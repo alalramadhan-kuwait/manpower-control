@@ -60,7 +60,7 @@ batchSql(plan1, batch1, 'Initial load — Stage A (staged from workbook by Claud
 // 2) promotion master against the employees plan1 creates. The commit assigns real ids, so the planner
 //    matches by employee number and the SQL resolves ids at commit time (matched_employee_id filled by a sub-select).
 const existing: ExistingEmployee[] = plan1.rows.filter((r) => r.entity_kind === 'employee' && r.outcome === 'new').map((r) => ({
-  id: `__EMP__${r.employee_number}`, employee_number: r.employee_number!, full_name: String(r.payload!.full_name), short_name: String(r.payload!.short_name),
+  id: `__EMP__${r.employee_number}`, employee_number: r.employee_number!, official_name: String(r.payload!.official_name), display_name: String(r.payload!.short_name), short_name: String(r.payload!.short_name),
   employment_type: r.payload!.employment_type as 'knpc' | 'contractor', employment_type_source: 'inferred', in_unit12_scope: true,
   grade: null, master_position: null, cost_center: null, join_date: null, normalization_date: null, last_promotion_date: null, position_start_date: null,
   education: null, service_years: null, years_in_grade: null, current_role: null, qualifications: {}

@@ -69,10 +69,10 @@ export default function TakeChargeBulkPage({ profile }: { profile: UserProfile }
                 return (
                   <li key={r.id} className={cx('flex items-center gap-2 px-3 py-2.5', changed && 'bg-brand-50/60')}>
                     <div className="min-w-0 flex-1">
-                      <Link to={`/employees/${r.id}`} className="block truncate text-sm font-medium text-slate-800">{r.short_name ?? r.full_name}</Link>
+                      <Link to={`/employees/${r.id}`} className="block truncate text-sm font-medium text-slate-800">{r.display_name}</Link>
                       <div className="truncate text-[11px] text-slate-500">#{r.employee_number}{r.grade ? ` · Grade ${r.grade}` : ''}{r.employment_type === 'contractor' ? ' · Contractor' : ''} · now: <Chip tone={qualificationTone(r.take_charge_status)} className="px-1.5 py-0">{qualificationLabel(r.take_charge_status)}</Chip></div>
                     </div>
-                    <div className="flex shrink-0 rounded-lg ring-1 ring-slate-300" role="radiogroup" aria-label={`Take-Charge for ${r.short_name ?? r.full_name}`}>
+                    <div className="flex shrink-0 rounded-lg ring-1 ring-slate-300" role="radiogroup" aria-label={`Take-Charge for ${r.display_name}`}>
                       {OPTIONS.map((o) => (
                         <button key={o.value} type="button" role="radio" aria-checked={value === o.value} onClick={() => setPending((p) => ({ ...p, [r.id]: o.value }))}
                           className={cx('min-h-10 px-2.5 text-xs font-medium first:rounded-l-lg last:rounded-r-lg', value === o.value ? (o.tone === 'green' ? 'bg-green-600 text-white' : o.tone === 'red' ? 'bg-red-600 text-white' : 'bg-amber-500 text-white') : 'bg-white text-slate-600')}>{o.label}</button>

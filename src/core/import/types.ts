@@ -30,13 +30,29 @@ export interface ParsedGridRun {
   sourceRef: string;
 }
 
+/** Free text found in a day cell of a monthly sheet ("Rescheduled in Nov", "Covering D-shift"). Evidence only. */
+export interface ParsedGridRemark {
+  employeeNumber: string;
+  shortName: string;
+  sheet: string;
+  cell: string;
+  date: string | null;
+  text: string;
+}
+
 export interface ParsedManpowerWorkbook {
   kind: 'u12_manpower_workbook';
   year: number;
   pvPeople: ParsedPerson[];
   gridPeople: ParsedPerson[];
+  /** "PV Scheduled": the ORIGINAL annual leave plan (baseline, historical). */
   pvRanges: ParsedLeaveRange[];
+  /** "PV Scheduled Updated": the CURRENT approved plan. Equal to pvRanges when the workbook has no updated sheet. */
+  pvCurrentRanges: ParsedLeaveRange[];
+  pvOriginalSheet: string | null;
+  pvCurrentSheet: string | null;
   gridRuns: ParsedGridRun[];
+  gridRemarks: ParsedGridRemark[];
   monthsParsed: string[];
   warnings: string[];
 }
@@ -83,7 +99,8 @@ export type ParsedWorkbook = ParsedManpowerWorkbook | ParsedPromotionMaster;
 export interface ExistingEmployee {
   id: string;
   employee_number: string;
-  full_name: string;
+  official_name: string;
+  display_name: string | null;
   short_name: string | null;
   employment_type: 'knpc' | 'contractor';
   employment_type_source: 'inferred' | 'confirmed';
@@ -111,6 +128,8 @@ export interface ExistingLeave {
   status: string;
   absence_type_code?: string | null;
   review_status?: string;
+  in_original_plan?: boolean;
+  in_current_plan?: boolean;
 }
 
 // ---------------------------------------------------------------- staged rows
@@ -145,6 +164,10 @@ export interface PlanSummary {
   leaveNew: number;
   leaveChanged: number;
   leaveUnchanged: number;
+  pvAdded: number;
+  pvRescheduled: number;
+  pvCancelled: number;
+  unresolvedNew: number;
   qualificationsNew: number;
   roleAssignmentsNew: number;
 }

@@ -3,7 +3,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@/data/supabase';
 import { fetchReference } from '@/data/queries';
-import type { AbsenceType, AuditEntry, Crew, EmployeeDirectoryRow, LeaveRecord, Performance, Position, Qualification, QualificationCode, QualificationStatus, RoleAssignment, SickTotal, UserProfile } from '@/data/types';
+import { displayNameFor } from '@/core/names';
+import type { AbsenceType, AuditEntry, Crew, EmployeeDirectoryRow, LeaveRecord, LeavePlanChange, Performance, Position, Qualification, QualificationCode, QualificationStatus, RoleAssignment, SickTotal, UserProfile } from '@/data/types';
 import { BottomSheet, Button, Card, Chip, ErrorBox, Field, Row, Spinner, fmtDate, qualificationLabel, qualificationTone } from '@/ui/components';
 
 const QUALS: { code: QualificationCode; label: string; help: string }[] = [
@@ -14,7 +15,7 @@ const QUALS: { code: QualificationCode; label: string; help: string }[] = [
 ];
 
 interface Loaded {
-  emp: EmployeeDirectoryRow; quals: Qualification[]; roles: RoleAssignment[]; leaves: LeaveRecord[]; perf: Performance[]; sick: SickTotal[]; audit: AuditEntry[];
+  emp: EmployeeDirectoryRow; quals: Qualification[]; roles: RoleAssignment[]; leaves: LeaveRecord[]; changes: LeavePlanChange[]; perf: Performance[]; sick: SickTotal[]; audit: AuditEntry[];
   positions: Position[]; crews: Crew[]; absenceTypes: AbsenceType[];
 }
 
@@ -26,24 +27,27 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
 
   const load = useCallback(async () => {
     if (!id) return;
-    const [e, q, r, l, p, s, a, ref] = await Promise.all([
+    const [e, q, r, l, c, p, s, a, ref] = await Promise.all([
       supabase.from('employee_directory_v').select('*').eq('id', id).single(),
       supabase.from('employee_qualifications').select('*').eq('employee_id', id).order('effective_from', { ascending: false }),
       supabase.from('employee_role_assignments').select('*, positions(code,label), crews(code)').eq('employee_id', id).order('effective_from', { ascending: false }),
       supabase.from('leave_records').select('*').eq('employee_id', id).order('start_date'),
+      supabase.from('leave_plan_changes').select('*').eq('employee_id', id).order('created_at', { ascending: false }),
       supabase.from('employee_performance').select('*').eq('employee_id', id).order('year', { ascending: false }),
       supabase.from('sick_leave_totals').select('*').eq('employee_id', id).order('year', { ascending: false }),
       supabase.from('audit_log').select('*').eq('related_employee_id', id).order('occurred_at', { ascending: false }).limit(20),
       fetchReference()
     ]);
-    const err = [e, q, r, l, p, s, a].find((x) => x.error)?.error; if (err) throw err;
-    setData({ emp: e.data as EmployeeDirectoryRow, quals: q.data as Qualification[], roles: r.data as RoleAssignment[], leaves: l.data as LeaveRecord[], perf: p.data as Performance[], sick: s.data as SickTotal[], audit: a.data as AuditEntry[], ...ref });
+    const err = [e, q, r, l, c, p, s, a].find((x) => x.error)?.error; if (err) throw err;
+    setData({ emp: e.data as EmployeeDirectoryRow, quals: q.data as Qualification[], roles: r.data as RoleAssignment[], leaves: l.data as LeaveRecord[], changes: c.data as LeavePlanChange[], perf: p.data as Performance[], sick: s.data as SickTotal[], audit: a.data as AuditEntry[], ...ref });
   }, [id]);
   useEffect(() => { load().catch(setError); }, [load]);
 
   if (error) return <ErrorBox error={error} />;
   if (!data) return <Spinner />;
   const { emp } = data;
+  const currentLeaves = data.leaves.filter((l) => l.in_current_plan && l.status !== 'cancelled' && l.status !== 'rescheduled');
+  const originalLeaves = data.leaves.filter((l) => l.in_original_plan);
   const currentQual = (c: QualificationCode) => data.quals.find((q) => q.qualification === c && !q.effective_to);
 
   return (
@@ -52,8 +56,8 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
       <Card className="mb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-xl font-semibold text-brand-800">{emp.short_name ?? emp.full_name}</h1>
-            {emp.short_name && emp.short_name !== emp.full_name && <div className="text-sm text-slate-600">{emp.full_name}</div>}
+            <h1 className="text-xl font-semibold text-brand-800">{emp.display_name}</h1>
+            {emp.official_name !== emp.display_name && <div className="text-sm text-slate-600">{emp.official_name}</div>}
             <div className="mt-1 text-sm text-slate-500">Employee No. <span className="font-mono font-medium text-slate-700">{emp.employee_number}</span></div>
           </div>
           <Button variant="ghost" className="min-h-9 px-2" onClick={() => setSheet({ kind: 'basics' })} aria-label="Edit basics"><Pencil className="h-4 w-4" /></Button>
@@ -105,13 +109,29 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
         {data.sick.map((s) => <Row key={s.id} label={`Sick leave ${s.year}`} value={`${s.days} days (as of ${fmtDate(s.reported_as_of)})`} />)}
       </Section>
 
-      <Section title={`Leave register ${data.leaves.length ? `(${data.leaves.length})` : ''}`}>
-        {data.leaves.length === 0 && <p className="text-sm text-slate-500">No leave records.</p>}
-        <ul className="divide-y divide-slate-100">
-          {data.leaves.map((l) => (
-            <li key={l.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-              <div><div className="font-medium text-slate-800">{fmtDate(l.start_date)} → {fmtDate(l.end_date)}</div><div className="text-xs text-slate-500">{data.absenceTypes.find((t) => t.code === l.absence_type_code)?.label ?? 'Type not yet classified'} · {l.source_kind.replace('_', ' ')}{l.source_ref ? ` · ${l.source_ref.split(' / ').slice(1).join(' / ')}` : ''}</div></div>
-              <Chip tone={l.status === 'unresolved' ? 'amber' : l.status === 'cancelled' ? 'neutral' : 'green'}>{l.status}</Chip>
+      <Section title={`Current plan and absences ${currentLeaves.length ? `(${currentLeaves.length})` : ''}`}>
+        <p className="mb-1 text-xs text-slate-500">What reduces manpower now: the current approved plan (PV Scheduled Updated) plus operational absences.</p>
+        {currentLeaves.length === 0 && <p className="text-sm text-slate-500">No current leave records.</p>}
+        <ul className="divide-y divide-slate-100">{currentLeaves.map((l) => <LeaveLine key={l.id} l={l} types={data.absenceTypes} />)}</ul>
+      </Section>
+
+      <Section title={`Original plan ${originalLeaves.length ? `(${originalLeaves.length})` : ''}`}>
+        <p className="mb-1 text-xs text-slate-500">The annual plan as first approved (PV Scheduled). Historical; a block shown as rescheduled or cancelled no longer reduces manpower.</p>
+        {originalLeaves.length === 0 && <p className="text-sm text-slate-500">No original plan records.</p>}
+        <ul className="divide-y divide-slate-100">{originalLeaves.map((l) => <LeaveLine key={l.id} l={l} types={data.absenceTypes} />)}</ul>
+      </Section>
+
+      <Section title={`Leave change history ${data.changes.length ? `(${data.changes.length})` : ''}`}>
+        {data.changes.length === 0 && <p className="text-sm text-slate-500">No changes recorded.</p>}
+        <ul className="divide-y divide-slate-100 text-sm">
+          {data.changes.map((c) => (
+            <li key={c.id} className="py-2">
+              <div className="flex items-center justify-between gap-2"><span className="font-medium text-slate-800">{CHANGE_LABEL[c.change_kind]}</span><span className="text-xs text-slate-500">{new Date(c.created_at).toLocaleDateString('en-GB')}</span></div>
+              <div className="text-xs text-slate-600">
+                {c.from_start ? `${fmtDate(c.from_start)} → ${fmtDate(c.from_end)}` : ''}{c.from_start && c.to_start ? '  ⇒  ' : ''}{c.to_start ? `${fmtDate(c.to_start)} → ${fmtDate(c.to_end)}` : ''}
+              </div>
+              {c.note ? <div className="text-xs text-slate-500">{c.note}</div> : null}
+              {c.evidence ? <div className="text-xs text-slate-400">Evidence: {c.evidence}</div> : null}
             </li>
           ))}
         </ul>
@@ -134,6 +154,23 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
       {sheet?.kind === 'basics' && <BasicsSheet emp={emp} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load().catch(setError); }} />}
       {sheet?.kind === 'role' && <RoleSheet emp={emp} positions={data.positions} crews={data.crews} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load().catch(setError); }} />}
     </div>
+  );
+}
+
+const CHANGE_LABEL: Record<LeavePlanChange['change_kind'], string> = {
+  added: 'Added to current plan', rescheduled: 'Rescheduled', cancelled: 'Cancelled', source_data_changed: 'Source data changed between workbook versions', baseline_added: 'Added to original plan (later workbook)'
+};
+
+function LeaveLine({ l, types }: { l: LeaveRecord; types: AbsenceType[] }) {
+  const tone = l.status === 'unresolved' ? 'amber' : l.status === 'cancelled' || l.status === 'rescheduled' ? 'neutral' : 'green';
+  return (
+    <li className="flex items-center justify-between gap-3 py-2 text-sm">
+      <div>
+        <div className="font-medium text-slate-800">{fmtDate(l.start_date)} → {fmtDate(l.end_date)}</div>
+        <div className="text-xs text-slate-500">{types.find((t) => t.code === l.absence_type_code)?.label ?? 'Type not yet classified'} · {l.source_kind.replace('_', ' ')}{l.source_ref ? ` · ${l.source_ref.split(' / ').slice(1).join(' / ')}` : ''}{l.in_original_plan && l.in_current_plan ? ' · original and current plan' : ''}</div>
+      </div>
+      <Chip tone={tone}>{l.status}</Chip>
+    </li>
   );
 }
 
@@ -184,7 +221,8 @@ function QualificationSheet({ emp, code, current, actor, onClose, onSaved }: { e
 
 function BasicsSheet({ emp, onClose, onSaved }: { emp: EmployeeDirectoryRow; onClose: () => void; onSaved: () => void }) {
   const [shortName, setShortName] = useState(emp.short_name ?? '');
-  const [fullName, setFullName] = useState(emp.full_name);
+  const [fullName, setFullName] = useState(emp.official_name);
+  const [displayName, setDisplayName] = useState(emp.display_name);
   const [type, setType] = useState(emp.employment_type);
   const [confirmed, setConfirmed] = useState(emp.employment_type_source === 'confirmed');
   const [active, setActive] = useState(emp.is_active);
@@ -192,14 +230,15 @@ function BasicsSheet({ emp, onClose, onSaved }: { emp: EmployeeDirectoryRow; onC
   const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
   async function save() {
     setBusy(true); setError(null);
-    const { error } = await supabase.from('employees').update({ short_name: shortName.trim() || null, full_name: fullName.trim(), employment_type: type, employment_type_source: confirmed ? 'confirmed' : 'inferred', is_active: active, notes: notes.trim() || null }).eq('id', emp.id);
+    const { error } = await supabase.from('employees').update({ short_name: shortName.trim() || null, official_name: fullName.trim(), display_name: displayName.trim() || displayNameFor({ officialName: fullName, shortName, employmentType: type, employmentTypeSource: confirmed ? 'confirmed' : 'inferred' }) || fullName.trim(), employment_type: type, employment_type_source: confirmed ? 'confirmed' : 'inferred', is_active: active, notes: notes.trim() || null }).eq('id', emp.id);
     setBusy(false); if (error) setError(error); else onSaved();
   }
   return (
     <BottomSheet open onClose={onClose} title="Edit employee">
       <div className="space-y-3">
-        <Field label="Display name"><input className="input" value={shortName} onChange={(e) => setShortName(e.target.value)} /></Field>
-        <Field label="Full name"><input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} /></Field>
+        <Field label="Official name" hint="Full name as in the KNPC Promotion Master. Never shortened."><input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} /></Field>
+        <Field label="Display name" hint="Shown on screens. Leave empty to derive it (first and last name for confirmed KNPC staff, workbook name otherwise)."><input className="input" value={displayName} onChange={(e) => setDisplayName(e.target.value)} /></Field>
+        <Field label="Workbook name" hint="Name as written on the U-12 manpower sheets."><input className="input" value={shortName} onChange={(e) => setShortName(e.target.value)} /></Field>
         <Field label="Employment classification" hint="Classification only. It never decides manpower eligibility by itself.">
           <div className="flex gap-2">{(['knpc', 'contractor'] as const).map((t) => <button key={t} type="button" onClick={() => { setType(t); setConfirmed(true); }} className={`flex-1 rounded-xl py-2.5 text-sm font-medium ring-1 ${type === t ? 'bg-brand-700 text-white ring-brand-700' : 'ring-slate-300'}`}>{t === 'knpc' ? 'KNPC' : 'Contractor'}</button>)}</div>
         </Field>

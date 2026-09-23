@@ -12,6 +12,7 @@ Supabase MCP or dashboard gets a matching file here, named with the version the 
 | `20260923061353_stage_a_directory_view` | `employee_directory_v` read model (security_invoker) |
 | `20260923064931_stage_a_hardening` | Advisor fixes: function search_path, revoke anon execute on role helpers, hide trigger functions from the API |
 | `20260923073637_import_leave_updates` | `commit_import_batch` step 5b: an unresolved grid absence whose dates moved in a newer workbook is updated in place (only while still unresolved, pending review and untyped); classified records are never touched |
+| `20260923081416_leave_plans_and_names` | Original vs current leave plan flags on `leave_records` (+ `rescheduled` status, links), `leave_plan_changes` history table, `leave_current_v`; `employees.full_name` → `official_name` plus `display_name`; commit function steps 5b–5d (dates moved, rescheduled, cancelled) |
 
 ## Initial load (23 Sep 2026)
 

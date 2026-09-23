@@ -26,8 +26,8 @@ export default function EmployeesPage() {
       .filter((r) => !role || r.position_category === role)
       .filter((r) => !crew || r.crew_code === crew)
       .filter((r) => !emp || r.employment_type === emp)
-      .filter((r) => !needle || r.employee_number.includes(needle) || r.full_name.toLowerCase().includes(needle) || (r.short_name ?? '').toLowerCase().includes(needle))
-      .sort((a, b) => (a.position_category ?? 'z').localeCompare(b.position_category ?? 'z') || (a.crew_code ?? 'Z').localeCompare(b.crew_code ?? 'Z') || a.full_name.localeCompare(b.full_name));
+      .filter((r) => !needle || r.employee_number.includes(needle) || r.official_name.toLowerCase().includes(needle) || r.display_name.toLowerCase().includes(needle) || (r.short_name ?? '').toLowerCase().includes(needle))
+      .sort((a, b) => (a.position_category ?? 'z').localeCompare(b.position_category ?? 'z') || (a.crew_code ?? 'Z').localeCompare(b.crew_code ?? 'Z') || a.display_name.localeCompare(b.display_name));
   }, [rows, q, role, crew, emp]);
 
   if (error) return <ErrorBox error={error} />;
@@ -52,7 +52,7 @@ export default function EmployeesPage() {
               <Card to={`/employees/${r.id}`} className="flex items-center gap-3 p-3">
                 <div className={cx('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sm font-semibold', r.crew_code ? 'bg-brand-50 text-brand-700' : 'bg-slate-100 text-slate-600')}>{r.crew_code ?? (r.position_code === 'vr_controller' ? 'VR' : r.position_code === 'morning_controller' ? 'M' : '—')}</div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2"><span className="truncate font-medium text-slate-800">{r.short_name ?? r.full_name}</span>{r.employment_type === 'contractor' && <Chip>Contractor</Chip>}</div>
+                  <div className="flex items-center gap-2"><span className="truncate font-medium text-slate-800">{r.display_name}</span>{r.employment_type === 'contractor' && <Chip>Contractor</Chip>}</div>
                   <div className="truncate text-xs text-slate-500">#{r.employee_number} · {r.position_label ?? 'No role'}{r.grade ? ` · Grade ${r.grade}` : ''}</div>
                 </div>
                 <div className="shrink-0 text-right">

@@ -19,6 +19,14 @@ export function syntheticManpowerWorkbook(): XLSX.WorkBook {
   pv[10] = [2, 400001, 'Contractor One', 'A', null, null, null, null, null, null, null, null, ...Array(4 * 9).fill(null), '30~~~13']; // DEC 30 → JAN 13 next year
   const pvSheet = XLSX.utils.aoa_to_sheet(pv.map((r) => r ?? []));
   XLSX.utils.book_append_sheet(wb, pvSheet, 'PV Scheduled');
+  // PV Scheduled Updated = current approved plan: Ctrl One's FEB 2–23 block rescheduled to MAR 2–23 (same length),
+  // Field One's block shortened to 9–12 Jan, Field Two unchanged, Contractor One's DEC block cancelled, Ctrl VR gains a JUL block.
+  const upd: (string | number | null)[][] = pv.map((r) => (r ? [...r] : r));
+  upd[4] = [1, 10001, 'Ctrl One', 'A', null, null, null, null, null, null, null, null, '2~~~23'];   // MAR 2 → MAR 23
+  upd[5] = [2, 10002, 'Ctrl VR', 'VR', ...Array(16).fill(null), '26~~8', ...Array(7).fill(null), '1~~6']; // + JUL 1 → 6
+  upd[9] = [1, 20001, 'Field One', 'A', '9~~12'];
+  upd[10] = [2, 400001, 'Contractor One', 'A'];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(upd.map((r) => r ?? [])), 'PV Scheduled Updated');
 
   // Jan grid: A SHIFT block with two people; Field One absent 5..20 (PV 5..18 + 2 off days) and 25..26 (not in PV)
   const jan: (string | number | null)[][] = [];

@@ -1,6 +1,6 @@
 import type * as XLSX from 'xlsx';
 import { isoDate, monthIndexFromName, normalizeEmployeeNumber, num, readerFor, text } from './sheet';
-import type { CrewCode, ParsedGridRun, ParsedLeaveRange, ParsedManpowerWorkbook, ParsedPerson, RoleCode } from './types';
+import type { CrewCode, ParsedGridRemark, ParsedGridRun, ParsedLeaveRange, ParsedManpowerWorkbook, ParsedPerson, RoleCode } from './types';
 
 const MONTH_NAMES = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
@@ -99,6 +99,7 @@ export function parseMonthlyGridSheet(wb: XLSX.WorkBook, sheetName: string, year
   const r = readerFor(wb, sheetName);
   const people: ParsedPerson[] = [];
   const runs: ParsedGridRun[] = [];
+  const remarks: ParsedGridRemark[] = [];
   const dayColsOn = (rr: number) => {
     const cols: { col: number; day: number }[] = [];
     for (let col = 1; col <= r.cols; col++) {
@@ -152,8 +153,12 @@ export function parseMonthlyGridSheet(wb: XLSX.WorkBook, sheetName: string, year
       for (const { col, day } of dayCols) {
         const v = r.get(rr, col);
         const marked = v === 1 || v === '1';
-        if (!marked && v !== null && v !== undefined && text(v)) warnings.push(`${sheetName} ${r.ref(rr, col)}: ${name} (${emp}) day ${day} holds "${String(text(v)).slice(0, 40)}" instead of 1; not treated as an absence`);
         const date = isoDate(year, month, day);
+        if (!marked && v !== null && v !== undefined && text(v)) {
+          const t = String(text(v));
+          remarks.push({ employeeNumber: emp, shortName: name, sheet: sheetName, cell: r.ref(rr, col), date, text: t });
+          warnings.push(`${sheetName} ${r.ref(rr, col)}: ${name} (${emp}) day ${day} holds "${t.slice(0, 40)}" instead of 1; not treated as an absence`);
+        }
         if (!date) { if (marked) warnings.push(`${sheetName} ${r.ref(rr, col)}: day ${day} does not exist in month ${month}`); continue; }
         if (marked) { if (!runStart) { runStart = date; startRef = r.ref(rr, col); } prev = date; }
         else flush();
@@ -162,26 +167,42 @@ export function parseMonthlyGridSheet(wb: XLSX.WorkBook, sheetName: string, year
     }
     row = dayRow;
   }
-  return { people, runs };
+  return { people, runs, remarks };
 }
 
 export function parseManpowerWorkbook(wb: XLSX.WorkBook, workbookName: string): ParsedManpowerWorkbook {
   const warnings: string[] = [];
   const year = detectYear(wb) ?? new Date().getFullYear();
   if (!detectYear(wb)) warnings.push(`Could not detect the plan year from the workbook; assuming ${year}.`);
-  let pvPeople: ParsedPerson[] = []; let pvRanges: ParsedLeaveRange[] = [];
-  const pvSheet = wb.SheetNames.find((n) => n.trim().toLowerCase() === 'pv scheduled') ?? wb.SheetNames.find((n) => /^pv scheduled/i.test(n));
+  // "PV Scheduled" = original annual plan (baseline). "PV Scheduled Updated" = current approved plan.
+  let pvPeople: ParsedPerson[] = []; let pvRanges: ParsedLeaveRange[] = []; let pvCurrentRanges: ParsedLeaveRange[] = [];
+  const pvSheet = wb.SheetNames.find((n) => n.trim().toLowerCase() === 'pv scheduled') ?? wb.SheetNames.find((n) => /^pv scheduled(?!.*updated)/i.test(n)) ?? null;
+  const updSheet = wb.SheetNames.find((n) => /^pv scheduled.*updated/i.test(n)) ?? null;
   if (pvSheet) { const res = parsePvSheet(wb, pvSheet, year, workbookName, warnings); pvPeople = res.people; pvRanges = res.ranges; }
   else warnings.push('No "PV Scheduled" sheet found; crews for Panel Operators and Controllers cannot be read.');
-  const extra = wb.SheetNames.filter((n) => /^pv scheduled/i.test(n) && n !== pvSheet);
-  if (extra.length) warnings.push(`Additional PV sheets ignored (identical layout, use "PV Scheduled" as the plan): ${extra.join(', ')}`);
+  if (updSheet) {
+    const res = parsePvSheet(wb, updSheet, year, workbookName, warnings);
+    pvCurrentRanges = res.ranges;
+    if (!pvSheet) pvPeople = res.people;
+    else {
+      const key = (p: ParsedPerson) => `${p.employeeNumber}|${p.role}|${p.crew ?? '-'}`;
+      const a = new Set(pvPeople.map(key)); const bset = new Set(res.people.map(key));
+      const diff = [...a].filter((k) => !bset.has(k)).concat([...bset].filter((k) => !a.has(k)));
+      if (diff.length) warnings.push(`"${pvSheet}" and "${updSheet}" list different people/crews (${diff.length} difference(s)); crews taken from "${pvSheet}".`);
+    }
+  } else {
+    pvCurrentRanges = pvRanges;
+    warnings.push('No "PV Scheduled Updated" sheet; the current approved plan is taken to be the original plan.');
+  }
+  const extra = wb.SheetNames.filter((n) => /^pv scheduled/i.test(n) && n !== pvSheet && n !== updSheet);
+  if (extra.length) warnings.push(`Additional PV sheets ignored: ${extra.join(', ')}`);
 
-  const gridPeople: ParsedPerson[] = []; const gridRuns: ParsedGridRun[] = []; const monthsParsed: string[] = [];
+  const gridPeople: ParsedPerson[] = []; const gridRuns: ParsedGridRun[] = []; const gridRemarks: ParsedGridRemark[] = []; const monthsParsed: string[] = [];
   for (const name of wb.SheetNames) {
     const month = monthIndexFromName(name);
     if (!month || name.trim().length > 5) continue; // Jan .. Sept; skip "SCHEDULE-2026" etc
     const res = parseMonthlyGridSheet(wb, name, year, month, workbookName, warnings);
-    if (res.people.length) { monthsParsed.push(name); gridPeople.push(...res.people); gridRuns.push(...res.runs); }
+    if (res.people.length) { monthsParsed.push(name); gridPeople.push(...res.people); gridRuns.push(...res.runs); gridRemarks.push(...res.remarks); }
   }
-  return { kind: 'u12_manpower_workbook', year, pvPeople, gridPeople, pvRanges, gridRuns, monthsParsed, warnings };
+  return { kind: 'u12_manpower_workbook', year, pvPeople, gridPeople, pvRanges, pvCurrentRanges, pvOriginalSheet: pvSheet, pvCurrentSheet: updSheet, gridRuns, gridRemarks, monthsParsed, warnings };
 }

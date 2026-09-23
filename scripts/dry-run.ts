@@ -22,7 +22,7 @@ console.log('panel crews from grid+pv:', by(plan.rows, 'role_assignment').filter
 if (promotionPath) {
   // simulate "existing" = employees created by the manpower plan
   const existing: ExistingEmployee[] = by(plan.rows, 'employee').map((r, i) => ({
-    id: `emp-${i}`, employee_number: r.employee_number!, full_name: String((r.payload as any).full_name), short_name: String((r.payload as any).short_name),
+    id: `emp-${i}`, employee_number: r.employee_number!, official_name: String((r.payload as any).official_name), display_name: String((r.payload as any).short_name), short_name: String((r.payload as any).short_name),
     employment_type: (r.payload as any).employment_type, employment_type_source: 'inferred', in_unit12_scope: true, grade: null, master_position: null, cost_center: null,
     join_date: null, normalization_date: null, last_promotion_date: null, position_start_date: null, education: null, service_years: null, years_in_grade: null, current_role: null, qualifications: {}
   }));

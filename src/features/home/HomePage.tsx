@@ -45,8 +45,8 @@ export default function HomePage() {
         })}
       </div>
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
-        {scope.filter((r) => r.position_code === 'vr_controller').map((r) => <Chip key={r.id} tone="blue">VR Controller: {r.short_name ?? r.full_name}</Chip>)}
-        {scope.filter((r) => r.position_code === 'morning_controller').map((r) => <Chip key={r.id} tone="blue">Morning Controller: {r.short_name ?? r.full_name}</Chip>)}
+        {scope.filter((r) => r.position_code === 'vr_controller').map((r) => <Chip key={r.id} tone="blue">VR Controller: {r.display_name}</Chip>)}
+        {scope.filter((r) => r.position_code === 'morning_controller').map((r) => <Chip key={r.id} tone="blue">Morning Controller: {r.display_name}</Chip>)}
         <Chip>{scope.filter((r) => r.employment_type === 'contractor').length} contractors</Chip>
       </div>
       <h2 className="mb-2 mt-6 text-xs font-semibold uppercase tracking-wide text-slate-500">Data quality</h2>

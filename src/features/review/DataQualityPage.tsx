@@ -6,7 +6,7 @@ import type { AbsenceType, EmployeeDirectoryRow, ImportRowRecord, LeaveRecord, U
 import { BottomSheet, Button, Card, Chip, ErrorBox, Field, PageHeader, Spinner, fmtDate } from '@/ui/components';
 import { RowLine } from '@/features/imports/PlanPreview';
 
-interface Loaded { emps: EmployeeDirectoryRow[]; unresolved: (LeaveRecord & { employees: { short_name: string | null; full_name: string; employee_number: string } })[]; pending: ImportRowRecord[]; absenceTypes: AbsenceType[] }
+interface Loaded { emps: EmployeeDirectoryRow[]; unresolved: (LeaveRecord & { employees: { display_name: string; official_name: string; employee_number: string } })[]; pending: ImportRowRecord[]; absenceTypes: AbsenceType[] }
 
 export default function DataQualityPage({ profile }: { profile: UserProfile }) {
   const [data, setData] = useState<Loaded | null>(null);
@@ -15,7 +15,7 @@ export default function DataQualityPage({ profile }: { profile: UserProfile }) {
   const load = useCallback(async () => {
     const [emps, u, p, ref] = await Promise.all([
       fetchDirectory(),
-      supabase.from('leave_records').select('*, employees(short_name, full_name, employee_number)').eq('status', 'unresolved').order('start_date'),
+      supabase.from('leave_records').select('*, employees(display_name, official_name, employee_number)').eq('status', 'unresolved').order('start_date'),
       supabase.from('import_rows').select('*, import_batches!inner(status, file_name)').or('needs_review.eq.true,outcome.eq.unmatched,outcome.eq.error').eq('import_batches.status', 'committed').order('seq').limit(200),
       fetchReference()
     ]);
@@ -40,7 +40,7 @@ export default function DataQualityPage({ profile }: { profile: UserProfile }) {
         <ul className="divide-y divide-slate-100">
           {data.unresolved.map((l) => (
             <li key={l.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
-              <div className="min-w-0"><Link to={`/employees/${l.employee_id}`} className="font-medium text-brand-700">{l.employees.short_name ?? l.employees.full_name}</Link> <span className="text-xs text-slate-500">#{l.employees.employee_number}</span><div className="text-xs text-slate-600">{fmtDate(l.start_date)} → {fmtDate(l.end_date)} · {l.source_ref?.split(' / ').slice(1).join(' / ')}</div></div>
+              <div className="min-w-0"><Link to={`/employees/${l.employee_id}`} className="font-medium text-brand-700">{l.employees.display_name}</Link> <span className="text-xs text-slate-500">#{l.employees.employee_number}</span><div className="text-xs text-slate-600">{fmtDate(l.start_date)} → {fmtDate(l.end_date)} · {l.source_ref?.split(' / ').slice(1).join(' / ')}</div></div>
               <Button variant="secondary" className="min-h-9 shrink-0 px-3 text-xs" onClick={() => setResolving(l)}>Resolve</Button>
             </li>
           ))}
@@ -90,7 +90,7 @@ function PeopleList({ people, extra }: { people: EmployeeDirectoryRow[]; extra: 
     <ul className="divide-y divide-slate-100">
       {people.map((e) => (
         <li key={e.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-          <Link to={`/employees/${e.id}`} className="min-w-0 truncate"><span className="font-medium text-brand-700">{e.short_name ?? e.full_name}</span> <span className="text-xs text-slate-500">#{e.employee_number} · {e.position_label ?? 'no role'}{e.crew_code ? ` · ${e.crew_code}` : ''}</span></Link>
+          <Link to={`/employees/${e.id}`} className="min-w-0 truncate"><span className="font-medium text-brand-700">{e.display_name}</span> <span className="text-xs text-slate-500">#{e.employee_number} · {e.position_label ?? 'no role'}{e.crew_code ? ` · ${e.crew_code}` : ''}</span></Link>
           {extra(e)}
         </li>
       ))}
