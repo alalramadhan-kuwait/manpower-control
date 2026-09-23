@@ -42,12 +42,14 @@ export interface LeaveRecord {
   status: 'planned' | 'approved' | 'unresolved' | 'cancelled' | 'rescheduled'; source_kind: 'pv_schedule' | 'monthly_grid' | 'manual'; source_ref: string | null;
   source_batch_id: string | null; review_status: 'none' | 'pending_review' | 'resolved'; note: string | null; created_at: string;
   in_original_plan: boolean; in_current_plan: boolean; superseded_by: string | null; rescheduled_from: string | null;
+  /** Added, corrected or cancelled by hand; imports never change it. */
+  hand_corrected: boolean;
 }
 
 export interface LeavePlanChange {
-  id: string; employee_id: string; change_kind: 'added' | 'rescheduled' | 'cancelled' | 'source_data_changed' | 'baseline_added';
+  id: string; employee_id: string; change_kind: 'added' | 'rescheduled' | 'cancelled' | 'source_data_changed' | 'baseline_added' | 'corrected';
   original_record_id: string | null; current_record_id: string | null; from_start: string | null; from_end: string | null; to_start: string | null; to_end: string | null;
-  evidence: string | null; note: string | null; source_batch_id: string | null; created_by: string | null; created_at: string;
+  evidence: string | null; note: string | null; source_batch_id: string | null; created_by: string | null; created_at: string; by_hand: boolean;
 }
 
 export interface Performance { id: string; employee_id: string; year: number; perf_level: number | null; increment_pct: number | null; warnings: boolean | null; appreciation_letters: number | null; screening_eligibility: string | null; reported_as_of: string | null }

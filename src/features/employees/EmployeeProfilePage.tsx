@@ -9,6 +9,7 @@ import { BottomSheet, Button, Card, Chip, ErrorBox, Field, Row, Spinner, fmtDate
 import { CrewBadge, CrewTag, isCrew } from '@/ui/crew';
 import { OnLeaveChip, localToday, shortDate } from '@/ui/leave';
 import { splitLeave, type LeaveBlock, type LeaveSpan } from '@/core/leave';
+import { LeaveSheet, changeLabel, type LeaveTarget } from '@/features/leave/LeaveSheet';
 
 const QUALS: { code: QualificationCode; label: string; help: string }[] = [
   { code: 'take_charge', label: 'Take-Charge qualified', help: 'Only Take-Charge = Yes counts toward the Field Operator minimum of 6.' },
@@ -27,6 +28,8 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
   const [data, setData] = useState<Loaded | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [sheet, setSheet] = useState<null | { kind: 'qual'; code: QualificationCode } | { kind: 'basics' } | { kind: 'role' }>(null);
+  const [leaveSheet, setLeaveSheet] = useState<LeaveTarget | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -54,6 +57,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
   const leaveSplit = splitLeave(today, data.leaves.map((l) => ({ employeeId: l.employee_id, start: l.start_date, end: l.end_date, status: l.status, inCurrentPlan: l.in_current_plan, typeLabel: typeOf(l.absence_type_code)?.label ?? null, typeShort: typeOf(l.absence_type_code)?.short_code ?? null, rec: l })), isCrew(emp.crew_code) ? emp.crew_code : null);
   const leaveNow = leaveSplit.current;
   const awaitingReview = data.leaves.filter((l) => l.status === 'unresolved' && l.in_current_plan);
+  const currentRecord = data.leaves.find((l) => l.in_current_plan && (l.status === 'approved' || l.status === 'planned') && l.start_date <= today && today <= l.end_date) ?? null;
   const originalLeaves = data.leaves.filter((l) => l.in_original_plan);
   const currentQual = (c: QualificationCode) => data.quals.find((q) => q.qualification === c && !q.effective_to);
 
@@ -79,8 +83,9 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
         </div>
       </Card>
 
+      {flash && <div role="status" className="mb-3 rounded-xl bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{flash}</div>}
       {leaveNow && (
-        <Section title="Current leave / absence">
+        <Section title="Current leave / absence" action={currentRecord && <Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => setLeaveSheet({ kind: 'edit', record: currentRecord })}>Correct</Button>}>
           <div className="flex items-center justify-between gap-3">
             <LeaveCode code={leaveNow.typeShort} />
             <span className="text-lg font-semibold text-slate-900">Return {shortDate(leaveNow.returnOn)}</span>
@@ -89,14 +94,14 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
         </Section>
       )}
 
-      <Section title={`Upcoming leave${leaveSplit.upcoming.length ? ` (${leaveSplit.upcoming.length})` : ''}`}>
+      <Section title={`Upcoming leave${leaveSplit.upcoming.length ? ` (${leaveSplit.upcoming.length})` : ''}`} action={<Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => setLeaveSheet({ kind: 'add', employeeId: emp.id })}>+ Add leave</Button>}>
         {leaveSplit.upcoming.length === 0 && <p className="text-sm text-slate-500">No upcoming leave in the current plan.</p>}
-        <ul className="divide-y divide-slate-100">{leaveSplit.upcoming.map((b) => <BlockRow key={b.record.rec.id} b={b} today={today} showReturn />)}</ul>
+        <ul className="divide-y divide-slate-100">{leaveSplit.upcoming.map((b) => <BlockRow key={b.record.rec.id} b={b} today={today} showReturn onEdit={() => setLeaveSheet({ kind: 'edit', record: b.record.rec })} />)}</ul>
       </Section>
 
       <Collapsible title="Past leave history" count={leaveSplit.past.length}>
         {leaveSplit.past.length === 0 && <p className="text-sm text-slate-500">No completed leave this plan year.</p>}
-        <ul className="divide-y divide-slate-100">{leaveSplit.past.map((b) => <BlockRow key={b.record.rec.id} b={b} today={today} />)}</ul>
+        <ul className="divide-y divide-slate-100">{leaveSplit.past.map((b) => <BlockRow key={b.record.rec.id} b={b} today={today} onEdit={() => setLeaveSheet({ kind: 'edit', record: b.record.rec })} />)}</ul>
       </Collapsible>
 
       {awaitingReview.length > 0 && (
@@ -155,7 +160,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
         <ul className="divide-y divide-slate-100 text-sm">
           {data.changes.map((c) => (
             <li key={c.id} className="py-2">
-              <div className="flex items-center justify-between gap-2"><span className="font-medium text-slate-800">{CHANGE_LABEL[c.change_kind]}</span><span className="text-xs text-slate-500">{new Date(c.created_at).toLocaleDateString('en-GB')}</span></div>
+              <div className="flex items-center justify-between gap-2"><span className="font-medium text-slate-800">{changeLabel(c)}</span><span className="text-xs text-slate-500">{new Date(c.created_at).toLocaleDateString('en-GB')}</span></div>
               <div className="text-xs text-slate-600">
                 {c.from_start ? `${fmtDate(c.from_start)} → ${fmtDate(c.from_end)}` : ''}{c.from_start && c.to_start ? '  ⇒  ' : ''}{c.to_start ? `${fmtDate(c.to_start)} → ${fmtDate(c.to_end)}` : ''}
               </div>
@@ -181,14 +186,11 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
 
       {sheet?.kind === 'qual' && <QualificationSheet emp={emp} code={sheet.code} current={currentQual(sheet.code)} actor={profile} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load().catch(setError); }} />}
       {sheet?.kind === 'basics' && <BasicsSheet emp={emp} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load().catch(setError); }} />}
+      {leaveSheet && <LeaveSheet target={leaveSheet} people={[{ id: emp.id, name: emp.display_name, crew: isCrew(emp.crew_code) ? emp.crew_code : null }]} types={data.absenceTypes} onClose={() => setLeaveSheet(null)} onDone={(m) => { setLeaveSheet(null); setFlash(m); load().catch(setError); }} />}
       {sheet?.kind === 'role' && <RoleSheet emp={emp} positions={data.positions} crews={data.crews} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load().catch(setError); }} />}
     </div>
   );
 }
-
-const CHANGE_LABEL: Record<LeavePlanChange['change_kind'], string> = {
-  added: 'Added to current plan', rescheduled: 'Rescheduled', cancelled: 'Cancelled', source_data_changed: 'Source data changed between workbook versions', baseline_added: 'Added to original plan (later workbook)'
-};
 
 function LeaveLine({ l, types }: { l: LeaveRecord; types: AbsenceType[] }) {
   const tone = l.status === 'unresolved' ? 'amber' : l.status === 'cancelled' || l.status === 'rescheduled' ? 'neutral' : 'green';
@@ -212,14 +214,19 @@ function LeaveCode({ code }: { code: string | null | undefined }) {
 }
 
 type ProfileSpan = LeaveSpan & { rec: LeaveRecord };
-function BlockRow({ b, today, showReturn }: { b: LeaveBlock<ProfileSpan>; today: string; showReturn?: boolean }) {
+function BlockRow({ b, today, showReturn, onEdit }: { b: LeaveBlock<ProfileSpan>; today: string; showReturn?: boolean; onEdit: () => void }) {
   return (
-    <li className="flex items-center justify-between gap-3 py-2 text-sm">
-      <div className="min-w-0">
-        <div className="font-medium text-slate-800"><LeaveCode code={b.record.typeShort} /> {dateRange(b.start, b.end, today)}</div>
-        <div className="text-xs text-slate-500">{b.record.typeLabel ?? 'Leave'} · {dayCount(b.start, b.end)}</div>
-      </div>
-      {showReturn && <span className="shrink-0 text-xs font-medium text-slate-600">Return {shortDate(b.returnOn)}</span>}
+    <li>
+      <button type="button" onClick={onEdit} className="flex w-full items-center justify-between gap-3 py-2 text-left text-sm active:bg-slate-50">
+        <div className="min-w-0">
+          <div className="font-medium text-slate-800"><LeaveCode code={b.record.typeShort} /> {dateRange(b.start, b.end, today)}</div>
+          <div className="text-xs text-slate-500">{b.record.typeLabel ?? 'Leave'} · {dayCount(b.start, b.end)}{b.record.rec.hand_corrected ? ' · by hand' : ''}</div>
+        </div>
+        <span className="flex shrink-0 items-center gap-2">
+          {showReturn && <span className="text-xs font-medium text-slate-600">Return {shortDate(b.returnOn)}</span>}
+          <Pencil className="h-3.5 w-3.5 text-slate-400" />
+        </span>
+      </button>
     </li>
   );
 }

@@ -236,11 +236,13 @@ export function planManpowerImport(
         message: `${who}: baseline block ${lref(l)} is no longer on the original PV sheet. Baseline kept unchanged (source changed between workbook versions); review.` });
     }
 
-    // B. current leave records that the monthly sheets decide (import-owned: PV or monthly-sheet sources)
+    // B. current leave records that the monthly sheets decide (import-owned: PV or monthly-sheet sources, never touched by hand)
     const covered = new Set<string>();          // marked days already accounted for
     const notTaken: ExistingLeave[] = [];
-    const current = dbLeaves.filter((l) => counts(l) && l.source_kind !== 'manual');
-    for (const l of dbLeaves) if ((counts(l) && l.source_kind === 'manual') || l.status === 'unresolved') for (const d of eachDay(l.start_date, l.end_date)) covered.add(d);
+    const byHand = (l: ExistingLeave) => l.source_kind === 'manual' || l.hand_corrected === true;
+    const current = dbLeaves.filter((l) => counts(l) && !byHand(l));
+    // days entered, corrected or cancelled by hand are the Section Head's decision: never recreated or re-planned
+    for (const l of dbLeaves) if ((counts(l) && l.source_kind === 'manual') || l.hand_corrected || l.status === 'unresolved') for (const d of eachDay(l.start_date, l.end_date)) covered.add(d);
     const markedRuns = (from: string, to: string) => {
       const out: { start: string; end: string }[] = [];
       for (const d of eachDay(from, to)) {
@@ -334,7 +336,8 @@ export function planManpowerImport(
     }
 
     // E. months with no monthly sheet for this person: the updated PV sheet adds leave there
-    const liveRanges = [...current.filter((l) => !notTaken.includes(l)).map((l) => ({ start: l.start_date, end: l.end_date })), ...(!ex ? sheetOrig : [])];
+    const handRanges = dbLeaves.filter((l) => l.hand_corrected || (counts(l) && l.source_kind === 'manual')).map((l) => ({ start: l.start_date, end: l.end_date }));
+    const liveRanges = [...current.filter((l) => !notTaken.includes(l)).map((l) => ({ start: l.start_date, end: l.end_date })), ...handRanges, ...(!ex ? sheetOrig : [])];
     for (const rg of sheetCur) {
       if (eachDay(rg.start, rg.end).some(inScope)) continue;
       if (liveRanges.some((l) => l.start <= rg.end && l.end >= rg.start)) continue;

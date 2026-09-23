@@ -153,6 +153,22 @@ describe('monthly grid parsing and planning', () => {
       const plan = planManpowerImport(offShift, existing, [idempotent[0], idempotent[2], idempotent[3]], 'test.xlsx');
       expect(leaveRows(plan, '20001')).toEqual([]);
     });
+    it('leave cancelled by hand is not recreated from the sheet marks', () => {
+      const cancelled = cur('b', 'e1', '2026-01-25', '2026-01-26', { source_kind: 'monthly_grid', in_original_plan: false, status: 'cancelled', in_current_plan: false, hand_corrected: true });
+      const plan = planManpowerImport(parsed, existing, [idempotent[0], cancelled, idempotent[2], idempotent[3]], 'test.xlsx');
+      expect(leaveRows(plan, '20001')).toEqual([]);
+    });
+    it('leave corrected by hand is never re-planned: shortened dates stay short, a type fix is never marked not taken', () => {
+      // imported 9–14 Jan replaced by hand with 9–12 Jan; the sheet still marks 13–14 Jan
+      const replaced = cur('a', 'e1', '2026-01-09', '2026-01-14', { status: 'rescheduled', in_current_plan: false, hand_corrected: true });
+      const shorter = cur('h', 'e1', '2026-01-09', '2026-01-12', { source_kind: 'manual', in_original_plan: false, hand_corrected: true });
+      const plan = planManpowerImport(parsed, existing, [replaced, shorter, idempotent[1], idempotent[2], idempotent[3]], 'test.xlsx');
+      expect(leaveRows(plan, '20001')).toEqual([]);
+      // a type-only correction stays current even on dates the sheet does not mark
+      const typeFixed = cur('x', 'e2', '2026-01-25', '2026-01-26', { absence_type_code: 'sick_leave', hand_corrected: true });
+      const plan2 = planManpowerImport(parsed, existing, [...idempotent, typeFixed], 'test.xlsx');
+      expect(leaveRows(plan2, '20002')).toEqual([]);
+    });
     it('never changes a record entered or classified by hand, and does not duplicate it', () => {
       const manual = cur('m', 'e1', '2026-01-25', '2026-01-26', { source_kind: 'manual', absence_type_code: 'sick_leave', in_original_plan: false });
       const plan = planManpowerImport(parsed, existing, [idempotent[0], manual, idempotent[2], idempotent[3]], 'test.xlsx');

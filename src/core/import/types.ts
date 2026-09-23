@@ -131,6 +131,8 @@ export interface ExistingLeave {
   end_date: string;
   source_kind: 'pv_schedule' | 'monthly_grid' | 'manual';
   status: string;
+  /** Added, corrected or cancelled by hand: an import never changes it or recreates leave on its days. */
+  hand_corrected?: boolean;
   absence_type_code?: string | null;
   review_status?: string;
   in_original_plan?: boolean;

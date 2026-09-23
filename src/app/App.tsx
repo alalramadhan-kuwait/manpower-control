@@ -12,6 +12,8 @@ import DataQualityPage from '@/features/review/DataQualityPage';
 import TakeChargeBulkPage from '@/features/review/TakeChargeBulkPage';
 import MorePage from '@/features/more/MorePage';
 import UsersPage from '@/features/users/UsersPage';
+import CalendarPage from '@/features/calendar/CalendarPage';
+import LeavePlanPage from '@/features/leave/LeavePlanPage';
 import ControllersPage from '@/features/controllers/ControllersPage';
 import { Shell } from './Shell';
 import { Button, Spinner } from '@/ui/components';
@@ -73,7 +75,8 @@ export default function App() {
           <Route path="/more" element={<MorePage profile={profile} />} />
           <Route path="/users" element={<UsersPage profile={profile} />} />
           <Route path="/controllers" element={<ControllersPage profile={profile} />} />
-          <Route path="/calendar" element={<ComingLater stage="Stage E" title="Manpower Calendar" />} />
+          <Route path="/calendar" element={<CalendarPage />} />
+          <Route path="/leave-plan" element={<LeavePlanPage />} />
           <Route path="/requests" element={<ComingLater stage="Stage F" title="Requests" />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

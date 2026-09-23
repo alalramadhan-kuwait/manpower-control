@@ -20,6 +20,7 @@ Supabase MCP or dashboard gets a matching file here, named with the version the 
 | `20260923151023_controller_rules_cover_length` | Stage H correction: the 2-month maximum now applies to Morning rotation only; shift cover lasts the actual period unless `controller_rules.shift_cover_max_days` is set (null by default, Section Head only, audited) |
 | `20260923151145_audit_non_uuid_ids` | `audit_row_change` tolerates non-uuid ids (entity_id null; full row still recorded) |
 | `20260923153659_import_keeps_manual_roles` | A role or crew set by hand is never replaced by a workbook import: `employee_directory_v` adds `role_source` / `role_note`; `commit_import_batch` step 3 leaves a manual current role in place (the import row becomes a review note instead of deleting or closing it) |
+| `20260923155805_stage_e_manual_leave` | Stage E: leave entered or corrected by hand. `leave_records.hand_corrected`; `leave_plan_changes` gains change kind `corrected` and `by_hand`; `leave_save()` (add, or correct one current record: in place for a hand entry or a type-only fix, otherwise a hand-entered replacement with the imported record kept as `rescheduled` history) and `leave_cancel()` (out of the plan as `cancelled`), both staff-only, audited, refusing overlaps and requiring a reason for corrections; `commit_import_batch` steps 5c/5d/5e leave hand-corrected records alone |
 
 ## Edge Functions
 

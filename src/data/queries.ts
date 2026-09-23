@@ -48,7 +48,7 @@ export async function fetchExistingForPlanning(year: number): Promise<{ employee
       ...(r.controller_status ? { controller: r.controller_status } : {})
     }
   }));
-  const { data, error } = await supabase.from('leave_records').select('id,employee_id,start_date,end_date,source_kind,status,absence_type_code,review_status,in_original_plan,in_current_plan')
+  const { data, error } = await supabase.from('leave_records').select('id,employee_id,start_date,end_date,source_kind,status,absence_type_code,review_status,in_original_plan,in_current_plan,hand_corrected')
     .gte('end_date', `${year - 1}-12-01`).lte('start_date', `${year + 1}-01-31`);
   if (error) throw error;
   return { employees, leaves: (data ?? []) as ExistingLeave[] };
