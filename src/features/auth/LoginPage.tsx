@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '@/data/supabase';
 import { Button, Field } from '@/ui/components';
+import { loginEmail } from '@/core/auth';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -10,8 +11,8 @@ export default function LoginPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setError(null);
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (error) setError(error.message);
+    const { error } = await supabase.auth.signInWithPassword({ email: loginEmail(email), password });
+    if (error) setError(error.message === 'Invalid login credentials' ? 'Username or password is not correct.' : error.message);
     setBusy(false);
   }
 
@@ -24,8 +25,8 @@ export default function LoginPage() {
           <p className="mt-1 text-sm text-slate-600">KNPC · Mina Abdullah Refinery · Unit 12 · Section 1</p>
         </div>
         <form onSubmit={submit} className="space-y-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <Field label="Email">
-            <input className="input" type="email" autoComplete="username" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <Field label="Username">
+            <input className="input" type="text" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="e.g. ajr015" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </Field>
           <Field label="Password">
             <input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
