@@ -9,6 +9,11 @@
   --color-status-green: #16a34a;
   --color-status-amber: #d97706;
   --color-status-red: #dc2626;
+  /* Crew identity (A/B/C/D). Never used for manpower status. */
+  --color-crew-a: #2563eb;
+  --color-crew-b: #047857;
+  --color-crew-c: #ea580c;
+  --color-crew-d: #7c3aed;
 }
 
 html, body, #root { height: 100%; }

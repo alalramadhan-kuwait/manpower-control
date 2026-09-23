@@ -6,6 +6,8 @@ import type { CrewDay, DayResult, Finding, MpAbsence, MpPerson, PositionResult, 
 import { addDaysIso, isValidIsoDate } from '@/core/roster';
 import { fetchManpowerInputs } from '@/data/manpower';
 import { Card, ErrorBox, Spinner, cx, fmtDate } from '@/ui/components';
+import { CREW_IDENTITY, CrewBadge, crewEdge } from '@/ui/crew';
+import { CREWS } from '@/core/roster';
 
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const weekday = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long' });
@@ -16,17 +18,18 @@ const STATUS_BG: Record<Status, string> = { green: 'bg-status-green', amber: 'bg
 const STATUS_TEXT_CLS: Record<Status, string> = { green: 'text-status-green', amber: 'text-status-amber', red: 'text-status-red' };
 const STATUS_RING: Record<Status, string> = { green: 'ring-green-200', amber: 'ring-amber-300', red: 'ring-red-300' };
 
-// Four categories kept visually distinct from the GREEN / AMBER / RED manpower result.
+// Four categories kept visually distinct from the GREEN / AMBER / RED manpower result. Pending items are grey;
+// no category uses a crew colour (A blue, B green, C orange, D purple).
 const CATEGORY = {
   shortage: { label: 'Confirmed shortage', pill: 'bg-status-red text-white', text: 'text-status-red', box: 'bg-red-50 ring-red-200 text-red-800' },
-  coverage_required: { label: 'Controller coverage required', pill: 'bg-violet-600 text-white', text: 'text-violet-700', box: 'bg-violet-50 ring-violet-200 text-violet-900' },
+  coverage_required: { label: 'Controller coverage required', pill: 'bg-slate-700 text-white', text: 'text-slate-700', box: 'bg-slate-100 ring-slate-300 text-slate-800' },
   data_incomplete: { label: 'Qualification data incomplete', pill: 'bg-slate-500 text-white', text: 'text-slate-600', box: 'bg-slate-50 ring-slate-300 text-slate-700' },
   unresolved: { label: 'Unresolved absence warning', pill: 'bg-white text-amber-800 ring-1 ring-amber-400', text: 'text-amber-800', box: 'bg-amber-50 ring-amber-200 text-amber-900' }
 } as const;
 const PENDING_PILL: Record<'coverage_required' | 'data_incomplete', string> = { coverage_required: 'COVERAGE REQUIRED', data_incomplete: 'DATA INCOMPLETE' };
 
 function findingColor(f: Finding): string {
-  return f === 'above_minimum' || f === 'staffed' ? 'text-status-green' : f === 'no_buffer' ? 'text-status-amber' : f === 'shortage' ? 'text-status-red' : f === 'coverage_required' ? 'text-violet-700' : 'text-slate-500';
+  return f === 'above_minimum' || f === 'staffed' ? 'text-status-green' : f === 'no_buffer' ? 'text-status-amber' : f === 'shortage' ? 'text-status-red' : f === 'coverage_required' ? 'text-slate-700' : 'text-slate-500';
 }
 
 function PendingPill({ kind }: { kind: 'coverage_required' | 'data_incomplete' }) {
@@ -101,7 +104,7 @@ export default function DayOverviewPage() {
 function OverallBanner({ result }: { result: DayResult }) {
   const { counts } = result;
   const final = result.finalStatus;
-  const ring = final ? STATUS_RING[final] : counts.coverageRequired ? 'ring-violet-300' : 'ring-slate-300';
+  const ring = final ? STATUS_RING[final] : 'ring-slate-300';
   const headline = final === 'red' ? 'Confirmed manpower shortage' : final ? STATUS_HINT[final] : 'Not final — items pending';
   const headlineCls = final ? STATUS_TEXT_CLS[final] : 'text-slate-700';
   const reds = result.crews.filter((c) => c.confirmedShortage).map((c) => `${c.crew} (${c.shift})`);
@@ -142,6 +145,7 @@ function Legend() {
       <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between text-sm font-medium text-brand-700">What the labels mean {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</button>
       {open && (
         <dl className="mt-2 space-y-2 text-xs text-slate-600">
+          <div><dt className="font-semibold text-slate-700">Crew colours</dt><dd className="mt-1 flex flex-wrap gap-3">{CREWS.map((k) => <span key={k} className="inline-flex items-center gap-1.5"><CrewBadge crew={k} size="sm" /> {CREW_IDENTITY[k].colour}</span>)}</dd><dd className="mt-1">The circle and left edge say which crew it is. They never mean manpower status.</dd></div>
           <div><dt className="font-semibold text-status-green">GREEN</dt><dd>Qualified manpower above minimum, or the crew Controller is available (one Controller is the normal complement). Final.</dd></div>
           <div><dt className="font-semibold text-status-amber">AMBER · No Buffer</dt><dd>Panel or Field exactly at minimum. Final.</dd></div>
           <div><dt className={cx('font-semibold', CATEGORY.shortage.text)}>RED · Confirmed shortage</dt><dd>Below minimum, or no Grade 14+ Panel Operator, even if every unconfirmed qualification were confirmed. Final.</dd></div>
@@ -168,9 +172,12 @@ function CrewCard({ crew: c }: { crew: CrewDay }) {
   const [open, setOpen] = useState(false);
   if (!c.working) {
     return (
-      <Card className="bg-slate-50">
-        <div className="flex items-center justify-between">
-          <div><div className="font-semibold text-slate-700">{c.crew} SHIFT — OFF</div><div className="text-xs text-slate-500">{c.dutyLabel} · {c.members} people · rest day</div></div>
+      <Card className={cx('bg-slate-50', crewEdge(c.crew))}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-3">
+            <CrewBadge crew={c.crew} muted />
+            <div className="min-w-0"><div className="font-semibold text-slate-700">{c.crew} SHIFT · Off</div><div className="text-xs text-slate-500">{c.dutyLabel} · {c.members} people · rest day</div></div>
+          </div>
           <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-600">OFF</span>
         </div>
         {c.absences.length > 0 && (
@@ -182,16 +189,18 @@ function CrewCard({ crew: c }: { crew: CrewDay }) {
     );
   }
   const final = c.finalStatus;
-  const ring = final ? STATUS_RING[final] : c.pending.includes('coverage_required') ? 'ring-violet-300' : 'ring-slate-300';
   const g14Color = c.panel.grade14 >= 1 ? 'text-status-green' : findingColor(c.panel.finding);
   const byFinding = (f: Finding) => [c.controller, c.panel, c.field].filter((p) => p.finding === f).flatMap((p) => p.issues.filter((i) => !i.startsWith('Acting')));
   const shortages = byFinding('shortage'); const coverage = byFinding('coverage_required'); const incomplete = byFinding('data_incomplete');
   return (
-    <Card className={cx('ring-2', ring)}>
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <div className="font-semibold text-brand-800">{c.crew} SHIFT — {c.shift.toUpperCase()} {c.duty}</div>
-          <div className="text-xs text-slate-500">{c.members} people in crew</div>
+    <Card className={crewEdge(c.crew)}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-3">
+          <CrewBadge crew={c.crew} size="lg" />
+          <div className="min-w-0">
+            <div className="text-lg font-bold leading-tight text-slate-900">{c.crew} SHIFT</div>
+            <div className="text-xs text-slate-500"><span className="whitespace-nowrap">{c.shift} · {c.duty}</span> · <span className="whitespace-nowrap">{c.members} people</span></div>
+          </div>
         </div>
         <div className="flex flex-col items-end gap-1">
           {final ? <StatusPill status={final} /> : null}
@@ -209,7 +218,7 @@ function CrewCard({ crew: c }: { crew: CrewDay }) {
         <Metric label="Field" value={`${c.field.count}/${c.field.min}`} color={findingColor(c.field.finding)} sub={c.field.finding === 'data_incomplete' ? `${c.field.potential - c.field.count} unconfirmed` : c.field.notCounted.length ? `${c.field.notCounted.length} not counted` : undefined} />
       </div>
       {c.controller.acting && (
-        <div className="mt-2 rounded-lg bg-blue-50 px-2 py-1.5 text-xs text-brand-800 ring-1 ring-brand-100">Acting Controller: <span className="font-semibold">{c.controller.acting.name}</span> (Grade {c.controller.acting.grade})</div>
+        <div className="mt-2 rounded-lg bg-slate-50 px-2 py-1.5 text-xs text-slate-800 ring-1 ring-slate-200">Acting Controller: <span className="font-semibold">{c.controller.acting.name}</span> (Grade {c.controller.acting.grade})</div>
       )}
       {c.noBuffer && <div className="mt-2 text-xs font-medium text-status-amber">No Manpower Buffer — any further absence drops this crew below minimum.</div>}
       <FindingBox kind="shortage" items={shortages} />
