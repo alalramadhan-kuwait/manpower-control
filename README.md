@@ -70,3 +70,15 @@ src/ui               shared mobile-first components (cards, chips, bottom sheet)
 supabase/migrations  every migration applied to the project, in order
 scripts              dry-run and initial-load helpers
 ```
+
+## Validation against the real project
+
+```bash
+# RLS from outside, as the browser sees it (anonymous + both roles)
+SH_EMAIL=… SH_PASSWORD=… MC_EMAIL=… MC_PASSWORD=… node scripts/rls-check.mjs
+
+# Browser end-to-end on an iPhone viewport: login, directory, profile update, Take-Charge bulk update,
+# import preview + commit of the real workbook (must change nothing on a re-import)
+npm run dev &
+MC_EMAIL=… MC_PASSWORD=… WORKBOOK=data/manpower.xlsx OUT=/tmp/shots node scripts/e2e-real.mjs
+```
