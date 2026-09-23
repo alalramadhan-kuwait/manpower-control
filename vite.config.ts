@@ -4,7 +4,9 @@ import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { fileURLToPath, URL } from 'node:url';
 
+// VITE_BASE is '/manpower-control/' for GitHub Pages (set in CI); '/' everywhere else.
 export default defineConfig({
+  base: process.env.VITE_BASE || '/',
   plugins: [
     react(),
     tailwindcss(),
@@ -18,7 +20,8 @@ export default defineConfig({
         theme_color: '#0f3d5e',
         background_color: '#f4f6f8',
         display: 'standalone',
-        start_url: '/',
+        start_url: '.',
+        scope: '.',
         icons: [
           { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },

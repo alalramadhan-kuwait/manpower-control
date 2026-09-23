@@ -17,5 +17,28 @@ jobs:
       - run: npm test
       - run: npm run build
         env:
+          VITE_BASE: /manpower-control/
           VITE_SUPABASE_URL: https://fhnqaurtryfmmomvzrpl.supabase.co
           VITE_SUPABASE_ANON_KEY: sb_publishable_K-qSRqHDFTKHOEGPaz9RdA_o3gISiKZ
+      # GitHub Pages serves 404.html for unknown paths; the app then routes them itself, so deep links work
+      - run: cp dist/index.html dist/404.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  # Publishes main to https://alalramadhan-kuwait.github.io/manpower-control/ — the same way Time Keeper is
+  # published. Requires Settings → Pages → Source: GitHub Actions. The site is program code only; all data
+  # stays in Supabase behind login and row-level security.
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
