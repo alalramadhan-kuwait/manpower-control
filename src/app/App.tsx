@@ -8,6 +8,7 @@ import ImportCenterPage from '@/features/imports/ImportCenterPage';
 import ImportHistoryPage from '@/features/imports/ImportHistoryPage';
 import ImportBatchPage from '@/features/imports/ImportBatchPage';
 import DataQualityPage from '@/features/review/DataQualityPage';
+import TakeChargeBulkPage from '@/features/review/TakeChargeBulkPage';
 import MorePage from '@/features/more/MorePage';
 import { Shell } from './Shell';
 import { Button, Spinner } from '@/ui/components';
@@ -55,6 +56,7 @@ export default function App() {
           <Route path="/imports/history" element={<ImportHistoryPage />} />
           <Route path="/imports/:batchId" element={<ImportBatchPage />} />
           <Route path="/review" element={<DataQualityPage profile={profile} />} />
+          <Route path="/review/take-charge" element={<TakeChargeBulkPage profile={profile} />} />
           <Route path="/more" element={<MorePage profile={profile} />} />
           <Route path="/calendar" element={<ComingLater stage="Stage E" title="Manpower Calendar" />} />
           <Route path="/requests" element={<ComingLater stage="Stage F" title="Requests" />} />

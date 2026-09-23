@@ -47,7 +47,8 @@ export default function DataQualityPage({ profile }: { profile: UserProfile }) {
         </ul>
       </Section>
 
-      <Section title={`Take-Charge not confirmed (${tc.length})`} help="Field Operators only count toward the minimum of 6 once Take-Charge = Yes. Open the profile to set it.">
+      <Section title={`Take-Charge not confirmed (${tc.length})`} help="Field Operators only count toward the minimum of 6 once Take-Charge = Yes.">
+        <Link to="/review/take-charge" className="mb-2 inline-flex min-h-10 items-center rounded-xl bg-brand-700 px-4 text-sm font-medium text-white">Confirm all Field Operators in one screen</Link>
         {tc.length === 0 && <Ok />}
         <PeopleList people={tc} extra={() => <Chip tone="amber">Not yet confirmed</Chip>} />
       </Section>

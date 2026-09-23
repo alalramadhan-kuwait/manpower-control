@@ -1,4 +1,4 @@
-import { ChevronRight, ClipboardCheck, FileUp, History, LogOut } from 'lucide-react';
+import { ChevronRight, ClipboardCheck, FileUp, History, LogOut, ShieldCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/data/supabase';
 import type { UserProfile } from '@/data/types';
@@ -8,7 +8,8 @@ import { Button, Card, PageHeader } from '@/ui/components';
 const active = [
   { to: '/imports', label: 'Excel Import Center', desc: 'Upload the U-12 manpower workbook or the promotion master', icon: FileUp },
   { to: '/imports/history', label: 'Import History', desc: 'Every import batch with its counts and row outcomes', icon: History },
-  { to: '/review', label: 'Data Quality Review', desc: 'Unresolved absences, unconfirmed qualifications, unmatched rows', icon: ClipboardCheck }
+  { to: '/review', label: 'Data Quality Review', desc: 'Unresolved absences, unconfirmed qualifications, unmatched rows', icon: ClipboardCheck },
+  { to: '/review/take-charge', label: 'Take-Charge confirmation', desc: 'Bulk-confirm Take-Charge for all Field Operators', icon: ShieldCheck }
 ];
 const later = [
   ['Annual Leave Plan', 'Stage E'], ['Shift Movements', 'Stage G'], ['Controller Management', 'Stage H'], ['Shutdown', 'Stage I'], ['Notification Center', 'after Stage F'], ['Audit History', 'Stage J']
