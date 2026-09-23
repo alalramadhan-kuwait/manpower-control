@@ -10,7 +10,7 @@ const short = (iso: string) => `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.
 
 /**
  * "On leave" marker for employee screens: pale yellow (plus a plane in the full version) with the leave code and return date
- * (first day available to work). `compact` is the list version; the full type and dates are in the tooltip.
+ * (first day available to work). `compact` is the list version ("PV · 8 Oct"); the full type, dates and return date are in the tooltip.
  */
 export function OnLeaveChip({ leave, compact, className }: { leave: OnLeave; compact?: boolean; className?: string }) {
   const full = `${leave.typeLabel ?? 'Leave'}: ${short(leave.start)} – ${short(leave.until)} · back to work ${short(leave.returnOn)}`;
@@ -19,7 +19,7 @@ export function OnLeaveChip({ leave, compact, className }: { leave: OnLeave; com
     <span title={full} aria-label={`On leave. ${full}`}
       className={cx('inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-full bg-yellow-100 font-semibold text-yellow-900 ring-1 ring-yellow-400',
         compact ? 'px-1 py-px text-[10px]' : 'px-2.5 py-1 text-xs', className)}>
-      {compact ? `${code}Return ${short(leave.returnOn)}` : <><Plane className="h-3 w-3" /> On leave · {code}Return {short(leave.returnOn)}</>}
+      {compact ? `${code}${short(leave.returnOn)}` : <><Plane className="h-3 w-3" /> On leave · {code}Return {short(leave.returnOn)}</>}
     </span>
   );
 }

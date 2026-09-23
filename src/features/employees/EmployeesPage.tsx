@@ -68,6 +68,9 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
       .sort((a, b) => (a.position_category ?? 'z').localeCompare(b.position_category ?? 'z') || (a.crew_code ?? 'Z').localeCompare(b.crew_code ?? 'Z') || a.display_name.localeCompare(b.display_name));
   }, [rows, q, role, crew, emp, view, need]);
 
+  // Tick boxes are only for bulk approval, which works from the Needs action view.
+  const selecting = view === 'action';
+  useEffect(() => { if (!selecting) setSelected(new Set()); }, [selecting]);
   const selectedRows = (rows ?? []).filter((r) => selected.has(r.id));
   const allShownSelected = filtered.length > 0 && filtered.every((r) => selected.has(r.id));
   const toggle = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -110,19 +113,19 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
 
       {!rows ? <Spinner /> : (
         <>
-          <div className="mt-3 flex items-center justify-between text-sm">
+          {selecting && <div className="mt-3 flex items-center justify-between text-sm">
             <button onClick={toggleAll} className="inline-flex min-h-10 items-center gap-2 rounded-lg px-1 font-medium text-brand-700">
               {allShownSelected ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />} {allShownSelected ? 'Unselect shown' : `Select all shown (${filtered.length})`}
             </button>
             {selected.size > 0 && <span className="text-slate-500">{selected.size} selected</span>}
-          </div>
+          </div>}
 
           {/* PC: table */}
           <div className="mt-2 hidden overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 lg:block">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="w-10 px-3 py-2"><SelectBox checked={allShownSelected} onChange={toggleAll} label="Select all shown" /></th>
+                  {selecting ? <th className="w-10 px-3 py-2"><SelectBox checked={allShownSelected} onChange={toggleAll} label="Select all shown" /></th> : <th className="w-2" />}
                   <th className="px-2 py-2">Employee</th><th className="px-2 py-2">Emp #</th><th className="px-2 py-2">Role</th><th className="px-2 py-2">Crew</th>
                   <th className="px-2 py-2">Grade</th><th className="px-2 py-2">Type</th><th className="px-2 py-2">Needs action</th>
                 </tr>
@@ -130,7 +133,7 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((r) => (
                   <tr key={r.id} className={cx('align-middle', selected.has(r.id) ? 'bg-brand-50/60' : 'hover:bg-slate-50')}>
-                    <td className="px-3 py-2"><SelectBox checked={selected.has(r.id)} onChange={() => toggle(r.id)} label={`Select ${r.display_name}`} /></td>
+                    {selecting ? <td className="px-3 py-2"><SelectBox checked={selected.has(r.id)} onChange={() => toggle(r.id)} label={`Select ${r.display_name}`} /></td> : <td />}
                     <td className="whitespace-nowrap px-2 py-2"><Link to={`/employees/${r.id}`} title={r.official_name} className="font-medium text-brand-700 hover:underline">{r.display_name}</Link>{onLeave.has(r.id) && <OnLeaveChip leave={onLeave.get(r.id)!} compact className="ml-2 align-middle" />}</td>
                     <td className="px-2 py-2 tabular-nums text-slate-600">{r.employee_number}</td>
                     <td className="px-2 py-2 text-slate-700">{r.position_label ?? '—'}</td>
@@ -148,8 +151,8 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
           {/* Phone: cards */}
           <ul className="mt-2 space-y-1.5 lg:hidden">
             {filtered.map((r) => (
-              <li key={r.id} className={cx('flex items-center gap-2 rounded-xl bg-white pl-2 shadow-sm ring-1', selected.has(r.id) ? 'ring-brand-600' : 'ring-slate-200')}>
-                <SelectBox checked={selected.has(r.id)} onChange={() => toggle(r.id)} label={`Select ${r.display_name}`} />
+              <li key={r.id} className={cx('flex items-center gap-2 rounded-xl bg-white shadow-sm ring-1', selecting ? 'pl-2' : 'pl-3', selected.has(r.id) ? 'ring-brand-600' : 'ring-slate-200')}>
+                {selecting && <SelectBox checked={selected.has(r.id)} onChange={() => toggle(r.id)} label={`Select ${r.display_name}`} />}
                 <Link to={`/employees/${r.id}`} className="flex min-w-0 flex-1 items-center gap-2 py-2 pr-2">
                   {isCrew(r.crew_code) ? <CrewBadge crew={r.crew_code} size="md" /> : <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">{r.position_code === 'vr_controller' ? 'VR' : r.position_code === 'morning_controller' ? 'M' : '—'}</span>}
                   <span className="min-w-0 flex-1">

@@ -14,6 +14,7 @@ Supabase MCP or dashboard gets a matching file here, named with the version the 
 | `20260923073637_import_leave_updates` | `commit_import_batch` step 5b: an unresolved grid absence whose dates moved in a newer workbook is updated in place (only while still unresolved, pending review and untyped); classified records are never touched |
 | `20260923081416_leave_plans_and_names` | Original vs current leave plan flags on `leave_records` (+ `rescheduled` status, links), `leave_plan_changes` history table, `leave_current_v`; `employees.full_name` → `official_name` plus `display_name`; commit function steps 5b–5d (dates moved, rescheduled, cancelled) |
 | `20260923131508_leave_short_codes` | `absence_types.short_code` (PV, UL, SL, MED, HAJJ, SHORT, PCP, MARR, ESC …); Personal QB relabelled Personal Compassion Leave; new Marriage Leave and Escort Leave types |
+| `20260923133431_long_course_code` | Long Course gets its own short code `LCOURSE` (Course stays `COURSE`); Special Leave stays `SPEC` |
 
 ## Edge Functions
 
