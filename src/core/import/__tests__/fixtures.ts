@@ -14,7 +14,8 @@ export function syntheticManpowerWorkbook(): XLSX.WorkBook {
   pv[5] = [2, 10002, 'Ctrl VR', 'VR', ...Array(16).fill(null), '26~~8']; // column U = MAY: 26 May → 8 Jun
   pv[7] = ['OPERATIONS, AREA-4 - ARDs / FIELD OPERATORS LEAVE SCHEDULE FOR THE YEAR 2026'];
   pv[8] = hdr;
-  pv[9] = [1, 20001, 'Field One', 'A', '5~~18'];                 // JAN 5 → JAN 18
+  pv[9] = [1, 20001, 'Field One', 'A', '9~~14'];                 // JAN 9 → JAN 14 (A crew: M1..N2, then Off 15–16)
+  pv[11] = [3, 20002, 'Field Two', 'A', '9~~12'];                // JAN 9 → JAN 12 (ends on A2, a working day)
   pv[10] = [2, 400001, 'Contractor One', 'A', null, null, null, null, null, null, null, null, ...Array(4 * 9).fill(null), '30~~~13']; // DEC 30 → JAN 13 next year
   const pvSheet = XLSX.utils.aoa_to_sheet(pv.map((r) => r ?? []));
   XLSX.utils.book_append_sheet(wb, pvSheet, 'PV Scheduled');
@@ -23,13 +24,18 @@ export function syntheticManpowerWorkbook(): XLSX.WorkBook {
   const jan: (string | number | null)[][] = [];
   jan[1] = [null, '"A" SHIFT'];
   jan[2] = [null, 'NO', 'NAME', 'EMP #', ...Array.from({ length: 31 }, (_, i) => i + 1)];
+  // Field One absent 9..16 (PV 9–14 + roster Off 15–16) and 25..26 (M1, M2: not in PV)
   const row1: (string | number | null)[] = [null, 1, 'Field One', 20001];
-  for (let d = 1; d <= 31; d++) row1.push((d >= 5 && d <= 20) || d === 25 || d === 26 ? 1 : null);
+  for (let d = 1; d <= 31; d++) row1.push((d >= 9 && d <= 16) || d === 25 || d === 26 ? 1 : null);
   jan[3] = row1;
   const row2: (string | number | null)[] = [null, 2, 'Contractor One', 400001];
   for (let d = 1; d <= 31; d++) row2.push(d === 31 ? 1 : null);
   jan[4] = row2;
-  jan[5] = [null, 'TOTAL'];
+  // Field Two absent 9..14: PV covers 9–12 only; 13–14 are N1/N2 working days → must NOT be absorbed as "end + 2"
+  const row3: (string | number | null)[] = [null, 3, 'Field Two', 20002];
+  for (let d = 1; d <= 31; d++) row3.push(d >= 9 && d <= 14 ? 1 : null);
+  jan[5] = row3;
+  jan[6] = [null, 'TOTAL'];
   jan[8] = [null, 'CONTROLER'];
   jan[9] = [null, 'NO', 'NAME', 'EMP #', ...Array.from({ length: 31 }, (_, i) => i + 1)];
   jan[10] = [null, 1, 'Ctrl One', 10001];

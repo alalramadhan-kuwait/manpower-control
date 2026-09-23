@@ -1,4 +1,6 @@
 import { addDays, eachDay } from './sheet';
+import { isOff } from '../roster';
+import type { Crew } from '../roster';
 import type {
   ExistingEmployee, ExistingLeave, ImportPlan, ParsedGridRun, ParsedManpowerWorkbook, ParsedPerson, ParsedPromotionMaster,
   PlanSummary, RoleCode, StagedRow
@@ -149,11 +151,20 @@ export function planManpowerImport(
     }
   }
 
-  // PV leave ranges
+  // PV leave ranges. A monthly-grid mark is covered by a PV block on its actual calendar dates, plus any days
+  // immediately after the block that the ROSTER ENGINE says are Off for the employee's crew (a block that ends
+  // on N2 is followed by Off1/Off2; a block ending on a working day gets no extension). Never "end + 2".
+  const crewOf = new Map<string, Crew | null>();
+  for (const p of people.values()) crewOf.set(p.employeeNumber, p.crew);
   const pvDaysByEmp = new Map<string, Set<string>>();
   const addPvDays = (emp: string, start: string, end: string) => {
     const set = pvDaysByEmp.get(emp) ?? new Set<string>();
-    for (const d of eachDay(start, addDays(end, 2))) set.add(d); // include the two roster Off days after a block
+    for (const d of eachDay(start, end)) set.add(d);
+    const crew = crewOf.get(emp) ?? null;
+    if (crew) {
+      let d = addDays(end, 1);
+      while (isOff(d, crew)) { set.add(d); d = addDays(d, 1); }
+    }
     pvDaysByEmp.set(emp, set);
   };
   const seenPv = new Set<string>();
@@ -182,8 +193,8 @@ export function planManpowerImport(
     }
   }
 
-  // Monthly grid runs: merge runs that continue across month sheets, then compare with the PV plan.
-  // Covered by PV (plus the two trailing Off days) → nothing new; otherwise an unresolved absence.
+  // Monthly grid runs: merge runs that continue across month sheets, then compare with the PV plan by calendar date.
+  // Covered by PV (plus roster Off days directly after the block) → nothing new; otherwise an unresolved absence.
   const mergedRuns = mergeGridRuns(parsed.gridRuns);
   let covered = 0;
   const seenGrid = new Set<string>();
@@ -206,7 +217,7 @@ export function planManpowerImport(
         diff: null, message: dup ? 'Unresolved absence already recorded' : `${run.shortName}: absent ${start} → ${end} on ${sheetOf(run.sourceRef)} — not in PV plan, type unknown` });
     }
   }
-  if (covered) b.add({ sheet: null, row_ref: null, entity_kind: 'note', employee_number: null, matched_employee_id: null, outcome: 'unchanged', needs_review: false, raw: { covered }, payload: null, diff: null, message: `${covered} monthly-grid absence runs match the PV plan (including the two roster Off days after each block) and add nothing new.` });
+  if (covered) b.add({ sheet: null, row_ref: null, entity_kind: 'note', employee_number: null, matched_employee_id: null, outcome: 'unchanged', needs_review: false, raw: { covered }, payload: null, diff: null, message: `${covered} monthly-grid absence runs match the PV plan (including roster Off days directly after a block) and add nothing new.` });
 
   const dates = parsed.pvRanges.flatMap((r) => [r.start, r.end]).concat(parsed.gridRuns.flatMap((r) => [r.start, r.end])).sort();
   return {
