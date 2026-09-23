@@ -91,5 +91,9 @@ MC_EMAIL=… MC_PASSWORD=… WORKBOOK=data/manpower.xlsx OUT=/tmp/shots node scr
   approved Grade-14 Acting Controller shown as such), Panel 3 with at least one Grade 14+, Field 6 counting only
   Take-Charge = Yes. GREEN above minimum, AMBER exactly minimum (No Buffer), RED below minimum or requirement missing.
   Current-plan leave reduces manpower only on the crew's working days; unresolved absences are warnings only.
+- Every result is classified as a confirmed shortage (final RED), Controller coverage required (crew Controller on
+  leave, no cover recorded — not final until coverage is assigned), qualification data incomplete (below minimum only
+  because qualifications such as Take-Charge are not yet confirmed — not final), or an unresolved absence warning.
+  Not Yet Confirmed never counts. Acting Controller is used only when explicitly recorded in the employee profile.
 - The home screen is the mobile Day Overview (Today / Tomorrow / date picker, all four crews, who counts and why).
 

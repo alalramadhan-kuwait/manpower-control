@@ -79,6 +79,11 @@ describe('monthly grid parsing and planning', () => {
     ]);
     expect(review[0].payload).toMatchObject({ absence_type_code: null, status: 'unresolved', review_status: 'pending_review', in_current_plan: true });
   });
+  it('never creates an Acting Controller qualification (it must be recorded explicitly in the profile)', () => {
+    const plan = planManpowerImport(parsed, [], [], 'test.xlsx');
+    const quals = plan.rows.filter((r) => r.entity_kind === 'qualification').map((r) => (r.payload as any)?.qualification);
+    expect(quals).not.toContain('acting_controller');
+  });
   it('recognises existing leave (reschedules it when the current sheet moved it) and never overrides qualifications', () => {
     const existing: ExistingEmployee[] = [{
       id: 'e1', employee_number: '20001', official_name: 'Field One', display_name: 'Field One', short_name: 'Field One', employment_type: 'knpc', employment_type_source: 'inferred', in_unit12_scope: true,

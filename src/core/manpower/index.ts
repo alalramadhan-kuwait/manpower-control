@@ -62,23 +62,48 @@ export const FULL_OPERATION: Rules = {
   fieldMin: 6
 };
 
-export interface NotCounted { person: MpPerson; reason: string }
+export interface NotCounted { person: MpPerson; reason: string; /** true when the reason is missing data (not yet confirmed / not recorded), not a No */ pendingData?: boolean }
+
+/**
+ * What a position's result means operationally:
+ * - above_minimum / no_buffer: final GREEN / AMBER.
+ * - shortage: CONFIRMED manpower shortage — below minimum (or grade requirement missing) even if every
+ *   unconfirmed qualification turned out to be Yes. Final RED.
+ * - data_incomplete: below minimum only because qualification data is not yet confirmed. Not final.
+ * - coverage_required: the crew Controller is on leave and no cover is recorded (Vacation Relief coverage
+ *   is not implemented yet). Not final; becomes final once coverage is assigned.
+ */
+export type Finding = 'above_minimum' | 'no_buffer' | 'shortage' | 'data_incomplete' | 'coverage_required';
+export const PENDING_FINDINGS: Finding[] = ['data_incomplete', 'coverage_required'];
+
 export interface PositionResult {
   key: 'controller' | 'panel' | 'field';
   label: string;
+  /** Qualified and available (confirmed data only). */
   count: number;
   min: number;
   buffer: number;
+  /** Strict rule result on confirmed data only. */
   status: Status;
+  finding: Finding;
+  /** false while the finding is data_incomplete or coverage_required. */
+  final: boolean;
+  /** Count if every unconfirmed qualification were confirmed (for data_incomplete). */
+  potential: number;
+  /** Status to expect once pending items are resolved (coverage assigned / data confirmed as Yes). */
+  provisionalStatus: Status;
   counted: MpPerson[];
   notCounted: NotCounted[];
   issues: string[];
 }
 export interface ControllerResult extends PositionResult {
-  /** Grade-14 Acting Controller in use on this duty, if any (displayed as "Acting Controller"). */
+  /** Grade-14 Acting Controller in use on this duty, if any (displayed as "Acting Controller"). Only an
+   *  explicitly recorded Acting Controller qualification (= Yes) is used; it is never inferred. */
   acting: MpPerson | null;
+  /** Crew Controllers on leave on this working day (they need cover). */
+  onLeave: MpPerson[];
 }
-export interface PanelResult extends PositionResult { grade14: number }
+export interface PanelResult extends PositionResult { grade14: number; potentialGrade14: number }
 export interface AbsenceOnDay { person: MpPerson; absence: MpAbsence; reducesManpower: boolean }
 
 export interface CrewDay {
@@ -88,8 +113,16 @@ export interface CrewDay {
   shift: string;
   dutyLabel: string;
   working: boolean;
-  /** null when the crew is Off. */
+  /** Strict rule result on confirmed data only (null when Off). */
   status: Status | null;
+  /** Final GREEN/AMBER/RED: RED when there is a confirmed shortage; null while anything is pending
+   *  (coverage required / data incomplete) and nothing is confirmed short; null when Off. */
+  finalStatus: Status | null;
+  /** Expected result once pending items are resolved (null when Off). */
+  provisionalStatus: Status | null;
+  /** Pending findings on this duty (coverage_required, data_incomplete). */
+  pending: Finding[];
+  confirmedShortage: boolean;
   noBuffer: boolean;
   controller: ControllerResult;
   panel: PanelResult;
@@ -103,8 +136,13 @@ export interface DayResult {
   date: string;
   crews: CrewDay[]; // ordered Morning, Afternoon, Night, Off
   dayStaff: DayStaff[]; // VR and Morning Controllers (no crew; coverage is recorded in Stage H)
+  /** Strict rule result on confirmed data only. */
   overall: Status;
+  /** Final day status (see CrewDay.finalStatus). */
+  finalStatus: Status | null;
+  provisionalStatus: Status;
   noBuffer: boolean;
+  counts: { confirmedShortage: number; coverageRequired: number; dataIncomplete: number; unresolvedWarnings: number };
 }
 
 const SHIFT_ORDER: State[] = ['M', 'A', 'N', 'Off'];
@@ -114,6 +152,19 @@ export const worst = (list: Status[]): Status => list.reduce<Status>((w, s) => (
 /** GREEN above minimum, AMBER exactly minimum, RED below minimum. */
 export function statusFor(count: number, min: number): Status {
   return count > min ? 'green' : count === min ? 'amber' : 'red';
+}
+
+const isUnknown = (q: QualStatus) => q !== 'yes' && q !== 'no';
+
+function finishPosition(base: Omit<PositionResult, 'finding' | 'final' | 'provisionalStatus' | 'status'> & { requirementMet: boolean; potentialMet: boolean; coverage?: boolean }): PositionResult {
+  const { requirementMet, potentialMet, coverage, ...rest } = base;
+  const status: Status = !requirementMet ? 'red' : statusFor(base.count, base.min);
+  let finding: Finding; let provisionalStatus: Status;
+  if (requirementMet) { finding = status === 'green' ? 'above_minimum' : 'no_buffer'; provisionalStatus = status; }
+  else if (coverage) { finding = 'coverage_required'; provisionalStatus = statusFor(base.min, base.min); }
+  else if (potentialMet) { finding = 'data_incomplete'; provisionalStatus = statusFor(base.potential, base.min); }
+  else { finding = 'shortage'; provisionalStatus = 'red'; }
+  return { ...rest, status, finding, final: !PENDING_FINDINGS.includes(finding), provisionalStatus };
 }
 
 const covers = (a: MpAbsence, date: string) => a.start <= date && date <= a.end;
@@ -150,14 +201,16 @@ export function evaluateDay(date: string, people: MpPerson[], absences: MpAbsenc
     // ---- Controller
     const ctrlCounted: MpPerson[] = []; const ctrlNot: NotCounted[] = []; const ctrlIssues: string[] = [];
     let acting: MpPerson | null = null;
+    const qualifiesAsController = (p: MpPerson) => (p.grade != null && p.grade >= rules.controllerGrade) || (p.grade != null && p.grade >= rules.actingControllerGrade && p.actingController === 'yes');
     for (const p of available.filter((x) => x.role === 'controller')) {
       if (p.grade != null && p.grade >= rules.controllerGrade) ctrlCounted.push(p);
       else if (p.grade != null && p.grade >= rules.actingControllerGrade && p.actingController === 'yes') { ctrlCounted.push(p); acting ??= p; }
-      else ctrlNot.push({ person: p, reason: `${gradeText(p)}; Controller needs Grade ${rules.controllerGrade}+ or an approved Grade-${rules.actingControllerGrade} Acting Controller` });
+      else ctrlNot.push({ person: p, pendingData: p.grade == null, reason: `${gradeText(p)}; Controller needs Grade ${rules.controllerGrade}+ or a recorded Grade-${rules.actingControllerGrade} Acting Controller qualification` });
     }
     const pool = { panel: available.filter((x) => x.role === 'panel_operator'), field: available.filter((x) => x.role === 'field_operator') };
     if (ctrlCounted.length < rules.controllerMin) {
-      // Draw a qualified Grade-14 Acting Controller from the crew, from the position with the larger buffer.
+      // Draw a Grade-14 Acting Controller from the crew — only someone with the Acting Controller qualification
+      // explicitly recorded as Yes; never inferred — from the position with the larger buffer.
       const canAct = (p: MpPerson) => p.grade != null && p.grade >= rules.actingControllerGrade && p.grade < rules.controllerGrade && p.actingController === 'yes';
       const panelBuffer = pool.panel.filter((p) => p.panelQualified === 'yes').length - rules.panelMin;
       const fieldBuffer = pool.field.filter((p) => p.takeCharge === 'yes').length - rules.fieldMin;
@@ -168,40 +221,64 @@ export function evaluateDay(date: string, people: MpPerson[], absences: MpAbsenc
       }
     }
     if (acting) ctrlIssues.push(`Acting Controller: ${acting.name} (Grade ${acting.grade})`);
+    const ctrlOnLeave = working ? members.filter((p) => p.role === 'controller' && leaveOf(p) && qualifiesAsController(p)) : [];
     const ctrlCount = ctrlCounted.length;
+    const ctrlMet = ctrlCount >= rules.controllerMin;
+    const ctrlCoverage = !ctrlMet && ctrlOnLeave.length > 0;
+    const ctrlPotentialMet = ctrlCount + ctrlNot.filter((n) => n.pendingData).length >= rules.controllerMin;
+    if (ctrlCoverage) ctrlIssues.push(`Controller coverage required: ${ctrlOnLeave.map((p) => `${p.name} (${leaveOf(p)?.typeLabel ?? 'leave'})`).join(', ')} — no cover recorded`);
+    else if (!ctrlMet && ctrlPotentialMet) ctrlIssues.push('Controller grade not recorded');
+    else if (!ctrlMet) ctrlIssues.push(`Confirmed shortage: no qualified Controller (${ctrlCount}/${rules.controllerMin})`);
     const controller: ControllerResult = {
-      key: 'controller', label: 'Controller', count: ctrlCount, min: rules.controllerMin, buffer: ctrlCount - rules.controllerMin,
-      status: statusFor(ctrlCount, rules.controllerMin), counted: ctrlCounted, notCounted: ctrlNot, issues: ctrlIssues, acting
+      ...finishPosition({ key: 'controller', label: 'Controller', count: ctrlCount, min: rules.controllerMin, buffer: ctrlCount - rules.controllerMin, potential: ctrlCount + ctrlNot.filter((n) => n.pendingData).length,
+        counted: ctrlCounted, notCounted: ctrlNot, issues: ctrlIssues, requirementMet: ctrlMet, potentialMet: ctrlPotentialMet, coverage: ctrlCoverage }),
+      acting, onLeave: ctrlOnLeave
     };
-    if (ctrlCount < rules.controllerMin) controller.issues.push(`No qualified Controller available (${ctrlCount}/${rules.controllerMin})`);
 
     // ---- Panel
     const panelCounted = pool.panel.filter((p) => p.panelQualified === 'yes');
-    const panelNot: NotCounted[] = pool.panel.filter((p) => p.panelQualified !== 'yes').map((p) => ({ person: p, reason: qualReason('Panel qualification', p.panelQualified) }));
-    const grade14 = panelCounted.filter((p) => p.grade != null && p.grade >= rules.panelGrade14).length;
+    const panelNot: NotCounted[] = pool.panel.filter((p) => p.panelQualified !== 'yes').map((p) => ({ person: p, pendingData: isUnknown(p.panelQualified), reason: qualReason('Panel qualification', p.panelQualified) }));
+    const isG14 = (p: MpPerson) => p.grade != null && p.grade >= rules.panelGrade14;
+    const g14Unknown = (p: MpPerson) => p.grade == null && p.employmentType === 'knpc';
+    const grade14 = panelCounted.filter(isG14).length;
+    const panelPotentialPeople = [...panelCounted, ...pool.panel.filter((p) => isUnknown(p.panelQualified))];
+    const potentialGrade14 = panelPotentialPeople.filter((p) => isG14(p) || g14Unknown(p)).length;
+    const panelMet = panelCounted.length >= rules.panelMin && grade14 >= rules.panelGrade14Min;
+    const panelPotentialMet = panelPotentialPeople.length >= rules.panelMin && potentialGrade14 >= rules.panelGrade14Min;
     const panelIssues: string[] = [];
-    let panelStatus = statusFor(panelCounted.length, rules.panelMin);
-    if (panelCounted.length < rules.panelMin) panelIssues.push(`Panel below minimum (${panelCounted.length}/${rules.panelMin})`);
-    if (grade14 < rules.panelGrade14Min) { panelStatus = 'red'; panelIssues.push(`No Grade ${rules.panelGrade14} Panel Operator available`); }
+    if (!panelMet) {
+      const what = [panelCounted.length < rules.panelMin ? `${panelCounted.length}/${rules.panelMin} qualified` : null, grade14 < rules.panelGrade14Min ? `no Grade ${rules.panelGrade14}+ Panel Operator` : null].filter(Boolean).join(', ');
+      panelIssues.push(panelPotentialMet ? `Panel qualification data incomplete: ${what} confirmed` : `Confirmed shortage: Panel ${what}`);
+    }
     const panel: PanelResult = {
-      key: 'panel', label: 'Panel', count: panelCounted.length, min: rules.panelMin, buffer: panelCounted.length - rules.panelMin,
-      status: panelStatus, counted: panelCounted, notCounted: panelNot, issues: panelIssues, grade14
+      ...finishPosition({ key: 'panel', label: 'Panel', count: panelCounted.length, min: rules.panelMin, buffer: panelCounted.length - rules.panelMin, potential: panelPotentialPeople.length,
+        counted: panelCounted, notCounted: panelNot, issues: panelIssues, requirementMet: panelMet, potentialMet: panelPotentialMet }),
+      grade14, potentialGrade14
     };
 
     // ---- Field (only Take-Charge = Yes counts)
     const fieldCounted = pool.field.filter((p) => p.takeCharge === 'yes');
-    const fieldNot: NotCounted[] = pool.field.filter((p) => p.takeCharge !== 'yes').map((p) => ({ person: p, reason: qualReason('Take-Charge', p.takeCharge) }));
+    const fieldNot: NotCounted[] = pool.field.filter((p) => p.takeCharge !== 'yes').map((p) => ({ person: p, pendingData: isUnknown(p.takeCharge), reason: qualReason('Take-Charge', p.takeCharge) }));
+    const fieldUnknown = fieldNot.filter((n) => n.pendingData).length;
+    const fieldPotential = fieldCounted.length + fieldUnknown;
+    const fieldMet = fieldCounted.length >= rules.fieldMin;
+    const fieldPotentialMet = fieldPotential >= rules.fieldMin;
     const fieldIssues: string[] = [];
-    if (fieldCounted.length < rules.fieldMin) fieldIssues.push(`Field below minimum (${fieldCounted.length}/${rules.fieldMin} Take-Charge confirmed${fieldNot.length ? `; ${fieldNot.length} on duty not counted` : ''})`);
-    const field: PositionResult = {
-      key: 'field', label: 'Field', count: fieldCounted.length, min: rules.fieldMin, buffer: fieldCounted.length - rules.fieldMin,
-      status: statusFor(fieldCounted.length, rules.fieldMin), counted: fieldCounted, notCounted: fieldNot, issues: fieldIssues
-    };
+    if (!fieldMet) fieldIssues.push(fieldPotentialMet
+      ? `Take-Charge data incomplete: ${fieldCounted.length}/${rules.fieldMin} confirmed, ${fieldUnknown} not yet confirmed (up to ${fieldPotential}/${rules.fieldMin} if confirmed)`
+      : `Confirmed shortage: Field ${fieldCounted.length}/${rules.fieldMin} Take-Charge${fieldUnknown ? ` (at most ${fieldPotential}/${rules.fieldMin} even if all unconfirmed are confirmed)` : ''}`);
+    const field: PositionResult = finishPosition({ key: 'field', label: 'Field', count: fieldCounted.length, min: rules.fieldMin, buffer: fieldCounted.length - rules.fieldMin, potential: fieldPotential,
+      counted: fieldCounted, notCounted: fieldNot, issues: fieldIssues, requirementMet: fieldMet, potentialMet: fieldPotentialMet });
 
-    const status = working ? worst([controller.status, panel.status, field.status]) : null;
+    const positions = [controller, panel, field];
+    const status = working ? worst(positions.map((p) => p.status)) : null;
+    const confirmedShortage = working && positions.some((p) => p.finding === 'shortage');
+    const pending = working ? [...new Set(positions.filter((p) => !p.final).map((p) => p.finding))] : [];
+    const provisionalStatus = working ? worst(positions.map((p) => p.provisionalStatus)) : null;
+    const finalStatus = !working ? null : confirmedShortage ? 'red' : pending.length ? null : status;
     return {
-      crew, duty, state, shift: SHIFT_LABEL[state], dutyLabel: dutyLabel(duty), working, status,
-      noBuffer: status === 'amber', controller, panel, field, absences: absencesOnDay, unresolved, members: members.length
+      crew, duty, state, shift: SHIFT_LABEL[state], dutyLabel: dutyLabel(duty), working, status, finalStatus, provisionalStatus, pending, confirmedShortage,
+      noBuffer: finalStatus === 'amber', controller, panel, field, absences: absencesOnDay, unresolved, members: members.length
     };
   }).sort((a, b) => SHIFT_ORDER.indexOf(a.state) - SHIFT_ORDER.indexOf(b.state));
 
@@ -209,8 +286,19 @@ export function evaluateDay(date: string, people: MpPerson[], absences: MpAbsenc
     .filter((p) => p.role === 'vr_controller' || p.role === 'morning_controller')
     .map((p) => ({ person: p, absence: leaveOf(p), unresolved: unresolvedOf(p) }));
 
-  const overall = worst(crews.filter((c) => c.working).map((c) => c.status as Status));
-  return { date, crews, dayStaff, overall, noBuffer: overall === 'amber' };
+  const workingCrews = crews.filter((c) => c.working);
+  const overall = worst(workingCrews.map((c) => c.status as Status));
+  const anyShortage = workingCrews.some((c) => c.confirmedShortage);
+  const anyPending = workingCrews.some((c) => c.pending.length > 0);
+  const finalStatus: Status | null = anyShortage ? 'red' : anyPending ? null : overall;
+  const provisionalStatus = worst(workingCrews.map((c) => c.provisionalStatus as Status));
+  const counts = {
+    confirmedShortage: workingCrews.filter((c) => c.confirmedShortage).length,
+    coverageRequired: workingCrews.filter((c) => c.pending.includes('coverage_required')).length,
+    dataIncomplete: workingCrews.filter((c) => c.pending.includes('data_incomplete')).length,
+    unresolvedWarnings: crews.reduce((n, c) => n + c.unresolved.length, 0) + dayStaff.filter((s) => s.unresolved).length
+  };
+  return { date, crews, dayStaff, overall, finalStatus, provisionalStatus, noBuffer: finalStatus === 'amber', counts };
 }
 
 /** Status for each date in a range (for later calendar views and for tests). */
