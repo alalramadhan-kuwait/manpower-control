@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { firstDayBack, onLeaveOn, type LeaveSpan } from '..';
+import { firstDayBack, onLeaveOn, splitLeave, type LeaveSpan } from '..';
 import { isWorkingDay } from '../../roster';
 
 const L = (employeeId: string, start: string, end: string, over: Partial<LeaveSpan> = {}): LeaveSpan =>
@@ -49,5 +49,32 @@ describe('return date = first day available to work', () => {
     const m = onLeaveOn('2026-09-23', [L('a', '2026-09-20', '2026-09-24')], () => 'A');
     expect(isWorkingDay(m.get('a')!.returnOn, 'A')).toBe(true);
     expect(m.get('a')!.returnOn > '2026-09-24').toBe(true);
+  });
+});
+
+describe('splitLeave (profile)', () => {
+  const recs = [
+    L('a', '2026-01-05', '2026-01-18'),
+    L('a', '2026-05-01', '2026-05-14'),
+    L('a', '2026-09-20', '2026-09-25'),
+    L('a', '2026-09-26', '2026-09-28', { typeLabel: 'Leave Extension', typeShort: 'EXT' }),
+    L('a', '2026-12-01', '2026-12-10'),
+    L('a', '2026-11-01', '2026-11-05'),
+    L('a', '2026-10-01', '2026-10-04', { status: 'rescheduled', inCurrentPlan: false }),
+    L('a', '2026-08-01', '2026-08-04', { status: 'cancelled' })
+  ];
+  const s = splitLeave('2026-09-23', recs, 'A');
+  it('current = the absence covering today, joined with a back-to-back extension', () => {
+    expect(s.current).toMatchObject({ start: '2026-09-20', until: '2026-09-28', typeShort: 'PV' });
+    expect(isWorkingDay(s.current!.returnOn, 'A')).toBe(true);
+  });
+  it('upcoming = future counted leave only, nearest first, not the extension already in the current absence', () => {
+    expect(s.upcoming.map((b) => b.start)).toEqual(['2026-11-01', '2026-12-01']);
+  });
+  it('past = completed counted leave, most recent first; rescheduled and cancelled records are not listed', () => {
+    expect(s.past.map((b) => b.start)).toEqual(['2026-05-01', '2026-01-05']);
+  });
+  it('no current block when not absent today', () => {
+    expect(splitLeave('2026-10-15', recs, 'A').current).toBeNull();
   });
 });

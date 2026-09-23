@@ -1,4 +1,4 @@
-import { ArrowLeft, Pencil } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@/data/supabase';
@@ -7,8 +7,8 @@ import { displayNameFor } from '@/core/names';
 import type { AbsenceType, AuditEntry, Crew, EmployeeDirectoryRow, LeaveRecord, LeavePlanChange, Performance, Position, Qualification, QualificationCode, QualificationStatus, RoleAssignment, SickTotal, UserProfile } from '@/data/types';
 import { BottomSheet, Button, Card, Chip, ErrorBox, Field, Row, Spinner, fmtDate, qualificationLabel, qualificationTone, cx } from '@/ui/components';
 import { CrewBadge, CrewTag, isCrew } from '@/ui/crew';
-import { OnLeaveChip, localToday } from '@/ui/leave';
-import { onLeaveOn } from '@/core/leave';
+import { OnLeaveChip, localToday, shortDate } from '@/ui/leave';
+import { splitLeave, type LeaveBlock, type LeaveSpan } from '@/core/leave';
 
 const QUALS: { code: QualificationCode; label: string; help: string }[] = [
   { code: 'take_charge', label: 'Take-Charge qualified', help: 'Only Take-Charge = Yes counts toward the Field Operator minimum of 6.' },
@@ -49,9 +49,12 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
   if (error) return <ErrorBox error={error} />;
   if (!data) return <Spinner />;
   const { emp } = data;
-  const currentLeaves = data.leaves.filter((l) => l.in_current_plan && l.status !== 'cancelled' && l.status !== 'rescheduled');
+  const typeOf = (code: string | null) => data.absenceTypes.find((t) => t.code === code);
+  const today = localToday();
+  const leaveSplit = splitLeave(today, data.leaves.map((l) => ({ employeeId: l.employee_id, start: l.start_date, end: l.end_date, status: l.status, inCurrentPlan: l.in_current_plan, typeLabel: typeOf(l.absence_type_code)?.label ?? null, typeShort: typeOf(l.absence_type_code)?.short_code ?? null, rec: l })), isCrew(emp.crew_code) ? emp.crew_code : null);
+  const leaveNow = leaveSplit.current;
+  const awaitingReview = data.leaves.filter((l) => l.status === 'unresolved' && l.in_current_plan);
   const originalLeaves = data.leaves.filter((l) => l.in_original_plan);
-  const leaveNow = onLeaveOn(localToday(), data.leaves.map((l) => ({ employeeId: l.employee_id, start: l.start_date, end: l.end_date, status: l.status, inCurrentPlan: l.in_current_plan, typeLabel: data.absenceTypes.find((t) => t.code === l.absence_type_code)?.label ?? null, typeShort: data.absenceTypes.find((t) => t.code === l.absence_type_code)?.short_code ?? null })), () => (isCrew(emp.crew_code) ? emp.crew_code : null)).get(emp.id);
   const currentQual = (c: QualificationCode) => data.quals.find((q) => q.qualification === c && !q.effective_to);
 
   return (
@@ -75,6 +78,32 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
           {!emp.is_active && <Chip tone="red">Inactive</Chip>}
         </div>
       </Card>
+
+      {leaveNow && (
+        <Section title="Current leave / absence">
+          <div className="flex items-center justify-between gap-3">
+            <LeaveCode code={leaveNow.typeShort} />
+            <span className="text-lg font-semibold text-slate-900">Return {shortDate(leaveNow.returnOn)}</span>
+          </div>
+          <div className="mt-1 text-xs text-slate-500">{leaveNow.typeLabel ?? 'Leave'} · {dateRange(leaveNow.start, leaveNow.until, today)} · {dayCount(leaveNow.start, leaveNow.until)}</div>
+        </Section>
+      )}
+
+      <Section title={`Upcoming leave${leaveSplit.upcoming.length ? ` (${leaveSplit.upcoming.length})` : ''}`}>
+        {leaveSplit.upcoming.length === 0 && <p className="text-sm text-slate-500">No upcoming leave in the current plan.</p>}
+        <ul className="divide-y divide-slate-100">{leaveSplit.upcoming.map((b) => <BlockRow key={b.record.rec.id} b={b} today={today} showReturn />)}</ul>
+      </Section>
+
+      <Collapsible title="Past leave history" count={leaveSplit.past.length}>
+        {leaveSplit.past.length === 0 && <p className="text-sm text-slate-500">No completed leave this plan year.</p>}
+        <ul className="divide-y divide-slate-100">{leaveSplit.past.map((b) => <BlockRow key={b.record.rec.id} b={b} today={today} />)}</ul>
+      </Collapsible>
+
+      {awaitingReview.length > 0 && (
+        <Section title={`Absences awaiting review (${awaitingReview.length})`}>
+          <ul className="divide-y divide-slate-100">{awaitingReview.map((l) => <LeaveLine key={l.id} l={l} types={data.absenceTypes} />)}</ul>
+        </Section>
+      )}
 
       <Section title="Qualifications" action={<span className="text-xs text-slate-500">Tap to edit</span>}>
         {QUALS.filter((q) => q.code !== 'acting_controller' || emp.position_category === 'panel' || emp.position_category === 'controller' || currentQual('acting_controller')).map((q) => {
@@ -114,19 +143,13 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
         {data.sick.map((s) => <Row key={s.id} label={`Sick leave ${s.year}`} value={`${s.days} days (as of ${fmtDate(s.reported_as_of)})`} />)}
       </Section>
 
-      <Section title={`Current plan and absences ${currentLeaves.length ? `(${currentLeaves.length})` : ''}`}>
-        <p className="mb-1 text-xs text-slate-500">What reduces manpower now: the current approved plan (PV Scheduled Updated) plus operational absences.</p>
-        {currentLeaves.length === 0 && <p className="text-sm text-slate-500">No current leave records.</p>}
-        <ul className="divide-y divide-slate-100">{currentLeaves.map((l) => <LeaveLine key={l.id} l={l} types={data.absenceTypes} />)}</ul>
-      </Section>
-
-      <Section title={`Original plan ${originalLeaves.length ? `(${originalLeaves.length})` : ''}`}>
+      <Collapsible title="Original plan (PV Scheduled)" count={originalLeaves.length}>
         <p className="mb-1 text-xs text-slate-500">The annual plan as first approved (PV Scheduled). Historical; a block shown as rescheduled or cancelled no longer reduces manpower.</p>
         {originalLeaves.length === 0 && <p className="text-sm text-slate-500">No original plan records.</p>}
         <ul className="divide-y divide-slate-100">{originalLeaves.map((l) => <LeaveLine key={l.id} l={l} types={data.absenceTypes} />)}</ul>
-      </Section>
+      </Collapsible>
 
-      <Section title={`Leave change history ${data.changes.length ? `(${data.changes.length})` : ''}`}>
+      <Collapsible title="Leave change history" count={data.changes.length}>
         {data.changes.length === 0 && <p className="text-sm text-slate-500">No changes recorded.</p>}
         <ul className="divide-y divide-slate-100 text-sm">
           {data.changes.map((c) => (
@@ -140,7 +163,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
             </li>
           ))}
         </ul>
-      </Section>
+      </Collapsible>
 
       <Section title="Role history">
         <ul className="divide-y divide-slate-100 text-sm">
@@ -176,6 +199,41 @@ function LeaveLine({ l, types }: { l: LeaveRecord; types: AbsenceType[] }) {
       </div>
       <Chip tone={tone}>{l.status}</Chip>
     </li>
+  );
+}
+
+/** "12 Oct – 25 Oct", with the year only when it is not this year. */
+const dateRange = (start: string, end: string, today: string) => `${shortDate(start)} – ${shortDate(end)}${end.slice(0, 4) !== today.slice(0, 4) ? ` ${end.slice(0, 4)}` : ''}`;
+const dayCount = (start: string, end: string) => { const n = Math.round((Date.parse(end) - Date.parse(start)) / 864e5) + 1; return `${n} day${n === 1 ? '' : 's'}`; };
+
+function LeaveCode({ code }: { code: string | null | undefined }) {
+  return <span className="mr-1 inline-flex min-w-9 justify-center rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-bold text-slate-700">{code ?? '—'}</span>;
+}
+
+type ProfileSpan = LeaveSpan & { rec: LeaveRecord };
+function BlockRow({ b, today, showReturn }: { b: LeaveBlock<ProfileSpan>; today: string; showReturn?: boolean }) {
+  return (
+    <li className="flex items-center justify-between gap-3 py-2 text-sm">
+      <div className="min-w-0">
+        <div className="font-medium text-slate-800"><LeaveCode code={b.record.typeShort} /> {dateRange(b.start, b.end, today)}</div>
+        <div className="text-xs text-slate-500">{b.record.typeLabel ?? 'Leave'} · {dayCount(b.start, b.end)}</div>
+      </div>
+      {showReturn && <span className="shrink-0 text-xs font-medium text-slate-600">Return {shortDate(b.returnOn)}</span>}
+    </li>
+  );
+}
+
+/** A profile section that starts closed and shows how many records it holds. */
+function Collapsible({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Card className="mb-3">
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full items-center justify-between text-left">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title} ({count})</h2>
+        {open ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+      </button>
+      {open && <div className="mt-2">{children}</div>}
+    </Card>
   );
 }
 

@@ -49,3 +49,22 @@ export function onLeaveOn(date: string, leaves: LeaveSpan[], crewOf: (employeeId
   }
   return out;
 }
+
+export interface LeaveBlock<T> { record: T; start: string; end: string; returnOn: string }
+
+/**
+ * Splits one person's counted leave (approved or planned, current plan) around `today` for the profile:
+ * - current: the unbroken absence covering today (back-to-back records joined), with its return date;
+ * - upcoming: blocks starting after today and after the current absence, nearest first, each with its return date;
+ * - past: blocks that ended before today, most recent first.
+ * Records that do not count (rescheduled, cancelled, unresolved, out of the current plan) are left to the plan history.
+ */
+export function splitLeave<T extends LeaveSpan>(today: string, records: T[], crew: Crew | null): { current: OnLeave | null; upcoming: LeaveBlock<T>[]; past: LeaveBlock<T>[] } {
+  const counted = records.filter(counts);
+  const current = onLeaveOn(today, counted, () => crew).get(counted[0]?.employeeId ?? '') ?? null;
+  const absentOn = (d: string) => counted.some((l) => l.start <= d && d <= l.end);
+  const block = (l: T): LeaveBlock<T> => ({ record: l, start: l.start, end: l.end, returnOn: firstDayBack(l.end, crew, absentOn) });
+  const upcoming = counted.filter((l) => l.start > today && (!current || l.start > current.until)).sort((a, b) => a.start.localeCompare(b.start)).map(block);
+  const past = counted.filter((l) => l.end < today).sort((a, b) => b.start.localeCompare(a.start)).map(block);
+  return { current, upcoming, past };
+}
