@@ -37,3 +37,23 @@ Result: 8 reschedules (originals kept with status `rescheduled`, linked to the n
 59 new unresolved absences (unclassified, pending review, with sheet/cell and roster context in the note).
 Only the 74 acting rows were staged; the 405 unchanged preview rows are counted in the batch summary.
 
+
+## Unresolved absences resolved by rule (23 Sep 2026)
+
+Data change only (no schema change, so no migration file). Applied in one transaction as the Section Head login;
+every `leave_records` change is in `audit_log` and every plan change has a `leave_plan_changes` row.
+
+Section Head rule: **when the monthly sheets and "PV Scheduled Updated" disagree, the monthly sheet is the real leave.**
+
+- 62 unresolved absences (marks on the monthly sheets outside the current plan) → `approved`, `review_status = resolved`.
+  Type follows the sheet colour key: 42 planned (incl. 11 cells whose colour is not in the key), 14 rescheduled,
+  4 unscheduled, 2 special leave. 51 get an `added` history row; 11 are linked as the new dates of a moved block.
+- 23 current-plan blocks with no marks on the monthly sheets → `rescheduled`, out of the current plan
+  (11 linked to the dates they moved to, 12 with no matching new dates).
+- 18 current-plan blocks only partly marked → `rescheduled`; the marked days become a new current record
+  (`source_kind = monthly_grid`, linked via `rescheduled_from`).
+- The baseline ("PV Scheduled") flags were not changed.
+
+Result: 0 unresolved; 271 current approved records, identical to the monthly sheets on every working day
+(the only differences are roster Off days next to leave, which are never counted). 2026 evaluation: 12 confirmed
+shortage duties (Panel 2/3: A crew 10–15 Feb, C crew 7–12 May), 224 Controller-coverage-required duties, 859 final Amber.
