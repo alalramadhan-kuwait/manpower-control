@@ -24,3 +24,16 @@ Two import batches were committed through `commit_import_batch()` acting as the 
 | `11111111-…-0002` | `Promotion October 2026.xlsm.xlsx` (as of 01-OCT-2026) | 48 employees updated with grade / position / dates / education, 96 performance rows (2025, 2026), 96 sick-leave totals, 49 Area-4 rows ignored as outside Section 1 |
 
 Every operational row references its batch and its workbook / sheet / cell.
+
+## Second workbook import (23 Sep 2026)
+
+Batch `a4b7c9d1-3e5f-4a6b-8c9d-0e1f2a3b4c5d`, file "ARD's U-12 Manpower 2026.xlsx" (supersedes "(1)"), staged as the
+Manpower Coordinator and committed with `commit_import_batch` after Section Head approval. Rules applied:
+"PV Scheduled" = original annual plan (baseline, frozen; differences flagged, never rewritten), "PV Scheduled Updated" =
+current approved plan, monthly sheets = operational record compared against the current plan plus roster Off days.
+Result: 8 reschedules (originals kept with status `rescheduled`, linked to the new blocks), 1 addition to the current plan
+(one contractor Panel Operator, 8–13 Mar; absent from the previous workbook, so the baseline was not modified), 0 cancellations,
+2 unresolved absences re-dated with a `source_data_changed` history row (one D-crew and one A-crew Field Operator),
+59 new unresolved absences (unclassified, pending review, with sheet/cell and roster context in the note).
+Only the 74 acting rows were staged; the 405 unchanged preview rows are counted in the batch summary.
+

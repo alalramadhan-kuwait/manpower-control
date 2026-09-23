@@ -1,6 +1,6 @@
 import { addDays, eachDay } from './sheet';
 import { displayNameFor } from '../names';
-import { isOff } from '../roster';
+import { dutyFor, isOff } from '../roster';
 import type { Crew } from '../roster';
 import type {
   ExistingEmployee, ExistingLeave, ImportPlan, ParsedGridRun, ParsedManpowerWorkbook, ParsedPerson, ParsedPromotionMaster,
@@ -179,6 +179,7 @@ export function planManpowerImport(
   const remarksByEmp = new Map<string, string[]>();
   for (const m of parsed.gridRemarks) { if (!/resched|cancel/i.test(m.text)) continue; const arr = remarksByEmp.get(m.employeeNumber) ?? []; arr.push(`${m.sheet}!${m.cell}${m.date ? ` (${m.date})` : ''}: "${m.text.trim()}"`); remarksByEmp.set(m.employeeNumber, arr); }
   const origByEmp = new Map<string, typeof parsed.pvRanges>(); const curByEmp = new Map<string, typeof parsed.pvRanges>();
+  const rescheduledAway = new Map<string, { start: string; end: string; to: string }[]>();
   const dupCheck = (list: typeof parsed.pvRanges, into: Map<string, typeof parsed.pvRanges>, label: string) => {
     const seen = new Set<string>();
     for (const rg of list) {
@@ -220,7 +221,15 @@ export function planManpowerImport(
       const key = rk(rg.start, rg.end);
       if (dbOrigKeys.has(key)) continue;
       const alsoCurrent = sheetCur.some((c) => rk(c.start, c.end) === key);
-      if (alsoCurrent && !dbCurKeys.has(key)) { if (ex) bothSheetsNew.add(key); continue; } // created below as a block of both plans
+      if (alsoCurrent && !dbCurKeys.has(key)) {
+        if (ex) {
+          // later workbook: the block joins the CURRENT plan only; the recorded baseline is never modified
+          bothSheetsNew.add(key);
+          b.add({ sheet: sheetOf(rg.sourceRef), row_ref: cellOf(rg.sourceRef), entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex.id, outcome: 'review', needs_review: true, raw: { start: rg.start, end: rg.end, plan: 'original' }, payload: null, diff: null,
+            message: `${label(p.employeeNumber, p.shortName)}: ${rg.start} → ${rg.end} appears on the original PV sheet of this workbook but not in the recorded baseline. Baseline not modified; added to the current plan only (added to current plan in later workbook).` });
+        }
+        continue;
+      }
       if (!ex) {
         // new employee: an original-only block is history from day one (rescheduled when a same-length current-only block exists, else cancelled)
         const curOnly = sheetCur.filter((c) => !origKeys.has(rk(c.start, c.end)));
@@ -247,11 +256,12 @@ export function planManpowerImport(
       const same = dbCurKeys.get(key);
       if (same) { usedDb.add(same); b.add({ sheet, row_ref: cell, entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex?.id ?? null, outcome: 'unchanged', needs_review: false, raw, payload: null, diff: null, message: 'Already in the current plan' }); continue; }
       if (!ex || bothSheetsNew.has(key) || (!hasUpdatedSheet)) {
-        const inOriginal = origKeys.has(key);
-        const kind = !ex ? undefined : inOriginal ? 'baseline_added' : 'added';
-        b.add({ sheet, row_ref: cell, entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex?.id ?? null, outcome: 'new', needs_review: kind === 'baseline_added', raw,
-          payload: { absence_type_code: 'annual_leave_planned', status: 'approved', start_date: rg.start, end_date: rg.end, source_kind: 'pv_schedule', source_ref: rg.sourceRef, review_status: 'none', in_original_plan: inOriginal, in_current_plan: true, ...(kind ? { change_kind: kind, change_note: kind === 'baseline_added' ? 'On both PV sheets but not in the recorded baseline; source changed between workbook versions' : 'Added to the current plan', evidence } : {}) },
-          diff: null, message: kind === 'baseline_added' ? `${label(p.employeeNumber, p.shortName)}: ${rg.start} → ${rg.end} is on both PV sheets but was not in the recorded baseline; added to both plans` : `Planned leave ${rg.start} → ${rg.end}${inOriginal ? ' (original and current plan)' : ' (current plan)'}` });
+        const later = !!ex && bothSheetsNew.has(key);
+        const inOriginal = later ? false : origKeys.has(key);
+        const kind = !ex ? undefined : 'added';
+        b.add({ sheet, row_ref: cell, entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex?.id ?? null, outcome: 'new', needs_review: later, raw,
+          payload: { absence_type_code: 'annual_leave_planned', status: 'approved', start_date: rg.start, end_date: rg.end, source_kind: 'pv_schedule', source_ref: rg.sourceRef, review_status: 'none', in_original_plan: inOriginal, in_current_plan: true, ...(kind ? { change_kind: kind, change_note: later ? "Added to current plan in later workbook (also on that workbook's original sheet; baseline not modified)" : 'Added to the current plan', evidence } : {}) },
+          diff: null, message: later ? `${label(p.employeeNumber, p.shortName)}: ${rg.start} → ${rg.end} added to the current plan in a later workbook (baseline not modified)` : `Planned leave ${rg.start} → ${rg.end}${inOriginal ? ' (original and current plan)' : ' (current plan)'}` });
         continue;
       }
       remainingSheet.push(rg);
@@ -271,6 +281,7 @@ export function planManpowerImport(
       if (l) { pairs.push({ rg, l, how: 'moved' }); takeDb.add(l); takeSheet.add(rg); }
     }
     for (const { rg, l, how } of pairs) {
+      const away = rescheduledAway.get(emp) ?? []; away.push({ start: l.start_date, end: l.end_date, to: `${rg.start} → ${rg.end}` }); rescheduledAway.set(emp, away);
       b.add({ sheet: sheetOf(rg.sourceRef), row_ref: cellOf(rg.sourceRef), entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex!.id, outcome: 'changed', needs_review: true,
         raw: { employee_number: emp, name: p.shortName, start: rg.start, end: rg.end, source: rg.sourceRef, plan: 'current', original: lref(l) },
         payload: { rescheduled_from_id: l.id, change_kind: 'rescheduled', start_date: rg.start, end_date: rg.end, status: 'approved', source_ref: rg.sourceRef, note: `Rescheduled from ${lref(l)} (${how})`, change_note: `Rescheduled (${how}); same employee, ${how === 'moved' ? `same length ${days(rg.start, rg.end)} days` : 'overlapping dates'}`, evidence },
@@ -338,9 +349,13 @@ export function planManpowerImport(
         }
         continue;
       }
-      b.add({ sheet: sheetOf(run.sourceRef), row_ref: cellOf(run.sourceRef), entity_kind: 'leave_record', employee_number: run.employeeNumber, matched_employee_id: ex?.id ?? null, outcome: 'review', needs_review: true, raw,
-        payload: { absence_type_code: null, status: 'unresolved', start_date: start, end_date: end, source_kind: 'monthly_grid', source_ref: run.sourceRef, review_status: 'pending_review', in_original_plan: false, in_current_plan: true, note: 'Absent on the monthly sheet but not in the current approved plan; type not provable from source. Classify manually.' },
-        diff: null, message: `${label(run.employeeNumber, run.shortName)}: absent ${start} → ${end} on ${sheetOf(run.sourceRef)} — not in the current plan, type unknown` });
+      const crewCode = crewOf.get(run.employeeNumber) ?? null;
+      const rosterCtx = crewCode ? eachDay(start, end).map((d) => dutyFor(d, crewCode)).join(' ') : 'no crew (VR/Morning)';
+      const away = (rescheduledAway.get(run.employeeNumber) ?? []).find((a) => a.start <= end && a.end >= start);
+      const flag = away ? ` FLAG: the operational sheet still marks the original dates of a block rescheduled to ${away.to}; check the source before classifying.` : '';
+      b.add({ sheet: sheetOf(run.sourceRef), row_ref: cellOf(run.sourceRef), entity_kind: 'leave_record', employee_number: run.employeeNumber, matched_employee_id: ex?.id ?? null, outcome: 'review', needs_review: true, raw: { ...raw, roster: rosterCtx, rescheduled_block: away ? `${away.start} → ${away.end} → ${away.to}` : null },
+        payload: { absence_type_code: null, status: 'unresolved', start_date: start, end_date: end, source_kind: 'monthly_grid', source_ref: run.sourceRef, review_status: 'pending_review', in_original_plan: false, in_current_plan: true, note: `Absent on the monthly sheet (${sheetOf(run.sourceRef)} ${cellOf(run.sourceRef)}) but not in the current approved plan; roster ${crewCode ? `crew ${crewCode}: ${rosterCtx}` : rosterCtx}. Type not provable from source; classify manually.${flag}` },
+        diff: null, message: `${label(run.employeeNumber, run.shortName)}: absent ${start} → ${end} on ${sheetOf(run.sourceRef)} — not in the current plan, type unknown.${flag}` });
     }
   }
   // Grid-sourced records in the register that this workbook no longer produces → review, never delete.
@@ -363,6 +378,25 @@ export function planManpowerImport(
           ? `${label(p.employeeNumber, p.shortName)}: ${l.absence_type_code ? 'absence' : 'unresolved absence'} ${lref(l)} is now explained by the current approved plan. Left unchanged; resolve it manually.`
           : `${label(p.employeeNumber, p.shortName)}: ${l.absence_type_code ? 'absence' : 'unresolved absence'} ${lref(l)} is in the register but no longer marked on the monthly sheets. Left unchanged; review.` });
     }
+  }
+  // Controller coverage flag: days when three or more of the controllers (incl. VR / Morning) are absent under the
+  // current plan plus unresolved absences. A flag to review, not an error: manning rules are defined in Stage B.
+  const absentCtrl = new Map<string, Set<string>>();
+  const markCtrl = (emp: string, start: string, end: string) => { for (const d of eachDay(start, end)) { const set = absentCtrl.get(d) ?? new Set<string>(); set.add(emp); absentCtrl.set(d, set); } };
+  const isCtrl = (emp: string) => { const r = people.get(emp)?.role; return r === 'controller' || r === 'vr_controller' || r === 'morning_controller'; };
+  for (const rg of parsed.pvCurrentRanges) if (isCtrl(rg.employeeNumber)) markCtrl(rg.employeeNumber, rg.start, rg.end);
+  for (const r of b.rows) {
+    if (r.entity_kind !== 'leave_record' || !r.employee_number || !isCtrl(r.employee_number)) continue;
+    const pl = r.payload as { status?: string; start_date?: string; end_date?: string; change_kind?: string } | null;
+    if (pl?.start_date && pl.end_date && (pl.status === 'unresolved' || pl.change_kind === 'dates_moved')) markCtrl(r.employee_number, pl.start_date, pl.end_date);
+    if (r.outcome === 'unchanged' && r.raw && !r.sheet?.startsWith('PV') && r.sheet) { const raw = r.raw as { start?: string; end?: string }; if (raw.start && raw.end) markCtrl(r.employee_number, raw.start, raw.end); }
+  }
+  const heavy = [...absentCtrl.entries()].filter(([, s]) => s.size >= 3).sort();
+  if (heavy.length) {
+    const runs: { start: string; end: string; who: string }[] = [];
+    for (const [d, set] of heavy) { const who = [...set].sort().map((e) => label(e, people.get(e)?.shortName ?? e)).join(', '); const last = runs[runs.length - 1]; if (last && last.who === who && addDays(last.end, 1) === d) last.end = d; else runs.push({ start: d, end: d, who }); }
+    b.add({ sheet: null, row_ref: null, entity_kind: 'note', employee_number: null, matched_employee_id: null, outcome: 'review', needs_review: true, raw: { controller_overlaps: runs }, payload: null, diff: null,
+      message: `Controller coverage flag (not an error; manning rules come in Stage B): three or more controllers absent on ${runs.map((x) => `${x.start} → ${x.end} (${x.who})`).join('; ')}` });
   }
   if (covered) b.add({ sheet: null, row_ref: null, entity_kind: 'note', employee_number: null, matched_employee_id: null, outcome: 'unchanged', needs_review: false, raw: { covered }, payload: null, diff: null, message: `${covered} monthly-grid absence runs match the current approved plan (including roster Off days directly after a block) or an already classified absence, and add nothing new.` });
 
