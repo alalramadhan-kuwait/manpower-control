@@ -7,7 +7,8 @@ import { addDaysIso, isValidIsoDate } from '@/core/roster';
 import { fetchManpowerInputs } from '@/data/manpower';
 import { Card, ErrorBox, Spinner, cx, fmtDate } from '@/ui/components';
 import { CREW_IDENTITY, CrewBadge, crewEdge } from '@/ui/crew';
-import { localToday } from '@/ui/leave';
+import { localToday, shortDate } from '@/ui/leave';
+import { onLeaveOn, type OnLeave } from '@/core/leave';
 import { CREWS } from '@/core/roster';
 
 const weekday = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long' });
@@ -53,12 +54,17 @@ export default function DayOverviewPage() {
   useEffect(() => {
     if (inputs && inputs.from <= date && date <= inputs.to) return;
     // load a window around the date so stepping day by day does not refetch
-    const from = addDaysIso(date, -7); const to = addDaysIso(date, 31);
+    const from = addDaysIso(date, -45); const to = addDaysIso(date, 60);
     setError(null);
     fetchManpowerInputs(from, to).then((r) => setInputs({ ...r, from, to })).catch(setError);
   }, [date, inputs]);
 
   const result = useMemo(() => (inputs ? evaluateDay(date, inputs.people, inputs.absences) : null), [date, inputs]);
+  const leave = useMemo(() => {
+    if (!inputs) return new Map<string, OnLeave>();
+    const crewOf = new Map(inputs.people.map((p) => [p.id, p.crew]));
+    return onLeaveOn(date, inputs.absences.map((a) => ({ employeeId: a.employeeId, start: a.start, end: a.end, status: a.status, inCurrentPlan: a.inCurrentPlan !== false, typeLabel: a.typeLabel ?? null, typeShort: a.typeShort ?? null })), (id) => crewOf.get(id) ?? null);
+  }, [date, inputs]);
   const tcPending = inputs?.people.filter((p) => p.role === 'field_operator' && p.takeCharge !== 'yes').length ?? 0;
 
   return (
@@ -91,9 +97,9 @@ export default function DayOverviewPage() {
             </Link>
           )}
           <div className="space-y-3">
-            {result.crews.map((c) => <CrewCard key={c.crew} crew={c} />)}
+            {result.crews.map((c) => <CrewCard key={c.crew} crew={c} leave={leave} />)}
           </div>
-          <DayStaffCard result={result} />
+          <DayStaffCard result={result} leave={leave} />
           <Legend />
         </>
       )}
@@ -158,19 +164,75 @@ function Legend() {
   );
 }
 
-/** One position: people available against people required. Qualification rules stay in "Who counts". */
-function Metric({ label, count, min, color, sub }: { label: string; count: number; min: number; color: string; sub?: string }) {
+type Note = { text: string; tone: 'red' | 'amber' | 'pending' | 'muted' };
+const NOTE_CLS: Record<Note['tone'], string> = { red: 'text-status-red', amber: 'text-status-amber', pending: 'text-slate-600', muted: 'text-slate-500' };
+
+/** What to say directly under a manpower line. Plain words; the rule details stay in "Who counts". */
+function notesFor(c: CrewDay, key: 'controller' | 'panel' | 'field', leave: Map<string, OnLeave>): Note[] {
+  const notes: Note[] = [];
+  if (key === 'controller') {
+    const p = c.controller;
+    if (p.acting) notes.push({ text: `Acting Controller: ${p.acting.name}`, tone: 'muted' });
+    if (p.finding === 'coverage_required') notes.push({ text: `${p.onLeave.map((x) => `${x.name}${leave.get(x.id) ? ` (${leaveShort(leave.get(x.id)!)})` : ''}`).join(', ')} on leave — cover not recorded`, tone: 'pending' });
+    if (p.finding === 'shortage') notes.push({ text: 'No qualified Controller', tone: 'red' });
+    if (p.finding === 'data_incomplete') notes.push({ text: 'Controller grade not recorded', tone: 'pending' });
+  }
+  if (key === 'panel') {
+    const p = c.panel;
+    if (p.finding === 'shortage') {
+      if (p.count < p.min) notes.push({ text: `Short by ${p.min - p.count}`, tone: 'red' });
+      if (p.grade14 < 1) notes.push({ text: 'No Grade 14+ Panel Operator available', tone: 'red' });
+    }
+    if (p.finding === 'data_incomplete') {
+      if (p.count < p.min) notes.push({ text: `${p.potential - p.count} Panel qualification not yet confirmed`, tone: 'pending' });
+      if (p.grade14 < 1) notes.push({ text: 'Grade 14+ Panel Operator not confirmed', tone: 'pending' });
+    }
+  }
+  if (key === 'field') {
+    const p = c.field;
+    if (p.finding === 'shortage') notes.push({ text: `Short by ${p.min - p.count}`, tone: 'red' });
+    if (p.finding === 'data_incomplete') notes.push({ text: `${p.potential - p.count} Take-Charge not yet confirmed`, tone: 'pending' });
+  }
+  if (c[key].finding === 'no_buffer') notes.push({ text: 'No buffer — one more absence and the crew is short', tone: 'amber' });
+  return notes;
+}
+
+const leaveShort = (l: OnLeave) => `${l.typeShort ?? 'Leave'} · Return ${shortDate(l.returnOn)}`;
+
+function ManpowerLine({ label, pos, notes }: { label: string; pos: PositionResult; notes: Note[] }) {
   return (
-    <div className="rounded-xl bg-slate-50 px-2 py-2.5 text-center">
-      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</div>
-      <div className={cx('mt-0.5 text-2xl font-semibold leading-none tabular-nums', color)}>{count}</div>
-      <div className="mt-1 text-[11px] leading-tight text-slate-500">of {min} required</div>
-      {sub ? <div className="text-[10px] leading-tight text-slate-400">{sub}</div> : null}
+    <div className="py-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-sm font-medium text-slate-700">{label}</span>
+        <span className={cx('text-lg font-semibold tabular-nums', findingColor(pos.finding))}>{pos.count} <span className="text-slate-400">/</span> {pos.min}</span>
+      </div>
+      {notes.map((n) => <div key={n.text} className={cx('text-xs leading-snug', NOTE_CLS[n.tone])}>{n.text}</div>)}
     </div>
   );
 }
 
-function CrewCard({ crew: c }: { crew: CrewDay }) {
+/** One absent person: name and "PV · Return 27 Sep"; tap for the full type and dates. */
+function AbsentRow({ person, absence, leave }: { person: MpPerson; absence: MpAbsence; leave?: OnLeave }) {
+  const [open, setOpen] = useState(false);
+  const start = leave?.start ?? absence.start; const until = leave?.until ?? absence.end;
+  return (
+    <li>
+      <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-baseline justify-between gap-2 py-1 text-left">
+        <span className="truncate font-medium text-slate-800">{person.name}</span>
+        <span className="shrink-0 text-xs font-medium text-slate-600">{leave ? leaveShort(leave) : absence.typeShort ?? 'Leave'}</span>
+      </button>
+      {open && (
+        <div className="mb-1 rounded-lg bg-slate-50 px-2 py-1.5 text-xs text-slate-600">
+          {absence.typeLabel ?? 'Leave'} · {fmtDate(start)} – {fmtDate(until)}
+          {leave && <> · back to work {fmtDate(leave.returnOn)}</>}
+          <Link to={`/employees/${person.id}`} className="ml-2 font-medium text-brand-700">Profile</Link>
+        </div>
+      )}
+    </li>
+  );
+}
+
+function CrewCard({ crew: c, leave }: { crew: CrewDay; leave: Map<string, OnLeave> }) {
   const [open, setOpen] = useState(false);
   if (!c.working) {
     return (
@@ -178,58 +240,45 @@ function CrewCard({ crew: c }: { crew: CrewDay }) {
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-3">
             <CrewBadge crew={c.crew} muted />
-            <div className="min-w-0"><div className="font-semibold text-slate-700">{c.crew} SHIFT · Off</div><div className="text-xs text-slate-500">{c.dutyLabel} · {c.members} people · rest day</div></div>
+            <div className="min-w-0"><div className="font-semibold text-slate-700">{c.crew} Shift · Off</div><div className="text-xs text-slate-500">{c.dutyLabel} · rest day</div></div>
           </div>
           <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-600">OFF</span>
         </div>
         {c.absences.length > 0 && (
-          <ul className="mt-2 space-y-0.5 text-xs text-slate-500">
-            {c.absences.map((a) => <li key={a.person.id}>{a.person.name} — {a.absence.typeLabel ?? 'Leave'} (Off day, no manpower impact)</li>)}
+          <ul className="mt-2 text-sm text-slate-500">
+            {c.absences.map((a) => <AbsentRow key={a.person.id} person={a.person} absence={a.absence} leave={leave.get(a.person.id)} />)}
           </ul>
         )}
       </Card>
     );
   }
   const final = c.finalStatus;
-  const noBuffer = [c.controller, c.panel, c.field].filter((p) => p.finding === 'no_buffer');
-  const byFinding = (f: Finding) => [c.controller, c.panel, c.field].filter((p) => p.finding === f).flatMap((p) => p.issues.filter((i) => !i.startsWith('Acting')));
-  const shortages = byFinding('shortage'); const coverage = byFinding('coverage_required'); const incomplete = byFinding('data_incomplete');
   return (
     <Card className={crewEdge(c.crew)}>
       <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-3">
-          <CrewBadge crew={c.crew} size="lg" />
-          <div className="min-w-0">
-            <div className="text-lg font-bold leading-tight text-slate-900">{c.crew} SHIFT</div>
-            <div className="text-xs text-slate-500"><span className="whitespace-nowrap">{c.shift} · {c.duty}</span> · <span className="whitespace-nowrap">{c.members} people</span></div>
-          </div>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <CrewBadge crew={c.crew} />
+          <div className="min-w-0 text-base font-bold leading-tight text-slate-900">{c.crew} Shift <span className="font-medium text-slate-500">· {c.shift} {c.duty}</span></div>
         </div>
         <div className="flex flex-col items-end gap-1">
-          {final ? <StatusPill status={final} /> : null}
+          {final ? <StatusPill status={final} small /> : null}
           {c.pending.includes('coverage_required') && <PendingPill kind="coverage_required" />}
           {c.pending.includes('data_incomplete') && <PendingPill kind="data_incomplete" />}
         </div>
       </div>
       {!final && c.provisionalStatus && (
-        <div className="mt-1 text-xs text-slate-500">Not final. Provisional once resolved: <span className={cx('font-semibold', STATUS_TEXT_CLS[c.provisionalStatus])}>{STATUS_TEXT[c.provisionalStatus]}{c.provisionalStatus === 'amber' ? ' (No Buffer)' : ''}</span></div>
+        <div className="mt-1 text-xs text-slate-500">Not final. Once resolved: <span className={cx('font-semibold', STATUS_TEXT_CLS[c.provisionalStatus])}>{STATUS_TEXT[c.provisionalStatus]}</span></div>
       )}
-      <div className="mt-3 grid grid-cols-3 gap-1.5">
-        <Metric label="Controller" count={c.controller.count} min={c.controller.min} color={findingColor(c.controller.finding)} sub={c.controller.acting ? 'Acting Controller' : c.controller.finding === 'coverage_required' ? 'cover needed' : undefined} />
-        <Metric label="Panel" count={c.panel.count} min={c.panel.min} color={findingColor(c.panel.finding)} sub={c.panel.finding === 'data_incomplete' ? `${c.panel.potential - c.panel.count} unconfirmed` : undefined} />
-        <Metric label="Field" count={c.field.count} min={c.field.min} color={findingColor(c.field.finding)} sub={c.field.finding === 'data_incomplete' ? `${c.field.potential - c.field.count} unconfirmed` : undefined} />
+      <div className="mt-2 divide-y divide-slate-100">
+        <ManpowerLine label="Controller" pos={c.controller} notes={notesFor(c, 'controller', leave)} />
+        <ManpowerLine label="Panel" pos={c.panel} notes={notesFor(c, 'panel', leave)} />
+        <ManpowerLine label="Field" pos={c.field} notes={notesFor(c, 'field', leave)} />
       </div>
-      {c.controller.acting && (
-        <div className="mt-2 rounded-lg bg-slate-50 px-2 py-1.5 text-xs text-slate-800 ring-1 ring-slate-200">Acting Controller: <span className="font-semibold">{c.controller.acting.name}</span> (Grade {c.controller.acting.grade})</div>
-      )}
-      {c.noBuffer && noBuffer.length > 0 && <div className="mt-2 text-xs font-medium text-status-amber">No buffer: {noBuffer.map((p) => `${p.label} ${p.count} of ${p.min}`).join(' · ')}. One more absence and this crew is short.</div>}
-      <FindingBox kind="shortage" items={shortages} />
-      <FindingBox kind="coverage_required" items={coverage} />
-      <FindingBox kind="data_incomplete" items={incomplete} />
       {c.absences.length > 0 && (
-        <div className="mt-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Absences</div>
-          <ul className="mt-1 space-y-0.5 text-sm">
-            {c.absences.map((a) => <li key={a.person.id} className="flex justify-between gap-2"><span className="truncate">{a.person.name}</span><span className="shrink-0 text-xs text-slate-500">{a.absence.typeLabel ?? 'Leave'}</span></li>)}
+        <div className="mt-2 border-t border-slate-100 pt-2">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Absent</div>
+          <ul className="text-sm">
+            {c.absences.map((a) => <AbsentRow key={a.person.id} person={a.person} absence={a.absence} leave={leave.get(a.person.id)} />)}
           </ul>
         </div>
       )}
@@ -239,7 +288,7 @@ function CrewCard({ crew: c }: { crew: CrewDay }) {
           <ul className="mt-1 space-y-0.5">{c.unresolved.map((a) => <li key={a.person.id}>{a.person.name} · {a.absence.start === a.absence.end ? fmtDate(a.absence.start) : `${fmtDate(a.absence.start)} → ${fmtDate(a.absence.end)}`}</li>)}</ul>
         </div>
       )}
-      <button onClick={() => setOpen(!open)} className="mt-3 flex min-h-10 w-full items-center justify-center gap-1 rounded-xl text-sm font-medium text-brand-700 hover:bg-brand-50">
+      <button onClick={() => setOpen(!open)} className="mt-2 flex min-h-9 w-full items-center justify-center gap-1 rounded-xl text-xs font-medium text-brand-700 hover:bg-brand-50">
         {open ? <>Hide details <ChevronUp className="h-4 w-4" /></> : <>Who counts <ChevronDown className="h-4 w-4" /></>}
       </button>
       {open && (
@@ -250,16 +299,6 @@ function CrewCard({ crew: c }: { crew: CrewDay }) {
         </div>
       )}
     </Card>
-  );
-}
-
-function FindingBox({ kind, items }: { kind: 'shortage' | 'coverage_required' | 'data_incomplete'; items: string[] }) {
-  if (!items.length) return null;
-  return (
-    <div className={cx('mt-2 rounded-lg p-2 text-xs ring-1', CATEGORY[kind].box)}>
-      <div className="font-semibold">{CATEGORY[kind].label}</div>
-      <ul className="mt-0.5 space-y-0.5">{items.map((i) => <li key={i}>{i.replace(/^Confirmed shortage: /, '').replace(/^Controller coverage required: /, '')}</li>)}</ul>
-    </div>
   );
 }
 
@@ -293,7 +332,7 @@ function PositionDetail({ pos, acting, grade14 }: { pos: PositionResult; acting?
   );
 }
 
-function DayStaffCard({ result }: { result: DayResult }) {
+function DayStaffCard({ result, leave }: { result: DayResult; leave: Map<string, OnLeave> }) {
   if (!result.dayStaff.length) return null;
   const label = (r: string | null) => (r === 'vr_controller' ? 'Vacation Relief Controller' : 'Morning Controller');
   return (
@@ -304,7 +343,7 @@ function DayStaffCard({ result }: { result: DayResult }) {
           <li key={s.person.id} className="flex justify-between gap-2">
             <span className="min-w-0"><span className="block truncate font-medium text-slate-800">{s.person.name}</span><span className="block text-xs text-slate-500">{label(s.person.role)}</span></span>
             <span className="shrink-0 text-right text-xs">
-              <span className={cx('block', s.absence ? 'text-status-red' : 'text-status-green')}>{s.absence ? s.absence.typeLabel ?? 'On leave' : 'Available'}</span>
+              <span className={cx('block', s.absence ? 'text-status-red' : 'text-status-green')}>{s.absence ? (leave.get(s.person.id) ? leaveShort(leave.get(s.person.id)!) : s.absence.typeShort ?? 'On leave') : 'Available'}</span>
               {s.unresolved ? <span className="block text-status-amber">Unresolved absence (warning only)</span> : null}
             </span>
           </li>

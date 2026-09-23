@@ -25,7 +25,7 @@ export interface EmployeeDirectoryRow {
 
 export interface Position { id: string; code: string; label: string; category: string; sort_order: number }
 export interface Crew { id: string; code: 'A' | 'B' | 'C' | 'D'; name: string; sort_order: number }
-export interface AbsenceType { code: string; label: string; reduces_manpower: boolean; requires_approval: boolean; is_active: boolean; sort_order: number }
+export interface AbsenceType { code: string; label: string; short_code: string; reduces_manpower: boolean; requires_approval: boolean; is_active: boolean; sort_order: number }
 
 export interface Qualification {
   id: string; employee_id: string; qualification: QualificationCode; status: QualificationStatus; effective_from: string; effective_to: string | null;

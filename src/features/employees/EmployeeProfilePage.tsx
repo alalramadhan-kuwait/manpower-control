@@ -51,7 +51,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
   const { emp } = data;
   const currentLeaves = data.leaves.filter((l) => l.in_current_plan && l.status !== 'cancelled' && l.status !== 'rescheduled');
   const originalLeaves = data.leaves.filter((l) => l.in_original_plan);
-  const leaveNow = onLeaveOn(localToday(), data.leaves.map((l) => ({ employeeId: l.employee_id, start: l.start_date, end: l.end_date, status: l.status, inCurrentPlan: l.in_current_plan, typeLabel: data.absenceTypes.find((t) => t.code === l.absence_type_code)?.label ?? null }))).get(emp.id);
+  const leaveNow = onLeaveOn(localToday(), data.leaves.map((l) => ({ employeeId: l.employee_id, start: l.start_date, end: l.end_date, status: l.status, inCurrentPlan: l.in_current_plan, typeLabel: data.absenceTypes.find((t) => t.code === l.absence_type_code)?.label ?? null, typeShort: data.absenceTypes.find((t) => t.code === l.absence_type_code)?.short_code ?? null })), () => (isCrew(emp.crew_code) ? emp.crew_code : null)).get(emp.id);
   const currentQual = (c: QualificationCode) => data.quals.find((q) => q.qualification === c && !q.effective_to);
 
   return (

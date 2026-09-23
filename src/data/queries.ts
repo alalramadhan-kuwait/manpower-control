@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { onLeaveOn, type OnLeave } from '@/core/leave';
+import type { LeaveSpan } from '@/core/leave';
 import { addDaysIso } from '@/core/roster';
 import type { ExistingEmployee, ExistingLeave, ImportPlan } from '@/core/import';
 import type { AbsenceType, Crew, EmployeeDirectoryRow, ImportBatch, ImportRowRecord, Position } from './types';
@@ -10,15 +10,15 @@ export async function fetchDirectory(): Promise<EmployeeDirectoryRow[]> {
   return (data ?? []) as EmployeeDirectoryRow[];
 }
 
-/** Everyone on counted leave on `date` (approved or planned, current plan), with the end of their leave run. */
-export async function fetchOnLeave(date: string): Promise<Map<string, OnLeave>> {
+/** Counted leave (approved or planned, current plan) around `date`, for the on-leave markers. */
+export async function fetchLeaveSpans(date: string): Promise<LeaveSpan[]> {
   const { data, error } = await supabase.from('leave_records')
-    .select('employee_id,start_date,end_date,status,in_current_plan,absence_types(label)')
+    .select('employee_id,start_date,end_date,status,in_current_plan,absence_types(label,short_code)')
     .eq('in_current_plan', true).in('status', ['approved', 'planned'])
     .lte('start_date', addDaysIso(date, 120)).gte('end_date', addDaysIso(date, -120));
   if (error) throw error;
-  type R = { employee_id: string; start_date: string; end_date: string; status: string; in_current_plan: boolean; absence_types: { label: string } | null };
-  return onLeaveOn(date, ((data ?? []) as unknown as R[]).map((l) => ({ employeeId: l.employee_id, start: l.start_date, end: l.end_date, status: l.status, inCurrentPlan: l.in_current_plan, typeLabel: l.absence_types?.label ?? null })));
+  type R = { employee_id: string; start_date: string; end_date: string; status: string; in_current_plan: boolean; absence_types: { label: string; short_code: string | null } | null };
+  return ((data ?? []) as unknown as R[]).map((l) => ({ employeeId: l.employee_id, start: l.start_date, end: l.end_date, status: l.status, inCurrentPlan: l.in_current_plan, typeLabel: l.absence_types?.label ?? null, typeShort: l.absence_types?.short_code ?? null }));
 }
 
 export async function fetchReference() {

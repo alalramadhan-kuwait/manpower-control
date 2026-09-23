@@ -4,8 +4,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { ACTION_LABEL, actionsFor, eligibleFor } from '@/core/actions';
 import type { ActionCode, ActionItem, BulkAction } from '@/core/actions';
 import { confirmEmploymentTypeBulk, setQualificationBulk } from '@/data/bulk';
-import { fetchDirectory, fetchOnLeave } from '@/data/queries';
-import type { OnLeave } from '@/core/leave';
+import { fetchDirectory, fetchLeaveSpans } from '@/data/queries';
+import { onLeaveOn, type LeaveSpan } from '@/core/leave';
 import type { EmployeeDirectoryRow, QualificationStatus, UserProfile } from '@/data/types';
 import { BottomSheet, Button, Chip, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components';
 import { CrewBadge, CrewTag, isCrew } from '@/ui/crew';
@@ -40,8 +40,12 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
   const view = params.get('view') ?? '';
   const need = (params.get('need') ?? '') as ActionCode | '';
   const load = () => fetchDirectory().then((r) => setRows(r.filter((x) => x.in_unit12_scope && x.is_active).map((x) => ({ ...x, actions: actionsFor(x) })))).catch(setError);
-  const [onLeave, setOnLeave] = useState<Map<string, OnLeave>>(new Map());
-  useEffect(() => { load(); fetchOnLeave(localToday()).then(setOnLeave).catch(() => { /* marker only; the list still works */ }); }, []);
+  const [spans, setSpans] = useState<LeaveSpan[]>([]);
+  useEffect(() => { load(); fetchLeaveSpans(localToday()).then(setSpans).catch(() => { /* marker only; the list still works */ }); }, []);
+  const onLeave = useMemo(() => {
+    const crewOf = new Map((rows ?? []).map((r) => [r.id, isCrew(r.crew_code) ? r.crew_code : null]));
+    return onLeaveOn(localToday(), spans, (id) => crewOf.get(id) ?? null);
+  }, [rows, spans]);
   const set = (k: string, v: string) => { const p = new URLSearchParams(params); if (v) p.set(k, v); else p.delete(k); if (k === 'view' && !v) p.delete('need'); setParams(p, { replace: true }); };
 
   const needCounts = useMemo(() => {
@@ -146,16 +150,15 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
             {filtered.map((r) => (
               <li key={r.id} className={cx('flex items-center gap-2 rounded-xl bg-white pl-2 shadow-sm ring-1', selected.has(r.id) ? 'ring-brand-600' : 'ring-slate-200')}>
                 <SelectBox checked={selected.has(r.id)} onChange={() => toggle(r.id)} label={`Select ${r.display_name}`} />
-                <Link to={`/employees/${r.id}`} className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-3">
+                <Link to={`/employees/${r.id}`} className="flex min-w-0 flex-1 items-center gap-2 py-2 pr-2">
                   {isCrew(r.crew_code) ? <CrewBadge crew={r.crew_code} size="md" /> : <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">{r.position_code === 'vr_controller' ? 'VR' : r.position_code === 'morning_controller' ? 'M' : '—'}</span>}
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1.5">
-                      <span className="truncate font-medium text-slate-800">{r.display_name}</span>
-                      {onLeave.has(r.id) && <OnLeaveChip leave={onLeave.get(r.id)!} compact />}
-                    </span>
+                    <span className="block truncate font-medium text-slate-800">{r.display_name}</span>
                     {view === 'action' && r.actions.length > 0 && <span className="mt-1 flex flex-wrap gap-1">{r.actions.map((a) => <Chip key={a.code} tone={a.bulk ? 'amber' : 'neutral'} className="whitespace-nowrap text-[11px]">{a.label}</Chip>)}</span>}
                   </span>
-                  <span className="shrink-0 text-xs text-slate-500">{SHORT_ROLE[r.position_category ?? ''] ?? r.position_label ?? ''}</span>
+                  {onLeave.has(r.id)
+                    ? <OnLeaveChip leave={onLeave.get(r.id)!} compact />
+                    : <span className="shrink-0 text-xs text-slate-500">{SHORT_ROLE[r.position_category ?? ''] ?? r.position_label ?? ''}</span>}
                 </Link>
               </li>
             ))}

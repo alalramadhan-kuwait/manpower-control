@@ -36,6 +36,8 @@ export interface MpAbsence {
   end: string;
   status: string; // approved | planned | unresolved | cancelled | rescheduled
   typeCode: string | null;
+  /** Short display code (PV, SL, UL …) from absence_types.short_code. */
+  typeShort?: string | null;
   typeLabel?: string | null;
   sourceRef?: string | null;
   inCurrentPlan?: boolean;
