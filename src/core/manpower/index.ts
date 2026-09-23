@@ -233,7 +233,7 @@ export function evaluateDay(date: string, people: MpPerson[], absences: MpAbsenc
     const ctrlPotentialMet = ctrlCount + ctrlNot.filter((n) => n.pendingData).length >= rules.controllerMin;
     if (ctrlCoverage) ctrlIssues.push(`Controller coverage required: ${ctrlOnLeave.map((p) => `${p.name} (${leaveOf(p)?.typeLabel ?? 'leave'})`).join(', ')} — no cover recorded`);
     else if (!ctrlMet && ctrlPotentialMet) ctrlIssues.push('Controller grade not recorded');
-    else if (!ctrlMet) ctrlIssues.push(`Confirmed shortage: no qualified Controller (${ctrlCount}/${rules.controllerMin})`);
+    else if (!ctrlMet) ctrlIssues.push(`Confirmed shortage: Controller ${ctrlCount} of ${rules.controllerMin} required`);
     const controller: ControllerResult = {
       ...finishPosition({ key: 'controller', label: 'Controller', count: ctrlCount, min: rules.controllerMin, buffer: ctrlCount - rules.controllerMin, potential: ctrlCount + ctrlNot.filter((n) => n.pendingData).length,
         counted: ctrlCounted, notCounted: ctrlNot, issues: ctrlIssues, requirementMet: ctrlMet, potentialMet: ctrlPotentialMet, coverage: ctrlCoverage, greenAtMinimum: rules.controllerGreenAtMinimum }),
@@ -253,7 +253,8 @@ export function evaluateDay(date: string, people: MpPerson[], absences: MpAbsenc
     const panelIssues: string[] = [];
     if (!panelMet) {
       const what = [panelCounted.length < rules.panelMin ? `${panelCounted.length}/${rules.panelMin} qualified` : null, grade14 < rules.panelGrade14Min ? `no Grade ${rules.panelGrade14}+ Panel Operator` : null].filter(Boolean).join(', ');
-      panelIssues.push(panelPotentialMet ? `Panel qualification data incomplete: ${what} confirmed` : `Confirmed shortage: Panel ${what}`);
+      const short = [panelCounted.length < rules.panelMin ? `${panelCounted.length} of ${rules.panelMin} required` : null, grade14 < rules.panelGrade14Min ? `no Grade ${rules.panelGrade14}+ Panel Operator available` : null].filter(Boolean).join(', ');
+      panelIssues.push(panelPotentialMet ? `Panel qualification data incomplete: ${what} confirmed` : `Confirmed shortage: Panel ${short}`);
     }
     const panel: PanelResult = {
       ...finishPosition({ key: 'panel', label: 'Panel', count: panelCounted.length, min: rules.panelMin, buffer: panelCounted.length - rules.panelMin, potential: panelPotentialPeople.length,
@@ -271,7 +272,7 @@ export function evaluateDay(date: string, people: MpPerson[], absences: MpAbsenc
     const fieldIssues: string[] = [];
     if (!fieldMet) fieldIssues.push(fieldPotentialMet
       ? `Take-Charge data incomplete: ${fieldCounted.length}/${rules.fieldMin} confirmed, ${fieldUnknown} not yet confirmed (up to ${fieldPotential}/${rules.fieldMin} if confirmed)`
-      : `Confirmed shortage: Field ${fieldCounted.length}/${rules.fieldMin} Take-Charge${fieldUnknown ? ` (at most ${fieldPotential}/${rules.fieldMin} even if all unconfirmed are confirmed)` : ''}`);
+      : `Confirmed shortage: Field ${fieldCounted.length} of ${rules.fieldMin} required${fieldUnknown ? ` (at most ${fieldPotential} even if all unconfirmed are confirmed)` : ''}`);
     const field: PositionResult = finishPosition({ key: 'field', label: 'Field', count: fieldCounted.length, min: rules.fieldMin, buffer: fieldCounted.length - rules.fieldMin, potential: fieldPotential,
       counted: fieldCounted, notCounted: fieldNot, issues: fieldIssues, requirementMet: fieldMet, potentialMet: fieldPotentialMet });
 

@@ -78,7 +78,7 @@ export default function DayOverviewPage() {
 
       <div className="mb-3">
         <h1 className="text-xl font-semibold text-brand-800">{weekday(date)}, {fmtDate(date)}</h1>
-        <p className="text-xs text-slate-500">Day Overview · full operation · minimums Controller 1 · Panel 3 (1 Grade 14+) · Field 6 (Take-Charge)</p>
+        <p className="text-xs text-slate-500">Full operation · required per crew: Controller 1 · Panel 3 · Field 6</p>
       </div>
 
       {error ? <ErrorBox error={error} /> : !result ? <Spinner /> : (
@@ -147,8 +147,8 @@ function Legend() {
         <dl className="mt-2 space-y-2 text-xs text-slate-600">
           <div><dt className="font-semibold text-slate-700">Crew colours</dt><dd className="mt-1 flex flex-wrap gap-3">{CREWS.map((k) => <span key={k} className="inline-flex items-center gap-1.5"><CrewBadge crew={k} size="sm" /> {CREW_IDENTITY[k].colour}</span>)}</dd><dd className="mt-1">The circle and left edge say which crew it is. They never mean manpower status.</dd></div>
           <div><dt className="font-semibold text-status-green">GREEN</dt><dd>Qualified manpower above minimum, or the crew Controller is available (one Controller is the normal complement). Final.</dd></div>
-          <div><dt className="font-semibold text-status-amber">AMBER · No Buffer</dt><dd>Panel or Field exactly at minimum. Final.</dd></div>
-          <div><dt className={cx('font-semibold', CATEGORY.shortage.text)}>RED · Confirmed shortage</dt><dd>Below minimum, or no Grade 14+ Panel Operator, even if every unconfirmed qualification were confirmed. Final.</dd></div>
+          <div><dt className="font-semibold text-status-amber">AMBER · No Buffer</dt><dd>Panel or Field has exactly the number required; the card names which one. Final.</dd></div>
+          <div><dt className={cx('font-semibold', CATEGORY.shortage.text)}>RED · Confirmed shortage</dt><dd>Fewer people available than required, even if every unconfirmed qualification were confirmed. Panel also needs at least one Grade 14+ operator; if none is available the card says so. Final.</dd></div>
           <div><dt className={cx('font-semibold', CATEGORY.coverage_required.text)}>Controller coverage required</dt><dd>The crew Controller is on leave and no cover is recorded yet. Not final: the result becomes final once coverage is assigned (Controller Management stage).</dd></div>
           <div><dt className={cx('font-semibold', CATEGORY.data_incomplete.text)}>Qualification data incomplete</dt><dd>Below minimum only because qualifications (for example Take-Charge) are not yet confirmed. Not Yet Confirmed never counts; the result becomes final once the data is confirmed.</dd></div>
           <div><dt className={cx('font-semibold', CATEGORY.unresolved.text)}>Unresolved absence warning</dt><dd>Absence seen on the monthly sheet with no confirmed type. Shown for review only; it never reduces manpower.</dd></div>
@@ -158,11 +158,13 @@ function Legend() {
   );
 }
 
-function Metric({ label, value, color, sub }: { label: string; value: string; color: string; sub?: string }) {
+/** One position: people available against people required. Qualification rules stay in "Who counts". */
+function Metric({ label, count, min, color, sub }: { label: string; count: number; min: number; color: string; sub?: string }) {
   return (
-    <div className="rounded-xl bg-slate-50 px-2 py-2 text-center">
-      <div className={cx('text-lg font-semibold tabular-nums', color)}>{value}</div>
-      <div className="text-[11px] leading-tight text-slate-600">{label}</div>
+    <div className="rounded-xl bg-slate-50 px-2 py-2.5 text-center">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</div>
+      <div className={cx('mt-0.5 text-2xl font-semibold leading-none tabular-nums', color)}>{count}</div>
+      <div className="mt-1 text-[11px] leading-tight text-slate-500">of {min} required</div>
       {sub ? <div className="text-[10px] leading-tight text-slate-400">{sub}</div> : null}
     </div>
   );
@@ -189,7 +191,7 @@ function CrewCard({ crew: c }: { crew: CrewDay }) {
     );
   }
   const final = c.finalStatus;
-  const g14Color = c.panel.grade14 >= 1 ? 'text-status-green' : findingColor(c.panel.finding);
+  const noBuffer = [c.controller, c.panel, c.field].filter((p) => p.finding === 'no_buffer');
   const byFinding = (f: Finding) => [c.controller, c.panel, c.field].filter((p) => p.finding === f).flatMap((p) => p.issues.filter((i) => !i.startsWith('Acting')));
   const shortages = byFinding('shortage'); const coverage = byFinding('coverage_required'); const incomplete = byFinding('data_incomplete');
   return (
@@ -211,16 +213,15 @@ function CrewCard({ crew: c }: { crew: CrewDay }) {
       {!final && c.provisionalStatus && (
         <div className="mt-1 text-xs text-slate-500">Not final. Provisional once resolved: <span className={cx('font-semibold', STATUS_TEXT_CLS[c.provisionalStatus])}>{STATUS_TEXT[c.provisionalStatus]}{c.provisionalStatus === 'amber' ? ' (No Buffer)' : ''}</span></div>
       )}
-      <div className="mt-3 grid grid-cols-4 gap-1.5">
-        <Metric label="Controller" value={`${c.controller.count}/${c.controller.min}`} color={findingColor(c.controller.finding)} sub={c.controller.acting ? 'Acting' : c.controller.finding === 'coverage_required' ? 'cover needed' : undefined} />
-        <Metric label="Panel" value={`${c.panel.count}/${c.panel.min}`} color={findingColor(c.panel.finding)} sub={c.panel.finding === 'data_incomplete' ? `${c.panel.potential - c.panel.count} unconfirmed` : undefined} />
-        <Metric label="Grade 14+" value={String(c.panel.grade14)} color={g14Color} sub="available" />
-        <Metric label="Field" value={`${c.field.count}/${c.field.min}`} color={findingColor(c.field.finding)} sub={c.field.finding === 'data_incomplete' ? `${c.field.potential - c.field.count} unconfirmed` : c.field.notCounted.length ? `${c.field.notCounted.length} not counted` : undefined} />
+      <div className="mt-3 grid grid-cols-3 gap-1.5">
+        <Metric label="Controller" count={c.controller.count} min={c.controller.min} color={findingColor(c.controller.finding)} sub={c.controller.acting ? 'Acting Controller' : c.controller.finding === 'coverage_required' ? 'cover needed' : undefined} />
+        <Metric label="Panel" count={c.panel.count} min={c.panel.min} color={findingColor(c.panel.finding)} sub={c.panel.finding === 'data_incomplete' ? `${c.panel.potential - c.panel.count} unconfirmed` : undefined} />
+        <Metric label="Field" count={c.field.count} min={c.field.min} color={findingColor(c.field.finding)} sub={c.field.finding === 'data_incomplete' ? `${c.field.potential - c.field.count} unconfirmed` : undefined} />
       </div>
       {c.controller.acting && (
         <div className="mt-2 rounded-lg bg-slate-50 px-2 py-1.5 text-xs text-slate-800 ring-1 ring-slate-200">Acting Controller: <span className="font-semibold">{c.controller.acting.name}</span> (Grade {c.controller.acting.grade})</div>
       )}
-      {c.noBuffer && <div className="mt-2 text-xs font-medium text-status-amber">No Manpower Buffer — any further absence drops this crew below minimum.</div>}
+      {c.noBuffer && noBuffer.length > 0 && <div className="mt-2 text-xs font-medium text-status-amber">No buffer: {noBuffer.map((p) => `${p.label} ${p.count} of ${p.min}`).join(' · ')}. One more absence and this crew is short.</div>}
       <FindingBox kind="shortage" items={shortages} />
       <FindingBox kind="coverage_required" items={coverage} />
       <FindingBox kind="data_incomplete" items={incomplete} />
