@@ -68,7 +68,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <Chip tone="blue">{emp.position_label ?? 'No role assigned'}</Chip>
-          {leaveNow && <OnLeaveChip leave={leaveNow} className="px-2.5 py-1 text-xs" />}
+          {leaveNow && <OnLeaveChip leave={leaveNow} />}
           {isCrew(emp.crew_code) && <span className="inline-flex items-center rounded-full bg-white py-0.5 pl-0.5 pr-2.5 text-xs font-semibold text-slate-800 ring-1 ring-slate-200"><CrewTag crew={emp.crew_code} /></span>}
           <Chip tone={emp.employment_type_source === 'confirmed' ? 'neutral' : 'amber'}>{emp.employment_type === 'knpc' ? 'KNPC' : 'Contractor'}{emp.employment_type_source === 'inferred' ? ' (inferred)' : ''}</Chip>
           {emp.grade && <Chip>Grade {emp.grade}</Chip>}

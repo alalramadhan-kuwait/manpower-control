@@ -7,12 +7,13 @@ import { confirmEmploymentTypeBulk, setQualificationBulk } from '@/data/bulk';
 import { fetchDirectory, fetchOnLeave } from '@/data/queries';
 import type { OnLeave } from '@/core/leave';
 import type { EmployeeDirectoryRow, QualificationStatus, UserProfile } from '@/data/types';
-import { BottomSheet, Button, Chip, ErrorBox, PageHeader, Spinner, cx, qualificationLabel, qualificationTone } from '@/ui/components';
+import { BottomSheet, Button, Chip, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components';
 import { CrewBadge, CrewTag, isCrew } from '@/ui/crew';
 import { OnLeaveChip, localToday } from '@/ui/leave';
 
 const ROLE_FILTERS = [['', 'All roles'], ['controller', 'Controllers'], ['panel', 'Panel'], ['field', 'Field']] as const;
 const CREW_FILTERS = ['', 'A', 'B', 'C', 'D'] as const;
+const SHORT_ROLE: Record<string, string> = { controller: 'Controller', panel: 'Panel', field: 'Field' };
 const NEED_ORDER: ActionCode[] = ['take_charge', 'panel_qualification', 'employment_type', 'grade_missing', 'controller_grade', 'unresolved_absences'];
 
 type Row = EmployeeDirectoryRow & { actions: ActionItem[] };
@@ -119,40 +120,42 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
                 <tr>
                   <th className="w-10 px-3 py-2"><SelectBox checked={allShownSelected} onChange={toggleAll} label="Select all shown" /></th>
                   <th className="px-2 py-2">Employee</th><th className="px-2 py-2">Emp #</th><th className="px-2 py-2">Role</th><th className="px-2 py-2">Crew</th>
-                  <th className="px-2 py-2">Grade</th><th className="px-2 py-2">Type</th><th className="px-2 py-2">Qualification</th><th className="px-2 py-2">Needs action</th>
+                  <th className="px-2 py-2">Grade</th><th className="px-2 py-2">Type</th><th className="px-2 py-2">Needs action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((r) => (
-                  <tr key={r.id} className={cx('align-top', selected.has(r.id) ? 'bg-brand-50/60' : 'hover:bg-slate-50')}>
+                  <tr key={r.id} className={cx('align-middle', selected.has(r.id) ? 'bg-brand-50/60' : 'hover:bg-slate-50')}>
                     <td className="px-3 py-2"><SelectBox checked={selected.has(r.id)} onChange={() => toggle(r.id)} label={`Select ${r.display_name}`} /></td>
-                    <td className="px-2 py-2"><Link to={`/employees/${r.id}`} className="font-medium text-brand-700 hover:underline">{r.display_name}</Link>{onLeave.has(r.id) && <OnLeaveChip leave={onLeave.get(r.id)!} className="ml-2 align-middle" />}{r.official_name !== r.display_name && <div className="max-w-56 truncate text-xs text-slate-500">{r.official_name}</div>}</td>
+                    <td className="whitespace-nowrap px-2 py-2"><Link to={`/employees/${r.id}`} title={r.official_name} className="font-medium text-brand-700 hover:underline">{r.display_name}</Link>{onLeave.has(r.id) && <OnLeaveChip leave={onLeave.get(r.id)!} compact className="ml-2 align-middle" />}</td>
                     <td className="px-2 py-2 tabular-nums text-slate-600">{r.employee_number}</td>
                     <td className="px-2 py-2 text-slate-700">{r.position_label ?? '—'}</td>
                     <td className="px-2 py-2 text-slate-700">{isCrew(r.crew_code) ? <CrewBadge crew={r.crew_code} size="sm" /> : r.position_code === 'vr_controller' ? 'VR' : r.position_code === 'morning_controller' ? 'M' : '—'}</td>
                     <td className="px-2 py-2 tabular-nums text-slate-700">{r.grade ?? '—'}</td>
-                    <td className="px-2 py-2"><span className="text-slate-700">{r.employment_type === 'knpc' ? 'KNPC' : 'Contractor'}</span>{r.employment_type_source !== 'confirmed' && <div className="text-[11px] text-amber-700">inferred</div>}</td>
-                    <td className="px-2 py-2"><QualChip r={r} /></td>
+                    <td className="whitespace-nowrap px-2 py-2"><span className="text-slate-700">{r.employment_type === 'knpc' ? 'KNPC' : 'Contractor'}</span>{r.employment_type_source !== 'confirmed' && <span className="ml-1 text-[11px] text-amber-700">inferred</span>}</td>
                     <td className="px-2 py-2"><ActionChips actions={r.actions} /></td>
                   </tr>
                 ))}
-                {filtered.length === 0 && <tr><td colSpan={9} className="py-10 text-center text-slate-500">No employees match.</td></tr>}
+                {filtered.length === 0 && <tr><td colSpan={8} className="py-10 text-center text-slate-500">No employees match.</td></tr>}
               </tbody>
             </table>
           </div>
 
           {/* Phone: cards */}
-          <ul className="mt-2 space-y-2 lg:hidden">
+          <ul className="mt-2 space-y-1.5 lg:hidden">
             {filtered.map((r) => (
-              <li key={r.id} className={cx('flex items-stretch gap-1 rounded-2xl bg-white shadow-sm ring-1', selected.has(r.id) ? 'ring-brand-600' : 'ring-slate-200')}>
-                <div className="flex items-center pl-2"><SelectBox checked={selected.has(r.id)} onChange={() => toggle(r.id)} label={`Select ${r.display_name}`} /></div>
-                <Link to={`/employees/${r.id}`} className="flex min-w-0 flex-1 items-center gap-3 p-3 pl-1">
-                  {isCrew(r.crew_code) ? <CrewBadge crew={r.crew_code} size="lg" /> : <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600">{r.position_code === 'vr_controller' ? 'VR' : r.position_code === 'morning_controller' ? 'M' : '—'}</div>}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2"><span className="truncate font-medium text-slate-800">{r.display_name}</span>{r.employment_type === 'contractor' && <Chip>Contractor</Chip>}</div>
-                    <div className="truncate text-xs text-slate-500">#{r.employee_number} · {r.position_label ?? 'No role'}{r.grade ? ` · Grade ${r.grade}` : ''}</div>
-                    <div className="mt-1.5 flex flex-wrap gap-1">{onLeave.has(r.id) && <OnLeaveChip leave={onLeave.get(r.id)!} />}<QualChip r={r} />{r.actions.filter((a) => a.code !== 'take_charge' && a.code !== 'panel_qualification').map((a) => <Chip key={a.code} tone={a.bulk ? 'amber' : 'neutral'} className="whitespace-nowrap text-[11px]">{a.label}</Chip>)}</div>
-                  </div>
+              <li key={r.id} className={cx('flex items-center gap-2 rounded-xl bg-white pl-2 shadow-sm ring-1', selected.has(r.id) ? 'ring-brand-600' : 'ring-slate-200')}>
+                <SelectBox checked={selected.has(r.id)} onChange={() => toggle(r.id)} label={`Select ${r.display_name}`} />
+                <Link to={`/employees/${r.id}`} className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-3">
+                  {isCrew(r.crew_code) ? <CrewBadge crew={r.crew_code} size="md" /> : <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">{r.position_code === 'vr_controller' ? 'VR' : r.position_code === 'morning_controller' ? 'M' : '—'}</span>}
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5">
+                      <span className="truncate font-medium text-slate-800">{r.display_name}</span>
+                      {onLeave.has(r.id) && <OnLeaveChip leave={onLeave.get(r.id)!} compact />}
+                    </span>
+                    {view === 'action' && r.actions.length > 0 && <span className="mt-1 flex flex-wrap gap-1">{r.actions.map((a) => <Chip key={a.code} tone={a.bulk ? 'amber' : 'neutral'} className="whitespace-nowrap text-[11px]">{a.label}</Chip>)}</span>}
+                  </span>
+                  <span className="shrink-0 text-xs text-slate-500">{SHORT_ROLE[r.position_category ?? ''] ?? r.position_label ?? ''}</span>
                 </Link>
               </li>
             ))}
@@ -235,13 +238,6 @@ function SelectBox({ checked, onChange, label }: { checked: boolean; onChange: (
       {checked ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5 text-slate-400" />}
     </button>
   );
-}
-
-function QualChip({ r }: { r: EmployeeDirectoryRow }) {
-  if (r.position_category === 'field') return <Chip tone={qualificationTone(r.take_charge_status)} className="whitespace-nowrap">TC: {qualificationLabel(r.take_charge_status)}</Chip>;
-  if (r.position_category === 'panel') return <Chip tone={qualificationTone(r.panel_operator_status)} className="whitespace-nowrap">Panel: {qualificationLabel(r.panel_operator_status)}</Chip>;
-  if (r.position_category === 'controller') return <Chip tone={r.grade && r.grade >= 15 ? 'green' : r.grade === 14 ? 'amber' : 'neutral'}>{r.acting_controller_status === 'yes' ? 'Acting Controller' : r.grade ? `Grade ${r.grade}` : 'Grade —'}</Chip>;
-  return null;
 }
 
 function ActionChips({ actions }: { actions: ActionItem[] }) {

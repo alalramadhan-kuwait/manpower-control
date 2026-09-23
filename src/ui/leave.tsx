@@ -7,14 +7,16 @@ export const localToday = () => { const d = new Date(); return `${d.getFullYear(
 const short = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
 /**
- * "On leave" marker for employee screens. Deliberately neither a status colour (green/amber/red/grey)
- * nor a crew colour: a plane on white with the last day of leave.
+ * "On leave" marker for employee screens: a plane on pale yellow with the last day of leave.
+ * `compact` (lists) shows only the plane and the date; the full wording and dates are in the tooltip.
  */
-export function OnLeaveChip({ leave, className }: { leave: OnLeave; className?: string }) {
+export function OnLeaveChip({ leave, compact, className }: { leave: OnLeave; compact?: boolean; className?: string }) {
+  const full = `On leave: ${leave.typeLabel ?? 'Leave'} ${short(leave.start)} – ${short(leave.until)}`;
   return (
-    <span title={`${leave.typeLabel ?? 'Leave'} ${short(leave.start)} – ${short(leave.until)}`}
-      className={cx('inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-800 ring-1 ring-slate-400', className)}>
-      <Plane className="h-3 w-3" /> On leave · until {short(leave.until)}
+    <span title={full} aria-label={full}
+      className={cx('inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-full bg-yellow-100 font-semibold text-yellow-900 ring-1 ring-yellow-400',
+        compact ? 'px-1.5 py-px text-[10px]' : 'px-2.5 py-1 text-xs', className)}>
+      <Plane className={compact ? 'h-2.5 w-2.5' : 'h-3 w-3'} /> {compact ? short(leave.until) : `On leave · until ${short(leave.until)}`}
     </span>
   );
 }
