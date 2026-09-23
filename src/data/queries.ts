@@ -40,7 +40,7 @@ export async function fetchExistingForPlanning(year: number): Promise<{ employee
     grade: r.grade, master_position: r.master_position, cost_center: r.cost_center, join_date: r.join_date,
     normalization_date: r.normalization_date, last_promotion_date: r.last_promotion_date, position_start_date: r.position_start_date,
     education: r.education, service_years: r.service_years, years_in_grade: r.years_in_grade,
-    current_role: r.position_code ? { position_code: r.position_code, crew_code: r.crew_code } : null,
+    current_role: r.position_code ? { position_code: r.position_code, crew_code: r.crew_code, source: r.role_source, effective_from: r.role_effective_from } : null,
     qualifications: {
       ...(r.take_charge_status ? { take_charge: r.take_charge_status } : {}),
       ...(r.panel_operator_status ? { panel_operator: r.panel_operator_status } : {}),

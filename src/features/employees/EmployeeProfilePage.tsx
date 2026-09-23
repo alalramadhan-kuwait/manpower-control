@@ -120,7 +120,8 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
       <Section title="Operations" action={<Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => setSheet({ kind: 'role' })}>Correct role / crew</Button>}>
         <Row label="Operational role" value={emp.position_label} />
         <Row label="Permanent crew" value={isCrew(emp.crew_code) ? <CrewTag crew={emp.crew_code} /> : (emp.position_code === 'vr_controller' || emp.position_code === 'morning_controller' ? 'Not crew-bound' : null)} />
-        <Row label="Since" value={fmtDate(emp.role_effective_from)} />
+        <Row label="Since" value={emp.role_effective_from ? `${fmtDate(emp.role_effective_from)}${emp.role_source === 'manual' ? ' · set manually' : ''}` : null} />
+        {emp.role_note ? <Row label="Note" value={emp.role_note} /> : null}
         <Row label="Section" value={emp.section_name} />
       </Section>
 

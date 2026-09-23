@@ -151,7 +151,12 @@ export function planManpowerImport(
     // role assignment
     const cur = ex?.current_role ?? null;
     const same = cur && cur.position_code === p.role && (cur.crew_code ?? null) === (p.crew ?? null);
-    b.add({ sheet, row_ref: cell, entity_kind: 'role_assignment', employee_number: p.employeeNumber, matched_employee_id: ex?.id ?? null, outcome: same ? 'unchanged' : (cur ? 'changed' : 'new'), needs_review: false, raw,
+    if (cur && !same && cur.source === 'manual') {
+      // set by hand (profile correction or Section Head decision): the workbook never replaces it
+      b.add({ sheet, row_ref: cell, entity_kind: 'role_assignment', employee_number: p.employeeNumber, matched_employee_id: ex!.id, outcome: 'review', needs_review: true, raw, payload: null,
+        diff: { role: { from: `${cur.position_code}/${cur.crew_code ?? '-'}`, to: `${p.role}/${p.crew ?? '-'}` } },
+        message: `Workbook lists ${ROLE_LABEL[p.role]}${p.crew ? `, ${p.crew} Shift` : ''}; kept the role set by hand (${ROLE_LABEL[cur.position_code as RoleCode] ?? cur.position_code}${cur.crew_code ? `, ${cur.crew_code} Shift` : ''}${cur.effective_from ? ` since ${cur.effective_from}` : ''})` });
+    } else b.add({ sheet, row_ref: cell, entity_kind: 'role_assignment', employee_number: p.employeeNumber, matched_employee_id: ex?.id ?? null, outcome: same ? 'unchanged' : (cur ? 'changed' : 'new'), needs_review: false, raw,
       payload: same ? null : { position_code: p.role, crew_code: p.crew, effective_from: yearStart, source_ref: p.sourceRef },
       diff: same || !cur ? null : { role: { from: `${cur.position_code}/${cur.crew_code ?? '-'}`, to: `${p.role}/${p.crew ?? '-'}` } },
       message: same ? `Role ${ROLE_LABEL[p.role]}${p.crew ? ` ${p.crew}` : ''} unchanged` : `${ROLE_LABEL[p.role]}${p.crew ? `, ${p.crew} Shift` : ''}${cur ? ' (replaces current assignment)' : ''}` });

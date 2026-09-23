@@ -104,6 +104,15 @@ describe('monthly grid parsing and planning', () => {
     const idempotent = [cur('a', 'e1', '2026-01-09', '2026-01-14'), cur('b', 'e1', '2026-01-25', '2026-01-26', { source_kind: 'monthly_grid', in_original_plan: false }),
       cur('c', 'e2', '2026-01-09', '2026-01-12'), cur('d', 'e2', '2026-01-13', '2026-01-14', { source_kind: 'monthly_grid', in_original_plan: false })];
 
+    it('never replaces a role set by hand; a different workbook role becomes a review note', () => {
+      const manual = { ...existing[0], current_role: { position_code: 'field_operator', crew_code: 'B' as const, source: 'manual' as const, effective_from: '2026-09-23' } };
+      const imported = { ...existing[1], current_role: { position_code: 'field_operator', crew_code: 'B' as const, source: 'import' as const } };
+      const plan = planManpowerImport(parsed, [manual, imported], idempotent, 'test.xlsx');
+      const role = (num: string) => plan.rows.find((r) => r.entity_kind === 'role_assignment' && r.employee_number === num)!;
+      expect(role('20001')).toMatchObject({ outcome: 'review', needs_review: true, payload: null });
+      expect(role('20001').message).toContain('kept the role set by hand');
+      expect(role('20002')).toMatchObject({ outcome: 'changed', payload: { crew_code: 'A' } });
+    });
     it('changes nothing when the register already matches the monthly sheets (re-importing the same workbook)', () => {
       const plan = planManpowerImport(parsed, existing, idempotent, 'test.xlsx');
       expect(leaveRows(plan, '20001')).toEqual([]);

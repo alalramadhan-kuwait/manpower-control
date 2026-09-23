@@ -19,6 +19,7 @@ Supabase MCP or dashboard gets a matching file here, named with the version the 
 | `20260923143335_controller_assignments` | Stage H: `controller_assignments` (shift cover and Morning rotation) with the rules in the database: Grade 15+ Controllers only, max 2 months, no overlapping assignments per person (a VR cannot cover two shifts at once), one cover per crew per day, one Morning rotation at a time, no covering your own crew, cancelled rows kept and locked, no delete policy, audit trigger. Adds `btree_gist` |
 | `20260923151023_controller_rules_cover_length` | Stage H correction: the 2-month maximum now applies to Morning rotation only; shift cover lasts the actual period unless `controller_rules.shift_cover_max_days` is set (null by default, Section Head only, audited) |
 | `20260923151145_audit_non_uuid_ids` | `audit_row_change` tolerates non-uuid ids (entity_id null; full row still recorded) |
+| `20260923153659_import_keeps_manual_roles` | A role or crew set by hand is never replaced by a workbook import: `employee_directory_v` adds `role_source` / `role_note`; `commit_import_batch` step 3 leaves a manual current role in place (the import row becomes a review note instead of deleting or closing it) |
 
 ## Edge Functions
 
@@ -69,3 +70,21 @@ Section Head rule: **when the monthly sheets and "PV Scheduled Updated" disagree
 Result: 0 unresolved; 271 current approved records, identical to the monthly sheets on every working day
 (the only differences are roster Off days next to leave, which are never counted). 2026 evaluation: 12 confirmed
 shortage duties (Panel 2/3: A crew 10–15 Feb, C crew 7–12 May), 224 Controller-coverage-required duties, 859 final Amber.
+
+## Morning Controller post and D Shift cover (23 Sep 2026)
+
+Data change only, entered as the Section Head login (the same writes the profile's "Correct role / crew" sheet and
+the Controllers screen make); all three rows are in `audit_log`.
+
+Section Head: the Morning Controller post is empty until the rotations start in 2027; the Controller the workbook lists
+as Morning Controller is acting as an additional Vacation Relief Controller meanwhile, and is covering D Shift.
+
+- Role: the imported `morning_controller` row is closed on 22 Sep (kept as history); a manual `vr_controller` row starts
+  23 Sep with that reason as its note. With no Morning Controller recorded the post shows as empty, with no flag.
+  A later workbook import cannot switch it back (migration `20260923153659`).
+- `controller_assignments`: shift cover of D Shift, 8–23 Sep 2026, covering the D Controller's leave (8–21 Sep;
+  D is Off 22–23 Sep; back 24 Sep).
+- VR planning now has two VR Controllers: the overlapping December gaps (C 1–14 Dec, B 7–20 Dec) are both covered
+  and "Additional Controller required" no longer appears; B's suggested VR carries a note that they are on leave
+  17–20 Dec.
+

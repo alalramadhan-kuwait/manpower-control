@@ -119,7 +119,8 @@ export interface ExistingEmployee {
   education: string | null;
   service_years: number | null;
   years_in_grade: number | null;
-  current_role: { position_code: string; crew_code: CrewCode | null } | null;
+  /** source 'manual' = set by hand (profile correction); an import never replaces it. */
+  current_role: { position_code: string; crew_code: CrewCode | null; source?: 'manual' | 'import' | null; effective_from?: string | null } | null;
   qualifications: Partial<Record<'take_charge' | 'panel_operator' | 'acting_controller' | 'controller', string>>;
 }
 
