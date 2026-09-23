@@ -18,7 +18,7 @@ export function PlanPreview({ plan, detection, onCancel, onConfirm }: { plan: Im
   const tiles: [string, number, Tone][] = [
     ['Employees matched', s.employeesChanged + s.employeesUnchanged, 'neutral'], ['Employee records changed', s.employeesChanged, 'blue'], ['New employees', s.employeesNew, 'green'],
     ['Unmatched', s.unmatched, s.unmatched ? 'red' : 'neutral'], ['Ignored outside Section 1', s.ignored, 'neutral'], ['Needs review', s.review, s.review ? 'amber' : 'neutral'],
-    ['Current-plan leave added', s.pvAdded, 'green'], ['Leave rescheduled', s.pvRescheduled, s.pvRescheduled ? 'amber' : 'neutral'], ['Leave cancelled', s.pvCancelled, s.pvCancelled ? 'amber' : 'neutral'], ['New unresolved absences', s.unresolvedNew, s.unresolvedNew ? 'amber' : 'neutral'], ['Leave dates to update', s.leaveChanged - s.pvRescheduled - s.pvCancelled, 'neutral'], ['Role assignments', s.roleAssignmentsNew, 'neutral'], ['Errors', s.errors, s.errors ? 'red' : 'neutral']
+    ['Leave added (marked on the monthly sheets)', s.pvAdded, 'green'], ['Leave moved or trimmed to the marked days', s.pvRescheduled, s.pvRescheduled ? 'amber' : 'neutral'], ['Planned leave not taken', s.pvNotTaken, s.pvNotTaken ? 'amber' : 'neutral'], ['Leave cancelled', s.pvCancelled, s.pvCancelled ? 'amber' : 'neutral'], ['New unresolved absences', s.unresolvedNew, s.unresolvedNew ? 'amber' : 'neutral'], ['Leave dates to update', s.leaveChanged - s.pvRescheduled - s.pvCancelled - s.pvNotTaken, 'neutral'], ['Role assignments', s.roleAssignmentsNew, 'neutral'], ['Errors', s.errors, s.errors ? 'red' : 'neutral']
   ];
   return (
     <div className="space-y-3">

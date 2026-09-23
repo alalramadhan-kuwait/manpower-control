@@ -51,78 +51,108 @@ describe('monthly grid parsing and planning', () => {
     const merged = mergeGridRuns(parsed.gridRuns).filter((r) => r.employeeNumber === '400001');
     expect(merged.map((r) => [r.start, r.end])).toEqual([['2026-01-31', '2026-02-02']]);
   });
-  it('plans new employees, roles, qualifications and leave; flags non-PV absences for review', () => {
+  it('plans new employees, roles and qualifications; the monthly sheets decide the leave, never an unresolved absence', () => {
     const plan = planManpowerImport(parsed, [], [], 'test.xlsx');
     expect(plan.summary.employeesNew).toBe(5);
     const contractor = plan.rows.find((r) => r.entity_kind === 'employee' && r.employee_number === '400001')!;
     expect(contractor.payload).toMatchObject({ employment_type: 'contractor', employment_type_source: 'inferred', display_name: 'Contractor One' });
     const tc = plan.rows.find((r) => r.entity_kind === 'qualification' && r.employee_number === '20001')!;
     expect(tc.payload).toMatchObject({ qualification: 'take_charge', status: 'not_yet_confirmed' });
-    const pv = plan.rows.filter((r) => r.entity_kind === 'leave_record' && r.outcome === 'new');
-    // current plan: Ctrl One MAR, Ctrl VR MAY + JUL, Field One 9–12, Field Two 9–12 (5) + original-only history: Ctrl One FEB, Field One 9–14, Contractor DEC (3)
-    expect(pv).toHaveLength(8);
-    const cur = pv.filter((r) => (r.payload as any).in_current_plan);
-    expect(cur).toHaveLength(5);
-    expect(cur.map((r) => [r.employee_number, (r.payload as any).start_date, (r.payload as any).in_original_plan])).toEqual([
-      ['10001', '2026-03-02', false], ['10002', '2026-05-26', true], ['10002', '2026-07-01', false], ['20001', '2026-01-09', false], ['20002', '2026-01-09', true]
+    const leave = plan.rows.filter((r) => r.entity_kind === 'leave_record' && r.payload).map((r) => {
+      const p = r.payload as any; return [r.employee_number, p.start_date, p.end_date, p.source_kind, p.status, p.in_original_plan, p.in_current_plan];
+    });
+    expect(leave).toEqual([
+      // Ctrl One: Jan sheet only; the original Feb block was moved to Mar on the updated sheet → Feb is history, Mar comes from the updated PV sheet
+      ['10001', '2026-02-02', '2026-02-23', 'pv_schedule', 'rescheduled', true, false],
+      ['10001', '2026-03-02', '2026-03-23', 'pv_schedule', 'approved', false, true],
+      // Ctrl VR: on no monthly sheet → the plan sheets decide
+      ['10002', '2026-05-26', '2026-06-08', 'pv_schedule', 'approved', true, true],
+      ['10002', '2026-07-01', '2026-07-06', 'pv_schedule', 'approved', false, true],
+      // Field One: original 9–14 fully marked → taken; 15–16 are Off days (nothing); 25–26 marked → leave
+      ['20001', '2026-01-09', '2026-01-14', 'pv_schedule', 'approved', true, true],
+      ['20001', '2026-01-25', '2026-01-26', 'monthly_grid', 'approved', false, true],
+      // Contractor One: December is not on a monthly sheet and not on the updated plan → history;
+      // 31 Jan–2 Feb marked, of which 31 Jan and 1 Feb are Off days → the leave is the duty day 2 Feb
+      ['400001', '2026-12-30', '2027-01-13', 'pv_schedule', 'rescheduled', true, false],
+      ['400001', '2026-02-02', '2026-02-02', 'monthly_grid', 'approved', false, true],
+      // Field Two: 9–12 taken; 13–14 are working days (N1, N2) marked → leave
+      ['20002', '2026-01-09', '2026-01-12', 'pv_schedule', 'approved', true, true],
+      ['20002', '2026-01-13', '2026-01-14', 'monthly_grid', 'approved', false, true]
     ]);
-    const hist = pv.filter((r) => !(r.payload as any).in_current_plan);
-    expect(hist.map((r) => [r.employee_number, (r.payload as any).start_date, (r.payload as any).status])).toEqual([
-      ['10001', '2026-02-02', 'rescheduled'], ['20001', '2026-01-09', 'rescheduled'], ['400001', '2026-12-30', 'cancelled']
-    ]);
-    const review = plan.rows.filter((r) => r.entity_kind === 'leave_record' && r.outcome === 'review');
-    // Field One: current plan 9–12 ends on A2, so 13–16 Jan (N1 N2 Off1 Off2 marked on the sheet) and 25–26 Jan are unresolved.
-    // Field Two: PV 9–12 ends on a working day, so 13–14 Jan (N1, N2) are NOT absorbed — they are unresolved.
-    // Contractor One: 31 Jan–2 Feb has no current plan at all.
-    expect(review.map((r) => [r.employee_number, (r.payload as any).start_date, (r.payload as any).end_date])).toEqual([
-      ['20001', '2026-01-13', '2026-01-16'], ['20001', '2026-01-25', '2026-01-26'], ['20002', '2026-01-13', '2026-01-14'], ['400001', '2026-01-31', '2026-02-02']
-    ]);
-    expect(review[0].payload).toMatchObject({ absence_type_code: null, status: 'unresolved', review_status: 'pending_review', in_current_plan: true });
+    expect(plan.rows.some((r) => (r.payload as any)?.status === 'unresolved')).toBe(false);
+    expect(plan.summary.unresolvedNew).toBe(0);
+    // the synthetic sheet has no fill colours → type defaults to planned annual leave and the row is flagged to check
+    const marked = plan.rows.find((r) => r.employee_number === '20001' && (r.payload as any)?.source_kind === 'monthly_grid')!;
+    expect(marked).toMatchObject({ needs_review: true, payload: { absence_type_code: 'annual_leave_planned' } });
+    expect(marked.message).toContain('not in the key');
   });
   it('never creates an Acting Controller qualification (it must be recorded explicitly in the profile)', () => {
     const plan = planManpowerImport(parsed, [], [], 'test.xlsx');
     const quals = plan.rows.filter((r) => r.entity_kind === 'qualification').map((r) => (r.payload as any)?.qualification);
     expect(quals).not.toContain('acting_controller');
   });
-  it('recognises existing leave (reschedules it when the current sheet moved it) and never overrides qualifications', () => {
-    const existing: ExistingEmployee[] = [{
-      id: 'e1', employee_number: '20001', official_name: 'Field One', display_name: 'Field One', short_name: 'Field One', employment_type: 'knpc', employment_type_source: 'inferred', in_unit12_scope: true,
+  describe('existing register (monthly sheet is the real leave)', () => {
+    const emp = (id: string, num: string, name: string, crew: 'A' | null = 'A'): ExistingEmployee => ({
+      id, employee_number: num, official_name: name, display_name: name, short_name: name, employment_type: 'knpc', employment_type_source: 'inferred', in_unit12_scope: true,
       grade: null, master_position: null, cost_center: null, join_date: null, normalization_date: null, last_promotion_date: null, position_start_date: null, education: null, service_years: null, years_in_grade: null,
-      current_role: { position_code: 'field_operator', crew_code: 'A' }, qualifications: { take_charge: 'yes' }
-    }];
-    const plan = planManpowerImport(parsed, existing, [{ id: 'p1', employee_id: 'e1', start_date: '2026-01-09', end_date: '2026-01-14', source_kind: 'pv_schedule', status: 'approved', in_original_plan: true, in_current_plan: true }], 'test.xlsx');
-    const rows = plan.rows.filter((r) => r.employee_number === '20001');
-    expect(rows.find((r) => r.entity_kind === 'employee')!.outcome).toBe('unchanged');
-    expect(rows.find((r) => r.entity_kind === 'role_assignment')!.outcome).toBe('unchanged');
-    expect(rows.find((r) => r.entity_kind === 'qualification')!.outcome).toBe('unchanged');
-    const resched = rows.find((r) => r.entity_kind === 'leave_record' && r.outcome === 'changed')!;
-    expect(resched.payload).toMatchObject({ rescheduled_from_id: 'p1', change_kind: 'rescheduled', start_date: '2026-01-09', end_date: '2026-01-12' });
-    expect(resched.diff).toEqual({ dates: { from: '2026-01-09 → 2026-01-14', to: '2026-01-09 → 2026-01-12' } });
-    expect(rows.filter((r) => r.entity_kind === 'leave_record' && r.outcome === 'new')).toHaveLength(0);
-  });
-  it('pairs rescheduled blocks, cancels vanished ones and adds new ones against the register', () => {
-    const emp = (id: string, num: string, name: string, type: 'knpc' | 'contractor' = 'knpc'): ExistingEmployee => ({
-      id, employee_number: num, official_name: name, display_name: name, short_name: name, employment_type: type, employment_type_source: 'inferred', in_unit12_scope: true,
-      grade: null, master_position: null, cost_center: null, join_date: null, normalization_date: null, last_promotion_date: null, position_start_date: null, education: null, service_years: null, years_in_grade: null, current_role: null, qualifications: {}
+      current_role: crew ? { position_code: 'field_operator', crew_code: crew } : null, qualifications: { take_charge: 'yes' }
     });
-    const existing = [emp('c1', '10001', 'Ctrl One'), emp('v1', '10002', 'Ctrl VR'), emp('x1', '400001', 'Contractor One', 'contractor')];
-    const base = { source_kind: 'pv_schedule' as const, status: 'approved', in_original_plan: true, in_current_plan: true };
-    const plan = planManpowerImport(parsed, existing, [
-      { id: 'l1', employee_id: 'c1', start_date: '2026-02-02', end_date: '2026-02-23', ...base },
-      { id: 'l2', employee_id: 'v1', start_date: '2026-05-26', end_date: '2026-06-08', ...base },
-      { id: 'l3', employee_id: 'x1', start_date: '2026-12-30', end_date: '2027-01-13', ...base }
-    ], 'test.xlsx');
-    const leave = plan.rows.filter((r) => r.entity_kind === 'leave_record' && r.sheet?.startsWith('PV'));
-    const byEmp = (n: string) => leave.filter((r) => r.employee_number === n);
-    expect(byEmp('10001').map((r) => [r.outcome, (r.payload as any)?.change_kind ?? null])).toEqual([['changed', 'rescheduled']]);
-    expect(byEmp('10001')[0].payload).toMatchObject({ rescheduled_from_id: 'l1', start_date: '2026-03-02', end_date: '2026-03-23' });
-    expect(byEmp('10001')[0].message).toContain('moved');
-    expect(byEmp('10002').map((r) => [r.outcome, (r.payload as any)?.change_kind ?? null])).toEqual([['unchanged', null], ['new', 'added']]);
-    expect(byEmp('400001').map((r) => [r.outcome, (r.payload as any)?.change_kind ?? null])).toEqual([['changed', 'cancelled']]);
-    expect(byEmp('400001')[0].payload).toMatchObject({ leave_record_id: 'l3' });
-    expect(plan.summary).toMatchObject({ pvRescheduled: 1, pvCancelled: 1, pvAdded: 1 });
-  });
-  it('flags a baseline discrepancy instead of rewriting the original plan', () => {
+    const existing = [emp('e1', '20001', 'Field One'), emp('e2', '20002', 'Field Two')];
+    const cur = (id: string, employee_id: string, start: string, end: string, over: object = {}) =>
+      ({ id, employee_id, start_date: start, end_date: end, source_kind: 'pv_schedule' as const, status: 'approved', absence_type_code: 'annual_leave_planned', review_status: 'none', in_original_plan: true, in_current_plan: true, ...over });
+    const leaveRows = (plan: ReturnType<typeof planManpowerImport>, num: string) => plan.rows.filter((r) => r.entity_kind === 'leave_record' && r.employee_number === num && r.payload);
+    const idempotent = [cur('a', 'e1', '2026-01-09', '2026-01-14'), cur('b', 'e1', '2026-01-25', '2026-01-26', { source_kind: 'monthly_grid', in_original_plan: false }),
+      cur('c', 'e2', '2026-01-09', '2026-01-12'), cur('d', 'e2', '2026-01-13', '2026-01-14', { source_kind: 'monthly_grid', in_original_plan: false })];
+
+    it('changes nothing when the register already matches the monthly sheets (re-importing the same workbook)', () => {
+      const plan = planManpowerImport(parsed, existing, idempotent, 'test.xlsx');
+      expect(leaveRows(plan, '20001')).toEqual([]);
+      expect(leaveRows(plan, '20002')).toEqual([]);
+    });
+    it('a block with no marks is not taken (history, no longer counted); a similar-length marked period elsewhere is its new dates', () => {
+      const plan = planManpowerImport(parsed, existing, [cur('a', 'e1', '2026-01-17', '2026-01-22'), idempotent[1], idempotent[2], idempotent[3]], 'test.xlsx');
+      const rows = leaveRows(plan, '20001');
+      expect(rows.map((r) => [r.outcome, (r.payload as any).change_kind, (r.payload as any).rescheduled_from_id ?? (r.payload as any).leave_record_id, (r.payload as any).start_date ?? null])).toEqual([
+        ['changed', 'rescheduled', 'a', '2026-01-09']
+      ]);
+      expect(rows[0].payload).toMatchObject({ end_date: '2026-01-14', source_kind: 'monthly_grid' });
+    });
+    it('a block with no marks and nothing similar is recorded as not taken, never cancelled or deleted', () => {
+      const plan = planManpowerImport(parsed, existing, [...idempotent, cur('x', 'e2', '2026-01-25', '2026-01-26')], 'test.xlsx');
+      const rows = leaveRows(plan, '20002');
+      expect(rows.map((r) => [r.outcome, (r.payload as any).change_kind, (r.payload as any).leave_record_id])).toEqual([['changed', 'not_taken', 'x']]);
+      expect(plan.summary.pvNotTaken).toBe(1);
+    });
+    it('a partly marked block keeps only its marked days', () => {
+      const plan = planManpowerImport(parsed, existing, [cur('a', 'e2', '2026-01-09', '2026-01-20')], 'test.xlsx');
+      const rows = leaveRows(plan, '20002');
+      expect(rows.map((r) => [(r.payload as any).change_kind, (r.payload as any).rescheduled_from_id, (r.payload as any).start_date, (r.payload as any).end_date, (r.payload as any).source_kind])).toEqual([
+        ['rescheduled', 'a', '2026-01-09', '2026-01-14', 'monthly_grid']
+      ]);
+    });
+    it('marked days with no record become approved leave typed from the sheet colour', () => {
+      const withColour = structuredClone(parsed);
+      for (const r of withColour.gridRuns) if (r.employeeNumber === '20001' && r.start === '2026-01-25') r.fills = { '2026-01-25': 'rgb:00B0F0', '2026-01-26': 'rgb:00B0F0' };
+      const plan = planManpowerImport(withColour, existing, [idempotent[0], idempotent[2], idempotent[3]], 'test.xlsx');
+      const rows = leaveRows(plan, '20001');
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ outcome: 'new', needs_review: false, payload: { status: 'approved', absence_type_code: 'special_leave', source_kind: 'monthly_grid', change_kind: 'added', start_date: '2026-01-25', end_date: '2026-01-26' } });
+    });
+    it('"go to other shift / off" marks are not leave', () => {
+      const offShift = structuredClone(parsed);
+      for (const r of offShift.gridRuns) if (r.employeeNumber === '20001' && r.start === '2026-01-25') r.fills = { '2026-01-25': 'theme:9:0.6', '2026-01-26': 'theme:9:0.6' };
+      const plan = planManpowerImport(offShift, existing, [idempotent[0], idempotent[2], idempotent[3]], 'test.xlsx');
+      expect(leaveRows(plan, '20001')).toEqual([]);
+    });
+    it('never changes a record entered or classified by hand, and does not duplicate it', () => {
+      const manual = cur('m', 'e1', '2026-01-25', '2026-01-26', { source_kind: 'manual', absence_type_code: 'sick_leave', in_original_plan: false });
+      const plan = planManpowerImport(parsed, existing, [idempotent[0], manual, idempotent[2], idempotent[3]], 'test.xlsx');
+      expect(leaveRows(plan, '20001')).toEqual([]);
+      const manualAway = cur('m', 'e1', '2026-01-05', '2026-01-06', { source_kind: 'manual', absence_type_code: 'sick_leave', in_original_plan: false });
+      const plan2 = planManpowerImport(parsed, existing, [...idempotent, manualAway], 'test.xlsx');
+      expect(leaveRows(plan2, '20001')).toEqual([]);
+    });
+    it('flags a baseline discrepancy instead of rewriting the original plan', () => {
     const existing: ExistingEmployee[] = [{
       id: 'c1', employee_number: '10001', official_name: 'Ctrl One', display_name: 'Ctrl One', short_name: 'Ctrl One', employment_type: 'knpc', employment_type_source: 'inferred', in_unit12_scope: true,
       grade: null, master_position: null, cost_center: null, join_date: null, normalization_date: null, last_promotion_date: null, position_start_date: null, education: null, service_years: null, years_in_grade: null, current_role: null, qualifications: {}
@@ -135,42 +165,6 @@ describe('monthly grid parsing and planning', () => {
       expect.stringContaining('baseline block 2026-02-04 → 2026-02-25 is no longer on the original PV sheet')
     ]);
   });
-});
-
-describe('unresolved absences already in the register', () => {
-  const parsed = parseManpowerWorkbook(syntheticManpowerWorkbook(), 'test.xlsx');
-  const existing: ExistingEmployee[] = [{
-    id: 'e1', employee_number: '20001', official_name: 'Field One', display_name: 'Field One', short_name: 'Field One', employment_type: 'knpc', employment_type_source: 'inferred', in_unit12_scope: true,
-    grade: null, master_position: null, cost_center: null, join_date: null, normalization_date: null, last_promotion_date: null, position_start_date: null, education: null, service_years: null, years_in_grade: null,
-    current_role: { position_code: 'field_operator', crew_code: 'A' }, qualifications: {}
-  }];
-  const pv = { id: 'p1', employee_id: 'e1', start_date: '2026-01-09', end_date: '2026-01-14', source_kind: 'pv_schedule' as const, status: 'approved', in_original_plan: true, in_current_plan: true };
-  const gridRows = (plan: ReturnType<typeof planManpowerImport>) => plan.rows.filter((r) => r.entity_kind === 'leave_record' && r.employee_number === '20001' && !r.sheet?.startsWith('PV') && ((r.raw as any)?.start ?? '') >= '2026-01-25');
-  it('keeps an exact match unchanged', () => {
-    const plan = planManpowerImport(parsed, existing, [pv, { id: 'l1', employee_id: 'e1', start_date: '2026-01-25', end_date: '2026-01-26', source_kind: 'monthly_grid', status: 'unresolved', absence_type_code: null, review_status: 'pending_review' }], 'test.xlsx');
-    expect(gridRows(plan).map((r) => r.outcome)).toEqual(['unchanged']);
-  });
-  it('moves the dates of an import-owned record that now overlaps a different run', () => {
-    const plan = planManpowerImport(parsed, existing, [pv, { id: 'l1', employee_id: 'e1', start_date: '2026-01-25', end_date: '2026-01-25', source_kind: 'monthly_grid', status: 'unresolved', absence_type_code: null, review_status: 'pending_review' }], 'test.xlsx');
-    const rows = gridRows(plan);
-    expect(rows.map((r) => r.outcome)).toEqual(['changed']);
-    expect(rows[0].payload).toMatchObject({ leave_record_id: 'l1', start_date: '2026-01-25', end_date: '2026-01-26' });
-    expect(rows[0].diff).toEqual({ dates: { from: '2026-01-25 → 2026-01-25', to: '2026-01-25 → 2026-01-26' } });
-  });
-  it('never touches a record a person has classified; flags it instead', () => {
-    const plan = planManpowerImport(parsed, existing, [pv, { id: 'l1', employee_id: 'e1', start_date: '2026-01-25', end_date: '2026-01-25', source_kind: 'monthly_grid', status: 'approved', absence_type_code: 'sick_leave', review_status: 'resolved' }], 'test.xlsx');
-    const rows = gridRows(plan);
-    // 25 Jan is explained by the classified sick leave; 26 Jan is not → one new unresolved day, classified record untouched
-    expect(rows.map((r) => [r.outcome, (r.payload as any)?.start_date ?? null])).toEqual([['review', '2026-01-26'], ['unchanged', null]]);
-    expect(rows[1].message).toContain('classified absence');
-  });
-  it('flags a grid record the workbook no longer marks, without deleting it', () => {
-    const plan = planManpowerImport(parsed, existing, [pv, { id: 'l1', employee_id: 'e1', start_date: '2026-01-05', end_date: '2026-01-06', source_kind: 'monthly_grid', status: 'unresolved', absence_type_code: null, review_status: 'pending_review' }], 'test.xlsx');
-    const rows = plan.rows.filter((r) => r.entity_kind === 'leave_record' && r.employee_number === '20001' && !r.sheet?.startsWith('PV'));
-    const gone = rows.find((r) => !r.payload && (r.raw as any).start === '2026-01-05')!;
-    expect(gone.outcome).toBe('review');
-    expect(gone.message).toContain('no longer marked');
-    expect(rows.filter((r) => r.payload && (r.payload as any).start_date === '2026-01-25').length).toBe(1);
   });
 });
 

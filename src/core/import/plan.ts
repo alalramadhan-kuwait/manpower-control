@@ -1,6 +1,7 @@
 import { addDays, eachDay } from './sheet';
+import { colourMeaning, majorityFill } from './colourKey';
 import { displayNameFor } from '../names';
-import { dutyFor, isOff } from '../roster';
+import { isOff } from '../roster';
 import type { Crew } from '../roster';
 import type {
   ExistingEmployee, ExistingLeave, ImportPlan, ParsedGridRun, ParsedManpowerWorkbook, ParsedPerson, ParsedPromotionMaster,
@@ -23,7 +24,7 @@ class RowBuilder {
 }
 
 function emptySummary(): PlanSummary {
-  return { read: 0, employeesNew: 0, employeesChanged: 0, employeesUnchanged: 0, unmatched: 0, ignored: 0, review: 0, errors: 0, leaveNew: 0, leaveChanged: 0, leaveUnchanged: 0, pvAdded: 0, pvRescheduled: 0, pvCancelled: 0, unresolvedNew: 0, qualificationsNew: 0, roleAssignmentsNew: 0 };
+  return { read: 0, employeesNew: 0, employeesChanged: 0, employeesUnchanged: 0, unmatched: 0, ignored: 0, review: 0, errors: 0, leaveNew: 0, leaveChanged: 0, leaveUnchanged: 0, pvAdded: 0, pvRescheduled: 0, pvCancelled: 0, pvNotTaken: 0, unresolvedNew: 0, qualificationsNew: 0, roleAssignmentsNew: 0 };
 }
 
 export function summarize(rows: StagedRow[]): PlanSummary {
@@ -40,7 +41,7 @@ export function summarize(rows: StagedRow[]): PlanSummary {
       if (r.outcome === 'new' || r.outcome === 'review') {
         if (r.payload) { s.leaveNew++; if (kind === 'added' || kind === 'baseline_added') s.pvAdded++; if ((r.payload as { status?: string }).status === 'unresolved') s.unresolvedNew++; }
       } else if (r.outcome === 'changed') {
-        s.leaveChanged++; if (kind === 'rescheduled') s.pvRescheduled++; if (kind === 'cancelled') s.pvCancelled++;
+        s.leaveChanged++; if (kind === 'rescheduled') s.pvRescheduled++; if (kind === 'cancelled') s.pvCancelled++; if (kind === 'not_taken') s.pvNotTaken++;
       } else if (r.outcome === 'unchanged') s.leaveUnchanged++;
     }
     if (r.entity_kind === 'qualification' && r.outcome === 'new') s.qualificationsNew++;
@@ -72,6 +73,7 @@ export function mergeGridRuns(runs: ParsedGridRun[]): ParsedGridRun[] {
     const last = out[out.length - 1];
     if (last && last.employeeNumber === r.employeeNumber && addDays(last.end, 1) >= r.start) {
       if (r.end > last.end) last.end = r.end;
+      last.fills = { ...(last.fills ?? {}), ...(r.fills ?? {}) };
       if (!last.sourceRef.includes(' + ')) last.sourceRef = `${last.sourceRef} + ${r.sourceRef.split(' / ').slice(1).join(' / ')}`;
     } else out.push({ ...r });
   }
@@ -166,11 +168,16 @@ export function planManpowerImport(
     }
   }
 
-  // ------------------------------------------------------------ leave plans
-  // "PV Scheduled" = ORIGINAL plan (baseline, historical). "PV Scheduled Updated" = CURRENT approved plan.
-  // The baseline recorded in the register is never rewritten from a later workbook: differences are flagged.
-  // The current plan follows the updated sheet: a block that moved is a reschedule (original kept in history,
-  // linked to the new dates), a block that vanished is cancelled, a block that appeared is added.
+  // ------------------------------------------------------------ leave
+  // Agreed model (Section Head, 23 Sep 2026):
+  // - "PV Scheduled" = ORIGINAL plan (baseline, frozen): differences with the register are flagged, never rewritten.
+  // - The MONTHLY SHEETS are the real leave: for every month a person is listed on a monthly sheet, their current
+  //   leave is exactly what is marked there (on working days of their crew). A plan block that is not marked is
+  //   "not taken" (kept in history, no longer counted), a partly marked block keeps only its marked days, and a
+  //   marked period with no record becomes approved leave typed from the sheet colour. No unresolved absences are
+  //   created from the sheets.
+  // - "PV Scheduled Updated" is used only for months that have no monthly sheet for that person.
+  // - Records a person entered or classified by hand (source "manual") are never changed by an import.
   const crewOf = new Map<string, Crew | null>();
   for (const p of people.values()) crewOf.set(p.employeeNumber, p.crew);
   const days = (a: string, b: string) => eachDay(a, b).length;
@@ -178,227 +185,162 @@ export function planManpowerImport(
   const lref = (l: ExistingLeave) => `${l.start_date} → ${l.end_date}`;
   const remarksByEmp = new Map<string, string[]>();
   for (const m of parsed.gridRemarks) { if (!/resched|cancel/i.test(m.text)) continue; const arr = remarksByEmp.get(m.employeeNumber) ?? []; arr.push(`${m.sheet}!${m.cell}${m.date ? ` (${m.date})` : ''}: "${m.text.trim()}"`); remarksByEmp.set(m.employeeNumber, arr); }
-  const origByEmp = new Map<string, typeof parsed.pvRanges>(); const curByEmp = new Map<string, typeof parsed.pvRanges>();
-  const rescheduledAway = new Map<string, { start: string; end: string; to: string }[]>();
-  const dupCheck = (list: typeof parsed.pvRanges, into: Map<string, typeof parsed.pvRanges>, label: string) => {
-    const seen = new Set<string>();
+  const byEmpRanges = (list: typeof parsed.pvRanges, label: string) => {
+    const into = new Map<string, typeof parsed.pvRanges>(); const seen = new Set<string>();
     for (const rg of list) {
       const key = `${rg.employeeNumber}|${rg.start}|${rg.end}`;
       if (seen.has(key)) { b.add({ sheet: sheetOf(rg.sourceRef), row_ref: cellOf(rg.sourceRef), entity_kind: 'leave_record', employee_number: rg.employeeNumber, matched_employee_id: byNumber.get(rg.employeeNumber)?.id ?? null, outcome: 'error', needs_review: true, raw: { start: rg.start, end: rg.end }, payload: null, diff: null, message: `Duplicate range on the ${label} sheet` }); continue; }
-      seen.add(key);
-      const arr = into.get(rg.employeeNumber) ?? []; arr.push(rg); into.set(rg.employeeNumber, arr);
+      seen.add(key); const arr = into.get(rg.employeeNumber) ?? []; arr.push(rg); into.set(rg.employeeNumber, arr);
     }
+    return into;
   };
-  dupCheck(parsed.pvRanges, origByEmp, 'original PV'); dupCheck(parsed.pvCurrentRanges, curByEmp, 'updated PV');
-  const hasUpdatedSheet = parsed.pvCurrentSheet !== null;
+  const origByEmp = byEmpRanges(parsed.pvRanges, 'original PV'); const curByEmp = byEmpRanges(parsed.pvCurrentRanges, 'updated PV');
 
-  // Days covered by the CURRENT plan (plus the roster Off days directly after each block), and by absences
-  // someone has already classified. A monthly-sheet mark on one of these days needs no new record.
-  const coveredDays = new Map<string, Set<string>>();
-  const cover = (emp: string, start: string, end: string, walkOff: boolean) => {
-    const set = coveredDays.get(emp) ?? new Set<string>();
-    for (const d of eachDay(start, end)) set.add(d);
-    const crew = crewOf.get(emp) ?? null;
-    if (walkOff && crew) { let d = addDays(end, 1); while (isOff(d, crew)) { set.add(d); d = addDays(d, 1); } }
-    coveredDays.set(emp, set);
-  };
+  // Monthly-sheet evidence per person: which months they are listed on, and each marked day with its colour.
+  const monthsOf = new Map<string, Set<string>>();
+  for (const g of parsed.gridPeople) if (g.month) { const set = monthsOf.get(g.employeeNumber) ?? new Set<string>(); set.add(g.month); monthsOf.set(g.employeeNumber, set); }
+  const marksOf = new Map<string, Map<string, string | null>>();
+  const mergedRuns = mergeGridRuns(parsed.gridRuns);
+  for (const run of mergedRuns) {
+    const m = marksOf.get(run.employeeNumber) ?? new Map<string, string | null>();
+    for (const d of eachDay(run.start, run.end)) m.set(d, run.fills?.[d] ?? null);
+    marksOf.set(run.employeeNumber, m);
+  }
+  const counts = (l: ExistingLeave) => (l.status === 'approved' || l.status === 'planned') && (l.in_current_plan ?? true);
+  let offOnly = 0; let takenAsMarked = 0;
 
   for (const p of people.values()) {
-    const emp = p.employeeNumber; const ex = byNumber.get(emp) ?? null;
+    const emp = p.employeeNumber; const ex = byNumber.get(emp) ?? null; const crew = crewOf.get(emp) ?? null;
+    const who = label(emp, p.shortName);
+    const inScope = (d: string) => monthsOf.get(emp)?.has(d.slice(0, 7)) ?? false;
+    const working = (d: string) => (crew ? !isOff(d, crew) : true);
+    const marks = marksOf.get(emp) ?? new Map<string, string | null>();
+    const isMarked = (d: string) => marks.has(d) && colourMeaning(marks.get(d) ?? null)?.absence !== false;
+    const evidence = remarksByEmp.get(emp)?.join('; ') ?? null;
     const dbLeaves = ex ? (leavesByEmp.get(ex.id) ?? []) : [];
-    const dbOrig = dbLeaves.filter((l) => l.source_kind === 'pv_schedule' && l.in_original_plan);
-    const dbCur = dbLeaves.filter((l) => l.source_kind === 'pv_schedule' && (l.in_current_plan ?? true) && l.status !== 'cancelled' && l.status !== 'rescheduled');
     const sheetOrig = origByEmp.get(emp) ?? []; const sheetCur = curByEmp.get(emp) ?? [];
     const origKeys = new Set(sheetOrig.map((r) => rk(r.start, r.end)));
-    const dbOrigKeys = new Set(dbOrig.map((l) => rk(l.start_date, l.end_date)));
-    const dbCurKeys = new Map(dbCur.map((l) => [rk(l.start_date, l.end_date), l]));
-    const evidence = remarksByEmp.get(emp)?.join('; ') ?? null;
-    for (const r of sheetCur) cover(emp, r.start, r.end, true);
 
-    // A. original sheet vs recorded baseline (flag only; baseline is history)
-    const bothSheetsNew = new Set<string>();
-    for (const rg of sheetOrig) {
-      const key = rk(rg.start, rg.end);
-      if (dbOrigKeys.has(key)) continue;
-      const alsoCurrent = sheetCur.some((c) => rk(c.start, c.end) === key);
-      if (alsoCurrent && !dbCurKeys.has(key)) {
-        if (ex) {
-          // later workbook: the block joins the CURRENT plan only; the recorded baseline is never modified
-          bothSheetsNew.add(key);
-          b.add({ sheet: sheetOf(rg.sourceRef), row_ref: cellOf(rg.sourceRef), entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex.id, outcome: 'review', needs_review: true, raw: { start: rg.start, end: rg.end, plan: 'original' }, payload: null, diff: null,
-            message: `${label(p.employeeNumber, p.shortName)}: ${rg.start} → ${rg.end} appears on the original PV sheet of this workbook but not in the recorded baseline. Baseline not modified; added to the current plan only (added to current plan in later workbook).` });
-        }
+    // A. original plan sheet vs the recorded baseline: flag only, the baseline is history
+    if (ex) {
+      const dbOrig = dbLeaves.filter((l) => l.source_kind === 'pv_schedule' && l.in_original_plan);
+      const dbOrigKeys = new Set(dbOrig.map((l) => rk(l.start_date, l.end_date)));
+      for (const rg of sheetOrig) if (!dbOrigKeys.has(rk(rg.start, rg.end))) b.add({ sheet: sheetOf(rg.sourceRef), row_ref: cellOf(rg.sourceRef), entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex.id, outcome: 'review', needs_review: true, raw: { start: rg.start, end: rg.end, plan: 'original' }, payload: null, diff: null,
+        message: `${who}: the original PV sheet now shows ${rg.start} → ${rg.end}, which is not in the recorded baseline. Baseline kept unchanged (source changed between workbook versions); review.` });
+      if (sheetOrig.length) for (const l of dbOrig) if (!origKeys.has(rk(l.start_date, l.end_date))) b.add({ sheet: parsed.pvOriginalSheet, row_ref: null, entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex.id, outcome: 'review', needs_review: true, raw: { start: l.start_date, end: l.end_date, plan: 'original' }, payload: null, diff: null,
+        message: `${who}: baseline block ${lref(l)} is no longer on the original PV sheet. Baseline kept unchanged (source changed between workbook versions); review.` });
+    }
+
+    // B. current leave records that the monthly sheets decide (import-owned: PV or monthly-sheet sources)
+    const covered = new Set<string>();          // marked days already accounted for
+    const notTaken: ExistingLeave[] = [];
+    const current = dbLeaves.filter((l) => counts(l) && l.source_kind !== 'manual');
+    for (const l of dbLeaves) if ((counts(l) && l.source_kind === 'manual') || l.status === 'unresolved') for (const d of eachDay(l.start_date, l.end_date)) covered.add(d);
+    const markedRuns = (from: string, to: string) => {
+      const out: { start: string; end: string }[] = [];
+      for (const d of eachDay(from, to)) {
+        if (!inScope(d) || !isMarked(d)) continue;
+        const last = out[out.length - 1];
+        if (last && addDays(last.end, 1) === d) last.end = d; else out.push({ start: d, end: d });
+      }
+      return out.filter((r) => eachDay(r.start, r.end).some(working));
+    };
+    for (const l of current) {
+      const all = eachDay(l.start_date, l.end_date);
+      const scoped = all.filter(inScope);
+      if (scoped.length === 0) continue;                                  // no monthly sheet for these dates
+      const work = scoped.filter(working);
+      const markedWork = work.filter(isMarked);
+      for (const d of all) if (isMarked(d)) covered.add(d);
+      if (scoped.length < all.length && markedWork.length < work.length) {
+        b.add({ sheet: null, row_ref: null, entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex!.id, outcome: 'review', needs_review: true, raw: { start: l.start_date, end: l.end_date }, payload: null, diff: null,
+          message: `${who}: leave ${lref(l)} runs past the months on the monthly sheets and is not fully marked; left unchanged, review.` });
         continue;
       }
-      if (!ex) {
-        // new employee: an original-only block is history from day one (rescheduled when a same-length current-only block exists, else cancelled)
-        const curOnly = sheetCur.filter((c) => !origKeys.has(rk(c.start, c.end)));
-        const twin = curOnly.find((c) => days(c.start, c.end) === days(rg.start, rg.end) || (c.start <= rg.end && c.end >= rg.start));
+      if (markedWork.length === work.length) { takenAsMarked++; continue; }
+      if (markedWork.length === 0) { notTaken.push(l); continue; }
+      for (const r of markedRuns(l.start_date, l.end_date)) {
+        b.add({ sheet: null, row_ref: null, entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex!.id, outcome: 'changed', needs_review: false,
+          raw: { employee_number: emp, name: p.shortName, start: r.start, end: r.end, original: lref(l) },
+          payload: { rescheduled_from_id: l.id, change_kind: 'rescheduled', start_date: r.start, end_date: r.end, status: 'approved', source_kind: 'monthly_grid', source_ref: 'monthly sheets', note: `Marked days of ${lref(l)} (only these were taken per the monthly sheets)`, change_note: 'Only the marked days were taken (monthly sheet is the real leave)', evidence },
+          diff: { dates: { from: lref(l), to: `${r.start} → ${r.end}` } },
+          message: `${who}: ${lref(l)} is only partly marked on the monthly sheets; ${r.start} → ${r.end} kept as the leave, the rest no longer counts.` });
+      }
+    }
+
+    // B2. new employee: the original plan becomes the baseline; a block fully marked on the sheets is also current
+    if (!ex) {
+      for (const rg of sheetOrig) {
+        const work = eachDay(rg.start, rg.end).filter((d) => inScope(d) && working(d));
+        const taken = work.length > 0 && work.every(isMarked);
+        const outside = eachDay(rg.start, rg.end).every((d) => !inScope(d));
+        const current = taken || (outside && sheetCur.some((c) => rk(c.start, c.end) === rk(rg.start, rg.end)));
+        if (current) for (const d of eachDay(rg.start, rg.end)) if (isMarked(d)) covered.add(d);
         b.add({ sheet: sheetOf(rg.sourceRef), row_ref: cellOf(rg.sourceRef), entity_kind: 'leave_record', employee_number: emp, matched_employee_id: null, outcome: 'new', needs_review: false, raw: { employee_number: emp, name: p.shortName, start: rg.start, end: rg.end, source: rg.sourceRef, plan: 'original' },
-          payload: { absence_type_code: 'annual_leave_planned', status: twin ? 'rescheduled' : 'cancelled', start_date: rg.start, end_date: rg.end, source_kind: 'pv_schedule', source_ref: rg.sourceRef, review_status: 'none', in_original_plan: true, in_current_plan: false, note: twin ? `Original plan block; current plan shows ${twin.start} → ${twin.end} instead` : 'Original plan block; not on the current plan sheet' },
-          diff: null, message: `${label(p.employeeNumber, p.shortName)}: original plan ${rg.start} → ${rg.end} (${twin ? `rescheduled to ${twin.start} → ${twin.end}` : 'not on the current plan'}); history only` });
-        continue;
+          payload: { absence_type_code: 'annual_leave_planned', status: current ? 'approved' : 'rescheduled', start_date: rg.start, end_date: rg.end, source_kind: 'pv_schedule', source_ref: rg.sourceRef, review_status: 'none', in_original_plan: true, in_current_plan: current, note: current ? 'Original plan block, taken as planned' : 'Original plan block; not taken on these dates per the monthly sheets' },
+          diff: null, message: `${who}: original plan ${rg.start} → ${rg.end}${current ? '' : ' (not taken on these dates; history only)'}` });
       }
-      b.add({ sheet: sheetOf(rg.sourceRef), row_ref: cellOf(rg.sourceRef), entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex.id, outcome: 'review', needs_review: true, raw: { start: rg.start, end: rg.end, plan: 'original' }, payload: null, diff: null,
-        message: `${label(p.employeeNumber, p.shortName)}: the original PV sheet now shows ${rg.start} → ${rg.end}, which is not in the recorded baseline. Baseline kept unchanged (source changed between workbook versions); review.` });
-    }
-    for (const l of dbOrig) {
-      if (origKeys.has(rk(l.start_date, l.end_date)) || !hasUpdatedSheet && sheetOrig.length === 0) continue;
-      if (!origKeys.has(rk(l.start_date, l.end_date))) b.add({ sheet: parsed.pvOriginalSheet, row_ref: null, entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex!.id, outcome: 'review', needs_review: true, raw: { start: l.start_date, end: l.end_date, plan: 'original' }, payload: null, diff: null,
-        message: `${label(p.employeeNumber, p.shortName)}: baseline block ${lref(l)} is no longer on the original PV sheet. Baseline kept unchanged (source changed between workbook versions); review.` });
     }
 
-    // B. current plan vs updated sheet
-    const remainingSheet: typeof sheetCur = []; const usedDb = new Set<ExistingLeave>();
-    for (const rg of sheetCur) {
-      const key = rk(rg.start, rg.end); const sheet = sheetOf(rg.sourceRef); const cell = cellOf(rg.sourceRef);
-      const raw = { employee_number: emp, name: p.shortName, start: rg.start, end: rg.end, source: rg.sourceRef, plan: 'current' };
-      const same = dbCurKeys.get(key);
-      if (same) { usedDb.add(same); b.add({ sheet, row_ref: cell, entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex?.id ?? null, outcome: 'unchanged', needs_review: false, raw, payload: null, diff: null, message: 'Already in the current plan' }); continue; }
-      if (!ex || bothSheetsNew.has(key) || (!hasUpdatedSheet)) {
-        const later = !!ex && bothSheetsNew.has(key);
-        const inOriginal = later ? false : origKeys.has(key);
-        const kind = !ex ? undefined : 'added';
-        b.add({ sheet, row_ref: cell, entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex?.id ?? null, outcome: 'new', needs_review: later, raw,
-          payload: { absence_type_code: 'annual_leave_planned', status: 'approved', start_date: rg.start, end_date: rg.end, source_kind: 'pv_schedule', source_ref: rg.sourceRef, review_status: 'none', in_original_plan: inOriginal, in_current_plan: true, ...(kind ? { change_kind: kind, change_note: later ? "Added to current plan in later workbook (also on that workbook's original sheet; baseline not modified)" : 'Added to the current plan', evidence } : {}) },
-          diff: null, message: later ? `${label(p.employeeNumber, p.shortName)}: ${rg.start} → ${rg.end} added to the current plan in a later workbook (baseline not modified)` : `Planned leave ${rg.start} → ${rg.end}${inOriginal ? ' (original and current plan)' : ' (current plan)'}` });
-        continue;
-      }
-      remainingSheet.push(rg);
-    }
-    const remainingDb = dbCur.filter((l) => !usedDb.has(l));
-    // pair by overlap first (dates adjusted), then by equal length (moved), in date order
-    const pairs: { rg: (typeof sheetCur)[number]; l: ExistingLeave; how: 'dates adjusted' | 'moved' }[] = [];
-    const takeDb = new Set<ExistingLeave>(); const takeSheet = new Set<(typeof sheetCur)[number]>();
-    for (const rg of remainingSheet) {
-      const l = remainingDb.find((x) => !takeDb.has(x) && x.start_date <= rg.end && x.end_date >= rg.start);
-      if (l) { pairs.push({ rg, l, how: 'dates adjusted' }); takeDb.add(l); takeSheet.add(rg); }
-    }
-    for (const rg of remainingSheet) {
-      if (takeSheet.has(rg)) continue;
-      const len = days(rg.start, rg.end);
-      const l = remainingDb.filter((x) => !takeDb.has(x) && days(x.start_date, x.end_date) === len).sort((a, c) => Math.abs(days(a.start_date, rg.start)) - Math.abs(days(c.start_date, rg.start)))[0];
-      if (l) { pairs.push({ rg, l, how: 'moved' }); takeDb.add(l); takeSheet.add(rg); }
-    }
-    for (const { rg, l, how } of pairs) {
-      const away = rescheduledAway.get(emp) ?? []; away.push({ start: l.start_date, end: l.end_date, to: `${rg.start} → ${rg.end}` }); rescheduledAway.set(emp, away);
-      b.add({ sheet: sheetOf(rg.sourceRef), row_ref: cellOf(rg.sourceRef), entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex!.id, outcome: 'changed', needs_review: true,
-        raw: { employee_number: emp, name: p.shortName, start: rg.start, end: rg.end, source: rg.sourceRef, plan: 'current', original: lref(l) },
-        payload: { rescheduled_from_id: l.id, change_kind: 'rescheduled', start_date: rg.start, end_date: rg.end, status: 'approved', source_ref: rg.sourceRef, note: `Rescheduled from ${lref(l)} (${how})`, change_note: `Rescheduled (${how}); same employee, ${how === 'moved' ? `same length ${days(rg.start, rg.end)} days` : 'overlapping dates'}`, evidence },
-        diff: { dates: { from: lref(l), to: `${rg.start} → ${rg.end}` } },
-        message: `${label(p.employeeNumber, p.shortName)}: leave ${lref(l)} rescheduled to ${rg.start} → ${rg.end} (${how}). Original kept in history and no longer reduces manpower.${evidence ? ` Evidence: ${evidence}` : ''}` });
-    }
-    for (const rg of remainingSheet) {
-      if (takeSheet.has(rg)) continue;
-      b.add({ sheet: sheetOf(rg.sourceRef), row_ref: cellOf(rg.sourceRef), entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex!.id, outcome: 'new', needs_review: false,
-        raw: { employee_number: emp, name: p.shortName, start: rg.start, end: rg.end, source: rg.sourceRef, plan: 'current' },
-        payload: { absence_type_code: 'annual_leave_planned', status: 'approved', start_date: rg.start, end_date: rg.end, source_kind: 'pv_schedule', source_ref: rg.sourceRef, review_status: 'none', in_original_plan: false, in_current_plan: true, change_kind: 'added', change_note: 'Added to the current plan', evidence },
-        diff: null, message: `${label(p.employeeNumber, p.shortName)}: ${rg.start} → ${rg.end} added to the current plan` });
-    }
-    for (const l of remainingDb) {
-      if (takeDb.has(l)) continue;
-      b.add({ sheet: parsed.pvCurrentSheet ?? parsed.pvOriginalSheet, row_ref: null, entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex!.id, outcome: 'changed', needs_review: true,
-        raw: { employee_number: emp, name: p.shortName, start: l.start_date, end: l.end_date, plan: 'current' },
-        payload: { leave_record_id: l.id, change_kind: 'cancelled', change_note: 'No longer on the current approved plan sheet', evidence },
-        diff: { status: { from: l.status, to: 'cancelled' } },
-        message: `${label(p.employeeNumber, p.shortName)}: leave ${lref(l)} is not on the current plan sheet and pairs with nothing; cancelled (kept in history).` });
-    }
-    // absences already classified by a person count as explained
-    for (const l of dbLeaves) if (l.source_kind !== 'pv_schedule' && l.absence_type_code && (l.status === 'approved' || l.status === 'planned') && (l.in_current_plan ?? true)) cover(emp, l.start_date, l.end_date, false);
-  }
-
-  // Monthly grid runs: merge runs that continue across month sheets, then compare with the CURRENT plan by
-  // calendar date. Covered → nothing new; otherwise an unresolved absence. An unresolved record already in the
-  // register is matched by exact dates first, then by overlap: an import-owned record (still unresolved, pending
-  // review, no type) follows the source's new dates; a record someone has classified is never touched.
-  const mergedRuns = mergeGridRuns(parsed.gridRuns);
-  let covered = 0;
-  const seenGrid = new Set<string>();
-  const usedExisting = new Set<ExistingLeave>();
-  const importOwned = (l: ExistingLeave) => l.status === 'unresolved' && (l.review_status ?? 'pending_review') === 'pending_review' && !l.absence_type_code;
-  for (const run of mergedRuns) {
-    const ex = byNumber.get(run.employeeNumber) ?? null;
-    const pvDays = coveredDays.get(run.employeeNumber) ?? new Set<string>();
-    const uncovered = eachDay(run.start, run.end).filter((d) => !pvDays.has(d));
-    if (uncovered.length === 0) { covered++; continue; }
+    // C. marked periods with no record → approved leave typed from the sheet colour
     const groups: string[][] = [];
-    for (const d of uncovered) { const g = groups[groups.length - 1]; if (g && addDays(g[g.length - 1], 1) === d) g.push(d); else groups.push([d]); }
+    for (const d of [...marks.keys()].sort()) {
+      if (!inScope(d) || covered.has(d)) continue;
+      const meaning = colourMeaning(marks.get(d) ?? null);
+      if (meaning && !meaning.absence) continue;                          // "go to other shift / off" is not leave
+      const g = groups[groups.length - 1];
+      if (g && addDays(g[g.length - 1], 1) === d) g.push(d); else groups.push([d]);
+    }
+    const usedNotTaken = new Set<ExistingLeave>();
     for (const g of groups) {
+      if (!g.some(working)) { offOnly++; continue; }                       // Off days marked next to leave carry no manpower
+      while (!working(g[0])) g.shift();                                    // a new record starts and ends on duty days
+      while (!working(g[g.length - 1])) g.pop();
       const start = g[0], end = g[g.length - 1];
-      const key = `${run.employeeNumber}|${start}|${end}`;
-      if (seenGrid.has(key)) continue; seenGrid.add(key);
-      const gridRecs = ex ? (leavesByEmp.get(ex.id) ?? []).filter((l) => l.source_kind === 'monthly_grid' && l.status !== 'cancelled' && !usedExisting.has(l)) : [];
-      const raw = { employee_number: run.employeeNumber, name: run.shortName, block: run.block, start, end, source: run.sourceRef };
-      const dup = gridRecs.find((l) => l.start_date === start && l.end_date === end);
-      if (dup) {
-        usedExisting.add(dup);
-        b.add({ sheet: sheetOf(run.sourceRef), row_ref: cellOf(run.sourceRef), entity_kind: 'leave_record', employee_number: run.employeeNumber, matched_employee_id: ex?.id ?? null, outcome: 'unchanged', needs_review: false, raw, payload: null, diff: null, message: 'Unresolved absence already recorded' });
+      const key = majorityFill(g.map((d) => marks.get(d) ?? null));
+      const meaning = colourMeaning(key);
+      const type = meaning?.type ?? 'annual_leave_planned';
+      const colourNote = meaning ? `sheet colour: ${meaning.label}` : `sheet colour ${key ?? 'not readable'} is not in the key; type set to planned annual leave (PV), check it`;
+      const run = mergedRuns.find((r) => r.employeeNumber === emp && r.start <= end && r.end >= start);
+      const sourceRef = run?.sourceRef ?? 'monthly sheets';
+      const partner = ex ? notTaken.filter((l) => !usedNotTaken.has(l) && Math.abs(days(l.start_date, l.end_date) - g.length) <= 3)
+        .sort((a, c) => Math.abs(Date.parse(a.start_date) - Date.parse(start)) - Math.abs(Date.parse(c.start_date) - Date.parse(start)))[0] : undefined;
+      if (partner) {
+        usedNotTaken.add(partner);
+        b.add({ sheet: sheetOf(sourceRef), row_ref: cellOf(sourceRef), entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex!.id, outcome: 'changed', needs_review: !meaning,
+          raw: { employee_number: emp, name: p.shortName, start, end, original: lref(partner), colour: key },
+          payload: { rescheduled_from_id: partner.id, change_kind: 'rescheduled', start_date: start, end_date: end, status: 'approved', absence_type_code: type, source_kind: 'monthly_grid', source_ref: sourceRef, note: `Taken on other dates per the monthly sheets; ${colourNote}`, change_note: 'Taken on other dates per the monthly sheets', evidence },
+          diff: { dates: { from: lref(partner), to: `${start} → ${end}` } },
+          message: `${who}: leave ${lref(partner)} is not marked on the monthly sheets; taken ${start} → ${end} instead (${colourNote}).` });
         continue;
       }
-      const overlap = gridRecs.find((l) => l.start_date <= end && l.end_date >= start);
-      if (overlap) {
-        usedExisting.add(overlap);
-        const diff = { dates: { from: lref(overlap), to: `${start} → ${end}` } };
-        if (importOwned(overlap) && overlap.id) {
-          b.add({ sheet: sheetOf(run.sourceRef), row_ref: cellOf(run.sourceRef), entity_kind: 'leave_record', employee_number: run.employeeNumber, matched_employee_id: ex?.id ?? null, outcome: 'changed', needs_review: true, raw,
-            payload: { leave_record_id: overlap.id, change_kind: 'dates_moved', start_date: start, end_date: end, source_ref: run.sourceRef, note: `Dates follow the monthly sheet; previously ${lref(overlap)}. Type still not provable from source; classify manually.`, change_note: 'Source data changed between workbook versions' },
-            diff, message: `${label(run.employeeNumber, run.shortName)}: unresolved absence ${lref(overlap)} now marked ${start} → ${end} on ${sheetOf(run.sourceRef)}; dates updated, still unclassified (source data changed between workbook versions)` });
-        } else {
-          b.add({ sheet: sheetOf(run.sourceRef), row_ref: cellOf(run.sourceRef), entity_kind: 'leave_record', employee_number: run.employeeNumber, matched_employee_id: ex?.id ?? null, outcome: 'review', needs_review: true, raw, payload: null,
-            diff, message: `${label(run.employeeNumber, run.shortName)}: the sheet marks ${start} → ${end} but the register holds a classified record ${lref(overlap)} (${overlap.absence_type_code ?? overlap.status}). Left unchanged; review.` });
-        }
-        continue;
-      }
-      const crewCode = crewOf.get(run.employeeNumber) ?? null;
-      const rosterCtx = crewCode ? eachDay(start, end).map((d) => dutyFor(d, crewCode)).join(' ') : 'no crew (VR/Morning)';
-      const away = (rescheduledAway.get(run.employeeNumber) ?? []).find((a) => a.start <= end && a.end >= start);
-      const flag = away ? ` FLAG: the operational sheet still marks the original dates of a block rescheduled to ${away.to}; check the source before classifying.` : '';
-      b.add({ sheet: sheetOf(run.sourceRef), row_ref: cellOf(run.sourceRef), entity_kind: 'leave_record', employee_number: run.employeeNumber, matched_employee_id: ex?.id ?? null, outcome: 'review', needs_review: true, raw: { ...raw, roster: rosterCtx, rescheduled_block: away ? `${away.start} → ${away.end} → ${away.to}` : null },
-        payload: { absence_type_code: null, status: 'unresolved', start_date: start, end_date: end, source_kind: 'monthly_grid', source_ref: run.sourceRef, review_status: 'pending_review', in_original_plan: false, in_current_plan: true, note: `Absent on the monthly sheet (${sheetOf(run.sourceRef)} ${cellOf(run.sourceRef)}) but not in the current approved plan; roster ${crewCode ? `crew ${crewCode}: ${rosterCtx}` : rosterCtx}. Type not provable from source; classify manually.${flag}` },
-        diff: null, message: `${label(run.employeeNumber, run.shortName)}: absent ${start} → ${end} on ${sheetOf(run.sourceRef)} — not in the current plan, type unknown.${flag}` });
+      b.add({ sheet: sheetOf(sourceRef), row_ref: cellOf(sourceRef), entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex?.id ?? null, outcome: 'new', needs_review: !meaning,
+        raw: { employee_number: emp, name: p.shortName, start, end, source: sourceRef, colour: key },
+        payload: { absence_type_code: type, status: 'approved', start_date: start, end_date: end, source_kind: 'monthly_grid', source_ref: sourceRef, review_status: 'none', in_original_plan: false, in_current_plan: true, note: `Marked on the monthly sheet (${sheetOf(sourceRef)} ${cellOf(sourceRef)}); ${colourNote}`, ...(ex ? { change_kind: 'added', change_note: 'Leave marked on the monthly sheets', evidence: sourceRef } : {}) },
+        diff: null, message: `${who}: ${start} → ${end} marked on the monthly sheets; recorded as leave (${colourNote}).` });
+    }
+    for (const l of notTaken) {
+      if (usedNotTaken.has(l)) continue;
+      b.add({ sheet: null, row_ref: null, entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex!.id, outcome: 'changed', needs_review: false,
+        raw: { employee_number: emp, name: p.shortName, start: l.start_date, end: l.end_date },
+        payload: { leave_record_id: l.id, change_kind: 'not_taken', change_note: 'Not marked on the monthly sheets; not taken on these dates', evidence },
+        diff: { status: { from: l.status, to: 'rescheduled' } },
+        message: `${who}: leave ${lref(l)} is not marked on the monthly sheets; recorded as not taken (kept in history, no longer counted).` });
+    }
+
+    // E. months with no monthly sheet for this person: the updated PV sheet adds leave there
+    const liveRanges = [...current.filter((l) => !notTaken.includes(l)).map((l) => ({ start: l.start_date, end: l.end_date })), ...(!ex ? sheetOrig : [])];
+    for (const rg of sheetCur) {
+      if (eachDay(rg.start, rg.end).some(inScope)) continue;
+      if (liveRanges.some((l) => l.start <= rg.end && l.end >= rg.start)) continue;
+      b.add({ sheet: sheetOf(rg.sourceRef), row_ref: cellOf(rg.sourceRef), entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex?.id ?? null, outcome: 'new', needs_review: false,
+        raw: { employee_number: emp, name: p.shortName, start: rg.start, end: rg.end, source: rg.sourceRef, plan: 'current' },
+        payload: { absence_type_code: 'annual_leave_planned', status: 'approved', start_date: rg.start, end_date: rg.end, source_kind: 'pv_schedule', source_ref: rg.sourceRef, review_status: 'none', in_original_plan: origKeys.has(rk(rg.start, rg.end)), in_current_plan: true, ...(ex ? { change_kind: 'added', change_note: 'Planned on the updated PV sheet (no monthly sheet for these dates yet)', evidence } : {}) },
+        diff: null, message: `${who}: planned leave ${rg.start} → ${rg.end} from the updated PV sheet (no monthly sheet for these dates yet)` });
     }
   }
-  // Grid-sourced records in the register that this workbook no longer produces → review, never delete.
-  const markedDays = new Map<string, Set<string>>();
-  for (const run of mergedRuns) { const set = markedDays.get(run.employeeNumber) ?? new Set<string>(); for (const d of eachDay(run.start, run.end)) set.add(d); markedDays.set(run.employeeNumber, set); }
-  for (const p of people.values()) {
-    const ex = byNumber.get(p.employeeNumber); if (!ex) continue;
-    const pvDays = coveredDays.get(p.employeeNumber) ?? new Set<string>();
-    const marked = markedDays.get(p.employeeNumber) ?? new Set<string>();
-    for (const l of leavesByEmp.get(ex.id) ?? []) {
-      if (l.source_kind !== 'monthly_grid' || l.status === 'cancelled' || usedExisting.has(l)) continue;
-      const stillMarked = eachDay(l.start_date, l.end_date).every((d) => marked.has(d));
-      if (stillMarked && l.absence_type_code) { // a classified absence the sheet still shows: nothing to do
-        b.add({ sheet: null, row_ref: null, entity_kind: 'leave_record', employee_number: p.employeeNumber, matched_employee_id: ex.id, outcome: 'unchanged', needs_review: false, raw: { start: l.start_date, end: l.end_date }, payload: null, diff: null, message: `${label(p.employeeNumber, p.shortName)}: classified absence ${lref(l)} (${l.absence_type_code}) still marked on the monthly sheets; unchanged` });
-        continue;
-      }
-      const explained = eachDay(l.start_date, l.end_date).every((d) => pvDays.has(d));
-      b.add({ sheet: null, row_ref: null, entity_kind: 'leave_record', employee_number: p.employeeNumber, matched_employee_id: ex.id, outcome: 'review', needs_review: true, raw: { start: l.start_date, end: l.end_date, explained_by_current_plan: explained }, payload: null, diff: null,
-        message: explained
-          ? `${label(p.employeeNumber, p.shortName)}: ${l.absence_type_code ? 'absence' : 'unresolved absence'} ${lref(l)} is now explained by the current approved plan. Left unchanged; resolve it manually.`
-          : `${label(p.employeeNumber, p.shortName)}: ${l.absence_type_code ? 'absence' : 'unresolved absence'} ${lref(l)} is in the register but no longer marked on the monthly sheets. Left unchanged; review.` });
-    }
-  }
-  // Controller coverage flag: days when three or more of the controllers (incl. VR / Morning) are absent under the
-  // current plan plus unresolved absences. A flag to review, not an error: manning rules are defined in Stage B.
-  const absentCtrl = new Map<string, Set<string>>();
-  const markCtrl = (emp: string, start: string, end: string) => { for (const d of eachDay(start, end)) { const set = absentCtrl.get(d) ?? new Set<string>(); set.add(emp); absentCtrl.set(d, set); } };
-  const isCtrl = (emp: string) => { const r = people.get(emp)?.role; return r === 'controller' || r === 'vr_controller' || r === 'morning_controller'; };
-  for (const rg of parsed.pvCurrentRanges) if (isCtrl(rg.employeeNumber)) markCtrl(rg.employeeNumber, rg.start, rg.end);
-  for (const r of b.rows) {
-    if (r.entity_kind !== 'leave_record' || !r.employee_number || !isCtrl(r.employee_number)) continue;
-    const pl = r.payload as { status?: string; start_date?: string; end_date?: string; change_kind?: string } | null;
-    if (pl?.start_date && pl.end_date && (pl.status === 'unresolved' || pl.change_kind === 'dates_moved')) markCtrl(r.employee_number, pl.start_date, pl.end_date);
-    if (r.outcome === 'unchanged' && r.raw && !r.sheet?.startsWith('PV') && r.sheet) { const raw = r.raw as { start?: string; end?: string }; if (raw.start && raw.end) markCtrl(r.employee_number, raw.start, raw.end); }
-  }
-  const heavy = [...absentCtrl.entries()].filter(([, s]) => s.size >= 3).sort();
-  if (heavy.length) {
-    const runs: { start: string; end: string; who: string }[] = [];
-    for (const [d, set] of heavy) { const who = [...set].sort().map((e) => label(e, people.get(e)?.shortName ?? e)).join(', '); const last = runs[runs.length - 1]; if (last && last.who === who && addDays(last.end, 1) === d) last.end = d; else runs.push({ start: d, end: d, who }); }
-    b.add({ sheet: null, row_ref: null, entity_kind: 'note', employee_number: null, matched_employee_id: null, outcome: 'review', needs_review: true, raw: { controller_overlaps: runs }, payload: null, diff: null,
-      message: `Controller coverage flag (not an error; manning rules come in Stage B): three or more controllers absent on ${runs.map((x) => `${x.start} → ${x.end} (${x.who})`).join('; ')}` });
-  }
-  if (covered) b.add({ sheet: null, row_ref: null, entity_kind: 'note', employee_number: null, matched_employee_id: null, outcome: 'unchanged', needs_review: false, raw: { covered }, payload: null, diff: null, message: `${covered} monthly-grid absence runs match the current approved plan (including roster Off days directly after a block) or an already classified absence, and add nothing new.` });
+  if (takenAsMarked) b.add({ sheet: null, row_ref: null, entity_kind: 'note', employee_number: null, matched_employee_id: null, outcome: 'unchanged', needs_review: false, raw: { takenAsMarked }, payload: null, diff: null, message: `${takenAsMarked} current leave records are exactly as marked on the monthly sheets; unchanged.` });
+  if (offOnly) b.add({ sheet: null, row_ref: null, entity_kind: 'note', employee_number: null, matched_employee_id: null, outcome: 'unchanged', needs_review: false, raw: { offOnly }, payload: null, diff: null, message: `${offOnly} marked periods fall only on roster Off days (usually the Off days after a leave); no manpower effect, nothing recorded.` });
 
   const dates = parsed.pvRanges.concat(parsed.pvCurrentRanges).flatMap((r) => [r.start, r.end]).concat(parsed.gridRuns.flatMap((r) => [r.start, r.end])).sort();
   return {

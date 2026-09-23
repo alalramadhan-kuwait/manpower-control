@@ -11,6 +11,8 @@ export interface ParsedPerson {
   role: RoleCode;
   crew: CrewCode | null;
   sourceRef: string;
+  /** Monthly sheets only: the month (YYYY-MM) this row was listed on. */
+  month?: string;
 }
 
 export interface ParsedLeaveRange {
@@ -28,6 +30,8 @@ export interface ParsedGridRun {
   start: string;
   end: string;
   sourceRef: string;
+  /** Fill colour key of each marked day (ISO date → key), for the absence type. */
+  fills?: Record<string, string | null>;
 }
 
 /** Free text found in a day cell of a monthly sheet ("Rescheduled in Nov", "Covering D-shift"). Evidence only. */
@@ -167,6 +171,8 @@ export interface PlanSummary {
   pvAdded: number;
   pvRescheduled: number;
   pvCancelled: number;
+  /** Current leave not marked on the monthly sheets (kept in history, no longer counted). */
+  pvNotTaken: number;
   unresolvedNew: number;
   qualificationsNew: number;
   roleAssignmentsNew: number;

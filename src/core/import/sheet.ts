@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { fillKey } from './colourKey';
 
 export type Cell = string | number | boolean | Date | null;
 
@@ -7,11 +8,14 @@ export interface SheetReader {
   rows: number; // 1-based count
   cols: number;
   get(r: number, c: number): Cell; // 1-based row and column
+  /** Fill colour key of a cell (see colourKey.ts), null when none is readable. */
+  fill(r: number, c: number): string | null;
   ref(r: number, c: number): string;
 }
 
 export function openWorkbook(data: ArrayBuffer | Uint8Array): XLSX.WorkBook {
-  return XLSX.read(data, { type: data instanceof Uint8Array ? 'array' : 'array', cellDates: true });
+  // cellStyles: the monthly sheets' colour key says what kind of absence a marked day is
+  return XLSX.read(data, { type: data instanceof Uint8Array ? 'array' : 'array', cellDates: true, cellStyles: true });
 }
 
 export function readerFor(wb: XLSX.WorkBook, name: string): SheetReader {
@@ -26,6 +30,10 @@ export function readerFor(wb: XLSX.WorkBook, name: string): SheetReader {
       if (!cell || cell.v === undefined || cell.v === null) return null;
       if (cell.t === 'd' || cell.v instanceof Date) return cell.v as Date;
       return cell.v as Cell;
+    },
+    fill(r, c) {
+      const cell = ws?.[XLSX.utils.encode_cell({ r: r - 1, c: c - 1 })] as (XLSX.CellObject & { s?: { fgColor?: { rgb?: string; theme?: number; tint?: number } } }) | undefined;
+      return fillKey(cell?.s?.fgColor);
     },
     ref(r, c) {
       return XLSX.utils.encode_cell({ r: r - 1, c: c - 1 });

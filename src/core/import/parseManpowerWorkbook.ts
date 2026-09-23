@@ -147,9 +147,9 @@ export function parseMonthlyGridSheet(wb: XLSX.WorkBook, sheetName: string, year
       blank = 0;
       if (!emp || !name) { warnings.push(`${sheetName} row ${rr}: employee row missing ${emp ? 'name' : 'employee number'}`); continue; }
       const crew = info.crew ?? (info.role === 'panel_operator' && groupIndex < 4 ? (['A', 'B', 'C', 'D'][groupIndex] as CrewCode) : null);
-      people.push({ employeeNumber: emp, shortName: name, role: info.role, crew, sourceRef: `${workbookName} / ${sheetName} / ${r.ref(rr, empCol)}` });
-      let runStart: string | null = null; let prev: string | null = null; let startRef = '';
-      const flush = () => { if (runStart && prev) runs.push({ employeeNumber: emp, shortName: name, block: title, start: runStart, end: prev, sourceRef: `${workbookName} / ${sheetName} / ${startRef}` }); runStart = null; prev = null; };
+      people.push({ employeeNumber: emp, shortName: name, role: info.role, crew, sourceRef: `${workbookName} / ${sheetName} / ${r.ref(rr, empCol)}`, month: `${year}-${String(month).padStart(2, '0')}` });
+      let runStart: string | null = null; let prev: string | null = null; let startRef = ''; let fills: Record<string, string | null> = {};
+      const flush = () => { if (runStart && prev) runs.push({ employeeNumber: emp, shortName: name, block: title, start: runStart, end: prev, sourceRef: `${workbookName} / ${sheetName} / ${startRef}`, fills }); runStart = null; prev = null; fills = {}; };
       for (const { col, day } of dayCols) {
         const v = r.get(rr, col);
         const marked = v === 1 || v === '1';
@@ -160,7 +160,7 @@ export function parseMonthlyGridSheet(wb: XLSX.WorkBook, sheetName: string, year
           warnings.push(`${sheetName} ${r.ref(rr, col)}: ${name} (${emp}) day ${day} holds "${t.slice(0, 40)}" instead of 1; not treated as an absence`);
         }
         if (!date) { if (marked) warnings.push(`${sheetName} ${r.ref(rr, col)}: day ${day} does not exist in month ${month}`); continue; }
-        if (marked) { if (!runStart) { runStart = date; startRef = r.ref(rr, col); } prev = date; }
+        if (marked) { if (!runStart) { runStart = date; startRef = r.ref(rr, col); } prev = date; fills[date] = r.fill(rr, col); }
         else flush();
       }
       flush();
