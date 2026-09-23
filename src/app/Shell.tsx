@@ -15,7 +15,7 @@ const tabs = [
 
 export function Shell({ profile, children }: { profile: UserProfile; children: ReactNode }) {
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col">
+    <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col lg:max-w-7xl">
       <header className="sticky top-0 z-40 bg-brand-700 text-white safe-top">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="min-w-0">
@@ -27,7 +27,7 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
       </header>
       <main className="flex-1 px-4 pb-28 pt-4 sm:pb-8">{children}</main>
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur safe-bottom sm:hidden">
-        <div className="mx-auto grid max-w-5xl grid-cols-5">
+        <div className="mx-auto grid max-w-5xl grid-cols-5 lg:max-w-7xl">
           {tabs.map(({ to, label, icon: Icon, soon }) => (
             <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => cx('flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px]', isActive ? 'text-brand-700 font-semibold' : 'text-slate-500', soon && 'opacity-60')}>
               <Icon className="h-5 w-5" />

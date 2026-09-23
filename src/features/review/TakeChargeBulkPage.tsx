@@ -1,7 +1,7 @@
 import { ArrowLeft, Check } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase } from '@/data/supabase';
+import { setQualificationBulk } from '@/data/bulk';
 import { fetchDirectory } from '@/data/queries';
 import type { EmployeeDirectoryRow, QualificationStatus, UserProfile } from '@/data/types';
 import { Button, Card, Chip, ErrorBox, PageHeader, Spinner, cx, qualificationLabel, qualificationTone } from '@/ui/components';
@@ -27,19 +27,13 @@ export default function TakeChargeBulkPage({ profile }: { profile: UserProfile }
 
   async function save() {
     setBusy(true); setError(null); setSaved(null);
-    const today = new Date().toISOString().slice(0, 10);
     try {
-      for (const [employeeId, status] of changes) {
-        const { data: cur, error: e1 } = await supabase.from('employee_qualifications').select('id, effective_from').eq('employee_id', employeeId).eq('qualification', 'take_charge').is('effective_to', null).maybeSingle();
-        if (e1) throw e1;
-        if (cur) {
-          if (cur.effective_from >= today) { const { error } = await supabase.from('employee_qualifications').delete().eq('id', cur.id); if (error) throw error; }
-          else { const { error } = await supabase.from('employee_qualifications').update({ effective_to: today }).eq('id', cur.id); if (error) throw error; }
-        }
-        const { error: e2 } = await supabase.from('employee_qualifications').insert({ employee_id: employeeId, qualification: 'take_charge', status, effective_from: today, source: 'manual', evidence: note.trim() || `Confirmed by ${profile.display_name} (bulk edit)`, created_by: profile.auth_user_id });
-        if (e2) throw e2;
+      let n = 0;
+      for (const status of ['yes', 'no', 'not_yet_confirmed'] as QualificationStatus[]) {
+        const ids = changes.filter(([, v]) => v === status).map(([id]) => id);
+        n += await setQualificationBulk(ids, 'take_charge', status, profile, note.trim() || `Confirmed by ${profile.display_name} (bulk edit)`);
       }
-      setSaved(changes.length); await load();
+      setSaved(n); await load();
     } catch (e) { setError(e); } finally { setBusy(false); }
   }
 
@@ -85,7 +79,7 @@ export default function TakeChargeBulkPage({ profile }: { profile: UserProfile }
           </Card>
         );
       })}
-      <div className="fixed inset-x-0 bottom-16 z-30 mx-auto max-w-5xl px-4 sm:bottom-4 sm:pl-48">
+      <div className="fixed inset-x-0 bottom-16 z-30 mx-auto max-w-5xl px-4 lg:max-w-7xl sm:bottom-4 sm:pl-48">
         <div className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-lg ring-1 ring-slate-200">
           <div className="flex-1 text-sm">{changes.length === 0 ? <span className="text-slate-500">No changes yet</span> : <span className="font-medium text-brand-800">{changes.length} change{changes.length === 1 ? '' : 's'} ready</span>}{saved !== null && changes.length === 0 && <span className="ml-2 text-status-green"><Check className="inline h-4 w-4" /> Saved {saved}</span>}</div>
           {changes.length > 0 && <Button variant="secondary" className="min-h-10" onClick={() => setPending({})}>Discard</Button>}

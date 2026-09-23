@@ -52,7 +52,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<DayOverviewPage />} />
           <Route path="/summary" element={<HomePage />} />
-          <Route path="/employees" element={<EmployeesPage />} />
+          <Route path="/employees" element={<EmployeesPage profile={profile} />} />
           <Route path="/employees/:id" element={<EmployeeProfilePage profile={profile} />} />
           <Route path="/imports" element={<ImportCenterPage profile={profile} />} />
           <Route path="/imports/history" element={<ImportHistoryPage />} />
