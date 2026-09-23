@@ -5,6 +5,7 @@ import { setQualificationBulk } from '@/data/bulk';
 import { fetchDirectory } from '@/data/queries';
 import type { EmployeeDirectoryRow, QualificationStatus, UserProfile } from '@/data/types';
 import { Button, Card, Chip, ErrorBox, PageHeader, Spinner, cx, qualificationLabel, qualificationTone } from '@/ui/components';
+import { CrewTag, crewEdge } from '@/ui/crew';
 
 const CREWS = ['A', 'B', 'C', 'D'] as const;
 const OPTIONS: { value: QualificationStatus; label: string; tone: 'green' | 'red' | 'amber' }[] = [
@@ -54,8 +55,8 @@ export default function TakeChargeBulkPage({ profile }: { profile: UserProfile }
         const list = field.filter((r) => r.crew_code === crew);
         if (list.length === 0) return null;
         return (
-          <Card key={crew} className="mb-3 p-0">
-            <div className="flex items-center justify-between px-4 py-2"><span className="font-semibold text-brand-800">{crew} Shift</span><span className="text-xs text-slate-500">{list.length} field operators</span></div>
+          <Card key={crew} className={`mb-3 p-0 ${crewEdge(crew)}`}>
+            <div className="flex items-center justify-between px-4 py-2"><span className="font-semibold text-slate-900"><CrewTag crew={crew} /></span><span className="text-xs text-slate-500">{list.length} field operators</span></div>
             <ul className="divide-y divide-slate-100">
               {list.map((r) => {
                 const value = pending[r.id] ?? (r.take_charge_status ?? 'not_yet_confirmed');

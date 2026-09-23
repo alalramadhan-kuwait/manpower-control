@@ -107,7 +107,7 @@ function OverallBanner({ result }: { result: DayResult }) {
   const ring = final ? STATUS_RING[final] : 'ring-slate-300';
   const headline = final === 'red' ? 'Confirmed manpower shortage' : final ? STATUS_HINT[final] : 'Not final — items pending';
   const headlineCls = final ? STATUS_TEXT_CLS[final] : 'text-slate-700';
-  const reds = result.crews.filter((c) => c.confirmedShortage).map((c) => `${c.crew} (${c.shift})`);
+  const reds = result.crews.filter((c) => c.confirmedShortage);
   return (
     <div className={cx('mb-3 rounded-2xl bg-white p-4 shadow-sm ring-2', ring)}>
       <div className="flex items-center justify-between gap-3">
@@ -115,7 +115,7 @@ function OverallBanner({ result }: { result: DayResult }) {
           <div className="text-xs uppercase tracking-wide text-slate-500">Overall</div>
           <div className={cx('text-lg font-semibold leading-snug', headlineCls)}>{headline}</div>
           <div className="text-xs text-slate-600">
-            {reds.length ? `${reds.join(', ')} confirmed short` : final ? `${result.crews.filter((c) => c.working).length} crews on duty` : `Provisional result once resolved: ${STATUS_TEXT[result.provisionalStatus]}`}
+            {reds.length ? <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">{reds.map((c) => <span key={c.crew} className="inline-flex items-center gap-1"><CrewBadge crew={c.crew} size="sm" /> {c.shift}</span>)} confirmed short</span> : final ? `${result.crews.filter((c) => c.working).length} crews on duty` : `Provisional result once resolved: ${STATUS_TEXT[result.provisionalStatus]}`}
           </div>
         </div>
         {final ? <StatusPill status={final} /> : <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700">PENDING</span>}
@@ -311,7 +311,7 @@ function DayStaffCard({ result }: { result: DayResult }) {
       </ul>
       {result.counts.coverageRequired > 0 && (
         <p className={cx('mt-2 rounded-lg p-2 text-[11px] ring-1', CATEGORY.coverage_required.box)}>
-          Controller coverage required today: {result.crews.filter((c) => c.pending.includes('coverage_required')).map((c) => `${c.crew} (${c.shift})`).join(', ')}. Assigning the covering Controller arrives with Controller Management.
+          Controller coverage required today: {result.crews.filter((c) => c.pending.includes('coverage_required')).map((c) => <span key={c.crew} className="mr-1 inline-flex items-center gap-1 align-middle"><CrewBadge crew={c.crew} size="sm" /> {c.shift}</span>)}. Assigning the covering Controller arrives with Controller Management.
         </p>
       )}
       <p className="mt-2 text-[11px] text-slate-500">Not counted in crew manpower until coverage of a specific shift is recorded.</p>

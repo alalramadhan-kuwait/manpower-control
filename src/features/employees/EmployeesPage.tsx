@@ -7,6 +7,7 @@ import { confirmEmploymentTypeBulk, setQualificationBulk } from '@/data/bulk';
 import { fetchDirectory } from '@/data/queries';
 import type { EmployeeDirectoryRow, QualificationStatus, UserProfile } from '@/data/types';
 import { BottomSheet, Button, Chip, ErrorBox, PageHeader, Spinner, cx, qualificationLabel, qualificationTone } from '@/ui/components';
+import { CrewBadge, CrewTag, isCrew } from '@/ui/crew';
 
 const ROLE_FILTERS = [['', 'All roles'], ['controller', 'Controllers'], ['panel', 'Panel'], ['field', 'Field']] as const;
 const CREW_FILTERS = ['', 'A', 'B', 'C', 'D'] as const;
@@ -91,7 +92,7 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
         <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] lg:mt-0 lg:flex-wrap">
           {ROLE_FILTERS.map(([v, l]) => <FilterChip key={v} active={role === v} onClick={() => set('role', v)}>{l}</FilterChip>)}
           <span className="mx-1 w-px shrink-0 bg-slate-300" />
-          {CREW_FILTERS.map((v) => <FilterChip key={v || 'all'} active={crew === v} onClick={() => set('crew', v)}>{v ? `${v} Shift` : 'All crews'}</FilterChip>)}
+          {CREW_FILTERS.map((v) => <FilterChip key={v || 'all'} active={crew === v} onClick={() => set('crew', v)}>{v ? <CrewTag crew={v} /> : 'All crews'}</FilterChip>)}
           <span className="mx-1 w-px shrink-0 bg-slate-300" />
           {[['', 'KNPC + Contractor'], ['knpc', 'KNPC'], ['contractor', 'Contractor']].map(([v, l]) => <FilterChip key={v || 'both'} active={emp === v} onClick={() => set('type', v)}>{l}</FilterChip>)}
         </div>
@@ -125,7 +126,7 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
                     <td className="px-2 py-2"><Link to={`/employees/${r.id}`} className="font-medium text-brand-700 hover:underline">{r.display_name}</Link>{r.official_name !== r.display_name && <div className="max-w-56 truncate text-xs text-slate-500">{r.official_name}</div>}</td>
                     <td className="px-2 py-2 tabular-nums text-slate-600">{r.employee_number}</td>
                     <td className="px-2 py-2 text-slate-700">{r.position_label ?? '—'}</td>
-                    <td className="px-2 py-2 text-slate-700">{r.crew_code ?? (r.position_code === 'vr_controller' ? 'VR' : r.position_code === 'morning_controller' ? 'M' : '—')}</td>
+                    <td className="px-2 py-2 text-slate-700">{isCrew(r.crew_code) ? <CrewBadge crew={r.crew_code} size="sm" /> : r.position_code === 'vr_controller' ? 'VR' : r.position_code === 'morning_controller' ? 'M' : '—'}</td>
                     <td className="px-2 py-2 tabular-nums text-slate-700">{r.grade ?? '—'}</td>
                     <td className="px-2 py-2"><span className="text-slate-700">{r.employment_type === 'knpc' ? 'KNPC' : 'Contractor'}</span>{r.employment_type_source !== 'confirmed' && <div className="text-[11px] text-amber-700">inferred</div>}</td>
                     <td className="px-2 py-2"><QualChip r={r} /></td>
@@ -143,7 +144,7 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
               <li key={r.id} className={cx('flex items-stretch gap-1 rounded-2xl bg-white shadow-sm ring-1', selected.has(r.id) ? 'ring-brand-600' : 'ring-slate-200')}>
                 <div className="flex items-center pl-2"><SelectBox checked={selected.has(r.id)} onChange={() => toggle(r.id)} label={`Select ${r.display_name}`} /></div>
                 <Link to={`/employees/${r.id}`} className="flex min-w-0 flex-1 items-center gap-3 p-3 pl-1">
-                  <div className={cx('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sm font-semibold', r.crew_code ? 'bg-brand-50 text-brand-700' : 'bg-slate-100 text-slate-600')}>{r.crew_code ?? (r.position_code === 'vr_controller' ? 'VR' : r.position_code === 'morning_controller' ? 'M' : '—')}</div>
+                  {isCrew(r.crew_code) ? <CrewBadge crew={r.crew_code} size="lg" /> : <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600">{r.position_code === 'vr_controller' ? 'VR' : r.position_code === 'morning_controller' ? 'M' : '—'}</div>}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2"><span className="truncate font-medium text-slate-800">{r.display_name}</span>{r.employment_type === 'contractor' && <Chip>Contractor</Chip>}</div>
                     <div className="truncate text-xs text-slate-500">#{r.employee_number} · {r.position_label ?? 'No role'}{r.grade ? ` · Grade ${r.grade}` : ''}</div>

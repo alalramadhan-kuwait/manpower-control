@@ -25,3 +25,13 @@ export function CrewBadge({ crew, size = 'md', muted }: { crew: Crew; size?: 'sm
 
 /** Thick left edge in the crew colour, for cards that belong to one crew. */
 export const crewEdge = (crew: Crew) => cx('border-l-[6px]', CREW_IDENTITY[crew].border);
+
+const isCrew = (v: string | null | undefined): v is Crew => v === 'A' || v === 'B' || v === 'C' || v === 'D';
+
+/** Badge plus "A Shift", for rows and headers. Renders nothing for a missing or non-crew code. */
+export function CrewTag({ crew, suffix = ' Shift', size = 'sm' }: { crew: string | null | undefined; suffix?: string; size?: 'sm' | 'md' }) {
+  if (!isCrew(crew)) return null;
+  return <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><CrewBadge crew={crew} size={size} />{crew}{suffix}</span>;
+}
+
+export { isCrew };

@@ -5,6 +5,7 @@ import { fetchDirectory, fetchReference } from '@/data/queries';
 import type { AbsenceType, EmployeeDirectoryRow, ImportRowRecord, LeaveRecord, UserProfile } from '@/data/types';
 import { BottomSheet, Button, Card, Chip, ErrorBox, Field, PageHeader, Spinner, fmtDate } from '@/ui/components';
 import { RowLine } from '@/features/imports/PlanPreview';
+import { CrewTag, isCrew } from '@/ui/crew';
 
 interface Loaded { emps: EmployeeDirectoryRow[]; unresolved: (LeaveRecord & { employees: { display_name: string; official_name: string; employee_number: string } })[]; pending: ImportRowRecord[]; absenceTypes: AbsenceType[] }
 
@@ -90,7 +91,7 @@ function PeopleList({ people, extra }: { people: EmployeeDirectoryRow[]; extra: 
     <ul className="divide-y divide-slate-100">
       {people.map((e) => (
         <li key={e.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-          <Link to={`/employees/${e.id}`} className="min-w-0 truncate"><span className="font-medium text-brand-700">{e.display_name}</span> <span className="text-xs text-slate-500">#{e.employee_number} · {e.position_label ?? 'no role'}{e.crew_code ? ` · ${e.crew_code}` : ''}</span></Link>
+          <Link to={`/employees/${e.id}`} className="min-w-0 truncate"><span className="font-medium text-brand-700">{e.display_name}</span> <span className="text-xs text-slate-500">#{e.employee_number} · {e.position_label ?? 'no role'}{isCrew(e.crew_code) && <> · <CrewTag crew={e.crew_code} /></>}</span></Link>
           {extra(e)}
         </li>
       ))}

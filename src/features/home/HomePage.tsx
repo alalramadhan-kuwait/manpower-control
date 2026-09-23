@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { fetchBatches, fetchDirectory } from '@/data/queries';
 import type { EmployeeDirectoryRow, ImportBatch } from '@/data/types';
 import { Card, Chip, ErrorBox, PageHeader, Spinner, Stat, fmtDate } from '@/ui/components';
+import { CrewTag, crewEdge } from '@/ui/crew';
 
 const CREWS = ['A', 'B', 'C', 'D'] as const;
 
@@ -33,8 +34,8 @@ export default function HomePage() {
           const crew = scope.filter((r) => r.crew_code === c);
           const n = (cat: string) => crew.filter((r) => r.position_category === cat).length;
           return (
-            <Card key={c} to={`/employees?crew=${c}`}>
-              <div className="flex items-baseline justify-between"><span className="text-lg font-semibold text-brand-800">{c} Shift</span><span className="text-xs text-slate-500">{crew.length} people</span></div>
+            <Card key={c} to={`/employees?crew=${c}`} className={crewEdge(c)}>
+              <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1"><span className="text-lg font-semibold text-slate-900"><CrewTag crew={c} size="md" /></span><span className="whitespace-nowrap text-xs text-slate-500">{crew.length} people</span></div>
               <div className="mt-2 grid grid-cols-3 gap-1 text-center text-xs">
                 <div><div className="text-base font-semibold tabular-nums">{n('controller')}</div><div className="text-slate-500">Ctrl</div></div>
                 <div><div className="text-base font-semibold tabular-nums">{n('panel')}</div><div className="text-slate-500">Panel</div></div>

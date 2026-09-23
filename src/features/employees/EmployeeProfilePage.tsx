@@ -5,7 +5,8 @@ import { supabase } from '@/data/supabase';
 import { fetchReference } from '@/data/queries';
 import { displayNameFor } from '@/core/names';
 import type { AbsenceType, AuditEntry, Crew, EmployeeDirectoryRow, LeaveRecord, LeavePlanChange, Performance, Position, Qualification, QualificationCode, QualificationStatus, RoleAssignment, SickTotal, UserProfile } from '@/data/types';
-import { BottomSheet, Button, Card, Chip, ErrorBox, Field, Row, Spinner, fmtDate, qualificationLabel, qualificationTone } from '@/ui/components';
+import { BottomSheet, Button, Card, Chip, ErrorBox, Field, Row, Spinner, fmtDate, qualificationLabel, qualificationTone, cx } from '@/ui/components';
+import { CrewBadge, CrewTag, isCrew } from '@/ui/crew';
 
 const QUALS: { code: QualificationCode; label: string; help: string }[] = [
   { code: 'take_charge', label: 'Take-Charge qualified', help: 'Only Take-Charge = Yes counts toward the Field Operator minimum of 6.' },
@@ -64,7 +65,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <Chip tone="blue">{emp.position_label ?? 'No role assigned'}</Chip>
-          {emp.crew_code && <Chip tone="blue">{emp.crew_code} Shift</Chip>}
+          {isCrew(emp.crew_code) && <span className="inline-flex items-center rounded-full bg-white py-0.5 pl-0.5 pr-2.5 text-xs font-semibold text-slate-800 ring-1 ring-slate-200"><CrewTag crew={emp.crew_code} /></span>}
           <Chip tone={emp.employment_type_source === 'confirmed' ? 'neutral' : 'amber'}>{emp.employment_type === 'knpc' ? 'KNPC' : 'Contractor'}{emp.employment_type_source === 'inferred' ? ' (inferred)' : ''}</Chip>
           {emp.grade && <Chip>Grade {emp.grade}</Chip>}
           {!emp.is_active && <Chip tone="red">Inactive</Chip>}
@@ -85,7 +86,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
 
       <Section title="Operations" action={<Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => setSheet({ kind: 'role' })}>Correct role / crew</Button>}>
         <Row label="Operational role" value={emp.position_label} />
-        <Row label="Permanent crew" value={emp.crew_code ? `${emp.crew_code} Shift` : (emp.position_code === 'vr_controller' || emp.position_code === 'morning_controller' ? 'Not crew-bound' : null)} />
+        <Row label="Permanent crew" value={isCrew(emp.crew_code) ? <CrewTag crew={emp.crew_code} /> : (emp.position_code === 'vr_controller' || emp.position_code === 'morning_controller' ? 'Not crew-bound' : null)} />
         <Row label="Since" value={fmtDate(emp.role_effective_from)} />
         <Row label="Section" value={emp.section_name} />
       </Section>
@@ -139,7 +140,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
 
       <Section title="Role history">
         <ul className="divide-y divide-slate-100 text-sm">
-          {data.roles.map((r) => <li key={r.id} className="flex justify-between py-2"><span>{r.positions?.label ?? r.position_id}{r.crews?.code ? ` · ${r.crews.code} Shift` : ''}</span><span className="text-slate-500">{fmtDate(r.effective_from)} → {r.effective_to ? fmtDate(r.effective_to) : 'current'}</span></li>)}
+          {data.roles.map((r) => <li key={r.id} className="flex justify-between py-2"><span className="inline-flex flex-wrap items-center gap-1.5">{r.positions?.label ?? r.position_id}{isCrew(r.crews?.code) && <><span className="text-slate-400">·</span><CrewTag crew={r.crews?.code} /></>}</span><span className="text-slate-500">{fmtDate(r.effective_from)} → {r.effective_to ? fmtDate(r.effective_to) : 'current'}</span></li>)}
         </ul>
       </Section>
 
@@ -279,7 +280,7 @@ function RoleSheet({ emp, positions, crews, onClose, onSaved }: { emp: EmployeeD
         <Field label="Operational role">
           <select className="input" value={positionCode} onChange={(e) => setPositionCode(e.target.value)}>{positions.map((p) => <option key={p.id} value={p.code}>{p.label}</option>)}</select>
         </Field>
-        {crewBound && <Field label="Permanent crew"><div className="grid grid-cols-4 gap-2">{crews.map((c) => <button key={c.id} type="button" onClick={() => setCrewCode(c.code)} className={`rounded-xl py-2.5 text-sm font-semibold ring-1 ${crewCode === c.code ? 'bg-brand-700 text-white ring-brand-700' : 'ring-slate-300'}`}>{c.code}</button>)}</div></Field>}
+        {crewBound && <Field label="Permanent crew"><div className="grid grid-cols-4 gap-2">{crews.map((c) => <button key={c.id} type="button" onClick={() => setCrewCode(c.code)} className={cx('flex items-center justify-center rounded-xl py-2 ring-1', crewCode === c.code ? 'bg-slate-100 ring-2 ring-slate-800' : 'ring-slate-300')} aria-pressed={crewCode === c.code}>{isCrew(c.code) ? <CrewBadge crew={c.code} muted={crewCode !== c.code} /> : c.code}</button>)}</div></Field>}
         <Field label="Effective from"><input className="input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
       </div>
       {error ? <div className="mt-2"><ErrorBox error={error} /></div> : null}
