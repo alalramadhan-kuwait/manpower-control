@@ -11,6 +11,7 @@ import ImportBatchPage from '@/features/imports/ImportBatchPage';
 import DataQualityPage from '@/features/review/DataQualityPage';
 import TakeChargeBulkPage from '@/features/review/TakeChargeBulkPage';
 import MorePage from '@/features/more/MorePage';
+import UsersPage from '@/features/users/UsersPage';
 import { Shell } from './Shell';
 import { Button, Spinner } from '@/ui/components';
 import { supabase } from '@/data/supabase';
@@ -33,6 +34,15 @@ export default function App() {
       <div className="mx-auto max-w-sm p-6 text-center">
         <p className="font-semibold text-brand-800">Signed in, but no role assigned</p>
         <p className="mt-2 text-sm text-slate-600">{profileError ?? 'Ask the Section Head to assign a role to this login.'}</p>
+        <Button variant="secondary" className="mt-6" onClick={() => supabase.auth.signOut()}>Sign out</Button>
+      </div>
+    );
+  }
+  if (!profile.is_active) {
+    return (
+      <div className="mx-auto max-w-sm p-6 text-center">
+        <p className="font-semibold text-brand-800">This login is disabled</p>
+        <p className="mt-2 text-sm text-slate-600">Ask the Section Head to turn it back on.</p>
         <Button variant="secondary" className="mt-6" onClick={() => supabase.auth.signOut()}>Sign out</Button>
       </div>
     );
@@ -60,6 +70,7 @@ export default function App() {
           <Route path="/review" element={<DataQualityPage profile={profile} />} />
           <Route path="/review/take-charge" element={<TakeChargeBulkPage profile={profile} />} />
           <Route path="/more" element={<MorePage profile={profile} />} />
+          <Route path="/users" element={<UsersPage profile={profile} />} />
           <Route path="/calendar" element={<ComingLater stage="Stage E" title="Manpower Calendar" />} />
           <Route path="/requests" element={<ComingLater stage="Stage F" title="Requests" />} />
           <Route path="*" element={<Navigate to="/" replace />} />

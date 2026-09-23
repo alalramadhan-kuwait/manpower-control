@@ -14,6 +14,12 @@ Supabase MCP or dashboard gets a matching file here, named with the version the 
 | `20260923073637_import_leave_updates` | `commit_import_batch` step 5b: an unresolved grid absence whose dates moved in a newer workbook is updated in place (only while still unresolved, pending review and untyped); classified records are never touched |
 | `20260923081416_leave_plans_and_names` | Original vs current leave plan flags on `leave_records` (+ `rescheduled` status, links), `leave_plan_changes` history table, `leave_current_v`; `employees.full_name` → `official_name` plus `display_name`; commit function steps 5b–5d (dates moved, rescheduled, cancelled) |
 
+## Edge Functions
+
+| Function | Purpose |
+|---|---|
+| `manage-users` | Users & access screen. Creates, edits (name, username, role, password, sign-in on/off) and deletes logins through the Auth admin API, which needs the service key and so cannot run in the browser. Every call checks the caller's own session: only an active Section Head is allowed. It refuses to disable, demote or delete the caller's own login, or to leave no active Section Head. Each change writes an `audit_log` row (`entity_table = user_accounts`); passwords are never logged. Deployed with gateway JWT verification off because the function verifies the token itself. `rules.ts` is a byte-identical copy of `src/core/users/rules.ts` (a test enforces it). |
+
 ## Initial load (23 Sep 2026)
 
 Two import batches were committed through `commit_import_batch()` acting as the Manpower Coordinator login:
