@@ -18,7 +18,7 @@ export function PlanPreview({ plan, detection, onCancel, onConfirm }: { plan: Im
   const tiles: [string, number, Tone][] = [
     ['Employees matched', s.employeesChanged + s.employeesUnchanged, 'neutral'], ['Employee records changed', s.employeesChanged, 'blue'], ['New employees', s.employeesNew, 'green'],
     ['Unmatched', s.unmatched, s.unmatched ? 'red' : 'neutral'], ['Ignored outside Section 1', s.ignored, 'neutral'], ['Needs review', s.review, s.review ? 'amber' : 'neutral'],
-    ['Leave records to add', s.leaveNew, 'green'], ['Role assignments', s.roleAssignmentsNew, 'neutral'], ['Errors', s.errors, s.errors ? 'red' : 'neutral']
+    ['Leave records to add', s.leaveNew, 'green'], ['Leave dates to update', s.leaveChanged, s.leaveChanged ? 'amber' : 'neutral'], ['Role assignments', s.roleAssignmentsNew, 'neutral'], ['Errors', s.errors, s.errors ? 'red' : 'neutral']
   ];
   return (
     <div className="space-y-3">

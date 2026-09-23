@@ -103,11 +103,14 @@ export interface ExistingEmployee {
 }
 
 export interface ExistingLeave {
+  id?: string;
   employee_id: string;
   start_date: string;
   end_date: string;
   source_kind: 'pv_schedule' | 'monthly_grid' | 'manual';
   status: string;
+  absence_type_code?: string | null;
+  review_status?: string;
 }
 
 // ---------------------------------------------------------------- staged rows
@@ -140,6 +143,7 @@ export interface PlanSummary {
   review: number;
   errors: number;
   leaveNew: number;
+  leaveChanged: number;
   leaveUnchanged: number;
   qualificationsNew: number;
   roleAssignmentsNew: number;

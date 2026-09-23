@@ -10,3 +10,4 @@ data/
 *.xlsm
 *.xls
 .DS_Store
+scratch/

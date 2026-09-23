@@ -22,7 +22,7 @@ class RowBuilder {
 }
 
 function emptySummary(): PlanSummary {
-  return { read: 0, employeesNew: 0, employeesChanged: 0, employeesUnchanged: 0, unmatched: 0, ignored: 0, review: 0, errors: 0, leaveNew: 0, leaveUnchanged: 0, qualificationsNew: 0, roleAssignmentsNew: 0 };
+  return { read: 0, employeesNew: 0, employeesChanged: 0, employeesUnchanged: 0, unmatched: 0, ignored: 0, review: 0, errors: 0, leaveNew: 0, leaveChanged: 0, leaveUnchanged: 0, qualificationsNew: 0, roleAssignmentsNew: 0 };
 }
 
 export function summarize(rows: StagedRow[]): PlanSummary {
@@ -36,6 +36,7 @@ export function summarize(rows: StagedRow[]): PlanSummary {
     }
     if (r.entity_kind === 'leave_record') {
       if (r.outcome === 'new' || r.outcome === 'review') { if (r.payload) s.leaveNew++; }
+      else if (r.outcome === 'changed') s.leaveChanged++;
       else if (r.outcome === 'unchanged') s.leaveUnchanged++;
     }
     if (r.entity_kind === 'qualification' && r.outcome === 'new') s.qualificationsNew++;
@@ -114,6 +115,13 @@ export function planManpowerImport(
   }
 
   const yearStart = `${parsed.year}-01-01`;
+  // Employees currently in scope but absent from this workbook: never removed automatically, flagged for review.
+  const inWorkbook = new Set(people.keys());
+  for (const ex of existing) {
+    if (!ex.in_unit12_scope || inWorkbook.has(ex.employee_number)) continue;
+    b.add({ sheet: null, row_ref: null, entity_kind: 'note', employee_number: ex.employee_number, matched_employee_id: ex.id, outcome: 'review', needs_review: true, raw: { name: ex.short_name ?? ex.full_name },
+      payload: null, diff: null, message: `${ex.short_name ?? ex.full_name} (${ex.employee_number}) is in Unit-12 scope but does not appear in this workbook. Left unchanged; decide whether they have left the section.` });
+  }
   for (const p of people.values()) {
     const ex = byNumber.get(p.employeeNumber) ?? null;
     const sheet = sheetOf(p.sourceRef); const cell = cellOf(p.sourceRef);
@@ -195,9 +203,14 @@ export function planManpowerImport(
 
   // Monthly grid runs: merge runs that continue across month sheets, then compare with the PV plan by calendar date.
   // Covered by PV (plus roster Off days directly after the block) → nothing new; otherwise an unresolved absence.
+  // An unresolved record already in the register is matched by exact dates first, then by overlap: an
+  // import-owned record (still unresolved, pending review, no type) follows the source's new dates; a record
+  // someone has classified is never touched and is flagged instead.
   const mergedRuns = mergeGridRuns(parsed.gridRuns);
   let covered = 0;
   const seenGrid = new Set<string>();
+  const usedExisting = new Set<ExistingLeave>();
+  const importOwned = (l: ExistingLeave) => l.status === 'unresolved' && (l.review_status ?? 'pending_review') === 'pending_review' && !l.absence_type_code;
   for (const run of mergedRuns) {
     const ex = byNumber.get(run.employeeNumber) ?? null;
     const pvDays = pvDaysByEmp.get(run.employeeNumber) ?? new Set<string>();
@@ -210,11 +223,40 @@ export function planManpowerImport(
       const start = g[0], end = g[g.length - 1];
       const key = `${run.employeeNumber}|${start}|${end}`;
       if (seenGrid.has(key)) continue; seenGrid.add(key);
-      const dup = ex ? (leavesByEmp.get(ex.id) ?? []).find((l) => l.source_kind === 'monthly_grid' && l.start_date === start && l.end_date === end) : undefined;
-      b.add({ sheet: sheetOf(run.sourceRef), row_ref: cellOf(run.sourceRef), entity_kind: 'leave_record', employee_number: run.employeeNumber, matched_employee_id: ex?.id ?? null, outcome: dup ? 'unchanged' : 'review', needs_review: !dup,
-        raw: { employee_number: run.employeeNumber, name: run.shortName, block: run.block, start, end, source: run.sourceRef },
-        payload: dup ? null : { absence_type_code: null, status: 'unresolved', start_date: start, end_date: end, source_kind: 'monthly_grid', source_ref: run.sourceRef, review_status: 'pending_review', note: 'Absent on the monthly sheet but not in the PV plan; type not provable from source. Classify manually.' },
-        diff: null, message: dup ? 'Unresolved absence already recorded' : `${run.shortName}: absent ${start} → ${end} on ${sheetOf(run.sourceRef)} — not in PV plan, type unknown` });
+      const gridRecs = ex ? (leavesByEmp.get(ex.id) ?? []).filter((l) => l.source_kind === 'monthly_grid' && l.status !== 'cancelled' && !usedExisting.has(l)) : [];
+      const raw = { employee_number: run.employeeNumber, name: run.shortName, block: run.block, start, end, source: run.sourceRef };
+      const dup = gridRecs.find((l) => l.start_date === start && l.end_date === end);
+      if (dup) {
+        usedExisting.add(dup);
+        b.add({ sheet: sheetOf(run.sourceRef), row_ref: cellOf(run.sourceRef), entity_kind: 'leave_record', employee_number: run.employeeNumber, matched_employee_id: ex?.id ?? null, outcome: 'unchanged', needs_review: false, raw, payload: null, diff: null, message: 'Unresolved absence already recorded' });
+        continue;
+      }
+      const overlap = gridRecs.find((l) => l.start_date <= end && l.end_date >= start);
+      if (overlap) {
+        usedExisting.add(overlap);
+        const diff = { dates: { from: `${overlap.start_date} → ${overlap.end_date}`, to: `${start} → ${end}` } };
+        if (importOwned(overlap) && overlap.id) {
+          b.add({ sheet: sheetOf(run.sourceRef), row_ref: cellOf(run.sourceRef), entity_kind: 'leave_record', employee_number: run.employeeNumber, matched_employee_id: ex?.id ?? null, outcome: 'changed', needs_review: true, raw,
+            payload: { leave_record_id: overlap.id, start_date: start, end_date: end, source_ref: run.sourceRef, note: `Dates follow the monthly sheet; previously ${overlap.start_date} → ${overlap.end_date}. Type still not provable from source; classify manually.` },
+            diff, message: `${run.shortName}: unresolved absence ${overlap.start_date} → ${overlap.end_date} now marked ${start} → ${end} on ${sheetOf(run.sourceRef)}; dates updated, still unclassified` });
+        } else {
+          b.add({ sheet: sheetOf(run.sourceRef), row_ref: cellOf(run.sourceRef), entity_kind: 'leave_record', employee_number: run.employeeNumber, matched_employee_id: ex?.id ?? null, outcome: 'review', needs_review: true, raw, payload: null,
+            diff, message: `${run.shortName}: the sheet marks ${start} → ${end} but the register holds a classified record ${overlap.start_date} → ${overlap.end_date} (${overlap.absence_type_code ?? overlap.status}). Left unchanged; review.` });
+        }
+        continue;
+      }
+      b.add({ sheet: sheetOf(run.sourceRef), row_ref: cellOf(run.sourceRef), entity_kind: 'leave_record', employee_number: run.employeeNumber, matched_employee_id: ex?.id ?? null, outcome: 'review', needs_review: true, raw,
+        payload: { absence_type_code: null, status: 'unresolved', start_date: start, end_date: end, source_kind: 'monthly_grid', source_ref: run.sourceRef, review_status: 'pending_review', note: 'Absent on the monthly sheet but not in the PV plan; type not provable from source. Classify manually.' },
+        diff: null, message: `${run.shortName}: absent ${start} → ${end} on ${sheetOf(run.sourceRef)} — not in PV plan, type unknown` });
+    }
+  }
+  // Grid-sourced records in the register that this workbook no longer marks → review, never delete
+  for (const p of people.values()) {
+    const ex = byNumber.get(p.employeeNumber); if (!ex) continue;
+    for (const l of leavesByEmp.get(ex.id) ?? []) {
+      if (l.source_kind !== 'monthly_grid' || l.status === 'cancelled' || usedExisting.has(l)) continue;
+      b.add({ sheet: null, row_ref: null, entity_kind: 'leave_record', employee_number: p.employeeNumber, matched_employee_id: ex.id, outcome: 'review', needs_review: true, raw: { start: l.start_date, end: l.end_date }, payload: null, diff: null,
+        message: `${p.shortName}: ${l.absence_type_code ? 'absence' : 'unresolved absence'} ${l.start_date} → ${l.end_date} is in the register but no longer marked on the monthly sheets (or is now inside the PV plan). Left unchanged; review.` });
     }
   }
   if (covered) b.add({ sheet: null, row_ref: null, entity_kind: 'note', employee_number: null, matched_employee_id: null, outcome: 'unchanged', needs_review: false, raw: { covered }, payload: null, diff: null, message: `${covered} monthly-grid absence runs match the PV plan (including roster Off days directly after a block) and add nothing new.` });

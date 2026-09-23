@@ -91,11 +91,22 @@ export function parsePvSheet(wb: XLSX.WorkBook, sheetName: string, year: number,
   return { people, ranges };
 }
 
-/** Monthly grid: a 1 in a day cell = absent. Type is NOT encoded; only presence. */
+/** Monthly grid: a 1 in a day cell = absent. Type is NOT encoded; only presence.
+ *  Two layouts are seen in the field: (a) block title on the row directly above the `EMP #` header and day
+ *  numbers on the header row itself; (b) the title several rows above, F/S letters on the header row and the
+ *  day numbers on a following row (Panel/Controller blocks may put an Off-crew letter row in between). */
 export function parseMonthlyGridSheet(wb: XLSX.WorkBook, sheetName: string, year: number, month: number, workbookName: string, warnings: string[]) {
   const r = readerFor(wb, sheetName);
   const people: ParsedPerson[] = [];
   const runs: ParsedGridRun[] = [];
+  const dayColsOn = (rr: number) => {
+    const cols: { col: number; day: number }[] = [];
+    for (let col = 1; col <= r.cols; col++) {
+      const d = num(r.get(rr, col));
+      if (d !== null && Number.isInteger(d) && d >= 1 && d <= 31) cols.push({ col, day: d });
+    }
+    return cols;
+  };
   for (let row = 1; row <= r.rows; row++) {
     let empCol = -1;
     for (let col = 1; col <= Math.min(r.cols, 6); col++) {
@@ -104,18 +115,29 @@ export function parseMonthlyGridSheet(wb: XLSX.WorkBook, sheetName: string, year
     }
     if (empCol === -1) continue;
     const nameCol = empCol - 1; const noCol = empCol - 2;
-    let title = '';
-    for (let col = 1; col <= empCol; col++) { const t = text(r.get(row - 1, col)); if (t) { title = t; break; } }
-    const info = roleFromBlockTitle(title);
-    if (!info) { warnings.push(`${sheetName} row ${row}: block title "${title}" not recognised; block skipped`); continue; }
-    const dayCols: { col: number; day: number }[] = [];
-    for (let col = empCol + 1; col <= r.cols; col++) {
-      const d = num(r.get(row, col));
-      if (d !== null && Number.isInteger(d) && d >= 1 && d <= 31) dayCols.push({ col, day: d });
+    // Block title: nearest recognised text above the header (up to 8 rows), else the nearest text for the warning.
+    let title = ''; let info: ReturnType<typeof roleFromBlockTitle> = null; let nearest = '';
+    for (let up = row - 1; up >= Math.max(1, row - 8) && !info; up--) {
+      for (let col = 1; col <= empCol; col++) {
+        const t = text(r.get(up, col));
+        if (!t) continue;
+        if (!nearest) nearest = t;
+        const cand = roleFromBlockTitle(t);
+        if (cand) { title = t; info = cand; }
+        break;
+      }
     }
+    if (!info) { warnings.push(`${sheetName} row ${row}: block title "${nearest}" not recognised; block skipped`); continue; }
+    // Day numbers: on the header row, or on the first of the next three rows that carries them.
+    let dayRow = row; let dayCols = dayColsOn(row).filter((c) => c.col > empCol);
+    for (let rr = row + 1; rr <= row + 3 && dayCols.length < 28; rr++) {
+      const cols = dayColsOn(rr).filter((c) => c.col > empCol);
+      if (cols.length >= 28) { dayRow = rr; dayCols = cols; }
+    }
+    if (dayCols.length < 28) { warnings.push(`${sheetName} row ${row}: no day-number row found under block "${title}"; block skipped`); continue; }
     // rows until TOTAL
     let groupIndex = 0; let blank = 0;
-    for (let rr = row + 1; rr <= row + 60 && rr <= r.rows; rr++) {
+    for (let rr = dayRow + 1; rr <= dayRow + 60 && rr <= r.rows; rr++) {
       const no = text(r.get(rr, noCol));
       if (no && /^total/i.test(no)) break;
       const emp = normalizeEmployeeNumber(r.get(rr, empCol));
@@ -130,6 +152,7 @@ export function parseMonthlyGridSheet(wb: XLSX.WorkBook, sheetName: string, year
       for (const { col, day } of dayCols) {
         const v = r.get(rr, col);
         const marked = v === 1 || v === '1';
+        if (!marked && v !== null && v !== undefined && text(v)) warnings.push(`${sheetName} ${r.ref(rr, col)}: ${name} (${emp}) day ${day} holds "${String(text(v)).slice(0, 40)}" instead of 1; not treated as an absence`);
         const date = isoDate(year, month, day);
         if (!date) { if (marked) warnings.push(`${sheetName} ${r.ref(rr, col)}: day ${day} does not exist in month ${month}`); continue; }
         if (marked) { if (!runStart) { runStart = date; startRef = r.ref(rr, col); } prev = date; }
@@ -137,7 +160,7 @@ export function parseMonthlyGridSheet(wb: XLSX.WorkBook, sheetName: string, year
       }
       flush();
     }
-    row += 1;
+    row = dayRow;
   }
   return { people, runs };
 }

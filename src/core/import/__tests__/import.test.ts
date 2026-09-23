@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { detectImportType, inferEmploymentType, parseManpowerWorkbook, parsePromotionMaster, planManpowerImport, planPromotionImport } from '..';
 import { mergeGridRuns } from '../plan';
+import { parseMonthlyGridSheet } from '../parseManpowerWorkbook';
+import * as XLSX from 'xlsx';
 import type { ExistingEmployee } from '../types';
 import { syntheticManpowerWorkbook, syntheticPromotionWorkbook } from './fixtures';
 
@@ -80,6 +82,71 @@ describe('monthly grid parsing and planning', () => {
     expect(rows.find((r) => r.entity_kind === 'role_assignment')!.outcome).toBe('unchanged');
     expect(rows.find((r) => r.entity_kind === 'qualification')!.outcome).toBe('unchanged');
     expect(rows.find((r) => r.entity_kind === 'leave_record' && r.raw?.start === '2026-01-09')!.outcome).toBe('unchanged');
+  });
+});
+
+describe('unresolved absences already in the register', () => {
+  const parsed = parseManpowerWorkbook(syntheticManpowerWorkbook(), 'test.xlsx');
+  const existing: ExistingEmployee[] = [{
+    id: 'e1', employee_number: '20001', full_name: 'Field One', short_name: 'Field One', employment_type: 'knpc', employment_type_source: 'inferred', in_unit12_scope: true,
+    grade: null, master_position: null, cost_center: null, join_date: null, normalization_date: null, last_promotion_date: null, position_start_date: null, education: null, service_years: null, years_in_grade: null,
+    current_role: { position_code: 'field_operator', crew_code: 'A' }, qualifications: {}
+  }];
+  const pv = { employee_id: 'e1', start_date: '2026-01-09', end_date: '2026-01-14', source_kind: 'pv_schedule' as const, status: 'approved' };
+  const gridRows = (plan: ReturnType<typeof planManpowerImport>) => plan.rows.filter((r) => r.entity_kind === 'leave_record' && r.employee_number === '20001' && r.sheet !== 'PV Scheduled');
+  it('keeps an exact match unchanged', () => {
+    const plan = planManpowerImport(parsed, existing, [pv, { id: 'l1', employee_id: 'e1', start_date: '2026-01-25', end_date: '2026-01-26', source_kind: 'monthly_grid', status: 'unresolved', absence_type_code: null, review_status: 'pending_review' }], 'test.xlsx');
+    expect(gridRows(plan).map((r) => r.outcome)).toEqual(['unchanged']);
+  });
+  it('moves the dates of an import-owned record that now overlaps a different run', () => {
+    const plan = planManpowerImport(parsed, existing, [pv, { id: 'l1', employee_id: 'e1', start_date: '2026-01-25', end_date: '2026-01-25', source_kind: 'monthly_grid', status: 'unresolved', absence_type_code: null, review_status: 'pending_review' }], 'test.xlsx');
+    const rows = gridRows(plan);
+    expect(rows.map((r) => r.outcome)).toEqual(['changed']);
+    expect(rows[0].payload).toMatchObject({ leave_record_id: 'l1', start_date: '2026-01-25', end_date: '2026-01-26' });
+    expect(rows[0].diff).toEqual({ dates: { from: '2026-01-25 → 2026-01-25', to: '2026-01-25 → 2026-01-26' } });
+  });
+  it('never touches a record a person has classified; flags it instead', () => {
+    const plan = planManpowerImport(parsed, existing, [pv, { id: 'l1', employee_id: 'e1', start_date: '2026-01-25', end_date: '2026-01-25', source_kind: 'monthly_grid', status: 'approved', absence_type_code: 'sick_leave', review_status: 'resolved' }], 'test.xlsx');
+    const rows = gridRows(plan);
+    expect(rows.map((r) => r.outcome)).toEqual(['review']);
+    expect(rows[0].payload).toBeNull();
+    expect(rows[0].message).toContain('classified record');
+  });
+  it('flags a grid record the workbook no longer marks, without deleting it', () => {
+    const plan = planManpowerImport(parsed, existing, [pv, { id: 'l1', employee_id: 'e1', start_date: '2026-01-05', end_date: '2026-01-06', source_kind: 'monthly_grid', status: 'unresolved', absence_type_code: null, review_status: 'pending_review' }], 'test.xlsx');
+    const rows = gridRows(plan);
+    expect(rows.map((r) => r.outcome).sort()).toEqual(['review', 'review']);
+    const gone = rows.find((r) => !r.payload)!;
+    expect(gone.message).toContain('no longer marked');
+    expect(rows.filter((r) => r.payload).length).toBe(1);
+  });
+});
+
+describe('monthly grid, second layout', () => {
+  it('reads a block whose title sits several rows above the header and whose day numbers are on a later row', () => {
+    const wb = XLSX.utils.book_new();
+    const sheet: (string | number | null)[][] = [];
+    sheet[0] = ['"B" SHIFT'];
+    sheet[5] = ['NO', 'NAME', 'EMP #', 'F', 'S'];
+    sheet[6] = [null, null, null, ...Array.from({ length: 31 }, (_, i) => i + 1)];
+    const row: (string | number | null)[] = [1, 'Field B', 30001];
+    for (let d = 1; d <= 31; d++) row.push(d === 3 || d === 4 ? 1 : d === 10 ? 'Rescheduled in Jun' : null);
+    sheet[7] = row;
+    sheet[8] = ['TOTAL'];
+    sheet[10] = [' Panel operators '];
+    sheet[13] = ['NO', 'NAME', 'EMP #', 'F', 'S'];
+    sheet[14] = [null, null, null, 'D', 'D', 'B', 'B'];
+    sheet[15] = [null, null, null, ...Array.from({ length: 31 }, (_, i) => i + 1)];
+    sheet[16] = [1, 'Panel A', 30002, 1];
+    sheet[17] = [];
+    sheet[18] = [2, 'Panel B', 30003];
+    sheet[19] = ['TOTAL AVILABLE'];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheet.map((r) => r ?? [])), 'May');
+    const warnings: string[] = [];
+    const res = parseMonthlyGridSheet(wb, 'May', 2026, 5, 'test.xlsx', warnings);
+    expect(res.people.map((p) => [p.employeeNumber, p.role, p.crew])).toEqual([['30001', 'field_operator', 'B'], ['30002', 'panel_operator', 'A'], ['30003', 'panel_operator', 'B']]);
+    expect(res.runs.map((r) => [r.employeeNumber, r.start, r.end])).toEqual([['30001', '2026-05-03', '2026-05-04'], ['30002', '2026-05-01', '2026-05-01']]);
+    expect(warnings).toEqual(['May M8: Field B (30001) day 10 holds "Rescheduled in Jun" instead of 1; not treated as an absence']);
   });
 });
 

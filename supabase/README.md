@@ -11,6 +11,7 @@ Supabase MCP or dashboard gets a matching file here, named with the version the 
 | `20260923060911_stage_a_foundation` | Roles, RLS helpers, organisation, employees, role assignments, qualifications, performance, sick totals, absence types, leave records, import batches/rows, audit log, `commit_import_batch()`, seed data |
 | `20260923061353_stage_a_directory_view` | `employee_directory_v` read model (security_invoker) |
 | `20260923064931_stage_a_hardening` | Advisor fixes: function search_path, revoke anon execute on role helpers, hide trigger functions from the API |
+| `20260923073637_import_leave_updates` | `commit_import_batch` step 5b: an unresolved grid absence whose dates moved in a newer workbook is updated in place (only while still unresolved, pending review and untyped); classified records are never touched |
 
 ## Initial load (23 Sep 2026)
 
