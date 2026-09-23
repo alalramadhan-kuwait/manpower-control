@@ -16,6 +16,7 @@ Supabase MCP or dashboard gets a matching file here, named with the version the 
 | `20260923131508_leave_short_codes` | `absence_types.short_code` (PV, UL, SL, MED, HAJJ, SHORT, PCP, MARR, ESC …); Personal QB relabelled Personal Compassion Leave; new Marriage Leave and Escort Leave types |
 | `20260923133431_long_course_code` | Long Course gets its own short code `LCOURSE` (Course stays `COURSE`); Special Leave stays `SPEC` |
 | `20260923142500_import_monthly_sheets_real_leave` | `commit_import_batch`: replacement records take their source kind from the plan (monthly sheets), one block may be split into several taken pieces, new step 5e `not_taken` (leave not marked on the monthly sheets leaves the current plan, kept in history; hand-entered records never touched) |
+| `20260923143335_controller_assignments` | Stage H: `controller_assignments` (shift cover and Morning rotation) with the rules in the database: Grade 15+ Controllers only, max 2 months, no overlapping assignments per person (a VR cannot cover two shifts at once), one cover per crew per day, one Morning rotation at a time, no covering your own crew, cancelled rows kept and locked, no delete policy, audit trigger. Adds `btree_gist` |
 
 ## Edge Functions
 

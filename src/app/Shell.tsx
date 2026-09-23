@@ -22,7 +22,7 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
             <div className="truncate text-sm font-semibold leading-tight">Area 4 Manpower Control</div>
             <div className="truncate text-[11px] text-brand-100">U-12 Section 1 · {profile.display_name} · {ROLE_LABEL[profile.role_code] ?? profile.role_code}</div>
           </div>
-          <div className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium">Stage B</div>
+          <div className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium">Stage H</div>
         </div>
       </header>
       <main className="flex-1 px-4 pb-28 pt-4 sm:pb-8">{children}</main>

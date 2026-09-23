@@ -66,3 +66,9 @@ export interface ImportRowRecord {
 }
 
 export interface AuditEntry { id: string; actor_id: string | null; entity_table: string; entity_id: string | null; action: string; previous: Record<string, unknown> | null; next: Record<string, unknown> | null; reason: string | null; occurred_at: string }
+
+export interface ControllerAssignment {
+  id: string; kind: 'shift_cover' | 'morning_rotation'; employee_id: string; crew_code: 'A' | 'B' | 'C' | 'D' | null; covers_employee_id: string | null;
+  start_date: string; end_date: string; status: 'active' | 'cancelled'; note: string | null;
+  created_by: string | null; created_at: string; updated_at: string; cancelled_by: string | null; cancelled_at: string | null; cancel_reason: string | null;
+}

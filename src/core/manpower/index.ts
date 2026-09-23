@@ -29,6 +29,22 @@ export interface MpPerson {
   actingController: QualStatus;
 }
 
+/**
+ * A Controller Management assignment (Stage H), already filtered to active (not cancelled) records.
+ * - shift_cover: `employeeId` acts as the Controller of `crew` from `start` to `end` (inclusive);
+ * - morning_rotation: `employeeId` holds the Morning Controller post from `start` to `end`.
+ * On those dates the person is away from their own crew (if they have one).
+ */
+export interface MpAssignment {
+  id: string;
+  kind: 'shift_cover' | 'morning_rotation';
+  employeeId: string;
+  crew: Crew | null;
+  start: string;
+  end: string;
+  coversEmployeeId?: string | null;
+}
+
 export interface MpAbsence {
   id?: string;
   employeeId: string;
@@ -108,6 +124,10 @@ export interface ControllerResult extends PositionResult {
   acting: MpPerson | null;
   /** Crew Controllers on leave on this working day (they need cover). */
   onLeave: MpPerson[];
+  /** Crew Controllers away on another assignment (Morning rotation, covering another crew) on this working day. */
+  away: { person: MpPerson; assignment: MpAssignment }[];
+  /** The recorded cover for this crew today, and whether it counts (it does not while the cover is on leave). */
+  cover: { person: MpPerson; assignment: MpAssignment; counted: boolean; absence: MpAbsence | null } | null;
 }
 export interface PanelResult extends PositionResult { grade14: number; potentialGrade14: number }
 export interface AbsenceOnDay { person: MpPerson; absence: MpAbsence; reducesManpower: boolean }
@@ -137,11 +157,17 @@ export interface CrewDay {
   unresolved: AbsenceOnDay[];
   members: number;
 }
-export interface DayStaff { person: MpPerson; absence: MpAbsence | null; unresolved: MpAbsence | null }
+export interface DayStaff {
+  person: MpPerson; absence: MpAbsence | null; unresolved: MpAbsence | null;
+  /** What the person is assigned to today (covering a crew, or holding the Morning post on rotation). */
+  assignment: MpAssignment | null;
+  /** Holds the Morning Controller post today (the rotation holder when one is active, else the Morning Controller). */
+  morningPost: boolean;
+}
 export interface DayResult {
   date: string;
   crews: CrewDay[]; // ordered Morning, Afternoon, Night, Off
-  dayStaff: DayStaff[]; // VR and Morning Controllers (no crew; coverage is recorded in Stage H)
+  dayStaff: DayStaff[]; // VR and Morning Controllers, and anyone on Morning rotation
   /** Strict rule result on confirmed data only. */
   overall: Status;
   /** Final day status (see CrewDay.finalStatus). */
@@ -183,7 +209,10 @@ function qualReason(label: string, s: QualStatus): string {
   return s === 'no' ? `${label} = No` : s === 'not_yet_confirmed' ? `${label} not yet confirmed` : `${label} not recorded`;
 }
 
-export function evaluateDay(date: string, people: MpPerson[], absences: MpAbsence[], rules: Rules = FULL_OPERATION): DayResult {
+export function evaluateDay(date: string, people: MpPerson[], absences: MpAbsence[], rules: Rules = FULL_OPERATION, assignments: MpAssignment[] = []): DayResult {
+  const todays = assignments.filter((a) => a.start <= date && date <= a.end);
+  const assignmentOf = (p: MpPerson) => todays.find((a) => a.employeeId === p.id) ?? null;
+  const byId = new Map(people.map((p) => [p.id, p]));
   const byEmp = new Map<string, MpAbsence[]>();
   for (const a of absences) if (covers(a, date)) { const l = byEmp.get(a.employeeId) ?? []; l.push(a); byEmp.set(a.employeeId, l); }
   const leaveOf = (p: MpPerson) => (byEmp.get(p.id) ?? []).find(isLeave) ?? null;
@@ -197,11 +226,14 @@ export function evaluateDay(date: string, people: MpPerson[], absences: MpAbsenc
     const absencesOnDay: AbsenceOnDay[] = [];
     const unresolved: AbsenceOnDay[] = [];
     const available: MpPerson[] = [];
+    const away: { person: MpPerson; assignment: MpAssignment }[] = [];
     for (const p of members) {
       const leave = leaveOf(p);
       const unres = unresolvedOf(p);
+      const assigned = p.role === 'controller' ? assignmentOf(p) : null;
       if (leave) absencesOnDay.push({ person: p, absence: leave, reducesManpower: working });
       if (unres) unresolved.push({ person: p, absence: unres, reducesManpower: false });
+      if (assigned && working && !leave) { away.push({ person: p, assignment: assigned }); continue; }
       if (!leave || !working) available.push(p);
     }
 
@@ -215,6 +247,16 @@ export function evaluateDay(date: string, people: MpPerson[], absences: MpAbsenc
       else ctrlNot.push({ person: p, pendingData: p.grade == null, reason: `${gradeText(p)}; Controller needs Grade ${rules.controllerGrade}+ or a recorded Grade-${rules.actingControllerGrade} Acting Controller qualification` });
     }
     const pool = { panel: available.filter((x) => x.role === 'panel_operator'), field: available.filter((x) => x.role === 'field_operator') };
+    // Recorded cover (Controller Management): counts as this crew's Controller unless the cover is on leave.
+    const coverAssignment = todays.find((a) => a.kind === 'shift_cover' && a.crew === crew) ?? null;
+    const coverPerson = coverAssignment ? byId.get(coverAssignment.employeeId) ?? null : null;
+    let cover: ControllerResult['cover'] = null;
+    if (coverAssignment && coverPerson) {
+      const absence = leaveOf(coverPerson);
+      const counted = working && !absence && coverPerson.grade != null && coverPerson.grade >= rules.controllerGrade;
+      cover = { person: coverPerson, assignment: coverAssignment, counted, absence };
+      if (counted && !ctrlCounted.includes(coverPerson)) ctrlCounted.push(coverPerson);
+    }
     if (ctrlCounted.length < rules.controllerMin) {
       // Draw a Grade-14 Acting Controller from the crew — only someone with the Acting Controller qualification
       // explicitly recorded as Yes; never inferred — from the position with the larger buffer.
@@ -228,18 +270,22 @@ export function evaluateDay(date: string, people: MpPerson[], absences: MpAbsenc
       }
     }
     if (acting) ctrlIssues.push(`Acting Controller: ${acting.name} (Grade ${acting.grade})`);
+    if (cover?.counted) ctrlIssues.push(`Covered by ${cover.person.name}`);
     const ctrlOnLeave = working ? members.filter((p) => p.role === 'controller' && leaveOf(p) && qualifiesAsController(p)) : [];
     const ctrlCount = ctrlCounted.length;
     const ctrlMet = ctrlCount >= rules.controllerMin;
-    const ctrlCoverage = !ctrlMet && ctrlOnLeave.length > 0;
+    const ctrlCoverage = !ctrlMet && (ctrlOnLeave.length > 0 || away.length > 0 || (cover !== null && !cover.counted));
     const ctrlPotentialMet = ctrlCount + ctrlNot.filter((n) => n.pendingData).length >= rules.controllerMin;
-    if (ctrlCoverage) ctrlIssues.push(`Controller coverage required: ${ctrlOnLeave.map((p) => `${p.name} (${leaveOf(p)?.typeLabel ?? 'leave'})`).join(', ')} — no cover recorded`);
+    if (ctrlCoverage) {
+      const why = [...ctrlOnLeave.map((p) => `${p.name} (${leaveOf(p)?.typeLabel ?? 'leave'})`), ...away.map((w) => `${w.person.name} (${w.assignment.kind === 'morning_rotation' ? 'Morning rotation' : `covering ${w.assignment.crew} Shift`})`)];
+      ctrlIssues.push(`Controller coverage required: ${why.join(', ')}${cover && !cover.counted ? ` — recorded cover ${cover.person.name} is ${cover.absence ? 'on leave' : 'not Grade ' + rules.controllerGrade + '+'}` : ' — no cover recorded'}`);
+    }
     else if (!ctrlMet && ctrlPotentialMet) ctrlIssues.push('Controller grade not recorded');
     else if (!ctrlMet) ctrlIssues.push(`Confirmed shortage: Controller ${ctrlCount} of ${rules.controllerMin} required`);
     const controller: ControllerResult = {
       ...finishPosition({ key: 'controller', label: 'Controller', count: ctrlCount, min: rules.controllerMin, buffer: ctrlCount - rules.controllerMin, potential: ctrlCount + ctrlNot.filter((n) => n.pendingData).length,
         counted: ctrlCounted, notCounted: ctrlNot, issues: ctrlIssues, requirementMet: ctrlMet, potentialMet: ctrlPotentialMet, coverage: ctrlCoverage, greenAtMinimum: rules.controllerGreenAtMinimum }),
-      acting, onLeave: ctrlOnLeave
+      acting, onLeave: ctrlOnLeave, away, cover
     };
 
     // ---- Panel
@@ -290,9 +336,11 @@ export function evaluateDay(date: string, people: MpPerson[], absences: MpAbsenc
     };
   }).sort((a, b) => SHIFT_ORDER.indexOf(a.state) - SHIFT_ORDER.indexOf(b.state));
 
+  const rotation = todays.find((a) => a.kind === 'morning_rotation') ?? null;
   const dayStaff: DayStaff[] = people
-    .filter((p) => p.role === 'vr_controller' || p.role === 'morning_controller')
-    .map((p) => ({ person: p, absence: leaveOf(p), unresolved: unresolvedOf(p) }));
+    .filter((p) => p.role === 'vr_controller' || p.role === 'morning_controller' || p.id === rotation?.employeeId)
+    .map((p) => ({ person: p, absence: leaveOf(p), unresolved: unresolvedOf(p), assignment: assignmentOf(p),
+      morningPost: rotation ? p.id === rotation.employeeId : p.role === 'morning_controller' }));
 
   const workingCrews = crews.filter((c) => c.working);
   const overall = worst(workingCrews.map((c) => c.status as Status));
@@ -310,10 +358,10 @@ export function evaluateDay(date: string, people: MpPerson[], absences: MpAbsenc
 }
 
 /** Status for each date in a range (for later calendar views and for tests). */
-export function evaluateRange(from: string, to: string, people: MpPerson[], absences: MpAbsence[], rules: Rules = FULL_OPERATION): DayResult[] {
+export function evaluateRange(from: string, to: string, people: MpPerson[], absences: MpAbsence[], rules: Rules = FULL_OPERATION, assignments: MpAssignment[] = []): DayResult[] {
   const out: DayResult[] = [];
   for (let d = from; d <= to; ) {
-    out.push(evaluateDay(d, people, absences, rules));
+    out.push(evaluateDay(d, people, absences, rules, assignments));
     const next = new Date(d + 'T00:00:00Z'); next.setUTCDate(next.getUTCDate() + 1); d = next.toISOString().slice(0, 10);
   }
   return out;

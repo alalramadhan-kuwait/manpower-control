@@ -1,8 +1,8 @@
 import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Info } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { evaluateDay } from '@/core/manpower';
-import type { CrewDay, DayResult, Finding, MpAbsence, MpPerson, PositionResult, Status } from '@/core/manpower';
+import { evaluateDay, FULL_OPERATION } from '@/core/manpower';
+import type { CrewDay, DayResult, Finding, MpAbsence, MpAssignment, MpPerson, PositionResult, Status } from '@/core/manpower';
 import { addDaysIso, isValidIsoDate } from '@/core/roster';
 import { fetchManpowerInputs } from '@/data/manpower';
 import { Card, ErrorBox, Spinner, cx, fmtDate } from '@/ui/components';
@@ -49,7 +49,7 @@ export default function DayOverviewPage() {
   const date = isValidIsoDate(raw) ? raw : today;
   const setDate = (d: string) => setParams(d === today ? {} : { date: d }, { replace: true });
 
-  const [inputs, setInputs] = useState<{ people: MpPerson[]; absences: MpAbsence[]; from: string; to: string } | null>(null);
+  const [inputs, setInputs] = useState<{ people: MpPerson[]; absences: MpAbsence[]; assignments: MpAssignment[]; from: string; to: string } | null>(null);
   const [error, setError] = useState<unknown>(null);
   useEffect(() => {
     if (inputs && inputs.from <= date && date <= inputs.to) return;
@@ -59,7 +59,7 @@ export default function DayOverviewPage() {
     fetchManpowerInputs(from, to).then((r) => setInputs({ ...r, from, to })).catch(setError);
   }, [date, inputs]);
 
-  const result = useMemo(() => (inputs ? evaluateDay(date, inputs.people, inputs.absences) : null), [date, inputs]);
+  const result = useMemo(() => (inputs ? evaluateDay(date, inputs.people, inputs.absences, FULL_OPERATION, inputs.assignments) : null), [date, inputs]);
   const leave = useMemo(() => {
     if (!inputs) return new Map<string, OnLeave>();
     const crewOf = new Map(inputs.people.map((p) => [p.id, p.crew]));
@@ -97,7 +97,7 @@ export default function DayOverviewPage() {
             </Link>
           )}
           <div className="space-y-3">
-            {result.crews.map((c) => <CrewCard key={c.crew} crew={c} leave={leave} />)}
+            {result.crews.map((c) => <CrewCard key={c.crew} crew={c} leave={leave} date={date} />)}
           </div>
           <DayStaffCard result={result} leave={leave} />
           <Legend />
@@ -155,7 +155,7 @@ function Legend() {
           <div><dt className="font-semibold text-status-green">GREEN</dt><dd>Qualified manpower above minimum, or the crew Controller is available (one Controller is the normal complement). Final.</dd></div>
           <div><dt className="font-semibold text-status-amber">AMBER · No Buffer</dt><dd>Panel or Field has exactly the number required; the card names which one. Final.</dd></div>
           <div><dt className={cx('font-semibold', CATEGORY.shortage.text)}>RED · Confirmed shortage</dt><dd>Fewer people available than required, even if every unconfirmed qualification were confirmed. Panel also needs at least one Grade 14+ operator; if none is available the card says so. Final.</dd></div>
-          <div><dt className={cx('font-semibold', CATEGORY.coverage_required.text)}>Controller coverage required</dt><dd>The crew Controller is on leave and no cover is recorded yet. Not final: the result becomes final once coverage is assigned (Controller Management stage).</dd></div>
+          <div><dt className={cx('font-semibold', CATEGORY.coverage_required.text)}>Controller coverage required</dt><dd>The crew Controller is on leave or on another assignment and no cover is recorded. Not final: it becomes final once a cover is assigned in Controller Management.</dd></div>
           <div><dt className={cx('font-semibold', CATEGORY.data_incomplete.text)}>Qualification data incomplete</dt><dd>Below minimum only because qualifications (for example Take-Charge) are not yet confirmed. Not Yet Confirmed never counts; the result becomes final once the data is confirmed.</dd></div>
           <div><dt className={cx('font-semibold', CATEGORY.unresolved.text)}>Unresolved absence warning</dt><dd>Absence seen on the monthly sheet with no confirmed type. Shown for review only; it never reduces manpower.</dd></div>
         </dl>
@@ -164,16 +164,23 @@ function Legend() {
   );
 }
 
-type Note = { text: string; tone: 'red' | 'amber' | 'pending' | 'muted' };
-const NOTE_CLS: Record<Note['tone'], string> = { red: 'text-status-red', amber: 'text-status-amber', pending: 'text-slate-600', muted: 'text-slate-500' };
+type Note = { text: string; tone: 'red' | 'amber' | 'pending' | 'muted' | 'good'; to?: string; link?: string };
+const NOTE_CLS: Record<Note['tone'], string> = { red: 'text-status-red', amber: 'text-status-amber', pending: 'text-slate-600', muted: 'text-slate-500', good: 'text-slate-700' };
 
 /** What to say directly under a manpower line. Plain words; the rule details stay in "Who counts". */
-function notesFor(c: CrewDay, key: 'controller' | 'panel' | 'field', leave: Map<string, OnLeave>): Note[] {
+const ROLE_SHORT: Record<string, string> = { vr_controller: 'VR', morning_controller: 'Morning Controller', controller: 'Shift Controller' };
+
+function notesFor(c: CrewDay, key: 'controller' | 'panel' | 'field', leave: Map<string, OnLeave>, date: string): Note[] {
   const notes: Note[] = [];
   if (key === 'controller') {
     const p = c.controller;
     if (p.acting) notes.push({ text: `Acting Controller: ${p.acting.name}`, tone: 'muted' });
-    if (p.finding === 'coverage_required') notes.push({ text: `${p.onLeave.map((x) => `${x.name}${leave.get(x.id) ? ` (${leaveShort(leave.get(x.id)!)})` : ''}`).join(', ')} on leave — cover not recorded`, tone: 'pending' });
+    const whoIsOut = [...p.onLeave.map((x) => `${x.name}${leave.get(x.id) ? ` (${leaveShort(leave.get(x.id)!)})` : ''}`), ...p.away.map((w) => `${w.person.name} (${w.assignment.kind === 'morning_rotation' ? 'Morning rotation' : `covering ${w.assignment.crew} Shift`})`)];
+    if (p.cover?.counted) notes.push({ text: `Covered by ${p.cover.person.name} (${ROLE_SHORT[p.cover.person.role ?? ''] ?? 'Controller'}) until ${shortDate(p.cover.assignment.end)}${whoIsOut.length ? ` · for ${whoIsOut.join(', ')}` : ''}`, tone: 'good' });
+    if (p.finding === 'coverage_required') {
+      const coverOut = p.cover && !p.cover.counted ? ` — recorded cover ${p.cover.person.name} is on leave` : ' — cover not recorded';
+      notes.push({ text: `${whoIsOut.join(', ')}${coverOut}`, tone: 'pending', to: `/controllers?assign=cover&crew=${c.crew}&from=${date}`, link: 'Assign cover' });
+    }
     if (p.finding === 'shortage') notes.push({ text: 'No qualified Controller', tone: 'red' });
     if (p.finding === 'data_incomplete') notes.push({ text: 'Controller grade not recorded', tone: 'pending' });
   }
@@ -206,7 +213,7 @@ function ManpowerLine({ label, pos, notes }: { label: string; pos: PositionResul
         <span className="text-sm font-medium text-slate-700">{label}</span>
         <span className={cx('text-lg font-semibold tabular-nums', findingColor(pos.finding))}>{pos.count} <span className="text-slate-400">/</span> {pos.min}</span>
       </div>
-      {notes.map((n) => <div key={n.text} className={cx('text-xs leading-snug', NOTE_CLS[n.tone])}>{n.text}</div>)}
+      {notes.map((n) => <div key={n.text} className={cx('text-xs leading-snug', NOTE_CLS[n.tone])}>{n.text}{n.to && <> · <Link to={n.to} className="font-semibold text-brand-700 underline">{n.link}</Link></>}</div>)}
     </div>
   );
 }
@@ -232,7 +239,7 @@ function AbsentRow({ person, absence, leave }: { person: MpPerson; absence: MpAb
   );
 }
 
-function CrewCard({ crew: c, leave }: { crew: CrewDay; leave: Map<string, OnLeave> }) {
+function CrewCard({ crew: c, leave, date }: { crew: CrewDay; leave: Map<string, OnLeave>; date: string }) {
   const [open, setOpen] = useState(false);
   if (!c.working) {
     return (
@@ -270,9 +277,9 @@ function CrewCard({ crew: c, leave }: { crew: CrewDay; leave: Map<string, OnLeav
         <div className="mt-1 text-xs text-slate-500">Not final. Once resolved: <span className={cx('font-semibold', STATUS_TEXT_CLS[c.provisionalStatus])}>{STATUS_TEXT[c.provisionalStatus]}</span></div>
       )}
       <div className="mt-2 divide-y divide-slate-100">
-        <ManpowerLine label="Controller" pos={c.controller} notes={notesFor(c, 'controller', leave)} />
-        <ManpowerLine label="Panel" pos={c.panel} notes={notesFor(c, 'panel', leave)} />
-        <ManpowerLine label="Field" pos={c.field} notes={notesFor(c, 'field', leave)} />
+        <ManpowerLine label="Controller" pos={c.controller} notes={notesFor(c, 'controller', leave, date)} />
+        <ManpowerLine label="Panel" pos={c.panel} notes={notesFor(c, 'panel', leave, date)} />
+        <ManpowerLine label="Field" pos={c.field} notes={notesFor(c, 'field', leave, date)} />
       </div>
       {c.absences.length > 0 && (
         <div className="mt-2 border-t border-slate-100 pt-2">
@@ -334,27 +341,32 @@ function PositionDetail({ pos, acting, grade14 }: { pos: PositionResult; acting?
 
 function DayStaffCard({ result, leave }: { result: DayResult; leave: Map<string, OnLeave> }) {
   if (!result.dayStaff.length) return null;
-  const label = (r: string | null) => (r === 'vr_controller' ? 'Vacation Relief Controller' : 'Morning Controller');
+  const label = (s: DayResult['dayStaff'][number]) =>
+    s.morningPost ? `Morning Controller${s.assignment?.kind === 'morning_rotation' ? ` (rotation until ${shortDate(s.assignment.end)})` : ''}`
+      : s.person.role === 'vr_controller' ? 'Vacation Relief Controller' : s.person.role === 'morning_controller' ? 'Morning Controller (post on rotation)' : 'Shift Controller';
+  const needing = result.crews.filter((c) => c.pending.includes('coverage_required'));
   return (
     <Card className="mt-3">
       <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Controllers outside the crews</div>
       <ul className="mt-1 space-y-1 text-sm">
         {result.dayStaff.map((s) => (
           <li key={s.person.id} className="flex justify-between gap-2">
-            <span className="min-w-0"><span className="block truncate font-medium text-slate-800">{s.person.name}</span><span className="block text-xs text-slate-500">{label(s.person.role)}</span></span>
+            <span className="min-w-0"><span className="block truncate font-medium text-slate-800">{s.person.name}</span><span className="block text-xs text-slate-500">{label(s)}</span></span>
             <span className="shrink-0 text-right text-xs">
-              <span className={cx('block', s.absence ? 'text-status-red' : 'text-status-green')}>{s.absence ? (leave.get(s.person.id) ? leaveShort(leave.get(s.person.id)!) : s.absence.typeShort ?? 'On leave') : 'Available'}</span>
+              {s.absence ? <span className="block text-status-red">{leave.get(s.person.id) ? leaveShort(leave.get(s.person.id)!) : s.absence.typeShort ?? 'On leave'}</span>
+                : s.assignment?.kind === 'shift_cover' && s.assignment.crew ? <span className="inline-flex items-center gap-1 font-medium text-slate-700"><CrewBadge crew={s.assignment.crew} size="sm" /> Covering until {shortDate(s.assignment.end)}</span>
+                : <span className="block text-status-green">{s.morningPost ? 'On duty' : 'Available'}</span>}
               {s.unresolved ? <span className="block text-status-amber">Unresolved absence (warning only)</span> : null}
             </span>
           </li>
         ))}
       </ul>
-      {result.counts.coverageRequired > 0 && (
+      {needing.length > 0 && (
         <p className={cx('mt-2 rounded-lg p-2 text-[11px] ring-1', CATEGORY.coverage_required.box)}>
-          Controller coverage required today: {result.crews.filter((c) => c.pending.includes('coverage_required')).map((c) => <span key={c.crew} className="mr-1 inline-flex items-center gap-1 align-middle"><CrewBadge crew={c.crew} size="sm" /> {c.shift}</span>)}. Assigning the covering Controller arrives with Controller Management.
+          Controller coverage required today: {needing.map((c) => <span key={c.crew} className="mr-1 inline-flex items-center gap-1 align-middle"><CrewBadge crew={c.crew} size="sm" /> {c.shift}</span>)}.{' '}
+          <Link to="/controllers" className="font-semibold text-brand-700 underline">Controller Management</Link>
         </p>
       )}
-      <p className="mt-2 text-[11px] text-slate-500">Not counted in crew manpower until coverage of a specific shift is recorded.</p>
     </Card>
   );
 }

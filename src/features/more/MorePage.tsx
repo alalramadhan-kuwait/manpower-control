@@ -1,4 +1,4 @@
-import { BarChart3, ChevronRight, ClipboardCheck, FileUp, History, LogOut, ShieldCheck, UserCog } from 'lucide-react';
+import { BarChart3, ChevronRight, ClipboardCheck, FileUp, History, LogOut, ShieldCheck, UserCheck, UserCog } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/data/supabase';
 import type { UserProfile } from '@/data/types';
@@ -6,6 +6,7 @@ import { ROLE_LABEL } from '@/features/auth/useSession';
 import { Button, Card, PageHeader } from '@/ui/components';
 
 const active = [
+  { to: '/controllers', label: 'Controller Management', desc: 'Cover for Shift Controllers, VR assignments, Morning rotation', icon: UserCheck },
   { to: '/summary', label: 'Section summary', desc: 'Headcount by crew and role, data-quality counts, last import', icon: BarChart3 },
   { to: '/imports', label: 'Excel Import Center', desc: 'Upload the U-12 manpower workbook or the promotion master', icon: FileUp },
   { to: '/imports/history', label: 'Import History', desc: 'Every import batch with its counts and row outcomes', icon: History },
@@ -16,7 +17,7 @@ const headOnly = [
   { to: '/users', label: 'Users & access', desc: 'Create logins, change roles, reset passwords, block or delete access', icon: UserCog }
 ];
 const later = [
-  ['Annual Leave Plan', 'Stage E'], ['Shift Movements', 'Stage G'], ['Controller Management', 'Stage H'], ['Shutdown', 'Stage I'], ['Notification Center', 'after Stage F'], ['Audit History', 'Stage J']
+  ['Annual Leave Plan', 'Stage E'], ['Shift Movements', 'Stage G'], ['Shutdown', 'Stage I'], ['Notification Center', 'after Stage F'], ['Audit History', 'Stage J']
 ];
 
 export default function MorePage({ profile }: { profile: UserProfile }) {
@@ -42,7 +43,7 @@ export default function MorePage({ profile }: { profile: UserProfile }) {
         <div className="text-sm text-slate-600">Signed in as <span className="font-medium text-slate-800">{profile.display_name}</span></div>
         <Button variant="secondary" className="mt-3 w-full" onClick={() => supabase.auth.signOut()}><LogOut className="h-4 w-4" /> Sign out</Button>
       </Card>
-      <p className="mt-6 text-center text-[11px] text-slate-400">Area 4 Manpower Control · Stage B · standalone from Time Keeper</p>
+      <p className="mt-6 text-center text-[11px] text-slate-400">Area 4 Manpower Control · Stage H (Controller Management) · standalone from Time Keeper</p>
     </div>
   );
 }

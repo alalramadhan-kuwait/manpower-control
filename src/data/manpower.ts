@@ -1,8 +1,9 @@
 // Data access for the manpower engine: maps Supabase rows to the engine's input types.
 import { supabase } from './supabase';
-import type { MpAbsence, MpPerson, Role } from '@/core/manpower';
+import type { MpAbsence, MpAssignment, MpPerson, Role } from '@/core/manpower';
+import { toMpAssignment } from './controllers';
 import type { Crew } from '@/core/roster';
-import type { EmployeeDirectoryRow } from './types';
+import type { ControllerAssignment, EmployeeDirectoryRow } from './types';
 
 const ROLES: Role[] = ['controller', 'vr_controller', 'morning_controller', 'panel_operator', 'field_operator'];
 
@@ -25,16 +26,18 @@ export function toMpAbsence(l: LeaveRow): MpAbsence {
   };
 }
 
-/** Active Section-1 people plus every current-plan absence overlapping [from, to]. */
-export async function fetchManpowerInputs(from: string, to: string): Promise<{ people: MpPerson[]; absences: MpAbsence[] }> {
-  const [dir, lv] = await Promise.all([
+/** Active Section-1 people, every current-plan absence and every active Controller assignment overlapping [from, to]. */
+export async function fetchManpowerInputs(from: string, to: string): Promise<{ people: MpPerson[]; absences: MpAbsence[]; assignments: MpAssignment[] }> {
+  const [dir, lv, ca] = await Promise.all([
     supabase.from('employee_directory_v').select('*').eq('in_unit12_scope', true).eq('is_active', true),
     supabase.from('leave_records')
       .select('id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,absence_types(label,short_code)')
       .eq('in_current_plan', true).in('status', ['approved', 'planned', 'unresolved'])
-      .lte('start_date', to).gte('end_date', from)
+      .lte('start_date', to).gte('end_date', from),
+    supabase.from('controller_assignments').select('*').eq('status', 'active').lte('start_date', to).gte('end_date', from)
   ]);
   if (dir.error) throw dir.error;
   if (lv.error) throw lv.error;
-  return { people: (dir.data as EmployeeDirectoryRow[]).map(toMpPerson), absences: (lv.data as unknown as LeaveRow[]).map(toMpAbsence) };
+  if (ca.error) throw ca.error;
+  return { people: (dir.data as EmployeeDirectoryRow[]).map(toMpPerson), absences: (lv.data as unknown as LeaveRow[]).map(toMpAbsence), assignments: (ca.data as ControllerAssignment[]).map(toMpAssignment) };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateDay, FULL_OPERATION, statusFor } from '..';
-import type { MpAbsence, MpPerson } from '..';
+import type { MpAbsence, MpAssignment, MpPerson } from '..';
 import type { Crew } from '../../roster';
 
 // 23 Sep 2026: A = Morning M2, C = Afternoon A2, B = Night N2, D = Off 2.
@@ -323,5 +323,57 @@ describe('Stage B refinement: confirmed shortage vs pending findings', () => {
     expect(r.finalStatus).toBeNull();
     expect(r.provisionalStatus).toBe('green');
     expect(r.counts).toMatchObject({ confirmedShortage: 0, coverageRequired: 1, dataIncomplete: 0 });
+  });
+});
+
+describe('Controller Management assignments', () => {
+  const vr = () => person(null, 'vr_controller', { grade: 16 });
+  const cover = (who: MpPerson, crew: Crew, over: Partial<MpAssignment> = {}): MpAssignment =>
+    ({ id: `as-${who.id}`, kind: 'shift_cover', employeeId: who.id, crew, start: DAY, end: DAY, ...over });
+
+  it('a VR covering a crew whose Controller is on leave makes the Controller line staffed (final GREEN)', () => {
+    const a = crewOf('A'); const v = vr();
+    const c = crewResult(evaluateDay(DAY, [...a, v], [leave(a[0], DAY, DAY)], FULL_OPERATION, [cover(v, 'A')]), 'A');
+    expect(c.controller).toMatchObject({ count: 1, finding: 'staffed', final: true, status: 'green' });
+    expect(c.controller.cover).toMatchObject({ counted: true });
+    expect(c.controller.cover!.person.id).toBe(v.id);
+    expect(c.controller.issues).toContain(`Covered by ${v.name}`);
+    expect(c.pending).toEqual([]);
+  });
+  it('a recorded cover who is on leave does not count: coverage required, and the reason says so', () => {
+    const a = crewOf('A'); const v = vr();
+    const c = crewResult(evaluateDay(DAY, [...a, v], [leave(a[0], DAY, DAY), leave(v, DAY, DAY)], FULL_OPERATION, [cover(v, 'A')]), 'A');
+    expect(c.controller.finding).toBe('coverage_required');
+    expect(c.controller.cover).toMatchObject({ counted: false });
+    expect(c.controller.issues.join(' ')).toContain('is on leave');
+  });
+  it('a cover is used before a Grade-14 Acting Controller, so Panel and Field keep their people', () => {
+    const a = crewOf('A', 4); a[1].actingController = 'yes'; const v = vr();
+    const c = crewResult(evaluateDay(DAY, [...a, v], [leave(a[0], DAY, DAY)], FULL_OPERATION, [cover(v, 'A')]), 'A');
+    expect(c.controller.acting).toBeNull();
+    expect(c.panel.count).toBe(4);
+  });
+  it('a crew Controller on Morning rotation is away from the crew (coverage required) and holds the Morning post', () => {
+    const a = crewOf('A'); const mc = person(null, 'morning_controller', { grade: 15 });
+    const rot: MpAssignment = { id: 'r1', kind: 'morning_rotation', employeeId: a[0].id, crew: null, start: DAY, end: DAY };
+    const r = evaluateDay(DAY, [...a, mc], [], FULL_OPERATION, [rot]);
+    const c = crewResult(r, 'A');
+    expect(c.controller.finding).toBe('coverage_required');
+    expect(c.controller.away.map((w) => w.person.id)).toEqual([a[0].id]);
+    expect(c.controller.issues.join(' ')).toContain('Morning rotation');
+    expect(r.dayStaff.find((s) => s.person.id === a[0].id)).toMatchObject({ morningPost: true });
+    expect(r.dayStaff.find((s) => s.person.id === mc.id)).toMatchObject({ morningPost: false });
+  });
+  it('a Controller covering another crew leaves their own working crew needing cover', () => {
+    const a = crewOf('A'); const c = crewOf('C');
+    const r = evaluateDay(DAY, [...a, ...c], [leave(a[0], DAY, DAY)], FULL_OPERATION, [cover(c[0], 'A')]);
+    expect(crewResult(r, 'A').controller.finding).toBe('staffed');
+    expect(crewResult(r, 'C').controller.finding).toBe('coverage_required');
+  });
+  it('an assignment outside its dates has no effect', () => {
+    const a = crewOf('A'); const v = vr();
+    const c = crewResult(evaluateDay(DAY, [...a, v], [leave(a[0], DAY, DAY)], FULL_OPERATION, [cover(v, 'A', { start: '2026-10-01', end: '2026-10-10' })]), 'A');
+    expect(c.controller.finding).toBe('coverage_required');
+    expect(c.controller.cover).toBeNull();
   });
 });
