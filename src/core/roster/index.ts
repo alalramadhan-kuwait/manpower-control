@@ -52,3 +52,60 @@ export function isOff(date: string, crew: Crew): boolean {
 export function dutiesOn(date: string): Record<Crew, DutyCode> {
   return { A: dutyFor(date, 'A'), B: dutyFor(date, 'B'), C: dutyFor(date, 'C'), D: dutyFor(date, 'D') };
 }
+
+// ---------------------------------------------------------------- Stage B additions
+
+export const CREWS: Crew[] = ['A', 'B', 'C', 'D'];
+export const SHIFT_LABEL: Record<State, string> = { M: 'Morning', A: 'Afternoon', N: 'Night', Off: 'Off' };
+/** Display label for a duty code: 'M2' → 'Morning M2', 'Off1' → 'Off 1'. */
+export function dutyLabel(duty: DutyCode): string {
+  const s = stateOf(duty);
+  return s === 'Off' ? `Off ${duty.slice(3)}` : `${SHIFT_LABEL[s]} ${duty}`;
+}
+
+/** True for a real calendar date in YYYY-MM-DD form (rejects 2026-02-30, 2026-13-01, '2026-3-1'). */
+export function isValidIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [y, m, d] = value.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+export function addDaysIso(iso: string, days: number): string {
+  const d = new Date(iso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** The crew on each shift on `date`: { M: 'A', A: 'C', N: 'B', Off: 'D' }. */
+export function crewsByShift(date: string): Record<State, Crew> {
+  const out = {} as Record<State, Crew>;
+  for (const c of CREWS) out[stateOf(dutyFor(date, c))] = c;
+  return out;
+}
+
+/** Scheduled to work (Morning, Afternoon or Night) — leave only reduces manpower on these days. */
+export function isWorkingDay(date: string, crew: Crew): boolean {
+  return !isOff(date, crew);
+}
+
+/**
+ * Self-check over a date range. Every day must have exactly one crew on each of M, A, N and Off, the day
+ * number must alternate 1,2, and each crew must step M1→M2→A1→A2→N1→N2→Off1→Off2→M1 from one day to the next.
+ * Returns the list of problems (empty = valid).
+ */
+export function validateRosterRange(from: string, to: string): string[] {
+  const NEXT: Record<DutyCode, DutyCode> = { M1: 'M2', M2: 'A1', A1: 'A2', A2: 'N1', N1: 'N2', N2: 'Off1', Off1: 'Off2', Off2: 'M1' };
+  const problems: string[] = [];
+  let prev: Record<Crew, DutyCode> | null = null;
+  for (let d = from; d <= to; d = addDaysIso(d, 1)) {
+    const duties = dutiesOn(d);
+    const states = CREWS.map((c) => stateOf(duties[c])).sort().join(',');
+    if (states !== 'A,M,N,Off') problems.push(`${d}: shifts covered ${states}`);
+    const dayNums = new Set(CREWS.map((c) => duties[c].slice(-1)));
+    if (dayNums.size !== 1) problems.push(`${d}: crews disagree on day 1/2`);
+    if (prev) for (const c of CREWS) if (NEXT[prev[c]] !== duties[c]) problems.push(`${d}: crew ${c} went ${prev[c]} → ${duties[c]}`);
+    prev = duties;
+  }
+  return problems;
+}

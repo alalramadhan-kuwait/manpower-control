@@ -20,7 +20,7 @@ export default function HomePage() {
   const last = batches[0];
   return (
     <div>
-      <PageHeader title="Unit 12 — Section 1" subtitle="Stage A: employee foundation. The Day Overview and manpower status arrive in Stages C–D." />
+      <PageHeader title="Section summary" subtitle="Unit 12 — Section 1 headcount and data quality. Daily manpower status is on the Today screen." />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="In scope" value={scope.length} to="/employees" />
         <Stat label="Controllers" value={byCat('controller').length} to="/employees?role=controller" />

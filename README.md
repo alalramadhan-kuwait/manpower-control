@@ -82,3 +82,14 @@ SH_EMAIL=… SH_PASSWORD=… MC_EMAIL=… MC_PASSWORD=… node scripts/rls-check
 npm run dev &
 MC_EMAIL=… MC_PASSWORD=… WORKBOOK=data/manpower.xlsx OUT=/tmp/shots node scripts/e2e-real.mjs
 ```
+
+## Stage B — roster and manpower engine
+
+- `src/core/roster` is the single roster logic (8-day cycle, anchor 2 Mar 2026 = B M1, Morning order B, C, A, D).
+  Tests check all 365 days of 2026 against the Off-crew rows of the U-12 workbook and the full cycle from 2020 to 2035.
+- `src/core/manpower` evaluates each crew on duty against the full-operation minimums: Controller 1 (Grade 15+, or an
+  approved Grade-14 Acting Controller shown as such), Panel 3 with at least one Grade 14+, Field 6 counting only
+  Take-Charge = Yes. GREEN above minimum, AMBER exactly minimum (No Buffer), RED below minimum or requirement missing.
+  Current-plan leave reduces manpower only on the crew's working days; unresolved absences are warnings only.
+- The home screen is the mobile Day Overview (Today / Tomorrow / date picker, all four crews, who counts and why).
+

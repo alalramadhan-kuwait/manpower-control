@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dutiesOn, dutyFor, isOff, morningCrew } from '..';
+import { addDaysIso, crewsByShift, dutiesOn, dutyFor, dutyLabel, isOff, isValidIsoDate, isWorkingDay, morningCrew, validateRosterRange } from '..';
 
 describe('8-day roster engine', () => {
   it('anchor: 2 March 2026 = B Morning Day 1', () => {
@@ -30,5 +30,48 @@ describe('8-day roster engine', () => {
     expect(isOff('2026-09-02', 'C')).toBe(true);
     expect(isOff('2026-09-03', 'C')).toBe(true);
     expect(isOff('2026-09-02', 'B')).toBe(false);
+  });
+});
+
+// Off crew for every day of 2026, read from the Off-crew row of each monthly sheet in
+// "ARD's U-12 Manpower 2026.xlsx" (Jan..Dec, 365 letters). Independent source for the whole year.
+const WORKBOOK_OFF_2026 =
+  'DDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBCCAADDBBC';
+
+describe('Stage B: roster validation for any date', () => {
+  it('matches the workbook Off crew on all 365 days of 2026', () => {
+    expect(WORKBOOK_OFF_2026).toHaveLength(365);
+    const mismatches: string[] = [];
+    let d = '2026-01-01';
+    for (const expected of WORKBOOK_OFF_2026) {
+      if (crewsByShift(d).Off !== expected) mismatches.push(`${d}: engine ${crewsByShift(d).Off}, workbook ${expected}`);
+      d = addDaysIso(d, 1);
+    }
+    expect(mismatches).toEqual([]);
+  });
+  it('is internally consistent from 2020 to 2035 (one crew per shift, 1/2 alternation, M1→…→Off2→M1)', () => {
+    expect(validateRosterRange('2020-01-01', '2035-12-31')).toEqual([]);
+  });
+  it('handles leap days and year boundaries', () => {
+    expect(validateRosterRange('2027-12-25', '2028-03-05')).toEqual([]);
+    expect(crewsByShift('2028-02-29')).toEqual(crewsByShift(addDaysIso('2028-02-29', 8 * 100)));
+  });
+  it('repeats every 8 days and never earlier', () => {
+    for (const d of ['2024-07-15', '2026-09-23', '2031-02-01']) {
+      expect(dutiesOn(addDaysIso(d, 8))).toEqual(dutiesOn(d));
+      for (let k = 1; k < 8; k++) expect(dutiesOn(addDaysIso(d, k))).not.toEqual(dutiesOn(d));
+    }
+  });
+  it('gives crews by shift for the known date 23 Sep 2026', () => {
+    expect(crewsByShift('2026-09-23')).toEqual({ M: 'A', A: 'C', N: 'B', Off: 'D' });
+    expect(dutyLabel(dutyFor('2026-09-23', 'A'))).toBe('Morning M2');
+    expect(dutyLabel(dutyFor('2026-09-23', 'D'))).toBe('Off 2');
+    expect(isWorkingDay('2026-09-23', 'A')).toBe(true);
+    expect(isWorkingDay('2026-09-23', 'D')).toBe(false);
+  });
+  it('validates date input', () => {
+    expect(isValidIsoDate('2026-09-23')).toBe(true);
+    expect(isValidIsoDate('2028-02-29')).toBe(true);
+    for (const bad of ['2026-02-29', '2026-13-01', '2026-9-23', '23/09/2026', '', '2026-09-31']) expect(isValidIsoDate(bad)).toBe(false);
   });
 });

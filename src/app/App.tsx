@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { useSession } from '@/features/auth/useSession';
 import LoginPage from '@/features/auth/LoginPage';
 import HomePage from '@/features/home/HomePage';
+import DayOverviewPage from '@/features/day/DayOverviewPage';
 import EmployeesPage from '@/features/employees/EmployeesPage';
 import EmployeeProfilePage from '@/features/employees/EmployeeProfilePage';
 import ImportCenterPage from '@/features/imports/ImportCenterPage';
@@ -18,7 +19,7 @@ function ComingLater({ stage, title }: { stage: string; title: string }) {
   return (
     <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center">
       <p className="text-lg font-semibold text-brand-800">{title}</p>
-      <p className="mt-1 text-sm text-slate-600">This screen is built in {stage}. Stage A covers the employee foundation and the Excel Import Center only.</p>
+      <p className="mt-1 text-sm text-slate-600">This screen is built in {stage}.</p>
     </div>
   );
 }
@@ -49,7 +50,8 @@ export default function App() {
     <Shell profile={profile}>
       <div className="sm:pl-44">
         <Routes>
-          <Route path="/" element={<HomePage />} />
+          <Route path="/" element={<DayOverviewPage />} />
+          <Route path="/summary" element={<HomePage />} />
           <Route path="/employees" element={<EmployeesPage />} />
           <Route path="/employees/:id" element={<EmployeeProfilePage profile={profile} />} />
           <Route path="/imports" element={<ImportCenterPage profile={profile} />} />
