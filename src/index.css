@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-50: #eef5fa;
+  --color-brand-100: #d5e6f2;
+  --color-brand-600: #17547d;
+  --color-brand-700: #0f3d5e;
+  --color-brand-800: #0b2e47;
+  --color-status-green: #16a34a;
+  --color-status-amber: #d97706;
+  --color-status-red: #dc2626;
+}
+
+html, body, #root { height: 100%; }
+body { -webkit-tap-highlight-color: transparent; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem); }
+.safe-top { padding-top: env(safe-area-inset-top); }
+
+.input { @apply block w-full min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-base text-slate-900 shadow-sm outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/20; }

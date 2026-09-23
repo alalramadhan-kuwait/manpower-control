@@ -1,0 +1,12 @@
+node_modules
+dist
+dev-dist
+.env
+.env.local
+*.local
+# Source workbooks contain personal employee data and must never be committed
+data/
+*.xlsx
+*.xlsm
+*.xls
+.DS_Store
