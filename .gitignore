@@ -5,7 +5,7 @@ dev-dist
 .env.local
 *.local
 # Source workbooks contain personal employee data and must never be committed
-data/
+/data/
 *.xlsx
 *.xlsm
 *.xls
