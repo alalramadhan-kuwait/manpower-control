@@ -26,7 +26,7 @@ const CATEGORY = {
 const PENDING_PILL: Record<'coverage_required' | 'data_incomplete', string> = { coverage_required: 'COVERAGE REQUIRED', data_incomplete: 'DATA INCOMPLETE' };
 
 function findingColor(f: Finding): string {
-  return f === 'above_minimum' ? 'text-status-green' : f === 'no_buffer' ? 'text-status-amber' : f === 'shortage' ? 'text-status-red' : f === 'coverage_required' ? 'text-violet-700' : 'text-slate-500';
+  return f === 'above_minimum' || f === 'staffed' ? 'text-status-green' : f === 'no_buffer' ? 'text-status-amber' : f === 'shortage' ? 'text-status-red' : f === 'coverage_required' ? 'text-violet-700' : 'text-slate-500';
 }
 
 function PendingPill({ kind }: { kind: 'coverage_required' | 'data_incomplete' }) {
@@ -142,8 +142,8 @@ function Legend() {
       <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between text-sm font-medium text-brand-700">What the labels mean {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</button>
       {open && (
         <dl className="mt-2 space-y-2 text-xs text-slate-600">
-          <div><dt className="font-semibold text-status-green">GREEN</dt><dd>Qualified manpower above minimum. Final.</dd></div>
-          <div><dt className="font-semibold text-status-amber">AMBER · No Buffer</dt><dd>Exactly at minimum. Final.</dd></div>
+          <div><dt className="font-semibold text-status-green">GREEN</dt><dd>Qualified manpower above minimum, or the crew Controller is available (one Controller is the normal complement). Final.</dd></div>
+          <div><dt className="font-semibold text-status-amber">AMBER · No Buffer</dt><dd>Panel or Field exactly at minimum. Final.</dd></div>
           <div><dt className={cx('font-semibold', CATEGORY.shortage.text)}>RED · Confirmed shortage</dt><dd>Below minimum, or no Grade 14+ Panel Operator, even if every unconfirmed qualification were confirmed. Final.</dd></div>
           <div><dt className={cx('font-semibold', CATEGORY.coverage_required.text)}>Controller coverage required</dt><dd>The crew Controller is on leave and no cover is recorded yet. Not final: the result becomes final once coverage is assigned (Controller Management stage).</dd></div>
           <div><dt className={cx('font-semibold', CATEGORY.data_incomplete.text)}>Qualification data incomplete</dt><dd>Below minimum only because qualifications (for example Take-Charge) are not yet confirmed. Not Yet Confirmed never counts; the result becomes final once the data is confirmed.</dd></div>

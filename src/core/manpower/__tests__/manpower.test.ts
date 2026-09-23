@@ -50,9 +50,20 @@ describe('day layout', () => {
 });
 
 describe('Controller rule', () => {
-  it('one Grade 15+ Controller = 1/1 AMBER (No Buffer)', () => {
+  it('one Grade 15+ Controller = 1/1 GREEN: one Controller is the normal complement, not No Buffer', () => {
     const c = crewResult(evaluateDay(DAY, crewOf('A'), []), 'A');
-    expect(c.controller).toMatchObject({ count: 1, min: 1, status: 'amber', acting: null });
+    expect(c.controller).toMatchObject({ count: 1, min: 1, status: 'green', finding: 'staffed', final: true, acting: null });
+    expect(c.status).toBe('green');
+    expect(c.noBuffer).toBe(false);
+  });
+  it('the Controller exception is a rule: without it 1/1 would be AMBER No Buffer', () => {
+    const c = crewResult(evaluateDay(DAY, crewOf('A'), [], { ...FULL_OPERATION, controllerGreenAtMinimum: false }), 'A');
+    expect(c.controller).toMatchObject({ status: 'amber', finding: 'no_buffer' });
+  });
+  it('Panel and Field exactly at minimum stay AMBER No Buffer', () => {
+    const c = crewResult(evaluateDay(DAY, crewOf('A', 3, 6), []), 'A');
+    expect(c.panel).toMatchObject({ status: 'amber', finding: 'no_buffer' });
+    expect(c.field).toMatchObject({ status: 'amber', finding: 'no_buffer' });
     expect(c.status).toBe('amber');
     expect(c.noBuffer).toBe(true);
   });
@@ -66,7 +77,7 @@ describe('Controller rule', () => {
   it('qualified Grade 14 counts and is shown as Acting Controller', () => {
     const people = crewOf('A'); people[0].grade = 14; people[0].actingController = 'yes';
     const c = crewResult(evaluateDay(DAY, people, []), 'A');
-    expect(c.controller).toMatchObject({ count: 1, status: 'amber' });
+    expect(c.controller).toMatchObject({ count: 1, status: 'green', finding: 'staffed' });
     expect(c.controller.acting?.id).toBe(people[0].id);
     expect(c.controller.issues[0]).toContain('Acting Controller');
   });
@@ -198,12 +209,12 @@ describe('leave and absences', () => {
 
 describe('overall status', () => {
   it('crew status is the worst of its positions; day status is the worst working crew; Off crew ignored', () => {
-    const a = crewOf('A', 4, 7); // green except controller amber
-    const b = crewOf('B', 4, 7);
+    const a = crewOf('A', 4, 7); // all green
+    const b = crewOf('B', 3, 7); // Panel exactly at minimum: amber
     const c = crewOf('C', 4, 7);
     const d = crewOf('D', 0, 0); // Off crew with no one: must not affect the day
     const r = evaluateDay(DAY, [...a, ...b, ...c, ...d], []);
-    expect(r.crews.filter((x) => x.working).map((x) => x.status)).toEqual(['amber', 'amber', 'amber']);
+    expect(r.crews.filter((x) => x.working).map((x) => `${x.crew}:${x.status}`)).toEqual(['A:green', 'C:green', 'B:amber']);
     expect(r.overall).toBe('amber');
     expect(r.noBuffer).toBe(true);
     const withLeave = evaluateDay(DAY, [...a, ...b, ...c, ...d], [leave(b[0], DAY, DAY)]);
@@ -223,13 +234,13 @@ describe('Stage B refinement: confirmed shortage vs pending findings', () => {
     const people = crewOf('A');
     const r = evaluateDay(DAY, people, [leave(people[0], DAY, DAY)]);
     const c = crewResult(r, 'A');
-    expect(c.controller).toMatchObject({ count: 0, status: 'red', finding: 'coverage_required', final: false, provisionalStatus: 'amber' });
+    expect(c.controller).toMatchObject({ count: 0, status: 'red', finding: 'coverage_required', final: false, provisionalStatus: 'green' });
     expect(c.controller.onLeave.map((p) => p.id)).toEqual([people[0].id]);
     expect(c.controller.issues[0]).toContain('Controller coverage required');
     expect(c.confirmedShortage).toBe(false);
     expect(c.pending).toEqual(['coverage_required']);
     expect(c.finalStatus).toBeNull();
-    expect(c.provisionalStatus).toBe('amber');
+    expect(c.provisionalStatus).toBe('green');
     expect(r.counts.coverageRequired).toBe(1);
   });
   it('no qualified Controller in the crew at all (not on leave) = confirmed shortage', () => {
@@ -249,10 +260,10 @@ describe('Stage B refinement: confirmed shortage vs pending findings', () => {
   it('an explicitly recorded Acting Controller resolves the coverage need (final result)', () => {
     const people = crewOf('A', 5); people[1].actingController = 'yes'; people[2].grade = 14;
     const c = crewResult(evaluateDay(DAY, people, [leave(people[0], DAY, DAY)]), 'A');
-    expect(c.controller).toMatchObject({ finding: 'no_buffer', final: true });
+    expect(c.controller).toMatchObject({ finding: 'staffed', status: 'green', final: true });
     expect(c.controller.acting?.id).toBe(people[1].id);
     expect(c.pending).toEqual([]);
-    expect(c.finalStatus).toBe('amber');
+    expect(c.finalStatus).toBe('green');
   });
   it('Field below minimum only because Take-Charge is not confirmed = Qualification Data Incomplete', () => {
     const people = crewOf('A', 4, 9);
@@ -300,17 +311,17 @@ describe('Stage B refinement: confirmed shortage vs pending findings', () => {
     const people = crewOf('A', 4, 7);
     const r = evaluateDay(DAY, people, [leave(people[0], DAY, DAY, { status: 'unresolved', typeCode: null })]);
     const c = crewResult(r, 'A');
-    expect(c.controller.finding).toBe('no_buffer');
-    expect(c.finalStatus).toBe('amber');
+    expect(c.controller.finding).toBe('staffed');
+    expect(c.finalStatus).toBe('green');
     expect(r.counts.unresolvedWarnings).toBe(1);
   });
   it('day status: final only when nothing is pending', () => {
     const all = [...crewOf('A'), ...crewOf('B'), ...crewOf('C'), ...crewOf('D')];
-    expect(evaluateDay(DAY, all, []).finalStatus).toBe('amber');
+    expect(evaluateDay(DAY, all, []).finalStatus).toBe('green');
     const ctrlB = all.find((p) => p.crew === 'B' && p.role === 'controller')!;
     const r = evaluateDay(DAY, all, [leave(ctrlB, DAY, DAY)]);
     expect(r.finalStatus).toBeNull();
-    expect(r.provisionalStatus).toBe('amber');
+    expect(r.provisionalStatus).toBe('green');
     expect(r.counts).toMatchObject({ confirmedShortage: 0, coverageRequired: 1, dataIncomplete: 0 });
   });
 });

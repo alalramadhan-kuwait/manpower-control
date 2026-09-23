@@ -53,13 +53,16 @@ export interface Rules {
   /** Grade that satisfies the Panel Grade-14 requirement (this grade and above). */
   panelGrade14: number;
   fieldMin: number;
+  /** One Controller per crew is the normal complement, so meeting the minimum is GREEN, not No Buffer. */
+  controllerGreenAtMinimum: boolean;
 }
 
 /** Full operation of the unit. Shutdown / one-train modes are Stage I and will supply their own Rules. */
 export const FULL_OPERATION: Rules = {
   controllerMin: 1, controllerGrade: 15, actingControllerGrade: 14,
   panelMin: 3, panelGrade14Min: 1, panelGrade14: 14,
-  fieldMin: 6
+  fieldMin: 6,
+  controllerGreenAtMinimum: true
 };
 
 export interface NotCounted { person: MpPerson; reason: string; /** true when the reason is missing data (not yet confirmed / not recorded), not a No */ pendingData?: boolean }
@@ -67,13 +70,14 @@ export interface NotCounted { person: MpPerson; reason: string; /** true when th
 /**
  * What a position's result means operationally:
  * - above_minimum / no_buffer: final GREEN / AMBER.
+ * - staffed: exactly at minimum where that is the normal complement (one Controller). Final GREEN.
  * - shortage: CONFIRMED manpower shortage — below minimum (or grade requirement missing) even if every
  *   unconfirmed qualification turned out to be Yes. Final RED.
  * - data_incomplete: below minimum only because qualification data is not yet confirmed. Not final.
  * - coverage_required: the crew Controller is on leave and no cover is recorded (Vacation Relief coverage
  *   is not implemented yet). Not final; becomes final once coverage is assigned.
  */
-export type Finding = 'above_minimum' | 'no_buffer' | 'shortage' | 'data_incomplete' | 'coverage_required';
+export type Finding = 'above_minimum' | 'staffed' | 'no_buffer' | 'shortage' | 'data_incomplete' | 'coverage_required';
 export const PENDING_FINDINGS: Finding[] = ['data_incomplete', 'coverage_required'];
 
 export interface PositionResult {
@@ -156,13 +160,14 @@ export function statusFor(count: number, min: number): Status {
 
 const isUnknown = (q: QualStatus) => q !== 'yes' && q !== 'no';
 
-function finishPosition(base: Omit<PositionResult, 'finding' | 'final' | 'provisionalStatus' | 'status'> & { requirementMet: boolean; potentialMet: boolean; coverage?: boolean }): PositionResult {
-  const { requirementMet, potentialMet, coverage, ...rest } = base;
-  const status: Status = !requirementMet ? 'red' : statusFor(base.count, base.min);
+function finishPosition(base: Omit<PositionResult, 'finding' | 'final' | 'provisionalStatus' | 'status'> & { requirementMet: boolean; potentialMet: boolean; coverage?: boolean; greenAtMinimum?: boolean }): PositionResult {
+  const { requirementMet, potentialMet, coverage, greenAtMinimum, ...rest } = base;
+  const rate = (count: number): Status => (greenAtMinimum && count >= base.min ? 'green' : statusFor(count, base.min));
+  const status: Status = !requirementMet ? 'red' : rate(base.count);
   let finding: Finding; let provisionalStatus: Status;
-  if (requirementMet) { finding = status === 'green' ? 'above_minimum' : 'no_buffer'; provisionalStatus = status; }
-  else if (coverage) { finding = 'coverage_required'; provisionalStatus = statusFor(base.min, base.min); }
-  else if (potentialMet) { finding = 'data_incomplete'; provisionalStatus = statusFor(base.potential, base.min); }
+  if (requirementMet) { finding = base.count > base.min ? 'above_minimum' : status === 'green' ? 'staffed' : 'no_buffer'; provisionalStatus = status; }
+  else if (coverage) { finding = 'coverage_required'; provisionalStatus = rate(base.min); }
+  else if (potentialMet) { finding = 'data_incomplete'; provisionalStatus = rate(base.potential); }
   else { finding = 'shortage'; provisionalStatus = 'red'; }
   return { ...rest, status, finding, final: !PENDING_FINDINGS.includes(finding), provisionalStatus };
 }
@@ -231,7 +236,7 @@ export function evaluateDay(date: string, people: MpPerson[], absences: MpAbsenc
     else if (!ctrlMet) ctrlIssues.push(`Confirmed shortage: no qualified Controller (${ctrlCount}/${rules.controllerMin})`);
     const controller: ControllerResult = {
       ...finishPosition({ key: 'controller', label: 'Controller', count: ctrlCount, min: rules.controllerMin, buffer: ctrlCount - rules.controllerMin, potential: ctrlCount + ctrlNot.filter((n) => n.pendingData).length,
-        counted: ctrlCounted, notCounted: ctrlNot, issues: ctrlIssues, requirementMet: ctrlMet, potentialMet: ctrlPotentialMet, coverage: ctrlCoverage }),
+        counted: ctrlCounted, notCounted: ctrlNot, issues: ctrlIssues, requirementMet: ctrlMet, potentialMet: ctrlPotentialMet, coverage: ctrlCoverage, greenAtMinimum: rules.controllerGreenAtMinimum }),
       acting, onLeave: ctrlOnLeave
     };
 
