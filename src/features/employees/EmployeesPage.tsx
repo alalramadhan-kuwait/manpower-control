@@ -4,10 +4,12 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { ACTION_LABEL, actionsFor, eligibleFor } from '@/core/actions';
 import type { ActionCode, ActionItem, BulkAction } from '@/core/actions';
 import { confirmEmploymentTypeBulk, setQualificationBulk } from '@/data/bulk';
-import { fetchDirectory } from '@/data/queries';
+import { fetchDirectory, fetchOnLeave } from '@/data/queries';
+import type { OnLeave } from '@/core/leave';
 import type { EmployeeDirectoryRow, QualificationStatus, UserProfile } from '@/data/types';
 import { BottomSheet, Button, Chip, ErrorBox, PageHeader, Spinner, cx, qualificationLabel, qualificationTone } from '@/ui/components';
 import { CrewBadge, CrewTag, isCrew } from '@/ui/crew';
+import { OnLeaveChip, localToday } from '@/ui/leave';
 
 const ROLE_FILTERS = [['', 'All roles'], ['controller', 'Controllers'], ['panel', 'Panel'], ['field', 'Field']] as const;
 const CREW_FILTERS = ['', 'A', 'B', 'C', 'D'] as const;
@@ -37,7 +39,8 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
   const view = params.get('view') ?? '';
   const need = (params.get('need') ?? '') as ActionCode | '';
   const load = () => fetchDirectory().then((r) => setRows(r.filter((x) => x.in_unit12_scope && x.is_active).map((x) => ({ ...x, actions: actionsFor(x) })))).catch(setError);
-  useEffect(() => { load(); }, []);
+  const [onLeave, setOnLeave] = useState<Map<string, OnLeave>>(new Map());
+  useEffect(() => { load(); fetchOnLeave(localToday()).then(setOnLeave).catch(() => { /* marker only; the list still works */ }); }, []);
   const set = (k: string, v: string) => { const p = new URLSearchParams(params); if (v) p.set(k, v); else p.delete(k); if (k === 'view' && !v) p.delete('need'); setParams(p, { replace: true }); };
 
   const needCounts = useMemo(() => {
@@ -123,7 +126,7 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
                 {filtered.map((r) => (
                   <tr key={r.id} className={cx('align-top', selected.has(r.id) ? 'bg-brand-50/60' : 'hover:bg-slate-50')}>
                     <td className="px-3 py-2"><SelectBox checked={selected.has(r.id)} onChange={() => toggle(r.id)} label={`Select ${r.display_name}`} /></td>
-                    <td className="px-2 py-2"><Link to={`/employees/${r.id}`} className="font-medium text-brand-700 hover:underline">{r.display_name}</Link>{r.official_name !== r.display_name && <div className="max-w-56 truncate text-xs text-slate-500">{r.official_name}</div>}</td>
+                    <td className="px-2 py-2"><Link to={`/employees/${r.id}`} className="font-medium text-brand-700 hover:underline">{r.display_name}</Link>{onLeave.has(r.id) && <OnLeaveChip leave={onLeave.get(r.id)!} className="ml-2 align-middle" />}{r.official_name !== r.display_name && <div className="max-w-56 truncate text-xs text-slate-500">{r.official_name}</div>}</td>
                     <td className="px-2 py-2 tabular-nums text-slate-600">{r.employee_number}</td>
                     <td className="px-2 py-2 text-slate-700">{r.position_label ?? '—'}</td>
                     <td className="px-2 py-2 text-slate-700">{isCrew(r.crew_code) ? <CrewBadge crew={r.crew_code} size="sm" /> : r.position_code === 'vr_controller' ? 'VR' : r.position_code === 'morning_controller' ? 'M' : '—'}</td>
@@ -148,7 +151,7 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2"><span className="truncate font-medium text-slate-800">{r.display_name}</span>{r.employment_type === 'contractor' && <Chip>Contractor</Chip>}</div>
                     <div className="truncate text-xs text-slate-500">#{r.employee_number} · {r.position_label ?? 'No role'}{r.grade ? ` · Grade ${r.grade}` : ''}</div>
-                    <div className="mt-1.5 flex flex-wrap gap-1"><QualChip r={r} />{r.actions.filter((a) => a.code !== 'take_charge' && a.code !== 'panel_qualification').map((a) => <Chip key={a.code} tone={a.bulk ? 'amber' : 'neutral'} className="whitespace-nowrap text-[11px]">{a.label}</Chip>)}</div>
+                    <div className="mt-1.5 flex flex-wrap gap-1">{onLeave.has(r.id) && <OnLeaveChip leave={onLeave.get(r.id)!} />}<QualChip r={r} />{r.actions.filter((a) => a.code !== 'take_charge' && a.code !== 'panel_qualification').map((a) => <Chip key={a.code} tone={a.bulk ? 'amber' : 'neutral'} className="whitespace-nowrap text-[11px]">{a.label}</Chip>)}</div>
                   </div>
                 </Link>
               </li>

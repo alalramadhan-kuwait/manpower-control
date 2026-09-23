@@ -7,6 +7,8 @@ import { displayNameFor } from '@/core/names';
 import type { AbsenceType, AuditEntry, Crew, EmployeeDirectoryRow, LeaveRecord, LeavePlanChange, Performance, Position, Qualification, QualificationCode, QualificationStatus, RoleAssignment, SickTotal, UserProfile } from '@/data/types';
 import { BottomSheet, Button, Card, Chip, ErrorBox, Field, Row, Spinner, fmtDate, qualificationLabel, qualificationTone, cx } from '@/ui/components';
 import { CrewBadge, CrewTag, isCrew } from '@/ui/crew';
+import { OnLeaveChip, localToday } from '@/ui/leave';
+import { onLeaveOn } from '@/core/leave';
 
 const QUALS: { code: QualificationCode; label: string; help: string }[] = [
   { code: 'take_charge', label: 'Take-Charge qualified', help: 'Only Take-Charge = Yes counts toward the Field Operator minimum of 6.' },
@@ -49,6 +51,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
   const { emp } = data;
   const currentLeaves = data.leaves.filter((l) => l.in_current_plan && l.status !== 'cancelled' && l.status !== 'rescheduled');
   const originalLeaves = data.leaves.filter((l) => l.in_original_plan);
+  const leaveNow = onLeaveOn(localToday(), data.leaves.map((l) => ({ employeeId: l.employee_id, start: l.start_date, end: l.end_date, status: l.status, inCurrentPlan: l.in_current_plan, typeLabel: data.absenceTypes.find((t) => t.code === l.absence_type_code)?.label ?? null }))).get(emp.id);
   const currentQual = (c: QualificationCode) => data.quals.find((q) => q.qualification === c && !q.effective_to);
 
   return (
@@ -65,6 +68,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <Chip tone="blue">{emp.position_label ?? 'No role assigned'}</Chip>
+          {leaveNow && <OnLeaveChip leave={leaveNow} className="px-2.5 py-1 text-xs" />}
           {isCrew(emp.crew_code) && <span className="inline-flex items-center rounded-full bg-white py-0.5 pl-0.5 pr-2.5 text-xs font-semibold text-slate-800 ring-1 ring-slate-200"><CrewTag crew={emp.crew_code} /></span>}
           <Chip tone={emp.employment_type_source === 'confirmed' ? 'neutral' : 'amber'}>{emp.employment_type === 'knpc' ? 'KNPC' : 'Contractor'}{emp.employment_type_source === 'inferred' ? ' (inferred)' : ''}</Chip>
           {emp.grade && <Chip>Grade {emp.grade}</Chip>}

@@ -7,9 +7,9 @@ import { addDaysIso, isValidIsoDate } from '@/core/roster';
 import { fetchManpowerInputs } from '@/data/manpower';
 import { Card, ErrorBox, Spinner, cx, fmtDate } from '@/ui/components';
 import { CREW_IDENTITY, CrewBadge, crewEdge } from '@/ui/crew';
+import { localToday } from '@/ui/leave';
 import { CREWS } from '@/core/roster';
 
-const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const weekday = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long' });
 
 const STATUS_TEXT: Record<Status, string> = { green: 'GREEN', amber: 'AMBER', red: 'RED' };
