@@ -377,3 +377,26 @@ describe('Controller Management assignments', () => {
     expect(c.controller.cover).toBeNull();
   });
 });
+
+describe('Morning Controller post', () => {
+  const mc = () => person(null, 'morning_controller', { grade: 15 });
+  it('is held by the Morning Controller on a normal day', () => {
+    const m = mc(); const r = evaluateDay(DAY, [...crewOf('A'), m], []);
+    expect(r.morningPost).toMatchObject({ status: 'held', viaRotation: false }); expect(r.morningPost.holder?.id).toBe(m.id);
+    expect(r.counts.morningCoverageRequired).toBe(0);
+  });
+  it('is never silently empty: covering a shift makes it "coverage required"', () => {
+    const a = crewOf('A'); const m = mc();
+    const r = evaluateDay(DAY, [...a, m], [leave(a[0], DAY, DAY)], FULL_OPERATION, [{ id: 'c', kind: 'shift_cover', employeeId: m.id, crew: 'A', start: DAY, end: DAY }]);
+    expect(r.morningPost).toMatchObject({ status: 'coverage_required', holder: null });
+    expect(r.counts.morningCoverageRequired).toBe(1);
+    expect(crewResult(r, 'A').controller.finding).toBe('staffed');
+  });
+  it('a Morning rotation fills the post', () => {
+    const a = crewOf('A'); const d = crewOf('D'); const m = mc();
+    const r = evaluateDay(DAY, [...a, ...d, m], [leave(a[0], DAY, DAY)], FULL_OPERATION, [
+      { id: 'c', kind: 'shift_cover', employeeId: m.id, crew: 'A', start: DAY, end: DAY },
+      { id: 'r', kind: 'morning_rotation', employeeId: d[0].id, crew: null, start: DAY, end: DAY }]);
+    expect(r.morningPost).toMatchObject({ status: 'held', viaRotation: true }); expect(r.morningPost.holder?.id).toBe(d[0].id);
+  });
+});

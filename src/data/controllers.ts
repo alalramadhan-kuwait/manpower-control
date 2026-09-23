@@ -11,7 +11,8 @@ function friendly(error: { message: string; code?: string }): Error {
   if (m.includes('ca_one_at_a_time')) return new Error('This Controller already has an assignment on some of these dates. One person cannot cover two shifts at the same time.');
   if (m.includes('ca_one_cover_per_crew')) return new Error('This crew already has a cover recorded on some of these dates.');
   if (m.includes('ca_one_morning_rotation')) return new Error('Another Morning rotation already covers some of these dates.');
-  if (m.includes('ca_max_two_months')) return new Error('An assignment can last at most 2 months.');
+  if (m.includes('ca_morning_rotation_max_two_months')) return new Error('A Morning rotation can last at most 2 months.');
+  if (m.includes('A shift cover can last at most')) return new Error(m.replace(/^.*?(A shift cover)/, '$1'));
   if (m.includes('ca_dates')) return new Error('The end date is before the start date.');
   return new Error(m);
 }
@@ -35,4 +36,16 @@ export async function endAssignmentEarly(id: string, end_date: string, note: str
 export async function cancelAssignment(id: string, reason: string) {
   const { error } = await supabase.from('controller_assignments').update({ status: 'cancelled', cancel_reason: reason }).eq('id', id);
   if (error) throw friendly(error);
+}
+
+/** Optional maximum length of a shift cover in days (null = no maximum; the cover lasts the actual period). */
+export async function fetchShiftCoverMaxDays(): Promise<number | null> {
+  const { data, error } = await supabase.from('controller_rules').select('shift_cover_max_days').eq('id', 1).maybeSingle();
+  if (error) throw error;
+  return (data as { shift_cover_max_days: number | null } | null)?.shift_cover_max_days ?? null;
+}
+
+export async function setShiftCoverMaxDays(days: number | null) {
+  const { error } = await supabase.from('controller_rules').update({ shift_cover_max_days: days, updated_at: new Date().toISOString() }).eq('id', 1);
+  if (error) throw error;
 }

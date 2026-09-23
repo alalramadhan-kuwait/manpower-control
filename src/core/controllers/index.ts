@@ -6,7 +6,7 @@ import { addDaysIso, isWorkingDay, type Crew } from '../roster';
 export const COVER_GRADE = 15;
 const CONTROLLER_ROLES = new Set(['controller', 'vr_controller', 'morning_controller']);
 
-/** Last allowed end date for an assignment starting on `start`: strictly less than two calendar months later. */
+/** Last allowed end date of a Morning rotation starting on `start`: strictly less than two calendar months later. */
 export function maxEndDate(start: string): string {
   const [y, m, d] = start.split('-').map(Number);
   const target = new Date(Date.UTC(y, m - 1 + 2, d));
@@ -15,31 +15,88 @@ export function maxEndDate(start: string): string {
   return addDaysIso(target.toISOString().slice(0, 10), -1);
 }
 
-export interface CoverageNeed { crew: Crew; start: string; end: string; dutyDays: number; who: string[]; absentIds: string[] }
+export interface CoverageNeed {
+  /** 'crew': a crew has no Controller; 'morning': the Morning Controller is away covering a shift and the post is empty. */
+  kind: 'crew' | 'morning';
+  crew: Crew | null;
+  start: string; end: string; dutyDays: number; who: string[]; absentIds: string[];
+  /** Suggested VR Controller for this crew need (free for the whole period), or null. */
+  vr: MpPerson | null;
+  /** True when another need in the same period already takes the VR: an additional Controller is required. */
+  additional: boolean;
+  /** Why the VR cannot take it (e.g. "VR covers C Shift 1 Dec – 14 Dec", "VR on leave"). */
+  vrNote: string | null;
+}
 
 /**
- * Periods in [from, to] where a crew's Controller line is "coverage required". Duty days separated only by the
- * crew's Off days belong to one period, so a 14-day leave shows as one need, not as three.
+ * Periods in [from, to] needing Controller cover: crews whose Controller line is "coverage required" (duty days
+ * separated only by the crew's Off days form one period) and days when the Morning post is empty because the
+ * Morning Controller covers a shift. Crew needs are then planned against the VR Controller(s) in date order: the
+ * first need in a period gets a free VR, an overlapping one is "Additional Controller required".
  */
 export function coverageNeeds(from: string, to: string, people: MpPerson[], absences: MpAbsence[], assignments: MpAssignment[]): CoverageNeed[] {
   const out: CoverageNeed[] = [];
-  const open = new Map<Crew, CoverageNeed>();
+  const open = new Map<string, CoverageNeed>();
+  const close = (key: string) => { const cur = open.get(key); if (cur) { out.push(cur); open.delete(key); } };
+  const blank = { vr: null, additional: false, vrNote: null };
   for (const day of evaluateRange(from, to, people, absences, FULL_OPERATION, assignments)) {
     for (const c of day.crews) {
       if (!c.working) continue;
-      const need = c.controller.finding === 'coverage_required';
-      const cur = open.get(c.crew);
-      if (!need) { if (cur) { out.push(cur); open.delete(c.crew); } continue; }
+      const key = `crew:${c.crew}`;
+      if (c.controller.finding !== 'coverage_required') { close(key); continue; }
       const ids = [...c.controller.onLeave.map((p) => p.id), ...c.controller.away.map((w) => w.person.id)];
       const names = [...c.controller.onLeave.map((p) => p.name), ...c.controller.away.map((w) => w.person.name)];
+      const cur = open.get(key);
       if (cur) {
         cur.end = day.date; cur.dutyDays++;
         for (let i = 0; i < ids.length; i++) if (!cur.absentIds.includes(ids[i])) { cur.absentIds.push(ids[i]); cur.who.push(names[i]); }
-      } else open.set(c.crew, { crew: c.crew, start: day.date, end: day.date, dutyDays: 1, who: names, absentIds: ids });
+      } else open.set(key, { kind: 'crew', crew: c.crew, start: day.date, end: day.date, dutyDays: 1, who: names, absentIds: ids, ...blank });
+    }
+    const mp = day.morningPost;
+    if (mp.status !== 'coverage_required') close('morning');
+    else {
+      const cur = open.get('morning');
+      const mc = people.find((p) => p.role === 'morning_controller');
+      if (cur) { cur.end = day.date; cur.dutyDays++; }
+      else open.set('morning', { kind: 'morning', crew: null, start: day.date, end: day.date, dutyDays: 1, who: mc ? [mc.name] : [], absentIds: mc ? [mc.id] : [], ...blank });
     }
   }
-  out.push(...open.values());
-  return out.sort((a, b) => a.start.localeCompare(b.start) || a.crew.localeCompare(b.crew));
+  for (const key of [...open.keys()]) close(key);
+  out.sort((a, b) => a.start.localeCompare(b.start) || (a.crew ?? 'Z').localeCompare(b.crew ?? 'Z'));
+  planVr(out.filter((n) => n.kind === 'crew'), people, absences, assignments);
+  return out;
+}
+
+/** Offers each crew need, in date order, to a VR Controller who is free for the whole period. */
+function planVr(needs: CoverageNeed[], people: MpPerson[], absences: MpAbsence[], assignments: MpAssignment[]) {
+  const vrs = people.filter((p) => p.role === 'vr_controller' && p.grade != null && p.grade >= COVER_GRADE);
+  const taken: { id: string; start: string; end: string; crew: Crew | null }[] = assignments.map((a) => ({ id: a.employeeId, start: a.start, end: a.end, crew: a.crew }));
+  const counted = (a: MpAbsence) => (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false;
+  const onLeaveThroughout = (id: string, n: CoverageNeed) => absences.some((a) => a.employeeId === id && counted(a) && a.start <= n.start && a.end >= n.end);
+  const leaveInside = (id: string, n: CoverageNeed) => absences.filter((a) => a.employeeId === id && counted(a) && a.start <= n.end && a.end >= n.start);
+  for (const n of needs) {
+    if (!vrs.length) { n.additional = true; n.vrNote = 'No VR Controller recorded'; continue; }
+    const candidates = vrs.filter((v) => !onLeaveThroughout(v.id, n) && !taken.some((t) => t.id === v.id && t.start <= n.end && t.end >= n.start))
+      .sort((a, b) => leaveInside(a.id, n).length - leaveInside(b.id, n).length);
+    const free = candidates[0];
+    if (free) {
+      n.vr = free; taken.push({ id: free.id, start: n.start, end: n.end, crew: n.crew });
+      // clip the VR's leave to the gap and join back-to-back records into one period
+      const spans = leaveInside(free.id, n).map((a) => ({ start: a.start < n.start ? n.start : a.start, end: a.end > n.end ? n.end : a.end })).sort((x, y) => x.start.localeCompare(y.start));
+      const joined: { start: string; end: string }[] = [];
+      for (const sp of spans) { const last = joined[joined.length - 1]; if (last && addDaysIso(last.end, 1) >= sp.start) { if (sp.end > last.end) last.end = sp.end; } else joined.push({ ...sp }); }
+      if (joined.length) n.vrNote = `VR on leave part of this period (${joined.map((x) => (x.start === x.end ? x.start : `${x.start} – ${x.end}`)).join(', ')})`;
+      continue;
+    }
+    n.additional = true;
+    const busy = taken.find((t) => vrs.some((v) => v.id === t.id) && t.start <= n.end && t.end >= n.start);
+    n.vrNote = busy ? `VR covers ${busy.crew ?? 'another'} Shift ${busy.start} – ${busy.end}` : 'VR on leave';
+  }
+}
+
+/** Last allowed end date of a shift cover: no limit unless a maximum number of days is configured. */
+export function shiftCoverMaxEnd(start: string, maxDays: number | null): string | null {
+  return maxDays ? addDaysIso(start, maxDays - 1) : null;
 }
 
 export interface CandidateCheck {

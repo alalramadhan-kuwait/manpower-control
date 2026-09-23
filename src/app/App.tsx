@@ -72,7 +72,7 @@ export default function App() {
           <Route path="/review/take-charge" element={<TakeChargeBulkPage profile={profile} />} />
           <Route path="/more" element={<MorePage profile={profile} />} />
           <Route path="/users" element={<UsersPage profile={profile} />} />
-          <Route path="/controllers" element={<ControllersPage />} />
+          <Route path="/controllers" element={<ControllersPage profile={profile} />} />
           <Route path="/calendar" element={<ComingLater stage="Stage E" title="Manpower Calendar" />} />
           <Route path="/requests" element={<ComingLater stage="Stage F" title="Requests" />} />
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -168,13 +168,19 @@ export interface DayResult {
   date: string;
   crews: CrewDay[]; // ordered Morning, Afternoon, Night, Off
   dayStaff: DayStaff[]; // VR and Morning Controllers, and anyone on Morning rotation
+  /**
+   * The Morning Controller post today. 'coverage_required' when the Morning Controller has been assigned to cover
+   * a shift and no Morning rotation fills the post: never left silently empty; management resolves it by
+   * recording a Morning rotation for those days.
+   */
+  morningPost: { holder: MpPerson | null; status: 'held' | 'on_leave' | 'coverage_required' | 'vacant'; viaRotation: boolean; away: MpAssignment | null };
   /** Strict rule result on confirmed data only. */
   overall: Status;
   /** Final day status (see CrewDay.finalStatus). */
   finalStatus: Status | null;
   provisionalStatus: Status;
   noBuffer: boolean;
-  counts: { confirmedShortage: number; coverageRequired: number; dataIncomplete: number; unresolvedWarnings: number };
+  counts: { confirmedShortage: number; coverageRequired: number; dataIncomplete: number; unresolvedWarnings: number; morningCoverageRequired: number };
 }
 
 const SHIFT_ORDER: State[] = ['M', 'A', 'N', 'Off'];
@@ -342,6 +348,18 @@ export function evaluateDay(date: string, people: MpPerson[], absences: MpAbsenc
     .map((p) => ({ person: p, absence: leaveOf(p), unresolved: unresolvedOf(p), assignment: assignmentOf(p),
       morningPost: rotation ? p.id === rotation.employeeId : p.role === 'morning_controller' }));
 
+  const regularMorning = people.find((p) => p.role === 'morning_controller') ?? null;
+  let morningPost: DayResult['morningPost'];
+  if (rotation) {
+    const holder = byId.get(rotation.employeeId) ?? null;
+    morningPost = { holder, status: holder && leaveOf(holder) ? 'on_leave' : 'held', viaRotation: true, away: null };
+  } else if (!regularMorning) morningPost = { holder: null, status: 'vacant', viaRotation: false, away: null };
+  else {
+    const away = assignmentOf(regularMorning);
+    morningPost = away?.kind === 'shift_cover' ? { holder: null, status: 'coverage_required', viaRotation: false, away }
+      : { holder: regularMorning, status: leaveOf(regularMorning) ? 'on_leave' : 'held', viaRotation: false, away: null };
+  }
+
   const workingCrews = crews.filter((c) => c.working);
   const overall = worst(workingCrews.map((c) => c.status as Status));
   const anyShortage = workingCrews.some((c) => c.confirmedShortage);
@@ -352,9 +370,10 @@ export function evaluateDay(date: string, people: MpPerson[], absences: MpAbsenc
     confirmedShortage: workingCrews.filter((c) => c.confirmedShortage).length,
     coverageRequired: workingCrews.filter((c) => c.pending.includes('coverage_required')).length,
     dataIncomplete: workingCrews.filter((c) => c.pending.includes('data_incomplete')).length,
-    unresolvedWarnings: crews.reduce((n, c) => n + c.unresolved.length, 0) + dayStaff.filter((s) => s.unresolved).length
+    unresolvedWarnings: crews.reduce((n, c) => n + c.unresolved.length, 0) + dayStaff.filter((s) => s.unresolved).length,
+    morningCoverageRequired: morningPost.status === 'coverage_required' ? 1 : 0
   };
-  return { date, crews, dayStaff, overall, finalStatus, provisionalStatus, noBuffer: finalStatus === 'amber', counts };
+  return { date, crews, dayStaff, morningPost, overall, finalStatus, provisionalStatus, noBuffer: finalStatus === 'amber', counts };
 }
 
 /** Status for each date in a range (for later calendar views and for tests). */

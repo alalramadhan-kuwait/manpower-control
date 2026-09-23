@@ -54,3 +54,39 @@ describe('who can cover', () => {
     expect(list.find((c) => c.person.id === 'vr')!.warnings).toEqual(['On leave 6 of these days']);
   });
 });
+
+describe('Stage H corrections', () => {
+  it('shift cover has no length limit unless one is configured', async () => {
+    const { shiftCoverMaxEnd } = await import('..');
+    expect(shiftCoverMaxEnd('2026-10-01', null)).toBeNull();
+    expect(shiftCoverMaxEnd('2026-10-01', 30)).toBe('2026-10-30');
+  });
+  it('the Morning Controller covering a shift leaves the Morning post needing cover; a Morning rotation resolves it', () => {
+    const cover: MpAssignment = { id: 'c', kind: 'shift_cover', employeeId: 'mc', crew: 'A', start: '2026-10-01', end: '2026-10-05' };
+    const needs = coverageNeeds('2026-10-01', '2026-10-05', people, [leave('ctrlA', '2026-10-01', '2026-10-05')], [cover]);
+    expect(needs.map((n) => [n.kind, n.start, n.end])).toEqual([['morning', '2026-10-01', '2026-10-05']]);
+    const rot: MpAssignment = { id: 'r', kind: 'morning_rotation', employeeId: 'ctrlD', crew: null, start: '2026-10-01', end: '2026-10-05' };
+    const after = coverageNeeds('2026-10-01', '2026-10-05', people, [leave('ctrlA', '2026-10-01', '2026-10-05')], [cover, rot]);
+    expect(after.some((n) => n.kind === 'morning')).toBe(false);
+  });
+  it('two overlapping gaps and one VR: the first gets the VR, the second is Additional Controller required', () => {
+    const needs = coverageNeeds('2026-12-01', '2026-12-20', people, [leave('ctrlC', '2026-12-01', '2026-12-14'), leave('ctrlB', '2026-12-07', '2026-12-20')], []);
+    const c = needs.find((n) => n.crew === 'C')!; const b = needs.find((n) => n.crew === 'B')!;
+    expect(c).toMatchObject({ additional: false }); expect(c.vr?.id).toBe('vr');
+    expect(b).toMatchObject({ additional: true, vr: null });
+    expect(b.vrNote).toContain('VR covers C Shift');
+  });
+  it('a VR on leave for the whole gap is not offered', () => {
+    const needs = coverageNeeds('2026-12-01', '2026-12-14', people, [leave('ctrlC', '2026-12-01', '2026-12-14'), leave('vr', '2026-11-25', '2026-12-20')], []);
+    expect(needs[0]).toMatchObject({ additional: true, vrNote: 'VR on leave' });
+  });
+});
+
+describe('VR partly on leave', () => {
+  it('is still suggested, with the leave shown, and is not called free', () => {
+    const needs = coverageNeeds('2026-12-01', '2026-12-14', people, [leave('ctrlC', '2026-12-01', '2026-12-14'), leave('vr', '2026-11-25', '2026-12-05')], []);
+    expect(needs[0].vr?.id).toBe('vr');
+    expect(needs[0].additional).toBe(false);
+    expect(needs[0].vrNote).toContain('on leave part of this period');
+  });
+});
