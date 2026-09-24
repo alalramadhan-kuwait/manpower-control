@@ -15,18 +15,11 @@ import UsersPage from '@/features/users/UsersPage';
 import CalendarPage from '@/features/calendar/CalendarPage';
 import LeavePlanPage from '@/features/leave/LeavePlanPage';
 import ControllersPage from '@/features/controllers/ControllersPage';
+import RequestsPage from '@/features/requests/RequestsPage';
+import RequestPage from '@/features/requests/RequestPage';
 import { Shell } from './Shell';
 import { Button, Spinner } from '@/ui/components';
 import { supabase } from '@/data/supabase';
-
-function ComingLater({ stage, title }: { stage: string; title: string }) {
-  return (
-    <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center">
-      <p className="text-lg font-semibold text-brand-800">{title}</p>
-      <p className="mt-1 text-sm text-slate-600">This screen is built in {stage}.</p>
-    </div>
-  );
-}
 
 export default function App() {
   const { loading, session, profile, profileError, access } = useSession();
@@ -86,7 +79,8 @@ export default function App() {
           <Route path="/controllers" element={<ControllersPage profile={profile} />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/leave-plan" element={<LeavePlanPage />} />
-          <Route path="/requests" element={<ComingLater stage="Stage F" title="Requests" />} />
+          <Route path="/requests" element={<RequestsPage />} />
+          <Route path="/requests/:id" element={<RequestPage profile={profile} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

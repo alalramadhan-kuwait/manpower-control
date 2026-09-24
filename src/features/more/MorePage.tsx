@@ -44,7 +44,7 @@ export default function MorePage({ profile }: { profile: UserProfile }) {
         <div className="text-sm text-slate-600">Signed in as <span className="font-medium text-slate-800">{profile.display_name}</span></div>
         <Button variant="secondary" className="mt-3 w-full" onClick={() => supabase.auth.signOut()}><LogOut className="h-4 w-4" /> Sign out</Button>
       </Card>
-      <p className="mt-6 text-center text-[11px] text-slate-400">Area 4 Manpower Control · Stage E (Calendar and Annual Leave Plan) · standalone from Time Keeper</p>
+      <p className="mt-6 text-center text-[11px] text-slate-400">Area 4 Manpower Control · Stage F (Leave requests) · standalone from Time Keeper</p>
     </div>
   );
 }
