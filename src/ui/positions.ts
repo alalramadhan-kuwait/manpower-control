@@ -10,3 +10,7 @@ export const positionRank = (code: string | null | undefined) => {
 /** Sort people by position, then name. */
 export const byPosition = (a: { position_code: string | null; display_name: string }, b: { position_code: string | null; display_name: string }) =>
   positionRank(a.position_code) - positionRank(b.position_code) || a.display_name.localeCompare(b.display_name);
+
+/** Within a crew: position first, then the most senior (highest grade; contractors and missing grades after), then name. */
+export const bySeniority = (a: { role: string | null; grade: number | null; name: string }, b: { role: string | null; grade: number | null; name: string }) =>
+  positionRank(a.role) - positionRank(b.role) || (b.grade ?? -1) - (a.grade ?? -1) || a.name.localeCompare(b.name);

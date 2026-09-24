@@ -8,6 +8,7 @@ import { fetchManpowerInputs } from '@/data/manpower';
 import { Card, ErrorBox, Spinner, cx, fmtDate } from '@/ui/components';
 import { CREW_IDENTITY, CrewBadge, crewEdge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
+import { bySeniority } from '@/ui/positions';
 import { onLeaveOn, type OnLeave } from '@/core/leave';
 import { coverageNeeds, type CoverageNeed } from '@/core/controllers';
 import { CREWS } from '@/core/roster';
@@ -267,7 +268,7 @@ function CrewCard({ crew: c, leave, date, need }: { crew: CrewDay; leave: Map<st
         </div>
         {c.absences.length > 0 && (
           <ul className="mt-2 text-sm text-slate-500">
-            {c.absences.map((a) => <AbsentRow key={a.person.id} person={a.person} absence={a.absence} leave={leave.get(a.person.id)} />)}
+            {[...c.absences].sort((a, b) => bySeniority(a.person, b.person)).map((a) => <AbsentRow key={a.person.id} person={a.person} absence={a.absence} leave={leave.get(a.person.id)} />)}
           </ul>
         )}
       </Card>
@@ -305,7 +306,7 @@ function CrewCard({ crew: c, leave, date, need }: { crew: CrewDay; leave: Map<st
         <div className="mt-2 border-t border-slate-100 pt-2">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Absent</div>
           <ul className="text-sm">
-            {c.absences.map((a) => <AbsentRow key={a.person.id} person={a.person} absence={a.absence} leave={leave.get(a.person.id)} />)}
+            {[...c.absences].sort((a, b) => bySeniority(a.person, b.person)).map((a) => <AbsentRow key={a.person.id} person={a.person} absence={a.absence} leave={leave.get(a.person.id)} />)}
           </ul>
         </div>
       )}
@@ -319,7 +320,7 @@ function CrewCard({ crew: c, leave, date, need }: { crew: CrewDay; leave: Map<st
         {open ? <>Hide details <ChevronUp className="h-4 w-4" /></> : <>Who counts <ChevronDown className="h-4 w-4" /></>}
       </button>
       {open && (
-        <div className="mt-1 space-y-3 border-t border-slate-100 pt-3">
+        <div className="mt-1 space-y-2.5 border-t border-slate-100 pt-3">
           <PositionDetail pos={c.controller} acting={c.controller.acting} />
           <PositionDetail pos={c.panel} grade14 />
           <PositionDetail pos={c.field} />
@@ -330,33 +331,49 @@ function CrewCard({ crew: c, leave, date, need }: { crew: CrewDay; leave: Map<st
 }
 
 function PositionDetail({ pos, acting, grade14 }: { pos: PositionResult; acting?: MpPerson | null; grade14?: boolean }) {
+  const counted = [...pos.counted].sort(bySeniority);
+  const notCounted = [...pos.notCounted].sort((a, b) => bySeniority(a.person, b.person));
   return (
-    <div>
-      <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-500">
-        <span>{pos.label} · counted {pos.count} of minimum {pos.min}</span>
+    <section className="rounded-xl bg-slate-50 px-3 py-2.5 ring-1 ring-slate-200/70">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-slate-900">{pos.label}</h3>
+          <div className="text-xs text-slate-500">{pos.count} counted · minimum {pos.min}</div>
+        </div>
         {pos.final ? <StatusPill status={pos.status} small /> : <PendingPill kind={pos.finding as 'coverage_required' | 'data_incomplete'} />}
       </div>
-      <ul className="mt-1 space-y-0.5 text-sm">
-        {pos.counted.map((p) => (
-          <li key={p.id} className="flex justify-between gap-2">
-            <Link to={`/employees/${p.id}`} className="truncate text-brand-700">{p.name}</Link>
-            <span className="shrink-0 text-xs text-slate-500">
-              {p.grade != null ? `G${p.grade}` : p.employmentType === 'contractor' ? 'Contractor' : 'G?'}
-              {grade14 && p.grade != null && p.grade >= 14 ? ' · Grade 14+' : ''}
-              {acting?.id === p.id ? ' · Acting Controller' : ''}
-              {p.movedFrom ? ` · cover from ${p.movedFrom}` : ''}
+      <ul className="mt-1.5 divide-y divide-slate-200/70">
+        {counted.map((p) => (
+          <li key={p.id} className="flex items-center justify-between gap-3 py-2">
+            <Link to={`/employees/${p.id}`} className="min-w-0 truncate text-[15px] font-medium text-slate-900">{p.name}</Link>
+            <span className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+              {acting?.id === p.id && <Tag brand>Acting Controller</Tag>}
+              {grade14 && p.grade != null && p.grade >= 14 && <Tag brand>Grade 14+</Tag>}
+              {p.movedFrom && <Tag>Cover from {p.movedFrom}</Tag>}
+              <Tag>{p.grade != null ? `G${p.grade}` : p.employmentType === 'contractor' ? 'Contractor' : 'G?'}</Tag>
             </span>
           </li>
         ))}
-        {pos.notCounted.map((n) => (
-          <li key={n.person.id} className="flex justify-between gap-2 text-slate-400">
-            <Link to={`/employees/${n.person.id}`} className="truncate">{n.person.name}</Link>
-            <span className={cx('shrink-0 text-right text-xs', n.pendingData && 'text-slate-500')}>{n.reason}</span>
+        {notCounted.map((n) => (
+          <li key={n.person.id} className="py-2">
+            <div className="flex items-center justify-between gap-3">
+              <Link to={`/employees/${n.person.id}`} className="min-w-0 truncate text-[15px] text-slate-600">{n.person.name}</Link>
+              <Tag muted>Not counted</Tag>
+            </div>
+            <div className={cx('mt-0.5 text-xs', n.pendingData ? 'text-slate-600' : 'text-slate-500')}>{n.reason}</div>
           </li>
         ))}
-        {pos.counted.length + pos.notCounted.length === 0 && <li className="text-xs text-slate-400">Nobody available in this position.</li>}
+        {counted.length + notCounted.length === 0 && <li className="py-2 text-sm text-slate-500">Nobody available in this position.</li>}
       </ul>
-    </div>
+    </section>
+  );
+}
+
+/** Small neutral label on a person row. Navy for qualifications; never a status colour. */
+function Tag({ children, brand, muted }: { children: React.ReactNode; brand?: boolean; muted?: boolean }) {
+  return (
+    <span className={cx('whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] font-semibold ring-1',
+      brand ? 'bg-brand-50 text-brand-700 ring-brand-100' : muted ? 'bg-slate-100 text-slate-500 ring-slate-200' : 'bg-white text-slate-700 ring-slate-200')}>{children}</span>
   );
 }
 
