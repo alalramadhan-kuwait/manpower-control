@@ -107,8 +107,8 @@ export interface Rules {
   /** Grade that satisfies the Panel Grade-14 requirement (this grade and above). */
   panelGrade14: number;
   fieldMin: number;
-  /** A Field Operator of this grade or above on the shift can take a Panel seat: Panel exactly at its minimum
-   *  still has a buffer when one is on duty and Field keeps its own minimum without them. */
+  /** Grade 13+ covers both Panel and Field: a position exactly at its minimum still has a buffer when the other
+   *  position has a spare of this grade or above on the shift (and keeps its own requirements without them). */
   panelBackupGrade: number;
   /** One Controller per crew is the normal complement, so meeting the minimum is GREEN, not No Buffer. */
   controllerGreenAtMinimum: boolean;
@@ -151,6 +151,8 @@ export interface PositionResult {
   final: boolean;
   /** Count if every unconfirmed qualification were confirmed (for data_incomplete). */
   potential: number;
+  /** Panel / Field exactly at minimum: the Grade-13+ spare from the other position who is its buffer. */
+  backup?: MpPerson | null;
   /** Status to expect once pending items are resolved (coverage assigned / data confirmed as Yes). */
   provisionalStatus: Status;
   counted: MpPerson[];
@@ -168,7 +170,7 @@ export interface ControllerResult extends PositionResult {
   /** The recorded cover for this crew today, and whether it counts (it does not while the cover is on leave). */
   cover: { person: MpPerson; assignment: MpAssignment; counted: boolean; absence: MpAbsence | null } | null;
 }
-export interface PanelResult extends PositionResult { grade14: number; potentialGrade14: number; /** Grade-13+ Field Operator who is Panel's buffer at minimum. */ backup: MpPerson | null }
+export interface PanelResult extends PositionResult { grade14: number; potentialGrade14: number }
 export interface AbsenceOnDay { person: MpPerson; absence: MpAbsence; reducesManpower: boolean }
 
 export interface CrewDay {
@@ -388,8 +390,15 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
     if (!fieldMet) fieldIssues.push(fieldPotentialMet
       ? `Take-Charge data incomplete: ${fieldCounted.length}/${rules.fieldMin} confirmed, ${fieldUnknown} not yet confirmed (up to ${fieldPotential}/${rules.fieldMin} if confirmed)`
       : `Confirmed shortage: Field ${fieldCounted.length} of ${rules.fieldMin} required${fieldUnknown ? ` (at most ${fieldPotential} even if all unconfirmed are confirmed)` : ''}`);
-    const field: PositionResult = finishPosition({ key: 'field', label: 'Field', count: fieldCounted.length, min: rules.fieldMin, buffer: fieldCounted.length - rules.fieldMin, potential: fieldPotential,
-      counted: fieldCounted, notCounted: fieldNot, issues: fieldIssues, requirementMet: fieldMet, potentialMet: fieldPotentialMet });
+    // Field buffer from Panel: at exactly the minimum, a spare Grade-13+ Panel Operator can take a Field post, provided
+    // Panel keeps its minimum and its Grade-14 requirement without them. Lowest grade first (Grade 14s stay on Panel).
+    const fieldBackup = fieldMet && fieldCounted.length === rules.fieldMin && panelMet && panelCounted.length > rules.panelMin
+      ? panelCounted.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade && grade14 - (isG14(p) ? 1 : 0) >= rules.panelGrade14Min)
+          .sort((a, b) => (a.grade ?? 0) - (b.grade ?? 0) || a.name.localeCompare(b.name))[0] ?? null
+      : null;
+    if (fieldBackup) fieldIssues.push(`Buffer: ${fieldBackup.name} (Panel Operator, Grade ${fieldBackup.grade}) can take a Field post`);
+    const field: PositionResult = { ...finishPosition({ key: 'field', label: 'Field', count: fieldCounted.length, min: rules.fieldMin, buffer: fieldCounted.length - rules.fieldMin + (fieldBackup ? 1 : 0), potential: fieldPotential,
+      counted: fieldCounted, notCounted: fieldNot, issues: fieldIssues, requirementMet: fieldMet, potentialMet: fieldPotentialMet, greenAtMinimum: fieldBackup !== null }), backup: fieldBackup };
 
     const positions = [controller, panel, field];
     const status = working ? worst(positions.map((p) => p.status)) : null;

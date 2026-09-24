@@ -143,10 +143,10 @@ describe('Panel rule', () => {
 });
 
 describe('Field rule (only Take-Charge = Yes counts)', () => {
-  it('7 → GREEN, 6 → AMBER, 5 → RED', () => {
-    expect(crewResult(evaluateDay(DAY, crewOf('A', 4, 7), []), 'A').field.status).toBe('green');
-    expect(crewResult(evaluateDay(DAY, crewOf('A', 4, 6), []), 'A').field.status).toBe('amber');
-    expect(crewResult(evaluateDay(DAY, crewOf('A', 4, 5), []), 'A').field.status).toBe('red');
+  it('7 → GREEN, 6 → AMBER, 5 → RED (Panel with no spare to lend)', () => {
+    expect(crewResult(evaluateDay(DAY, crewOf('A', 3, 7), []), 'A').field.status).toBe('green');
+    expect(crewResult(evaluateDay(DAY, crewOf('A', 3, 6), []), 'A').field.status).toBe('amber');
+    expect(crewResult(evaluateDay(DAY, crewOf('A', 3, 5), []), 'A').field.status).toBe('red');
   });
   it('Not Yet Confirmed and No do not count, whatever the grade', () => {
     const people = crewOf('A', 4, 9);
@@ -474,5 +474,24 @@ describe('Panel buffer from a Grade-13+ Field Operator', () => {
     const people = withField([13, 10, 10, 10, 10, 10, 10]);
     const g13 = people.find((p) => p.role === 'field_operator' && p.grade === 13)!;
     expect(crewResult(evaluateDay(day, people, [leave(g13, day, day)]), 'D').panel.backup).toBeNull();
+  });
+});
+
+describe('Field buffer from a spare Grade-13+ Panel Operator', () => {
+  const day = '2026-09-24'; // D on Morning
+  const crew = (panelGrades: (number | null)[], field = 6) => [
+    person('D', 'controller'),
+    ...panelGrades.map((g) => person('D', 'panel_operator', { grade: g })),
+    ...Array.from({ length: field }, () => person('D', 'field_operator', { grade: 10 }))
+  ];
+  it('Field exactly at minimum is GREEN when Panel has a spare Grade-13 Panel Operator', () => {
+    const r = crewResult(evaluateDay(day, crew([14, 14, 13, null]), []), 'D'); // Panel 4 of 3, Field 6 of 6
+    expect(r.field).toMatchObject({ count: 6, status: 'green', finding: 'staffed' });
+    expect(r.field.backup?.grade).toBe(13);
+    expect(r.panel.status).toBe('green');
+  });
+  it('stays AMBER when Panel has no spare, or the spare would leave Panel without a Grade 14', () => {
+    expect(crewResult(evaluateDay(day, crew([14, 13, 13]), []), 'D').field).toMatchObject({ status: 'amber', backup: null });      // Panel 3 of 3
+    expect(crewResult(evaluateDay(day, crew([14, 12, 12, 12]), []), 'D').field).toMatchObject({ status: 'amber', backup: null });  // only the Grade 14 is 13+
   });
 });

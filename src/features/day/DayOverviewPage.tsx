@@ -164,7 +164,7 @@ function Legend() {
         <dl className="mt-2 space-y-2 text-xs text-slate-600">
           <div><dt className="font-semibold text-slate-700">Crew colours</dt><dd className="mt-1 flex flex-wrap gap-3">{CREWS.map((k) => <span key={k} className="inline-flex items-center gap-1.5"><CrewBadge crew={k} size="sm" /> {CREW_IDENTITY[k].colour}</span>)}</dd><dd className="mt-1">The circle and left edge say which crew it is. They never mean manpower status.</dd></div>
           <div><dt className="font-semibold text-status-green">GREEN</dt><dd>Qualified manpower above minimum, or the crew Controller is available (one Controller is the normal complement). Final.</dd></div>
-          <div><dt className="font-semibold text-status-amber">AMBER · No Buffer</dt><dd>Panel or Field has exactly the number required; the card names which one. Final. Panel at the minimum is still GREEN when a Grade 13+ Field Operator on the shift can take a Panel seat and Field keeps its own minimum.</dd></div>
+          <div><dt className="font-semibold text-status-amber">AMBER · No Buffer</dt><dd>Panel or Field has exactly the number required; the card names which one. Final. Grade 13+ covers both: Panel or Field at the minimum is still GREEN when the other position has a spare Grade 13+ on the shift (and keeps its own minimum, and Panel its Grade 14+).</dd></div>
           <div><dt className={cx('font-semibold', CATEGORY.shortage.text)}>RED · Confirmed shortage</dt><dd>Fewer people available than required, even if every unconfirmed qualification were confirmed. Panel also needs at least one Grade 14+ operator; if none is available the card says so. Final.</dd></div>
           <div><dt className={cx('font-semibold', CATEGORY.coverage_required.text)}>Controller coverage required</dt><dd>The crew Controller is on leave or on another assignment and no cover is recorded. Not final: it becomes final once a cover is assigned in Controller Management.</dd></div>
           <div><dt className={cx('font-semibold', CATEGORY.data_incomplete.text)}>Qualification data incomplete</dt><dd>Below minimum only because qualifications (for example Take-Charge) are not yet confirmed. Not Yet Confirmed never counts; the result becomes final once the data is confirmed.</dd></div>
@@ -211,6 +211,7 @@ function notesFor(c: CrewDay, key: 'controller' | 'panel' | 'field', leave: Map<
   }
   if (key === 'field') {
     const p = c.field;
+    if (p.backup) notes.push({ text: `Buffer from Panel: ${p.backup.name} (G${p.backup.grade})`, tone: 'good' });
     if (p.finding === 'shortage') notes.push({ text: `Short by ${p.min - p.count}`, tone: 'red' });
     if (p.finding === 'data_incomplete') notes.push({ text: `${p.potential - p.count} Take-Charge not yet confirmed`, tone: 'pending' });
   }
@@ -328,15 +329,15 @@ function CrewCard({ crew: c, leave, date, need }: { crew: CrewDay; leave: Map<st
       {open && (
         <div className="mt-1 space-y-1.5 border-t border-slate-100 pt-2">
           <PositionDetail pos={c.controller} acting={c.controller.acting} />
-          <PositionDetail pos={c.panel} grade14 backup={c.panel.backup} />
-          <PositionDetail pos={c.field} />
+          <PositionDetail pos={c.panel} grade14 backup={c.panel.backup} backupFrom="Field" />
+          <PositionDetail pos={c.field} backup={c.field.backup} backupFrom="Panel" />
         </div>
       )}
     </Card>
   );
 }
 
-function PositionDetail({ pos, acting, grade14, backup }: { pos: PositionResult; acting?: MpPerson | null; grade14?: boolean; backup?: MpPerson | null }) {
+function PositionDetail({ pos, acting, grade14, backup, backupFrom }: { pos: PositionResult; acting?: MpPerson | null; grade14?: boolean; backup?: MpPerson | null; backupFrom?: string }) {
   const counted = [...pos.counted].sort(bySeniority);
   const notCounted = [...pos.notCounted].sort((a, b) => bySeniority(a.person, b.person));
   return (
@@ -365,7 +366,7 @@ function PositionDetail({ pos, acting, grade14, backup }: { pos: PositionResult;
         {backup && (
           <li className="flex items-center justify-between gap-2 py-1">
             <Link to={`/employees/${backup.id}`} className="min-w-0 truncate text-sm text-slate-700">{backup.name}</Link>
-            <span className="flex shrink-0 items-center gap-1"><Tag brand>Buffer from Field</Tag><Tag>G{backup.grade}</Tag></span>
+            <span className="flex shrink-0 items-center gap-1"><Tag brand>Buffer from {backupFrom}</Tag><Tag>G{backup.grade}</Tag></span>
           </li>
         )}
         {counted.length + notCounted.length === 0 && <li className="py-1 text-xs text-slate-500">Nobody available in this position.</li>}

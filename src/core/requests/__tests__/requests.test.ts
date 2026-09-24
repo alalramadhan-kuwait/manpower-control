@@ -9,7 +9,8 @@ function person(crew: Crew | null, role: MpPerson['role'], grade: number): MpPer
   return { id: `p${seq}`, employeeNumber: String(10000 + seq), name: `p${seq}`, role, crew, grade, employmentType: 'knpc',
     takeCharge: role === 'field_operator' ? 'yes' : null, panelQualified: role === 'panel_operator' ? 'yes' : null, actingController: null };
 }
-const crew = (c: Crew, field: number) => [person(c, 'controller', 16), person(c, 'panel_operator', 14), ...[1, 2, 3].map(() => person(c, 'panel_operator', 13)), ...Array.from({ length: field }, () => person(c, 'field_operator', 11))];
+// Panel Operators below Grade 13, so Panel lends no buffer to Field (Field thresholds tested on their own)
+const crew = (c: Crew, field: number) => [person(c, 'controller', 16), person(c, 'panel_operator', 14), ...[1, 2, 3].map(() => person(c, 'panel_operator', 12)), ...Array.from({ length: field }, () => person(c, 'field_operator', 11))];
 const A = crew('A', 7), B = crew('B', 6), C = crew('C', 8), D = crew('D', 8);
 const vr = person(null, 'vr_controller', 16);
 const people = [...A, ...B, ...C, ...D, vr];

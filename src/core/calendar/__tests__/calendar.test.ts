@@ -10,7 +10,8 @@ function person(crew: Crew, role: MpPerson['role'], grade: number): MpPerson {
   return { id: `p${seq}`, employeeNumber: String(10000 + seq), name: `p${seq}`, role, crew, grade, employmentType: 'knpc',
     takeCharge: role === 'field_operator' ? 'yes' : null, panelQualified: role === 'panel_operator' ? 'yes' : null, actingController: null };
 }
-const crew = (c: Crew, field = 7) => [person(c, 'controller', 16), person(c, 'panel_operator', 14), ...[1, 2, 3].map(() => person(c, 'panel_operator', 13)), ...Array.from({ length: field }, () => person(c, 'field_operator', 11))];
+// Panel Operators below Grade 13, so Panel lends no buffer to Field (Field thresholds tested on their own)
+const crew = (c: Crew, field = 7) => [person(c, 'controller', 16), person(c, 'panel_operator', 14), ...[1, 2, 3].map(() => person(c, 'panel_operator', 12)), ...Array.from({ length: field }, () => person(c, 'field_operator', 11))];
 const leave = (p: MpPerson, start: string, end: string): MpAbsence => ({ employeeId: p.id, start, end, status: 'approved', typeCode: 'annual_leave_planned', typeLabel: 'PV', inCurrentPlan: true });
 
 // 23 Sep 2026: A = Morning, C = Afternoon, B = Night, D = Off
