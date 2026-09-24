@@ -26,6 +26,7 @@ Supabase MCP or dashboard gets a matching file here, named with the version the 
 | `20260924112150_leave_requests_no_duplicates` | One leave, one record between Stage E and Stage F: `leave_save` refuses adding leave by hand while an open request covers the dates; `request_save` refuses a second open request for the same person and dates; `request_decide` confirms a record already on the same dates (no second record; type set from the request), moves a planned PV block for a Scheduled request on other dates, and refuses any other overlap |
 | `20260924151038_stage_g_shift_movements` | Stage G: `crew_movements` (temporary covers, open-ended allowed, one active per person at a time; permanent moves recorded here and applied as a dated manual row in `employee_role_assignments`); `crew_move` / `crew_move_end` / `crew_move_cancel` (staff only); cancelled rows locked, no delete policy, audited |
 | `20260924171012_controller_i_position` | Adds the `controller_i` position (Controller I, category `other`): shown on profiles, never counted as a crew's shift Controller |
+| `20260924171332_remove_controller_i_position` | Removes `controller_i` again: Controller I and UD Engineers are not tracked in this app |
 
 ## Edge Functions
 
