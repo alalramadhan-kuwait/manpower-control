@@ -164,7 +164,7 @@ function Legend() {
         <dl className="mt-2 space-y-2 text-xs text-slate-600">
           <div><dt className="font-semibold text-slate-700">Crew colours</dt><dd className="mt-1 flex flex-wrap gap-3">{CREWS.map((k) => <span key={k} className="inline-flex items-center gap-1.5"><CrewBadge crew={k} size="sm" /> {CREW_IDENTITY[k].colour}</span>)}</dd><dd className="mt-1">The circle and left edge say which crew it is. They never mean manpower status.</dd></div>
           <div><dt className="font-semibold text-status-green">GREEN</dt><dd>Qualified manpower above minimum, or the crew Controller is available (one Controller is the normal complement). Final.</dd></div>
-          <div><dt className="font-semibold text-status-amber">AMBER · No Buffer</dt><dd>Panel or Field has exactly the number required; the card names which one. Final. Grade 13+ covers both: Panel or Field at the minimum is still GREEN when the other position has a spare Grade 13+ on the shift (and keeps its own minimum, and Panel its Grade 14+).</dd></div>
+          <div><dt className="font-semibold text-status-amber">AMBER · No Buffer</dt><dd>Panel or Field has exactly the number required; the card names which one. Final. Grade 13+ covers both: when Panel is short, Grade 13+ Field Operators fill the empty seats while Field keeps its minimum; and Panel or Field at the minimum is still GREEN when the other position has a spare Grade 13+ on the shift (Panel keeps its Grade 14+).</dd></div>
           <div><dt className={cx('font-semibold', CATEGORY.shortage.text)}>RED · Confirmed shortage</dt><dd>Fewer people available than required, even if every unconfirmed qualification were confirmed. Panel also needs at least one Grade 14+ operator; if none is available the card says so. Final.</dd></div>
           <div><dt className={cx('font-semibold', CATEGORY.coverage_required.text)}>Controller coverage required</dt><dd>The crew Controller is on leave or on another assignment and no cover is recorded. Not final: it becomes final once a cover is assigned in Controller Management.</dd></div>
           <div><dt className={cx('font-semibold', CATEGORY.data_incomplete.text)}>Qualification data incomplete</dt><dd>Below minimum only because qualifications (for example Take-Charge) are not yet confirmed. Not Yet Confirmed never counts; the result becomes final once the data is confirmed.</dd></div>
@@ -199,6 +199,7 @@ function notesFor(c: CrewDay, key: 'controller' | 'panel' | 'field', leave: Map<
   }
   if (key === 'panel') {
     const p = c.panel;
+    if (p.fromField.length) notes.push({ text: `Filled from Field: ${p.fromField.map((x) => `${x.name} (G${x.grade})`).join(', ')}`, tone: 'good' });
     if (p.backup) notes.push({ text: `Buffer from Field: ${p.backup.name} (G${p.backup.grade})`, tone: 'good' });
     if (p.finding === 'shortage') {
       if (p.count < p.min) notes.push({ text: `Short by ${p.min - p.count}`, tone: 'red' });
@@ -329,7 +330,7 @@ function CrewCard({ crew: c, leave, date, need }: { crew: CrewDay; leave: Map<st
       {open && (
         <div className="mt-1 space-y-1.5 border-t border-slate-100 pt-2">
           <PositionDetail pos={c.controller} acting={c.controller.acting} />
-          <PositionDetail pos={c.panel} grade14 backup={c.panel.backup} backupFrom="Field" />
+          <PositionDetail pos={c.panel} grade14 backup={c.panel.backup} backupFrom="Field" fromOther={c.panel.fromField} />
           <PositionDetail pos={c.field} backup={c.field.backup} backupFrom="Panel" />
         </div>
       )}
@@ -337,7 +338,7 @@ function CrewCard({ crew: c, leave, date, need }: { crew: CrewDay; leave: Map<st
   );
 }
 
-function PositionDetail({ pos, acting, grade14, backup, backupFrom }: { pos: PositionResult; acting?: MpPerson | null; grade14?: boolean; backup?: MpPerson | null; backupFrom?: string }) {
+function PositionDetail({ pos, acting, grade14, backup, backupFrom, fromOther }: { pos: PositionResult; acting?: MpPerson | null; grade14?: boolean; backup?: MpPerson | null; backupFrom?: string; fromOther?: MpPerson[] }) {
   const counted = [...pos.counted].sort(bySeniority);
   const notCounted = [...pos.notCounted].sort((a, b) => bySeniority(a.person, b.person));
   return (
@@ -352,6 +353,7 @@ function PositionDetail({ pos, acting, grade14, backup, backupFrom }: { pos: Pos
             <Link to={`/employees/${p.id}`} className="min-w-0 truncate text-sm font-medium text-slate-900">{p.name}</Link>
             <span className="flex shrink-0 items-center gap-1">
               {acting?.id === p.id && <Tag brand>Acting</Tag>}
+              {fromOther?.includes(p) && <Tag brand>From Field</Tag>}
               {p.dayDuty ? <Tag brand>Day duty</Tag> : p.movedFrom && <Tag>from {p.movedFrom}</Tag>}
               <Tag brand={grade14 && p.grade != null && p.grade >= 14}>{p.grade != null ? `G${p.grade}${grade14 && p.grade >= 14 ? ' · 14+' : ''}` : p.employmentType === 'contractor' ? 'Contractor' : 'G?'}</Tag>
             </span>

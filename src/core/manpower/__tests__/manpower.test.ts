@@ -495,3 +495,27 @@ describe('Field buffer from a spare Grade-13+ Panel Operator', () => {
     expect(crewResult(evaluateDay(day, crew([14, 12, 12, 12]), []), 'D').field).toMatchObject({ status: 'amber', backup: null });  // only the Grade 14 is 13+
   });
 });
+
+describe('Grade-13+ Field Operators fill empty Panel seats', () => {
+  const day = '2026-09-24'; // D on Morning
+  const crew = (panelGrades: number[], fieldGrades: number[]) => [
+    person('D', 'controller'),
+    ...panelGrades.map((g) => person('D', 'panel_operator', { grade: g })),
+    ...fieldGrades.map((g) => person('D', 'field_operator', { grade: g }))
+  ];
+  it('Panel 2 of 3 with Field 11 of 6: a Grade-13 Field Operator takes the seat, Field drops to 10', () => {
+    const r = crewResult(evaluateDay(day, crew([14, 13], [13, 13, 12, 12, 11, 11, 10, 10, 10, 10, 8]), []), 'D');
+    expect(r.panel).toMatchObject({ count: 3, finding: 'staffed' });
+    expect(r.panel.fromField.map((p) => p.grade)).toEqual([13]);
+    expect(r.panel.backup?.grade).toBe(13);          // the other Grade 13 is Panel's buffer
+    expect(r.field.count).toBe(10);
+    expect(r.confirmedShortage).toBe(false);
+  });
+  it('never takes Field below its minimum, and never uses a Field Operator below Grade 13', () => {
+    const tight = crewResult(evaluateDay(day, crew([14, 13], [13, 11, 11, 11, 11, 11]), []), 'D'); // Field exactly 6
+    expect(tight.panel).toMatchObject({ count: 2, status: 'red', fromField: [] });
+    expect(tight.field.count).toBe(6);
+    const lowGrades = crewResult(evaluateDay(day, crew([14, 13], [12, 12, 12, 11, 11, 11, 11, 11]), []), 'D');
+    expect(lowGrades.panel).toMatchObject({ count: 2, fromField: [] });
+  });
+});

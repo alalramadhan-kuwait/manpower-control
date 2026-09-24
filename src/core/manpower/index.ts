@@ -170,7 +170,7 @@ export interface ControllerResult extends PositionResult {
   /** The recorded cover for this crew today, and whether it counts (it does not while the cover is on leave). */
   cover: { person: MpPerson; assignment: MpAssignment; counted: boolean; absence: MpAbsence | null } | null;
 }
-export interface PanelResult extends PositionResult { grade14: number; potentialGrade14: number }
+export interface PanelResult extends PositionResult { grade14: number; potentialGrade14: number; /** Grade-13+ Field Operators filling empty Panel seats today (counted in Panel, not Field). */ fromField: MpPerson[] }
 export interface AbsenceOnDay { person: MpPerson; absence: MpAbsence; reducesManpower: boolean }
 
 export interface CrewDay {
@@ -350,7 +350,20 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
     };
 
     // ---- Panel
-    const panelCounted = pool.panel.filter((p) => p.panelQualified === 'yes');
+    // Grade 13+ covers both: when Panel is short, Grade-13+ Field Operators on the shift take the empty Panel seats
+    // (highest grade first) as long as Field keeps its own minimum. They count in Panel, not in Field.
+    const fromField: MpPerson[] = [];
+    {
+      const qualified = pool.panel.filter((p) => p.panelQualified === 'yes').length;
+      let fieldSpare = pool.field.filter((p) => p.takeCharge === 'yes').length - rules.fieldMin;
+      for (const c of pool.field.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade).sort((a, b) => (b.grade ?? 0) - (a.grade ?? 0) || a.name.localeCompare(b.name))) {
+        if (qualified + fromField.length >= rules.panelMin) break;
+        if (c.takeCharge === 'yes') { if (fieldSpare <= 0) continue; fieldSpare--; }
+        fromField.push(c);
+      }
+      pool.field = pool.field.filter((p) => !fromField.includes(p));
+    }
+    const panelCounted = [...pool.panel.filter((p) => p.panelQualified === 'yes'), ...fromField];
     const panelNot: NotCounted[] = pool.panel.filter((p) => p.panelQualified !== 'yes').map((p) => ({ person: p, pendingData: isUnknown(p.panelQualified), reason: qualReason('Panel qualification', p.panelQualified) }));
     const isG14 = (p: MpPerson) => p.grade != null && p.grade >= rules.panelGrade14;
     const g14Unknown = (p: MpPerson) => p.grade == null && p.employmentType === 'knpc';
@@ -372,11 +385,12 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
       ? pool.field.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade && (!fieldTakeCharge.includes(p) || fieldTakeCharge.length - 1 >= rules.fieldMin))
           .sort((a, b) => (b.grade ?? 0) - (a.grade ?? 0) || a.name.localeCompare(b.name))[0] ?? null
       : null;
+    for (const p of fromField) panelIssues.push(`Filled from Field: ${p.name} (Grade ${p.grade})`);
     if (backup) panelIssues.push(`Buffer: ${backup.name} (Field Operator, Grade ${backup.grade}) can take a Panel seat`);
     const panel: PanelResult = {
       ...finishPosition({ key: 'panel', label: 'Panel', count: panelCounted.length, min: rules.panelMin, buffer: panelCounted.length - rules.panelMin + (backup ? 1 : 0), potential: panelPotentialPeople.length,
         counted: panelCounted, notCounted: panelNot, issues: panelIssues, requirementMet: panelMet, potentialMet: panelPotentialMet, greenAtMinimum: backup !== null }),
-      grade14, potentialGrade14, backup
+      grade14, potentialGrade14, backup, fromField
     };
 
     // ---- Field (only Take-Charge = Yes counts)
