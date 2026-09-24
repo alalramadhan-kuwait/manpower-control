@@ -42,6 +42,10 @@
 }
 
 html, body, #root { height: 100%; }
+/* iPhone home-screen app (translucent status bar): on a page too short to scroll, iOS places the fixed bottom
+   tab bar one status-bar height above the bottom edge. A document that tall again keeps the bar at the bottom.
+   iOS only (-webkit-touch-callout); the inset is 0 in the browser and on other devices. */
+@supports (-webkit-touch-callout: none) { html { min-height: calc(100% + env(safe-area-inset-top)); } }
 body { -webkit-tap-highlight-color: transparent; font-family: var(--font-sans); font-feature-settings: "cv11", "ss01"; background: var(--color-canvas); }
 /* headings use the display face of the wordmark */
 h1, h2.font-display, .font-display { font-family: var(--font-display); letter-spacing: -0.01em; }
