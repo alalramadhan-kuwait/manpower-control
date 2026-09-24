@@ -153,18 +153,35 @@ describe('monthly grid parsing and planning', () => {
       const plan = planManpowerImport(offShift, existing, [idempotent[0], idempotent[2], idempotent[3]], 'test.xlsx');
       expect(leaveRows(plan, '20001')).toEqual([]);
     });
-    it('lists "Covering X-shift" notes for review, and marks them as recorded once the move is in Shift Movements', () => {
+    it('lists upcoming "Covering X-shift" notes for review, and marks them as recorded once the move is in Shift Movements', () => {
       const withNote = structuredClone(parsed);
       withNote.gridRemarks.push({ employeeNumber: '20001', shortName: 'Field One', sheet: 'Jan', cell: 'E9', date: '2026-01-20', text: 'Covering B-shift' });
       const notes = (plan: ReturnType<typeof planManpowerImport>) => plan.rows.filter((r) => r.entity_kind === 'note' && (r.raw as any)?.crew);
-      const open = notes(planManpowerImport(withNote, existing, idempotent, 'test.xlsx'));
+      const T = '2026-01-10';                                   // "today" before the note: an upcoming cover
+      const open = notes(planManpowerImport(withNote, existing, idempotent, 'test.xlsx', T));
       expect(open).toHaveLength(1);
       expect(open[0]).toMatchObject({ outcome: 'review', needs_review: true, sheet: 'Jan', row_ref: 'E9', raw: { crew: 'B', date: '2026-01-20' } });
       expect(open[0].message).toContain('Shift Movements');
       const moved = existing.map((e) => (e.id === 'e1' ? { ...e, crew_moves: [{ start: '2026-01-15', end: null, crew: 'B' }] } : e));
-      expect(notes(planManpowerImport(withNote, moved, idempotent, 'test.xlsx'))[0]).toMatchObject({ outcome: 'unchanged', needs_review: false });
+      expect(notes(planManpowerImport(withNote, moved, idempotent, 'test.xlsx', T))[0]).toMatchObject({ outcome: 'unchanged', needs_review: false });
       const permanent = existing.map((e) => (e.id === 'e1' ? { ...e, crew_history: [{ from: '2026-01-01', to: '2026-01-19', crew: 'A' }, { from: '2026-01-20', to: null, crew: 'B' }] } : e));
-      expect(notes(planManpowerImport(withNote, permanent, idempotent, 'test.xlsx'))[0]).toMatchObject({ outcome: 'unchanged' });
+      expect(notes(planManpowerImport(withNote, permanent, idempotent, 'test.xlsx', T))[0]).toMatchObject({ outcome: 'unchanged' });
+      // on the note's own date it is still current
+      expect(notes(planManpowerImport(withNote, existing, idempotent, 'test.xlsx', '2026-01-20'))[0]).toMatchObject({ outcome: 'review', needs_review: true });
+    });
+    it('a "Covering X-shift" note dated before today is history only, not a review item', () => {
+      const withNote = structuredClone(parsed);
+      withNote.gridRemarks.push({ employeeNumber: '20001', shortName: 'Field One', sheet: 'Jan', cell: 'E9', date: '2026-01-20', text: 'Covering B-shift' });
+      const row = planManpowerImport(withNote, existing, idempotent, 'test.xlsx', '2026-09-24').rows.find((r) => r.entity_kind === 'note' && (r.raw as any)?.crew);
+      expect(row).toMatchObject({ outcome: 'unchanged', needs_review: false, raw: { past: true } });
+      expect(row!.message).toContain('kept for the record');
+    });
+    it('a next-year workbook does not question the earlier year\'s baseline', () => {
+      const oldBaseline = cur('old', 'e1', '2025-11-03', '2025-11-20', { in_original_plan: true });
+      const flagged = (plan: ReturnType<typeof planManpowerImport>) => plan.rows.filter((r) => r.needs_review && r.message?.includes('no longer on the original PV sheet'));
+      expect(flagged(planManpowerImport(parsed, existing, [...idempotent, oldBaseline], 'test.xlsx'))).toEqual([]);
+      const sameYear = cur('gone', 'e1', '2026-11-03', '2026-11-20', { in_original_plan: true });
+      expect(flagged(planManpowerImport(parsed, existing, [...idempotent, sameYear], 'test.xlsx'))).toHaveLength(1);
     });
     it('leave cancelled by hand is not recreated from the sheet marks', () => {
       const cancelled = cur('b', 'e1', '2026-01-25', '2026-01-26', { source_kind: 'monthly_grid', in_original_plan: false, status: 'cancelled', in_current_plan: false, hand_corrected: true });

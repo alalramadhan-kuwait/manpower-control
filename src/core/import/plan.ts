@@ -84,7 +84,8 @@ export function planManpowerImport(
   parsed: ParsedManpowerWorkbook,
   existing: ExistingEmployee[],
   existingLeaves: ExistingLeave[],
-  fileName: string
+  fileName: string,
+  today: string = localIsoToday()
 ): ImportPlan {
   const b = new RowBuilder();
   const warnings = [...parsed.warnings];
@@ -228,7 +229,9 @@ export function planManpowerImport(
 
     // A. original plan sheet vs the recorded baseline: flag only, the baseline is history
     if (ex) {
-      const dbOrig = dbLeaves.filter((l) => l.source_kind === 'pv_schedule' && l.in_original_plan);
+      // only the workbook's own year: a 2027 plan says nothing about the 2026 baseline
+      const inYear = (l: ExistingLeave) => l.start_date.startsWith(`${parsed.year}-`) || l.end_date.startsWith(`${parsed.year}-`);
+      const dbOrig = dbLeaves.filter((l) => l.source_kind === 'pv_schedule' && l.in_original_plan && inYear(l));
       const dbOrigKeys = new Set(dbOrig.map((l) => rk(l.start_date, l.end_date)));
       for (const rg of sheetOrig) if (!dbOrigKeys.has(rk(rg.start, rg.end))) b.add({ sheet: sheetOf(rg.sourceRef), row_ref: cellOf(rg.sourceRef), entity_kind: 'leave_record', employee_number: emp, matched_employee_id: ex.id, outcome: 'review', needs_review: true, raw: { start: rg.start, end: rg.end, plan: 'original' }, payload: null, diff: null,
         message: `${who}: the original PV sheet now shows ${rg.start} → ${rg.end}, which is not in the recorded baseline. Baseline kept unchanged (source changed between workbook versions); review.` });
@@ -349,6 +352,7 @@ export function planManpowerImport(
   }
   // "Covering X-shift" notes: a crew move written as text in a day cell. Never applied automatically (the note has
   // no end date and the crew blocks were not changed); listed for review unless the move is already recorded.
+  // A note dated before today is history only: the past is kept for the record, not re-planned.
   const COVER = /cover(?:ing)?\s*([ABCD])\s*[-\s]?\s*shift/i;
   for (const m of parsed.gridRemarks) {
     const hit = COVER.exec(m.text);
@@ -356,11 +360,13 @@ export function planManpowerImport(
     const crew = hit[1].toUpperCase();
     const ex = byNumber.get(m.employeeNumber) ?? null;
     const recorded = !!ex && !!m.date && crewRecorded(ex, m.date, crew);
+    const past = !!m.date && m.date < today;
     const who = label(m.employeeNumber, m.shortName);
     const when = m.date ?? 'an unknown date';
-    b.add({ sheet: m.sheet, row_ref: m.cell, entity_kind: 'note', employee_number: m.employeeNumber, matched_employee_id: ex?.id ?? null, outcome: recorded ? 'unchanged' : 'review', needs_review: !recorded,
-      raw: { text: m.text.trim(), date: m.date, crew }, payload: null, diff: null,
+    b.add({ sheet: m.sheet, row_ref: m.cell, entity_kind: 'note', employee_number: m.employeeNumber, matched_employee_id: ex?.id ?? null, outcome: recorded || past ? 'unchanged' : 'review', needs_review: !recorded && !past,
+      raw: { text: m.text.trim(), date: m.date, crew, ...(past ? { past: true } : {}) }, payload: null, diff: null,
       message: recorded ? `${who}: note "${m.text.trim()}" on ${when} — already recorded (in ${crew} Shift on that date).`
+        : past ? `${who}: note "${m.text.trim()}" on ${when} — past cover, kept for the record.`
         : `${who}: note "${m.text.trim()}" on ${when} (${m.sheet} ${m.cell}). The workbook records a crew move only as this note; record it in Shift Movements if it applies.` });
   }
 
@@ -456,6 +462,11 @@ export function planPromotionImport(parsed: ParsedPromotionMaster, existing: Exi
 }
 
 /** Whether an existing employee is already in `crew` on `date` (role history or an active temporary cover). */
+function localIsoToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function crewRecorded(ex: ExistingEmployee, date: string, crew: string): boolean {
   if (ex.crew_moves?.some((m) => m.start <= date && (m.end === null || date <= m.end) && m.crew === crew)) return true;
   const period = ex.crew_history?.find((h) => h.from <= date && (h.to === null || date <= h.to));
