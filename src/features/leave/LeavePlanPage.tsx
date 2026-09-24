@@ -9,11 +9,11 @@ import type { EmployeeDirectoryRow, LeaveRecord } from '@/data/types';
 import { Button, Card, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components';
 import { CrewBadge, CrewTag, crewEdge, isCrew } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
+import { byPosition } from '@/ui/positions';
 import { LeaveSheet, SOURCE_LABEL, changeLabel, type LeaveTarget, type SheetPerson } from './LeaveSheet';
 
 const GROUPS = ['A', 'B', 'C', 'D', 'day'] as const;
 type Group = (typeof GROUPS)[number];
-const ROLE_ORDER: Record<string, number> = { controller: 0, panel_operator: 1, field_operator: 2 };
 const ROLE_SHORT: Record<string, string> = { controller: 'Controller', panel_operator: 'Panel', field_operator: 'Field', vr_controller: 'VR', morning_controller: 'Morning Controller' };
 const MONTH_LETTERS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
 
@@ -45,7 +45,7 @@ export default function LeavePlanPage() {
     const q = query.trim().toLowerCase();
     const people = data.people
       .filter((p) => (filter === 'all' || groupOf(p) === filter) && (!q || p.display_name.toLowerCase().includes(q) || p.employee_number.includes(q)))
-      .sort((a, b) => (ROLE_ORDER[a.position_code ?? ''] ?? 9) - (ROLE_ORDER[b.position_code ?? ''] ?? 9) || a.display_name.localeCompare(b.display_name));
+      .sort(byPosition);
     const groups = GROUPS.map((g) => {
       const rows = people.filter((p) => groupOf(p) === g).map((p) => {
         const all = leavesOf.get(p.id) ?? [];

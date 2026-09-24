@@ -10,6 +10,7 @@ import type { EmployeeDirectoryRow, QualificationStatus, UserProfile } from '@/d
 import { BottomSheet, Button, Chip, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components';
 import { CrewBadge, CrewTag, isCrew } from '@/ui/crew';
 import { OnLeaveChip, localToday } from '@/ui/leave';
+import { positionRank } from '@/ui/positions';
 
 const ROLE_FILTERS = [['', 'All roles'], ['controller', 'Controllers'], ['panel', 'Panel'], ['field', 'Field']] as const;
 const CREW_FILTERS = ['', 'A', 'B', 'C', 'D'] as const;
@@ -65,7 +66,7 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
       .filter((r) => !crew || r.crew_code === crew)
       .filter((r) => !emp || r.employment_type === emp)
       .filter((r) => !needle || r.employee_number.includes(needle) || r.official_name.toLowerCase().includes(needle) || r.display_name.toLowerCase().includes(needle) || (r.short_name ?? '').toLowerCase().includes(needle))
-      .sort((a, b) => (a.position_category ?? 'z').localeCompare(b.position_category ?? 'z') || (a.crew_code ?? 'Z').localeCompare(b.crew_code ?? 'Z') || a.display_name.localeCompare(b.display_name));
+      .sort((a, b) => positionRank(a.position_code) - positionRank(b.position_code) || (a.crew_code ?? 'Z').localeCompare(b.crew_code ?? 'Z') || a.display_name.localeCompare(b.display_name));
   }, [rows, q, role, crew, emp, view, need]);
 
   // Tick boxes are only for bulk approval, which works from the Needs action view.
