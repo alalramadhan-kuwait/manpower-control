@@ -320,7 +320,7 @@ function CrewCard({ crew: c, leave, date, need }: { crew: CrewDay; leave: Map<st
         {open ? <>Hide details <ChevronUp className="h-4 w-4" /></> : <>Who counts <ChevronDown className="h-4 w-4" /></>}
       </button>
       {open && (
-        <div className="mt-1 space-y-2.5 border-t border-slate-100 pt-3">
+        <div className="mt-1 space-y-1.5 border-t border-slate-100 pt-2">
           <PositionDetail pos={c.controller} acting={c.controller.acting} />
           <PositionDetail pos={c.panel} grade14 />
           <PositionDetail pos={c.field} />
@@ -334,46 +334,39 @@ function PositionDetail({ pos, acting, grade14 }: { pos: PositionResult; acting?
   const counted = [...pos.counted].sort(bySeniority);
   const notCounted = [...pos.notCounted].sort((a, b) => bySeniority(a.person, b.person));
   return (
-    <section className="rounded-xl bg-slate-50 px-3 py-2.5 ring-1 ring-slate-200/70">
+    <section className="rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200/70">
       <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-slate-900">{pos.label}</h3>
-          <div className="text-xs text-slate-500">{pos.count} counted · minimum {pos.min}</div>
-        </div>
+        <h3 className="text-xs font-semibold text-slate-900">{pos.label} <span className="font-normal text-slate-500">· {pos.count} of min {pos.min}</span></h3>
         {pos.final ? <StatusPill status={pos.status} small /> : <PendingPill kind={pos.finding as 'coverage_required' | 'data_incomplete'} />}
       </div>
-      <ul className="mt-1.5 divide-y divide-slate-200/70">
+      <ul className="mt-0.5 divide-y divide-slate-200/60">
         {counted.map((p) => (
-          <li key={p.id} className="flex items-center justify-between gap-3 py-2">
-            <Link to={`/employees/${p.id}`} className="min-w-0 truncate text-[15px] font-medium text-slate-900">{p.name}</Link>
-            <span className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-              {acting?.id === p.id && <Tag brand>Acting Controller</Tag>}
-              {grade14 && p.grade != null && p.grade >= 14 && <Tag brand>Grade 14+</Tag>}
-              {p.movedFrom && <Tag>Cover from {p.movedFrom}</Tag>}
-              <Tag>{p.grade != null ? `G${p.grade}` : p.employmentType === 'contractor' ? 'Contractor' : 'G?'}</Tag>
+          <li key={p.id} className="flex items-center justify-between gap-2 py-1">
+            <Link to={`/employees/${p.id}`} className="min-w-0 truncate text-sm font-medium text-slate-900">{p.name}</Link>
+            <span className="flex shrink-0 items-center gap-1">
+              {acting?.id === p.id && <Tag brand>Acting</Tag>}
+              {p.movedFrom && <Tag>from {p.movedFrom}</Tag>}
+              <Tag brand={grade14 && p.grade != null && p.grade >= 14}>{p.grade != null ? `G${p.grade}${grade14 && p.grade >= 14 ? ' · 14+' : ''}` : p.employmentType === 'contractor' ? 'Contractor' : 'G?'}</Tag>
             </span>
           </li>
         ))}
         {notCounted.map((n) => (
-          <li key={n.person.id} className="py-2">
-            <div className="flex items-center justify-between gap-3">
-              <Link to={`/employees/${n.person.id}`} className="min-w-0 truncate text-[15px] text-slate-600">{n.person.name}</Link>
-              <Tag muted>Not counted</Tag>
-            </div>
-            <div className={cx('mt-0.5 text-xs', n.pendingData ? 'text-slate-600' : 'text-slate-500')}>{n.reason}</div>
+          <li key={n.person.id} className="flex items-baseline justify-between gap-2 py-1">
+            <Link to={`/employees/${n.person.id}`} className="min-w-0 truncate text-sm text-slate-500">{n.person.name}</Link>
+            <span className={cx('min-w-0 text-right text-[11px] leading-tight', n.pendingData ? 'text-slate-600' : 'text-slate-500')}>Not counted · {n.reason}</span>
           </li>
         ))}
-        {counted.length + notCounted.length === 0 && <li className="py-2 text-sm text-slate-500">Nobody available in this position.</li>}
+        {counted.length + notCounted.length === 0 && <li className="py-1 text-xs text-slate-500">Nobody available in this position.</li>}
       </ul>
     </section>
   );
 }
 
 /** Small neutral label on a person row. Navy for qualifications; never a status colour. */
-function Tag({ children, brand, muted }: { children: React.ReactNode; brand?: boolean; muted?: boolean }) {
+function Tag({ children, brand }: { children: React.ReactNode; brand?: boolean }) {
   return (
-    <span className={cx('whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] font-semibold ring-1',
-      brand ? 'bg-brand-50 text-brand-700 ring-brand-100' : muted ? 'bg-slate-100 text-slate-500 ring-slate-200' : 'bg-white text-slate-700 ring-slate-200')}>{children}</span>
+    <span className={cx('whitespace-nowrap rounded px-1 text-[10px] font-semibold leading-4 ring-1',
+      brand ? 'bg-brand-50 text-brand-700 ring-brand-100' : 'bg-white text-slate-600 ring-slate-200')}>{children}</span>
   );
 }
 
