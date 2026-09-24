@@ -27,7 +27,7 @@ Supabase MCP or dashboard gets a matching file here, named with the version the 
 | `20260924151038_stage_g_shift_movements` | Stage G: `crew_movements` (temporary covers, open-ended allowed, one active per person at a time; permanent moves recorded here and applied as a dated manual row in `employee_role_assignments`); `crew_move` / `crew_move_end` / `crew_move_cancel` (staff only); cancelled rows locked, no delete policy, audited |
 | `20260924171012_controller_i_position` | Adds the `controller_i` position (Controller I, category `other`): shown on profiles, never counted as a crew's shift Controller |
 | `20260924171332_remove_controller_i_position` | Removes `controller_i` again: Controller I and UD Engineers are not tracked in this app |
-| `20260924185557_day_duty_movements` | Day duty: `crew_movements.to_crew` also accepts `DAY` (temporary only, open-ended allowed); `crew_move` accepts it. The person leaves their crew for the period, works day shift Sunday–Thursday, and is not counted in any crew's minimum |
+| `20260924185557_day_duty_movements` | Day duty: `crew_movements.to_crew` also accepts `DAY` (temporary only, open-ended allowed); `crew_move` accepts it. The person leaves their crew for the period and works day shift Sunday–Thursday; the app counts them with the crew on Morning shift those days (off Friday and Saturday) |
 
 ## Edge Functions
 

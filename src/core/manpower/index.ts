@@ -33,7 +33,8 @@ export interface MpPerson {
   moves?: MpCrewMove[];
   /** Set by personOn when a temporary cover puts the person in another crew on that date: their own crew. */
   movedFrom?: Crew | null;
-  /** Set by personOn when the person is on day duty on that date (out of every crew, works day shift Sun–Thu). */
+  /** Set by personOn when the person is on day duty on that date: out of their own crew; evaluateDay counts them
+   *  in the crew on Morning shift, Sunday to Thursday (Friday and Saturday off). */
   dayDuty?: boolean;
 }
 
@@ -41,7 +42,7 @@ export interface MpPerson {
 export interface MpRolePeriod { from: string; to: string | null; role: Role | null; crew: Crew | null }
 /** A temporary cover: works with `crew` from `start` to `end` (null = until further notice). `DAY` = day duty. */
 export interface MpCrewMove { start: string; end: string | null; crew: Crew | typeof DAY_DUTY }
-/** Movement target for day duty: out of every crew, day shift Sunday to Thursday (Friday and Saturday off). */
+/** Movement target for day duty: day shift Sunday to Thursday with the crew on Morning shift (Friday and Saturday off). */
 export const DAY_DUTY = 'DAY' as const;
 /** Day duty works Sunday to Thursday. */
 export const isDayDutyWorkday = (date: string) => new Date(date + 'T00:00:00Z').getUTCDay() <= 4;
@@ -203,12 +204,14 @@ export interface DayDutyToday {
   person: MpPerson; absence: MpAbsence | null; unresolved: MpAbsence | null;
   /** Sunday to Thursday; Friday and Saturday are off. */
   working: boolean;
+  /** The crew they are counted in today (the crew on Morning shift), null when off. */
+  countedIn: Crew | null;
 }
 export interface DayResult {
   date: string;
   crews: CrewDay[]; // ordered Morning, Afternoon, Night, Off
   dayStaff: DayStaff[]; // VR and Morning Controllers, and anyone on Morning rotation
-  /** Crew members on day duty today (not counted in any crew). */
+  /** Crew members on day duty today (counted in the Morning crew Sunday to Thursday, off Friday and Saturday). */
   dayDuty: DayDutyToday[];
   /**
    * The Morning Controller post today. 'coverage_required' when the Morning Controller has been assigned to cover
@@ -258,8 +261,11 @@ function qualReason(label: string, s: QualStatus): string {
 }
 
 export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbsence[], rules: Rules = FULL_OPERATION, assignments: MpAssignment[] = []): DayResult {
-  // each person's role and crew on this date (role history, permanent and temporary shift movements)
-  const people = allPeople.map((p) => personOn(p, date));
+  // each person's role and crew on this date (role history, permanent and temporary shift movements);
+  // day duty works with the crew on Morning shift, Sunday to Thursday, in the person's own position
+  const morningCrew = CREWS.find((c) => stateOf(dutyFor(date, c)) === 'M') ?? null;
+  const dayDutyCrew = isDayDutyWorkday(date) ? morningCrew : null;
+  const people = allPeople.map((p) => personOn(p, date)).map((p) => (p.dayDuty && dayDutyCrew ? { ...p, crew: dayDutyCrew } : p));
   const todays = assignments.filter((a) => a.start <= date && date <= a.end);
   const assignmentOf = (p: MpPerson) => todays.find((a) => a.employeeId === p.id) ?? null;
   const byId = new Map(people.map((p) => [p.id, p]));
@@ -393,7 +399,7 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
       morningPost: rotation ? p.id === rotation.employeeId : p.role === 'morning_controller' }));
 
   const dayDuty: DayDutyToday[] = people.filter((p) => p.dayDuty)
-    .map((p) => ({ person: p, absence: leaveOf(p), unresolved: unresolvedOf(p), working: isDayDutyWorkday(date) }));
+    .map((p) => ({ person: p, absence: leaveOf(p), unresolved: unresolvedOf(p), working: dayDutyCrew !== null, countedIn: dayDutyCrew }));
 
   const regularMorning = people.find((p) => p.role === 'morning_controller') ?? null;
   let morningPost: DayResult['morningPost'];

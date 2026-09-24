@@ -268,7 +268,7 @@ function AbsentList({ crew: c, leave }: { crew: CrewDay; leave: Map<string, OnLe
   );
 }
 
-const covering = (c: CrewDay) => [c.controller, c.panel, c.field].flatMap((pos) => pos.counted).filter((p) => p.movedFrom);
+const covering = (c: CrewDay) => [c.controller, c.panel, c.field].flatMap((pos) => pos.counted).filter((p) => p.dayDuty || (p.movedFrom && p.movedFrom !== c.crew));
 
 function CrewCard({ crew: c, leave, date, need }: { crew: CrewDay; leave: Map<string, OnLeave>; date: string; need?: CoverageNeed }) {
   const [open, setOpen] = useState(false);
@@ -310,8 +310,8 @@ function CrewCard({ crew: c, leave, date, need }: { crew: CrewDay; leave: Map<st
       </div>
       {covering(c).length > 0 && (
         <section className="mt-2 rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200/70">
-          <h3 className="text-xs font-semibold text-slate-900">Covering from another crew <span className="font-normal text-slate-500">· {covering(c).length}</span></h3>
-          <ul className="mt-0.5 divide-y divide-slate-200/60">{[...covering(c)].sort(bySeniority).map((p) => <li key={p.id} className="flex items-center justify-between gap-2 py-1"><Link to={`/employees/${p.id}`} className="min-w-0 truncate text-sm font-medium text-slate-900">{p.name}</Link><span className="flex shrink-0 items-center gap-1 text-[11px] text-slate-500">from <CrewBadge crew={p.movedFrom!} size="sm" /></span></li>)}</ul>
+          <h3 className="text-xs font-semibold text-slate-900">Covering from another crew or day duty <span className="font-normal text-slate-500">· {covering(c).length}</span></h3>
+          <ul className="mt-0.5 divide-y divide-slate-200/60">{[...covering(c)].sort(bySeniority).map((p) => <li key={p.id} className="flex items-center justify-between gap-2 py-1"><Link to={`/employees/${p.id}`} className="min-w-0 truncate text-sm font-medium text-slate-900">{p.name}</Link><span className="flex shrink-0 items-center gap-1 text-[11px] text-slate-500">{p.dayDuty && <Tag brand>Day duty</Tag>}{p.movedFrom && p.movedFrom !== c.crew && <>from <CrewBadge crew={p.movedFrom} size="sm" /></>}</span></li>)}</ul>
         </section>
       )}
       {c.absences.length > 0 && <AbsentList crew={c} leave={leave} />}
@@ -350,7 +350,7 @@ function PositionDetail({ pos, acting, grade14 }: { pos: PositionResult; acting?
             <Link to={`/employees/${p.id}`} className="min-w-0 truncate text-sm font-medium text-slate-900">{p.name}</Link>
             <span className="flex shrink-0 items-center gap-1">
               {acting?.id === p.id && <Tag brand>Acting</Tag>}
-              {p.movedFrom && <Tag>from {p.movedFrom}</Tag>}
+              {p.dayDuty ? <Tag brand>Day duty</Tag> : p.movedFrom && <Tag>from {p.movedFrom}</Tag>}
               <Tag brand={grade14 && p.grade != null && p.grade >= 14}>{p.grade != null ? `G${p.grade}${grade14 && p.grade >= 14 ? ' · 14+' : ''}` : p.employmentType === 'contractor' ? 'Contractor' : 'G?'}</Tag>
             </span>
           </li>
@@ -383,7 +383,7 @@ function DayDutyCard({ result, leave }: { result: DayResult; leave: Map<string, 
     <Card className="mt-3">
       <div className="flex items-center justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-xs font-semibold text-slate-900"><DayDutyBadge size="sm" /> Day duty <span className="font-normal text-slate-500">· {result.dayDuty.length}</span></h3>
-        <span className="text-[11px] text-slate-500">{weekend ? 'Weekend: off today' : 'Sunday to Thursday'}</span>
+        <span className="flex items-center gap-1 text-[11px] text-slate-500">{weekend ? 'Weekend: off today' : <>Counted in <CrewBadge crew={result.dayDuty[0].countedIn!} size="sm" /> Morning</>}</span>
       </div>
       <ul className="mt-1 divide-y divide-slate-100">
         {[...result.dayDuty].sort((a, b) => bySeniority(a.person, b.person)).map((s) => {
@@ -400,7 +400,7 @@ function DayDutyCard({ result, leave }: { result: DayResult; leave: Map<string, 
           );
         })}
       </ul>
-      <p className="mt-1 text-[11px] text-slate-500">Not counted in any crew's minimum.</p>
+      <p className="mt-1 text-[11px] text-slate-500">Day duty counts in the crew on Morning shift, Sunday to Thursday; off Friday and Saturday.</p>
     </Card>
   );
 }

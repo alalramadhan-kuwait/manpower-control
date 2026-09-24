@@ -431,15 +431,18 @@ describe('shift movements (Stage G): role and crew by date', () => {
     expect(personOn(p, '2027-06-01').crew).toBe('D');
     expect(personOn(p, '2026-08-31').crew).toBe('B');
     expect(personOn({ ...p, moves: [] }, '2025-12-31').crew).toBe('B');
-  });  it('day duty takes a crew member out of every crew and lists them as day duty, working Sunday to Thursday', () => {
-    const a = crewOf('A', 4, 7);
+  });  it('day duty takes a crew member out of their crew and counts them with the Morning crew, Sunday to Thursday', () => {
+    const a = crewOf('A', 4, 7), d = crewOf('D', 4, 6);
     const dd = { ...a[6], moves: [{ start: '2026-09-20', end: null, crew: 'DAY' as const }] };
-    const people = [...a.filter((p) => p.id !== dd.id), dd];
-    const thu = evaluateDay('2026-09-24', people, []);   // Thursday
+    const people = [...a.filter((p) => p.id !== dd.id), dd, ...d];
+    const inCrews = (r: ReturnType<typeof evaluateDay>) => r.crews.filter((c) => [...c.controller.counted, ...c.panel.counted, ...c.field.counted].some((p) => p.id === dd.id)).map((c) => c.crew);
+    const thu = evaluateDay('2026-09-24', people, []);   // Thursday: D on Morning
     expect(crewResult(thu, 'A').members).toBe(a.length - 1);
-    expect(thu.crews.every((c) => ![...c.controller.counted, ...c.panel.counted, ...c.field.counted].some((p) => p.id === dd.id))).toBe(true);
+    expect(inCrews(thu)).toEqual(['D']);
+    expect(crewResult(thu, 'D').field.count).toBe(7);
     expect(thu.dayDuty).toHaveLength(1);
-    expect(thu.dayDuty[0]).toMatchObject({ working: true });
+    expect(thu.dayDuty[0]).toMatchObject({ working: true, countedIn: 'D' });
+    expect(inCrews(evaluateDay('2026-09-25', people, []))).toEqual([]);   // Friday: off
     expect(thu.dayDuty[0].person.movedFrom).toBe('A');
     expect(evaluateDay('2026-09-25', people, []).dayDuty[0].working).toBe(false); // Friday
     expect(evaluateDay('2026-09-26', people, []).dayDuty[0].working).toBe(false); // Saturday
