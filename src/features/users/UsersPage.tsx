@@ -3,7 +3,7 @@ import { AlertTriangle, Eye, EyeOff, KeyRound, Plus, RefreshCw, Trash2, UserCog 
 import type { EmployeeDirectoryRow, UserProfile } from '@/data/types';
 import { fetchDirectory } from '@/data/queries';
 import { createUser, deleteUser, fetchRoles, listUsers, updateUser, type AppRole, type ManagedUser } from '@/data/users';
-import { accountEmail, passwordProblem } from '@/core/users/rules';
+import { MIN_PASSWORD, accountEmail, passwordProblem } from '@/core/users/rules';
 import { BottomSheet, Button, Card, Chip, EmptyState, ErrorBox, Field, PageHeader, Spinner, cx, fmtDate } from '@/ui/components';
 
 const lastSeen = (iso: string | null) => (iso ? `${fmtDate(iso.slice(0, 10))}` : 'Never signed in');
@@ -107,7 +107,7 @@ function CreateSheet({ roles, staff, users, onClose, onDone }: { roles: AppRole[
         <Field label="Staff member" hint="Who this login belongs to. If the staff member is made inactive, the login loses access."><StaffPicker staff={staff} users={users} self={null} value={employee} onChange={(id, n) => { setEmployee(id); if (id && !name.trim()) setName(n); }} /></Field>
         <Field label="Name shown in the app"><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Manpower Coordinator" /></Field>
         <Field label="Username" hint="What they type to sign in, e.g. ajr015."><input className="input" autoCapitalize="none" autoCorrect="off" value={username} onChange={(e) => setUsername(e.target.value)} /></Field>
-        <Field label="Password" hint="At least 8 characters. The key button makes one."><PasswordInput value={password} onChange={setPassword} /></Field>
+        <Field label="Password" hint={`At least ${MIN_PASSWORD} characters. The key button makes one.`}><PasswordInput value={password} onChange={setPassword} /></Field>
         <Field label="Role"><RolePicker roles={roles} value={role} onChange={setRole} /></Field>
         <RoleMoveNote roles={roles} role={role} users={users} self={null} />
         {err != null && <ErrorBox error={err} />}

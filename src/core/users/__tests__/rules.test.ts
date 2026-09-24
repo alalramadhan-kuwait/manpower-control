@@ -16,8 +16,8 @@ describe('account usernames', () => {
     for (const bad of ['', 'a', 'has space', '-lead', 'x@', 'a'.repeat(33)]) expect(accountEmail(bad)).toBeNull();
   });
   it('requires 8-character passwords', () => {
-    expect(passwordProblem('1234567')).toMatch(/at least 8/);
-    expect(passwordProblem('12345678')).toBeNull();
+    expect(passwordProblem('1234')).toMatch(/at least 5/);
+    expect(passwordProblem('12345')).toBeNull();
   });
 });
 

@@ -4,7 +4,7 @@
  * (supabase/functions/manage-users/rules.ts); a test keeps the two in step.
  */
 export const USERNAME_DOMAIN = 'manpower-control.local';
-export const MIN_PASSWORD = 8;
+export const MIN_PASSWORD = 5;
 const USERNAME = /^[a-z0-9][a-z0-9._-]{1,31}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
