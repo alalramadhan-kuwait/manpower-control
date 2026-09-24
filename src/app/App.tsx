@@ -14,6 +14,7 @@ import MorePage from '@/features/more/MorePage';
 import UsersPage from '@/features/users/UsersPage';
 import CalendarPage from '@/features/calendar/CalendarPage';
 import LeavePlanPage from '@/features/leave/LeavePlanPage';
+import MovementsPage from '@/features/movements/MovementsPage';
 import ControllersPage from '@/features/controllers/ControllersPage';
 import RequestsPage from '@/features/requests/RequestsPage';
 import RequestPage from '@/features/requests/RequestPage';
@@ -80,6 +81,7 @@ export default function App() {
           <Route path="/controllers" element={<ControllersPage profile={profile} />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/leave-plan" element={<LeavePlanPage />} />
+          <Route path="/movements" element={<MovementsPage />} />
           <Route path="/requests" element={<RequestsPage />} />
           <Route path="/requests/:id" element={<RequestPage profile={profile} />} />
           <Route path="*" element={<Navigate to="/" replace />} />

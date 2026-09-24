@@ -1,4 +1,4 @@
-import { BarChart3, CalendarRange, ChevronRight, ClipboardCheck, FileUp, History, LogOut, ShieldCheck, UserCheck, UserCog } from 'lucide-react';
+import { ArrowLeftRight, BarChart3, CalendarRange, ChevronRight, ClipboardCheck, FileUp, History, LogOut, ShieldCheck, UserCheck, UserCog } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/data/supabase';
 import type { UserProfile } from '@/data/types';
@@ -6,6 +6,7 @@ import { ROLE_LABEL } from '@/features/auth/useSession';
 import { Button, Card, PageHeader } from '@/ui/components';
 
 const active = [
+  { to: '/movements', label: 'Shift Movements', desc: 'Temporary covers with another crew and permanent crew moves, by date', icon: ArrowLeftRight },
   { to: '/leave-plan', label: 'Annual Leave Plan', desc: 'Everyone\'s leave for the year; add, correct or cancel leave by hand', icon: CalendarRange },
   { to: '/controllers', label: 'Controller Management', desc: 'Cover for Shift Controllers, VR assignments, Morning rotation', icon: UserCheck },
   { to: '/summary', label: 'Section summary', desc: 'Headcount by crew and role, data-quality counts, last import', icon: BarChart3 },
@@ -18,7 +19,7 @@ const headOnly = [
   { to: '/users', label: 'Users & access', desc: 'Create logins, change roles, reset passwords, block or delete access', icon: UserCog }
 ];
 const later = [
-  ['Shift Movements', 'Stage G'], ['Shutdown', 'Stage I'], ['Notification Center', 'after Stage F'], ['Audit History', 'Stage J']
+  ['Shutdown', 'Stage I'], ['Notification Center', 'after Stage F'], ['Audit History', 'Stage J']
 ];
 
 export default function MorePage({ profile }: { profile: UserProfile }) {
@@ -44,7 +45,7 @@ export default function MorePage({ profile }: { profile: UserProfile }) {
         <div className="text-sm text-slate-600">Signed in as <span className="font-medium text-slate-800">{profile.display_name}</span></div>
         <Button variant="secondary" className="mt-3 w-full" onClick={() => supabase.auth.signOut()}><LogOut className="h-4 w-4" /> Sign out</Button>
       </Card>
-      <p className="mt-6 text-center text-[11px] text-slate-400">ARDS Operations · Area 4 · Unit 12 · Manpower Control · Stage F · standalone from Time Keeper</p>
+      <p className="mt-6 text-center text-[11px] text-slate-400">ARDS Operations · Area 4 · Unit 12 · Manpower Control · Stage G · standalone from Time Keeper</p>
     </div>
   );
 }

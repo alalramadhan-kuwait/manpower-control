@@ -347,6 +347,23 @@ export function planManpowerImport(
         diff: null, message: `${who}: planned leave ${rg.start} → ${rg.end} from the updated PV sheet (no monthly sheet for these dates yet)` });
     }
   }
+  // "Covering X-shift" notes: a crew move written as text in a day cell. Never applied automatically (the note has
+  // no end date and the crew blocks were not changed); listed for review unless the move is already recorded.
+  const COVER = /cover(?:ing)?\s*([ABCD])\s*[-\s]?\s*shift/i;
+  for (const m of parsed.gridRemarks) {
+    const hit = COVER.exec(m.text);
+    if (!hit) continue;
+    const crew = hit[1].toUpperCase();
+    const ex = byNumber.get(m.employeeNumber) ?? null;
+    const recorded = !!ex && !!m.date && crewRecorded(ex, m.date, crew);
+    const who = label(m.employeeNumber, m.shortName);
+    const when = m.date ?? 'an unknown date';
+    b.add({ sheet: m.sheet, row_ref: m.cell, entity_kind: 'note', employee_number: m.employeeNumber, matched_employee_id: ex?.id ?? null, outcome: recorded ? 'unchanged' : 'review', needs_review: !recorded,
+      raw: { text: m.text.trim(), date: m.date, crew }, payload: null, diff: null,
+      message: recorded ? `${who}: note "${m.text.trim()}" on ${when} — already recorded (in ${crew} Shift on that date).`
+        : `${who}: note "${m.text.trim()}" on ${when} (${m.sheet} ${m.cell}). The workbook records a crew move only as this note; record it in Shift Movements if it applies.` });
+  }
+
   if (takenAsMarked) b.add({ sheet: null, row_ref: null, entity_kind: 'note', employee_number: null, matched_employee_id: null, outcome: 'unchanged', needs_review: false, raw: { takenAsMarked }, payload: null, diff: null, message: `${takenAsMarked} current leave records are exactly as marked on the monthly sheets; unchanged.` });
   if (offOnly) b.add({ sheet: null, row_ref: null, entity_kind: 'note', employee_number: null, matched_employee_id: null, outcome: 'unchanged', needs_review: false, raw: { offOnly }, payload: null, diff: null, message: `${offOnly} marked periods fall only on roster Off days (usually the Off days after a leave); no manpower effect, nothing recorded.` });
 
@@ -436,4 +453,11 @@ export function planPromotionImport(parsed: ParsedPromotionMaster, existing: Exi
     b.add({ sheet: null, row_ref: null, entity_kind: 'note', employee_number: ex.employee_number, matched_employee_id: ex.id, outcome: 'unmatched', needs_review: true, raw: null, payload: null, diff: null, message: `${ex.short_name ?? ex.official_name} (${ex.employee_number}) is in Unit-12 scope as KNPC but is not in this promotion master` });
   }
   return { importType: 'promotion_master', fileName, sourceAsOfDate: parsed.asOfDate, periodStart: null, periodEnd: null, rows: b.rows, summary: summarize(b.rows), warnings };
+}
+
+/** Whether an existing employee is already in `crew` on `date` (role history or an active temporary cover). */
+function crewRecorded(ex: ExistingEmployee, date: string, crew: string): boolean {
+  if (ex.crew_moves?.some((m) => m.start <= date && (m.end === null || date <= m.end) && m.crew === crew)) return true;
+  const period = ex.crew_history?.find((h) => h.from <= date && (h.to === null || date <= h.to));
+  return (period?.crew ?? (ex.crew_history?.length ? null : ex.current_role?.crew_code ?? null)) === crew;
 }

@@ -250,6 +250,9 @@ function AbsentRow({ person, absence, leave }: { person: MpPerson; absence: MpAb
   );
 }
 
+/** People counted in this crew today through a temporary shift movement (Stage G). */
+const covering = (c: CrewDay) => [c.controller, c.panel, c.field].flatMap((pos) => pos.counted).filter((p) => p.movedFrom);
+
 function CrewCard({ crew: c, leave, date, need }: { crew: CrewDay; leave: Map<string, OnLeave>; date: string; need?: CoverageNeed }) {
   const [open, setOpen] = useState(false);
   if (!c.working) {
@@ -292,6 +295,12 @@ function CrewCard({ crew: c, leave, date, need }: { crew: CrewDay; leave: Map<st
         <ManpowerLine label="Panel" pos={c.panel} notes={notesFor(c, 'panel', leave, date)} />
         <ManpowerLine label="Field" pos={c.field} notes={notesFor(c, 'field', leave, date)} />
       </div>
+      {covering(c).length > 0 && (
+        <div className="mt-2 border-t border-slate-100 pt-2 text-sm">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Covering from another crew</div>
+          <ul>{covering(c).map((p) => <li key={p.id} className="flex items-center justify-between gap-2 py-0.5"><Link to={`/employees/${p.id}`} className="truncate text-slate-800">{p.name}</Link><span className="flex shrink-0 items-center gap-1 text-xs text-slate-500">from <CrewBadge crew={p.movedFrom!} size="sm" /></span></li>)}</ul>
+        </div>
+      )}
       {c.absences.length > 0 && (
         <div className="mt-2 border-t border-slate-100 pt-2">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Absent</div>
@@ -335,6 +344,7 @@ function PositionDetail({ pos, acting, grade14 }: { pos: PositionResult; acting?
               {p.grade != null ? `G${p.grade}` : p.employmentType === 'contractor' ? 'Contractor' : 'G?'}
               {grade14 && p.grade != null && p.grade >= 14 ? ' · Grade 14+' : ''}
               {acting?.id === p.id ? ' · Acting Controller' : ''}
+              {p.movedFrom ? ` · cover from ${p.movedFrom}` : ''}
             </span>
           </li>
         ))}

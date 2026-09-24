@@ -48,10 +48,21 @@ export async function fetchExistingForPlanning(year: number): Promise<{ employee
       ...(r.controller_status ? { controller: r.controller_status } : {})
     }
   }));
-  const { data, error } = await supabase.from('leave_records').select('id,employee_id,start_date,end_date,source_kind,status,absence_type_code,review_status,in_original_plan,in_current_plan,hand_corrected')
-    .gte('end_date', `${year - 1}-12-01`).lte('start_date', `${year + 1}-01-31`);
-  if (error) throw error;
-  return { employees, leaves: (data ?? []) as ExistingLeave[] };
+  const [lv, ra, mv] = await Promise.all([
+    supabase.from('leave_records').select('id,employee_id,start_date,end_date,source_kind,status,absence_type_code,review_status,in_original_plan,in_current_plan,hand_corrected')
+      .gte('end_date', `${year - 1}-12-01`).lte('start_date', `${year + 1}-01-31`),
+    supabase.from('employee_role_assignments').select('employee_id,effective_from,effective_to,crews(code)').limit(5000),
+    supabase.from('crew_movements').select('employee_id,start_date,end_date,to_crew').eq('status', 'active').eq('kind', 'temporary')
+  ]);
+  const err = [lv, ra, mv].find((r) => r.error)?.error; if (err) throw err;
+  // crew history and temporary covers, so workbook notes like "Covering D-shift" can be matched to what is recorded
+  for (const e of employees) {
+    e.crew_history = (ra.data as unknown as { employee_id: string; effective_from: string; effective_to: string | null; crews: { code: string } | null }[])
+      .filter((r) => r.employee_id === e.id).map((r) => ({ from: r.effective_from, to: r.effective_to, crew: r.crews?.code ?? null }));
+    e.crew_moves = (mv.data as { employee_id: string; start_date: string; end_date: string | null; to_crew: string }[])
+      .filter((m) => m.employee_id === e.id).map((m) => ({ start: m.start_date, end: m.end_date, crew: m.to_crew }));
+  }
+  return { employees, leaves: (lv.data ?? []) as ExistingLeave[] };
 }
 
 /** Stage a plan as a batch + rows, then commit it server-side in one transaction. */

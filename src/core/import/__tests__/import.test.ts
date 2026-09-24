@@ -153,6 +153,19 @@ describe('monthly grid parsing and planning', () => {
       const plan = planManpowerImport(offShift, existing, [idempotent[0], idempotent[2], idempotent[3]], 'test.xlsx');
       expect(leaveRows(plan, '20001')).toEqual([]);
     });
+    it('lists "Covering X-shift" notes for review, and marks them as recorded once the move is in Shift Movements', () => {
+      const withNote = structuredClone(parsed);
+      withNote.gridRemarks.push({ employeeNumber: '20001', shortName: 'Field One', sheet: 'Jan', cell: 'E9', date: '2026-01-20', text: 'Covering B-shift' });
+      const notes = (plan: ReturnType<typeof planManpowerImport>) => plan.rows.filter((r) => r.entity_kind === 'note' && (r.raw as any)?.crew);
+      const open = notes(planManpowerImport(withNote, existing, idempotent, 'test.xlsx'));
+      expect(open).toHaveLength(1);
+      expect(open[0]).toMatchObject({ outcome: 'review', needs_review: true, sheet: 'Jan', row_ref: 'E9', raw: { crew: 'B', date: '2026-01-20' } });
+      expect(open[0].message).toContain('Shift Movements');
+      const moved = existing.map((e) => (e.id === 'e1' ? { ...e, crew_moves: [{ start: '2026-01-15', end: null, crew: 'B' }] } : e));
+      expect(notes(planManpowerImport(withNote, moved, idempotent, 'test.xlsx'))[0]).toMatchObject({ outcome: 'unchanged', needs_review: false });
+      const permanent = existing.map((e) => (e.id === 'e1' ? { ...e, crew_history: [{ from: '2026-01-01', to: '2026-01-19', crew: 'A' }, { from: '2026-01-20', to: null, crew: 'B' }] } : e));
+      expect(notes(planManpowerImport(withNote, permanent, idempotent, 'test.xlsx'))[0]).toMatchObject({ outcome: 'unchanged' });
+    });
     it('leave cancelled by hand is not recreated from the sheet marks', () => {
       const cancelled = cur('b', 'e1', '2026-01-25', '2026-01-26', { source_kind: 'monthly_grid', in_original_plan: false, status: 'cancelled', in_current_plan: false, hand_corrected: true });
       const plan = planManpowerImport(parsed, existing, [idempotent[0], cancelled, idempotent[2], idempotent[3]], 'test.xlsx');

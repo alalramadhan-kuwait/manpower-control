@@ -27,6 +27,35 @@ export interface MpPerson {
   takeCharge: QualStatus;
   panelQualified: QualStatus;
   actingController: QualStatus;
+  /** Dated role / crew periods from the role history (permanent moves included). Absent: `role` / `crew` hold on every date. */
+  history?: MpRolePeriod[];
+  /** Temporary covers with another crew (Stage G shift movements, active only). */
+  moves?: MpCrewMove[];
+  /** Set by personOn when a temporary cover puts the person in another crew on that date: their own crew. */
+  movedFrom?: Crew | null;
+}
+
+/** One period of the role history: `from`..`to` (inclusive, `to` null = still current). */
+export interface MpRolePeriod { from: string; to: string | null; role: Role | null; crew: Crew | null }
+/** A temporary cover: works with `crew` from `start` to `end` (null = until further notice). */
+export interface MpCrewMove { start: string; end: string | null; crew: Crew }
+
+const CREW_ROLES: (Role | null)[] = ['controller', 'panel_operator', 'field_operator'];
+
+/**
+ * The person as they stand on `date`: role and crew from the dated role history (before the first period the first
+ * one applies, after the last the last one), then a temporary cover moves a crew member into the covering crew.
+ */
+export function personOn(p: MpPerson, date: string): MpPerson {
+  let role = p.role, crew = p.crew;
+  if (p.history?.length) {
+    const h = [...p.history].sort((a, b) => a.from.localeCompare(b.from));
+    const period = h.find((x) => x.from <= date && (x.to === null || date <= x.to)) ?? (date < h[0].from ? h[0] : h[h.length - 1]);
+    role = period.role; crew = period.crew;
+  }
+  const move = crew && CREW_ROLES.includes(role) ? p.moves?.find((m) => m.start <= date && (m.end === null || date <= m.end) && m.crew !== crew) : undefined;
+  if (move) return { ...p, role, crew: move.crew, movedFrom: crew };
+  return role === p.role && crew === p.crew && !p.movedFrom ? p : { ...p, role, crew, movedFrom: undefined };
 }
 
 /**
@@ -215,7 +244,9 @@ function qualReason(label: string, s: QualStatus): string {
   return s === 'no' ? `${label} = No` : s === 'not_yet_confirmed' ? `${label} not yet confirmed` : `${label} not recorded`;
 }
 
-export function evaluateDay(date: string, people: MpPerson[], absences: MpAbsence[], rules: Rules = FULL_OPERATION, assignments: MpAssignment[] = []): DayResult {
+export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbsence[], rules: Rules = FULL_OPERATION, assignments: MpAssignment[] = []): DayResult {
+  // each person's role and crew on this date (role history, permanent and temporary shift movements)
+  const people = allPeople.map((p) => personOn(p, date));
   const todays = assignments.filter((a) => a.start <= date && date <= a.end);
   const assignmentOf = (p: MpPerson) => todays.find((a) => a.employeeId === p.id) ?? null;
   const byId = new Map(people.map((p) => [p.id, p]));

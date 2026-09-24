@@ -122,6 +122,10 @@ export interface ExistingEmployee {
   /** source 'manual' = set by hand (profile correction); an import never replaces it. */
   current_role: { position_code: string; crew_code: CrewCode | null; source?: 'manual' | 'import' | null; effective_from?: string | null } | null;
   qualifications: Partial<Record<'take_charge' | 'panel_operator' | 'acting_controller' | 'controller', string>>;
+  /** Dated crew periods from the role history, and active temporary covers: used to tell whether a workbook note
+   *  such as "Covering D-shift" is already recorded for its date. */
+  crew_history?: { from: string; to: string | null; crew: string | null }[];
+  crew_moves?: { start: string; end: string | null; crew: string }[];
 }
 
 export interface ExistingLeave {

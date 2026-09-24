@@ -24,6 +24,7 @@ Supabase MCP or dashboard gets a matching file here, named with the version the 
 | `20260924035958_logins_linked_to_staff` | Logins linked to staff: `user_profiles.employee_id` → `employees` (one login per staff member); `app_roles.one_holder` (Manpower Coordinator, backed by a unique index); `employee` role offered as "Staff (no app access yet)"; `set_login_role()` (service role only) moves a one-holder role in one step and returns who lost it; `app_current_role()` gives no access when the linked staff member is inactive |
 | `20260924111007_stage_f_leave_requests` | Stage F: leave requests following the MAB Operations leave request form. New absence type Unpaid Leave (`UNPAID`); `leave_requests` (form fields, Controller / Supervisor overtime review, Section Head decision, link to the leave record; staff read only, audited); `request_save` / `request_review` / `request_withdraw` (staff) and `request_decide` (Section Head only; approval creates the leave through `leave_save`, so overlaps are refused and imports never change it). Decided or withdrawn requests are locked |
 | `20260924112150_leave_requests_no_duplicates` | One leave, one record between Stage E and Stage F: `leave_save` refuses adding leave by hand while an open request covers the dates; `request_save` refuses a second open request for the same person and dates; `request_decide` confirms a record already on the same dates (no second record; type set from the request), moves a planned PV block for a Scheduled request on other dates, and refuses any other overlap |
+| `20260924151038_stage_g_shift_movements` | Stage G: `crew_movements` (temporary covers, open-ended allowed, one active per person at a time; permanent moves recorded here and applied as a dated manual row in `employee_role_assignments`); `crew_move` / `crew_move_end` / `crew_move_cancel` (staff only); cancelled rows locked, no delete policy, audited |
 
 ## Edge Functions
 
@@ -91,4 +92,12 @@ as Morning Controller is acting as an additional Vacation Relief Controller mean
 - VR planning now has two VR Controllers: the overlapping December gaps (C 1–14 Dec, B 7–20 Dec) are both covered
   and "Additional Controller required" no longer appears; B's suggested VR carries a note that they are on leave
   17–20 Dec.
+
+## Saleh Al-Ajmi: C → D from 1 Mar 2026 (24 Sep 2026)
+
+Data change through `crew_move` as the Section Head login (audited). The workbook lists this Field Operator in the C
+block on every sheet; the move exists only as the day-cell note "Covering D-shift" (Mar E33, also Feb Z33 on 22 Feb).
+Section Head: in D Shift from 1 March. Role history is now C 1 Jan – 28 Feb (import) and D from 1 Mar (manual, so a
+later import keeps it); a permanent `crew_movements` row records the move. The manpower engine uses the crew on each
+date. The other "Covering" notes in the workbook (6) are listed as review items at the next import.
 

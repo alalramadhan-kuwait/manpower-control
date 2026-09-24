@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateDay, FULL_OPERATION, statusFor } from '..';
+import { evaluateDay, FULL_OPERATION, personOn, statusFor } from '..';
 import type { MpAbsence, MpAssignment, MpPerson } from '..';
 import type { Crew } from '../../roster';
 
@@ -398,5 +398,38 @@ describe('Morning Controller post', () => {
       { id: 'c', kind: 'shift_cover', employeeId: m.id, crew: 'A', start: DAY, end: DAY },
       { id: 'r', kind: 'morning_rotation', employeeId: d[0].id, crew: null, start: DAY, end: DAY }]);
     expect(r.morningPost).toMatchObject({ status: 'held', viaRotation: true }); expect(r.morningPost.holder?.id).toBe(d[0].id);
+  });
+});
+
+describe('shift movements (Stage G): role and crew by date', () => {
+  it('a permanent move counts the person in the old crew before the date and in the new crew from it', () => {
+    const c = crewOf('C', 4, 7), d = crewOf('D', 4, 6);
+    const mover = { ...c[5], history: [{ from: '2026-01-01', to: '2026-02-28', role: 'field_operator' as const, crew: 'C' as const }, { from: '2026-03-01', to: null, role: 'field_operator' as const, crew: 'D' as const }], crew: 'D' as const };
+    const people = [...c.filter((p) => p.id !== mover.id), mover, ...d];
+    // both crews work on 28 Feb (C N1, D M1) and on 1 Mar (C N2, D M2)
+    const feb = evaluateDay('2026-02-28', people, []);
+    const mar = evaluateDay('2026-03-01', people, []);
+    expect([crewResult(feb, 'C').field.count, crewResult(feb, 'D').field.count]).toEqual([7, 6]);
+    expect([crewResult(mar, 'C').field.count, crewResult(mar, 'D').field.count]).toEqual([6, 7]);
+    expect(crewResult(mar, 'D').field.counted.find((p) => p.id === mover.id)?.movedFrom).toBeUndefined();
+  });
+  it('a temporary cover moves a crew member into the covering crew only on its dates', () => {
+    const a = crewOf('A', 4, 7), b = crewOf('B', 4, 5);
+    const cover = { ...a[6], moves: [{ start: '2026-09-22', end: '2026-09-25', crew: 'B' as const }] };
+    const people = [...a.filter((p) => p.id !== cover.id), cover, ...b];
+    const during = evaluateDay('2026-09-23', people, []); // B on Night: 5 own + the cover = 6
+    expect(crewResult(during, 'B').field.count).toBe(6);
+    expect(crewResult(during, 'B').field.counted.find((p) => p.id === cover.id)?.movedFrom).toBe('A');
+    expect(crewResult(during, 'A').members).toBe(a.length - 1);
+    const after = evaluateDay('2026-09-26', people, []);
+    expect(after.crews.find((x) => x.crew === 'A')!.members).toBe(a.length);
+  });
+  it('an open-ended cover lasts until further notice; role history applies before and after its periods', () => {
+    const b = crewOf('B', 4, 5);
+    const p = { ...b[5], role: 'field_operator' as const, crew: 'B' as const, moves: [{ start: '2026-09-01', end: null, crew: 'D' as const }],
+      history: [{ from: '2026-01-01', to: null, role: 'field_operator' as const, crew: 'B' as const }] };
+    expect(personOn(p, '2027-06-01').crew).toBe('D');
+    expect(personOn(p, '2026-08-31').crew).toBe('B');
+    expect(personOn({ ...p, moves: [] }, '2025-12-31').crew).toBe('B');
   });
 });

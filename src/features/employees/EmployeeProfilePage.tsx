@@ -10,6 +10,8 @@ import { CrewBadge, CrewTag, isCrew } from '@/ui/crew';
 import { OnLeaveChip, localToday, shortDate } from '@/ui/leave';
 import { splitLeave, type LeaveBlock, type LeaveSpan } from '@/core/leave';
 import { LeaveSheet, changeLabel, type LeaveTarget } from '@/features/leave/LeaveSheet';
+import { MovementSheet, type MoveTarget } from '@/features/movements/MovementSheet';
+import { fetchMovements, type CrewMovement } from '@/data/movements';
 
 const QUALS: { code: QualificationCode; label: string; help: string }[] = [
   { code: 'take_charge', label: 'Take-Charge qualified', help: 'Only Take-Charge = Yes counts toward the Field Operator minimum of 6.' },
@@ -29,6 +31,8 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
   const [error, setError] = useState<unknown>(null);
   const [sheet, setSheet] = useState<null | { kind: 'qual'; code: QualificationCode } | { kind: 'basics' } | { kind: 'role' }>(null);
   const [leaveSheet, setLeaveSheet] = useState<LeaveTarget | null>(null);
+  const [moveSheet, setMoveSheet] = useState<MoveTarget | null>(null);
+  const [moves, setMoves] = useState<CrewMovement[]>([]);
   const [flash, setFlash] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -48,6 +52,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
     setData({ emp: e.data as EmployeeDirectoryRow, quals: q.data as Qualification[], roles: r.data as RoleAssignment[], leaves: l.data as LeaveRecord[], changes: c.data as LeavePlanChange[], perf: p.data as Performance[], sick: s.data as SickTotal[], audit: a.data as AuditEntry[], ...ref });
   }, [id]);
   useEffect(() => { load().catch(setError); }, [load]);
+  useEffect(() => { if (id) fetchMovements(id).then(setMoves).catch(() => setMoves([])); }, [id, data]);
 
   if (error) return <ErrorBox error={error} />;
   if (!data) return <Spinner />;
@@ -171,6 +176,22 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
         </ul>
       </Collapsible>
 
+      <Section title="Shift movements" action={isCrew(emp.crew_code) ? <Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => setMoveSheet({ kind: 'new', employeeId: emp.id })}>+ New movement</Button> : undefined}>
+        {moves.length === 0 ? <p className="text-sm text-slate-500">No shift movements recorded.</p> : (
+          <ul className="divide-y divide-slate-100 text-sm">
+            {moves.map((m) => (
+              <li key={m.id} className="flex items-center justify-between gap-2 py-2">
+                <span className="min-w-0">
+                  <span className="flex items-center gap-1.5 font-medium text-slate-800">{m.from_crew && <CrewTag crew={m.from_crew} suffix="" />} → <CrewTag crew={m.to_crew} suffix="" /> <span className="font-normal text-slate-500">· {m.kind === 'permanent' ? 'permanent' : 'temporary cover'}{m.status === 'cancelled' ? ' · cancelled' : ''}</span></span>
+                  <span className="block text-xs text-slate-500">{fmtDate(m.start_date)} → {m.kind === 'permanent' ? 'onward' : m.end_date ? fmtDate(m.end_date) : 'until further notice'}{m.reason ? ` · ${m.reason}` : ''}</span>
+                </span>
+                {m.kind === 'temporary' && m.status === 'active' && <span className="flex shrink-0 gap-2 text-xs font-medium"><button type="button" className="text-brand-700" onClick={() => setMoveSheet({ kind: 'end', movement: m })}>End</button><button type="button" className="text-status-red" onClick={() => setMoveSheet({ kind: 'cancel', movement: m })}>Cancel</button></span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
       <Section title="Role history">
         <ul className="divide-y divide-slate-100 text-sm">
           {data.roles.map((r) => <li key={r.id} className="flex justify-between py-2"><span className="inline-flex flex-wrap items-center gap-1.5">{r.positions?.label ?? r.position_id}{isCrew(r.crews?.code) && <><span className="text-slate-400">·</span><CrewTag crew={r.crews?.code} /></>}</span><span className="text-slate-500">{fmtDate(r.effective_from)} → {r.effective_to ? fmtDate(r.effective_to) : 'current'}</span></li>)}
@@ -186,6 +207,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
 
       {sheet?.kind === 'qual' && <QualificationSheet emp={emp} code={sheet.code} current={currentQual(sheet.code)} actor={profile} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load().catch(setError); }} />}
       {sheet?.kind === 'basics' && <BasicsSheet emp={emp} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load().catch(setError); }} />}
+      {moveSheet && <MovementSheet target={moveSheet} people={[{ id: emp.id, name: emp.display_name, crew: isCrew(emp.crew_code) ? emp.crew_code : null }]} onClose={() => setMoveSheet(null)} onDone={(m) => { setMoveSheet(null); setFlash(m); load().catch(setError); }} />}
       {leaveSheet && <LeaveSheet target={leaveSheet} people={[{ id: emp.id, name: emp.display_name, crew: isCrew(emp.crew_code) ? emp.crew_code : null }]} types={data.absenceTypes} onClose={() => setLeaveSheet(null)} onDone={(m) => { setLeaveSheet(null); setFlash(m); load().catch(setError); }} />}
       {sheet?.kind === 'role' && <RoleSheet emp={emp} positions={data.positions} crews={data.crews} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load().catch(setError); }} />}
     </div>
@@ -345,7 +367,7 @@ function RoleSheet({ emp, positions, crews, onClose, onSaved }: { emp: EmployeeD
   }
   return (
     <BottomSheet open onClose={onClose} title="Correct role / crew">
-      <p className="mb-3 text-xs text-slate-500">Use this to fix imported data. Planned temporary and permanent shift changes go through the movement workflow in Stage G.</p>
+      <p className="mb-3 text-xs text-slate-500">Use this to fix imported data. Real crew changes (a temporary cover or a permanent move on a date) go in Shift Movements, so earlier dates keep the old crew.</p>
       <div className="space-y-3">
         <Field label="Operational role">
           <select className="input" value={positionCode} onChange={(e) => setPositionCode(e.target.value)}>{positions.map((p) => <option key={p.id} value={p.code}>{p.label}</option>)}</select>
