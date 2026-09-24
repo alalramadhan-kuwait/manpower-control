@@ -107,6 +107,9 @@ export interface Rules {
   /** Grade that satisfies the Panel Grade-14 requirement (this grade and above). */
   panelGrade14: number;
   fieldMin: number;
+  /** A Field Operator of this grade or above on the shift can take a Panel seat: Panel exactly at its minimum
+   *  still has a buffer when one is on duty and Field keeps its own minimum without them. */
+  panelBackupGrade: number;
   /** One Controller per crew is the normal complement, so meeting the minimum is GREEN, not No Buffer. */
   controllerGreenAtMinimum: boolean;
 }
@@ -115,7 +118,7 @@ export interface Rules {
 export const FULL_OPERATION: Rules = {
   controllerMin: 1, controllerGrade: 15, actingControllerGrade: 14,
   panelMin: 3, panelGrade14Min: 1, panelGrade14: 14,
-  fieldMin: 6,
+  fieldMin: 6, panelBackupGrade: 13,
   controllerGreenAtMinimum: true
 };
 
@@ -165,7 +168,7 @@ export interface ControllerResult extends PositionResult {
   /** The recorded cover for this crew today, and whether it counts (it does not while the cover is on leave). */
   cover: { person: MpPerson; assignment: MpAssignment; counted: boolean; absence: MpAbsence | null } | null;
 }
-export interface PanelResult extends PositionResult { grade14: number; potentialGrade14: number }
+export interface PanelResult extends PositionResult { grade14: number; potentialGrade14: number; /** Grade-13+ Field Operator who is Panel's buffer at minimum. */ backup: MpPerson | null }
 export interface AbsenceOnDay { person: MpPerson; absence: MpAbsence; reducesManpower: boolean }
 
 export interface CrewDay {
@@ -360,10 +363,18 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
       const short = [panelCounted.length < rules.panelMin ? `${panelCounted.length} of ${rules.panelMin} required` : null, grade14 < rules.panelGrade14Min ? `no Grade ${rules.panelGrade14}+ Panel Operator available` : null].filter(Boolean).join(', ');
       panelIssues.push(panelPotentialMet ? `Panel qualification data incomplete: ${what} confirmed` : `Confirmed shortage: Panel ${short}`);
     }
+    // Panel buffer from Field: at exactly the minimum, a Grade-13+ Field Operator on this shift can take a Panel seat,
+    // provided Field still meets its own minimum without them. Highest grade first.
+    const fieldTakeCharge = pool.field.filter((p) => p.takeCharge === 'yes');
+    const backup = panelMet && panelCounted.length === rules.panelMin
+      ? pool.field.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade && (!fieldTakeCharge.includes(p) || fieldTakeCharge.length - 1 >= rules.fieldMin))
+          .sort((a, b) => (b.grade ?? 0) - (a.grade ?? 0) || a.name.localeCompare(b.name))[0] ?? null
+      : null;
+    if (backup) panelIssues.push(`Buffer: ${backup.name} (Field Operator, Grade ${backup.grade}) can take a Panel seat`);
     const panel: PanelResult = {
-      ...finishPosition({ key: 'panel', label: 'Panel', count: panelCounted.length, min: rules.panelMin, buffer: panelCounted.length - rules.panelMin, potential: panelPotentialPeople.length,
-        counted: panelCounted, notCounted: panelNot, issues: panelIssues, requirementMet: panelMet, potentialMet: panelPotentialMet }),
-      grade14, potentialGrade14
+      ...finishPosition({ key: 'panel', label: 'Panel', count: panelCounted.length, min: rules.panelMin, buffer: panelCounted.length - rules.panelMin + (backup ? 1 : 0), potential: panelPotentialPeople.length,
+        counted: panelCounted, notCounted: panelNot, issues: panelIssues, requirementMet: panelMet, potentialMet: panelPotentialMet, greenAtMinimum: backup !== null }),
+      grade14, potentialGrade14, backup
     };
 
     // ---- Field (only Take-Charge = Yes counts)

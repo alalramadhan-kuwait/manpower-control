@@ -453,3 +453,26 @@ describe('shift movements (Stage G): role and crew by date', () => {
     expect(personOn(dd, '2026-09-24')).toMatchObject({ crew: null, dayDuty: true });
   });
 });
+
+describe('Panel buffer from a Grade-13+ Field Operator', () => {
+  const day = '2026-09-24'; // D on Morning
+  const withField = (grades: (number | null)[]) => {
+    const d = crewOf('D', 3, 0);
+    return [...d, ...grades.map((g) => person('D', 'field_operator', { grade: g }))];
+  };
+  it('Panel exactly at minimum is GREEN when a Grade-13 Field Operator can be spared from Field', () => {
+    const r = crewResult(evaluateDay(day, withField([13, 10, 10, 10, 10, 10, 10]), []), 'D'); // Field 7 of 6
+    expect(r.panel).toMatchObject({ count: 3, status: 'green', finding: 'staffed' });
+    expect(r.panel.backup?.grade).toBe(13);
+    expect(r.field.status).toBe('green');
+  });
+  it('stays AMBER when Field has no spare, or no Field Operator is Grade 13+', () => {
+    expect(crewResult(evaluateDay(day, withField([13, 10, 10, 10, 10, 10]), []), 'D').panel).toMatchObject({ status: 'amber', backup: null }); // Field 6 of 6
+    expect(crewResult(evaluateDay(day, withField([12, 10, 10, 10, 10, 10, 10]), []), 'D').panel).toMatchObject({ status: 'amber', backup: null });
+  });
+  it('a Grade-13 Field Operator on leave is not a buffer', () => {
+    const people = withField([13, 10, 10, 10, 10, 10, 10]);
+    const g13 = people.find((p) => p.role === 'field_operator' && p.grade === 13)!;
+    expect(crewResult(evaluateDay(day, people, [leave(g13, day, day)]), 'D').panel.backup).toBeNull();
+  });
+});
