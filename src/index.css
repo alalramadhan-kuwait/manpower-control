@@ -1,11 +1,36 @@
 @import "tailwindcss";
 
+/* Bundled fonts (Latin only, cached for offline use). Montserrat: the geometric bold of the ARDS wordmark,
+   for display text. Inter: interface and data text (tabular figures). */
+@font-face { font-family: "Montserrat Variable"; font-style: normal; font-display: swap; font-weight: 100 900;
+  src: url("../node_modules/@fontsource-variable/montserrat/files/montserrat-latin-wght-normal.woff2") format("woff2-variations"); }
+@font-face { font-family: "Inter Variable"; font-style: normal; font-display: swap; font-weight: 100 900;
+  src: url("../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2") format("woff2-variations"); }
+
 @theme {
-  --color-brand-50: #eef5fa;
-  --color-brand-100: #d5e6f2;
-  --color-brand-600: #17547d;
-  --color-brand-700: #0f3d5e;
-  --color-brand-800: #0b2e47;
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Montserrat Variable", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+
+  /* ARDS Operations brand, taken from the U12 mark. Navy (700) is the interface colour: header, primary buttons,
+     links, headings. The mark's red, green and blue appear only inside the logo artwork (logo-*): in this app red
+     and green mean manpower status and blue / green are crew colours, so they are never used for interface chrome. */
+  --color-brand-50: #eef2f9;
+  --color-brand-100: #d8e1f1;
+  --color-brand-200: #b2c4e4;
+  --color-brand-300: #809dd0;
+  --color-brand-400: #4c70b6;
+  --color-brand-500: #2c55a0;
+  --color-brand-600: #173f8a;
+  --color-brand-700: #0e2a63;
+  --color-brand-800: #0a1f4a;
+  --color-brand-900: #071636;
+  --color-logo-navy: #0e2a63;
+  --color-logo-blue: #1d5bbf;
+  --color-logo-red: #e11d2a;
+  --color-logo-green: #12944a;
+  /* App surfaces */
+  --color-canvas: #f3f5f9;
+
   --color-status-green: #16a34a;
   --color-status-amber: #d97706;
   --color-status-red: #dc2626;
@@ -17,7 +42,10 @@
 }
 
 html, body, #root { height: 100%; }
-body { -webkit-tap-highlight-color: transparent; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+body { -webkit-tap-highlight-color: transparent; font-family: var(--font-sans); font-feature-settings: "cv11", "ss01"; background: var(--color-canvas); }
+/* headings use the display face of the wordmark */
+h1, h2.font-display, .font-display { font-family: var(--font-display); letter-spacing: -0.01em; }
+.tabular-nums, table { font-variant-numeric: tabular-nums; }
 .safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem); }
 .safe-top { padding-top: env(safe-area-inset-top); }
 

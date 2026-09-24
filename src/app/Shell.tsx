@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { countOpenRequests } from '@/data/requests';
 import { cx } from '@/ui/components';
+import { BrandTile } from '@/ui/brand';
 import { ROLE_LABEL } from '@/features/auth/useSession';
 import type { UserProfile } from '@/data/types';
 
@@ -28,12 +29,15 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
   return (
     <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col lg:max-w-7xl">
       <header className="sticky top-0 z-40 bg-brand-700 text-white safe-top">
-        <div className="flex items-center justify-between px-4 py-3">
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold leading-tight">Area 4 Manpower Control</div>
-            <div className="truncate text-[11px] text-brand-100">U-12 Section 1 · {profile.display_name} · {ROLE_LABEL[profile.role_code] ?? profile.role_code}</div>
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <BrandTile className="h-9 w-9" />
+            <div className="min-w-0">
+              <div className="truncate font-display text-[15px] font-bold leading-tight tracking-tight">ARDS Operations</div>
+              <div className="truncate text-[11px] text-brand-100">Manpower Control · {[...new Set([profile.display_name, ROLE_LABEL[profile.role_code] ?? profile.role_code])].join(' · ')}</div>
+            </div>
           </div>
-          <div className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium">Stage F</div>
+          <div className="shrink-0 whitespace-nowrap rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium">Stage F</div>
         </div>
       </header>
       <main className="flex-1 px-4 pb-28 pt-4 sm:pb-8">{children}</main>

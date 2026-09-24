@@ -1,4 +1,6 @@
-# Area 4 Manpower Control
+# ARDS Operations · Manpower Control
+
+Area 4 · Unit 12 internal operations app (KNPC Mina Abdullah Refinery). Design system: [docs/BRAND.md](docs/BRAND.md).
 
 Operations manpower planning and control for **KNPC — Mina Abdullah Refinery — Area 4 — Unit 12 — Section 1**.
 

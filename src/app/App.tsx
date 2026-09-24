@@ -18,12 +18,13 @@ import ControllersPage from '@/features/controllers/ControllersPage';
 import RequestsPage from '@/features/requests/RequestsPage';
 import RequestPage from '@/features/requests/RequestPage';
 import { Shell } from './Shell';
-import { Button, Spinner } from '@/ui/components';
+import { Button } from '@/ui/components';
+import { SplashScreen } from '@/ui/brand';
 import { supabase } from '@/data/supabase';
 
 export default function App() {
   const { loading, session, profile, profileError, access } = useSession();
-  if (loading) return <Spinner label="Starting…" />;
+  if (loading) return <SplashScreen />;
   if (!session) return <LoginPage />;
   if (!profile) {
     return (

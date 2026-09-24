@@ -3,15 +3,32 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#0f3d5e" />
+    <meta name="theme-color" content="#0e2a63" />
+    <meta name="description" content="ARDS Operations · Area 4 · Unit 12 · Manpower Control (KNPC Mina Abdullah Refinery, internal use)" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="ARDS Ops" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/icon-192.png" />
-    <title>Area 4 Manpower Control</title>
+    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <title>ARDS Operations · Manpower Control</title>
+    <style>
+      /* First paint, before the app code loads: the same loading screen the app shows (src/ui/brand.tsx). */
+      .boot { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-bottom: 9.5rem;
+        background: linear-gradient(#fff, #f3f5f9); font-family: "Montserrat Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .boot img { width: 96px; height: 96px; margin-bottom: 16px; }
+      .boot b { font-size: 28px; font-weight: 800; color: #0e2a63; letter-spacing: -0.02em; line-height: 1; }
+      .boot b span { color: #1d5bbf; }
+      .boot small { margin-top: 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: #64748b; }
+      .boot i { margin-top: 40px; width: 36px; height: 36px; border: 3px solid #e2e8f0; border-top-color: #173f8a; border-radius: 50%; animation: boot-spin 0.9s linear infinite; }
+      .boot p { margin: 16px 0 0; font: 14px ui-sans-serif, system-ui, -apple-system, sans-serif; color: #64748b; }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+    </style>
   </head>
-  <body class="bg-[#f4f6f8] text-slate-900">
-    <div id="root"></div>
+  <body>
+    <div id="root">
+      <div class="boot" role="status"><img src="/brand/mark.svg" alt="" /><b>ARDS <span>Operations</span></b><small>Area 4 · Unit 12</small><i></i><p>Loading operational data…</p></div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
