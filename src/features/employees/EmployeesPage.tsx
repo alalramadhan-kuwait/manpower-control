@@ -172,7 +172,7 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
       )}
 
       {selected.size > 0 && (
-        <div className="fixed inset-x-0 bottom-16 z-30 mx-auto max-w-5xl px-4 lg:max-w-7xl sm:bottom-4 sm:pl-48">
+        <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] z-30 mx-auto max-w-5xl px-4 lg:max-w-7xl sm:bottom-4 sm:pl-48">
           <div className="flex items-center gap-2 rounded-2xl bg-white p-3 shadow-lg ring-1 ring-slate-200">
             <div className="flex-1 text-sm font-medium text-brand-800">{selected.size} selected</div>
             <Button variant="secondary" className="min-h-10" onClick={() => setSelected(new Set())}>Clear</Button>

@@ -40,7 +40,7 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
           <div className="shrink-0 whitespace-nowrap rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium">Stage G</div>
         </div>
       </header>
-      <main className="flex-1 px-4 pb-28 pt-4 sm:pb-8">{children}</main>
+      <main className="flex-1 px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-4 sm:pb-8">{children}</main>
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur safe-bottom sm:hidden">
         <div className="mx-auto grid max-w-5xl grid-cols-5 lg:max-w-7xl">
           {tabs.map(({ to, label, icon: Icon }) => (

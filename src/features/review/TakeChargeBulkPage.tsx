@@ -80,7 +80,7 @@ export default function TakeChargeBulkPage({ profile }: { profile: UserProfile }
           </Card>
         );
       })}
-      <div className="fixed inset-x-0 bottom-16 z-30 mx-auto max-w-5xl px-4 lg:max-w-7xl sm:bottom-4 sm:pl-48">
+      <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] z-30 mx-auto max-w-5xl px-4 lg:max-w-7xl sm:bottom-4 sm:pl-48">
         <div className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-lg ring-1 ring-slate-200">
           <div className="flex-1 text-sm">{changes.length === 0 ? <span className="text-slate-500">No changes yet</span> : <span className="font-medium text-brand-800">{changes.length} change{changes.length === 1 ? '' : 's'} ready</span>}{saved !== null && changes.length === 0 && <span className="ml-2 text-status-green"><Check className="inline h-4 w-4" /> Saved {saved}</span>}</div>
           {changes.length > 0 && <Button variant="secondary" className="min-h-10" onClick={() => setPending({})}>Discard</Button>}
