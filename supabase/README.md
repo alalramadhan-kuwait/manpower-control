@@ -101,3 +101,7 @@ Section Head: in D Shift from 1 March. Role history is now C 1 Jan – 28 Feb (i
 later import keeps it); a permanent `crew_movements` row records the move. The manpower engine uses the crew on each
 date. The other "Covering" notes in the workbook (6) are listed as review items at the next import.
 
+Same day, second entry (Section Head): Abdulaziz Al-Ajmi D → C from 1 Mar 2026, the other half of the exchange with
+Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other three people with "Covering" notes
+(January–February) are back in their own crews, which is what is recorded; no change for them.
+
