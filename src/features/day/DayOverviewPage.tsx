@@ -216,6 +216,7 @@ function notesFor(c: CrewDay, key: 'controller' | 'panel' | 'field', leave: Map<
   return notes;
 }
 
+
 const leaveShort = (l: OnLeave) => `${l.typeShort ?? 'Leave'} · Return ${shortDate(l.returnOn)}`;
 
 function ManpowerLine({ label, pos, notes }: { label: string; pos: PositionResult; notes: Note[] }) {
@@ -236,12 +237,14 @@ function AbsentRow({ person, absence, leave }: { person: MpPerson; absence: MpAb
   const start = leave?.start ?? absence.start; const until = leave?.until ?? absence.end;
   return (
     <li>
-      <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-baseline justify-between gap-2 py-1 text-left">
-        <span className="truncate font-medium text-slate-800">{person.name}</span>
-        <span className="shrink-0 text-xs font-medium text-slate-600">{leave ? leaveShort(leave) : absence.typeShort ?? 'Leave'}</span>
+      <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center justify-between gap-2 py-1 text-left">
+        <span className="min-w-0 truncate text-sm font-medium text-slate-900">{person.name}</span>
+        <span className="flex shrink-0 items-center gap-1 text-[11px] text-slate-500">
+          <Tag>{leave?.typeShort ?? absence.typeShort ?? 'Leave'}</Tag>{leave && <>back {shortDate(leave.returnOn)}</>}
+        </span>
       </button>
       {open && (
-        <div className="mb-1 rounded-lg bg-slate-50 px-2 py-1.5 text-xs text-slate-600">
+        <div className="mb-1 rounded-md bg-white px-2 py-1 text-xs text-slate-600 ring-1 ring-slate-200">
           {absence.typeLabel ?? 'Leave'} · {fmtDate(start)} – {fmtDate(until)}
           {leave && <> · back to work {fmtDate(leave.returnOn)}</>}
           <Link to={`/employees/${person.id}`} className="ml-2 font-medium text-brand-700">Profile</Link>
@@ -252,6 +255,18 @@ function AbsentRow({ person, absence, leave }: { person: MpPerson; absence: MpAb
 }
 
 /** People counted in this crew today through a temporary shift movement (Stage G). */
+/** Absent people of a crew: position first, then grade, compact rows; tap a row for the dates. */
+function AbsentList({ crew: c, leave }: { crew: CrewDay; leave: Map<string, OnLeave> }) {
+  return (
+    <section className="mt-2 rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200/70">
+      <h3 className="text-xs font-semibold text-slate-900">Absent <span className="font-normal text-slate-500">· {c.absences.length}</span></h3>
+      <ul className="mt-0.5 divide-y divide-slate-200/60">
+        {[...c.absences].sort((a, b) => bySeniority(a.person, b.person)).map((a) => <AbsentRow key={a.person.id} person={a.person} absence={a.absence} leave={leave.get(a.person.id)} />)}
+      </ul>
+    </section>
+  );
+}
+
 const covering = (c: CrewDay) => [c.controller, c.panel, c.field].flatMap((pos) => pos.counted).filter((p) => p.movedFrom);
 
 function CrewCard({ crew: c, leave, date, need }: { crew: CrewDay; leave: Map<string, OnLeave>; date: string; need?: CoverageNeed }) {
@@ -266,11 +281,7 @@ function CrewCard({ crew: c, leave, date, need }: { crew: CrewDay; leave: Map<st
           </div>
           <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-600">OFF</span>
         </div>
-        {c.absences.length > 0 && (
-          <ul className="mt-2 text-sm text-slate-500">
-            {[...c.absences].sort((a, b) => bySeniority(a.person, b.person)).map((a) => <AbsentRow key={a.person.id} person={a.person} absence={a.absence} leave={leave.get(a.person.id)} />)}
-          </ul>
-        )}
+        {c.absences.length > 0 && <AbsentList crew={c} leave={leave} />}
       </Card>
     );
   }
@@ -297,19 +308,12 @@ function CrewCard({ crew: c, leave, date, need }: { crew: CrewDay; leave: Map<st
         <ManpowerLine label="Field" pos={c.field} notes={notesFor(c, 'field', leave, date)} />
       </div>
       {covering(c).length > 0 && (
-        <div className="mt-2 border-t border-slate-100 pt-2 text-sm">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Covering from another crew</div>
-          <ul>{covering(c).map((p) => <li key={p.id} className="flex items-center justify-between gap-2 py-0.5"><Link to={`/employees/${p.id}`} className="truncate text-slate-800">{p.name}</Link><span className="flex shrink-0 items-center gap-1 text-xs text-slate-500">from <CrewBadge crew={p.movedFrom!} size="sm" /></span></li>)}</ul>
-        </div>
+        <section className="mt-2 rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200/70">
+          <h3 className="text-xs font-semibold text-slate-900">Covering from another crew <span className="font-normal text-slate-500">· {covering(c).length}</span></h3>
+          <ul className="mt-0.5 divide-y divide-slate-200/60">{[...covering(c)].sort(bySeniority).map((p) => <li key={p.id} className="flex items-center justify-between gap-2 py-1"><Link to={`/employees/${p.id}`} className="min-w-0 truncate text-sm font-medium text-slate-900">{p.name}</Link><span className="flex shrink-0 items-center gap-1 text-[11px] text-slate-500">from <CrewBadge crew={p.movedFrom!} size="sm" /></span></li>)}</ul>
+        </section>
       )}
-      {c.absences.length > 0 && (
-        <div className="mt-2 border-t border-slate-100 pt-2">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Absent</div>
-          <ul className="text-sm">
-            {[...c.absences].sort((a, b) => bySeniority(a.person, b.person)).map((a) => <AbsentRow key={a.person.id} person={a.person} absence={a.absence} leave={leave.get(a.person.id)} />)}
-          </ul>
-        </div>
-      )}
+      {c.absences.length > 0 && <AbsentList crew={c} leave={leave} />}
       {c.unresolved.length > 0 && (
         <div className={cx('mt-2 rounded-lg p-2 text-xs ring-1', CATEGORY.unresolved.box)}>
           <div className="flex items-center gap-1 font-semibold"><AlertTriangle className="h-3.5 w-3.5" /> Unresolved absence warning — not deducted</div>
