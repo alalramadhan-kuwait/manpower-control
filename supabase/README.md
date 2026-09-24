@@ -28,6 +28,7 @@ Supabase MCP or dashboard gets a matching file here, named with the version the 
 | `20260924171012_controller_i_position` | Adds the `controller_i` position (Controller I, category `other`): shown on profiles, never counted as a crew's shift Controller |
 | `20260924171332_remove_controller_i_position` | Removes `controller_i` again: Controller I and UD Engineers are not tracked in this app |
 | `20260924185557_day_duty_movements` | Day duty: `crew_movements.to_crew` also accepts `DAY` (temporary only, open-ended allowed); `crew_move` accepts it. The person leaves their crew for the period and works day shift Sunday–Thursday; the app counts them with the crew on Morning shift those days (off Friday and Saturday) |
+| `20260924201755_manpower_coordinator_multiple_holders` | Manpower Coordinator is no longer a one-holder role: `one_holder = false`, unique index `user_profiles_one_manpower_coordinator` dropped, so giving it to a login no longer takes it from another |
 
 ## Edge Functions
 
