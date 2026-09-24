@@ -8,19 +8,25 @@ export interface SessionState {
   session: Session | null;
   profile: UserProfile | null;
   profileError: string | null;
+  /** Role the database grants right now (null when the login is disabled or its linked staff member is inactive). */
+  access: string | null;
 }
 
 export function useSession(): SessionState {
-  const [state, setState] = useState<SessionState>({ loading: true, session: null, profile: null, profileError: null });
+  const [state, setState] = useState<SessionState>({ loading: true, session: null, profile: null, profileError: null, access: null });
 
   useEffect(() => {
     let cancelled = false;
     async function loadProfile(session: Session | null) {
-      if (!session) { if (!cancelled) setState({ loading: false, session: null, profile: null, profileError: null }); return; }
-      const { data, error } = await supabase.from('user_profiles').select('*').eq('auth_user_id', session.user.id).maybeSingle();
+      if (!session) { if (!cancelled) setState({ loading: false, session: null, profile: null, profileError: null, access: null }); return; }
+      const [{ data, error }, role] = await Promise.all([
+        supabase.from('user_profiles').select('*').eq('auth_user_id', session.user.id).maybeSingle(),
+        supabase.rpc('app_current_role')
+      ]);
       if (cancelled) return;
-      if (error) setState({ loading: false, session, profile: null, profileError: error.message });
-      else setState({ loading: false, session, profile: (data as UserProfile | null), profileError: data ? null : 'No role has been assigned to this login yet.' });
+      const access = (role.data as string | null) ?? null;
+      if (error) setState({ loading: false, session, profile: null, profileError: error.message, access });
+      else setState({ loading: false, session, profile: (data as UserProfile | null), profileError: data ? null : 'No role has been assigned to this login yet.', access });
     }
     supabase.auth.getSession().then(({ data }) => loadProfile(data.session));
     const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => { loadProfile(session); });
@@ -31,5 +37,5 @@ export function useSession(): SessionState {
 }
 
 export const ROLE_LABEL: Record<string, string> = {
-  section_head: 'Section Head', manpower_coordinator: 'Manpower Coordinator', controller: 'Controller', employee: 'Employee'
+  section_head: 'Section Head', manpower_coordinator: 'Manpower Coordinator', controller: 'Controller', employee: 'Staff (no app access yet)'
 };

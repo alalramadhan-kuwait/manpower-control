@@ -29,7 +29,7 @@ function ComingLater({ stage, title }: { stage: string; title: string }) {
 }
 
 export default function App() {
-  const { loading, session, profile, profileError } = useSession();
+  const { loading, session, profile, profileError, access } = useSession();
   if (loading) return <Spinner label="Starting…" />;
   if (!session) return <LoginPage />;
   if (!profile) {
@@ -50,11 +50,20 @@ export default function App() {
       </div>
     );
   }
+  if (profile.employee_id && !access && ['section_head', 'manpower_coordinator'].includes(profile.role_code)) {
+    return (
+      <div className="mx-auto max-w-sm p-6 text-center">
+        <p className="font-semibold text-brand-800">Access paused</p>
+        <p className="mt-2 text-sm text-slate-600">The staff member linked to this login is no longer active. Ask the Section Head.</p>
+        <Button variant="secondary" className="mt-6" onClick={() => supabase.auth.signOut()}>Sign out</Button>
+      </div>
+    );
+  }
   if (!['section_head', 'manpower_coordinator'].includes(profile.role_code)) {
     return (
       <div className="mx-auto max-w-sm p-6 text-center">
-        <p className="font-semibold text-brand-800">Role not active in Phase 1</p>
-        <p className="mt-2 text-sm text-slate-600">Only the Section Head and the Manpower Coordinator can use the application at this stage.</p>
+        <p className="font-semibold text-brand-800">No app access</p>
+        <p className="mt-2 text-sm text-slate-600">This login has no role with access. Only the Section Head and the Manpower Coordinator can use the application at this stage; ask the Section Head if you should have access.</p>
         <Button variant="secondary" className="mt-6" onClick={() => supabase.auth.signOut()}>Sign out</Button>
       </div>
     );
