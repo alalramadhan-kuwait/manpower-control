@@ -1,5 +1,5 @@
 import { Loader2 } from 'lucide-react';
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
 export function cx(...parts: (string | false | null | undefined)[]) { return parts.filter(Boolean).join(' '); }
@@ -84,43 +84,66 @@ export function ErrorBox({ error }: { error: unknown }) {
 
 /**
  * Bottom sheet: the mobile editing surface. Renders as a centred dialog on wide screens.
- * Swipe down to close: from the handle and title at any time, or anywhere on the sheet once its content is
- * scrolled to the top. A short pull springs back; a pull past ~110 px (or a quick flick) closes it.
+ * While open, the page behind is locked so it cannot scroll or bounce. Swipe down to close: from the handle
+ * and title at any time, or anywhere on the sheet once its content is scrolled to the top. A short pull
+ * springs back; a pull past ~110 px (or a quick flick) closes it. Only the dimmed backdrop fades while dragging.
  */
 export function BottomSheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
   const sheet = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ y0: number; t0: number; fromHeader: boolean; active: boolean } | null>(null);
+  const drag = useRef<{ y0: number; t0: number; fromHeader: boolean; active: boolean; dy: number } | null>(null);
   const [dy, setDy] = useState(0);
+  const close = useRef(onClose); close.current = onClose;
+
+  // lock the page behind (iOS ignores overflow:hidden alone, so pin the body and restore the scroll position)
+  useEffect(() => {
+    if (!open) return;
+    const b = document.body.style; const h = document.documentElement.style;
+    const y = b.position === 'fixed' ? -parseInt(b.top || '0', 10) : window.scrollY;   // already pinned (effect re-run)
+    const saved = { position: b.position, top: b.top, left: b.left, right: b.right, overflow: b.overflow, overscroll: h.overscrollBehavior };
+    Object.assign(b, { position: 'fixed', top: `-${y}px`, left: '0', right: '0', overflow: 'hidden' });
+    h.overscrollBehavior = 'none';
+    return () => { Object.assign(b, { position: saved.position, top: saved.top, left: saved.left, right: saved.right, overflow: saved.overflow }); h.overscrollBehavior = saved.overscroll; window.scrollTo(0, y); };
+  }, [open]);
+
+  // native listeners: touchmove must be non-passive so a drag can stop the browser's own scrolling / bounce
+  useEffect(() => {
+    const el = sheet.current; if (!open || !el) return;
+    const start = (e: TouchEvent) => {
+      const t = e.target as HTMLElement;
+      const fromHeader = t.closest('[data-sheet-grip]') !== null;
+      drag.current = !fromHeader && t.closest('input, select, textarea') ? null : { y0: e.touches[0].clientY, t0: Date.now(), fromHeader, active: false, dy: 0 };
+    };
+    const move = (e: TouchEvent) => {
+      const d = drag.current; if (!d) return;
+      const moved = e.touches[0].clientY - d.y0;
+      if (!d.active) {
+        if (moved <= 6) return;
+        if (!d.fromHeader && el.scrollTop > 0) { drag.current = null; return; }   // let the content scroll
+        d.active = true;
+      }
+      e.preventDefault();
+      d.dy = Math.max(0, moved); setDy(d.dy);
+    };
+    const end = () => {
+      const d = drag.current; drag.current = null;
+      if (!d?.active) return;
+      const fast = d.dy > 40 && d.dy / Math.max(1, Date.now() - d.t0) > 0.6;
+      setDy(0);
+      if (d.dy > 110 || fast) close.current();
+    };
+    el.addEventListener('touchstart', start, { passive: true });
+    el.addEventListener('touchmove', move, { passive: false });
+    el.addEventListener('touchend', end); el.addEventListener('touchcancel', end);
+    return () => { el.removeEventListener('touchstart', start); el.removeEventListener('touchmove', move); el.removeEventListener('touchend', end); el.removeEventListener('touchcancel', end); };
+  }, [open]);
+
   if (!open) return null;
-  const onTouchStart = (e: React.TouchEvent) => {
-    const fromHeader = (e.target as HTMLElement).closest('[data-sheet-grip]') !== null;
-    const el = e.target as HTMLElement;
-    // never steal gestures from form fields
-    if (!fromHeader && el.closest('input, select, textarea')) { drag.current = null; return; }
-    drag.current = { y0: e.touches[0].clientY, t0: Date.now(), fromHeader, active: false };
-  };
-  const onTouchMove = (e: React.TouchEvent) => {
-    const d = drag.current; if (!d) return;
-    const moved = e.touches[0].clientY - d.y0;
-    if (!d.active) {
-      if (moved <= 6) return;
-      if (!d.fromHeader && (sheet.current?.scrollTop ?? 0) > 0) { drag.current = null; return; }   // let the content scroll
-      d.active = true;
-    }
-    setDy(Math.max(0, moved));
-  };
-  const onTouchEnd = () => {
-    const d = drag.current; drag.current = null;
-    if (!d?.active) return;
-    const fast = dy > 40 && dy / Math.max(1, Date.now() - d.t0) > 0.6;
-    if (dy > 110 || fast) { setDy(0); onClose(); } else setDy(0);
-  };
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose} style={{ opacity: dy ? Math.max(0.4, 1 - dy / 600) : undefined }}>
-      <div ref={sheet} role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}
-        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} style={{ opacity: dy ? Math.max(0.3, 1 - dy / 500) : 1 }} />
+      <div ref={sheet} role="dialog" aria-modal="true" aria-label={title}
         style={{ transform: dy ? `translateY(${dy}px)` : undefined, transition: dy ? 'none' : 'transform 180ms ease-out', overscrollBehavior: 'contain' }}
-        className="max-h-[90vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-xl safe-bottom sm:max-w-lg sm:rounded-3xl">
+        className="relative max-h-[90vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-xl safe-bottom sm:max-w-lg sm:rounded-3xl">
         <div data-sheet-grip className="-mx-5 -mt-5 mb-1 px-5 pt-5">
           <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-slate-300 sm:hidden" />
           <h2 className="mb-3 text-lg font-semibold text-brand-800">{title}</h2>
