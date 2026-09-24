@@ -1,5 +1,5 @@
 import { Loader2 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
 export function cx(...parts: (string | false | null | undefined)[]) { return parts.filter(Boolean).join(' '); }
@@ -17,7 +17,7 @@ export function Button({ children, variant = 'primary', className, ...rest }: Re
 
 export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
-    <label className="block">
+    <label className="block min-w-0">
       <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{label}</span>
       {children}
       {hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
@@ -82,15 +82,49 @@ export function ErrorBox({ error }: { error: unknown }) {
   return <div role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{msg}</div>;
 }
 
-/** Bottom sheet: the mobile editing surface. Renders as a centred dialog on wide screens. */
+/**
+ * Bottom sheet: the mobile editing surface. Renders as a centred dialog on wide screens.
+ * Swipe down to close: from the handle and title at any time, or anywhere on the sheet once its content is
+ * scrolled to the top. A short pull springs back; a pull past ~110 px (or a quick flick) closes it.
+ */
 export function BottomSheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+  const sheet = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ y0: number; t0: number; fromHeader: boolean; active: boolean } | null>(null);
+  const [dy, setDy] = useState(0);
   if (!open) return null;
+  const onTouchStart = (e: React.TouchEvent) => {
+    const fromHeader = (e.target as HTMLElement).closest('[data-sheet-grip]') !== null;
+    const el = e.target as HTMLElement;
+    // never steal gestures from form fields
+    if (!fromHeader && el.closest('input, select, textarea')) { drag.current = null; return; }
+    drag.current = { y0: e.touches[0].clientY, t0: Date.now(), fromHeader, active: false };
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    const d = drag.current; if (!d) return;
+    const moved = e.touches[0].clientY - d.y0;
+    if (!d.active) {
+      if (moved <= 6) return;
+      if (!d.fromHeader && (sheet.current?.scrollTop ?? 0) > 0) { drag.current = null; return; }   // let the content scroll
+      d.active = true;
+    }
+    setDy(Math.max(0, moved));
+  };
+  const onTouchEnd = () => {
+    const d = drag.current; drag.current = null;
+    if (!d?.active) return;
+    const fast = dy > 40 && dy / Math.max(1, Date.now() - d.t0) > 0.6;
+    if (dy > 110 || fast) { setDy(0); onClose(); } else setDy(0);
+  };
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose}>
-      <div role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose} style={{ opacity: dy ? Math.max(0.4, 1 - dy / 600) : undefined }}>
+      <div ref={sheet} role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}
+        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}
+        style={{ transform: dy ? `translateY(${dy}px)` : undefined, transition: dy ? 'none' : 'transform 180ms ease-out', overscrollBehavior: 'contain' }}
         className="max-h-[90vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-xl safe-bottom sm:max-w-lg sm:rounded-3xl">
-        <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-slate-300 sm:hidden" />
-        <h2 className="mb-3 text-lg font-semibold text-brand-800">{title}</h2>
+        <div data-sheet-grip className="-mx-5 -mt-5 mb-1 px-5 pt-5">
+          <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-slate-300 sm:hidden" />
+          <h2 className="mb-3 text-lg font-semibold text-brand-800">{title}</h2>
+        </div>
         {children}
       </div>
     </div>
