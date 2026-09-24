@@ -29,7 +29,8 @@ export interface RequestImpact {
 }
 
 const RANK: Record<DayMark, number> = { off: -1, green: 0, amber: 1, pending: 2, red: 3 };
-const counted = (a: MpAbsence) => (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false;
+// current leave (as request_decide counts it): approved or planned, and unresolved absences still in the plan
+const counted = (a: MpAbsence) => (a.status === 'approved' || a.status === 'planned' || a.status === 'unresolved') && a.inCurrentPlan !== false;
 
 export function requestImpact(req: { employeeId: string; start: string; end: string; typeCode: string }, people: MpPerson[], absences: MpAbsence[], assignments: MpAssignment[] = []): RequestImpact {
   const person = people.find((p) => p.id === req.employeeId) ?? null;
@@ -55,4 +56,29 @@ export function requestImpact(req: { employeeId: string; start: string; end: str
     red: worse.filter((d) => d.after === 'red'),
     coverNeeded: person?.role === 'controller' ? worse.filter((d) => d.after === 'pending') : []
   };
+}
+
+export type ApprovalOutcome =
+  | { kind: 'add' }
+  | { kind: 'confirm'; record: MpAbsence; setsType: boolean }
+  | { kind: 'move'; record: MpAbsence }
+  | { kind: 'refused'; records: MpAbsence[] };
+
+/**
+ * What approving would do to the plan: the same rule as request_decide in the database, so the Section Head sees it
+ * before deciding. One leave is never recorded twice.
+ * - nothing on those dates → a new record;
+ * - one record with the same dates → confirmed (its type set from the request if it differs);
+ * - a Scheduled request and one planned / rescheduled PV block on other dates → the block moves to the request dates;
+ * - anything else → refused until the overlapping leave is corrected or cancelled.
+ * `overlaps` are the employee's current leave records overlapping the request (requestImpact().overlaps).
+ */
+export function approvalOutcome(req: { type: RequestType; start: string; end: string }, overlaps: MpAbsence[]): ApprovalOutcome {
+  if (overlaps.length === 0) return { kind: 'add' };
+  if (overlaps.length === 1) {
+    const o = overlaps[0];
+    if (o.status !== 'unresolved' && o.start === req.start && o.end === req.end) return { kind: 'confirm', record: o, setsType: o.typeCode !== REQUEST_TYPE_CODE[req.type] };
+    if (o.status !== 'unresolved' && req.type === 'scheduled' && (o.typeCode === 'annual_leave_planned' || o.typeCode === 'annual_leave_rescheduled')) return { kind: 'move', record: o };
+  }
+  return { kind: 'refused', records: overlaps };
 }

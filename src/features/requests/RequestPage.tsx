@@ -1,10 +1,10 @@
-import { AlertTriangle, ArrowLeft, Pencil } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Info, Pencil } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { DayMark } from '@/core/calendar';
 import { firstDayBack } from '@/core/leave';
 import type { MpAbsence, MpAssignment, MpPerson } from '@/core/manpower';
-import { REQUEST_TYPES, REQUEST_TYPE_CODE, REQUEST_TYPE_LABEL, requestImpact, type RequestType } from '@/core/requests';
+import { REQUEST_TYPES, REQUEST_TYPE_CODE, REQUEST_TYPE_LABEL, approvalOutcome, requestImpact, type ApprovalOutcome, type RequestType } from '@/core/requests';
 import { addDaysIso, isValidIsoDate } from '@/core/roster';
 import { fetchManpowerInputs } from '@/data/manpower';
 import { fetchDirectory } from '@/data/queries';
@@ -97,7 +97,8 @@ export default function RequestPage({ profile }: { profile: UserProfile }) {
         </Card>
       )}
 
-      {form.employee_id && valid && <ImpactCard impact={impact} crewLabel={emp && isCrew(emp.crew_code) ? emp.crew_code : null} approved={req?.status === 'approved'} />}
+      {form.employee_id && valid && <ImpactCard impact={impact} crewLabel={emp && isCrew(emp.crew_code) ? emp.crew_code : null} approved={req?.status === 'approved'}
+        outcome={open && impact ? approvalOutcome({ type: form.request_type, start: form.start_date, end: form.end_date }, impact.overlaps) : null} typeLabel={REQUEST_TYPE_LABEL[form.request_type]} />}
 
       {req && <ReviewCard req={req} open={open} impactRed={impact?.red.length ?? 0} onDone={done} />}
       {req && <DecisionCard req={req} open={open} isHead={isHead} onDone={done} />}
@@ -176,7 +177,7 @@ function FormCard({ form, setForm, dir, emp, requestId, onCancel, onSaved }: {
   );
 }
 
-function ImpactCard({ impact, crewLabel, approved }: { impact: ReturnType<typeof requestImpact> | null; crewLabel: string | null; approved: boolean }) {
+function ImpactCard({ impact, crewLabel, approved, outcome, typeLabel }: { impact: ReturnType<typeof requestImpact> | null; crewLabel: string | null; approved: boolean; outcome: ApprovalOutcome | null; typeLabel: string }) {
   const [all, setAll] = useState(false);
   if (!impact) return <Card className="mb-3"><Spinner label="Working out the manpower impact…" /></Card>;
   const shown = all ? impact.duties : impact.worse;
@@ -184,12 +185,7 @@ function ImpactCard({ impact, crewLabel, approved }: { impact: ReturnType<typeof
     <Card className="mb-3">
       <h2 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Manpower impact{crewLabel ? ` · ${crewLabel} Shift` : ''}</h2>
       {approved && <p className="mb-1 text-xs text-slate-500">This leave is now in the plan; the result below compares the crew with and without it.</p>}
-      {impact.overlaps.length > 0 && (
-        <div className="mb-2 flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>Leave already recorded on these dates: {impact.overlaps.map((o) => `${o.typeShort ?? ''} ${range(o.start, o.end)}`.trim()).join(', ')}. Approval will be refused until that record is corrected or cancelled.</span>
-        </div>
-      )}
+      {outcome && <OutcomeNote outcome={outcome} typeLabel={typeLabel} />}
       {!crewLabel ? <p className="text-sm text-slate-600">Day staff: no crew minimum is affected. {impact.calendarDays} days.</p> : (
         <>
           <p className="text-sm text-slate-700">{impact.dutyDays} duty day{impact.dutyDays === 1 ? '' : 's'} of {impact.calendarDays} calendar days.{' '}
@@ -315,3 +311,21 @@ function WithdrawCard({ req, onDone }: { req: LeaveRequest; onDone: (m: string) 
   );
 }
 
+
+const leaveText = (o: { typeShort?: string | null; start: string; end: string }) => `${o.typeShort ?? ''} ${range(o.start, o.end)}`.trim();
+
+/** What approving will do to the plan (one leave is never recorded twice). */
+function OutcomeNote({ outcome, typeLabel }: { outcome: ApprovalOutcome; typeLabel: string }) {
+  if (outcome.kind === 'refused') {
+    return (
+      <div className="mb-2 flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>Leave already recorded on these dates: <b>{outcome.records.map(leaveText).join(', ')}</b>. Approval will be refused until it is corrected or cancelled in the Annual Leave Plan.</span>
+      </div>
+    );
+  }
+  const text = outcome.kind === 'add' ? 'On approval the leave is added to the plan.'
+    : outcome.kind === 'confirm' ? `Already in the plan: ${leaveText(outcome.record)}. Approval confirms it; no second record is made${outcome.setsType ? `, and its type becomes ${typeLabel}` : ''}.`
+    : `Planned leave ${leaveText(outcome.record)}: approval moves it to the requested dates. The old dates stay in the history.`;
+  return <p className="mb-2 flex items-start gap-1.5 text-xs text-slate-600"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />{text}</p>;
+}

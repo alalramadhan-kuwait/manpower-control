@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { requestImpact } from '..';
+import { approvalOutcome, requestImpact } from '..';
 import type { MpAbsence, MpPerson } from '../../manpower';
 import { isWorkingDay, type Crew } from '../../roster';
 
@@ -43,5 +43,26 @@ describe('leave request impact', () => {
     expect(r.overlaps).toHaveLength(1);
     const day = requestImpact(req(vr, '2026-09-20', '2026-09-21'), people, []);
     expect(day).toMatchObject({ crew: null, calendarDays: 2, dutyDays: 2, duties: [] });
+  });
+});
+
+describe('what approval does (one leave, one record)', () => {
+  const pv = (start: string, end: string, typeCode = 'annual_leave_planned', status = 'approved'): MpAbsence => ({ employeeId: 'x', start, end, status, typeCode, typeLabel: null, inCurrentPlan: true });
+  it('adds a record when nothing is recorded on those dates', () => {
+    expect(approvalOutcome({ type: 'unscheduled', start: '2026-10-04', end: '2026-10-08' }, [])).toEqual({ kind: 'add' });
+  });
+  it('confirms leave already recorded on the same dates, setting the type when it differs', () => {
+    expect(approvalOutcome({ type: 'scheduled', start: '2026-10-04', end: '2026-10-08' }, [pv('2026-10-04', '2026-10-08')])).toMatchObject({ kind: 'confirm', setsType: false });
+    expect(approvalOutcome({ type: 'unscheduled', start: '2026-10-04', end: '2026-10-08' }, [pv('2026-10-04', '2026-10-08')])).toMatchObject({ kind: 'confirm', setsType: true });
+  });
+  it('moves a planned block for a Scheduled request on other dates', () => {
+    expect(approvalOutcome({ type: 'scheduled', start: '2026-10-04', end: '2026-10-08' }, [pv('2026-10-01', '2026-10-14')])).toMatchObject({ kind: 'move' });
+    expect(approvalOutcome({ type: 'scheduled', start: '2026-10-04', end: '2026-10-08' }, [pv('2026-10-01', '2026-10-14', 'annual_leave_rescheduled')])).toMatchObject({ kind: 'move' });
+  });
+  it('refuses other overlaps: another leave type, an unscheduled request, several records or an unresolved absence', () => {
+    expect(approvalOutcome({ type: 'scheduled', start: '2026-10-04', end: '2026-10-08' }, [pv('2026-10-05', '2026-10-05', 'sick_leave')]).kind).toBe('refused');
+    expect(approvalOutcome({ type: 'unscheduled', start: '2026-10-04', end: '2026-10-08' }, [pv('2026-10-01', '2026-10-14')]).kind).toBe('refused');
+    expect(approvalOutcome({ type: 'scheduled', start: '2026-10-04', end: '2026-10-08' }, [pv('2026-10-01', '2026-10-05'), pv('2026-10-07', '2026-10-09')]).kind).toBe('refused');
+    expect(approvalOutcome({ type: 'scheduled', start: '2026-10-04', end: '2026-10-08' }, [pv('2026-10-04', '2026-10-08', null as unknown as string, 'unresolved')]).kind).toBe('refused');
   });
 });
