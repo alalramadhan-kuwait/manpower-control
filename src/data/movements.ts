@@ -1,16 +1,16 @@
-// Shift movements (Stage G): permanent moves and temporary covers. Every change goes through a database function
+// Shift movements (Stage G): permanent moves, temporary covers and day duty (to_crew 'DAY'). Every change goes through a database function
 // (crew_move / crew_move_end / crew_move_cancel) that checks it and keeps the history.
 import { supabase } from './supabase';
 import type { Crew } from '@/core/roster';
 
 export interface CrewMovement {
-  id: string; employee_id: string; kind: 'temporary' | 'permanent'; from_crew: Crew | null; to_crew: Crew;
+  id: string; employee_id: string; kind: 'temporary' | 'permanent'; from_crew: Crew | null; to_crew: Crew | 'DAY';
   start_date: string; end_date: string | null; reason: string | null; status: 'active' | 'cancelled';
   created_at: string; cancelled_at: string | null; cancel_reason: string | null;
 }
 
 function plain(error: { message: string }): Error {
-  if (error.message.includes('cm_one_temporary_at_a_time')) return new Error('This person already has a temporary cover on some of these dates. End or cancel it first.');
+  if (error.message.includes('cm_one_temporary_at_a_time')) return new Error('This person already has a temporary cover or day duty on some of these dates. End or cancel it first.');
   return new Error(error.message);
 }
 
@@ -22,7 +22,7 @@ export async function fetchMovements(employeeId?: string): Promise<CrewMovement[
   return data as CrewMovement[];
 }
 
-export async function recordMovement(v: { employee: string; kind: CrewMovement['kind']; to: Crew; start: string; end: string | null; reason: string }): Promise<string> {
+export async function recordMovement(v: { employee: string; kind: CrewMovement['kind']; to: Crew | 'DAY'; start: string; end: string | null; reason: string }): Promise<string> {
   const { data, error } = await supabase.rpc('crew_move', { p_employee: v.employee, p_kind: v.kind, p_to_crew: v.to, p_start: v.start, p_end: v.end, p_reason: v.reason });
   if (error) throw plain(error);
   return data as string;

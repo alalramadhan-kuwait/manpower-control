@@ -27,7 +27,7 @@ export function toMpAbsence(l: LeaveRow): MpAbsence {
 }
 
 interface RoleRow { employee_id: string; effective_from: string; effective_to: string | null; positions: { code: string } | null; crews: { code: string } | null }
-interface MoveRow { employee_id: string; start_date: string; end_date: string | null; to_crew: Crew }
+interface MoveRow { employee_id: string; start_date: string; end_date: string | null; to_crew: Crew | 'DAY' }
 
 /**
  * Active Section-1 people (with their dated role history and temporary shift covers, so each date uses the crew

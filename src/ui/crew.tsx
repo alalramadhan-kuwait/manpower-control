@@ -1,3 +1,4 @@
+import { Sun } from 'lucide-react';
 import type { Crew } from '@/core/roster';
 import { cx } from './components';
 
@@ -35,3 +36,19 @@ export function CrewTag({ crew, suffix = ' Shift', size = 'sm' }: { crew: string
 }
 
 export { isCrew };
+
+/** Day duty marker (a sun), the size of a crew badge. Navy outline: not a crew colour, not a status colour. */
+export function DayDutyBadge({ size = 'md', muted }: { size?: 'sm' | 'md' | 'lg'; muted?: boolean }) {
+  const dims = { sm: 'h-6 w-6', md: 'h-9 w-9', lg: 'h-11 w-11' }[size];
+  const icon = { sm: 'h-3.5 w-3.5', md: 'h-5 w-5', lg: 'h-6 w-6' }[size];
+  return (
+    <span aria-label="Day duty" className={cx('inline-flex shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-700 ring-1 ring-brand-200', dims, muted && 'opacity-45')}>
+      <Sun className={icon} />
+    </span>
+  );
+}
+
+/** Where a shift movement goes: a crew, or day duty ('DAY'). */
+export function MoveTargetBadge({ to, size = 'md', muted }: { to: Crew | 'DAY'; size?: 'sm' | 'md' | 'lg'; muted?: boolean }) {
+  return to === 'DAY' ? <DayDutyBadge size={size} muted={muted} /> : <CrewBadge crew={to} size={size} muted={muted} />;
+}

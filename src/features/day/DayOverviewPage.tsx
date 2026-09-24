@@ -6,7 +6,7 @@ import type { CrewDay, DayResult, Finding, MpAbsence, MpAssignment, MpPerson, Po
 import { addDaysIso, isValidIsoDate } from '@/core/roster';
 import { fetchManpowerInputs } from '@/data/manpower';
 import { Card, ErrorBox, Spinner, cx, fmtDate } from '@/ui/components';
-import { CREW_IDENTITY, CrewBadge, crewEdge } from '@/ui/crew';
+import { CREW_IDENTITY, CrewBadge, DayDutyBadge, crewEdge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { bySeniority } from '@/ui/positions';
 import { onLeaveOn, type OnLeave } from '@/core/leave';
@@ -105,6 +105,7 @@ export default function DayOverviewPage() {
             {result.crews.map((c) => <CrewCard key={c.crew} crew={c} leave={leave} date={date} need={needFor(c.crew)} />)}
           </div>
           <DayStaffCard result={result} leave={leave} date={date} />
+          <DayDutyCard result={result} leave={leave} />
           <Legend />
         </>
       )}
@@ -371,6 +372,36 @@ function Tag({ children, brand }: { children: React.ReactNode; brand?: boolean }
   return (
     <span className={cx('whitespace-nowrap rounded px-1 text-[10px] font-semibold leading-4 ring-1',
       brand ? 'bg-brand-50 text-brand-700 ring-brand-100' : 'bg-white text-slate-600 ring-slate-200')}>{children}</span>
+  );
+}
+
+/** Crew members on day duty (Stage G movement to 'DAY'): out of every crew, day shift Sunday to Thursday. */
+function DayDutyCard({ result, leave }: { result: DayResult; leave: Map<string, OnLeave> }) {
+  if (!result.dayDuty.length) return null;
+  const weekend = !result.dayDuty[0].working;
+  return (
+    <Card className="mt-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="flex items-center gap-1.5 text-xs font-semibold text-slate-900"><DayDutyBadge size="sm" /> Day duty <span className="font-normal text-slate-500">· {result.dayDuty.length}</span></h3>
+        <span className="text-[11px] text-slate-500">{weekend ? 'Weekend: off today' : 'Sunday to Thursday'}</span>
+      </div>
+      <ul className="mt-1 divide-y divide-slate-100">
+        {[...result.dayDuty].sort((a, b) => bySeniority(a.person, b.person)).map((s) => {
+          const l = leave.get(s.person.id);
+          return (
+            <li key={s.person.id} className="flex items-center justify-between gap-2 py-1">
+              <Link to={`/employees/${s.person.id}`} className="min-w-0 truncate text-sm font-medium text-slate-900">{s.person.name}</Link>
+              <span className="flex shrink-0 items-center gap-1 text-[11px] text-slate-500">
+                {s.person.movedFrom && <>from <CrewBadge crew={s.person.movedFrom} size="sm" /></>}
+                {s.absence ? <><Tag>{l?.typeShort ?? s.absence.typeShort ?? 'Leave'}</Tag>{l && <>back {shortDate(l.returnOn)}</>}</> : <Tag>{s.working ? 'On duty' : 'Off'}</Tag>}
+                {s.unresolved && <Tag>Unresolved</Tag>}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="mt-1 text-[11px] text-slate-500">Not counted in any crew's minimum.</p>
+    </Card>
   );
 }
 

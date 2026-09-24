@@ -33,12 +33,18 @@ export interface MpPerson {
   moves?: MpCrewMove[];
   /** Set by personOn when a temporary cover puts the person in another crew on that date: their own crew. */
   movedFrom?: Crew | null;
+  /** Set by personOn when the person is on day duty on that date (out of every crew, works day shift Sun–Thu). */
+  dayDuty?: boolean;
 }
 
 /** One period of the role history: `from`..`to` (inclusive, `to` null = still current). */
 export interface MpRolePeriod { from: string; to: string | null; role: Role | null; crew: Crew | null }
-/** A temporary cover: works with `crew` from `start` to `end` (null = until further notice). */
-export interface MpCrewMove { start: string; end: string | null; crew: Crew }
+/** A temporary cover: works with `crew` from `start` to `end` (null = until further notice). `DAY` = day duty. */
+export interface MpCrewMove { start: string; end: string | null; crew: Crew | typeof DAY_DUTY }
+/** Movement target for day duty: out of every crew, day shift Sunday to Thursday (Friday and Saturday off). */
+export const DAY_DUTY = 'DAY' as const;
+/** Day duty works Sunday to Thursday. */
+export const isDayDutyWorkday = (date: string) => new Date(date + 'T00:00:00Z').getUTCDay() <= 4;
 
 const CREW_ROLES: (Role | null)[] = ['controller', 'panel_operator', 'field_operator'];
 
@@ -54,8 +60,8 @@ export function personOn(p: MpPerson, date: string): MpPerson {
     role = period.role; crew = period.crew;
   }
   const move = crew && CREW_ROLES.includes(role) ? p.moves?.find((m) => m.start <= date && (m.end === null || date <= m.end) && m.crew !== crew) : undefined;
-  if (move) return { ...p, role, crew: move.crew, movedFrom: crew };
-  return role === p.role && crew === p.crew && !p.movedFrom ? p : { ...p, role, crew, movedFrom: undefined };
+  if (move) return move.crew === DAY_DUTY ? { ...p, role, crew: null, movedFrom: crew, dayDuty: true } : { ...p, role, crew: move.crew, movedFrom: crew, dayDuty: undefined };
+  return role === p.role && crew === p.crew && !p.movedFrom && !p.dayDuty ? p : { ...p, role, crew, movedFrom: undefined, dayDuty: undefined };
 }
 
 /**
@@ -193,10 +199,17 @@ export interface DayStaff {
   /** Holds the Morning Controller post today (the rotation holder when one is active, else the Morning Controller). */
   morningPost: boolean;
 }
+export interface DayDutyToday {
+  person: MpPerson; absence: MpAbsence | null; unresolved: MpAbsence | null;
+  /** Sunday to Thursday; Friday and Saturday are off. */
+  working: boolean;
+}
 export interface DayResult {
   date: string;
   crews: CrewDay[]; // ordered Morning, Afternoon, Night, Off
   dayStaff: DayStaff[]; // VR and Morning Controllers, and anyone on Morning rotation
+  /** Crew members on day duty today (not counted in any crew). */
+  dayDuty: DayDutyToday[];
   /**
    * The Morning Controller post today. 'coverage_required' when the Morning Controller has been assigned to cover
    * a shift and no Morning rotation fills the post: never left silently empty; management resolves it by
@@ -379,6 +392,9 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
     .map((p) => ({ person: p, absence: leaveOf(p), unresolved: unresolvedOf(p), assignment: assignmentOf(p),
       morningPost: rotation ? p.id === rotation.employeeId : p.role === 'morning_controller' }));
 
+  const dayDuty: DayDutyToday[] = people.filter((p) => p.dayDuty)
+    .map((p) => ({ person: p, absence: leaveOf(p), unresolved: unresolvedOf(p), working: isDayDutyWorkday(date) }));
+
   const regularMorning = people.find((p) => p.role === 'morning_controller') ?? null;
   let morningPost: DayResult['morningPost'];
   if (rotation) {
@@ -401,10 +417,10 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
     confirmedShortage: workingCrews.filter((c) => c.confirmedShortage).length,
     coverageRequired: workingCrews.filter((c) => c.pending.includes('coverage_required')).length,
     dataIncomplete: workingCrews.filter((c) => c.pending.includes('data_incomplete')).length,
-    unresolvedWarnings: crews.reduce((n, c) => n + c.unresolved.length, 0) + dayStaff.filter((s) => s.unresolved).length,
+    unresolvedWarnings: crews.reduce((n, c) => n + c.unresolved.length, 0) + dayStaff.filter((s) => s.unresolved).length + dayDuty.filter((s) => s.unresolved).length,
     morningCoverageRequired: morningPost.status === 'coverage_required' ? 1 : 0
   };
-  return { date, crews, dayStaff, morningPost, overall, finalStatus, provisionalStatus, noBuffer: finalStatus === 'amber', counts };
+  return { date, crews, dayStaff, dayDuty, morningPost, overall, finalStatus, provisionalStatus, noBuffer: finalStatus === 'amber', counts };
 }
 
 /** Status for each date in a range (for later calendar views and for tests). */

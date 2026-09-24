@@ -6,7 +6,7 @@ import { fetchReference } from '@/data/queries';
 import { displayNameFor } from '@/core/names';
 import type { AbsenceType, AuditEntry, Crew, EmployeeDirectoryRow, LeaveRecord, LeavePlanChange, Performance, Position, Qualification, QualificationCode, QualificationStatus, RoleAssignment, SickTotal, UserProfile } from '@/data/types';
 import { BottomSheet, Button, Card, Chip, ErrorBox, Field, Row, Spinner, fmtDate, qualificationLabel, qualificationTone, cx } from '@/ui/components';
-import { CrewBadge, CrewTag, isCrew } from '@/ui/crew';
+import { CrewBadge, CrewTag, isCrew, DayDutyBadge } from '@/ui/crew';
 import { OnLeaveChip, localToday, shortDate } from '@/ui/leave';
 import { splitLeave, type LeaveBlock, type LeaveSpan } from '@/core/leave';
 import { LeaveSheet, changeLabel, type LeaveTarget } from '@/features/leave/LeaveSheet';
@@ -182,7 +182,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
             {moves.map((m) => (
               <li key={m.id} className="flex items-center justify-between gap-2 py-2">
                 <span className="min-w-0">
-                  <span className="flex items-center gap-1.5 font-medium text-slate-800">{m.from_crew && <CrewTag crew={m.from_crew} suffix="" />} → <CrewTag crew={m.to_crew} suffix="" /> <span className="font-normal text-slate-500">· {m.kind === 'permanent' ? 'permanent' : 'temporary cover'}{m.status === 'cancelled' ? ' · cancelled' : ''}</span></span>
+                  <span className="flex items-center gap-1.5 font-medium text-slate-800">{m.from_crew && <CrewTag crew={m.from_crew} suffix="" />} → {m.to_crew === 'DAY' ? <span className="inline-flex items-center gap-1.5"><DayDutyBadge size="sm" />Day</span> : <CrewTag crew={m.to_crew} suffix="" />} <span className="font-normal text-slate-500">· {m.kind === 'permanent' ? 'permanent' : m.to_crew === 'DAY' ? 'day duty' : 'temporary cover'}{m.status === 'cancelled' ? ' · cancelled' : ''}</span></span>
                   <span className="block text-xs text-slate-500">{fmtDate(m.start_date)} → {m.kind === 'permanent' ? 'onward' : m.end_date ? fmtDate(m.end_date) : 'until further notice'}{m.reason ? ` · ${m.reason}` : ''}</span>
                 </span>
                 {m.kind === 'temporary' && m.status === 'active' && <span className="flex shrink-0 gap-2 text-xs font-medium"><button type="button" className="text-brand-700" onClick={() => setMoveSheet({ kind: 'end', movement: m })}>End</button><button type="button" className="text-status-red" onClick={() => setMoveSheet({ kind: 'cancel', movement: m })}>Cancel</button></span>}
