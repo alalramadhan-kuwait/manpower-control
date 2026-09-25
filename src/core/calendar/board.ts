@@ -3,6 +3,7 @@
 // - how many people a crew is short on a duty ("B −1")
 // - leave reasons grouped the way the Section Head reads them
 import type { CrewDay } from '../manpower';
+import type { OracleStatus } from '../oracle';
 
 export interface Span { id: string; start: string; end: string }
 export interface WeekBar<T extends Span> { item: T; col: number; span: number; lane: number; startsHere: boolean; endsHere: boolean }
@@ -71,22 +72,22 @@ export function weekDates(start: string): string[] {
   return Array.from({ length: 7 }, (_, k) => { const x = new Date(d); x.setUTCDate(x.getUTCDate() + k); return x.toISOString().slice(0, 10); });
 }
 
-export interface LeaveBlock { employeeId: string; start: string; end: string; typeCode: string | null; typeShort: string | null }
+export interface LeaveBlock { employeeId: string; start: string; end: string; typeCode: string | null; typeShort: string | null; oracle?: OracleStatus }
 
 /**
  * Leave overlapping [from, to] the way the calendar counts it (approved or planned, in the current plan): one block per
  * absence with its real dates; overlapping or back-to-back blocks of one person with the same code are joined.
  */
-export function leaveInRange(absences: { employeeId: string; start: string; end: string; status: string; typeCode: string | null; typeShort?: string | null; inCurrentPlan?: boolean }[], from: string, to: string): LeaveBlock[] {
+export function leaveInRange(absences: { employeeId: string; start: string; end: string; status: string; typeCode: string | null; typeShort?: string | null; inCurrentPlan?: boolean; oracle?: OracleStatus }[], from: string, to: string): LeaveBlock[] {
   const next = (iso: string) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); };
   const counted = absences
     .filter((a) => (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false)
-    .map((a) => ({ employeeId: a.employeeId, start: a.start, end: a.end, typeCode: a.typeCode, typeShort: a.typeShort ?? null }))
+    .map((a) => ({ employeeId: a.employeeId, start: a.start, end: a.end, typeCode: a.typeCode, typeShort: a.typeShort ?? null, ...(a.oracle ? { oracle: a.oracle } : {}) }))
     .sort((a, b) => a.employeeId.localeCompare(b.employeeId) || a.start.localeCompare(b.start));
   const joined: LeaveBlock[] = [];
   for (const b of counted) {
     const last = joined[joined.length - 1];
-    if (last && last.employeeId === b.employeeId && last.typeShort === b.typeShort && b.start <= next(last.end)) { if (b.end > last.end) last.end = b.end; continue; }
+    if (last && last.employeeId === b.employeeId && last.typeShort === b.typeShort && last.oracle === b.oracle && b.start <= next(last.end)) { if (b.end > last.end) last.end = b.end; continue; }
     joined.push({ ...b });
   }
   return joined.filter((b) => b.start <= to && b.end >= from);

@@ -48,4 +48,13 @@ describe('notification center', () => {
     expect(actionCount(n)).toBe(n.filter((x) => x.level === 'action').length);
     expect(n.find((x) => x.id === 'staff-action')!.title).toBe('3 staff records to complete');
   });
+  it('Oracle HR: rejected and not-yet-approved leave starting within 30 days', () => {
+    const o = (p: MpPerson, start: string, oracle: MpAbsence['oracle']): MpAbsence => ({ ...leave(p, start, start), oracle });
+    const absences = [o(B[4], '2026-10-01', 'not_submitted'), o(B[5], '2026-10-03', 'submitted'), o(C[4], '2026-10-08', 'rejected'), o(C[5], '2026-10-02', 'approved'), o(D[4], '2026-12-01', 'not_submitted')];
+    const n = buildNotices(base({ absences }));
+    expect(n.find((x) => x.id.startsWith('oracle-rej'))).toMatchObject({ level: 'action', title: '1 leave rejected in Oracle', to: '/oracle?s=rejected' });
+    const w = n.find((x) => x.id === 'oracle-2026-09-25')!;
+    expect(w).toMatchObject({ level: 'action', title: '2 leaves not approved in Oracle · next 30 days', to: '/oracle' });
+    expect(w.detail).toBe(`${B[4].name} 1 Oct · ${B[5].name} 3 Oct`);
+  });
 });

@@ -12,6 +12,7 @@ import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { Card, ErrorBox, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { shortDate } from '@/ui/leave';
+import { OracleDot } from '@/ui/oracle';
 import { bySeniority } from '@/ui/positions';
 import { DaySheet } from './DaySheet';
 import { EventSheet, HolidaySheet } from './InfoSheets';
@@ -149,7 +150,8 @@ export function WeekView({ start, today, onWeek, onMonth }: { start: string; tod
 
           <Section title="Needs attention"><AttentionList items={view.attention} onOpen={setOpen} /></Section>
 
-          <Section title={`On leave (${view.onLeave})`}>
+          <Section title={`On leave (${view.onLeave})`} action={<Link to="/oracle" className="flex items-center gap-1.5 text-[10px] text-slate-500">Oracle
+            {(['approved', 'submitted', 'not_submitted', 'rejected'] as const).map((s) => <OracleDot key={s} status={s} />)}<ChevronRight className="h-3 w-3" /></Link>}>
             {view.groups.length === 0 ? <p className="py-2 text-sm text-slate-500">Nobody this week</p> : view.groups.map((g) => (
               <div key={g.crew ?? 'none'} className="py-1.5">
                 <div className="mb-0.5 flex items-center gap-1.5">
@@ -157,8 +159,8 @@ export function WeekView({ start, today, onWeek, onMonth }: { start: string; tod
                   <span className="text-xs text-slate-500">{new Set(g.rows.map((r) => r.person.id)).size}</span>
                 </div>
                 {g.rows.map(({ block, person }) => (
-                  <Link key={block.employeeId + block.start} to={`/employees/${person.id}`} className="flex items-center gap-2 py-1 pl-8 text-sm">
-                    <span className="min-w-0 flex-1 truncate text-slate-900">{person.name}</span>
+                  <Link key={block.employeeId + block.start} to={`/employees/${person.id}`} className="flex items-center gap-1.5 py-1 pl-8 text-sm">
+                    <OracleDot status={block.oracle} /><span className="min-w-0 flex-1 truncate text-slate-900">{person.name}</span>
                     <span className="shrink-0 text-xs tabular-nums text-slate-500">{block.typeShort ? <span className="mr-1 rounded bg-yellow-100 px-1 font-semibold text-yellow-900">{block.typeShort}</span> : null}{range(block.start, block.end)}</span>
                   </Link>
                 ))}

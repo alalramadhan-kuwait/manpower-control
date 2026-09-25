@@ -7,6 +7,7 @@ import type { ManpowerInputs } from '@/data/manpower';
 import { BottomSheet, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { shortDate } from '@/ui/leave';
+import { OracleDot } from '@/ui/oracle';
 import type { Bar } from './parts';
 
 const STATUS: Record<string, { text: string; cls: string }> = {
@@ -73,7 +74,7 @@ export function DaySheet({ date, day, inputs, holiday, bars, onClose, onAddEvent
                 <div key={g} className="rounded-lg bg-slate-50 px-2.5 py-1.5">
                   <div className="text-[11px] font-semibold text-slate-600">{g} · {groups.get(g)!.length}</div>
                   <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-slate-800">
-                    {groups.get(g)!.map((a) => { const p = people.get(a.employeeId)!; return <span key={a.employeeId + a.start}>{p.name}{p.crew ? <span className="text-slate-400"> · {p.crew}</span> : ''}<span className="text-slate-400"> · until {shortDate(a.end)}</span></span>; })}
+                    {groups.get(g)!.map((a) => { const p = people.get(a.employeeId)!; return <span key={a.employeeId + a.start} className="inline-flex items-center gap-1"><OracleDot status={a.oracle} />{p.name}{p.crew ? <span className="text-slate-400"> · {p.crew}</span> : ''}<span className="text-slate-400"> · until {shortDate(a.end)}</span></span>; })}
                   </div>
                 </div>
               ))}

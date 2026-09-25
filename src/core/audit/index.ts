@@ -2,6 +2,7 @@
 // The database writes one row for every insert / update / delete on the audited tables (trigger audit_row_change),
 // plus the login changes made by the manage-users Edge Function (entity_table = 'user_accounts').
 // Nothing here changes data; it only reads the before / after snapshots.
+import { ORACLE_LABEL, type OracleStatus } from '../oracle';
 
 export type AuditCategory = 'crews' | 'leave' | 'requests' | 'controllers' | 'modes' | 'qualifications' | 'staff' | 'logins' | 'other';
 
@@ -68,6 +69,7 @@ const WORDS: Record<string, string> = {
   take_charge: 'Take-Charge', panel_operator: 'Panel qualification', acting_controller: 'Acting Controller', controller_qualified: 'Controller qualification',
   shift_cover: 'Controller cover', morning_rotation: 'Morning rotation', scheduled: 'Scheduled', unscheduled: 'Unscheduled', unpaid: 'Unpaid'
 };
+const ora = (v: unknown) => ORACLE_LABEL[v as OracleStatus] ?? w(v);
 const w = (v: unknown) => { const t = s(v); return t === null ? 'not recorded' : WORDS[t] ?? t; };
 
 /** Field-by-field changes between two snapshots, only for the listed fields. */
@@ -135,11 +137,13 @@ export function describe(row: AuditRow, lk: AuditLookups): AuditEntry {
       else if (row.action === 'delete') title = `${who(empId)}: ${type} ${span} deleted`;
       else {
         const st = prev?.status !== next?.status;
-        title = st && next?.status === 'cancelled' ? `${who(empId)}: ${type} ${span} cancelled`
+        const oracle = prev?.oracle_status !== next?.oracle_status && prev?.start_date === next?.start_date && prev?.end_date === next?.end_date;
+        title = oracle && !st ? `${who(empId)}: ${type} ${span} · Oracle: ${ora(next?.oracle_status)}`
+          : st && next?.status === 'cancelled' ? `${who(empId)}: ${type} ${span} cancelled`
           : st && next?.status === 'rescheduled' ? `${who(empId)}: ${type} ${span} not taken on these dates`
           : `${who(empId)}: ${type} ${span} changed`;
         details = changes(prev, next, [['start_date', 'First day', day], ['end_date', 'Last day', day], ['status', 'Status', w],
-          ['absence_type_code', 'Type', (v) => lk.absence.get(String(v)) ?? w(v)], ['in_current_plan', 'Counts', (v) => (v === false ? 'No' : 'Yes')]]);
+          ['absence_type_code', 'Type', (v) => lk.absence.get(String(v)) ?? w(v)], ['in_current_plan', 'Counts', (v) => (v === false ? 'No' : 'Yes')], ['oracle_status', 'Oracle', ora], ['oracle_ref', 'Oracle no.', (v) => (s(v) ? String(v) : '—')]]);
       }
       if (s(cur.note) && row.action === 'insert') details.push(String(cur.note));
       break;

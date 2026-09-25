@@ -1,3 +1,4 @@
+import type { OracleStatus } from '@/core/oracle';
 // Hand-written row types for the Stage A schema (kept in step with supabase/migrations).
 
 export type RoleCode = 'section_head' | 'manpower_coordinator' | 'controller' | 'employee';
@@ -44,6 +45,8 @@ export interface LeaveRecord {
   in_original_plan: boolean; in_current_plan: boolean; superseded_by: string | null; rescheduled_from: string | null;
   /** Added, corrected or cancelled by hand; imports never change it. */
   hand_corrected: boolean;
+  /** Where the leave stands in Oracle HR; new dates on future leave reset it to not_submitted. */
+  oracle_status: OracleStatus; oracle_ref: string | null; oracle_updated_at: string | null;
 }
 
 export interface LeavePlanChange {

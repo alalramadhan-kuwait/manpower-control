@@ -5,6 +5,7 @@ import { rulesByDate, type OperationPlan } from '@/core/modes';
 import { fetchOperationPlan } from './modes';
 import { toMpAssignment } from './controllers';
 import type { Crew } from '@/core/roster';
+import type { OracleStatus } from '@/core/oracle';
 import type { ControllerAssignment, EmployeeDirectoryRow } from './types';
 
 const ROLES: Role[] = ['controller', 'vr_controller', 'morning_controller', 'panel_operator', 'field_operator'];
@@ -19,12 +20,12 @@ export function toMpPerson(r: EmployeeDirectoryRow): MpPerson {
   };
 }
 
-interface LeaveRow { id: string; employee_id: string; start_date: string; end_date: string; status: string; absence_type_code: string | null; source_ref: string | null; in_current_plan: boolean; absence_types: { label: string; short_code: string | null } | null }
+interface LeaveRow { id: string; employee_id: string; start_date: string; end_date: string; status: string; absence_type_code: string | null; source_ref: string | null; in_current_plan: boolean; oracle_status?: OracleStatus; absence_types: { label: string; short_code: string | null } | null }
 
 export function toMpAbsence(l: LeaveRow): MpAbsence {
   return {
     id: l.id, employeeId: l.employee_id, start: l.start_date, end: l.end_date, status: l.status, typeCode: l.absence_type_code,
-    typeLabel: l.absence_types?.label ?? (l.status === 'unresolved' ? 'Unresolved absence' : null), typeShort: l.absence_types?.short_code ?? null, sourceRef: l.source_ref, inCurrentPlan: l.in_current_plan
+    typeLabel: l.absence_types?.label ?? (l.status === 'unresolved' ? 'Unresolved absence' : null), typeShort: l.absence_types?.short_code ?? null, sourceRef: l.source_ref, inCurrentPlan: l.in_current_plan, oracle: l.oracle_status
   };
 }
 
@@ -41,7 +42,7 @@ export async function fetchManpowerInputs(from: string, to: string): Promise<Man
   const [dir, lv, ca, ra, mv, op] = await Promise.all([
     supabase.from('employee_directory_v').select('*').eq('in_unit12_scope', true).eq('is_active', true),
     supabase.from('leave_records')
-      .select('id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,absence_types(label,short_code)')
+      .select('id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,oracle_status,absence_types(label,short_code)')
       .eq('in_current_plan', true).in('status', ['approved', 'planned', 'unresolved'])
       .lte('start_date', to).gte('end_date', from),
     supabase.from('controller_assignments').select('*').eq('status', 'active').lte('start_date', to).gte('end_date', from),

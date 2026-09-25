@@ -6,6 +6,7 @@ import type { AbsenceType, LeaveRecord } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Field } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
+import { OraclePill } from '@/ui/oracle';
 
 export interface SheetPerson { id: string; name: string; crew: Crew | null }
 export type LeaveTarget = { kind: 'add'; employeeId?: string; start?: string } | { kind: 'edit'; record: LeaveRecord };
@@ -75,6 +76,7 @@ export function LeaveSheet({ target, people, types, onClose, onDone }: { target:
           <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm ring-1 ring-slate-200">
             <div className="flex items-center gap-1.5 font-medium text-slate-800">{person?.name}{person?.crew && <CrewBadge crew={person.crew} size="sm" />}</div>
             <div className="text-xs text-slate-500">Now: {typeOf(rec.absence_type_code)?.short_code ?? '—'} {range(rec.start_date, rec.end_date)} · {SOURCE_LABEL[rec.source_kind]}</div>
+            {rec.oracle_status && <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">Oracle HR <OraclePill status={rec.oracle_status} />{rec.oracle_ref ? ` #${rec.oracle_ref}` : ''}{rec.start_date > localToday() && rec.oracle_status !== 'not_submitted' && <span>· new dates → Not submitted</span>}</div>}
           </div>
         ) : target.kind === 'add' && target.employeeId ? (
           <div className="flex items-center gap-1.5 text-sm font-medium text-slate-800">{person?.name}{person?.crew && <CrewBadge crew={person.crew} size="sm" />}</div>

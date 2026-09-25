@@ -9,6 +9,7 @@
 // is scheduled to work. Absences on Off days stay on the record but do not reduce manpower. Unresolved absences
 // are warnings only and never reduce manpower. Rescheduled / cancelled records are ignored.
 
+import type { OracleStatus } from '../oracle';
 import { CREWS, SHIFT_LABEL, dutyFor, dutyLabel, stateOf } from '../roster';
 import type { Crew, DutyCode, State } from '../roster';
 
@@ -93,6 +94,8 @@ export interface MpAbsence {
   typeLabel?: string | null;
   sourceRef?: string | null;
   inCurrentPlan?: boolean;
+  /** Oracle HR status (information only: planned leave counts for manpower whatever it is). */
+  oracle?: OracleStatus;
 }
 
 export interface Rules {

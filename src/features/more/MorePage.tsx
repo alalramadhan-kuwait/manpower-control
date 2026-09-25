@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Bell, BarChart3, CalendarRange, ChevronRight, ClipboardCheck, FileUp, Gauge, History, LogOut, ScrollText, ShieldCheck, UserCheck, UserCog } from 'lucide-react';
+import { ArrowLeftRight, BadgeCheck, Bell, BarChart3, CalendarRange, ChevronRight, ClipboardCheck, FileUp, Gauge, History, LogOut, ScrollText, ShieldCheck, UserCheck, UserCog } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/data/supabase';
 import type { UserProfile } from '@/data/types';
@@ -8,6 +8,7 @@ import { Button, Card, PageHeader } from '@/ui/components';
 const active = [
   { to: '/movements', label: 'Shift movements', desc: 'Covers · moves · day duty', icon: ArrowLeftRight },
   { to: '/leave-plan', label: 'Leave plan', desc: 'Year plan · add / correct', icon: CalendarRange },
+  { to: '/oracle', label: 'Oracle HR', desc: 'Submitted · approved · pending', icon: BadgeCheck },
   { to: '/notifications', label: 'Notifications', desc: 'Next 60 days', icon: Bell },
   { to: '/operation', label: 'Operating modes', desc: 'Shutdown · one train', icon: Gauge },
   { to: '/controllers', label: 'Controllers', desc: 'Cover · VR · Morning rotation', icon: UserCheck },

@@ -32,6 +32,7 @@ Supabase MCP or dashboard gets a matching file here, named with the version the 
 | `20260925033008_audit_history_index` | Stage J: indexes `audit_log` by time (all rows, and rows not written by an import) for the Audit history screen |
 | `20260925062523_stage_i_operating_modes` | Stage I: `operating_modes` (name + Controller / Panel / Panel Grade 14+ / Field minimums; `full_operation` 1/3/1/6 is the default, Section Head edits) and `operation_periods` (mode by date, no overlapping active periods, cancel instead of delete, staff schedule); both audited |
 | `20260925132506_calendar_holidays_and_unit_events` | Calendar: `public_holidays` (Kuwait holidays; `expected` until officially announced; seeded 2026 fixed dates and 2027 incl. expected Islamic holidays) and `unit_events` (shutdown / startup / maintenance / catalyst / outage / operational / training, per unit or train; cancelled not deleted); staff read and write; audited; information only |
+| `20260925205624_oracle_hr_leave_status` | Oracle HR tracking: `leave_records.oracle_status` (not_submitted / submitted / approved / rejected), `oracle_ref`, `oracle_updated_at`; leave already started backfilled as approved (no audit rows); new dates on future leave reset the status to not_submitted; `leave_set_oracle(records, status, ref)` for staff, audited |
 
 ## Edge Functions
 

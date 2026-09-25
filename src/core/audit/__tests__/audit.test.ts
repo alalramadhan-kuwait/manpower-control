@@ -66,4 +66,10 @@ group('audit history sentences', () => {
     expect(describe(row({ entity_table: 'public_holidays', action: 'delete', previous: { name: 'Eid al-Fitr', start_date: '2027-03-09', end_date: '2027-03-11', expected: true } }), lk).title)
       .toBe('Public holiday removed: Eid al-Fitr, 9 Mar 2027 – 11 Mar 2027 (expected)');
   });
+  it('Oracle HR status change', () => {
+    const prev = { employee_id: 'e1', absence_type_code: 'annual_leave_planned', start_date: '2026-10-01', end_date: '2026-10-10', status: 'approved', in_current_plan: true, oracle_status: 'submitted', oracle_ref: null };
+    const e = describe(row({ entity_table: 'leave_records', action: 'update', previous: prev, next: { ...prev, oracle_status: 'approved', oracle_ref: 'HR-77' }, related_employee_id: 'e1' }), lk);
+    expect(e.title).toBe('Saleh Alajmi: PV 1 Oct 2026 – 10 Oct 2026 · Oracle: Approved');
+    expect(e.details).toEqual(['Oracle: Submitted → Approved', 'Oracle no.: — → HR-77']);
+  });
 });

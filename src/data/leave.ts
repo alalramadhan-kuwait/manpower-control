@@ -3,6 +3,7 @@
 // overlaps; their refusal messages are already plain sentences.
 import { supabase } from './supabase';
 import { dataChanged } from './changes';
+import type { OracleStatus } from '@/core/oracle';
 import type { AbsenceType, ControllerAssignment, EmployeeDirectoryRow, LeavePlanChange, LeaveRecord } from './types';
 
 const plain = (error: { message: string }) => new Error(error.message);
@@ -20,6 +21,25 @@ export async function cancelLeave(record: string, reason: string): Promise<void>
   const { error } = await supabase.rpc('leave_cancel', { p_record: record, p_reason: reason });
   if (error) throw plain(error);
   dataChanged();
+}
+
+/** Mark one or many current leave records in Oracle HR (the ref is kept unless a new one is given). Returns how many changed. */
+export async function setOracleStatus(records: string[], status: OracleStatus, ref?: string): Promise<number> {
+  const { data, error } = await supabase.rpc('leave_set_oracle', { p_records: records, p_status: status, p_ref: ref?.trim() || null });
+  if (error) throw plain(error);
+  dataChanged();
+  return data as number;
+}
+
+export interface OracleRow { id: string; employee_id: string; start_date: string; end_date: string; absence_type_code: string | null; oracle_status: OracleStatus; oracle_ref: string | null; oracle_updated_at: string | null; absence_types: { label: string; short_code: string | null } | null }
+
+/** Current-plan leave not finished before `from`, with its Oracle HR status. */
+export async function fetchOracleLeaves(from: string): Promise<OracleRow[]> {
+  const { data, error } = await supabase.from('leave_records')
+    .select('id,employee_id,start_date,end_date,absence_type_code,oracle_status,oracle_ref,oracle_updated_at,absence_types(label,short_code)')
+    .eq('in_current_plan', true).in('status', ['approved', 'planned']).gte('end_date', from).order('start_date').limit(5000);
+  if (error) throw error;
+  return data as unknown as OracleRow[];
 }
 
 export interface LeavePlanData {

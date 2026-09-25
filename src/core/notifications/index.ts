@@ -5,6 +5,7 @@ import { attentionPeriods } from '../calendar';
 import type { CoverageNeed } from '../controllers';
 import type { DayResult, MpAbsence, MpPerson } from '../manpower';
 import type { OperationPlan } from '../modes';
+import { oracleDue } from '../oracle';
 
 /** action: someone has to do something (counts in the badge) · watch: check it · info: good to know. */
 export type NoticeLevel = 'action' | 'watch' | 'info';
@@ -35,6 +36,8 @@ export interface NoticeInput {
   isSectionHead: boolean;
   /** Leave starting within this many days is listed (info). */
   leaveDays?: number;
+  /** Leave starting within this many days and not approved in Oracle HR is flagged. */
+  oracleDays?: number;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -90,6 +93,18 @@ export function buildNotices(i: NoticeInput): Notice[] {
     .sort((a, b) => a.start.localeCompare(b.start));
   if (starting.length) out.push({ id: `leave-${i.today}`, level: 'info', area: 'leave', title: `${plural(starting.length, 'leave')} starting · next ${soon} days`,
     detail: starting.slice(0, 6).map((a) => `${names.get(a.employeeId)} (${a.typeShort ?? 'Leave'}) ${d(a.start)}`).join(' · ') + (starting.length > 6 ? ` · and ${starting.length - 6} more` : ''), date: starting[0].start, to: '/leave-plan' });
+
+  // 7. Oracle HR: rejected leave, and leave starting soon that Oracle has not approved yet
+  const tracked = i.absences.filter((a) => (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && a.oracle && names.has(a.employeeId))
+    .map((a) => ({ ...a, id: a.id ?? `${a.employeeId}${a.start}`, oracle: a.oracle! }));
+  const due = oracleDue(tracked, i.today, i.oracleDays ?? 30);
+  const list = (xs: typeof due) => xs.slice(0, 4).map((a) => `${names.get(a.employeeId)} ${d(a.start)}`).join(' · ') + (xs.length > 4 ? ` · +${xs.length - 4} more` : '');
+  const rejected = due.filter((a) => a.oracle === 'rejected');
+  const waiting = due.filter((a) => a.oracle !== 'rejected');
+  if (rejected.length) out.push({ id: `oracle-rej-${i.today}`, level: 'action', area: 'leave', title: `${plural(rejected.length, 'leave')} rejected in Oracle`,
+    detail: list(rejected), date: rejected[0].start, to: '/oracle?s=rejected' });
+  if (waiting.length) out.push({ id: `oracle-${i.today}`, level: 'action', area: 'leave', title: `${plural(waiting.length, 'leave')} not approved in Oracle · next ${i.oracleDays ?? 30} days`,
+    detail: list(waiting), date: waiting[0].start, to: waiting.some((a) => a.oracle === 'not_submitted') ? '/oracle' : '/oracle?s=submitted' });
 
   const rank: Record<NoticeLevel, number> = { action: 0, watch: 1, info: 2 };
   return out.sort((a, b) => rank[a.level] - rank[b.level] || (a.date ?? '9999').localeCompare(b.date ?? '9999') || a.title.localeCompare(b.title));
