@@ -7,6 +7,8 @@ import { buildNotices, type Notice } from '@/core/notifications';
 import { REQUEST_TYPE_LABEL } from '@/core/requests';
 import { addDaysIso } from '@/core/roster';
 import { fetchManpowerInputs } from './manpower';
+import { fetchControllerLeave } from './controllers';
+import { checkControllerLeave, openIssues } from '@/core/controllers/leaveRules';
 import { fetchDirectory } from './queries';
 import { fetchRequests, isOpen } from './requests';
 
@@ -26,7 +28,10 @@ export async function loadNotices(isSectionHead: boolean, force = false): Promis
   if (!force && pending) return pending;
   pending = (async () => {
     const to = addDaysIso(today, NOTICE_HORIZON_DAYS);
-    const [inputs, reqs, dir] = await Promise.all([fetchManpowerInputs(today, addDaysIso(to, 1)), fetchRequests(), fetchDirectory()]);
+    const y = Number(today.slice(0, 4));
+    const [inputs, reqs, dir, ctl] = await Promise.all([fetchManpowerInputs(today, addDaysIso(to, 1)), fetchRequests(), fetchDirectory(), fetchControllerLeave(`${y}-01-01`, `${y + 1}-12-31`)]);
+    const open = openIssues(checkControllerLeave(ctl.people, ctl.absences, ctl.approvals, [y, y + 1]), today);
+    const who = (id: string) => ctl.people.find((p) => p.id === id)?.name ?? 'Controller';
     const names = new Map(dir.map((r) => [r.id, r.display_name]));
     const notices = buildNotices({
       today,
@@ -34,7 +39,11 @@ export async function loadNotices(isSectionHead: boolean, force = false): Promis
       needs: coverageNeeds(today, to, inputs.people, inputs.absences, inputs.assignments, inputs.rules),
       requests: reqs.filter(isOpen).map((r) => ({ id: r.id, employeeName: names.get(r.employee_id) ?? 'Employee', typeLabel: REQUEST_TYPE_LABEL[r.request_type], start: r.start_date, end: r.end_date, status: r.status as 'submitted' | 'reviewed', overtime: r.overtime_required })),
       needsAction: dir.filter((r) => r.is_active && r.in_unit12_scope && actionsFor(r).length > 0).length,
-      absences: inputs.absences, people: inputs.people, plan: inputs.plan, isSectionHead
+      absences: inputs.absences, people: inputs.people, plan: inputs.plan, isSectionHead,
+      controllerLeave: {
+        overlaps: open.overlaps.map((o) => ({ a: who(o.a.employeeId), b: who(o.b.employeeId), start: o.start, end: o.end, days: o.days })),
+        extras: open.extras.map((x) => ({ name: who(x.period.employeeId), nth: x.nth, year: x.year, start: x.period.start, end: x.period.end }))
+      }
     });
     cache = { key, at: Date.now(), notices };
     return notices;

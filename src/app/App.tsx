@@ -15,6 +15,7 @@ import UsersPage from '@/features/users/UsersPage';
 import CalendarPage from '@/features/calendar/CalendarPage';
 import OracleHrPage from '@/features/oracle/OracleHrPage';
 import MorningPlanPage from '@/features/controllers/MorningPlanPage';
+import ControllersBoardPage from '@/features/controllers/ControllersBoardPage';
 import LeavePlanPage from '@/features/leave/LeavePlanPage';
 import MovementsPage from '@/features/movements/MovementsPage';
 import ControllersPage from '@/features/controllers/ControllersPage';
@@ -85,6 +86,7 @@ export default function App() {
           <Route path="/users" element={<UsersPage profile={profile} />} />
           <Route path="/controllers" element={<ControllersPage profile={profile} />} />
           <Route path="/controllers/morning" element={<MorningPlanPage />} />
+          <Route path="/controllers/board" element={<ControllersBoardPage profile={profile} />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/leave-plan" element={<LeavePlanPage />} />
           <Route path="/oracle" element={<OracleHrPage />} />

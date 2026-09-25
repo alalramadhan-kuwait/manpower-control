@@ -10,7 +10,7 @@ export const AUDIT_CATEGORIES: { key: AuditCategory; label: string; tables: stri
   { key: 'crews', label: 'Crews & roles', tables: ['employee_role_assignments', 'crew_movements'] },
   { key: 'leave', label: 'Leave', tables: ['leave_records'] },
   { key: 'requests', label: 'Requests', tables: ['leave_requests'] },
-  { key: 'controllers', label: 'Controllers', tables: ['controller_assignments', 'controller_rules'] },
+  { key: 'controllers', label: 'Controllers', tables: ['controller_assignments', 'controller_rules', 'controller_leave_approvals'] },
   { key: 'modes', label: 'Modes & calendar', tables: ['operating_modes', 'operation_periods', 'public_holidays', 'unit_events'] },
   { key: 'qualifications', label: 'Qualifications', tables: ['employee_qualifications'] },
   { key: 'staff', label: 'Staff records', tables: ['employees'] },
@@ -167,6 +167,14 @@ export function describe(row: AuditRow, lk: AuditLookups): AuditEntry {
       if (row.action === 'insert') title = `${kind}: ${desc}`;
       else if (next?.status === 'cancelled' && prev?.status !== 'cancelled') { title = `${kind} cancelled: ${desc}`; if (s(next.cancel_reason)) details.push(`Reason: ${next.cancel_reason}`); }
       else { title = `${kind} changed: ${desc}`; details = changes(prev, next, [['start_date', 'First day', day], ['end_date', 'Last day', day]]); }
+      if (s(cur.note) && row.action === 'insert') details.push(String(cur.note));
+      break;
+    }
+    case 'controller_leave_approvals': {
+      const what = cur.kind === 'overlap' ? 'two Controllers on leave together' : 'extra Controller leave (over 4 in a year)';
+      if (row.action === 'insert') title = `Approved: ${what}`;
+      else if (next?.status === 'withdrawn' && prev?.status !== 'withdrawn') { title = `Approval withdrawn: ${what}`; if (s(next.withdraw_reason)) details.push(`Reason: ${next.withdraw_reason}`); }
+      else title = `Approval changed: ${what}`;
       if (s(cur.note) && row.action === 'insert') details.push(String(cur.note));
       break;
     }

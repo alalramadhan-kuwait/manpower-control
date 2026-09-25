@@ -38,6 +38,8 @@ export interface NoticeInput {
   leaveDays?: number;
   /** Leave starting within this many days and not approved in Oracle HR is flagged. */
   oracleDays?: number;
+  /** Controller leave rule breaks not yet approved (src/core/controllers/leaveRules openIssues, with names). */
+  controllerLeave?: { overlaps: { a: string; b: string; start: string; end: string; days: number }[]; extras: { name: string; nth: number; year: number; start: string; end: string }[] };
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -105,6 +107,16 @@ export function buildNotices(i: NoticeInput): Notice[] {
     detail: list(rejected), date: rejected[0].start, to: '/oracle?s=rejected' });
   if (waiting.length) out.push({ id: `oracle-${i.today}`, level: 'action', area: 'leave', title: `${plural(waiting.length, 'leave')} not approved in Oracle · next ${i.oracleDays ?? 30} days`,
     detail: list(waiting), date: waiting[0].start, to: waiting.some((a) => a.oracle === 'not_submitted') ? '/oracle' : '/oracle?s=submitted' });
+
+  // 8. Controller leave rules: two Controllers on leave together, or a 5th+ leave in a year, without approval
+  const lvl: NoticeLevel = i.isSectionHead ? 'action' : 'watch';
+  const ask = i.isSectionHead ? 'needs your approval' : 'waiting for the Section Head';
+  const ov = i.controllerLeave?.overlaps ?? [], ex = i.controllerLeave?.extras ?? [];
+  const more = (n: number) => (n > 3 ? ` · +${n - 3} more` : '');
+  if (ov.length) out.push({ id: `ctl2-${ov.map((o) => o.start).join()}`, level: lvl, area: 'controller', title: `2 Controllers on leave together · ${ov.length}×`,
+    detail: `${ov.slice(0, 3).map((o) => `${o.a.split(' ')[0]} + ${o.b.split(' ')[0]} ${span(o.start, o.end)}`).join(' · ')}${more(ov.length)} · ${ask}`, date: ov[0].start, to: `/controllers/board?month=${ov[0].start.slice(0, 7)}` });
+  if (ex.length) out.push({ id: `ctlx-${ex.map((x) => x.start).join()}`, level: lvl, area: 'controller', title: `Controller leave over 4 a year · ${ex.length}×`,
+    detail: `${ex.slice(0, 3).map((x) => `${x.name.split(' ')[0]} (leave ${x.nth}) ${d(x.start)}`).join(' · ')}${more(ex.length)} · ${ask}`, date: ex[0].start, to: `/controllers/board?month=${ex[0].start.slice(0, 7)}` });
 
   const rank: Record<NoticeLevel, number> = { action: 0, watch: 1, info: 2 };
   return out.sort((a, b) => rank[a.level] - rank[b.level] || (a.date ?? '9999').localeCompare(b.date ?? '9999') || a.title.localeCompare(b.title));

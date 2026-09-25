@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, RefreshCw, Sun } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronUp, RefreshCw, Sun } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { checkCandidates, coverageNeeds, maxEndDate, shiftCoverMaxEnd, type CoverageNeed } from '@/core/controllers';
 import { evaluateDay, type MpAbsence, type MpAssignment, type MpPerson } from '@/core/manpower';
@@ -79,6 +79,7 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
       <div className="mb-3 flex flex-wrap gap-2">
         <Button onClick={() => { setNotice(null); setDraft({ kind: 'shift_cover', crew: null, start: today, end: today, coversId: null }); }}>Assign cover</Button>
         <Button variant="secondary" onClick={() => { setNotice(null); setDraft({ kind: 'morning_rotation', crew: null, start: today, end: maxEndDate(today), coversId: null }); }}><Sun className="h-4 w-4" /> Morning rotation</Button>
+        <Link to="/controllers/board" className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-white px-4 text-sm font-medium text-brand-800 ring-1 ring-slate-300"><CalendarDays className="h-4 w-4" /> Calendar</Link>
       </div>
       {notice && <div className="mb-3 rounded-xl bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{notice}</div>}
       {error != null && <div className="mb-3 space-y-2"><ErrorBox error={error} /><Button variant="secondary" onClick={load}><RefreshCw className="h-4 w-4" /> Try again</Button></div>}

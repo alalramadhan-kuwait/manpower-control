@@ -57,4 +57,11 @@ describe('notification center', () => {
     expect(w).toMatchObject({ level: 'action', title: '2 leaves not approved in Oracle · next 30 days', to: '/oracle' });
     expect(w.detail).toBe(`${B[4].name} 1 Oct · ${B[5].name} 3 Oct`);
   });
+  it('Controller leave rules: one grouped notice each; actions for the Section Head only', () => {
+    const controllerLeave = { overlaps: [{ a: 'Jasem Sadeq', b: 'Muath Malallah', start: '2026-12-07', end: '2026-12-14', days: 8 }], extras: [{ name: 'Yaser Asiri', nth: 5, year: 2027, start: '2027-09-01', end: '2027-09-04' }] };
+    const head = buildNotices(base({ controllerLeave }));
+    expect(head.find((x) => x.id.startsWith('ctl2-'))).toMatchObject({ level: 'action', title: '2 Controllers on leave together · 1×', detail: 'Jasem + Muath 7 Dec – 14 Dec · needs your approval', to: '/controllers/board?month=2026-12' });
+    expect(head.find((x) => x.id.startsWith('ctlx-'))).toMatchObject({ level: 'action', title: 'Controller leave over 4 a year · 1×', detail: 'Yaser (leave 5) 1 Sep · needs your approval' });
+    expect(buildNotices(base({ controllerLeave, isSectionHead: false })).find((x) => x.id.startsWith('ctl2-'))!.level).toBe('watch');
+  });
 });

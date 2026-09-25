@@ -25,6 +25,7 @@ separate Supabase project (`fhnqaurtryfmmomvzrpl`), separate authentication, sep
 | Calendar | M / A / N per day with status and shortfall, Kuwait holidays, unit events and shutdown bars, day detail, filters; Week view: shift per crew across the week, leave per day, needs attention, who is on leave |
 | Oracle HR | Each leave's Oracle status (not submitted / submitted / approved / rejected, optional request no.); bulk marking; notices for leave starting within 30 days not yet approved |
 | Morning rotation | Morning Controller post to the end of next year: month strip by holder, empty days, holder on leave, crew losing its Controller; empty periods cut into 2-month turns with a suggested Controller (fewest Morning days); turns per Controller |
+| Controllers calendar | Controllers only, by month: each crew's Controller cover, each Controller's day (own shift / covering / leave / Morning / VR free), the Morning post; leave rules: no two Controllers on leave together, max 4 annual leaves and min 25 days a year, exceptions approved by the Section Head |
 
 Roles: **Section Head** and **Manpower Coordinator** (several may hold it) are active; Controller and Employee
 logins exist but have no app access yet. Logins are managed only through the `manage-users` Edge Function.
