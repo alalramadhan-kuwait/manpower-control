@@ -62,7 +62,10 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
     if ((kind === 'cover' && (!crew || !CREW_LIST.includes(crew))) || !isValidIsoDate(from)) return;
     const found = coverageNeeds(addDaysIso(from, -40), addDaysIso(from, 60), inputs.people, inputs.absences, inputs.assignments, inputs.rules)
       .find((n) => (kind === 'morning' ? n.kind === 'morning' : n.crew === crew) && n.start <= from && from <= n.end);
-    setDraft(fromNeed(found ? { ...found, start: found.start < from ? from : found.start } : { kind: kind === 'morning' ? 'morning' : 'crew', crew: kind === 'morning' ? null : crew, start: from, end: from, dutyDays: 1, who: [], absentIds: [], vr: null, additional: false, vrNote: null }, maxDays));
+    // from the Morning rotation plan: a proposed period and person (?to=…&who=…)
+    const to = params.get('to'); const who = params.get('who');
+    if (kind === 'morning' && to && isValidIsoDate(to) && to >= from) setDraft({ kind: 'morning_rotation', crew: null, start: from, end: to > maxEndDate(from) ? maxEndDate(from) : to, coversId: null, suggestId: who });
+    else setDraft(fromNeed(found ? { ...found, start: found.start < from ? from : found.start } : { kind: kind === 'morning' ? 'morning' : 'crew', crew: kind === 'morning' ? null : crew, start: from, end: from, dutyDays: 1, who: [], absentIds: [], vr: null, additional: false, vrNote: null }, maxDays));
     setParams({}, { replace: true });
   }, [inputs, params, setParams, today, maxDays]);
 
@@ -107,7 +110,7 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
             </ul>
           </Section>
 
-          <Section title="Morning Controller">
+          <Section title="Morning Controller" action={<Link to="/controllers/morning" className="text-xs font-medium text-brand-700">Plan ›</Link>}>
             {morningToday ? (
               <div className="flex items-center justify-between gap-3 text-sm">
                 <span><span className="font-medium text-slate-800">{morningToday.person.name}</span> <span className="text-xs text-slate-500">holds the post today{morningToday.assignment?.kind === 'morning_rotation' ? ` (rotation until ${shortDate(morningToday.assignment.end)})` : ''}</span></span>
@@ -180,8 +183,8 @@ function fromNeed(n: CoverageNeed, maxDays: number | null): Draft {
   return { kind: 'shift_cover', crew: n.crew, start: n.start, end: limit && n.end > limit ? limit : n.end, coversId: n.absentIds[0] ?? null, suggestId: n.vr?.id ?? null };
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return <Card className="mb-3"><h2 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h2>{children}</Card>;
+function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+  return <Card className="mb-3"><div className="mb-1 flex items-center justify-between"><h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h2>{action}</div>{children}</Card>;
 }
 
 function AssignmentTitle({ a, name }: { a: ControllerAssignment; name: (id: string | null) => string }) {

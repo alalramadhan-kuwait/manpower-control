@@ -1,4 +1,4 @@
-import { ArrowLeftRight, BadgeCheck, Bell, BarChart3, CalendarRange, ChevronRight, ClipboardCheck, FileUp, Gauge, History, LogOut, ScrollText, ShieldCheck, UserCheck, UserCog } from 'lucide-react';
+import { ArrowLeftRight, BadgeCheck, Bell, BarChart3, CalendarRange, ChevronRight, ClipboardCheck, FileUp, Gauge, History, LogOut, ScrollText, ShieldCheck, Sun, UserCheck, UserCog } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/data/supabase';
 import type { UserProfile } from '@/data/types';
@@ -11,7 +11,8 @@ const active = [
   { to: '/oracle', label: 'Oracle HR', desc: 'Submitted · approved · pending', icon: BadgeCheck },
   { to: '/notifications', label: 'Notifications', desc: 'Next 60 days', icon: Bell },
   { to: '/operation', label: 'Operating modes', desc: 'Shutdown · one train', icon: Gauge },
-  { to: '/controllers', label: 'Controllers', desc: 'Cover · VR · Morning rotation', icon: UserCheck },
+  { to: '/controllers', label: 'Controllers', desc: 'Cover · VR assignments', icon: UserCheck },
+  { to: '/controllers/morning', label: 'Morning rotation', desc: 'Plan to end of next year', icon: Sun },
   { to: '/summary', label: 'Section summary', desc: 'Headcount · data quality', icon: BarChart3 },
   { to: '/imports', label: 'Excel import', desc: 'Workbook · promotion list', icon: FileUp },
   { to: '/audit', label: 'Audit history', desc: 'Who changed what', icon: ScrollText },
