@@ -2,9 +2,9 @@ import { ChevronLeft, ChevronRight, Plane } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { MONTH_NAMES, WEEKDAY_SHORT, attentionPeriods, crewMarks, monthEnd, monthStart, monthWeeks, shiftMonth, summarizeMonth, type DayMark } from '@/core/calendar';
-import { evaluateRange, FULL_OPERATION, type DayResult, type MpAbsence, type MpAssignment, type MpPerson } from '@/core/manpower';
+import { evaluateRange, type DayResult } from '@/core/manpower';
 import { CREWS, addDaysIso, type Crew } from '@/core/roster';
-import { fetchManpowerInputs } from '@/data/manpower';
+import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { Card, ErrorBox, Spinner, cx } from '@/ui/components';
 import { CREW_IDENTITY, CrewBadge, isCrew } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
@@ -30,7 +30,7 @@ export default function CalendarPage() {
   };
 
   const from = monthStart(year, month), to = monthEnd(year, month);
-  const [inputs, setInputs] = useState<{ people: MpPerson[]; absences: MpAbsence[]; assignments: MpAssignment[]; key: string } | null>(null);
+  const [inputs, setInputs] = useState<(ManpowerInputs & { key: string }) | null>(null);
   const [error, setError] = useState<unknown>(null);
   useEffect(() => {
     let live = true;
@@ -41,13 +41,15 @@ export default function CalendarPage() {
 
   const view = useMemo(() => {
     if (!inputs || inputs.key !== from) return null;
-    const days = evaluateRange(from, to, inputs.people, inputs.absences, FULL_OPERATION, inputs.assignments);
+    const days = evaluateRange(from, to, inputs.people, inputs.absences, inputs.rules, inputs.assignments);
     const byDate = new Map(days.map((d) => [d.date, d]));
     const crewOf = new Map(inputs.people.map((p) => [p.id, p.crew]));
     const counted = inputs.absences.filter((a) => (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && (!crew || crewOf.get(a.employeeId) === crew));
     const onLeave = (d: string) => new Set(counted.filter((a) => a.start <= d && d <= a.end).map((a) => a.employeeId)).size;
     const filtered: DayResult[] = crew ? days.map((d) => ({ ...d, crews: d.crews.filter((c) => c.crew === crew) })) : days;
-    return { byDate, onLeave, summary: summarizeMonth(days, crew), attention: attentionPeriods(filtered) };
+    const periods = inputs.plan.periods.filter((p) => p.status === 'active' && p.start <= to && p.end >= from)
+      .map((p) => ({ ...p, label: inputs.plan.modes.find((m) => m.code === p.modeCode)?.label ?? p.modeCode }));
+    return { byDate, onLeave, summary: summarizeMonth(days, crew), attention: attentionPeriods(filtered), periods };
   }, [inputs, from, to, crew]);
 
   const [py, pm] = shiftMonth(year, month, -1); const [ny, nm] = shiftMonth(year, month, 1);
@@ -75,6 +77,11 @@ export default function CalendarPage() {
 
       {error ? <ErrorBox error={error} /> : !view ? <Spinner /> : (
         <>
+          {view.periods.map((p) => (
+            <Link key={p.id} to="/operation" className="mb-2 flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-2 text-xs text-brand-800 ring-1 ring-brand-100">
+              <span className="font-semibold">{p.label}</span><span>{shortDate(p.start)} – {shortDate(p.end)}</span><span className="text-brand-700/70">· own minimums on these days</span>
+            </Link>
+          ))}
           <p className="mb-1 px-1 text-[11px] text-slate-500">Days this month, by the worst crew on duty</p>
           <div className="mb-3 grid grid-cols-4 gap-1.5 text-center text-xs">
             {(['red', 'pending', 'amber', 'green'] as const).map((k) => (

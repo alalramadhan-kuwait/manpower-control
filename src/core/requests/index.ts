@@ -1,7 +1,7 @@
 // Leave requests (Stage F): what a request would do to the crew's manpower, following the MAB leave request form.
 // Pure functions over the manpower engine; no I/O.
 import { crewMarks, type DayMark } from '../calendar';
-import { evaluateRange, FULL_OPERATION, type MpAbsence, type MpAssignment, type MpPerson } from '../manpower';
+import { evaluateRange, FULL_OPERATION, type MpAbsence, type MpAssignment, type MpPerson, type RulesSource } from '../manpower';
 import { addDaysIso, isWorkingDay, type Crew } from '../roster';
 
 export type RequestType = 'scheduled' | 'unscheduled' | 'unpaid';
@@ -32,7 +32,7 @@ const RANK: Record<DayMark, number> = { off: -1, green: 0, amber: 1, pending: 2,
 // current leave (as request_decide counts it): approved or planned, and unresolved absences still in the plan
 const counted = (a: MpAbsence) => (a.status === 'approved' || a.status === 'planned' || a.status === 'unresolved') && a.inCurrentPlan !== false;
 
-export function requestImpact(req: { employeeId: string; start: string; end: string; typeCode: string }, people: MpPerson[], absences: MpAbsence[], assignments: MpAssignment[] = []): RequestImpact {
+export function requestImpact(req: { employeeId: string; start: string; end: string; typeCode: string }, people: MpPerson[], absences: MpAbsence[], assignments: MpAssignment[] = [], rules: RulesSource = FULL_OPERATION): RequestImpact {
   const person = people.find((p) => p.id === req.employeeId) ?? null;
   const crew = person?.crew ?? null;
   const overlaps = absences.filter((a) => a.employeeId === req.employeeId && counted(a) && a.start <= req.end && a.end >= req.start);
@@ -41,8 +41,8 @@ export function requestImpact(req: { employeeId: string; start: string; end: str
   const duties: ImpactDay[] = [];
   if (crew) {
     const withLeave: MpAbsence[] = [...absences, { employeeId: req.employeeId, start: req.start, end: req.end, status: 'approved', typeCode: req.typeCode, typeLabel: null, inCurrentPlan: true }];
-    const before = evaluateRange(req.start, req.end, people, absences, FULL_OPERATION, assignments);
-    const after = evaluateRange(req.start, req.end, people, withLeave, FULL_OPERATION, assignments);
+    const before = evaluateRange(req.start, req.end, people, absences, rules, assignments);
+    const after = evaluateRange(req.start, req.end, people, withLeave, rules, assignments);
     before.forEach((day, i) => {
       const b = crewMarks(day).find((m) => m.crew === crew)!;
       if (b.shift === 'Off') return;

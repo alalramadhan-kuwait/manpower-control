@@ -1,10 +1,11 @@
 import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Info } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { evaluateDay, FULL_OPERATION } from '@/core/manpower';
-import type { CrewDay, DayResult, Finding, MpAbsence, MpAssignment, MpPerson, PositionResult, Status } from '@/core/manpower';
+import { evaluateDay } from '@/core/manpower';
+import { minimumsText, periodOn } from '@/core/modes';
+import type { CrewDay, DayResult, Finding, MpAbsence, MpPerson, PositionResult, Status } from '@/core/manpower';
 import { addDaysIso, isValidIsoDate } from '@/core/roster';
-import { fetchManpowerInputs } from '@/data/manpower';
+import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { Card, ErrorBox, Spinner, cx, fmtDate } from '@/ui/components';
 import { CREW_IDENTITY, CrewBadge, DayDutyBadge, crewEdge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
@@ -51,7 +52,7 @@ export default function DayOverviewPage() {
   const date = isValidIsoDate(raw) ? raw : today;
   const setDate = (d: string) => setParams(d === today ? {} : { date: d }, { replace: true });
 
-  const [inputs, setInputs] = useState<{ people: MpPerson[]; absences: MpAbsence[]; assignments: MpAssignment[]; from: string; to: string } | null>(null);
+  const [inputs, setInputs] = useState<(ManpowerInputs & { from: string; to: string }) | null>(null);
   const [error, setError] = useState<unknown>(null);
   useEffect(() => {
     if (inputs && inputs.from <= date && date <= inputs.to) return;
@@ -61,14 +62,15 @@ export default function DayOverviewPage() {
     fetchManpowerInputs(from, to).then((r) => setInputs({ ...r, from, to })).catch(setError);
   }, [date, inputs]);
 
-  const result = useMemo(() => (inputs ? evaluateDay(date, inputs.people, inputs.absences, FULL_OPERATION, inputs.assignments) : null), [date, inputs]);
+  const result = useMemo(() => (inputs ? evaluateDay(date, inputs.people, inputs.absences, inputs.rules, inputs.assignments) : null), [date, inputs]);
+  const period = useMemo(() => (inputs ? periodOn(date, inputs.plan) : null), [date, inputs]);
   const leave = useMemo(() => {
     if (!inputs) return new Map<string, OnLeave>();
     const crewOf = new Map(inputs.people.map((p) => [p.id, p.crew]));
     return onLeaveOn(date, inputs.absences.map((a) => ({ employeeId: a.employeeId, start: a.start, end: a.end, status: a.status, inCurrentPlan: a.inCurrentPlan !== false, typeLabel: a.typeLabel ?? null, typeShort: a.typeShort ?? null })), (id) => crewOf.get(id) ?? null);
   }, [date, inputs]);
   // Controller cover planning around this date (VR suggestion / "Additional Controller required")
-  const needs = useMemo(() => (inputs ? coverageNeeds(addDaysIso(date, -40), addDaysIso(date, 40), inputs.people, inputs.absences, inputs.assignments) : []), [date, inputs]);
+  const needs = useMemo(() => (inputs ? coverageNeeds(addDaysIso(date, -40), addDaysIso(date, 40), inputs.people, inputs.absences, inputs.assignments, inputs.rules) : []), [date, inputs]);
   const needFor = (crew: string) => needs.find((n) => n.kind === 'crew' && n.crew === crew && n.start <= date && date <= n.end);
   const tcPending = inputs?.people.filter((p) => p.role === 'field_operator' && p.takeCharge !== 'yes').length ?? 0;
 
@@ -89,7 +91,12 @@ export default function DayOverviewPage() {
 
       <div className="mb-3">
         <h1 className="text-xl font-semibold text-brand-800">{weekday(date)}, {fmtDate(date)}</h1>
-        <p className="text-xs text-slate-500">Full operation · required per crew: Controller 1 · Panel 3 · Field 6</p>
+        <p className="text-xs text-slate-500">{result ? `${result.rules.modeLabel} · required per crew: ${minimumsText(result.rules)}` : '\u00a0'}</p>
+        {period && result && (
+          <Link to="/operation" className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-brand-700 px-2.5 py-1 text-[11px] font-semibold text-white">
+            <span className="truncate">{result.rules.modeLabel} · {shortDate(period.start)} – {shortDate(period.end)}{period.note ? ` · ${period.note}` : ''}</span>
+          </Link>
+        )}
       </div>
 
       {error ? <ErrorBox error={error} /> : !result ? <Spinner /> : (

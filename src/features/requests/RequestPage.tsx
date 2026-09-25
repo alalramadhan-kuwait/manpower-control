@@ -3,10 +3,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { DayMark } from '@/core/calendar';
 import { firstDayBack } from '@/core/leave';
-import type { MpAbsence, MpAssignment, MpPerson } from '@/core/manpower';
 import { REQUEST_TYPES, REQUEST_TYPE_CODE, REQUEST_TYPE_LABEL, approvalOutcome, requestImpact, type ApprovalOutcome, type RequestType } from '@/core/requests';
 import { addDaysIso, isValidIsoDate } from '@/core/roster';
-import { fetchManpowerInputs } from '@/data/manpower';
+import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { fetchDirectory } from '@/data/queries';
 import { decideRequest, fetchRequest, isOpen, reviewRequest, saveRequest, withdrawRequest, type LeaveRequest, type RequestForm } from '@/data/requests';
 import type { EmployeeDirectoryRow, UserProfile } from '@/data/types';
@@ -43,7 +42,7 @@ export default function RequestPage({ profile }: { profile: UserProfile }) {
 
   // manpower inputs around the requested dates, for the impact
   const valid = isValidIsoDate(form.start_date) && isValidIsoDate(form.end_date) && form.end_date >= form.start_date && dayCount(form.start_date, form.end_date) <= 366;
-  const [inputs, setInputs] = useState<{ people: MpPerson[]; absences: MpAbsence[]; assignments: MpAssignment[]; key: string } | null>(null);
+  const [inputs, setInputs] = useState<(ManpowerInputs & { key: string }) | null>(null);
   useEffect(() => {
     if (!valid) return;
     const key = `${form.start_date}|${form.end_date}`;
@@ -57,7 +56,7 @@ export default function RequestPage({ profile }: { profile: UserProfile }) {
     if (!inputs || !valid || !form.employee_id || inputs.key !== `${form.start_date}|${form.end_date}`) return null;
     // once approved, the leave is already in the plan: show the impact without counting it twice
     const absences = req?.leave_record_id ? inputs.absences.filter((a) => a.id !== req.leave_record_id) : inputs.absences;
-    return requestImpact({ employeeId: form.employee_id, start: form.start_date, end: form.end_date, typeCode: REQUEST_TYPE_CODE[form.request_type] }, inputs.people, absences, inputs.assignments);
+    return requestImpact({ employeeId: form.employee_id, start: form.start_date, end: form.end_date, typeCode: REQUEST_TYPE_CODE[form.request_type] }, inputs.people, absences, inputs.assignments, inputs.rules);
   }, [inputs, valid, form, req]);
 
   if (error && !dir) return <ErrorBox error={error} />;

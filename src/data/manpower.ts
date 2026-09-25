@@ -1,6 +1,8 @@
 // Data access for the manpower engine: maps Supabase rows to the engine's input types.
 import { supabase } from './supabase';
-import type { MpAbsence, MpAssignment, MpCrewMove, MpPerson, MpRolePeriod, Role } from '@/core/manpower';
+import type { MpAbsence, MpAssignment, MpCrewMove, MpPerson, MpRolePeriod, Role, Rules } from '@/core/manpower';
+import { rulesByDate, type OperationPlan } from '@/core/modes';
+import { fetchOperationPlan } from './modes';
 import { toMpAssignment } from './controllers';
 import type { Crew } from '@/core/roster';
 import type { ControllerAssignment, EmployeeDirectoryRow } from './types';
@@ -33,8 +35,10 @@ interface MoveRow { employee_id: string; start_date: string; end_date: string | 
  * Active Section-1 people (with their dated role history and temporary shift covers, so each date uses the crew
  * the person was in that day), every current-plan absence and every active Controller assignment overlapping [from, to].
  */
-export async function fetchManpowerInputs(from: string, to: string): Promise<{ people: MpPerson[]; absences: MpAbsence[]; assignments: MpAssignment[] }> {
-  const [dir, lv, ca, ra, mv] = await Promise.all([
+export interface ManpowerInputs { people: MpPerson[]; absences: MpAbsence[]; assignments: MpAssignment[]; plan: OperationPlan; rules: (date: string) => Rules }
+
+export async function fetchManpowerInputs(from: string, to: string): Promise<ManpowerInputs> {
+  const [dir, lv, ca, ra, mv, op] = await Promise.all([
     supabase.from('employee_directory_v').select('*').eq('in_unit12_scope', true).eq('is_active', true),
     supabase.from('leave_records')
       .select('id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,absence_types(label,short_code)')
@@ -42,7 +46,8 @@ export async function fetchManpowerInputs(from: string, to: string): Promise<{ p
       .lte('start_date', to).gte('end_date', from),
     supabase.from('controller_assignments').select('*').eq('status', 'active').lte('start_date', to).gte('end_date', from),
     supabase.from('employee_role_assignments').select('employee_id,effective_from,effective_to,positions(code),crews(code)').limit(5000),
-    supabase.from('crew_movements').select('employee_id,start_date,end_date,to_crew').eq('status', 'active').eq('kind', 'temporary').lte('start_date', to).or(`end_date.is.null,end_date.gte.${from}`)
+    supabase.from('crew_movements').select('employee_id,start_date,end_date,to_crew').eq('status', 'active').eq('kind', 'temporary').lte('start_date', to).or(`end_date.is.null,end_date.gte.${from}`),
+    fetchOperationPlan(from, to)
   ]);
   const err = [dir, lv, ca, ra, mv].find((r) => r.error)?.error; if (err) throw err;
   const history = new Map<string, MpRolePeriod[]>();
@@ -53,5 +58,5 @@ export async function fetchManpowerInputs(from: string, to: string): Promise<{ p
   const moves = new Map<string, MpCrewMove[]>();
   for (const m of mv.data as MoveRow[]) moves.set(m.employee_id, [...(moves.get(m.employee_id) ?? []), { start: m.start_date, end: m.end_date, crew: m.to_crew }]);
   const people = (dir.data as EmployeeDirectoryRow[]).map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id) }));
-  return { people, absences: (lv.data as unknown as LeaveRow[]).map(toMpAbsence), assignments: (ca.data as ControllerAssignment[]).map(toMpAssignment) };
+  return { people, absences: (lv.data as unknown as LeaveRow[]).map(toMpAbsence), assignments: (ca.data as ControllerAssignment[]).map(toMpAssignment), plan: op.plan, rules: rulesByDate(op.plan) };
 }

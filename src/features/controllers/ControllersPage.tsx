@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp, RefreshCw, Sun } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { checkCandidates, coverageNeeds, maxEndDate, shiftCoverMaxEnd, type CoverageNeed } from '@/core/controllers';
-import { evaluateDay, FULL_OPERATION, type MpAbsence, type MpAssignment, type MpPerson } from '@/core/manpower';
+import { evaluateDay, type MpAbsence, type MpAssignment, type MpPerson } from '@/core/manpower';
 import { onLeaveOn, type OnLeave } from '@/core/leave';
 import { addDaysIso, isValidIsoDate, type Crew } from '@/core/roster';
 import { cancelAssignment, createAssignment, endAssignmentEarly, fetchAssignments, fetchShiftCoverMaxDays, setShiftCoverMaxDays } from '@/data/controllers';
-import { fetchManpowerInputs } from '@/data/manpower';
+import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import type { ControllerAssignment, UserProfile } from '@/data/types';
 import { BottomSheet, Button, Card, Chip, ErrorBox, Field, PageHeader, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
@@ -23,7 +23,7 @@ interface Draft { kind: MpAssignment['kind']; crew: Crew | null; start: string; 
 export default function ControllersPage({ profile }: { profile: UserProfile }) {
   const today = localToday();
   const [params, setParams] = useSearchParams();
-  const [inputs, setInputs] = useState<{ people: MpPerson[]; absences: MpAbsence[]; assignments: MpAssignment[] } | null>(null);
+  const [inputs, setInputs] = useState<(ManpowerInputs) | null>(null);
   const [all, setAll] = useState<ControllerAssignment[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -45,14 +45,14 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
 
   const byId = useMemo(() => new Map((inputs?.people ?? []).map((p) => [p.id, p])), [inputs]);
   const name = (id: string | null) => (id ? byId.get(id)?.name ?? 'Unknown' : '');
-  const needs = useMemo(() => (inputs ? coverageNeeds(today, addDaysIso(today, HORIZON - 1), inputs.people, inputs.absences, inputs.assignments) : []), [inputs, today]);
+  const needs = useMemo(() => (inputs ? coverageNeeds(today, addDaysIso(today, HORIZON - 1), inputs.people, inputs.absences, inputs.assignments, inputs.rules) : []), [inputs, today]);
   /** Who is on leave on a date, with code and true return date (for the coverage-needed list). */
   const leaveOnDate = useCallback((date: string) => {
     if (!inputs) return new Map<string, OnLeave>();
     const crewOf = new Map(inputs.people.map((p) => [p.id, p.crew]));
     return onLeaveOn(date, inputs.absences.map((a) => ({ employeeId: a.employeeId, start: a.start, end: a.end, status: a.status, inCurrentPlan: a.inCurrentPlan !== false, typeLabel: a.typeLabel ?? null, typeShort: a.typeShort ?? null })), (id) => crewOf.get(id) ?? null);
   }, [inputs]);
-  const morningToday = useMemo(() => (inputs ? evaluateDay(today, inputs.people, inputs.absences, FULL_OPERATION, inputs.assignments).dayStaff.find((s) => s.morningPost) ?? null : null), [inputs, today]);
+  const morningToday = useMemo(() => (inputs ? evaluateDay(today, inputs.people, inputs.absences, inputs.rules, inputs.assignments).dayStaff.find((s) => s.morningPost) ?? null : null), [inputs, today]);
 
   // Opened from Today's "Assign cover" link: ?assign=cover&crew=A&from=YYYY-MM-DD
   useEffect(() => {
@@ -60,7 +60,7 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
     if (!inputs || (kind !== 'cover' && kind !== 'morning')) return;
     const crew = params.get('crew') as Crew | null; const from = params.get('from') ?? today;
     if ((kind === 'cover' && (!crew || !CREW_LIST.includes(crew))) || !isValidIsoDate(from)) return;
-    const found = coverageNeeds(addDaysIso(from, -40), addDaysIso(from, 60), inputs.people, inputs.absences, inputs.assignments)
+    const found = coverageNeeds(addDaysIso(from, -40), addDaysIso(from, 60), inputs.people, inputs.absences, inputs.assignments, inputs.rules)
       .find((n) => (kind === 'morning' ? n.kind === 'morning' : n.crew === crew) && n.start <= from && from <= n.end);
     setDraft(fromNeed(found ? { ...found, start: found.start < from ? from : found.start } : { kind: kind === 'morning' ? 'morning' : 'crew', crew: kind === 'morning' ? null : crew, start: from, end: from, dutyDays: 1, who: [], absentIds: [], vr: null, additional: false, vrNote: null }, maxDays));
     setParams({}, { replace: true });

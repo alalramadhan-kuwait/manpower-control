@@ -3,13 +3,14 @@
 // plus the login changes made by the manage-users Edge Function (entity_table = 'user_accounts').
 // Nothing here changes data; it only reads the before / after snapshots.
 
-export type AuditCategory = 'crews' | 'leave' | 'requests' | 'controllers' | 'qualifications' | 'staff' | 'logins' | 'other';
+export type AuditCategory = 'crews' | 'leave' | 'requests' | 'controllers' | 'modes' | 'qualifications' | 'staff' | 'logins' | 'other';
 
 export const AUDIT_CATEGORIES: { key: AuditCategory; label: string; tables: string[] }[] = [
   { key: 'crews', label: 'Crews & roles', tables: ['employee_role_assignments', 'crew_movements'] },
   { key: 'leave', label: 'Leave', tables: ['leave_records'] },
   { key: 'requests', label: 'Requests', tables: ['leave_requests'] },
   { key: 'controllers', label: 'Controllers', tables: ['controller_assignments', 'controller_rules'] },
+  { key: 'modes', label: 'Operating modes', tables: ['operating_modes', 'operation_periods'] },
   { key: 'qualifications', label: 'Qualifications', tables: ['employee_qualifications'] },
   { key: 'staff', label: 'Staff records', tables: ['employees'] },
   { key: 'logins', label: 'Logins', tables: ['user_accounts'] }
@@ -169,6 +170,26 @@ export function describe(row: AuditRow, lk: AuditLookups): AuditEntry {
       title = 'Controller rules changed';
       details = changes(prev, next, [['shift_cover_max_days', 'Longest shift cover (days)', w]]);
       break;
+    case 'operating_modes': {
+      const mins = (v: Record<string, unknown> | null) => (v ? `Controller ${v.controller_min} · Panel ${v.panel_min} (${v.panel_grade14_min} Grade 14+) · Field ${v.field_min}` : '—');
+      const name = s(cur.label) ?? s(cur.code) ?? 'Mode';
+      if (row.action === 'insert') { title = `Operating mode added: ${name}`; details = [mins(next)]; }
+      else {
+        title = next?.is_active === false && prev?.is_active !== false ? `Operating mode switched off: ${name}` : `Operating mode changed: ${name}`;
+        details = changes(prev, next, [['label', 'Name', w]]);
+        if (mins(prev) !== mins(next)) details.push(`Minimums: ${mins(prev)} → ${mins(next)}`);
+      }
+      break;
+    }
+    case 'operation_periods': {
+      const span = range(cur.start_date, cur.end_date);
+      const mode = s(cur.mode_code)?.replace(/_/g, ' ') ?? 'mode';
+      if (row.action === 'insert') title = `Operating period scheduled: ${mode}, ${span}`;
+      else if (next?.status === 'cancelled' && prev?.status !== 'cancelled') { title = `Operating period cancelled: ${mode}, ${span}`; if (s(next.cancel_reason)) details.push(`Reason: ${next.cancel_reason}`); }
+      else { title = `Operating period changed: ${mode}, ${span}`; details = changes(prev, next, [['start_date', 'First day', day], ['end_date', 'Last day', day]]); }
+      if (row.action === 'insert' && s(cur.note)) details.push(String(cur.note));
+      break;
+    }
     case 'employee_qualifications': {
       const q = w(cur.qualification);
       if (row.action === 'insert') title = `${who(empId)}: ${q} = ${w(cur.status)} from ${day(cur.effective_from)}`;

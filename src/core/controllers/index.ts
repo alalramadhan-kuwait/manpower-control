@@ -1,6 +1,6 @@
 // Controller Management (Stage H): where cover is needed, and who can cover a crew for a period.
 // The same rules are enforced by the database (controller_assignments); these give the screen early answers.
-import { evaluateRange, FULL_OPERATION, type MpAbsence, type MpAssignment, type MpPerson } from '../manpower';
+import { evaluateRange, FULL_OPERATION, type MpAbsence, type MpAssignment, type MpPerson, type RulesSource } from '../manpower';
 import { addDaysIso, isWorkingDay, type Crew } from '../roster';
 
 export const COVER_GRADE = 15;
@@ -34,12 +34,12 @@ export interface CoverageNeed {
  * Morning Controller covers a shift. Crew needs are then planned against the VR Controller(s) in date order: the
  * first need in a period gets a free VR, an overlapping one is "Additional Controller required".
  */
-export function coverageNeeds(from: string, to: string, people: MpPerson[], absences: MpAbsence[], assignments: MpAssignment[]): CoverageNeed[] {
+export function coverageNeeds(from: string, to: string, people: MpPerson[], absences: MpAbsence[], assignments: MpAssignment[], rules: RulesSource = FULL_OPERATION): CoverageNeed[] {
   const out: CoverageNeed[] = [];
   const open = new Map<string, CoverageNeed>();
   const close = (key: string) => { const cur = open.get(key); if (cur) { out.push(cur); open.delete(key); } };
   const blank = { vr: null, additional: false, vrNote: null };
-  for (const day of evaluateRange(from, to, people, absences, FULL_OPERATION, assignments)) {
+  for (const day of evaluateRange(from, to, people, absences, rules, assignments)) {
     for (const c of day.crews) {
       if (!c.working) continue;
       const key = `crew:${c.crew}`;

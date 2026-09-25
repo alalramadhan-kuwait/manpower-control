@@ -18,6 +18,7 @@ import MovementsPage from '@/features/movements/MovementsPage';
 import ControllersPage from '@/features/controllers/ControllersPage';
 import RequestsPage from '@/features/requests/RequestsPage';
 import AuditPage from '@/features/audit/AuditPage';
+import OperationPage from '@/features/operation/OperationPage';
 import RequestPage from '@/features/requests/RequestPage';
 import { Shell } from './Shell';
 import { Button } from '@/ui/components';
@@ -86,6 +87,7 @@ export default function App() {
           <Route path="/requests" element={<RequestsPage />} />
           <Route path="/requests/:id" element={<RequestPage profile={profile} />} />
           <Route path="/audit" element={<AuditPage />} />
+          <Route path="/operation" element={<OperationPage profile={profile} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

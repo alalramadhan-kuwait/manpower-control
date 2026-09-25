@@ -53,4 +53,11 @@ group('audit history sentences', () => {
     const e = describe(row({ actor_id: 'zz', batch_id: 'b1', next: { display_name: 'New Person', employee_number: '26604' } }), lk);
     expect(e).toMatchObject({ title: 'Staff member added: New Person (#26604)', fromImport: true, actor: 'Unknown login' });
   });
+  it('operating modes and periods', () => {
+    const prev = { code: 'shutdown', label: 'Shutdown', controller_min: 1, panel_min: 2, panel_grade14_min: 1, field_min: 4, is_active: true };
+    const e = describe(row({ entity_table: 'operating_modes', action: 'update', previous: prev, next: { ...prev, field_min: 3 } }), lk);
+    expect(e).toMatchObject({ category: 'modes', title: 'Operating mode changed: Shutdown', details: ['Minimums: Controller 1 · Panel 2 (1 Grade 14+) · Field 4 → Controller 1 · Panel 2 (1 Grade 14+) · Field 3'] });
+    const p = describe(row({ entity_table: 'operation_periods', next: { mode_code: 'one_train', start_date: '2026-11-01', end_date: '2026-11-10', status: 'active', note: 'Train 2 turnaround' } }), lk);
+    expect(p).toMatchObject({ title: 'Operating period scheduled: one train, 1 Nov 2026 – 10 Nov 2026', details: ['Train 2 turnaround'] });
+  });
 });

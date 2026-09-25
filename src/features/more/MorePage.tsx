@@ -1,4 +1,4 @@
-import { ArrowLeftRight, BarChart3, CalendarRange, ChevronRight, ClipboardCheck, FileUp, History, LogOut, ScrollText, ShieldCheck, UserCheck, UserCog } from 'lucide-react';
+import { ArrowLeftRight, BarChart3, CalendarRange, ChevronRight, ClipboardCheck, FileUp, Gauge, History, LogOut, ScrollText, ShieldCheck, UserCheck, UserCog } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/data/supabase';
 import type { UserProfile } from '@/data/types';
@@ -8,6 +8,7 @@ import { Button, Card, PageHeader } from '@/ui/components';
 const active = [
   { to: '/movements', label: 'Shift Movements', desc: 'Temporary covers with another crew and permanent crew moves, by date', icon: ArrowLeftRight },
   { to: '/leave-plan', label: 'Annual Leave Plan', desc: 'Everyone\'s leave for the year; add, correct or cancel leave by hand', icon: CalendarRange },
+  { to: '/operation', label: 'Operating modes', desc: 'Shutdown / one-train periods with their own minimums per crew', icon: Gauge },
   { to: '/controllers', label: 'Controller Management', desc: 'Cover for Shift Controllers, VR assignments, Morning rotation', icon: UserCheck },
   { to: '/summary', label: 'Section summary', desc: 'Headcount by crew and role, data-quality counts, last import', icon: BarChart3 },
   { to: '/imports', label: 'Excel Import Center', desc: 'Upload the U-12 manpower workbook or the promotion master', icon: FileUp },
@@ -20,7 +21,7 @@ const headOnly = [
   { to: '/users', label: 'Users & access', desc: 'Create logins, change roles, reset passwords, block or delete access', icon: UserCog }
 ];
 const later = [
-  ['Shutdown', 'Stage I'], ['Notification Center', 'after Stage F']
+  ['Notification Center', 'after Stage F']
 ];
 
 export default function MorePage({ profile }: { profile: UserProfile }) {

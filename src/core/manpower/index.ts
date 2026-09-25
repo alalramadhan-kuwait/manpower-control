@@ -96,6 +96,9 @@ export interface MpAbsence {
 }
 
 export interface Rules {
+  /** Operating mode these minimums belong to (Stage I). */
+  modeCode: string;
+  modeLabel: string;
   controllerMin: number;
   /** Normal Controller grade (and above). */
   controllerGrade: number;
@@ -114,8 +117,9 @@ export interface Rules {
   controllerGreenAtMinimum: boolean;
 }
 
-/** Full operation of the unit. Shutdown / one-train modes are Stage I and will supply their own Rules. */
+/** Full operation of the unit: the default mode. Other operating modes (Stage I) change only the minimums. */
 export const FULL_OPERATION: Rules = {
+  modeCode: 'full_operation', modeLabel: 'Full operation',
   controllerMin: 1, controllerGrade: 15, actingControllerGrade: 14,
   panelMin: 3, panelGrade14Min: 1, panelGrade14: 14,
   fieldMin: 6, panelBackupGrade: 13,
@@ -212,8 +216,14 @@ export interface DayDutyToday {
   /** The crew they are counted in today (the crew on Morning shift), null when off. */
   countedIn: Crew | null;
 }
+/** Fixed rules, or rules that depend on the date (operating modes, Stage I). */
+export type RulesSource = Rules | ((date: string) => Rules);
+const rulesOn = (src: RulesSource, date: string): Rules => (typeof src === 'function' ? src(date) : src);
+
 export interface DayResult {
   date: string;
+  /** The minimums that applied on this date (operating mode). */
+  rules: Rules;
   crews: CrewDay[]; // ordered Morning, Afternoon, Night, Off
   dayStaff: DayStaff[]; // VR and Morning Controllers, and anyone on Morning rotation
   /** Crew members on day duty today (counted in the Morning crew Sunday to Thursday, off Friday and Saturday). */
@@ -265,7 +275,8 @@ function qualReason(label: string, s: QualStatus): string {
   return s === 'no' ? `${label} = No` : s === 'not_yet_confirmed' ? `${label} not yet confirmed` : `${label} not recorded`;
 }
 
-export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbsence[], rules: Rules = FULL_OPERATION, assignments: MpAssignment[] = []): DayResult {
+export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbsence[], rulesSource: RulesSource = FULL_OPERATION, assignments: MpAssignment[] = []): DayResult {
+  const rules = rulesOn(rulesSource, date);
   // each person's role and crew on this date (role history, permanent and temporary shift movements);
   // day duty works with the crew on Morning shift, Sunday to Thursday, in the person's own position
   const morningCrew = CREWS.find((c) => stateOf(dutyFor(date, c)) === 'M') ?? null;
@@ -460,11 +471,11 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
     unresolvedWarnings: crews.reduce((n, c) => n + c.unresolved.length, 0) + dayStaff.filter((s) => s.unresolved).length + dayDuty.filter((s) => s.unresolved).length,
     morningCoverageRequired: morningPost.status === 'coverage_required' ? 1 : 0
   };
-  return { date, crews, dayStaff, dayDuty, morningPost, overall, finalStatus, provisionalStatus, noBuffer: finalStatus === 'amber', counts };
+  return { date, rules, crews, dayStaff, dayDuty, morningPost, overall, finalStatus, provisionalStatus, noBuffer: finalStatus === 'amber', counts };
 }
 
 /** Status for each date in a range (for later calendar views and for tests). */
-export function evaluateRange(from: string, to: string, people: MpPerson[], absences: MpAbsence[], rules: Rules = FULL_OPERATION, assignments: MpAssignment[] = []): DayResult[] {
+export function evaluateRange(from: string, to: string, people: MpPerson[], absences: MpAbsence[], rules: RulesSource = FULL_OPERATION, assignments: MpAssignment[] = []): DayResult[] {
   const out: DayResult[] = [];
   for (let d = from; d <= to; ) {
     out.push(evaluateDay(d, people, absences, rules, assignments));
