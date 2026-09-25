@@ -1,4 +1,4 @@
-import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Info } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Info, Star } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { evaluateDay } from '@/core/manpower';
@@ -6,6 +6,8 @@ import { minimumsText, periodOn } from '@/core/modes';
 import type { CrewDay, DayResult, Finding, MpAbsence, MpPerson, PositionResult, Status } from '@/core/manpower';
 import { addDaysIso, isValidIsoDate } from '@/core/roster';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
+import { fetchCalendarInfo, type Holiday, type UnitEvent } from '@/data/calendar';
+import { EVENT_ICON } from '@/ui/calendar';
 import { Card, ErrorBox, Spinner, cx, fmtDate } from '@/ui/components';
 import { CREW_IDENTITY, CrewBadge, DayDutyBadge, crewEdge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
@@ -64,6 +66,9 @@ export default function DayOverviewPage() {
 
   const result = useMemo(() => (inputs ? evaluateDay(date, inputs.people, inputs.absences, inputs.rules, inputs.assignments) : null), [date, inputs]);
   const period = useMemo(() => (inputs ? periodOn(date, inputs.plan) : null), [date, inputs]);
+  // holiday and unit events on this date (calendar information)
+  const [info, setInfo] = useState<{ date: string; holidays: Holiday[]; events: UnitEvent[] } | null>(null);
+  useEffect(() => { let live = true; fetchCalendarInfo(date, date).then((r) => live && setInfo({ date, ...r })).catch(() => live && setInfo(null)); return () => { live = false; }; }, [date]);
   const leave = useMemo(() => {
     if (!inputs) return new Map<string, OnLeave>();
     const crewOf = new Map(inputs.people.map((p) => [p.id, p.crew]));
@@ -92,6 +97,12 @@ export default function DayOverviewPage() {
       <div className="mb-3">
         <h1 className="text-xl font-semibold text-brand-800">{weekday(date)}, {fmtDate(date)}</h1>
         <p className="text-xs text-slate-500">{result ? `${result.rules.modeLabel} · required per crew: ${minimumsText(result.rules)}` : '\u00a0'}</p>
+        {info?.date === date && (info.holidays.length > 0 || info.events.length > 0) && (
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {info.holidays.map((h) => <Link key={h.id} to={`/calendar?month=${date.slice(0, 7)}`} className="inline-flex items-center gap-1 rounded-full bg-pink-50 px-2.5 py-1 text-[11px] font-semibold text-pink-800 ring-1 ring-pink-300"><Star className="h-3 w-3 fill-pink-500 text-pink-600" />{h.name}{h.expected ? ' (expected)' : ''}</Link>)}
+            {info.events.map((e) => { const Icon = EVENT_ICON[e.category]; return <Link key={e.id} to={`/calendar?month=${date.slice(0, 7)}`} className="inline-flex max-w-full items-center gap-1 rounded-full bg-teal-700 px-2.5 py-1 text-[11px] font-semibold text-white"><Icon className="h-3 w-3 shrink-0" /><span className="truncate">{e.unit ? `${e.unit} ` : ''}{e.title} · {e.start === e.end ? shortDate(e.start) : `${shortDate(e.start)} – ${shortDate(e.end)}`}</span></Link>; })}
+          </div>
+        )}
         {period && result && (
           <Link to="/operation" className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-brand-700 px-2.5 py-1 text-[11px] font-semibold text-white">
             <span className="truncate">{result.rules.modeLabel} · {shortDate(period.start)} – {shortDate(period.end)}{period.note ? ` · ${period.note}` : ''}</span>
