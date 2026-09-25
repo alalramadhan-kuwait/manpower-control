@@ -12,6 +12,9 @@ import { splitLeave, type LeaveBlock, type LeaveSpan } from '@/core/leave';
 import { LeaveSheet, changeLabel, type LeaveTarget } from '@/features/leave/LeaveSheet';
 import { MovementSheet, type MoveTarget } from '@/features/movements/MovementSheet';
 import { fetchMovements, type CrewMovement } from '@/data/movements';
+import { fetchAuditLookups } from '@/data/audit';
+import { describe, type AuditLookups, type AuditRow } from '@/core/audit';
+import { Entry as AuditLine } from '@/features/audit/AuditPage';
 
 const QUALS: { code: QualificationCode; label: string; help: string }[] = [
   { code: 'take_charge', label: 'Take-Charge qualified', help: 'Only Take-Charge = Yes counts toward the Field Operator minimum of 6.' },
@@ -34,6 +37,8 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
   const [moveSheet, setMoveSheet] = useState<MoveTarget | null>(null);
   const [moves, setMoves] = useState<CrewMovement[]>([]);
   const [flash, setFlash] = useState<string | null>(null);
+  const [auditLk, setAuditLk] = useState<AuditLookups | null>(null);
+  useEffect(() => { fetchAuditLookups().then(setAuditLk).catch(() => setAuditLk(null)); }, []);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -198,11 +203,10 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
         </ul>
       </Section>
 
-      <Section title="Recent changes (audit)">
-        {data.audit.length === 0 && <p className="text-sm text-slate-500">No changes recorded.</p>}
-        <ul className="divide-y divide-slate-100 text-xs">
-          {data.audit.map((a) => <li key={a.id} className="flex justify-between gap-3 py-2"><span className="text-slate-700">{a.action} · {a.entity_table.replace(/_/g, ' ')}</span><span className="shrink-0 text-slate-500">{new Date(a.occurred_at).toLocaleString('en-GB')}</span></li>)}
-        </ul>
+      <Section title="Change history" action={<Link to={`/audit?employee=${emp.id}`} className="text-xs font-medium text-brand-700">See all</Link>}>
+        {data.audit.length === 0 ? <p className="text-sm text-slate-500">No changes recorded.</p> : !auditLk ? <p className="text-xs text-slate-500">Loading…</p> : (
+          <div className="-mx-3 divide-y divide-slate-100">{data.audit.map((a) => <AuditLine key={a.id} e={describe(a as unknown as AuditRow, auditLk)} showPerson={false} />)}</div>
+        )}
       </Section>
 
       {sheet?.kind === 'qual' && <QualificationSheet emp={emp} code={sheet.code} current={currentQual(sheet.code)} actor={profile} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load().catch(setError); }} />}

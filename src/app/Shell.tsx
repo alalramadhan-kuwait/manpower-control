@@ -37,7 +37,7 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
               <div className="truncate text-[11px] text-brand-100">Manpower Control · {[...new Set([profile.display_name, ROLE_LABEL[profile.role_code] ?? profile.role_code])].join(' · ')}</div>
             </div>
           </div>
-          <div className="shrink-0 whitespace-nowrap rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium">Stage G</div>
+          <div className="shrink-0 whitespace-nowrap rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium">Stage J</div>
         </div>
       </header>
       <main className="flex-1 px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-4 sm:pb-8">{children}</main>
