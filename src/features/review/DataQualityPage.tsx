@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { supabase } from '@/data/supabase';
 import { fetchDirectory, fetchReference } from '@/data/queries';
 import type { AbsenceType, EmployeeDirectoryRow, ImportRowRecord, LeaveRecord, UserProfile } from '@/data/types';
-import { BottomSheet, Button, Card, Chip, ErrorBox, Field, PageHeader, Spinner, fmtDate } from '@/ui/components';
+import { BottomSheet, Button, Card, Chip, ErrorBox, Field, PageHeader, Spinner, fmtDate, InfoButton } from '@/ui/components';
 import { RowLine } from '@/features/imports/PlanPreview';
 import { CrewTag, isCrew } from '@/ui/crew';
 
@@ -34,7 +34,7 @@ export default function DataQualityPage({ profile }: { profile: UserProfile }) {
   const contractorsNoMaster = scope.filter((e) => e.employment_type === 'contractor');
   return (
     <div>
-      <PageHeader title="Data Quality Review" subtitle="Things a person must decide. Nothing here is guessed by the system." />
+      <PageHeader title="Data quality" info="Things a person must decide. Nothing here is guessed by the system." />
 
       <Section title={`Unresolved absences (${data.unresolved.length})`} help="Marked on a monthly manpower sheet but not in the PV plan. Classify or cancel.">
         {data.unresolved.length === 0 && <Ok />}
@@ -48,18 +48,18 @@ export default function DataQualityPage({ profile }: { profile: UserProfile }) {
         </ul>
       </Section>
 
-      <Section title={`Take-Charge not confirmed (${tc.length})`} help="Field Operators only count toward the minimum of 6 once Take-Charge = Yes.">
+      <Section title={`Take-Charge to confirm (${tc.length})`} help="Field Operators only count toward the minimum of 6 once Take-Charge = Yes.">
         <Link to="/review/take-charge" className="mb-2 inline-flex min-h-10 items-center rounded-xl bg-brand-700 px-4 text-sm font-medium text-white">Confirm all Field Operators in one screen</Link>
         {tc.length === 0 && <Ok />}
         <PeopleList people={tc} extra={() => <Chip tone="amber">Not yet confirmed</Chip>} />
       </Section>
 
-      <Section title={`Employment type inferred from the number (${inferred.length})`} help="5-digit = KNPC, 6-digit = contractor was assumed. KNPC master matches confirm KNPC automatically; contractors need a manual confirmation.">
+      <Section title={`Employment type to confirm (${inferred.length})`} help="5-digit = KNPC, 6-digit = contractor was assumed. KNPC master matches confirm KNPC automatically; contractors need a manual confirmation.">
         {inferred.length === 0 && <Ok />}
         <PeopleList people={inferred} extra={(e) => <Chip tone="amber">{e.employment_type === 'knpc' ? 'KNPC' : 'Contractor'} (inferred)</Chip>} />
       </Section>
 
-      <Section title={`Contractors without KNPC master record (${contractorsNoMaster.length})`} help="Expected: contractors are not in the promotion master. Grade and HR dates must be entered manually if needed.">
+      <Section title={`Contractors · no HR data (${contractorsNoMaster.length})`} help="Expected: contractors are not in the promotion master. Grade and HR dates must be entered manually if needed.">
         <PeopleList people={contractorsNoMaster} extra={() => <Chip>Contractor</Chip>} />
       </Section>
 
@@ -69,7 +69,7 @@ export default function DataQualityPage({ profile }: { profile: UserProfile }) {
         </Section>
       )}
 
-      <Section title={`Import rows flagged in committed batches (${data.pending.length})`} help="Unmatched, errored or review rows from imports. They stay here as the record of what the source said.">
+      <Section title={`Import rows to check (${data.pending.length})`} help="Unmatched, errored or review rows from imports. They stay here as the record of what the source said.">
         {data.pending.length === 0 && <Ok />}
         <ul className="divide-y divide-slate-100">
           {data.pending.map((r) => <li key={r.id} className="py-2"><RowLine row={r} /><Link to={`/imports/${r.batch_id}`} className="text-[11px] text-brand-700">Open batch</Link></li>)}
@@ -81,9 +81,9 @@ export default function DataQualityPage({ profile }: { profile: UserProfile }) {
   );
 }
 
-function Ok() { return <p className="py-2 text-sm text-status-green">Nothing outstanding.</p>; }
+function Ok() { return <p className="py-2 text-sm text-status-green">All clear ✓</p>; }
 function Section({ title, help, children }: { title: string; help: string; children: React.ReactNode }) {
-  return <Card className="mb-3"><h2 className="text-sm font-semibold text-brand-800">{title}</h2><p className="mb-1 text-xs text-slate-500">{help}</p>{children}</Card>;
+  return <Card className="mb-3"><h2 className="mb-1 flex items-center gap-1 text-sm font-semibold text-brand-800">{title}<InfoButton title={title}>{help}</InfoButton></h2>{children}</Card>;
 }
 function PeopleList({ people, extra }: { people: EmployeeDirectoryRow[]; extra: (e: EmployeeDirectoryRow) => React.ReactNode }) {
   if (people.length === 0) return null;

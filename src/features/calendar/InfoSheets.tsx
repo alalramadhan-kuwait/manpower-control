@@ -29,13 +29,13 @@ export function EventSheet({ event, date, units, onClose, onDone }: { event: Uni
           <Field label="Unit / train"><input className="input" list="units" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="e.g. Train-1" /><datalist id="units">{units.map((u) => <option key={u} value={u} />)}</datalist></Field>
           <Field label="Title"><input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. SD" /></Field>
         </div>
-        <p className="-mt-2 text-xs text-slate-500">Shown as "{unit.trim() ? `${unit.trim()} ` : ''}{title.trim() || 'Title'}". Each unit / train keeps its own colour.</p>
+        <p className="-mt-2 text-xs text-slate-500">"{unit.trim() ? `${unit.trim()} ` : ''}{title.trim() || 'Title'}"</p>
         <div className="grid grid-cols-2 gap-3">
           <Field label="First day"><input type="date" className="input" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value); }} /></Field>
           <Field label="Last day"><input type="date" className="input" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></Field>
         </div>
         <Field label="Note (optional)"><input className="input" value={note} onChange={(e) => setNote(e.target.value)} /></Field>
-        {category === 'shutdown' && <p className="text-xs text-slate-500">This shows the shutdown on the calendar only. If the minimums per crew change during it, schedule an operating mode as well (More → Operating modes).</p>}
+        {category === 'shutdown' && <p className="text-xs text-slate-500">Calendar only. Lower minimums? Add an operating mode too.</p>}
         {problem && <p className="text-xs text-slate-500">{problem}</p>}
         {err != null && <ErrorBox error={err} />}
         {cancelling ? (

@@ -6,26 +6,26 @@ import { ROLE_LABEL } from '@/features/auth/useSession';
 import { Button, Card, PageHeader } from '@/ui/components';
 
 const active = [
-  { to: '/movements', label: 'Shift Movements', desc: 'Temporary covers with another crew and permanent crew moves, by date', icon: ArrowLeftRight },
-  { to: '/leave-plan', label: 'Annual Leave Plan', desc: 'Everyone\'s leave for the year; add, correct or cancel leave by hand', icon: CalendarRange },
-  { to: '/notifications', label: 'Notifications', desc: 'What needs attention in the next 60 days: shortages, Controller cover, requests', icon: Bell },
-  { to: '/operation', label: 'Operating modes', desc: 'Shutdown / one-train periods with their own minimums per crew', icon: Gauge },
-  { to: '/controllers', label: 'Controller Management', desc: 'Cover for Shift Controllers, VR assignments, Morning rotation', icon: UserCheck },
-  { to: '/summary', label: 'Section summary', desc: 'Headcount by crew and role, data-quality counts, last import', icon: BarChart3 },
-  { to: '/imports', label: 'Excel Import Center', desc: 'Upload the U-12 manpower workbook or the promotion master', icon: FileUp },
-  { to: '/audit', label: 'Audit history', desc: 'Every change made in the app: who, when and what changed', icon: ScrollText },
-  { to: '/imports/history', label: 'Import History', desc: 'Every import batch with its counts and row outcomes', icon: History },
-  { to: '/review', label: 'Data Quality Review', desc: 'Unresolved absences, unconfirmed qualifications, unmatched rows', icon: ClipboardCheck },
-  { to: '/review/take-charge', label: 'Take-Charge confirmation', desc: 'Bulk-confirm Take-Charge for all Field Operators', icon: ShieldCheck }
+  { to: '/movements', label: 'Shift movements', desc: 'Covers · moves · day duty', icon: ArrowLeftRight },
+  { to: '/leave-plan', label: 'Leave plan', desc: 'Year plan · add / correct', icon: CalendarRange },
+  { to: '/notifications', label: 'Notifications', desc: 'Next 60 days', icon: Bell },
+  { to: '/operation', label: 'Operating modes', desc: 'Shutdown · one train', icon: Gauge },
+  { to: '/controllers', label: 'Controllers', desc: 'Cover · VR · Morning rotation', icon: UserCheck },
+  { to: '/summary', label: 'Section summary', desc: 'Headcount · data quality', icon: BarChart3 },
+  { to: '/imports', label: 'Excel import', desc: 'Workbook · promotion list', icon: FileUp },
+  { to: '/audit', label: 'Audit history', desc: 'Who changed what', icon: ScrollText },
+  { to: '/imports/history', label: 'Import history', desc: 'Past uploads', icon: History },
+  { to: '/review', label: 'Data quality', desc: 'Items to decide', icon: ClipboardCheck },
+  { to: '/review/take-charge', label: 'Take-Charge', desc: 'Confirm Field Operators', icon: ShieldCheck }
 ];
 const headOnly = [
-  { to: '/users', label: 'Users & access', desc: 'Create logins, change roles, reset passwords, block or delete access', icon: UserCog }
+  { to: '/users', label: 'Users & access', desc: 'Logins · roles', icon: UserCog }
 ];
 
 export default function MorePage({ profile }: { profile: UserProfile }) {
   return (
     <div>
-      <PageHeader title="More" subtitle={`${profile.display_name} · ${ROLE_LABEL[profile.role_code]}`} />
+      <PageHeader title="More" subtitle={[...new Set([profile.display_name, ROLE_LABEL[profile.role_code]])].join(' · ')} />
       <div className="space-y-2">
         {[...(profile.role_code === 'section_head' ? headOnly : []), ...active].map(({ to, label, desc, icon: Icon }) => (
           <Link key={to} to={to} className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 active:bg-slate-50">

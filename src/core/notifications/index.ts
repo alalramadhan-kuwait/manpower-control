@@ -51,31 +51,31 @@ export function buildNotices(i: NoticeInput): Notice[] {
   // 1. confirmed shortages and incomplete data, as periods per crew
   for (const p of attentionPeriods(i.days)) {
     if (p.kind === 'shortage') out.push({ id: `short-${p.crew}-${p.start}`, level: 'action', area: 'shortage', title: `${p.crew} Shift short · ${p.text}`,
-      detail: `${span(p.start, p.end)} · ${plural(p.duties, 'duty')} · ${when(i.today, p.start)}. Overtime or a cover is likely needed.`, date: p.start, to: `/?date=${p.start}` });
-    else if (p.kind === 'data_incomplete') out.push({ id: `data-${p.crew}-${p.start}`, level: 'watch', area: 'data', title: `${p.crew} Shift · qualification data incomplete`,
-      detail: `${span(p.start, p.end)} · the result is not final until the data is confirmed.`, date: p.start, to: '/review' });
+      detail: `${span(p.start, p.end)} · ${plural(p.duties, 'duty')} · ${when(i.today, p.start)}`, date: p.start, to: `/?date=${p.start}` });
+    else if (p.kind === 'data_incomplete') out.push({ id: `data-${p.crew}-${p.start}`, level: 'watch', area: 'data', title: `${p.crew} Shift · data to confirm`,
+      detail: span(p.start, p.end), date: p.start, to: '/review' });
   }
 
   // 2. Controller cover (crew Controller away, or the Morning post empty)
   for (const n of i.needs) {
-    const vr = n.additional ? 'Both VR Controllers are needed elsewhere: an additional Controller is required.' : n.vr ? `${n.vr.name} (VR) is free for the whole period.` : n.vrNote ?? '';
-    if (n.kind === 'crew') out.push({ id: `cover-${n.crew}-${n.start}`, level: 'action', area: 'controller', title: `Controller cover needed · ${n.crew} Shift`,
-      detail: `${span(n.start, n.end)} · ${plural(n.dutyDays, 'duty day')} · for ${n.who.join(', ')} · ${when(i.today, n.start)}. ${vr}`.trim(), date: n.start, to: `/controllers?assign=cover&crew=${n.crew}&from=${n.start}` });
+    const vr = n.additional ? 'Extra Controller needed' : n.vr ? `VR free: ${n.vr.name}` : n.vrNote ?? '';
+    if (n.kind === 'crew') out.push({ id: `cover-${n.crew}-${n.start}`, level: 'action', area: 'controller', title: `Cover needed · ${n.crew} Shift`,
+      detail: [`${span(n.start, n.end)} · ${n.who.join(', ')} · ${when(i.today, n.start)}`, vr].filter(Boolean).join(' · '), date: n.start, to: `/controllers?assign=cover&crew=${n.crew}&from=${n.start}` });
     else out.push({ id: `morning-${n.start}`, level: 'action', area: 'controller', title: 'Morning Controller post empty',
-      detail: `${span(n.start, n.end)} · the Morning Controller covers a shift and nobody holds the post.`, date: n.start, to: `/controllers?assign=morning&from=${n.start}` });
+      detail: span(n.start, n.end), date: n.start, to: `/controllers?assign=morning&from=${n.start}` });
   }
 
   // 3. open leave requests: to review (Coordinator or Section Head), then the Section Head's decision
   for (const r of i.requests) {
     const what = `${r.employeeName} · ${r.typeLabel} ${span(r.start, r.end)}`;
-    if (r.status === 'submitted') out.push({ id: `req-${r.id}`, level: 'action', area: 'request', title: 'Leave request to review', detail: `${what}. Record the Controller / Supervisor overtime decision.`, date: r.start, to: `/requests/${r.id}` });
-    else out.push({ id: `req-${r.id}`, level: i.isSectionHead ? 'action' : 'watch', area: 'request', title: i.isSectionHead ? 'Leave request waiting for your decision' : 'Leave request waiting for the Section Head',
-      detail: `${what}${r.overtime === true ? ' · overtime required' : r.overtime === false ? ' · no overtime needed' : ''}.`, date: r.start, to: `/requests/${r.id}` });
+    if (r.status === 'submitted') out.push({ id: `req-${r.id}`, level: 'action', area: 'request', title: 'Request to review', detail: what, date: r.start, to: `/requests/${r.id}` });
+    else out.push({ id: `req-${r.id}`, level: i.isSectionHead ? 'action' : 'watch', area: 'request', title: i.isSectionHead ? 'Waiting for your decision' : 'Waiting for the Section Head',
+      detail: `${what}${r.overtime === true ? ' · overtime' : r.overtime === false ? ' · no overtime' : ''}`, date: r.start, to: `/requests/${r.id}` });
   }
 
   // 4. staff records needing action
-  if (i.needsAction > 0) out.push({ id: 'staff-action', level: 'watch', area: 'data', title: `${plural(i.needsAction, 'staff record')} need${i.needsAction === 1 ? 's' : ''} action`,
-    detail: 'Missing grade, Take-Charge, Panel qualification or employment type: until confirmed they may not count.', date: null, to: '/employees?view=action' });
+  if (i.needsAction > 0) out.push({ id: 'staff-action', level: 'watch', area: 'data', title: `${plural(i.needsAction, 'staff record')} to complete`,
+    detail: 'Grade · Take-Charge · Panel · KNPC / contractor', date: null, to: '/employees?view=action' });
 
   // 5. operating periods now or starting within 14 days
   for (const p of i.plan.periods.filter((x) => x.status === 'active' && x.end >= i.today && daysBetween(i.today, x.start) <= 14)) {
@@ -88,7 +88,7 @@ export function buildNotices(i: NoticeInput): Notice[] {
   const soon = i.leaveDays ?? 7;
   const starting = i.absences.filter((a) => (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && a.start > i.today && daysBetween(i.today, a.start) <= soon && names.has(a.employeeId))
     .sort((a, b) => a.start.localeCompare(b.start));
-  if (starting.length) out.push({ id: `leave-${i.today}`, level: 'info', area: 'leave', title: `${plural(starting.length, 'leave')} starting in the next ${soon} days`,
+  if (starting.length) out.push({ id: `leave-${i.today}`, level: 'info', area: 'leave', title: `${plural(starting.length, 'leave')} starting · next ${soon} days`,
     detail: starting.slice(0, 6).map((a) => `${names.get(a.employeeId)} (${a.typeShort ?? 'Leave'}) ${d(a.start)}`).join(' · ') + (starting.length > 6 ? ` · and ${starting.length - 6} more` : ''), date: starting[0].start, to: '/leave-plan' });
 
   const rank: Record<NoticeLevel, number> = { action: 0, watch: 1, info: 2 };

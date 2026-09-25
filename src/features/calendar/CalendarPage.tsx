@@ -16,15 +16,15 @@ import { EventSheet, HolidaySheet } from './InfoSheets';
 
 type Filter = 'all' | Crew | 'shutdowns' | 'holidays' | 'shortage';
 const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'all', label: 'All shifts' }, ...CREWS.map((c) => ({ key: c as Filter, label: `Shift ${c}` })),
-  { key: 'shutdowns', label: 'Shutdowns & events' }, { key: 'holidays', label: 'Holidays' }, { key: 'shortage', label: 'Shortage only' }
+  { key: 'all', label: 'All' }, ...CREWS.map((c) => ({ key: c as Filter, label: c })),
+  { key: 'shutdowns', label: 'Events' }, { key: 'holidays', label: 'Holidays' }, { key: 'shortage', label: 'Shortage' }
 ];
 /** Status colours only: green safe, amber at minimum, red below minimum, grey pending. */
 const PILL: Record<Exclude<DayMark, 'off'>, string> = {
   green: 'bg-green-100 text-green-900', amber: 'bg-amber-100 text-amber-900', red: 'bg-status-red text-white', pending: 'bg-slate-200 text-slate-700'
 };
 const SUMMARY: { key: Exclude<DayMark, 'off'>; label: string; dot: string }[] = [
-  { key: 'red', label: 'Shortage', dot: 'bg-status-red' }, { key: 'amber', label: 'At minimum', dot: 'bg-status-amber' },
+  { key: 'red', label: 'Short', dot: 'bg-status-red' }, { key: 'amber', label: 'At min', dot: 'bg-status-amber' },
   { key: 'green', label: 'Safe', dot: 'bg-status-green' }, { key: 'pending', label: 'Pending', dot: 'bg-slate-400' }
 ];
 const dates = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)}–${shortDate(b)}`);
@@ -104,7 +104,7 @@ export default function CalendarPage() {
             {SUMMARY.map((k) => (
               <div key={k.key} className="rounded-lg bg-white px-1 py-1 ring-1 ring-slate-200">
                 <div className="flex items-center justify-center gap-1 text-base font-semibold leading-tight tabular-nums text-slate-800"><span className={cx('h-2 w-2 rounded-full', k.dot)} />{view.summary[k.key]}</div>
-                <div className="text-[10px] leading-tight text-slate-500">{k.label} days</div>
+                <div className="text-[10px] leading-tight text-slate-500">{k.label}</div>
               </div>
             ))}
           </div>
@@ -156,8 +156,8 @@ export default function CalendarPage() {
           <Legend />
 
           {filter === 'holidays' || view.monthHolidays.length > 0 ? (
-            <Section title={`Kuwait public holidays (${view.monthHolidays.length})`} action={<button type="button" className="text-xs font-medium text-brand-700" onClick={() => setSheet({ kind: 'holiday', holiday: null, date: from })}>+ Holiday</button>}>
-              {view.monthHolidays.length === 0 ? <p className="py-2 text-sm text-slate-500">No public holiday this month.</p> : view.monthHolidays.map((h) => (
+            <Section title={`Holidays (${view.monthHolidays.length})`} action={<button type="button" className="text-xs font-medium text-brand-700" onClick={() => setSheet({ kind: 'holiday', holiday: null, date: from })}>+ Holiday</button>}>
+              {view.monthHolidays.length === 0 ? <p className="py-2 text-sm text-slate-500">None this month</p> : view.monthHolidays.map((h) => (
                 <button key={h.id} type="button" onClick={() => setSheet({ kind: 'holiday', holiday: h })} className="flex w-full items-center gap-2 py-2 text-left">
                   <Star className="h-4 w-4 shrink-0 fill-pink-500 text-pink-600" />
                   <span className="min-w-0 flex-1"><span className="block text-sm font-medium text-slate-900">{h.name}</span><span className="block text-xs text-slate-500">{h.start === h.end ? shortDate(h.start) : `${shortDate(h.start)} – ${shortDate(h.end)}`}{h.expected ? ' · expected, to be confirmed' : ''}</span></span>
@@ -167,8 +167,8 @@ export default function CalendarPage() {
             </Section>
           ) : null}
 
-          <Section title={`Shutdowns & unit events (${view.monthBars.length})`} action={<button type="button" className="text-xs font-medium text-brand-700" onClick={() => setSheet({ kind: 'event', event: null, date: isThisMonth ? today : from })}>+ Event</button>}>
-            {view.monthBars.length === 0 ? <p className="py-2 text-sm text-slate-500">Nothing scheduled this month.</p> : view.monthBars.map((b) => {
+          <Section title={`Events & shutdowns (${view.monthBars.length})`} action={<button type="button" className="text-xs font-medium text-brand-700" onClick={() => setSheet({ kind: 'event', event: null, date: isThisMonth ? today : from })}>+ Event</button>}>
+            {view.monthBars.length === 0 ? <p className="py-2 text-sm text-slate-500">None this month</p> : view.monthBars.map((b) => {
               const Icon = b.icon;
               const inner = <><span className={cx('flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-white', b.cls)}><Icon className="h-3.5 w-3.5" /></span>
                 <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-900">{b.label}</span><span className="block text-xs text-slate-500">{b.event ? EVENT_CATEGORY_LABEL[b.event.category] : 'Operating mode: own minimums per crew'}{b.event?.note ? ` · ${b.event.note}` : ''}</span></span>
@@ -179,8 +179,8 @@ export default function CalendarPage() {
           </Section>
 
           {filter !== 'holidays' && filter !== 'shutdowns' && (
-            <Section title="Needs attention this month">
-              {view.attention.length === 0 ? <p className="py-2 text-sm text-slate-500">Nothing short or pending.</p> : view.attention.map((a) => (
+            <Section title="Needs attention">
+              {view.attention.length === 0 ? <p className="py-2 text-sm text-slate-500">All clear ✓</p> : view.attention.map((a) => (
                 <button key={`${a.crew}${a.start}${a.kind}`} type="button" onClick={() => setOpen(a.start)} className="flex w-full items-center gap-3 py-2 text-left">
                   <CrewBadge crew={a.crew} size="sm" />
                   <span className="min-w-0 flex-1">

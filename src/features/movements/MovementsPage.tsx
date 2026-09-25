@@ -56,15 +56,15 @@ export default function MovementsPage() {
 
   return (
     <div>
-      <PageHeader title="Shift Movements" subtitle="Temporary covers with another crew, permanent crew moves and day duty. Manpower counts each person in their crew on each date."
+      <PageHeader title="Shift movements" info={<><p>Temporary covers with another crew, permanent crew moves and day duty. Manpower counts each person in their crew on each date.</p><p>A permanent move is undone or corrected on the employee profile (Correct role / crew). Workbook notes such as "Covering D-shift" are listed in the import preview so they can be recorded here.</p></>}
         action={<Button className="min-h-10 shrink-0 px-3" onClick={() => setSheet({ kind: 'new' })}><Plus className="h-4 w-4" /> New</Button>} />
       {flash && <div role="status" className="mb-3 rounded-xl bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{flash}</div>}
       {error ? <ErrorBox error={error} /> : !view ? <Spinner /> : (
         <div className="space-y-3">
-          <Section title={`Covering now (${view.current.length})`} empty="Nobody is covering another crew today.">{view.current.map((m) => <Row key={m.id} m={m} actions />)}</Section>
+          <Section title={`Covering now (${view.current.length})`} empty="None today">{view.current.map((m) => <Row key={m.id} m={m} actions />)}</Section>
           {view.upcoming.length > 0 && <Section title={`Upcoming (${view.upcoming.length})`}>{view.upcoming.map((m) => <Row key={m.id} m={m} actions />)}</Section>}
-          <Section title={`Day duty (${view.dayDuty.length})`} empty="Nobody is on day duty.">{view.dayDuty.map((m) => <Row key={m.id} m={m} actions />)}</Section>
-          <Section title={`Permanent moves (${view.permanent.length})`} empty="No permanent moves recorded.">{view.permanent.map((m) => <Row key={m.id} m={m} />)}</Section>
+          <Section title={`Day duty (${view.dayDuty.length})`} empty="None">{view.dayDuty.map((m) => <Row key={m.id} m={m} actions />)}</Section>
+          <Section title={`Permanent moves (${view.permanent.length})`} empty="None">{view.permanent.map((m) => <Row key={m.id} m={m} />)}</Section>
           {view.past.length > 0 && (
             <Card className="p-0">
               <button type="button" onClick={() => setHistory(!history)} className="flex w-full items-center justify-between px-4 py-3 text-left">
@@ -73,7 +73,6 @@ export default function MovementsPage() {
               {history && <ul className="divide-y divide-slate-100 px-4 pb-2">{view.past.map((m) => <Row key={m.id} m={m} />)}</ul>}
             </Card>
           )}
-          <p className="px-1 text-xs text-slate-500">A permanent move is undone or corrected on the employee's profile (Correct role / crew). Workbook notes such as "Covering D-shift" are listed in the import preview so they can be recorded here.</p>
         </div>
       )}
       {sheet && view && <MovementSheet target={sheet} people={view.people} onClose={() => setSheet(null)} onDone={done} />}

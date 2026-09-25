@@ -56,7 +56,7 @@ export function LeaveSheet({ target, people, types, onClose, onDone }: { target:
       <BottomSheet open onClose={onClose} title="Cancel this leave">
         <div className="space-y-4">
           <p className="text-sm text-slate-700">{person?.name} · {typeOf(rec.absence_type_code)?.short_code ?? '—'} {range(rec.start_date, rec.end_date)}</p>
-          <p className="text-xs text-slate-500">It leaves the current plan and no longer reduces manpower. The record stays in the history, and a later workbook import will not bring it back.</p>
+          <p className="text-xs text-slate-500">Removed from the plan · kept in history · imports won't bring it back.</p>
           <Field label="Reason"><input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Did not travel; worked normally" /></Field>
           {err != null && <ErrorBox error={err} />}
           <div className="flex gap-2">
@@ -100,7 +100,7 @@ export function LeaveSheet({ target, people, types, onClose, onDone }: { target:
         <Field label={rec ? 'Reason for the correction' : 'Note (optional)'} hint={rec && rec.source_kind !== 'manual' && (start !== rec.start_date || end !== rec.end_date) ? 'The imported record stays in the history; the corrected leave replaces it in the plan.' : undefined}>
           <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={rec ? 'e.g. Came back two days early' : 'e.g. Sick leave, certificate received'} />
         </Field>
-        <p className="text-xs text-slate-500">{rec ? 'Corrected by hand' : 'Entered by hand'}: a later workbook import never changes or removes it.</p>
+        <p className="text-xs text-slate-500">Imports never change leave entered by hand.</p>
         {problem && <p className="text-xs text-slate-500">{problem}</p>}
         {err != null && <ErrorBox error={err} />}
         <div className="flex gap-2">

@@ -2,7 +2,6 @@ import { ChevronRight, Star } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { LEAVE_GROUPS, leaveGroup, shortfall, type LeaveGroup } from '@/core/calendar/board';
 import type { CrewDay, DayResult } from '@/core/manpower';
-import { minimumsText } from '@/core/modes';
 import type { Holiday } from '@/data/calendar';
 import type { ManpowerInputs } from '@/data/manpower';
 import { BottomSheet, cx } from '@/ui/components';
@@ -38,7 +37,7 @@ export function DaySheet({ date, day, inputs, holiday, bars, onClose, onAddEvent
             {bars.map((b) => { const Icon = b.icon; return <span key={b.id} className={cx('inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-white', b.cls)}><Icon className="h-3 w-3 shrink-0" /><span className="truncate">{b.label}</span></span>; })}
           </div>
         )}
-        <p className="text-xs text-slate-500">{day.rules.modeLabel} · required per crew: {minimumsText(day.rules)}</p>
+        <p className="text-xs text-slate-500">{day.rules.modeCode !== 'full_operation' ? `${day.rules.modeLabel} · ` : ''}Min per crew: C {day.rules.controllerMin} · P {day.rules.panelMin} · F {day.rules.fieldMin}</p>
 
         <div className="divide-y divide-slate-100 rounded-xl ring-1 ring-slate-200">
           {crews.map((c) => {
@@ -67,8 +66,8 @@ export function DaySheet({ date, day, inputs, holiday, bars, onClose, onAddEvent
         </div>
 
         <div>
-          <h3 className="mb-1 text-xs font-semibold text-slate-700">On leave / unavailable · {count}</h3>
-          {count === 0 ? <p className="text-xs text-slate-500">Nobody on leave.</p> : (
+          <h3 className="mb-1 text-xs font-semibold text-slate-700">On leave · {count}</h3>
+          {count === 0 ? <p className="text-xs text-slate-500">None</p> : (
             <div className="space-y-1.5">
               {LEAVE_GROUPS.filter((g) => groups.has(g)).map((g) => (
                 <div key={g} className="rounded-lg bg-slate-50 px-2.5 py-1.5">

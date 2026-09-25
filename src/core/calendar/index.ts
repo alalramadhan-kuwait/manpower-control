@@ -125,8 +125,8 @@ export function attentionPeriods(days: DayResult[]): AttentionPeriod[] {
       const positions = [c.controller, c.panel, c.field];
       const short = positions.filter((p) => p.finding === 'shortage');
       const item = short.length ? { kind: 'shortage' as const, text: short.map((p) => `${p.label} ${p.count} of ${p.min}`).join(', ') }
-        : c.pending.includes('coverage_required') ? { kind: 'coverage_required' as const, text: 'Controller coverage required' }
-        : c.pending.includes('data_incomplete') ? { kind: 'data_incomplete' as const, text: 'Qualification data incomplete' } : null;
+        : c.pending.includes('coverage_required') ? { kind: 'coverage_required' as const, text: 'Controller cover needed' }
+        : c.pending.includes('data_incomplete') ? { kind: 'data_incomplete' as const, text: 'Grade data missing' } : null;
       const cur = open.get(c.crew);
       if (cur && item && cur.kind === item.kind && cur.text === item.text) { cur.end = d.date; cur.duties++; continue; }
       if (cur) { out.push(cur); open.delete(c.crew); }

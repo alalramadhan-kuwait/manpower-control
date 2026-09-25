@@ -72,7 +72,7 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
 
   return (
     <div>
-      <PageHeader title="Controller Management" subtitle="Cover for Shift Controllers and the Morning Controller rotation. Grade 15+ only. Morning rotation up to 2 months; shift cover lasts the actual leave period." />
+      <PageHeader title="Controllers" info={<><p>Cover for a Shift Controller on leave, and the Morning Controller rotation.</p><p>Only Grade 15+ can cover. A Morning rotation is up to 2 months; a shift cover lasts the actual leave.</p><p>Grade 15+ Controllers only; nobody covers their own crew; one person cannot hold two overlapping assignments. Every change is kept in the audit history.</p><p>Needs are listed for the next 120 days with a free VR Controller suggested.</p></>} />
       <div className="mb-3 flex flex-wrap gap-2">
         <Button onClick={() => { setNotice(null); setDraft({ kind: 'shift_cover', crew: null, start: today, end: today, coversId: null }); }}>Assign cover</Button>
         <Button variant="secondary" onClick={() => { setNotice(null); setDraft({ kind: 'morning_rotation', crew: null, start: today, end: maxEndDate(today), coversId: null }); }}><Sun className="h-4 w-4" /> Morning rotation</Button>
@@ -81,8 +81,8 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
       {error != null && <div className="mb-3 space-y-2"><ErrorBox error={error} /><Button variant="secondary" onClick={load}><RefreshCw className="h-4 w-4" /> Try again</Button></div>}
       {!inputs || !all ? (!error && <Spinner />) : (
         <>
-          <Section title={`Coverage needed · next ${HORIZON} days (${needs.length})`}>
-            {needs.length === 0 && <p className="text-sm text-slate-500">Every crew has a Controller on every duty day in the next {HORIZON} days.</p>}
+          <Section title={`Cover needed (${needs.length})`}>
+            {needs.length === 0 && <p className="text-sm text-slate-500">All covered ✓ · next {HORIZON} days</p>}
             <ul className="divide-y divide-slate-100">
               {needs.map((n) => {
                 const l = leaveOnDate(n.start);
@@ -90,14 +90,14 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
                   <li key={`${n.kind}${n.crew}${n.start}`} className="flex items-center gap-3 py-2.5">
                     {n.crew ? <CrewBadge crew={n.crew} /> : <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700"><Sun className="h-5 w-5" /></span>}
                     <div className="min-w-0 flex-1">
-                      <div className="font-medium text-slate-800">{range(n.start, n.end)} <span className="whitespace-nowrap text-xs font-normal text-slate-500">· {n.dutyDays} {n.kind === 'crew' ? 'duty ' : ''}day{n.dutyDays === 1 ? '' : 's'}</span></div>
+                      <div className="font-medium text-slate-800">{range(n.start, n.end)} <span className="whitespace-nowrap text-xs font-normal text-slate-500">· {n.dutyDays}d</span></div>
                       {n.kind === 'morning'
-                        ? <div className="text-xs text-slate-600"><span className="font-semibold">Morning Controller coverage required</span> · {n.who.join(', ') || 'Morning Controller'} covers a shift</div>
-                        : <div className="truncate text-xs text-slate-500">{n.who.map((w, i) => { const lv = l.get(n.absentIds[i]); return `${w}${lv ? ` (${lv.typeShort ?? 'Leave'} · Return ${shortDate(lv.returnOn)})` : ''}`; }).join(', ') || 'Controller away'}</div>}
+                        ? <div className="text-xs text-slate-600"><span className="font-semibold">Morning post empty</span> · {n.who.join(', ') || 'Morning Controller'} on shift</div>
+                        : <div className="truncate text-xs text-slate-500">{n.who.map((w, i) => { const lv = l.get(n.absentIds[i]); return `${w}${lv ? ` · ${lv.typeShort ?? 'Leave'}` : ''}`; }).join(', ') || 'Controller away'}</div>}
                       {n.kind === 'crew' && (n.additional
-                        ? <div className="text-xs font-semibold text-status-red">Additional Controller required{n.vrNote ? <span className="font-normal text-slate-500"> · {n.vrNote.replace(/(\d{4}-\d{2}-\d{2})/g, (d) => shortDate(d))}</span> : null}</div>
+                        ? <div className="truncate text-xs font-semibold text-status-red">Extra Controller needed</div>
                         : n.vr && (n.vrNote
-                          ? <div className="text-xs text-status-amber">VR: {n.vr.name} · {n.vrNote.replace(/^VR /, '').replace(/(\d{4}-\d{2}-\d{2})/g, (d) => shortDate(d))}</div>
+                          ? <div className="truncate text-xs text-status-amber">VR {n.vr.name}: {n.vrNote.replace(/^VR /, '').replace(/(\d{4}-\d{2}-\d{2})/g, (d) => shortDate(d))}</div>
                           : <div className="text-xs text-status-green">VR free: {n.vr.name}</div>))}
                     </div>
                     <Button variant="secondary" className="shrink-0" onClick={() => { setNotice(null); setDraft(fromNeed(n, maxDays)); }}>{n.kind === 'morning' ? 'Rotation' : 'Assign'}</Button>
@@ -113,21 +113,19 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
                 <span><span className="font-medium text-slate-800">{morningToday.person.name}</span> <span className="text-xs text-slate-500">holds the post today{morningToday.assignment?.kind === 'morning_rotation' ? ` (rotation until ${shortDate(morningToday.assignment.end)})` : ''}</span></span>
                 {morningToday.absence && <Chip tone="red">On leave</Chip>}
               </div>
-            ) : <p className="text-sm text-slate-500">Nobody holds the Morning Controller post today.</p>}
+            ) : <p className="text-sm text-slate-500">Empty today</p>}
           </Section>
 
-          <Section title="Rules">
+          <Section title="Settings">
             <ul className="space-y-1 text-sm text-slate-700">
-              <li>Grade 15+ Controllers only; nobody covers their own crew; one person cannot hold two overlapping assignments.</li>
-              <li>Morning rotation: at most 2 months.</li>
               <li className="flex items-center justify-between gap-2">
-                <span>Shift cover length: <span className="font-semibold">{maxDays ? `at most ${maxDays} days` : 'no maximum (covers the actual leave period)'}</span></span>
+                <span>Shift cover: <span className="font-semibold">{maxDays ? `max ${maxDays} days` : 'actual leave'}</span> · Morning: <span className="font-semibold">max 2 months</span></span>
                 {profile.role_code === 'section_head' && <Button variant="ghost" className="min-h-8 shrink-0 px-2 text-xs" onClick={() => setEditRules(true)}>Change</Button>}
               </li>
             </ul>
           </Section>
 
-          <Section title={`Current and upcoming assignments (${current.length})`}>
+          <Section title={`Assignments (${current.length})`}>
             {current.length === 0 && <p className="text-sm text-slate-500">No assignments.</p>}
             <ul className="divide-y divide-slate-100">
               {current.map((a) => (
@@ -163,7 +161,6 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
               </ul>
             )}
           </Card>
-          <p className="text-[11px] text-slate-500">Every assignment, change and cancellation is kept and written to the audit history. Records are never deleted.</p>
         </>
       )}
       {draft && inputs && <AssignSheet initial={draft} maxDays={maxDays} people={inputs.people} absences={inputs.absences} assignments={inputs.assignments} onClose={() => setDraft(null)} onDone={done} />}

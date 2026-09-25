@@ -43,7 +43,7 @@ export default function ImportCenterPage({ profile }: { profile: UserProfile }) 
 
   return (
     <div>
-      <PageHeader title="Excel Import Center" subtitle="The workbook is an input. Nothing is written until you confirm the preview." action={<Link to="/imports/history" className="text-sm text-brand-700">History</Link>} />
+      <PageHeader title="Excel import" info="The workbook is an input. Nothing is written until you confirm the preview." action={<Link to="/imports/history" className="text-sm text-brand-700">History</Link>} />
       <ol className="mb-4 flex flex-wrap gap-1 text-[11px] text-slate-500">
         {STEPS.map((s, i) => <li key={s} className="rounded-full bg-slate-100 px-2 py-0.5">{i + 1}. {s}</li>)}
       </ol>

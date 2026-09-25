@@ -49,20 +49,20 @@ export default function OperationPage({ profile }: { profile: UserProfile }) {
 
   return (
     <div>
-      <PageHeader title="Operating modes" subtitle="Lower minimums per crew for shutdown or one-train periods. Days without a period use Full operation."
+      <PageHeader title="Operating modes" info={<><p>Lower minimums per crew for shutdown or one-train periods. Days without a period use Full operation.</p><p>A mode changes only the minimums. Panel still needs its Grade 14+, only Take-Charge = Yes counts in Field, and Grade 13+ covers both Panel and Field.</p><p>Only the Section Head adds modes or changes the numbers. Periods never overlap; a cancelled period stays in the history.</p></>}
         action={<Button className="min-h-10 shrink-0 px-3" disabled={!view?.choosable.length} onClick={() => setSheet({ kind: 'period' })}><Plus className="h-4 w-4" /> Period</Button>} />
       {flash && <div role="status" className="mb-3 rounded-xl bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{flash}</div>}
       {error ? <ErrorBox error={error} /> : !view ? <Spinner /> : (
         <div className="space-y-3">
           <Card className="py-2">
-            <h2 className="pt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Scheduled periods ({view.live.length})</h2>
+            <h2 className="pt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Periods ({view.live.length})</h2>
             {view.live.length ? <ul className="divide-y divide-slate-100">{view.live.map((p) => <PeriodRowView key={p.id} p={p} actions />)}</ul>
-              : <p className="py-2 text-sm text-slate-500">{view.choosable.length ? 'None. Every day uses Full operation.' : 'None. Add a mode below first (e.g. Shutdown, One train), then schedule its dates.'}</p>}
+              : <p className="py-2 text-sm text-slate-500">{view.choosable.length ? 'None · Full operation every day' : 'None · add a mode first'}</p>}
           </Card>
 
           <Card className="py-2">
             <div className="flex items-center justify-between pt-1">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Modes and minimums per crew</h2>
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Modes · min per crew</h2>
               {head && <button type="button" className="text-xs font-medium text-brand-700" onClick={() => setSheet({ kind: 'mode', mode: null })}>+ New mode</button>}
             </div>
             <ul className="divide-y divide-slate-100">
@@ -77,7 +77,6 @@ export default function OperationPage({ profile }: { profile: UserProfile }) {
                 </li>
               ))}
             </ul>
-            {!head && <p className="pb-1 text-[11px] text-slate-500">Only the Section Head adds modes or changes the numbers.</p>}
           </Card>
 
           {view.past.length > 0 && (
@@ -88,7 +87,6 @@ export default function OperationPage({ profile }: { profile: UserProfile }) {
               {history && <ul className="divide-y divide-slate-100 px-4 pb-2">{view.past.map((p) => <PeriodRowView key={p.id} p={p} />)}</ul>}
             </Card>
           )}
-          <p className="px-1 text-xs text-slate-500">A mode changes only the minimums. The other rules stay: Panel needs its Grade 14+, only Take-Charge = Yes counts in Field, and Grade 13+ covers both Panel and Field.</p>
         </div>
       )}
       {sheet?.kind === 'period' && view && <PeriodSheet modes={view.choosable} onClose={() => setSheet(null)} onDone={done} />}
@@ -115,7 +113,7 @@ function PeriodSheet({ modes, onClose, onDone }: { modes: OperatingMode[]; onClo
     <BottomSheet open onClose={onClose} title="Schedule a period">
       <div className="space-y-4">
         <Field label="Mode"><select className="input" value={mode} onChange={(e) => setMode(e.target.value)}>{modes.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}</select></Field>
-        {m && <p className="-mt-2 text-xs text-slate-500">Required per crew: {minimumsText(m)}</p>}
+        {m && <p className="-mt-2 text-xs text-slate-500">{minimumsText(m)}</p>}
         <div className="grid grid-cols-2 gap-3">
           <Field label="First day"><input type="date" className="input" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value); }} /></Field>
           <Field label="Last day"><input type="date" className="input" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></Field>
@@ -144,11 +142,11 @@ function ModeSheet({ mode, onClose, onDone }: { mode: OperatingMode | null; onCl
     <BottomSheet open onClose={onClose} title={mode ? `Edit ${mode.label}` : 'New operating mode'}>
       <div className="space-y-4">
         <Field label="Name"><input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Shutdown, One train" /></Field>
-        <p className="-mt-2 text-xs text-slate-500">Minimum per crew on each shift:</p>
+        <p className="-mt-2 text-xs text-slate-500">Minimum per crew:</p>
         <div className="-mt-2 grid grid-cols-2 gap-3">{num('controllerMin', 'Controller', 5)}{num('panelMin', 'Panel', 10)}{num('panelGrade14Min', 'of them Grade 14+', 10)}{num('fieldMin', 'Field', 20)}</div>
         <Field label="Note (optional)"><input className="input" value={note} onChange={(e) => setNote(e.target.value)} /></Field>
         {mode && !mode.isDefault && <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Can be scheduled</label>}
-        {mode?.isDefault && <p className="text-xs text-slate-500">Full operation applies on every day without a period. Changing its numbers changes the whole year.</p>}
+        {mode?.isDefault && <p className="text-xs text-slate-500">Applies to every day without a period.</p>}
         {problem && <p className="text-xs text-slate-500">{problem}</p>}
         {err != null && <ErrorBox error={err} />}
         <div className="flex gap-2"><Button variant="secondary" className="flex-1" onClick={onClose}>Close</Button>

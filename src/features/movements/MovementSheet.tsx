@@ -37,8 +37,8 @@ function NewSheet({ target, people, busy, err, run, onClose }: { target: Extract
   const save = () => run(() => recordMovement({ employee, kind: day ? 'temporary' : kind, to: day ? 'DAY' : to!, start, end: dated && !openEnded ? end : null, reason: reason.trim() }),
     kind === 'permanent' ? `${person?.name}: in ${to} Shift from ${shortDate(start)}.` : day ? `${person?.name}: day duty ${shortDate(start)} – ${until} (Sunday to Thursday).` : `${person?.name}: covering ${to} Shift ${shortDate(start)} – ${until}.`);
   const KINDS = [['temporary', 'Temporary cover'], ['permanent', 'Permanent move'], ['day', 'Day duty']] as const;
-  const HELP = { temporary: 'Works with another crew for a period, then returns to their own crew.', permanent: 'Their crew changes from the first day. Earlier dates keep the old crew.',
-    day: 'Leaves the crew for the period and works day shift, Sunday to Thursday (Friday and Saturday off), counted with the crew on Morning shift. Back to their own crew after the last day.' };
+  const HELP = { temporary: 'With another crew for a period, then back.', permanent: 'New crew from the first day.',
+    day: 'Day shift Sun–Thu, counted with the Morning crew.' };
   return (
     <BottomSheet open onClose={onClose} title="Shift movement">
       <div className="space-y-4">

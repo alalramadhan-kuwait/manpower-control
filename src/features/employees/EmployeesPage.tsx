@@ -80,7 +80,7 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
   if (error && !rows) return <ErrorBox error={error} />;
   return (
     <div className={cx(selected.size > 0 && 'pb-28')}>
-      <PageHeader title="Employees" subtitle={rows ? `${filtered.length} shown · ${rows.length} in Section 1 scope · ${needingAction} need action` : undefined} />
+      <PageHeader title="Employees" subtitle={rows ? `${filtered.length} shown${needingAction ? ` · ${needingAction} need action` : ''}` : undefined} info={`Everyone in Unit 12 Section 1 (${rows?.length ?? 0}). "Needs action" lists missing grade, Take-Charge, Panel qualification or employment type: until confirmed they may not count.`} />
 
       <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm sm:inline-grid sm:w-auto">
         <button onClick={() => set('view', '')} className={cx('min-h-9 rounded-lg px-4 font-medium', view !== 'action' ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>All employees</button>
@@ -227,7 +227,6 @@ function ApproveSheet({ rows, profile, onClose, onDone }: { rows: Row[]; profile
           <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">Note (optional)
             <input className="input mt-1 normal-case tracking-normal" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Confirmed against Section Head list, Sep 2026" />
           </label>
-          <p className="text-[11px] text-slate-500">Each change is recorded with your name and date; earlier records are kept in history.</p>
         </div>
       )}
       {error ? <div className="mt-2"><ErrorBox error={error} /></div> : null}

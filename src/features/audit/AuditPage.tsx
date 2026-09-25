@@ -47,7 +47,7 @@ export default function AuditPage() {
 
   return (
     <div>
-      <PageHeader title="Audit history" subtitle="Every change made in the app, newest first: who did it and what changed. Nothing here can be edited." />
+      <PageHeader title="Audit history" info="Every change made in the app, newest first: who did it and what changed. Tap an entry for the details. Nothing here can be edited." />
       {person && (
         <div className="mb-3 flex items-center justify-between gap-2 rounded-xl bg-brand-50 px-3 py-2 text-sm text-brand-800 ring-1 ring-brand-100">
           <span className="min-w-0 truncate">Only changes about <Link to={`/employees/${employeeId}`} className="font-semibold underline">{person}</Link></span>
@@ -65,7 +65,7 @@ export default function AuditPage() {
           <input className="input" style={{ paddingLeft: '2.25rem' }} placeholder="Search name or change" value={q} onChange={(e) => setQ(e.target.value)} inputMode="search" /></label>
         <label className="flex shrink-0 items-center gap-1.5 text-xs text-slate-600"><input type="checkbox" checked={imports} onChange={(e) => setImports(e.target.checked)} /> Imports</label>
       </div>
-      {!imports && <p className="-mt-1 mb-3 text-[11px] text-slate-500">Workbook imports are summarised in <Link to="/imports/history" className="font-medium text-brand-700">Import History</Link>; tick Imports to list their rows here too.</p>}
+      {!imports && <p className="-mt-1 mb-3 text-[11px] text-slate-500">Imports: see <Link to="/imports/history" className="font-medium text-brand-700">Import history</Link></p>}
       {error ? <ErrorBox error={error} /> : !entries ? <Spinner /> : entries.length === 0 ? (
         <Card className="text-sm text-slate-500"><History className="mb-1 h-5 w-5 text-slate-400" />Nothing recorded{q ? ' matches the search' : ''}.</Card>
       ) : (

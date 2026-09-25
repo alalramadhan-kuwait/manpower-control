@@ -31,7 +31,7 @@ export default function RequestsPage() {
 
   return (
     <div>
-      <PageHeader title="Leave requests" subtitle="Enter the paper leave request form, record the Controller / Supervisor overtime decision, then approve or not."
+      <PageHeader title="Leave requests" info="Enter the paper leave request form, record the Controller / Supervisor overtime decision, then the Section Head approves or not. The impact on the crew shows before the decision."
         action={<Link to="/requests/new"><Button className="min-h-10 shrink-0 px-3"><Plus className="h-4 w-4" /> New</Button></Link>} />
       <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
         {(['open', 'decided'] as const).map((t) => (
@@ -42,7 +42,7 @@ export default function RequestsPage() {
         ))}
       </div>
       {error ? <ErrorBox error={error} /> : !data ? <Spinner /> : shown.length === 0 ? (
-        <EmptyState title={tab === 'open' ? 'No open requests' : 'Nothing decided yet'} body={tab === 'open' ? 'Tap New to enter a paper leave request form.' : undefined} />
+        <EmptyState title={tab === 'open' ? 'No open requests' : 'Nothing decided yet'} body={tab === 'open' ? 'Tap New to enter a form.' : undefined} />
       ) : (
         <Card className="divide-y divide-slate-100 p-0">
           {shown.map((r) => {

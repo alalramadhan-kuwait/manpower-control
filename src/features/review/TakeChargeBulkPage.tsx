@@ -45,11 +45,10 @@ export default function TakeChargeBulkPage({ profile }: { profile: UserProfile }
   return (
     <div className="pb-24">
       <Link to="/review" className="mb-3 inline-flex items-center gap-1 text-sm text-brand-700"><ArrowLeft className="h-4 w-4" /> Data Quality Review</Link>
-      <PageHeader title="Take-Charge confirmation" subtitle={`${field.length} Field Operators · ${unconfirmed} not yet confirmed. Only Take-Charge = Yes will count toward the Field minimum of 6.`} />
+      <PageHeader title="Take-Charge" subtitle={`${field.length} Field · ${unconfirmed} to confirm`} info="Only Take-Charge = Yes counts toward the Field minimum. Set each person, then Save." />
       <Card className="mb-3">
         <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">Note for this confirmation (optional)</label>
         <input className="input mt-1" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Confirmed against Section Head list, Sep 2026" />
-        <p className="mt-2 text-xs text-slate-500">Each change is stored as a new dated qualification record with your name; the previous record is closed, not deleted.</p>
       </Card>
       {CREWS.map((crew) => {
         const list = field.filter((r) => r.crew_code === crew);

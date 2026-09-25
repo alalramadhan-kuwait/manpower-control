@@ -65,7 +65,7 @@ export default function LeavePlanPage() {
 
   return (
     <div>
-      <PageHeader title="Annual Leave Plan" subtitle="The current plan: monthly sheets, PV plan and leave entered by hand. Tap a person for dates and history."
+      <PageHeader title="Leave plan" info="The current plan: monthly sheets, PV plan and leave entered by hand. Tap a person for dates and history."
         action={<Button className="min-h-10 shrink-0 px-3" onClick={() => setSheet({ kind: 'add' })}><Plus className="h-4 w-4" /> Add</Button>} />
 
       <div className="mb-3 flex items-center gap-2">
@@ -116,7 +116,7 @@ export default function LeavePlanPage() {
               </ul>
             </Card>
           ))}
-          <p className="px-1 text-xs text-slate-500">Yellow = leave in the current plan (outlined = entered or corrected by hand). The line marks today. Leave days count calendar days in {year}.</p>
+          <p className="px-1 text-xs text-slate-500">Yellow = leave · outlined = by hand · line = today</p>
         </div>
       )}
       {sheet && view && data && <LeaveSheet target={sheet} people={view.sheetPeople} types={data.types} onClose={() => setSheet(null)} onDone={done} />}
@@ -156,7 +156,7 @@ function PersonDetail({ row, year, data, today, onEdit, onAdd }: { row: Row; yea
         <span>{ROLE_SHORT[p.position_code ?? ''] ?? p.position_label ?? '—'}{p.grade ? ` · Grade ${p.grade}` : ''}</span>
         <Link to={`/employees/${p.id}`} className="font-medium text-brand-700">Open profile</Link>
       </div>
-      {current.length === 0 && <p className="py-1 text-sm text-slate-500">No leave in the current plan for {year}.</p>}
+      {current.length === 0 && <p className="py-1 text-sm text-slate-500">No leave in {year}</p>}
       <ul className="divide-y divide-slate-200">
         {current.map((l) => {
           const back = firstDayBack(l.end_date, crew, absentOn);

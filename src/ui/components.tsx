@@ -1,4 +1,4 @@
-import { Loader2 } from 'lucide-react';
+import { Info, Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
@@ -42,15 +42,30 @@ export function Chip({ children, tone = 'neutral', className }: { children: Reac
   return <span className={cx('inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium', t, className)}>{children}</span>;
 }
 
-export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) {
+/** Page title with an optional short status line, an ⓘ button that holds the explanation, and an action. */
+export function PageHeader({ title, subtitle, info, action }: { title: string; subtitle?: ReactNode; info?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="mb-4 flex items-start justify-between gap-3">
-      <div>
-        <h1 className="text-xl font-semibold text-brand-800">{title}</h1>
+    <div className="mb-3 flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold text-brand-800">{title}{info && <InfoButton title={title}>{info}</InfoButton>}</h1>
         {subtitle && <p className="mt-0.5 text-sm text-slate-600">{subtitle}</p>}
       </div>
       {action}
     </div>
+  );
+}
+
+/** Small ⓘ that opens the explanation in a sheet: the page itself stays short. */
+export function InfoButton({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" aria-label={`About ${title}`} onClick={() => setOpen(true)}
+        className={cx('inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-brand-700', className)}>
+        <Info className="h-4 w-4" />
+      </button>
+      {open && <BottomSheet open onClose={() => setOpen(false)} title={title}><div className="space-y-2 pb-2 text-sm leading-6 text-slate-700">{children}</div></BottomSheet>}
+    </>
   );
 }
 

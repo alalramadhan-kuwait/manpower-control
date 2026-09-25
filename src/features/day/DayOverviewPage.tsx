@@ -8,7 +8,7 @@ import { addDaysIso, isValidIsoDate } from '@/core/roster';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { fetchCalendarInfo, type Holiday, type UnitEvent } from '@/data/calendar';
 import { EVENT_ICON } from '@/ui/calendar';
-import { Card, ErrorBox, Spinner, cx, fmtDate } from '@/ui/components';
+import { Card, ErrorBox, InfoButton, Spinner, cx, fmtDate } from '@/ui/components';
 import { CREW_IDENTITY, CrewBadge, DayDutyBadge, crewEdge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { bySeniority } from '@/ui/positions';
@@ -19,7 +19,7 @@ import { CREWS } from '@/core/roster';
 const weekday = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long' });
 
 const STATUS_TEXT: Record<Status, string> = { green: 'GREEN', amber: 'AMBER', red: 'RED' };
-const STATUS_HINT: Record<Status, string> = { green: 'Above minimum', amber: 'No Manpower Buffer', red: 'Below minimum or requirement missing' };
+const STATUS_HINT: Record<Status, string> = { green: 'Safe', amber: 'No buffer', red: 'Shortage' };
 const STATUS_BG: Record<Status, string> = { green: 'bg-status-green', amber: 'bg-status-amber', red: 'bg-status-red' };
 const STATUS_TEXT_CLS: Record<Status, string> = { green: 'text-status-green', amber: 'text-status-amber', red: 'text-status-red' };
 const STATUS_RING: Record<Status, string> = { green: 'ring-green-200', amber: 'ring-amber-300', red: 'ring-red-300' };
@@ -96,7 +96,10 @@ export default function DayOverviewPage() {
 
       <div className="mb-3">
         <h1 className="text-xl font-semibold text-brand-800">{weekday(date)}, {fmtDate(date)}</h1>
-        <p className="text-xs text-slate-500">{result ? `${result.rules.modeLabel} · required per crew: ${minimumsText(result.rules)}` : '\u00a0'}</p>
+        <p className="flex items-center gap-1 text-xs text-slate-500">
+          {result ? <span>{result.rules.modeCode !== 'full_operation' ? `${result.rules.modeLabel} · ` : ''}Min per crew: C {result.rules.controllerMin} · P {result.rules.panelMin} · F {result.rules.fieldMin}</span> : '\u00a0'}
+          <InfoButton title="How to read this" className="h-5 w-5"><p>{result ? `${result.rules.modeLabel}: ${minimumsText(result.rules)} per crew.` : ''}</p><LegendBody /></InfoButton>
+        </p>
         {info?.date === date && (info.holidays.length > 0 || info.events.length > 0) && (
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {info.holidays.map((h) => <Link key={h.id} to={`/calendar?month=${date.slice(0, 7)}`} className="inline-flex items-center gap-1 rounded-full bg-pink-50 px-2.5 py-1 text-[11px] font-semibold text-pink-800 ring-1 ring-pink-300"><Star className="h-3 w-3 fill-pink-500 text-pink-600" />{h.name}{h.expected ? ' (expected)' : ''}</Link>)}
@@ -116,7 +119,7 @@ export default function DayOverviewPage() {
           {tcPending > 0 && (
             <Link to="/review/take-charge" className="mb-3 flex items-start gap-2 rounded-xl bg-slate-50 p-3 text-xs text-slate-700 ring-1 ring-slate-300">
               <Info className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>Qualification data incomplete: {tcPending} Field Operators have Take-Charge not yet confirmed. Only Take-Charge = Yes counts, so Field results are not final until they are confirmed. <span className="font-semibold underline">Confirm Take-Charge</span></span>
+              <span><span className="font-semibold">{tcPending} Take-Charge to confirm</span> · Field not final <span className="font-semibold text-brand-700">›</span></span>
             </Link>
           )}
           <div className="space-y-3">
@@ -124,7 +127,6 @@ export default function DayOverviewPage() {
           </div>
           <DayStaffCard result={result} leave={leave} date={date} />
           <DayDutyCard result={result} leave={leave} />
-          <Legend />
         </>
       )}
     </div>
@@ -135,30 +137,30 @@ function OverallBanner({ result }: { result: DayResult }) {
   const { counts } = result;
   const final = result.finalStatus;
   const ring = final ? STATUS_RING[final] : 'ring-slate-300';
-  const headline = final === 'red' ? 'Confirmed manpower shortage' : final ? STATUS_HINT[final] : 'Not final — items pending';
+  const headline = final ? STATUS_HINT[final] : 'Pending';
   const headlineCls = final ? STATUS_TEXT_CLS[final] : 'text-slate-700';
   const reds = result.crews.filter((c) => c.confirmedShortage);
   return (
     <div className={cx('mb-3 rounded-2xl bg-white p-4 shadow-sm ring-2', ring)}>
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Overall</div>
-          <div className={cx('text-lg font-semibold leading-snug', headlineCls)}>{headline}</div>
+          <div className={cx('text-2xl font-bold leading-tight', headlineCls)}>{headline}</div>
           <div className="text-xs text-slate-600">
             {reds.length ? <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">{reds.map((c) => <span key={c.crew} className="inline-flex items-center gap-1"><CrewBadge crew={c.crew} size="sm" /> {c.shift}</span>)} confirmed short</span> : final ? `${result.crews.filter((c) => c.working).length} crews on duty` : `Provisional result once resolved: ${STATUS_TEXT[result.provisionalStatus]}`}
           </div>
         </div>
-        {final ? <StatusPill status={final} /> : <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700">PENDING</span>}
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-1.5 text-xs">
-        <CountChip n={counts.confirmedShortage} label="Confirmed shortage" kind="shortage" unit="crew" />
-        <CountChip n={counts.coverageRequired} label="Coverage required" kind="coverage_required" unit="crew" />
-        <CountChip n={counts.dataIncomplete} label="Data incomplete" kind="data_incomplete" unit="crew" />
-        <CountChip n={counts.unresolvedWarnings} label="Unresolved warnings" kind="unresolved" unit="person" />
-      </div>
+      {(counts.confirmedShortage + counts.coverageRequired + counts.dataIncomplete + counts.unresolvedWarnings) > 0 && (
+        <div className="mt-2.5 flex flex-wrap gap-1.5 text-xs">
+          <CountChip n={counts.confirmedShortage} label="Short" kind="shortage" unit="crew" />
+          <CountChip n={counts.coverageRequired} label="Cover needed" kind="coverage_required" unit="crew" />
+          <CountChip n={counts.dataIncomplete} label="Data" kind="data_incomplete" unit="crew" />
+          <CountChip n={counts.unresolvedWarnings} label="Warnings" kind="unresolved" unit="person" />
+        </div>
+      )}
       {counts.morningCoverageRequired > 0 && (
         <div className={cx('mt-1.5 rounded-lg px-2 py-1.5 text-xs ring-1', CATEGORY.coverage_required.box)}>
-          <span className="font-semibold">Morning Controller coverage required</span> — the Morning Controller covers a shift today. <Link to={`/controllers?assign=morning&from=${result.date}`} className="font-semibold text-brand-700 underline">Assign rotation</Link>
+          <span className="font-semibold">Morning post empty</span> · <Link to={`/controllers?assign=morning&from=${result.date}`} className="font-semibold text-brand-700 underline">Assign</Link>
         </div>
       )}
     </div>
@@ -166,20 +168,18 @@ function OverallBanner({ result }: { result: DayResult }) {
 }
 
 function CountChip({ n, label, kind, unit }: { n: number; label: string; kind: keyof typeof CATEGORY; unit: string }) {
+  if (!n) return null;
   return (
-    <div className={cx('flex items-center justify-between rounded-lg px-2 py-1.5 ring-1', n ? CATEGORY[kind].box : 'bg-white text-slate-400 ring-slate-200')}>
-      <span>{label}</span><span className="font-semibold tabular-nums" title={`${n} ${unit}${n === 1 ? '' : 's'}`}>{n}</span>
+    <div className={cx('flex items-center gap-1.5 rounded-full px-2.5 py-1 ring-1', CATEGORY[kind].box)}>
+      <span className="font-bold tabular-nums" title={`${n} ${unit}${n === 1 ? '' : 's'}`}>{n}</span><span>{label}</span>
     </div>
   );
 }
 
-function Legend() {
-  const [open, setOpen] = useState(false);
+/** Meaning of the colours and labels (behind the ⓘ in the header). */
+function LegendBody() {
   return (
-    <Card className="mt-3">
-      <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between text-sm font-medium text-brand-700">What the labels mean {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</button>
-      {open && (
-        <dl className="mt-2 space-y-2 text-xs text-slate-600">
+        <dl className="space-y-2 text-xs text-slate-600">
           <div><dt className="font-semibold text-slate-700">Crew colours</dt><dd className="mt-1 flex flex-wrap gap-3">{CREWS.map((k) => <span key={k} className="inline-flex items-center gap-1.5"><CrewBadge crew={k} size="sm" /> {CREW_IDENTITY[k].colour}</span>)}</dd><dd className="mt-1">The circle and left edge say which crew it is. They never mean manpower status.</dd></div>
           <div><dt className="font-semibold text-status-green">GREEN</dt><dd>Qualified manpower above minimum, or the crew Controller is available (one Controller is the normal complement). Final.</dd></div>
           <div><dt className="font-semibold text-status-amber">AMBER · No Buffer</dt><dd>Panel or Field has exactly the number required; the card names which one. Final. Grade 13+ covers both: when Panel is short, Grade 13+ Field Operators fill the empty seats while Field keeps its minimum; and Panel or Field at the minimum is still GREEN when the other position has a spare Grade 13+ on the shift (Panel keeps its Grade 14+).</dd></div>
@@ -188,13 +188,11 @@ function Legend() {
           <div><dt className={cx('font-semibold', CATEGORY.data_incomplete.text)}>Qualification data incomplete</dt><dd>Below minimum only because qualifications (for example Take-Charge) are not yet confirmed. Not Yet Confirmed never counts; the result becomes final once the data is confirmed.</dd></div>
           <div><dt className={cx('font-semibold', CATEGORY.unresolved.text)}>Unresolved absence warning</dt><dd>Absence seen on the monthly sheet with no confirmed type. Shown for review only; it never reduces manpower.</dd></div>
         </dl>
-      )}
-    </Card>
   );
 }
 
 type Note = { text: string; tone: 'red' | 'amber' | 'pending' | 'muted' | 'good'; to?: string; link?: string };
-const NOTE_CLS: Record<Note['tone'], string> = { red: 'text-status-red', amber: 'text-status-amber', pending: 'text-slate-600', muted: 'text-slate-500', good: 'text-slate-700' };
+const NOTE_CLS: Record<Note['tone'], string> = { red: 'bg-red-50 text-red-700 ring-1 ring-red-200', amber: 'bg-amber-50 text-amber-800 ring-1 ring-amber-200', pending: 'bg-slate-100 text-slate-700', muted: 'bg-slate-50 text-slate-600 ring-1 ring-slate-200', good: 'bg-green-50 text-green-800 ring-1 ring-green-200' };
 
 /** What to say directly under a manpower line. Plain words; the rule details stay in "Who counts". */
 const ROLE_SHORT: Record<string, string> = { vr_controller: 'VR', morning_controller: 'Morning Controller', controller: 'Shift Controller' };
@@ -203,38 +201,37 @@ function notesFor(c: CrewDay, key: 'controller' | 'panel' | 'field', leave: Map<
   const notes: Note[] = [];
   if (key === 'controller') {
     const p = c.controller;
-    if (p.acting) notes.push({ text: `Acting Controller: ${p.acting.name}`, tone: 'muted' });
+    if (p.acting) notes.push({ text: `Acting: ${p.acting.name}`, tone: 'muted' });
     const whoIsOut = [...p.onLeave.map((x) => `${x.name}${leave.get(x.id) ? ` (${leaveShort(leave.get(x.id)!)})` : ''}`), ...p.away.map((w) => `${w.person.name} (${w.assignment.kind === 'morning_rotation' ? 'Morning rotation' : `covering ${w.assignment.crew} Shift`})`)];
-    if (p.cover?.counted) notes.push({ text: `Covered by ${p.cover.person.name} (${ROLE_SHORT[p.cover.person.role ?? ''] ?? 'Controller'}) until ${shortDate(p.cover.assignment.end)}${whoIsOut.length ? ` · for ${whoIsOut.join(', ')}` : ''}`, tone: 'good' });
+    if (p.cover?.counted) notes.push({ text: `Cover: ${p.cover.person.name} (${ROLE_SHORT[p.cover.person.role ?? ''] ?? 'Controller'}) · to ${shortDate(p.cover.assignment.end)}`, tone: 'good' });
     if (p.finding === 'coverage_required') {
-      const coverOut = p.cover && !p.cover.counted ? ` — recorded cover ${p.cover.person.name} is on leave` : ' — cover not recorded';
-      notes.push({ text: `${whoIsOut.join(', ')}${coverOut}`, tone: 'pending', to: `/controllers?assign=cover&crew=${c.crew}&from=${date}`, link: 'Assign cover' });
-      if (need?.additional) notes.push({ text: `Additional Controller required${need.vrNote ? ` · ${need.vrNote.replace(/(\d{4}-\d{2}-\d{2})/g, (d) => shortDate(d))}` : ''}`, tone: 'red' });
-      else if (need?.vr) notes.push({ text: need.vrNote ? `VR: ${need.vr.name} · ${need.vrNote.replace(/^VR /, '').replace(/(\d{4}-\d{2}-\d{2})/g, (d) => shortDate(d))}` : `VR free: ${need.vr.name}`, tone: need.vrNote ? 'amber' : 'muted' });
+      notes.push({ text: `Cover needed · ${whoIsOut.join(', ')}${p.cover && !p.cover.counted ? ` · cover ${p.cover.person.name} on leave` : ''}`, tone: 'pending', to: `/controllers?assign=cover&crew=${c.crew}&from=${date}`, link: 'Assign' });
+      if (need?.additional) notes.push({ text: 'Extra Controller needed', tone: 'red' });
+      else if (need?.vr) notes.push({ text: need.vrNote ? `VR ${need.vr.name}: ${need.vrNote.replace(/^VR /, '').replace(/(\d{4}-\d{2}-\d{2})/g, (d) => shortDate(d))}` : `VR free: ${need.vr.name}`, tone: need.vrNote ? 'amber' : 'muted' });
     }
-    if (p.finding === 'shortage') notes.push({ text: 'No qualified Controller', tone: 'red' });
-    if (p.finding === 'data_incomplete') notes.push({ text: 'Controller grade not recorded', tone: 'pending' });
+    if (p.finding === 'shortage') notes.push({ text: 'No Controller', tone: 'red' });
+    if (p.finding === 'data_incomplete') notes.push({ text: 'Grade missing', tone: 'pending' });
   }
   if (key === 'panel') {
     const p = c.panel;
-    if (p.fromField.length) notes.push({ text: `Filled from Field: ${p.fromField.map((x) => `${x.name} (G${x.grade})`).join(', ')}`, tone: 'good' });
-    if (p.backup) notes.push({ text: `Buffer from Field: ${p.backup.name} (G${p.backup.grade})`, tone: 'good' });
+    if (p.fromField.length) notes.push({ text: `From Field: ${p.fromField.map((x) => `${x.name} (G${x.grade})`).join(', ')}`, tone: 'good' });
+    if (p.backup) notes.push({ text: `Buffer: ${p.backup.name} (G${p.backup.grade})`, tone: 'good' });
     if (p.finding === 'shortage') {
-      if (p.count < p.min) notes.push({ text: `Short by ${p.min - p.count}`, tone: 'red' });
-      if (p.grade14 < 1) notes.push({ text: 'No Grade 14+ Panel Operator available', tone: 'red' });
+      if (p.count < p.min) notes.push({ text: `−${p.min - p.count} short`, tone: 'red' });
+      if (p.grade14 < 1) notes.push({ text: 'No Grade 14+', tone: 'red' });
     }
     if (p.finding === 'data_incomplete') {
-      if (p.count < p.min) notes.push({ text: `${p.potential - p.count} Panel qualification not yet confirmed`, tone: 'pending' });
-      if (p.grade14 < 1) notes.push({ text: 'Grade 14+ Panel Operator not confirmed', tone: 'pending' });
+      if (p.count < p.min) notes.push({ text: `${p.potential - p.count} to confirm`, tone: 'pending' });
+      if (p.grade14 < 1) notes.push({ text: 'Grade 14+ unconfirmed', tone: 'pending' });
     }
   }
   if (key === 'field') {
     const p = c.field;
-    if (p.backup) notes.push({ text: `Buffer from Panel: ${p.backup.name} (G${p.backup.grade})`, tone: 'good' });
-    if (p.finding === 'shortage') notes.push({ text: `Short by ${p.min - p.count}`, tone: 'red' });
-    if (p.finding === 'data_incomplete') notes.push({ text: `${p.potential - p.count} Take-Charge not yet confirmed`, tone: 'pending' });
+    if (p.backup) notes.push({ text: `Buffer: ${p.backup.name} (G${p.backup.grade})`, tone: 'good' });
+    if (p.finding === 'shortage') notes.push({ text: `−${p.min - p.count} short`, tone: 'red' });
+    if (p.finding === 'data_incomplete') notes.push({ text: `${p.potential - p.count} Take-Charge to confirm`, tone: 'pending' });
   }
-  if (c[key].finding === 'no_buffer') notes.push({ text: 'No buffer — one more absence and the crew is short', tone: 'amber' });
+  if (c[key].finding === 'no_buffer') notes.push({ text: 'No buffer', tone: 'amber' });
   return notes;
 }
 
@@ -248,7 +245,12 @@ function ManpowerLine({ label, pos, notes }: { label: string; pos: PositionResul
         <span className="text-sm font-medium text-slate-700">{label}</span>
         <span className={cx('text-lg font-semibold tabular-nums', findingColor(pos.finding))}>{pos.count} <span className="text-slate-400">/</span> {pos.min}</span>
       </div>
-      {notes.map((n) => <div key={n.text} className={cx('text-xs leading-snug', NOTE_CLS[n.tone])}>{n.text}{n.to && <> · <Link to={n.to} className="font-semibold text-brand-700 underline">{n.link}</Link></>}</div>)}
+      {notes.length > 0 && (
+        <div className="mt-1 flex flex-wrap gap-1">
+          {notes.map((n) => <span key={n.text} className={cx('inline-flex max-w-full items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium leading-tight', NOTE_CLS[n.tone])}><span className="truncate">{n.text}</span></span>)}
+          {notes.filter((n) => n.to).map((n) => <Link key={`${n.text}-go`} to={n.to!} className="inline-flex items-center rounded-md bg-brand-700 px-2 py-0.5 text-[11px] font-semibold text-white">{n.link} ›</Link>)}
+        </div>
+      )}
     </div>
   );
 }
@@ -331,7 +333,7 @@ function CrewCard({ crew: c, leave, date, need }: { crew: CrewDay; leave: Map<st
       </div>
       {covering(c).length > 0 && (
         <section className="mt-2 rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200/70">
-          <h3 className="text-xs font-semibold text-slate-900">Covering from another crew or day duty <span className="font-normal text-slate-500">· {covering(c).length}</span></h3>
+          <h3 className="text-xs font-semibold text-slate-900">From other crews <span className="font-normal text-slate-500">· {covering(c).length}</span></h3>
           <ul className="mt-0.5 divide-y divide-slate-200/60">{[...covering(c)].sort(bySeniority).map((p) => <li key={p.id} className="flex items-center justify-between gap-2 py-1"><Link to={`/employees/${p.id}`} className="min-w-0 truncate text-sm font-medium text-slate-900">{p.name}</Link><span className="flex shrink-0 items-center gap-1 text-[11px] text-slate-500">{p.dayDuty && <Tag brand>Day duty</Tag>}{p.movedFrom && p.movedFrom !== c.crew && <>from <CrewBadge crew={p.movedFrom} size="sm" /></>}</span></li>)}</ul>
         </section>
       )}
@@ -428,7 +430,6 @@ function DayDutyCard({ result, leave }: { result: DayResult; leave: Map<string, 
           );
         })}
       </ul>
-      <p className="mt-1 text-[11px] text-slate-500">Day duty counts in the crew on Morning shift, Sunday to Thursday; off Friday and Saturday.</p>
     </Card>
   );
 }
@@ -441,7 +442,7 @@ function DayStaffCard({ result, leave, date }: { result: DayResult; leave: Map<s
   const needing = result.crews.filter((c) => c.pending.includes('coverage_required'));
   return (
     <Card className="mt-3">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Controllers outside the crews</div>
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">VR & Morning Controllers</div>
       <ul className="mt-1 space-y-1 text-sm">
         {result.dayStaff.map((s) => (
           <li key={s.person.id} className="flex justify-between gap-2">
@@ -457,14 +458,14 @@ function DayStaffCard({ result, leave, date }: { result: DayResult; leave: Map<s
       </ul>
       {result.morningPost.status === 'coverage_required' && (
         <p className={cx('mt-2 rounded-lg p-2 text-[11px] ring-1', CATEGORY.coverage_required.box)}>
-          <span className="font-semibold">Morning Controller coverage required</span> — the Morning Controller covers {result.morningPost.away?.crew} Shift and nobody holds the Morning post.{' '}
-          <Link to={`/controllers?assign=morning&from=${date}`} className="font-semibold text-brand-700 underline">Assign Morning rotation</Link>
+          <span className="font-semibold">Morning post empty</span> · Morning Controller on {result.morningPost.away?.crew} Shift{' '}
+          <Link to={`/controllers?assign=morning&from=${date}`} className="font-semibold text-brand-700 underline">Assign ›</Link>
         </p>
       )}
       {needing.length > 0 && (
         <p className={cx('mt-2 rounded-lg p-2 text-[11px] ring-1', CATEGORY.coverage_required.box)}>
-          Controller coverage required today: {needing.map((c) => <span key={c.crew} className="mr-1 inline-flex items-center gap-1 align-middle"><CrewBadge crew={c.crew} size="sm" /> {c.shift}</span>)}.{' '}
-          <Link to="/controllers" className="font-semibold text-brand-700 underline">Controller Management</Link>
+          Cover needed: {needing.map((c) => <span key={c.crew} className="mr-1 inline-flex items-center gap-1 align-middle"><CrewBadge crew={c.crew} size="sm" /> {c.shift}</span>)}{' '}
+          <Link to="/controllers" className="font-semibold text-brand-700 underline">Assign ›</Link>
         </p>
       )}
     </Card>

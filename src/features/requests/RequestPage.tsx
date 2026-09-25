@@ -71,7 +71,7 @@ export default function RequestPage({ profile }: { profile: UserProfile }) {
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold text-brand-800">{isNew ? 'New leave request' : emp?.display_name ?? 'Leave request'}</h1>
-          <p className="text-sm text-slate-600">{isNew ? 'Enter the paper form (MAB Operations Department leave request form).' : `${REQUEST_TYPE_LABEL[req!.request_type]} leave · entered ${fmtDate(req!.created_at.slice(0, 10))}`}</p>
+          <p className="text-sm text-slate-600">{isNew ? 'From the paper form' : `${REQUEST_TYPE_LABEL[req!.request_type]} leave · entered ${fmtDate(req!.created_at.slice(0, 10))}`}</p>
         </div>
         {req && <StatusChip status={req.status} />}
       </div>
@@ -183,15 +183,15 @@ function ImpactCard({ impact, crewLabel, approved, outcome, typeLabel }: { impac
   return (
     <Card className="mb-3">
       <h2 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Manpower impact{crewLabel ? ` · ${crewLabel} Shift` : ''}</h2>
-      {approved && <p className="mb-1 text-xs text-slate-500">This leave is now in the plan; the result below compares the crew with and without it.</p>}
+      {approved && <p className="mb-1 text-xs text-slate-500">In the plan · crew with vs without it</p>}
       {outcome && <OutcomeNote outcome={outcome} typeLabel={typeLabel} />}
-      {!crewLabel ? <p className="text-sm text-slate-600">Day staff: no crew minimum is affected. {impact.calendarDays} days.</p> : (
+      {!crewLabel ? <p className="text-sm text-slate-600">Day staff · no crew impact · {impact.calendarDays} days</p> : (
         <>
-          <p className="text-sm text-slate-700">{impact.dutyDays} duty day{impact.dutyDays === 1 ? '' : 's'} of {impact.calendarDays} calendar days.{' '}
-            {impact.red.length > 0 ? <b className="text-status-red">The crew would be short (RED) on {impact.red.length} dut{impact.red.length === 1 ? 'y' : 'ies'}: overtime likely required.</b>
-              : impact.coverNeeded.length > 0 ? <b className="text-slate-800">Controller cover would be needed on {impact.coverNeeded.length} dut{impact.coverNeeded.length === 1 ? 'y' : 'ies'}.</b>
-              : impact.worse.length > 0 ? <span className="text-status-amber">Stays at or above minimum; no buffer on {impact.worse.filter((d) => d.after === 'amber').length} dut{impact.worse.filter((d) => d.after === 'amber').length === 1 ? 'y' : 'ies'}.</span>
-              : <span className="text-status-green">No change to the crew result.</span>}
+          <p className="text-sm text-slate-700">{impact.dutyDays} duty / {impact.calendarDays} days · {' '}
+            {impact.red.length > 0 ? <b className="text-status-red">Short on {impact.red.length} dut{impact.red.length === 1 ? 'y' : 'ies'} · overtime</b>
+              : impact.coverNeeded.length > 0 ? <b className="text-slate-800">Controller cover on {impact.coverNeeded.length} dut{impact.coverNeeded.length === 1 ? 'y' : 'ies'}</b>
+              : impact.worse.length > 0 ? <span className="text-status-amber">No buffer on {impact.worse.filter((d) => d.after === 'amber').length} dut{impact.worse.filter((d) => d.after === 'amber').length === 1 ? 'y' : 'ies'}</span>
+              : <span className="text-status-green">No impact ✓</span>}
           </p>
           {shown.length > 0 && (
             <ul className="mt-2 divide-y divide-slate-100 text-xs">
@@ -236,10 +236,10 @@ function ReviewCard({ req, open, impactRed, onDone }: { req: LeaveRequest; open:
             <Row label="Remarks" value={req.review_remarks} />
             <p className="text-xs text-slate-500">Recorded {new Date(req.reviewed_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</p>
           </>
-        ) : <p className="text-sm text-slate-500">{open ? 'Not recorded yet.' : 'Not recorded.'}</p>
+        ) : <p className="text-sm text-slate-500">{open ? 'Not yet' : '—'}</p>
       ) : (
         <div className="space-y-3">
-          <p className="text-xs text-slate-500">Record what the Shift Controller and Shift Supervisor marked on the paper form.{impactRed > 0 ? ` The crew would be RED on ${impactRed} dut${impactRed === 1 ? 'y' : 'ies'}.` : ''}</p>
+          <p className="text-xs text-slate-500">As marked on the form{impactRed > 0 ? ` · short on ${impactRed} dut${impactRed === 1 ? 'y' : 'ies'}` : ''}</p>
           <div className="grid grid-cols-2 gap-2">
             {[true, false].map((v) => (
               <label key={String(v)} className={cx('flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm ring-1', overtime === v ? 'bg-brand-50 ring-brand-600/40' : 'ring-slate-200')}>
@@ -278,9 +278,9 @@ function DecisionCard({ req, open, isHead, onDone }: { req: LeaveRequest; open: 
           <p className="text-xs text-slate-500">Decided {new Date(req.decided_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</p>
           {req.status === 'approved' && <Link to={`/employees/${req.employee_id}`} className="mt-2 inline-block text-sm font-medium text-brand-700">See it in the employee's leave</Link>}
         </>
-      ) : !open ? <p className="text-sm text-slate-500">No decision (withdrawn).</p> : !isHead ? <p className="text-sm text-slate-500">Waiting for the Section Head.</p> : (
+      ) : !open ? <p className="text-sm text-slate-500">Withdrawn</p> : !isHead ? <p className="text-sm text-slate-500">Waiting for Section Head</p> : (
         <div className="space-y-3">
-          {req.status === 'submitted' && <p className="text-xs text-status-amber">The Controller / Supervisor review is not recorded yet.</p>}
+          {req.status === 'submitted' && <p className="text-xs text-status-amber">Review not recorded yet</p>}
           <Field label="Remarks (optional)"><input className="input" value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>
           {err != null && <ErrorBox error={err} />}
           <div className="flex gap-2">
@@ -323,8 +323,8 @@ function OutcomeNote({ outcome, typeLabel }: { outcome: ApprovalOutcome; typeLab
       </div>
     );
   }
-  const text = outcome.kind === 'add' ? 'On approval the leave is added to the plan.'
-    : outcome.kind === 'confirm' ? `Already in the plan: ${leaveText(outcome.record)}. Approval confirms it; no second record is made${outcome.setsType ? `, and its type becomes ${typeLabel}` : ''}.`
-    : `Planned leave ${leaveText(outcome.record)}: approval moves it to the requested dates. The old dates stay in the history.`;
+  const text = outcome.kind === 'add' ? 'Approval adds it to the plan.'
+    : outcome.kind === 'confirm' ? `In the plan: ${leaveText(outcome.record)} · approval confirms it${outcome.setsType ? ` as ${typeLabel}` : ''}`
+    : `Planned ${leaveText(outcome.record)} · approval moves it to these dates`;
   return <p className="mb-2 flex items-start gap-1.5 text-xs text-slate-600"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />{text}</p>;
 }

@@ -104,10 +104,10 @@ function CreateSheet({ roles, staff, users, onClose, onDone }: { roles: AppRole[
   return (
     <BottomSheet open onClose={onClose} title="New login">
       <div className="space-y-4">
-        <Field label="Staff member" hint="Who this login belongs to. If the staff member is made inactive, the login loses access."><StaffPicker staff={staff} users={users} self={null} value={employee} onChange={(id, n) => { setEmployee(id); if (id && !name.trim()) setName(n); }} /></Field>
+        <Field label="Staff member" hint="Inactive staff = no access"><StaffPicker staff={staff} users={users} self={null} value={employee} onChange={(id, n) => { setEmployee(id); if (id && !name.trim()) setName(n); }} /></Field>
         <Field label="Name shown in the app"><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Manpower Coordinator" /></Field>
-        <Field label="Username" hint="What they type to sign in, e.g. ajr015."><input className="input" autoCapitalize="none" autoCorrect="off" value={username} onChange={(e) => setUsername(e.target.value)} /></Field>
-        <Field label="Password" hint={`At least ${MIN_PASSWORD} characters. The key button makes one.`}><PasswordInput value={password} onChange={setPassword} /></Field>
+        <Field label="Username" hint="e.g. ajr015"><input className="input" autoCapitalize="none" autoCorrect="off" value={username} onChange={(e) => setUsername(e.target.value)} /></Field>
+        <Field label="Password" hint={`Min ${MIN_PASSWORD} characters · 🔑 makes one`}><PasswordInput value={password} onChange={setPassword} /></Field>
         <Field label="Role"><RolePicker roles={roles} value={role} onChange={setRole} /></Field>
         <RoleMoveNote roles={roles} role={role} users={users} self={null} />
         {err != null && <ErrorBox error={err} />}
@@ -139,7 +139,7 @@ function EditSheet({ user, roles, staff, users, isMe, onClose, onDone }: { user:
   return (
     <BottomSheet open onClose={onClose} title={isMe ? 'Your login' : 'Edit login'}>
       <div className="space-y-4">
-        <Field label="Staff member" hint="Who this login belongs to. If the staff member is made inactive, the login loses access."><StaffPicker staff={staff} users={users} self={user.auth_user_id} value={employee} onChange={(id) => setEmployee(id)} /></Field>
+        <Field label="Staff member" hint="Inactive staff = no access"><StaffPicker staff={staff} users={users} self={user.auth_user_id} value={employee} onChange={(id) => setEmployee(id)} /></Field>
         <Field label="Name shown in the app"><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <Field label="Username"><input className="input" autoCapitalize="none" autoCorrect="off" value={username} onChange={(e) => setUsername(e.target.value)} /></Field>
         <Field label="Role"><RolePicker roles={roles} value={role} onChange={setRole} locked={isMe ? 'You cannot change your own role.' : undefined} /></Field>
@@ -148,7 +148,7 @@ function EditSheet({ user, roles, staff, users, isMe, onClose, onDone }: { user:
           <span><span className="block text-sm font-medium text-slate-800">Can sign in</span><span className="block text-xs text-slate-500">Turn off to block the login without deleting it.</span></span>
           <input type="checkbox" className="h-5 w-5" checked={active} disabled={isMe} onChange={(e) => setActive(e.target.checked)} />
         </label>
-        <Field label="Reset password" hint="Leave empty to keep the current password."><PasswordInput value={password} onChange={setPassword} placeholder="New password" /></Field>
+        <Field label="Reset password" hint="Empty = keep current"><PasswordInput value={password} onChange={setPassword} placeholder="New password" /></Field>
         {err != null && <ErrorBox error={err} />}
         <div className="flex gap-2">
           <Button variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
@@ -194,7 +194,7 @@ export default function UsersPage({ profile }: { profile: UserProfile }) {
   if (profile.role_code !== 'section_head') return <EmptyState title="Section Head only" body="Only the Section Head can manage logins." />;
   return (
     <div>
-      <PageHeader title="Users & access" subtitle="Create logins, change roles, reset passwords, block or delete access."
+      <PageHeader title="Users & access" info={<><p>Create logins, change roles, reset passwords, block or delete access. Only the Section Head sees this page.</p><p>Section Head: full control. Manpower Coordinator: everything except logins (more than one allowed). Staff (no app access): can sign in but sees nothing.</p><p>A login linked to a staff member who is made inactive loses access. Every change is in the audit history.</p></>}
         action={<Button className="shrink-0 whitespace-nowrap" onClick={() => { setNotice(null); setCreating(true); }}><Plus className="h-4 w-4" /> New login</Button>} />
       {notice && <div className="mb-3 rounded-xl bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{notice}</div>}
       {err != null && <div className="mb-3 space-y-2"><ErrorBox error={err} /><Button variant="secondary" onClick={load}><RefreshCw className="h-4 w-4" /> Try again</Button></div>}
@@ -234,7 +234,6 @@ export default function UsersPage({ profile }: { profile: UserProfile }) {
               </tbody>
             </table>
           </Card>
-          <p className="mt-4 text-xs text-slate-500">Section Head: full control, including this screen. Manpower Coordinator: everything except managing logins; only one login holds it at a time, so giving it to someone else takes it away from the previous holder. Staff (no app access yet): can sign in but sees nothing until given a role. A login linked to a staff member who is made inactive loses access. Every change here is written to the audit history.</p>
         </>
       )}
       {creating && users && <CreateSheet roles={roles} staff={staff} users={users} onClose={() => setCreating(false)} onDone={done} />}

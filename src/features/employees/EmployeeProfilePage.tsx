@@ -105,12 +105,12 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
       )}
 
       <Section title={`Upcoming leave${leaveSplit.upcoming.length ? ` (${leaveSplit.upcoming.length})` : ''}`} action={<Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => setLeaveSheet({ kind: 'add', employeeId: emp.id })}>+ Add leave</Button>}>
-        {leaveSplit.upcoming.length === 0 && <p className="text-sm text-slate-500">No upcoming leave in the current plan.</p>}
+        {leaveSplit.upcoming.length === 0 && <p className="text-sm text-slate-500">None</p>}
         <ul className="divide-y divide-slate-100">{leaveSplit.upcoming.map((b) => <BlockRow key={b.record.rec.id} b={b} today={today} showReturn onEdit={() => setLeaveSheet({ kind: 'edit', record: b.record.rec })} />)}</ul>
       </Section>
 
       <Collapsible title="Past leave history" count={leaveSplit.past.length}>
-        {leaveSplit.past.length === 0 && <p className="text-sm text-slate-500">No completed leave this plan year.</p>}
+        {leaveSplit.past.length === 0 && <p className="text-sm text-slate-500">None</p>}
         <ul className="divide-y divide-slate-100">{leaveSplit.past.map((b) => <BlockRow key={b.record.rec.id} b={b} today={today} onEdit={() => setLeaveSheet({ kind: 'edit', record: b.record.rec })} />)}</ul>
       </Collapsible>
 
@@ -141,7 +141,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
       </Section>
 
       <Section title="KNPC master data">
-        {emp.employment_type === 'contractor' && <p className="mb-2 text-xs text-slate-500">Contractors are not in the KNPC promotion master. Grade and HR dates are not available from the source files.</p>}
+        {emp.employment_type === 'contractor' && <p className="mb-2 text-xs text-slate-500">Contractor · no KNPC HR data</p>}
         <Row label="Grade" value={emp.grade} />
         <Row label="Master position" value={emp.master_position} />
         <Row label="Cost center" value={emp.cost_center} />
@@ -160,8 +160,8 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
       </Section>
 
       <Collapsible title="Original plan (PV Scheduled)" count={originalLeaves.length}>
-        <p className="mb-1 text-xs text-slate-500">The annual plan as first approved (PV Scheduled). Historical; a block shown as rescheduled or cancelled no longer reduces manpower.</p>
-        {originalLeaves.length === 0 && <p className="text-sm text-slate-500">No original plan records.</p>}
+        <p className="mb-1 text-xs text-slate-500">As first approved · history only</p>
+        {originalLeaves.length === 0 && <p className="text-sm text-slate-500">None</p>}
         <ul className="divide-y divide-slate-100">{originalLeaves.map((l) => <LeaveLine key={l.id} l={l} types={data.absenceTypes} />)}</ul>
       </Collapsible>
 
@@ -182,7 +182,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
       </Collapsible>
 
       <Section title="Shift movements" action={isCrew(emp.crew_code) ? <Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => setMoveSheet({ kind: 'new', employeeId: emp.id })}>+ New movement</Button> : undefined}>
-        {moves.length === 0 ? <p className="text-sm text-slate-500">No shift movements recorded.</p> : (
+        {moves.length === 0 ? <p className="text-sm text-slate-500">None</p> : (
           <ul className="divide-y divide-slate-100 text-sm">
             {moves.map((m) => (
               <li key={m.id} className="flex items-center justify-between gap-2 py-2">
@@ -333,10 +333,10 @@ function BasicsSheet({ emp, onClose, onSaved }: { emp: EmployeeDirectoryRow; onC
   return (
     <BottomSheet open onClose={onClose} title="Edit employee">
       <div className="space-y-3">
-        <Field label="Official name" hint="Full name as in the KNPC Promotion Master. Never shortened."><input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} /></Field>
-        <Field label="Display name" hint="Shown on screens. Leave empty to derive it (first and last name for confirmed KNPC staff, workbook name otherwise)."><input className="input" value={displayName} onChange={(e) => setDisplayName(e.target.value)} /></Field>
-        <Field label="Workbook name" hint="Name as written on the U-12 manpower sheets."><input className="input" value={shortName} onChange={(e) => setShortName(e.target.value)} /></Field>
-        <Field label="Employment classification" hint="Classification only. It never decides manpower eligibility by itself.">
+        <Field label="Official name" hint="As in the KNPC Promotion Master"><input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} /></Field>
+        <Field label="Display name" hint="Empty = first and last name"><input className="input" value={displayName} onChange={(e) => setDisplayName(e.target.value)} /></Field>
+        <Field label="Workbook name" hint="As on the U-12 sheets"><input className="input" value={shortName} onChange={(e) => setShortName(e.target.value)} /></Field>
+        <Field label="Employment classification" >
           <div className="flex gap-2">{(['knpc', 'contractor'] as const).map((t) => <button key={t} type="button" onClick={() => { setType(t); setConfirmed(true); }} className={`flex-1 rounded-xl py-2.5 text-sm font-medium ring-1 ${type === t ? 'bg-brand-700 text-white ring-brand-700' : 'ring-slate-300'}`}>{t === 'knpc' ? 'KNPC' : 'Contractor'}</button>)}</div>
         </Field>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> Classification confirmed (not just inferred from the number)</label>
@@ -371,7 +371,7 @@ function RoleSheet({ emp, positions, crews, onClose, onSaved }: { emp: EmployeeD
   }
   return (
     <BottomSheet open onClose={onClose} title="Correct role / crew">
-      <p className="mb-3 text-xs text-slate-500">Use this to fix imported data. Real crew changes (a temporary cover or a permanent move on a date) go in Shift Movements, so earlier dates keep the old crew.</p>
+      <p className="mb-3 text-xs text-slate-500">Fixes wrong data. Real crew changes → Shift movements.</p>
       <div className="space-y-3">
         <Field label="Operational role">
           <select className="input" value={positionCode} onChange={(e) => setPositionCode(e.target.value)}>{positions.map((p) => <option key={p.id} value={p.code}>{p.label}</option>)}</select>

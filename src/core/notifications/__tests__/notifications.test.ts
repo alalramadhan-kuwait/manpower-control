@@ -31,21 +31,21 @@ describe('notification center', () => {
     const absences = [leave(B[0], '2026-10-01', '2026-10-06')];
     const n = buildNotices(base({ people: [...people, vr], absences, days: evaluateRange('2026-09-25', '2026-10-10', [...people, vr], absences), needs: coverageNeeds('2026-09-25', '2026-10-10', [...people, vr], absences, []) }));
     const cover = n.find((x) => x.area === 'controller')!;
-    expect(cover).toMatchObject({ level: 'action', title: 'Controller cover needed · B Shift' });
-    expect(cover.detail).toContain(`${vr.name} (VR) is free`);
+    expect(cover).toMatchObject({ level: 'action', title: 'Cover needed · B Shift' });
+    expect(cover.detail).toContain(`VR free: ${vr.name}`);
     expect(cover.to).toBe(`/controllers?assign=cover&crew=B&from=${cover.date}`);
   });
   it('requests: review is an action for everyone; the decision is an action only for the Section Head', () => {
     const requests = [{ id: 'r1', employeeName: 'Person X', typeLabel: 'Unscheduled', start: '2026-10-02', end: '2026-10-03', status: 'reviewed' as const, overtime: true }];
-    expect(buildNotices(base({ requests })).find((x) => x.id === 'req-r1')).toMatchObject({ level: 'action', title: 'Leave request waiting for your decision' });
+    expect(buildNotices(base({ requests })).find((x) => x.id === 'req-r1')).toMatchObject({ level: 'action', title: 'Waiting for your decision' });
     expect(buildNotices(base({ requests, isSectionHead: false })).find((x) => x.id === 'req-r1')).toMatchObject({ level: 'watch' });
   });
   it('actions come first and only actions count in the badge; leave starting soon is info', () => {
     const n = buildNotices(base({ needsAction: 3, absences: [leave(C[5], '2026-09-28', '2026-10-02')] }));
     const levels = n.map((x) => x.level);
     expect(levels).toEqual([...levels].sort((a, b) => ['action', 'watch', 'info'].indexOf(a) - ['action', 'watch', 'info'].indexOf(b)));
-    expect(n.find((x) => x.area === 'leave')).toMatchObject({ level: 'info', title: '1 leave starting in the next 7 days' });
+    expect(n.find((x) => x.area === 'leave')).toMatchObject({ level: 'info', title: '1 leave starting · next 7 days' });
     expect(actionCount(n)).toBe(n.filter((x) => x.level === 'action').length);
-    expect(n.find((x) => x.id === 'staff-action')!.title).toBe('3 staff records need action');
+    expect(n.find((x) => x.id === 'staff-action')!.title).toBe('3 staff records to complete');
   });
 });
