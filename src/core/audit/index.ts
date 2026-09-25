@@ -10,7 +10,7 @@ export const AUDIT_CATEGORIES: { key: AuditCategory; label: string; tables: stri
   { key: 'leave', label: 'Leave', tables: ['leave_records'] },
   { key: 'requests', label: 'Requests', tables: ['leave_requests'] },
   { key: 'controllers', label: 'Controllers', tables: ['controller_assignments', 'controller_rules'] },
-  { key: 'modes', label: 'Operating modes', tables: ['operating_modes', 'operation_periods'] },
+  { key: 'modes', label: 'Modes & calendar', tables: ['operating_modes', 'operation_periods', 'public_holidays', 'unit_events'] },
   { key: 'qualifications', label: 'Qualifications', tables: ['employee_qualifications'] },
   { key: 'staff', label: 'Staff records', tables: ['employees'] },
   { key: 'logins', label: 'Logins', tables: ['user_accounts'] }
@@ -187,6 +187,20 @@ export function describe(row: AuditRow, lk: AuditLookups): AuditEntry {
       if (row.action === 'insert') title = `Operating period scheduled: ${mode}, ${span}`;
       else if (next?.status === 'cancelled' && prev?.status !== 'cancelled') { title = `Operating period cancelled: ${mode}, ${span}`; if (s(next.cancel_reason)) details.push(`Reason: ${next.cancel_reason}`); }
       else { title = `Operating period changed: ${mode}, ${span}`; details = changes(prev, next, [['start_date', 'First day', day], ['end_date', 'Last day', day]]); }
+      if (row.action === 'insert' && s(cur.note)) details.push(String(cur.note));
+      break;
+    }
+    case 'public_holidays': {
+      const what = `${s(cur.name) ?? 'Holiday'}, ${range(cur.start_date, cur.end_date)}${cur.expected ? ' (expected)' : ''}`;
+      title = row.action === 'insert' ? `Public holiday added: ${what}` : row.action === 'delete' ? `Public holiday removed: ${what}` : `Public holiday changed: ${what}`;
+      if (row.action === 'update') details = changes(prev, next, [['name', 'Name', w], ['start_date', 'First day', day], ['end_date', 'Last day', day], ['expected', 'Expected', (v) => (v ? 'Yes' : 'No')]]);
+      break;
+    }
+    case 'unit_events': {
+      const what = `${s(cur.unit) ? `${cur.unit} ` : ''}${s(cur.title) ?? 'Event'}, ${range(cur.start_date, cur.end_date)}`;
+      if (row.action === 'insert') title = `Unit event added: ${what}`;
+      else if (next?.status === 'cancelled' && prev?.status !== 'cancelled') { title = `Unit event cancelled: ${what}`; if (s(next.cancel_reason)) details.push(`Reason: ${next.cancel_reason}`); }
+      else { title = `Unit event changed: ${what}`; details = changes(prev, next, [['title', 'Title', w], ['unit', 'Unit', w], ['category', 'Type', w], ['start_date', 'First day', day], ['end_date', 'Last day', day]]); }
       if (row.action === 'insert' && s(cur.note)) details.push(String(cur.note));
       break;
     }

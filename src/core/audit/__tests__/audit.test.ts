@@ -60,4 +60,10 @@ group('audit history sentences', () => {
     const p = describe(row({ entity_table: 'operation_periods', next: { mode_code: 'one_train', start_date: '2026-11-01', end_date: '2026-11-10', status: 'active', note: 'Train 2 turnaround' } }), lk);
     expect(p).toMatchObject({ title: 'Operating period scheduled: one train, 1 Nov 2026 – 10 Nov 2026', details: ['Train 2 turnaround'] });
   });
+  it('holidays and unit events', () => {
+    expect(describe(row({ entity_table: 'unit_events', next: { category: 'shutdown', title: 'SD', unit: 'Train-1', start_date: '2026-11-01', end_date: '2026-11-18', status: 'active' } }), lk))
+      .toMatchObject({ category: 'modes', title: 'Unit event added: Train-1 SD, 1 Nov 2026 – 18 Nov 2026' });
+    expect(describe(row({ entity_table: 'public_holidays', action: 'delete', previous: { name: 'Eid al-Fitr', start_date: '2027-03-09', end_date: '2027-03-11', expected: true } }), lk).title)
+      .toBe('Public holiday removed: Eid al-Fitr, 9 Mar 2027 – 11 Mar 2027 (expected)');
+  });
 });
