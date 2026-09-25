@@ -22,7 +22,7 @@ separate Supabase project (`fhnqaurtryfmmomvzrpl`), separate authentication, sep
 | I · Operating modes | Shutdown / one-train periods with their own minimums per crew |
 | J · Audit history | Every change in plain words, per area and per employee |
 | Notification Center | Bell with what needs action in the next 60 days |
-| Calendar | M / A / N per day with status and shortfall, Kuwait holidays, unit events and shutdown bars, day detail, filters |
+| Calendar | M / A / N per day with status and shortfall, Kuwait holidays, unit events and shutdown bars, day detail, filters; Week view: shift per crew across the week, leave per day, needs attention, who is on leave |
 
 Roles: **Section Head** and **Manpower Coordinator** (several may hold it) are active; Controller and Employee
 logins exist but have no app access yet. Logins are managed only through the `manage-users` Edge Function.

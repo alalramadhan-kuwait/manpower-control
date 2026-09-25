@@ -1,36 +1,38 @@
-import { ChevronLeft, ChevronRight, Star, UserMinus, type LucideIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Star, UserMinus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { MONTH_NAMES, WEEKDAY_SHORT, attentionPeriods, crewMarks, monthEnd, monthStart, monthWeeks, shiftMonth, summarizeMonth, type DayMark } from '@/core/calendar';
-import { fillWeek, shortfall, weekBars } from '@/core/calendar/board';
+import { fillWeek, shortfall, weekBars, weekStartOf } from '@/core/calendar/board';
 import { evaluateRange, type DayResult } from '@/core/manpower';
 import { CREWS, addDaysIso, type Crew } from '@/core/roster';
 import { EVENT_CATEGORY_LABEL, fetchCalendarInfo, type Holiday, type UnitEvent } from '@/data/calendar';
-import { EVENT_ICON, UNIT_BAR } from '@/ui/calendar';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { Card, ErrorBox, Spinner, cx } from '@/ui/components';
-import { CrewBadge, isCrew } from '@/ui/crew';
+import { isCrew } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { DaySheet } from './DaySheet';
 import { EventSheet, HolidaySheet } from './InfoSheets';
+import { AttentionList, Legend, PILL, Section, SummaryTiles, ViewToggle, calendarBars } from './parts';
+import { WeekView } from './WeekView';
 
 type Filter = 'all' | Crew | 'shutdowns' | 'holidays' | 'shortage';
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all', label: 'All' }, ...CREWS.map((c) => ({ key: c as Filter, label: c })),
   { key: 'shutdowns', label: 'Events' }, { key: 'holidays', label: 'Holidays' }, { key: 'shortage', label: 'Shortage' }
 ];
-/** Status colours only: green safe, amber at minimum, red below minimum, grey pending. */
-const PILL: Record<Exclude<DayMark, 'off'>, string> = {
-  green: 'bg-green-100 text-green-900', amber: 'bg-amber-100 text-amber-900', red: 'bg-status-red text-white', pending: 'bg-slate-200 text-slate-700'
-};
-const SUMMARY: { key: Exclude<DayMark, 'off'>; label: string; dot: string }[] = [
-  { key: 'red', label: 'Short', dot: 'bg-status-red' }, { key: 'amber', label: 'At min', dot: 'bg-status-amber' },
-  { key: 'green', label: 'Safe', dot: 'bg-status-green' }, { key: 'pending', label: 'Pending', dot: 'bg-slate-400' }
-];
-const dates = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)}–${shortDate(b)}`);
-export type Bar = { id: string; start: string; end: string; label: string; cls: string; icon: LucideIcon; event?: UnitEvent };
 
 export default function CalendarPage() {
+  const [params, setParams] = useSearchParams();
+  const today = localToday();
+  if (params.get('view') !== 'week') return <MonthView />;
+  const w = params.get('week') ?? '';
+  const start = /^\d{4}-\d{2}-\d{2}$/.test(w) && !Number.isNaN(Date.parse(w)) ? weekStartOf(w) : weekStartOf(today);
+  return <WeekView start={start} today={today}
+    onWeek={(s) => { const n = new URLSearchParams({ view: 'week' }); if (s !== weekStartOf(today)) n.set('week', s); setParams(n, { replace: true }); }}
+    onMonth={() => { const mid = addDaysIso(start, 3).slice(0, 7); setParams(mid === today.slice(0, 7) ? {} : { month: mid }, { replace: true }); }} />;
+}
+
+function MonthView() {
   const [params, setParams] = useSearchParams();
   const today = localToday();
   const m = /^(\d{4})-(\d{2})$/.exec(params.get('month') ?? '');
@@ -71,12 +73,7 @@ export default function CalendarPage() {
     const counted = inputs.absences.filter((a) => (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && (!crew || crewOf.get(a.employeeId) === crew));
     const away = (d: string) => new Set(counted.filter((a) => a.start <= d && d <= a.end).map((a) => a.employeeId)).size;
     const holidayOn = (d: string) => info.holidays.find((h) => h.start <= d && d <= h.end) ?? null;
-    const unitIndex = (u: string | null) => (u ? info.units.indexOf(u.trim()) : -1);
-    const bars: Bar[] = [
-      ...inputs.plan.periods.filter((p) => p.status === 'active').map((p) => ({ id: `mode-${p.id}`, start: p.start, end: p.end, label: `${inputs.plan.modes.find((x) => x.code === p.modeCode)?.label ?? p.modeCode} · ${dates(p.start, p.end)}`, cls: 'bg-brand-700', icon: EVENT_ICON.mode })),
-      ...info.events.map((e) => ({ id: e.id, start: e.start, end: e.end, event: e, icon: EVENT_ICON[e.category],
-        label: `${e.unit ? `${e.unit} ` : ''}${e.title} · ${dates(e.start, e.end)}`, cls: UNIT_BAR[Math.max(0, unitIndex(e.unit)) % UNIT_BAR.length] }))
-    ];
+    const bars = calendarBars(inputs, info);
     const filtered: DayResult[] = crew ? monthDays.map((d) => ({ ...d, crews: d.crews.filter((c) => c.crew === crew) })) : monthDays;
     return { byDate, away, holidayOn, bars, summary: summarizeMonth(monthDays, crew), attention: attentionPeriods(filtered),
       monthHolidays: info.holidays.filter((h) => h.start <= to && h.end >= from), monthBars: bars.filter((b) => b.start <= to && b.end >= from) };
@@ -98,16 +95,10 @@ export default function CalendarPage() {
         <button aria-label="Next month" onClick={() => go(ny, nm)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-300 active:bg-slate-50"><ChevronRight className="h-5 w-5" /></button>
       </div>
 
+      <ViewToggle view="month" onChange={() => setParams({ view: 'week', week: weekStartOf(isThisMonth ? today : from) }, { replace: true })} />
       {error ? <ErrorBox error={error} /> : !view ? <Spinner /> : (
         <>
-          <div className="mb-2 grid grid-cols-4 gap-1 text-center">
-            {SUMMARY.map((k) => (
-              <div key={k.key} className="rounded-lg bg-white px-1 py-1 ring-1 ring-slate-200">
-                <div className="flex items-center justify-center gap-1 text-base font-semibold leading-tight tabular-nums text-slate-800"><span className={cx('h-2 w-2 rounded-full', k.dot)} />{view.summary[k.key]}</div>
-                <div className="text-[10px] leading-tight text-slate-500">{k.label}</div>
-              </div>
-            ))}
-          </div>
+          <SummaryTiles summary={view.summary} />
 
           <div className="-mx-4 mb-2 flex gap-1 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none]">
             {FILTERS.map((x) => (
@@ -180,16 +171,7 @@ export default function CalendarPage() {
 
           {filter !== 'holidays' && filter !== 'shutdowns' && (
             <Section title="Needs attention">
-              {view.attention.length === 0 ? <p className="py-2 text-sm text-slate-500">All clear ✓</p> : view.attention.map((a) => (
-                <button key={`${a.crew}${a.start}${a.kind}`} type="button" onClick={() => setOpen(a.start)} className="flex w-full items-center gap-3 py-2 text-left">
-                  <CrewBadge crew={a.crew} size="sm" />
-                  <span className="min-w-0 flex-1">
-                    <span className={cx('block text-sm font-medium', a.kind === 'shortage' ? 'text-status-red' : 'text-slate-700')}>{a.text}</span>
-                    <span className="block text-xs text-slate-500">{a.start === a.end ? shortDate(a.start) : `${shortDate(a.start)} – ${shortDate(a.end)}`} · {a.duties} dut{a.duties === 1 ? 'y' : 'ies'}</span>
-                  </span>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
-                </button>
-              ))}
+              <AttentionList items={view.attention} onOpen={setOpen} />
             </Section>
           )}
           <Link to={`/leave-plan?year=${year}${crew ? `&crew=${crew}` : ''}`} className="mt-3 flex items-center justify-between rounded-2xl bg-white p-4 text-sm font-medium text-brand-700 shadow-sm ring-1 ring-slate-200">Annual Leave Plan {year}<ChevronRight className="h-4 w-4" /></Link>
@@ -247,27 +229,3 @@ function DayCell({ date, day, today, crew, filter, showPills, away, holiday, inE
     </button>
   );
 }
-
-function Legend() {
-  return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 px-1 text-[10px] text-slate-500">
-      <span className="font-medium text-slate-600">M / A / N rows:</span>
-      <span className="flex items-center gap-1"><span className="rounded bg-green-100 px-1 font-bold text-green-900">B</span>safe</span>
-      <span className="flex items-center gap-1"><span className="rounded bg-amber-100 px-1 font-bold text-amber-900">B</span>at minimum</span>
-      <span className="flex items-center gap-1"><span className="rounded bg-status-red px-1 font-bold text-white">B−1</span>short</span>
-      <span className="flex items-center gap-1"><span className="rounded bg-slate-200 px-1 font-bold text-slate-700">B</span>pending</span>
-      <span className="flex items-center gap-1"><Star className="h-2.5 w-2.5 fill-pink-500 text-pink-600" />holiday</span>
-      <span className="flex items-center gap-1"><UserMinus className="h-2.5 w-2.5" />on leave</span>
-    </div>
-  );
-}
-
-function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <Card className="mt-3 py-1.5">
-      <div className="flex items-center justify-between pt-1"><h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h2>{action}</div>
-      <div className="divide-y divide-slate-100">{children}</div>
-    </Card>
-  );
-}
-

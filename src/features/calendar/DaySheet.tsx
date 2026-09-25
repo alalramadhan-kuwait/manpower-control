@@ -7,7 +7,7 @@ import type { ManpowerInputs } from '@/data/manpower';
 import { BottomSheet, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { shortDate } from '@/ui/leave';
-import type { Bar } from './CalendarPage';
+import type { Bar } from './parts';
 
 const STATUS: Record<string, { text: string; cls: string }> = {
   green: { text: 'Safe', cls: 'bg-green-100 text-green-900' }, amber: { text: 'At minimum', cls: 'bg-amber-100 text-amber-900' },

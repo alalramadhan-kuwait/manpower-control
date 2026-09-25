@@ -55,3 +55,39 @@ export function leaveGroup(typeCode: string | null | undefined): LeaveGroup {
   if (c === 'medical_absence') return 'Injury / surgery';
   return 'Other approved absence';
 }
+
+// ------------------------------------------------------------------ Week view
+
+/** The Sunday that starts the calendar week of `iso` (Kuwait working week). */
+export function weekStartOf(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - d.getUTCDay());
+  return d.toISOString().slice(0, 10);
+}
+
+/** The 7 dates of the week starting `start`. */
+export function weekDates(start: string): string[] {
+  const d = new Date(`${start}T00:00:00Z`);
+  return Array.from({ length: 7 }, (_, k) => { const x = new Date(d); x.setUTCDate(x.getUTCDate() + k); return x.toISOString().slice(0, 10); });
+}
+
+export interface LeaveBlock { employeeId: string; start: string; end: string; typeCode: string | null; typeShort: string | null }
+
+/**
+ * Leave overlapping [from, to] the way the calendar counts it (approved or planned, in the current plan): one block per
+ * absence with its real dates; overlapping or back-to-back blocks of one person with the same code are joined.
+ */
+export function leaveInRange(absences: { employeeId: string; start: string; end: string; status: string; typeCode: string | null; typeShort?: string | null; inCurrentPlan?: boolean }[], from: string, to: string): LeaveBlock[] {
+  const next = (iso: string) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); };
+  const counted = absences
+    .filter((a) => (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false)
+    .map((a) => ({ employeeId: a.employeeId, start: a.start, end: a.end, typeCode: a.typeCode, typeShort: a.typeShort ?? null }))
+    .sort((a, b) => a.employeeId.localeCompare(b.employeeId) || a.start.localeCompare(b.start));
+  const joined: LeaveBlock[] = [];
+  for (const b of counted) {
+    const last = joined[joined.length - 1];
+    if (last && last.employeeId === b.employeeId && last.typeShort === b.typeShort && b.start <= next(last.end)) { if (b.end > last.end) last.end = b.end; continue; }
+    joined.push({ ...b });
+  }
+  return joined.filter((b) => b.start <= to && b.end >= from);
+}
