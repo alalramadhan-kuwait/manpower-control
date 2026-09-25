@@ -7,22 +7,25 @@ Operations manpower planning and control for **KNPC — Mina Abdullah Refinery �
 This project is standalone. It shares **nothing** with Time Keeper / Time Gallery: separate repository,
 separate Supabase project (`fhnqaurtryfmmomvzrpl`), separate authentication, separate employees.
 
-## Status: Stage A — Foundation & Source Data
+## Status: stages A–J and the Notification Center are built
 
-Delivered in Stage A:
+| Stage | What it delivers |
+|---|---|
+| A · Foundation | Schema with Row Level Security and an audit log; Excel Import Center (preview → confirm → one-transaction commit); employee directory and profile; Data Quality Review |
+| B · Roster | `src/core/roster`: the 8-day cycle (anchor 2 Mar 2026 = B M1), validated against the workbook |
+| C · Manpower rules | `src/core/manpower`: Controller / Panel (Grade 14+) / Field (Take-Charge = Yes) against the minimums; GREEN / AMBER / RED / pending; Grade 13+ covers both Panel and Field |
+| D · Day Overview | Today: all four crews, who counts and why, absences, day staff |
+| E · Leave plan | Annual Leave Plan; add / correct / cancel leave by hand; the monthly sheet stays the real leave on import |
+| F · Leave requests | Paper form entry, overtime review, Section Head decision; one leave, one record |
+| G · Shift movements | Temporary covers, permanent moves, day duty (counted with the Morning crew, Sun–Thu) |
+| H · Controller Management | Shift cover, VR assignments, Morning rotation, cover needs |
+| I · Operating modes | Shutdown / one-train periods with their own minimums per crew |
+| J · Audit history | Every change in plain words, per area and per employee |
+| Notification Center | Bell with what needs action in the next 60 days |
+| Calendar | M / A / N per day with status and shortfall, Kuwait holidays, unit events and shutdown bars, day detail, filters |
 
-- Supabase project with the normalized Stage A schema, Row Level Security and an audit log (`supabase/migrations`)
-- Two active roles: **Section Head** and **Manpower Coordinator** (Controller and Employee roles exist but are inactive)
-- Employee foundation: identity, KNPC/Contractor classification, operational role + permanent crew (time-bounded),
-  qualifications as their own records (Take-Charge, Panel Operator, Acting Controller, Controller),
-  KNPC master data, performance and sick-leave yearly totals, leave register with source references
-- Excel Import Center: upload → parse → identify → match by Employee Number → validate → preview → confirm → commit
-  (`src/core/import` is pure TypeScript; the database applies a previewed batch in one transaction via `commit_import_batch`)
-- Import history with per-row outcomes, and a Data Quality Review screen for everything a person must decide
-- Employee directory and profile with editing of qualifications, classification and role/crew corrections
-
-Not yet built (later stages): roster engine, manpower status engine, Day Overview, calendar, requests, movements,
-controller management, shutdown, notifications.
+Roles: **Section Head** and **Manpower Coordinator** (several may hold it) are active; Controller and Employee
+logins exist but have no app access yet. Logins are managed only through the `manage-users` Edge Function.
 
 ## Source workbooks
 
