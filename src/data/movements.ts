@@ -1,6 +1,7 @@
 // Shift movements (Stage G): permanent moves, temporary covers and day duty (to_crew 'DAY'). Every change goes through a database function
 // (crew_move / crew_move_end / crew_move_cancel) that checks it and keeps the history.
 import { supabase } from './supabase';
+import { dataChanged } from './changes';
 import type { Crew } from '@/core/roster';
 
 export interface CrewMovement {
@@ -25,13 +26,16 @@ export async function fetchMovements(employeeId?: string): Promise<CrewMovement[
 export async function recordMovement(v: { employee: string; kind: CrewMovement['kind']; to: Crew | 'DAY'; start: string; end: string | null; reason: string }): Promise<string> {
   const { data, error } = await supabase.rpc('crew_move', { p_employee: v.employee, p_kind: v.kind, p_to_crew: v.to, p_start: v.start, p_end: v.end, p_reason: v.reason });
   if (error) throw plain(error);
+  dataChanged();
   return data as string;
 }
 export async function endMovement(id: string, end: string, note: string) {
   const { error } = await supabase.rpc('crew_move_end', { p_id: id, p_end: end, p_note: note });
   if (error) throw plain(error);
+  dataChanged();
 }
 export async function cancelMovement(id: string, reason: string) {
   const { error } = await supabase.rpc('crew_move_cancel', { p_id: id, p_reason: reason });
   if (error) throw plain(error);
+  dataChanged();
 }

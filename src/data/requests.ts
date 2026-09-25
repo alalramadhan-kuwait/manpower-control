@@ -1,6 +1,7 @@
 // Leave requests (Stage F). Every write goes through a database function that checks the step is allowed
 // (open requests only; the decision is the Section Head's) and keeps the whole history on the request.
 import { supabase } from './supabase';
+import { dataChanged } from './changes';
 import type { RequestType } from '@/core/requests';
 
 export type RequestStatus = 'submitted' | 'reviewed' | 'approved' | 'not_approved' | 'withdrawn';
@@ -43,17 +44,21 @@ export async function saveRequest(id: string | null, f: RequestForm): Promise<st
     p_balance: f.balance_days, p_balance_as_of: f.balance_as_of, p_form_date: f.form_date
   });
   if (error) throw plain(error);
+  dataChanged();
   return data as string;
 }
 export async function reviewRequest(id: string, overtime: boolean, signedBy: string, remarks: string) {
   const { error } = await supabase.rpc('request_review', { p_id: id, p_overtime: overtime, p_signed_by: signedBy, p_remarks: remarks });
   if (error) throw plain(error);
+  dataChanged();
 }
 export async function decideRequest(id: string, approve: boolean, remarks: string) {
   const { error } = await supabase.rpc('request_decide', { p_id: id, p_approve: approve, p_remarks: remarks });
   if (error) throw plain(error);
+  dataChanged();
 }
 export async function withdrawRequest(id: string, reason: string) {
   const { error } = await supabase.rpc('request_withdraw', { p_id: id, p_reason: reason });
   if (error) throw plain(error);
+  dataChanged();
 }

@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { dataChanged } from './changes';
 import type { MpAssignment } from '@/core/manpower';
 import type { ControllerAssignment } from './types';
 
@@ -26,16 +27,19 @@ export async function fetchAssignments(): Promise<ControllerAssignment[]> {
 export async function createAssignment(a: { kind: ControllerAssignment['kind']; employee_id: string; crew_code: string | null; covers_employee_id: string | null; start_date: string; end_date: string; note: string | null }) {
   const { error } = await supabase.from('controller_assignments').insert(a);
   if (error) throw friendly(error);
+  dataChanged();
 }
 
 export async function endAssignmentEarly(id: string, end_date: string, note: string | null) {
   const { error } = await supabase.from('controller_assignments').update({ end_date, ...(note ? { note } : {}) }).eq('id', id);
   if (error) throw friendly(error);
+  dataChanged();
 }
 
 export async function cancelAssignment(id: string, reason: string) {
   const { error } = await supabase.from('controller_assignments').update({ status: 'cancelled', cancel_reason: reason }).eq('id', id);
   if (error) throw friendly(error);
+  dataChanged();
 }
 
 /** Optional maximum length of a shift cover in days (null = no maximum; the cover lasts the actual period). */
@@ -48,4 +52,5 @@ export async function fetchShiftCoverMaxDays(): Promise<number | null> {
 export async function setShiftCoverMaxDays(days: number | null) {
   const { error } = await supabase.from('controller_rules').update({ shift_cover_max_days: days, updated_at: new Date().toISOString() }).eq('id', 1);
   if (error) throw error;
+  dataChanged();
 }

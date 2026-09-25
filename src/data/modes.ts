@@ -1,5 +1,6 @@
 // Stage I operating modes: modes (minimums per crew) and the periods they apply. Every write is audited in the database.
 import { supabase } from './supabase';
+import { dataChanged } from './changes';
 import type { OperatingMode, OperationPeriod, OperationPlan } from '@/core/modes';
 
 interface ModeRow { code: string; label: string; controller_min: number; panel_min: number; panel_grade14_min: number; field_min: number; is_default: boolean; is_active: boolean; note: string | null; sort_order: number }
@@ -32,12 +33,15 @@ export async function saveMode(v: { code?: string; label: string; controllerMin:
   const row = { label: v.label.trim(), controller_min: v.controllerMin, panel_min: v.panelMin, panel_grade14_min: v.panelGrade14Min, field_min: v.fieldMin, note: v.note, ...(v.isActive !== undefined ? { is_active: v.isActive } : {}) };
   const { error } = v.code ? await supabase.from('operating_modes').update(row).eq('code', v.code) : await supabase.from('operating_modes').insert({ ...row, code: codeOf(v.label) });
   if (error) throw plain(error);
+  dataChanged();
 }
 export async function schedulePeriod(v: { modeCode: string; start: string; end: string; note: string | null }) {
   const { error } = await supabase.from('operation_periods').insert({ mode_code: v.modeCode, start_date: v.start, end_date: v.end, note: v.note });
   if (error) throw plain(error);
+  dataChanged();
 }
 export async function cancelPeriod(id: string, reason: string) {
   const { error } = await supabase.from('operation_periods').update({ status: 'cancelled', cancel_reason: reason }).eq('id', id);
   if (error) throw plain(error);
+  dataChanged();
 }

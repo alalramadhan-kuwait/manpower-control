@@ -2,6 +2,7 @@
 // The database functions leave_save / leave_cancel do each change in one transaction, keep history and refuse
 // overlaps; their refusal messages are already plain sentences.
 import { supabase } from './supabase';
+import { dataChanged } from './changes';
 import type { AbsenceType, ControllerAssignment, EmployeeDirectoryRow, LeavePlanChange, LeaveRecord } from './types';
 
 const plain = (error: { message: string }) => new Error(error.message);
@@ -10,6 +11,7 @@ const plain = (error: { message: string }) => new Error(error.message);
 export async function saveLeave(v: { record: string | null; employee: string | null; type: string; start: string; end: string; note: string }): Promise<string> {
   const { data, error } = await supabase.rpc('leave_save', { p_record: v.record, p_employee: v.employee, p_type: v.type, p_start: v.start, p_end: v.end, p_note: v.note });
   if (error) throw plain(error);
+  dataChanged();
   return data as string;
 }
 
@@ -17,6 +19,7 @@ export async function saveLeave(v: { record: string | null; employee: string | n
 export async function cancelLeave(record: string, reason: string): Promise<void> {
   const { error } = await supabase.rpc('leave_cancel', { p_record: record, p_reason: reason });
   if (error) throw plain(error);
+  dataChanged();
 }
 
 export interface LeavePlanData {

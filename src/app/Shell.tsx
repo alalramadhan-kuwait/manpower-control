@@ -1,7 +1,9 @@
-import { CalendarDays, ClipboardList, Home, MoreHorizontal, Users } from 'lucide-react';
+import { Bell, CalendarDays, ClipboardList, Home, MoreHorizontal, Users } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { countOpenRequests } from '@/data/requests';
+import { loadNotices } from '@/data/notifications';
+import { actionCount } from '@/core/notifications';
 import { cx } from '@/ui/components';
 import { BrandTile } from '@/ui/brand';
 import { ROLE_LABEL } from '@/features/auth/useSession';
@@ -26,6 +28,14 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
     return () => window.removeEventListener('requests-changed', refresh);
   }, [pathname]);
   const badge = (to: string) => (to === '/requests' && openRequests > 0 ? openRequests : 0);
+  // Notification Center badge: items needing action in the coming weeks (cached a few minutes)
+  const [actions, setActions] = useState(0);
+  useEffect(() => {
+    const refresh = () => loadNotices(profile.role_code === 'section_head').then((n) => setActions(actionCount(n))).catch(() => setActions(0));
+    refresh();
+    window.addEventListener('notices-changed', refresh); window.addEventListener('requests-changed', refresh);
+    return () => { window.removeEventListener('notices-changed', refresh); window.removeEventListener('requests-changed', refresh); };
+  }, [pathname, profile.role_code]);
   return (
     <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col lg:max-w-7xl">
       <header className="sticky top-0 z-40 bg-brand-700 text-white safe-top">
@@ -37,7 +47,10 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
               <div className="truncate text-[11px] text-brand-100">Manpower Control · {[...new Set([profile.display_name, ROLE_LABEL[profile.role_code] ?? profile.role_code])].join(' · ')}</div>
             </div>
           </div>
-          <div className="shrink-0 whitespace-nowrap rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium">Stage I</div>
+          <Link to="/notifications" aria-label={`Notifications${actions ? `, ${actions} need action` : ''}`} className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
+            <Bell className="h-5 w-5" />
+            {actions > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-status-red px-1 text-[11px] font-bold leading-none text-white ring-2 ring-brand-700">{actions > 99 ? '99+' : actions}</span>}
+          </Link>
         </div>
       </header>
       <main className="flex-1 px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-4 sm:pb-8">{children}</main>
