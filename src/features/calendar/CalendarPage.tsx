@@ -227,11 +227,16 @@ function DayCell({ date, day, today, crew, filter, showPills, away, holiday, inE
   };
   return (
     <button type="button" onClick={onOpen} aria-label={`${shortDate(date)}${holiday ? `, ${holiday.name}` : ''}`}
-      className={cx('flex min-w-0 flex-col gap-px rounded-md px-0.5 pb-0.5 pt-px text-left ring-1 active:bg-slate-50', holiday ? 'bg-pink-50 ring-pink-300' : 'ring-slate-200',
-        date === today && 'ring-2 ring-brand-700', date < today && !holiday && 'bg-slate-50', dim && 'opacity-30')}>
+      aria-current={date === today ? 'date' : undefined}
+      className={cx('flex min-w-0 flex-col gap-px rounded-md px-0.5 pb-0.5 pt-px text-left active:bg-slate-50',
+        date === today ? cx('ring-[2.5px] ring-brand-700 shadow-md', holiday ? 'bg-pink-50' : 'bg-brand-50') : holiday ? 'bg-pink-50 ring-1 ring-pink-300' : 'ring-1 ring-slate-200',
+        date < today && !holiday && 'bg-slate-50', dim && 'opacity-30')}>
       <span className="flex h-[13px] items-center justify-between gap-px">
-        <span className={cx('flex items-center text-[11px] font-semibold leading-none', date === today ? 'text-brand-700' : 'text-slate-700')}>
-          {Number(date.slice(8))}{holiday && <Star className="ml-px h-2.5 w-2.5 fill-pink-500 text-pink-600" />}
+        <span className="flex items-center text-[11px] font-semibold leading-none text-slate-700">
+          {date === today
+            ? <span className="-ml-px flex h-[13px] min-w-[15px] items-center justify-center rounded-full bg-brand-700 px-0.5 text-[10px] font-bold text-white">{Number(date.slice(8))}</span>
+            : Number(date.slice(8))}
+          {holiday && <Star className="ml-px h-2.5 w-2.5 fill-pink-500 text-pink-600" />}
         </span>
         {away > 0 && <span className="flex items-center text-[9px] leading-none text-slate-500"><UserMinus className="h-2.5 w-2.5" />{away}</span>}
       </span>
