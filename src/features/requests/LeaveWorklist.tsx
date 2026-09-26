@@ -1,6 +1,6 @@
 // Requests › Leave: every leave running today or starting in the next 30 days, one row per leave, with what the
 // Oracle HR request should say. Approve / Reject records the Oracle decision; tap a row to check or edit the dates.
-import { AlertTriangle, CalendarClock, Check, ChevronRight, Trash2, X } from 'lucide-react';
+import { AlertTriangle, CalendarClock, Check, ChevronRight, Copy, Trash2, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { checkControllerLeave, isControllerRole, type LeaveApproval } from '@/core/controllers/leaveRules';
@@ -208,12 +208,14 @@ function EditSheet({ r, inputs, approvals, today, onClose, onDone }: { r: WorkRo
   return (
     <BottomSheet open onClose={onClose} title={r.person.name}>
       <div className="space-y-3">
-        <Link to={`/employees/${r.person.id}`} className="-mt-2 flex items-center gap-2 text-sm">
-          <span className="rounded-md bg-brand-50 px-2 py-0.5 font-mono text-base font-semibold tracking-wide text-brand-800">{r.person.employeeNumber}</span>
-          {r.crew !== 'DAY' && <CrewBadge crew={r.crew} size="sm" />}
-          <span className="truncate text-slate-500">{ROLE_LABEL[r.role ?? ''] ?? ''}{r.person.grade ? ` · Grade ${r.person.grade}` : ''}</span>
-          <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-slate-400" />
-        </Link>
+        <div className="-mt-2 flex items-center gap-2 text-sm">
+          <CopyNumber value={r.person.employeeNumber} />
+          <Link to={`/employees/${r.person.id}`} className="flex min-w-0 flex-1 items-center gap-2">
+            {r.crew !== 'DAY' && <CrewBadge crew={r.crew} size="sm" />}
+            <span className="truncate text-slate-500">{ROLE_LABEL[r.role ?? ''] ?? ''}{r.person.grade ? ` · Grade ${r.person.grade}` : ''}</span>
+            <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-slate-400" />
+          </Link>
+        </div>
         <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm ring-1 ring-slate-200">
           <div className="text-slate-700">Plan: <b>{range(r.start, r.end)}</b> {r.codes.join('+')}</div>
           {r.expected && <div className="text-xs text-slate-500">Expected in Oracle: {range(r.expected.start, r.expected.end)} · {r.expected.days} days · back {weekday(r.expected.backOn)} {shortDate(r.expected.backOn)}</div>}
@@ -266,5 +268,25 @@ function CancelSheet({ r, onClose, onDone }: { r: WorkRow; onClose: () => void; 
         </div>
       </div>
     </BottomSheet>
+  );
+}
+
+/** The employee number, tap to copy (to paste into EasyHR). */
+function CopyNumber({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try { await navigator.clipboard.writeText(value); }
+    catch {
+      // older iOS / no clipboard permission: copy through a hidden text field
+      const t = document.createElement('textarea'); t.value = value; t.setAttribute('readonly', ''); t.style.position = 'fixed'; t.style.opacity = '0';
+      document.body.appendChild(t); t.select(); t.setSelectionRange(0, value.length); document.execCommand('copy'); document.body.removeChild(t);
+    }
+    setCopied(true); window.setTimeout(() => setCopied(false), 1500);
+  }
+  return (
+    <button type="button" onClick={copy} aria-label={`Copy employee number ${value}`}
+      className={cx('flex shrink-0 items-center gap-1.5 rounded-md px-2 py-0.5 font-mono text-base font-semibold tracking-wide ring-1', copied ? 'bg-green-50 text-green-800 ring-green-300' : 'bg-brand-50 text-brand-800 ring-brand-100 active:bg-brand-100')}>
+      {value}{copied ? <><Check className="h-4 w-4" /><span className="font-sans text-xs">Copied</span></> : <Copy className="h-3.5 w-3.5 opacity-60" />}
+    </button>
   );
 }
