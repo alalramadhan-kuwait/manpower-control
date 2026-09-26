@@ -324,10 +324,14 @@ function BasicsSheet({ emp, onClose, onSaved }: { emp: EmployeeDirectoryRow; onC
   const [confirmed, setConfirmed] = useState(emp.employment_type_source === 'confirmed');
   const [active, setActive] = useState(emp.is_active);
   const [notes, setNotes] = useState(emp.notes ?? '');
+  const [grade, setGrade] = useState(emp.grade != null ? String(emp.grade) : '');
+  const [promoted, setPromoted] = useState(emp.last_promotion_date ?? '');
   const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
+  const gradeNum = grade.trim() === '' ? null : Number(grade);
+  const gradeBad = gradeNum !== null && (!Number.isInteger(gradeNum) || gradeNum < 1 || gradeNum > 25);
   async function save() {
     setBusy(true); setError(null);
-    const { error } = await supabase.from('employees').update({ short_name: shortName.trim() || null, official_name: fullName.trim(), display_name: displayName.trim() || displayNameFor({ officialName: fullName, shortName, employmentType: type, employmentTypeSource: confirmed ? 'confirmed' : 'inferred' }) || fullName.trim(), employment_type: type, employment_type_source: confirmed ? 'confirmed' : 'inferred', is_active: active, notes: notes.trim() || null }).eq('id', emp.id);
+    const { error } = await supabase.from('employees').update({ short_name: shortName.trim() || null, official_name: fullName.trim(), display_name: displayName.trim() || displayNameFor({ officialName: fullName, shortName, employmentType: type, employmentTypeSource: confirmed ? 'confirmed' : 'inferred' }) || fullName.trim(), employment_type: type, employment_type_source: confirmed ? 'confirmed' : 'inferred', is_active: active, notes: notes.trim() || null, grade: gradeNum, last_promotion_date: promoted || null }).eq('id', emp.id);
     setBusy(false); if (error) setError(error); else onSaved();
   }
   return (
@@ -336,6 +340,17 @@ function BasicsSheet({ emp, onClose, onSaved }: { emp: EmployeeDirectoryRow; onC
         <Field label="Official name" hint="As in the KNPC Promotion Master"><input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} /></Field>
         <Field label="Display name" hint="Empty = first and last name"><input className="input" value={displayName} onChange={(e) => setDisplayName(e.target.value)} /></Field>
         <Field label="Workbook name" hint="As on the U-12 sheets"><input className="input" value={shortName} onChange={(e) => setShortName(e.target.value)} /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Grade" hint={gradeBad ? 'A whole number, 1–25' : emp.grade != null && gradeNum !== emp.grade ? `Was ${emp.grade}` : undefined}>
+            <input className="input" inputMode="numeric" value={grade} onChange={(e) => {
+              const v = e.target.value.replace(/[^0-9]/g, ''); setGrade(v);
+              // a new grade suggests today as the promotion date (editable); back to the old grade restores it
+              const was = emp.last_promotion_date ?? '';
+              if (v === String(emp.grade ?? '')) setPromoted(was); else if (promoted === was) setPromoted(new Date().toISOString().slice(0, 10));
+            }} />
+          </Field>
+          <Field label="Last promotion"><input type="date" className="input" value={promoted} onChange={(e) => setPromoted(e.target.value)} /></Field>
+        </div>
         <Field label="Employment classification" >
           <div className="flex gap-2">{(['knpc', 'contractor'] as const).map((t) => <button key={t} type="button" onClick={() => { setType(t); setConfirmed(true); }} className={`flex-1 rounded-xl py-2.5 text-sm font-medium ring-1 ${type === t ? 'bg-brand-700 text-white ring-brand-700' : 'ring-slate-300'}`}>{t === 'knpc' ? 'KNPC' : 'Contractor'}</button>)}</div>
         </Field>
@@ -344,7 +359,7 @@ function BasicsSheet({ emp, onClose, onSaved }: { emp: EmployeeDirectoryRow; onC
         <Field label="Notes"><textarea className="input min-h-20" value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
       </div>
       {error ? <div className="mt-2"><ErrorBox error={error} /></div> : null}
-      <div className="mt-4 flex gap-2"><Button variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button><Button className="flex-1" disabled={busy} onClick={save}>Save</Button></div>
+      <div className="mt-4 flex gap-2"><Button variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button><Button className="flex-1" disabled={busy || gradeBad} onClick={save}>Save</Button></div>
     </BottomSheet>
   );
 }
