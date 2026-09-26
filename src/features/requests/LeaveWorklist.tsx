@@ -1,6 +1,7 @@
 // Requests › Leave: every leave running today or starting in the next 30 days, one row per leave, with what the
 // Oracle HR request should say. Approve / Reject records the Oracle decision; tap a row to check or edit the dates.
-import { AlertTriangle, CalendarClock, Check, Trash2, X } from 'lucide-react';
+import { AlertTriangle, CalendarClock, Check, ChevronRight, Trash2, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { checkControllerLeave, isControllerRole, type LeaveApproval } from '@/core/controllers/leaveRules';
 import { evaluateRange, personOn, type MpAbsence } from '@/core/manpower';
@@ -20,6 +21,7 @@ import { localToday, shortDate } from '@/ui/leave';
 import { OraclePill } from '@/ui/oracle';
 
 const DAYS = 14;
+const ROLE_LABEL: Record<string, string> = { controller: 'Shift Controller', vr_controller: 'VR Controller', morning_controller: 'Morning Controller', panel_operator: 'Panel Operator', field_operator: 'Field Operator' };
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
 const weekday = (iso: string) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(`${iso}T00:00:00Z`).getUTCDay()];
 type Shift = 'all' | Crew | 'DAY';
@@ -204,6 +206,12 @@ function EditSheet({ r, inputs, approvals, today, onClose, onDone }: { r: WorkRo
   return (
     <BottomSheet open onClose={onClose} title={r.person.name}>
       <div className="space-y-3">
+        <Link to={`/employees/${r.person.id}`} className="-mt-2 flex items-center gap-2 text-sm">
+          <span className="rounded-md bg-brand-50 px-2 py-0.5 font-mono text-base font-semibold tracking-wide text-brand-800">{r.person.employeeNumber}</span>
+          {r.crew !== 'DAY' && <CrewBadge crew={r.crew} size="sm" />}
+          <span className="truncate text-slate-500">{ROLE_LABEL[r.role ?? ''] ?? ''}{r.person.grade ? ` · Grade ${r.person.grade}` : ''}</span>
+          <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-slate-400" />
+        </Link>
         <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm ring-1 ring-slate-200">
           <div className="text-slate-700">Plan: <b>{range(r.start, r.end)}</b> {r.codes.join('+')}</div>
           {r.expected && <div className="text-xs text-slate-500">Expected in Oracle: {range(r.expected.start, r.expected.end)} · {r.expected.days} days · back {weekday(r.expected.backOn)} {shortDate(r.expected.backOn)}</div>}
