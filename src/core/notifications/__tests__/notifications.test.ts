@@ -32,7 +32,7 @@ describe('notification center', () => {
     const n = buildNotices(base({ people: [...people, vr], absences, days: evaluateRange('2026-09-25', '2026-10-10', [...people, vr], absences), needs: coverageNeeds('2026-09-25', '2026-10-10', [...people, vr], absences, []) }));
     const cover = n.find((x) => x.area === 'controller')!;
     expect(cover).toMatchObject({ level: 'action', title: 'Cover needed · B Shift' });
-    expect(cover.detail).toContain(`VR free: ${vr.name}`);
+    expect(cover.detail).toContain(`Move VR ${vr.name}`);
     expect(cover.to).toBe(`/controllers?assign=cover&crew=B&from=${cover.date}`);
   });
   it('requests: review is an action for everyone; the decision is an action only for the Section Head', () => {

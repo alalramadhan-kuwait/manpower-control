@@ -21,7 +21,7 @@ export function MovementSheet({ target, people, onClose, onDone }: { target: Mov
 
 function NewSheet({ target, people, busy, err, run, onClose }: { target: Extract<MoveTarget, { kind: 'new' }>; people: MovePerson[]; busy: boolean; err: unknown; run: (fn: () => Promise<unknown>, m: string) => void; onClose: () => void }) {
   const [employee, setEmployee] = useState(target.employeeId ?? '');
-  const [kind, setKind] = useState<CrewMovement['kind'] | 'day'>(target.dayDuty ? 'day' : 'temporary');
+  const [kind, setKind] = useState<'temporary' | 'permanent' | 'day'>(target.dayDuty ? 'day' : 'temporary');
   const [to, setTo] = useState<Crew | null>(target.to ?? null);
   const [start, setStart] = useState(target.start ?? localToday());
   const [openEnded, setOpenEnded] = useState(false);

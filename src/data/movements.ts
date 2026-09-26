@@ -5,12 +5,13 @@ import { dataChanged } from './changes';
 import type { Crew } from '@/core/roster';
 
 export interface CrewMovement {
-  id: string; employee_id: string; kind: 'temporary' | 'permanent'; from_crew: Crew | null; to_crew: Crew | 'DAY';
+  id: string; employee_id: string; kind: 'temporary' | 'permanent' | 'placement'; from_crew: Crew | null; to_crew: Crew | 'DAY';
   start_date: string; end_date: string | null; reason: string | null; status: 'active' | 'cancelled';
   created_at: string; cancelled_at: string | null; cancel_reason: string | null;
 }
 
 function plain(error: { message: string }): Error {
+  if (error.message.includes('cm_one_placement_at_a_time')) return new Error('This VR already has a placement on some of these dates.');
   if (error.message.includes('cm_one_temporary_at_a_time')) return new Error('This person already has a temporary cover or day duty on some of these dates. End or cancel it first.');
   return new Error(error.message);
 }
@@ -23,8 +24,15 @@ export async function fetchMovements(employeeId?: string): Promise<CrewMovement[
   return data as CrewMovement[];
 }
 
-export async function recordMovement(v: { employee: string; kind: CrewMovement['kind']; to: Crew | 'DAY'; start: string; end: string | null; reason: string }): Promise<string> {
+export async function recordMovement(v: { employee: string; kind: 'temporary' | 'permanent'; to: Crew | 'DAY'; start: string; end: string | null; reason: string }): Promise<string> {
   const { data, error } = await supabase.rpc('crew_move', { p_employee: v.employee, p_kind: v.kind, p_to_crew: v.to, p_start: v.start, p_end: v.end, p_reason: v.reason });
+  if (error) throw plain(error);
+  dataChanged();
+  return data as string;
+}
+/** Place a VR Controller in a crew from `start` until moved (ends the running placement the day before). */
+export async function placeVr(v: { employee: string; crew: Crew; start: string; reason: string }): Promise<string> {
+  const { data, error } = await supabase.rpc('vr_place', { p_employee: v.employee, p_crew: v.crew, p_start: v.start, p_reason: v.reason });
   if (error) throw plain(error);
   dataChanged();
   return data as string;

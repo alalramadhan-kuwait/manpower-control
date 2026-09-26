@@ -34,6 +34,7 @@ Supabase MCP or dashboard gets a matching file here, named with the version the 
 | `20260925132506_calendar_holidays_and_unit_events` | Calendar: `public_holidays` (Kuwait holidays; `expected` until officially announced; seeded 2026 fixed dates and 2027 incl. expected Islamic holidays) and `unit_events` (shutdown / startup / maintenance / catalyst / outage / operational / training, per unit or train; cancelled not deleted); staff read and write; audited; information only |
 | `20260925205624_oracle_hr_leave_status` | Oracle HR tracking: `leave_records.oracle_status` (not_submitted / submitted / approved / rejected), `oracle_ref`, `oracle_updated_at`; leave already started backfilled as approved (no audit rows); new dates on future leave reset the status to not_submitted; `leave_set_oracle(records, status, ref)` for staff, audited |
 | `20260925213900_controller_leave_approvals` | Controller leave rules: `controller_leave_approvals` (Section Head approval of two Controllers on leave together, or a 5th+ annual leave in a year; names the leave record(s); withdrawn not deleted); staff read, Section Head writes; audited |
+| `20260926205619_vr_placement` | VR placement: `crew_movements` kind `placement` (a VR in a crew from a date until moved; no overlap per person); `vr_place(employee, crew, start, reason)`; `crew_move_end` / `crew_move_cancel` accept placements; the recorded VR covers turned into placements and the covers cancelled (history kept) |
 
 ## Edge Functions
 

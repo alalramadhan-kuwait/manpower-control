@@ -41,8 +41,9 @@ export interface MpPerson {
 
 /** One period of the role history: `from`..`to` (inclusive, `to` null = still current). */
 export interface MpRolePeriod { from: string; to: string | null; role: Role | null; crew: Crew | null }
-/** A temporary cover: works with `crew` from `start` to `end` (null = until further notice). `DAY` = day duty. */
-export interface MpCrewMove { start: string; end: string | null; crew: Crew | typeof DAY_DUTY }
+/** A temporary cover: works with `crew` from `start` to `end` (null = until further notice). `DAY` = day duty.
+ *  kind 'placement': a VR Controller placed in `crew` until moved (the VR works that crew's rota). */
+export interface MpCrewMove { start: string; end: string | null; crew: Crew | typeof DAY_DUTY; kind?: 'temporary' | 'placement' }
 /** Movement target for day duty: day shift Sunday to Thursday with the crew on Morning shift (Friday and Saturday off). */
 export const DAY_DUTY = 'DAY' as const;
 /** Day duty works Sunday to Thursday. */
@@ -61,7 +62,14 @@ export function personOn(p: MpPerson, date: string): MpPerson {
     const period = h.find((x) => x.from <= date && (x.to === null || date <= x.to)) ?? (date < h[0].from ? h[0] : h[h.length - 1]);
     role = period.role; crew = period.crew;
   }
-  const move = crew && CREW_ROLES.includes(role) ? p.moves?.find((m) => m.start <= date && (m.end === null || date <= m.end) && m.crew !== crew) : undefined;
+  const on = (m: MpCrewMove) => m.start <= date && (m.end === null || date <= m.end);
+  // a VR Controller has no crew of their own: their placement puts them in a crew until moved
+  if (role === 'vr_controller') {
+    const placed = p.moves?.find((m) => m.kind === 'placement' && on(m) && m.crew !== DAY_DUTY);
+    const vrCrew = placed ? (placed.crew as Crew) : null;
+    return role === p.role && vrCrew === p.crew && !p.movedFrom && !p.dayDuty ? p : { ...p, role, crew: vrCrew, movedFrom: undefined, dayDuty: undefined };
+  }
+  const move = crew && CREW_ROLES.includes(role) ? p.moves?.find((m) => m.kind !== 'placement' && on(m) && m.crew !== crew) : undefined;
   if (move) return move.crew === DAY_DUTY ? { ...p, role, crew: null, movedFrom: crew, dayDuty: true } : { ...p, role, crew: move.crew, movedFrom: crew, dayDuty: undefined };
   return role === p.role && crew === p.crew && !p.movedFrom && !p.dayDuty ? p : { ...p, role, crew, movedFrom: undefined, dayDuty: undefined };
 }
@@ -297,7 +305,8 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
     const duty = dutyFor(date, crew);
     const state = stateOf(duty);
     const working = state !== 'Off';
-    const members = people.filter((p) => p.crew === crew && (p.role === 'controller' || p.role === 'panel_operator' || p.role === 'field_operator'));
+    // crew members, plus a VR Controller placed in this crew (counted as a Controller)
+    const members = people.filter((p) => p.crew === crew && (p.role === 'controller' || p.role === 'vr_controller' || p.role === 'panel_operator' || p.role === 'field_operator'));
     const absencesOnDay: AbsenceOnDay[] = [];
     const unresolved: AbsenceOnDay[] = [];
     const available: MpPerson[] = [];
@@ -305,7 +314,9 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
     for (const p of members) {
       const leave = leaveOf(p);
       const unres = unresolvedOf(p);
-      const assigned = p.role === 'controller' ? assignmentOf(p) : null;
+      const own = assignmentOf(p);
+      // a Controller assignment elsewhere takes them away (a cover of this same crew keeps them here)
+      const assigned = (p.role === 'controller' || p.role === 'vr_controller') && own && !(own.kind === 'shift_cover' && own.crew === crew) ? own : null;
       if (leave) absencesOnDay.push({ person: p, absence: leave, reducesManpower: working });
       if (unres) unresolved.push({ person: p, absence: unres, reducesManpower: false });
       if (assigned && working && !leave) { away.push({ person: p, assignment: assigned }); continue; }
@@ -316,7 +327,7 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
     const ctrlCounted: MpPerson[] = []; const ctrlNot: NotCounted[] = []; const ctrlIssues: string[] = [];
     let acting: MpPerson | null = null;
     const qualifiesAsController = (p: MpPerson) => (p.grade != null && p.grade >= rules.controllerGrade) || (p.grade != null && p.grade >= rules.actingControllerGrade && p.actingController === 'yes');
-    for (const p of available.filter((x) => x.role === 'controller')) {
+    for (const p of available.filter((x) => x.role === 'controller' || x.role === 'vr_controller')) {
       if (p.grade != null && p.grade >= rules.controllerGrade) ctrlCounted.push(p);
       else if (p.grade != null && p.grade >= rules.actingControllerGrade && p.actingController === 'yes') { ctrlCounted.push(p); acting ??= p; }
       else ctrlNot.push({ person: p, pendingData: p.grade == null, reason: `${gradeText(p)}; Controller needs Grade ${rules.controllerGrade}+ or a recorded Grade-${rules.actingControllerGrade} Acting Controller qualification` });

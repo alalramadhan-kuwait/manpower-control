@@ -119,9 +119,10 @@ export function describe(row: AuditRow, lk: AuditLookups): AuditEntry {
     }
     case 'crew_movements': {
       const to = cur.to_crew === 'DAY' ? 'day duty' : `${s(cur.to_crew)} Shift`;
-      const kind = cur.kind === 'permanent' ? 'Permanent move' : cur.to_crew === 'DAY' ? 'Day duty' : 'Temporary cover';
+      const kind = cur.kind === 'permanent' ? 'Permanent move' : cur.kind === 'placement' ? 'VR placement' : cur.to_crew === 'DAY' ? 'Day duty' : 'Temporary cover';
       const span = cur.end_date ? range(cur.start_date, cur.end_date) : `${day(cur.start_date)} until further notice`;
       const what = cur.kind === 'permanent' ? `${s(cur.from_crew) ?? '?'} → ${s(cur.to_crew)} from ${day(cur.start_date)}`
+        : cur.kind === 'placement' ? `${s(cur.from_crew) ? `${cur.from_crew} → ` : ''}${to}, ${cur.end_date ? span : `${day(cur.start_date)} until moved`}`
         : cur.to_crew === 'DAY' ? `from ${s(cur.from_crew) ?? '?'} Shift, ${span}` : `${s(cur.from_crew) ?? '?'} → ${to}, ${span}`;
       if (row.action === 'insert') title = `${who(empId)}: ${kind.toLowerCase()} ${what}`;
       else if (next?.status === 'cancelled' && prev?.status !== 'cancelled') { title = `${who(empId)}: ${kind.toLowerCase()} cancelled (${what})`; if (s(next.cancel_reason)) details.push(`Reason: ${next.cancel_reason}`); }

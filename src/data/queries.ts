@@ -52,7 +52,7 @@ export async function fetchExistingForPlanning(year: number): Promise<{ employee
     supabase.from('leave_records').select('id,employee_id,start_date,end_date,source_kind,status,absence_type_code,review_status,in_original_plan,in_current_plan,hand_corrected')
       .gte('end_date', `${year - 1}-12-01`).lte('start_date', `${year + 1}-01-31`),
     supabase.from('employee_role_assignments').select('employee_id,effective_from,effective_to,crews(code)').limit(5000),
-    supabase.from('crew_movements').select('employee_id,start_date,end_date,to_crew').eq('status', 'active').eq('kind', 'temporary')
+    supabase.from('crew_movements').select('employee_id,start_date,end_date,to_crew').eq('status', 'active').in('kind', ['temporary', 'placement'])
   ]);
   const err = [lv, ra, mv].find((r) => r.error)?.error; if (err) throw err;
   // crew history and temporary covers, so workbook notes like "Covering D-shift" can be matched to what is recorded

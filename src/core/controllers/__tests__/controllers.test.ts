@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { checkCandidates, coverageNeeds, maxEndDate } from '..';
-import type { MpAbsence, MpAssignment, MpPerson } from '../../manpower';
+import { evaluateDay, type MpAbsence, type MpAssignment, type MpPerson } from '../../manpower';
 
 const P = (id: string, role: MpPerson['role'], crew: MpPerson['crew'], grade: number | null = 16): MpPerson =>
   ({ id, employeeNumber: id, name: id, role, crew, grade, employmentType: 'knpc', takeCharge: null, panelQualified: null, actingController: null });
@@ -88,5 +88,29 @@ describe('VR partly on leave', () => {
     expect(needs[0].vr?.id).toBe('vr');
     expect(needs[0].additional).toBe(false);
     expect(needs[0].vrNote).toContain('on leave part of this period');
+  });
+});
+
+describe('VR placement', () => {
+  const placed = (crewCode: 'A' | 'B' | 'C' | 'D', start = '2026-09-01') => ({ ...P('vr', 'vr_controller', null), moves: [{ start, end: null, crew: crewCode, kind: 'placement' as const }] });
+  const withVr = (vr: MpPerson) => [...people.filter((p) => p.id !== 'vr'), vr];
+  it('a VR placed in the crew covers its Controller\'s leave: no cover needed', () => {
+    expect(coverageNeeds('2026-09-20', '2026-10-10', withVr(placed('A')), [leave('ctrlA', '2026-09-22', '2026-10-05')], [])).toEqual([]);
+  });
+  it('with the crew\'s own Controller present the placed VR is an extra Controller', () => {
+    const day = evaluateDay('2026-09-26', withVr(placed('B')), []);
+    const b = day.crews.find((c) => c.crew === 'B')!;
+    expect(b.working).toBe(true);                 // 26 Sep: B on M1
+    expect(b.controller.count).toBe(2);
+  });
+  it('suggests moving the VR from a crew that keeps its own Controller, and says from where', () => {
+    const needs = coverageNeeds('2026-09-20', '2026-10-10', withVr(placed('C')), [leave('ctrlA', '2026-09-22', '2026-10-05')], []);
+    expect(needs[0]).toMatchObject({ crew: 'A', vrFrom: 'C', additional: false });
+    expect(needs[0].vr?.id).toBe('vr');
+  });
+  it('does not suggest a VR who is covering his own crew at the same time', () => {
+    const needs = coverageNeeds('2026-09-20', '2026-10-10', withVr(placed('C')), [leave('ctrlA', '2026-09-22', '2026-10-05'), leave('ctrlC', '2026-09-20', '2026-10-10')], []);
+    expect(needs.find((n) => n.crew === 'A')).toMatchObject({ vr: null, additional: true });
+    expect(needs.find((n) => n.crew === 'C')).toBeUndefined();
   });
 });

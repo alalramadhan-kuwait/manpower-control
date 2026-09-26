@@ -9,7 +9,7 @@ import { CrewBadge, MoveTargetBadge, isCrew } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { MovementSheet, type MovePerson, type MoveTarget } from './MovementSheet';
 
-const range = (m: CrewMovement) => `${shortDate(m.start_date)}${m.kind === 'permanent' ? ' onward' : ` – ${m.end_date ? shortDate(m.end_date) : 'until further notice'}`}`;
+const range = (m: CrewMovement) => `${shortDate(m.start_date)}${m.kind === 'permanent' ? ' onward' : ` – ${m.end_date ? shortDate(m.end_date) : m.kind === 'placement' ? 'until moved' : 'until further notice'}`}`;
 
 /** Shift movements (Stage G): temporary covers with another crew and permanent crew moves, by date. */
 export default function MovementsPage() {
@@ -27,12 +27,12 @@ export default function MovementsPage() {
     const people: MovePerson[] = data.dir.filter((p) => p.is_active && p.in_unit12_scope).map((p) => ({ id: p.id, name: p.display_name, crew: isCrew(p.crew_code) ? p.crew_code : null })).sort((a, b) => a.name.localeCompare(b.name));
     const name = (id: string) => data.dir.find((p) => p.id === id)?.display_name ?? 'Employee';
     const active = data.moves.filter((m) => m.status === 'active');
-    const live = active.filter((m) => m.kind === 'temporary' && (!m.end_date || m.end_date >= today));
+    const live = active.filter((m) => (m.kind === 'temporary' || m.kind === 'placement') && (!m.end_date || m.end_date >= today));
     const current = live.filter((m) => m.to_crew !== 'DAY' && m.start_date <= today);
     const upcoming = live.filter((m) => m.to_crew !== 'DAY' && m.start_date > today).sort((a, b) => a.start_date.localeCompare(b.start_date));
     const dayDuty = live.filter((m) => m.to_crew === 'DAY').sort((a, b) => a.start_date.localeCompare(b.start_date));
     const permanent = active.filter((m) => m.kind === 'permanent');
-    const past = data.moves.filter((m) => m.status === 'cancelled' || (m.kind === 'temporary' && m.end_date && m.end_date < today));
+    const past = data.moves.filter((m) => m.status === 'cancelled' || ((m.kind === 'temporary' || m.kind === 'placement') && m.end_date && m.end_date < today));
     return { people, name, current, upcoming, dayDuty, permanent, past };
   }, [data, today]);
 
@@ -42,10 +42,10 @@ export default function MovementsPage() {
       <span className="flex shrink-0 items-center gap-1">{m.from_crew && <CrewBadge crew={m.from_crew} size="sm" />}<ArrowRight className="h-3.5 w-3.5 text-slate-400" /><MoveTargetBadge to={m.to_crew} size="sm" /></span>
       <span className="min-w-0 flex-1">
         <Link to={`/employees/${m.employee_id}`} className="block truncate text-sm font-medium text-slate-800">{view!.name(m.employee_id)}</Link>
-        <span className="block truncate text-xs text-slate-500">{m.kind === 'permanent' ? 'Permanent move' : m.to_crew === 'DAY' ? `Day duty${m.start_date > today ? ' (upcoming)' : ''}` : 'Temporary cover'} · {range(m)}{m.status === 'cancelled' ? ' · cancelled' : ''}</span>
+        <span className="block truncate text-xs text-slate-500">{m.kind === 'permanent' ? 'Permanent move' : m.kind === 'placement' ? `VR placement${m.start_date > today ? ' (upcoming)' : ''}` : m.to_crew === 'DAY' ? `Day duty${m.start_date > today ? ' (upcoming)' : ''}` : 'Temporary cover'} · {range(m)}{m.status === 'cancelled' ? ' · cancelled' : ''}</span>
         {m.reason && <span className="block truncate text-xs text-slate-400">{m.reason}</span>}
       </span>
-      {actions && m.kind === 'temporary' && m.status === 'active' && (
+      {actions && (m.kind === 'temporary' || m.kind === 'placement') && m.status === 'active' && (
         <span className="flex shrink-0 flex-col items-end gap-1 text-xs font-medium">
           <button type="button" className="text-brand-700" onClick={() => setSheet({ kind: 'end', movement: m })}>End</button>
           <button type="button" className="text-status-red" onClick={() => setSheet({ kind: 'cancel', movement: m })}>Cancel</button>

@@ -190,7 +190,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
                   <span className="flex items-center gap-1.5 font-medium text-slate-800">{m.from_crew && <CrewTag crew={m.from_crew} suffix="" />} → {m.to_crew === 'DAY' ? <span className="inline-flex items-center gap-1.5"><DayDutyBadge size="sm" />Day</span> : <CrewTag crew={m.to_crew} suffix="" />} <span className="font-normal text-slate-500">· {m.kind === 'permanent' ? 'permanent' : m.to_crew === 'DAY' ? 'day duty' : 'temporary cover'}{m.status === 'cancelled' ? ' · cancelled' : ''}</span></span>
                   <span className="block text-xs text-slate-500">{fmtDate(m.start_date)} → {m.kind === 'permanent' ? 'onward' : m.end_date ? fmtDate(m.end_date) : 'until further notice'}{m.reason ? ` · ${m.reason}` : ''}</span>
                 </span>
-                {m.kind === 'temporary' && m.status === 'active' && <span className="flex shrink-0 gap-2 text-xs font-medium"><button type="button" className="text-brand-700" onClick={() => setMoveSheet({ kind: 'end', movement: m })}>End</button><button type="button" className="text-status-red" onClick={() => setMoveSheet({ kind: 'cancel', movement: m })}>Cancel</button></span>}
+                {(m.kind === 'temporary' || m.kind === 'placement') && m.status === 'active' && <span className="flex shrink-0 gap-2 text-xs font-medium"><button type="button" className="text-brand-700" onClick={() => setMoveSheet({ kind: 'end', movement: m })}>End</button><button type="button" className="text-status-red" onClick={() => setMoveSheet({ kind: 'cancel', movement: m })}>Cancel</button></span>}
               </li>
             ))}
           </ul>

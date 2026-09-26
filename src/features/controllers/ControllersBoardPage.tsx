@@ -4,7 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { MONTH_NAMES, monthEnd, monthStart, shiftMonth } from '@/core/calendar';
 import { weekStartOf } from '@/core/calendar/board';
 import { CONTROLLER_LEAVE_RULES, checkControllerLeave, isControllerRole, type ExtraLeave, type LeaveApproval, type Overlap } from '@/core/controllers/leaveRules';
-import { evaluateRange, isDayDutyWorkday, type DayResult, type MpPerson } from '@/core/manpower';
+import { evaluateRange, isDayDutyWorkday, personOn, type DayResult, type MpPerson } from '@/core/manpower';
 import { CREWS, addDaysIso, type Crew } from '@/core/roster';
 import { approveLeaveException, fetchLeaveApprovals, withdrawLeaveApproval } from '@/data/controllers';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
@@ -76,8 +76,16 @@ export default function ControllersBoardPage({ profile }: { profile: UserProfile
       if (lv) { const k = base.clash.get(`${p.id}|${d}`); return { kind: 'leave', code: lv.typeShort ?? 'L', until: lv.end, clash: k !== undefined, approved: k === true }; }
       const as = inputs.assignments.find((a) => a.employeeId === p.id && a.start <= d && d <= a.end);
       if (as) return as.kind === 'shift_cover' && as.crew ? { kind: 'cover', crew: as.crew } : { kind: 'morning' };
+      if (p.role === 'vr_controller') {
+        // placed in a crew until moved: works its rota; solid while he is the crew's Controller (its own one away)
+        const placed = personOn(p, d).crew;
+        if (!placed) return { kind: 'free' };
+        const c = crews.find((x) => x.crew === placed);
+        if (!c?.working) return { kind: 'off' };
+        return c.controller.counted.some((x) => x.id === p.id) && (c.controller.onLeave.length > 0 || c.controller.away.length > 0) ? { kind: 'cover', crew: placed } : { kind: 'shift', state: c.state, crew: placed };
+      }
       if (p.crew) { const c = crews.find((x) => x.crew === p.crew); return c?.working ? { kind: 'shift', state: c.state, crew: p.crew } : { kind: 'off' }; }
-      return p.role === 'vr_controller' ? { kind: 'free' } : { kind: 'off' };
+      return { kind: 'off' };
     };
     const cols: Col[] = evaluateRange(from, to, inputs.people, inputs.absences, inputs.rules, inputs.assignments).map((d) => ({
       date: d.date, day: d,
@@ -89,7 +97,7 @@ export default function ControllersBoardPage({ profile }: { profile: UserProfile
       cover: cols.reduce((n, g) => n + CREWS.filter((c) => g.crews[c] && !g.crews[c]!.ok).length, 0),
       together: new Set(base.check.overlaps.filter((o) => !o.approval && o.start <= to && o.end >= from).flatMap((o) => dates(o.start, o.end).filter((d) => d >= from && d <= to))).size,
       morning: cols.filter((g) => g.morning === 'empty').length,
-      vrFree: cols.reduce((n, g) => n + base.ctl.filter((p) => g.people[p.id].kind === 'free').length, 0)
+      vrFree: cols.reduce((n, g) => n + base.ctl.filter((p) => p.role === 'vr_controller' && g.people[p.id].kind === 'shift').length, 0)
     };
     return { cols, tiles, firstRed: cols.find((g) => CREWS.some((c) => g.crews[c] && !g.crews[c]!.ok)) ?? null };
   }, [inputs, base, from, to]);
@@ -136,7 +144,7 @@ export default function ControllersBoardPage({ profile }: { profile: UserProfile
             {[{ n: view.tiles.cover, label: 'Cover needed', dot: 'bg-status-red', go: () => (view.firstRed ? setOpen(view.firstRed.date) : navigate('/controllers')) },
               { n: view.tiles.together, label: '2 on leave', dot: 'bg-status-red', go: () => rulesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
               { n: view.tiles.morning, label: 'Morning gap', dot: 'bg-amber-500', go: () => navigate('/controllers/morning') },
-              { n: view.tiles.vrFree, label: 'VR free', dot: 'bg-status-green', go: () => navigate('/controllers') }].map((k) => (
+              { n: view.tiles.vrFree, label: 'VR spare', dot: 'bg-status-green', go: () => navigate('/controllers') }].map((k) => (
               <button key={k.label} type="button" onClick={k.go} className="rounded-lg bg-white px-1 py-1 ring-1 ring-slate-200 active:bg-slate-50">
                 <div className="flex items-center justify-center gap-1 text-base font-semibold leading-tight tabular-nums text-slate-800"><span className={cx('h-2 w-2 rounded-full', k.dot)} />{k.n}</div>
                 <div className="flex items-center justify-center gap-0.5 text-[10px] leading-tight text-slate-500">{k.label}<ChevronRight className="h-2.5 w-2.5" /></div>
@@ -165,7 +173,7 @@ export default function ControllersBoardPage({ profile }: { profile: UserProfile
             <span className="flex items-center gap-1"><span className="rounded bg-crew-b px-1 font-bold text-white">B</span>covering B</span>
             <span className="flex items-center gap-1"><span className="rounded bg-yellow-100 px-1 font-bold text-yellow-900">PV</span>leave</span>
             <span className="flex items-center gap-1"><span className="rounded bg-status-red px-1 font-bold text-white">PV</span>2 on leave</span>
-            <span className="flex items-center gap-1"><span className="rounded px-1 font-bold text-status-green ring-1 ring-green-400">·</span>VR free</span>
+            <span className="flex items-center gap-1"><span className="rounded px-1 font-bold text-status-red ring-1 ring-red-300">—</span>VR not placed</span>
             <span className="flex items-center gap-1"><Sun className="h-3 w-3 text-amber-600" />Morning</span>
           </div>
 
@@ -273,8 +281,8 @@ const statusText = (c: Cell): { text: string; cls: string } => {
     case 'leave': return { text: `On leave (${c.code}) until ${shortDate(c.until)}${c.clash ? (c.approved ? ' · 2 on leave, approved' : ' · 2 on leave, needs approval') : ''}`, cls: c.clash && !c.approved ? 'text-status-red' : 'text-yellow-800' };
     case 'cover': return { text: `Covering ${c.crew} Shift`, cls: 'text-slate-800' };
     case 'morning': return { text: 'Morning post', cls: 'text-amber-700' };
-    case 'shift': return { text: `Own shift · ${c.state === 'M' ? 'Morning' : c.state === 'A' ? 'Afternoon' : 'Night'}`, cls: 'text-slate-700' };
-    case 'free': return { text: 'Free (VR)', cls: 'text-status-green' };
+    case 'shift': return { text: `${c.crew} Shift · ${c.state === 'M' ? 'Morning' : c.state === 'A' ? 'Afternoon' : 'Night'}`, cls: 'text-slate-700' };
+    case 'free': return { text: 'Not placed in a crew', cls: 'text-status-red' };
     default: return { text: 'Off', cls: 'text-slate-400' };
   }
 };
@@ -340,7 +348,7 @@ function PersonCell({ c, wide }: { c: Cell; wide?: boolean }) {
     case 'cover': return <td className={cx(base, CREW_IDENTITY[c.crew].bg, 'text-white')} title={`Covering ${c.crew} Shift`}>{wide ? `→${c.crew}` : c.crew}</td>;
     case 'morning': return <td className={cx(base, 'bg-amber-100 text-amber-600')} title="Morning post"><Sun className="mx-auto h-3 w-3" /></td>;
     case 'shift': return <td className={cx(base, TINT[c.crew])}>{c.state}</td>;
-    case 'free': return <td className={cx(base, 'text-status-green ring-1 ring-inset ring-green-300')} title="VR free">{wide ? 'Free' : '·'}</td>;
+    case 'free': return <td className={cx(base, 'text-status-red ring-1 ring-inset ring-red-300')} title="VR not placed in a crew">{wide ? 'None' : '—'}</td>;
     default: return <td className={base} />;
   }
 }

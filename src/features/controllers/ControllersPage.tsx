@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarDays, ChevronDown, ChevronUp, RefreshCw, Sun } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { checkCandidates, coverageNeeds, maxEndDate, shiftCoverMaxEnd, type CoverageNeed } from '@/core/controllers';
-import { evaluateDay, type MpAbsence, type MpAssignment, type MpPerson } from '@/core/manpower';
+import { evaluateDay, personOn, type MpAbsence, type MpAssignment, type MpPerson } from '@/core/manpower';
 import { onLeaveOn, type OnLeave } from '@/core/leave';
 import { addDaysIso, isValidIsoDate, type Crew } from '@/core/roster';
 import { cancelAssignment, createAssignment, endAssignmentEarly, fetchAssignments, fetchShiftCoverMaxDays, setShiftCoverMaxDays } from '@/data/controllers';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
+import { fetchMovements, placeVr, type CrewMovement } from '@/data/movements';
 import type { ControllerAssignment, UserProfile } from '@/data/types';
 import { BottomSheet, Button, Card, Chip, ErrorBox, Field, PageHeader, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
@@ -28,6 +29,8 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
   const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [placements, setPlacements] = useState<CrewMovement[]>([]);
+  const [placing, setPlacing] = useState<MpPerson | null>(null);
   const [ending, setEnding] = useState<ControllerAssignment | null>(null);
   const [cancelling, setCancelling] = useState<ControllerAssignment | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -37,8 +40,8 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [i, a, m] = await Promise.all([fetchManpowerInputs(addDaysIso(today, -60), addDaysIso(today, HORIZON + 70)), fetchAssignments(), fetchShiftCoverMaxDays()]);
-      setInputs(i); setAll(a); setMaxDays(m);
+      const [i, a, m, mv] = await Promise.all([fetchManpowerInputs(addDaysIso(today, -60), addDaysIso(today, HORIZON + 70)), fetchAssignments(), fetchShiftCoverMaxDays(), fetchMovements()]);
+      setInputs(i); setAll(a); setMaxDays(m); setPlacements(mv.filter((x) => x.kind === 'placement' && x.status === 'active'));
     } catch (e) { setError(e); }
   }, [today]);
   useEffect(() => { load(); }, [load]);
@@ -65,7 +68,7 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
     // from the Morning rotation plan: a proposed period and person (?to=…&who=…)
     const to = params.get('to'); const who = params.get('who');
     if (kind === 'morning' && to && isValidIsoDate(to) && to >= from) setDraft({ kind: 'morning_rotation', crew: null, start: from, end: to > maxEndDate(from) ? maxEndDate(from) : to, coversId: null, suggestId: who });
-    else setDraft(fromNeed(found ? { ...found, start: found.start < from ? from : found.start } : { kind: kind === 'morning' ? 'morning' : 'crew', crew: kind === 'morning' ? null : crew, start: from, end: from, dutyDays: 1, who: [], absentIds: [], vr: null, additional: false, vrNote: null }, maxDays));
+    else setDraft(fromNeed(found ? { ...found, start: found.start < from ? from : found.start } : { kind: kind === 'morning' ? 'morning' : 'crew', crew: kind === 'morning' ? null : crew, start: from, end: from, dutyDays: 1, who: [], absentIds: [], vr: null, additional: false, vrNote: null, vrFrom: null }, maxDays));
     setParams({}, { replace: true });
   }, [inputs, params, setParams, today, maxDays]);
 
@@ -102,9 +105,30 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
                         ? <div className="truncate text-xs font-semibold text-status-red">Extra Controller needed</div>
                         : n.vr && (n.vrNote
                           ? <div className="truncate text-xs text-status-amber">VR {n.vr.name}: {n.vrNote.replace(/^VR /, '').replace(/(\d{4}-\d{2}-\d{2})/g, (d) => shortDate(d))}</div>
-                          : <div className="text-xs text-status-green">VR free: {n.vr.name}</div>))}
+                          : <div className="truncate text-xs text-status-green">Move VR {n.vr.name}{n.vrFrom ? ` from ${n.vrFrom}` : ''}</div>))}
                     </div>
                     <Button variant="secondary" className="shrink-0" onClick={() => { setNotice(null); setDraft(fromNeed(n, maxDays)); }}>{n.kind === 'morning' ? 'Rotation' : 'Assign'}</Button>
+                  </li>
+                );
+              })}
+            </ul>
+          </Section>
+
+          <Section title="VR placement">
+            <ul className="divide-y divide-slate-100">
+              {inputs.people.filter((p) => p.role === 'vr_controller').sort((a, b) => a.name.localeCompare(b.name)).map((p) => {
+                const now = personOn(p, today).crew;
+                const mine = placements.filter((m) => m.employee_id === p.id && (!m.end_date || m.end_date >= today)).sort((a, b) => a.start_date.localeCompare(b.start_date));
+                const cur = mine.find((m) => m.start_date <= today) ?? null;
+                const next = mine.filter((m) => m.start_date > today);
+                return (
+                  <li key={p.id} className="flex items-center gap-3 py-2.5">
+                    {now ? <CrewBadge crew={now} /> : <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-100 text-xs font-semibold text-status-red">—</span>}
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium text-slate-800">{p.name}</div>
+                      <div className="truncate text-xs text-slate-500">{now ? `In ${now} Shift${cur ? ` since ${shortDate(cur.start_date)}` : ''}` : <span className="font-semibold text-status-red">Not placed in a crew</span>}{next.length ? ` · ${next.map((m) => `→ ${m.to_crew} ${shortDate(m.start_date)}`).join(' · ')}` : ''}</div>
+                    </div>
+                    <Button variant="secondary" className="shrink-0" onClick={() => { setNotice(null); setPlacing(p); }}>Move</Button>
                   </li>
                 );
               })}
@@ -168,6 +192,7 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
         </>
       )}
       {draft && inputs && <AssignSheet initial={draft} maxDays={maxDays} people={inputs.people} absences={inputs.absences} assignments={inputs.assignments} onClose={() => setDraft(null)} onDone={done} />}
+      {placing && <PlaceSheet vr={placing} today={today} onClose={() => setPlacing(null)} onDone={(m) => { setPlacing(null); done(m); }} />}
       {editRules && <RulesSheet current={maxDays} onClose={() => setEditRules(false)} onDone={(m) => { setEditRules(false); setNotice(m); load(); }} />}
       {ending && <EndEarlySheet a={ending} today={today} name={name} onClose={() => setEnding(null)} onDone={done} />}
       {cancelling && <CancelSheet a={cancelling} name={name} onClose={() => setCancelling(null)} onDone={done} />}
@@ -212,6 +237,12 @@ function AssignSheet({ initial, maxDays, people, absences, assignments, onClose,
     if (!pick) return;
     setBusy(true); setErr(null);
     try {
+      const vr = people.find((p) => p.id === pick);
+      if (d.kind === 'shift_cover' && d.crew && vr?.role === 'vr_controller') {
+        await placeVr({ employee: pick, crew: d.crew, start: d.start, reason: note.trim() || `Cover for ${people.find((p) => p.id === d.coversId)?.name ?? `${d.crew} Shift Controller`}` });
+        onDone(`${vr.name} placed in ${d.crew} Shift from ${shortDate(d.start)}, until moved.`);
+        return;
+      }
       await createAssignment({ kind: d.kind, employee_id: pick, crew_code: d.kind === 'shift_cover' ? d.crew : null, covers_employee_id: d.kind === 'shift_cover' ? d.coversId : null, start_date: d.start, end_date: d.end, note: note.trim() || null });
       const who = people.find((p) => p.id === pick)?.name ?? 'Controller';
       onDone(d.kind === 'shift_cover' ? `${who} covers ${d.crew} Shift ${range(d.start, d.end)}.` : `${who} holds the Morning Controller post ${range(d.start, d.end)}.`);
@@ -261,6 +292,7 @@ function AssignSheet({ initial, maxDays, people, absences, assignments, onClose,
                         <span className="flex items-center gap-1.5 text-sm font-medium text-slate-800">{c.person.name}{c.person.crew && <CrewBadge crew={c.person.crew} size="sm" />}</span>
                         <span className="block text-xs text-slate-500">{ROLE[c.person.role ?? ''] ?? 'Controller'} · Grade {c.person.grade ?? '—'}</span>
                         {[...c.blocked.map((t) => ({ t, red: true })), ...c.warnings.map((t) => ({ t, red: false }))].map(({ t, red }) => <span key={t} className={cx('block text-xs', red ? 'text-status-red' : 'text-status-amber')}>{t}</span>)}
+                        {c.person.role === 'vr_controller' && d.kind === 'shift_cover' && d.crew && <span className="block text-xs text-slate-600">VR: {personOn(c.person, d.start).crew ? `moves from ${personOn(c.person, d.start).crew} to ${d.crew}` : `placed in ${d.crew}`} from {shortDate(d.start)}, until moved</span>}
                         {!disabled && c.warnings.length === 0 && <span className="block text-xs text-status-green">Available on every day</span>}
                       </span>
                     </label>
@@ -342,6 +374,40 @@ function RulesSheet({ current, onClose, onDone }: { current: number | null; onCl
         {problem && <p className="text-xs text-slate-500">{problem}</p>}
         {err != null && <ErrorBox error={err} />}
         <div className="flex gap-2"><Button variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button><Button className="flex-1" disabled={busy || !!problem} onClick={save}>Save</Button></div>
+      </div>
+    </BottomSheet>
+  );
+}
+
+/** Place a VR Controller in a crew from a date; they stay until moved (the running placement ends the day before). */
+function PlaceSheet({ vr, today, onClose, onDone }: { vr: MpPerson; today: string; onClose: () => void; onDone: (m: string) => void }) {
+  const now = personOn(vr, today).crew;
+  const [crew, setCrew] = useState<Crew | null>(null);
+  const [start, setStart] = useState(today);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const problem = !crew ? 'Choose the crew.' : !isValidIsoDate(start) ? 'Enter the first day.' : null;
+  async function save() {
+    setBusy(true); setErr(null);
+    try { await placeVr({ employee: vr.id, crew: crew!, start, reason: reason.trim() || 'VR placement' }); onDone(`${vr.name} placed in ${crew} Shift from ${shortDate(start)}, until moved.`); }
+    catch (e) { setErr(e); } finally { setBusy(false); }
+  }
+  return (
+    <BottomSheet open onClose={onClose} title={`Move ${vr.name.split(' ')[0]} (VR)`}>
+      <div className="space-y-4">
+        <p className="text-sm text-slate-600">{now ? `Now in ${now} Shift.` : 'Not placed in a crew yet.'} Works the new crew's rota until moved again.</p>
+        <Field label="Crew">
+          <div className="grid grid-cols-4 gap-2">
+            {CREW_LIST.map((c) => (
+              <button key={c} type="button" aria-pressed={crew === c} disabled={c === now && start <= today} onClick={() => setCrew(c)}
+                className={cx('flex items-center justify-center rounded-xl py-2 ring-1 disabled:opacity-30', crew === c ? 'bg-slate-100 ring-2 ring-slate-800' : 'ring-slate-300')}><CrewBadge crew={c} muted={crew !== c} /></button>
+            ))}
+          </div>
+        </Field>
+        <Field label="From"><input type="date" className="input" value={start} onChange={(e) => setStart(e.target.value)} /></Field>
+        <Field label="Reason (optional)"><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Cover for Yaser Asiri (PV)" /></Field>
+        {err != null && <ErrorBox error={err} />}
+        <Button className="w-full" disabled={busy || !!problem} onClick={save}>{busy ? 'Saving…' : problem ?? `Place in ${crew} Shift from ${shortDate(start)}`}</Button>
       </div>
     </BottomSheet>
   );

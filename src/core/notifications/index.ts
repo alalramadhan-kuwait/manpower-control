@@ -3,7 +3,7 @@
 // stored: an item disappears as soon as the thing behind it is resolved.
 import { attentionPeriods } from '../calendar';
 import type { CoverageNeed } from '../controllers';
-import type { DayResult, MpAbsence, MpPerson } from '../manpower';
+import { personOn, type DayResult, type MpAbsence, type MpPerson } from '../manpower';
 import type { OperationPlan } from '../modes';
 import { oracleDue } from '../oracle';
 
@@ -63,7 +63,7 @@ export function buildNotices(i: NoticeInput): Notice[] {
 
   // 2. Controller cover (crew Controller away, or the Morning post empty)
   for (const n of i.needs) {
-    const vr = n.additional ? 'Extra Controller needed' : n.vr ? `VR free: ${n.vr.name}` : n.vrNote ?? '';
+    const vr = n.additional ? 'Extra Controller needed' : n.vr ? `Move VR ${n.vr.name}${n.vrFrom ? ` from ${n.vrFrom}` : ''}` : n.vrNote ?? '';
     if (n.kind === 'crew') out.push({ id: `cover-${n.crew}-${n.start}`, level: 'action', area: 'controller', title: `Cover needed · ${n.crew} Shift`,
       detail: [`${span(n.start, n.end)} · ${n.who.join(', ')} · ${when(i.today, n.start)}`, vr].filter(Boolean).join(' · '), date: n.start, to: `/controllers?assign=cover&crew=${n.crew}&from=${n.start}` });
     else out.push({ id: `morning-${n.start}`, level: 'action', area: 'controller', title: 'Morning Controller post empty',
@@ -77,6 +77,10 @@ export function buildNotices(i: NoticeInput): Notice[] {
     else out.push({ id: `req-${r.id}`, level: i.isSectionHead ? 'action' : 'watch', area: 'request', title: i.isSectionHead ? 'Waiting for your decision' : 'Waiting for the Section Head',
       detail: `${what}${r.overtime === true ? ' · overtime' : r.overtime === false ? ' · no overtime' : ''}`, date: r.start, to: `/requests/${r.id}` });
   }
+
+  // 3b. every VR Controller works in a crew: one not placed in any crew today
+  for (const v of i.people.filter((p) => p.role === 'vr_controller' && !personOn(p, i.today).crew))
+    out.push({ id: `vr-unplaced-${v.id}`, level: 'watch', area: 'controller', title: `${v.name} (VR) not placed in a crew`, detail: 'Place him in the crew he works with', date: null, to: '/controllers' });
 
   // 4. staff records needing action
   if (i.needsAction > 0) out.push({ id: 'staff-action', level: 'watch', area: 'data', title: `${plural(i.needsAction, 'staff record')} to complete`,

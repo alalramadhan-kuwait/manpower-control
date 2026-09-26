@@ -30,7 +30,7 @@ export function toMpAbsence(l: LeaveRow): MpAbsence {
 }
 
 interface RoleRow { employee_id: string; effective_from: string; effective_to: string | null; positions: { code: string } | null; crews: { code: string } | null }
-interface MoveRow { employee_id: string; start_date: string; end_date: string | null; to_crew: Crew | 'DAY' }
+interface MoveRow { employee_id: string; start_date: string; end_date: string | null; to_crew: Crew | 'DAY'; kind: 'temporary' | 'placement' }
 
 /**
  * Active Section-1 people (with their dated role history and temporary shift covers, so each date uses the crew
@@ -47,7 +47,7 @@ export async function fetchManpowerInputs(from: string, to: string): Promise<Man
       .lte('start_date', to).gte('end_date', from),
     supabase.from('controller_assignments').select('*').eq('status', 'active').lte('start_date', to).gte('end_date', from),
     supabase.from('employee_role_assignments').select('employee_id,effective_from,effective_to,positions(code),crews(code)').limit(5000),
-    supabase.from('crew_movements').select('employee_id,start_date,end_date,to_crew').eq('status', 'active').eq('kind', 'temporary').lte('start_date', to).or(`end_date.is.null,end_date.gte.${from}`),
+    supabase.from('crew_movements').select('employee_id,start_date,end_date,to_crew,kind').eq('status', 'active').in('kind', ['temporary', 'placement']).lte('start_date', to).or(`end_date.is.null,end_date.gte.${from}`),
     fetchOperationPlan(from, to)
   ]);
   const err = [dir, lv, ca, ra, mv].find((r) => r.error)?.error; if (err) throw err;
@@ -57,7 +57,7 @@ export async function fetchManpowerInputs(from: string, to: string): Promise<Man
     history.set(r.employee_id, [...(history.get(r.employee_id) ?? []), { from: r.effective_from, to: r.effective_to, role, crew: (r.crews?.code as Crew | undefined) ?? null }]);
   }
   const moves = new Map<string, MpCrewMove[]>();
-  for (const m of mv.data as MoveRow[]) moves.set(m.employee_id, [...(moves.get(m.employee_id) ?? []), { start: m.start_date, end: m.end_date, crew: m.to_crew }]);
+  for (const m of mv.data as MoveRow[]) moves.set(m.employee_id, [...(moves.get(m.employee_id) ?? []), { start: m.start_date, end: m.end_date, crew: m.to_crew, kind: m.kind }]);
   const people = (dir.data as EmployeeDirectoryRow[]).map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id) }));
   return { people, absences: (lv.data as unknown as LeaveRow[]).map(toMpAbsence), assignments: (ca.data as ControllerAssignment[]).map(toMpAssignment), plan: op.plan, rules: rulesByDate(op.plan) };
 }
