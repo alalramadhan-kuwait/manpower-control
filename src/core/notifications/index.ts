@@ -110,7 +110,7 @@ export function buildNotices(i: NoticeInput): Notice[] {
   if (rejected.length) out.push({ id: `oracle-rej-${i.today}`, level: 'action', area: 'leave', title: `${plural(rejected.length, 'leave')} rejected in Oracle`,
     detail: list(rejected), date: rejected[0].start, to: '/oracle?s=rejected' });
   if (waiting.length) out.push({ id: `oracle-${i.today}`, level: 'action', area: 'leave', title: `${plural(waiting.length, 'leave')} not approved in Oracle · next ${i.oracleDays ?? 30} days`,
-    detail: list(waiting), date: waiting[0].start, to: waiting.some((a) => a.oracle === 'not_submitted') ? '/oracle' : '/oracle?s=submitted' });
+    detail: list(waiting), date: waiting[0].start, to: '/requests' });
 
   // 8. Controller leave rules: two Controllers on leave together, or a 5th+ leave in a year, without approval
   const lvl: NoticeLevel = i.isSectionHead ? 'action' : 'watch';
