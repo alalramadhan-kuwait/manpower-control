@@ -115,17 +115,19 @@ export function LeaveWorklist({ adding, onAdded }: { adding: boolean; onAdded: (
 function Row({ r, busy, onOpen, onDecide, onCancel }: { r: WorkRow; busy: boolean; onOpen: () => void; onDecide: (s: OracleStatus) => void; onCancel: () => void }) {
   const e = r.expected;
   const icon = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg disabled:opacity-50';
+  // approved leave is faded so what still needs a decision stands out; its warnings stay clear
+  const fade = r.oracle === 'approved' ? 'opacity-40' : '';
   return (
     <div className="flex items-center gap-2 py-2">
       <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-2 text-left">
-        {r.crew === 'DAY' ? <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-600">Day</span> : <span className="mt-0.5"><CrewBadge crew={r.crew} size="sm" /></span>}
+        {r.crew === 'DAY' ? <span className={cx('mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-600', fade)}>Day</span> : <span className={cx('mt-0.5', fade)}><CrewBadge crew={r.crew} size="sm" /></span>}
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-1.5">
+          <span className={cx('flex items-center gap-1.5', fade)}>
             <span className="truncate text-sm font-medium text-slate-900">{r.person.name}</span>
             {r.role === 'vr_controller' && <span className="text-[10px] font-semibold text-slate-400">VR</span>}
             <OraclePill status={r.oracle} small />
           </span>
-          <span className="block truncate text-xs text-slate-600">{r.codes.length > 0 && <span className="mr-1 rounded bg-yellow-100 px-1 text-[10px] font-semibold text-yellow-900">{r.codes.join('+')}</span>}{e ? <><b className="font-semibold text-slate-800">{range(e.start, e.end)}</b> · {e.days}d · back {weekday(e.backOn)} {shortDate(e.backOn)}</> : 'Rest days only'}</span>
+          <span className={cx('block truncate text-xs text-slate-600', fade)}>{r.codes.length > 0 && <span className="mr-1 rounded bg-yellow-100 px-1 text-[10px] font-semibold text-yellow-900">{r.codes.join('+')}</span>}{e ? <><b className="font-semibold text-slate-800">{range(e.start, e.end)}</b> · {e.days}d · back {weekday(e.backOn)} {shortDate(e.backOn)}</> : 'Rest days only'}</span>
           {(r.oracle === 'rejected' || r.shortDuties > 0 || r.clashWith.length > 0 || r.extraNth) && (
             <span className="flex flex-wrap gap-x-2 text-[11px] font-semibold">
               {r.oracle === 'rejected' && <span className="text-status-red">Cancel or reschedule</span>}
