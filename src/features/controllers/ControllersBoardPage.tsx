@@ -17,9 +17,11 @@ import { localToday, shortDate } from '@/ui/leave';
 const pad = (n: number) => String(n).padStart(2, '0');
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
 const ORDER: Record<string, number> = { controller: 0, vr_controller: 1, morning_controller: 2 };
-type Cell = { kind: 'leave'; code: string; until: string; clash: boolean; approved: boolean } | { kind: 'cover'; crew: Crew } | { kind: 'morning' } | { kind: 'shift'; state: string } | { kind: 'free' } | { kind: 'off' };
+type Cell = { kind: 'leave'; code: string; until: string; clash: boolean; approved: boolean } | { kind: 'cover'; crew: Crew } | { kind: 'morning' } | { kind: 'shift'; state: string; crew: Crew } | { kind: 'free' } | { kind: 'off' };
 type Pending = { kind: 'overlap'; o: Overlap } | { kind: 'extra'; x: ExtraLeave } | { kind: 'withdraw'; a: LeaveApproval; what: string };
 type CrewCell = { state: string; ok: boolean } | null;
+/** Each crew's colour, light, for its own duties (A blue, B green, C orange, D purple). Red stays for "cover needed". */
+const TINT: Record<Crew, string> = { A: 'bg-crew-a/15 text-crew-a', B: 'bg-crew-b/15 text-crew-b', C: 'bg-crew-c/15 text-crew-c', D: 'bg-crew-d/15 text-crew-d' };
 type Col = { date: string; day: DayResult; crews: Record<Crew, CrewCell>; people: Record<string, Cell>; morning: 'held' | 'empty' | 'rest' };
 
 /** One calendar for the Controllers only: each crew's Controller cover, each Controller's day, the Morning post, and the leave rules. */
@@ -74,7 +76,7 @@ export default function ControllersBoardPage({ profile }: { profile: UserProfile
       if (lv) { const k = base.clash.get(`${p.id}|${d}`); return { kind: 'leave', code: lv.typeShort ?? 'L', until: lv.end, clash: k !== undefined, approved: k === true }; }
       const as = inputs.assignments.find((a) => a.employeeId === p.id && a.start <= d && d <= a.end);
       if (as) return as.kind === 'shift_cover' && as.crew ? { kind: 'cover', crew: as.crew } : { kind: 'morning' };
-      if (p.crew) { const c = crews.find((x) => x.crew === p.crew); return c?.working ? { kind: 'shift', state: c.state } : { kind: 'off' }; }
+      if (p.crew) { const c = crews.find((x) => x.crew === p.crew); return c?.working ? { kind: 'shift', state: c.state, crew: p.crew } : { kind: 'off' }; }
       return p.role === 'vr_controller' ? { kind: 'free' } : { kind: 'off' };
     };
     const cols: Col[] = evaluateRange(from, to, inputs.people, inputs.absences, inputs.rules, inputs.assignments).map((d) => ({
@@ -145,7 +147,7 @@ export default function ControllersBoardPage({ profile }: { profile: UserProfile
           <BoardCard title="Crew cover" cols={view.cols} mode={mode} today={today} onDay={setOpen} scrollRef={(el) => { scrollers.current[0] = el; }} onScroll={() => sync(0)}
             rows={CREWS.map((c) => ({ key: c, label: <CrewBadge crew={c} size="sm" />, cell: (g: Col) => {
               const x = g.crews[c];
-              return <td key={g.date} title={x ? (x.ok ? 'Controller in place' : 'Cover needed') : 'Off'} className={cx('h-7 rounded', !x ? '' : x.ok ? 'bg-green-100 text-green-900' : 'bg-status-red text-white')}>{x?.state ?? ''}</td>;
+              return <td key={g.date} title={x ? (x.ok ? 'Controller in place' : 'Cover needed') : 'Off'} className={cx('h-7 rounded', !x ? '' : x.ok ? TINT[c] : 'bg-status-red text-white')}>{x?.state ?? ''}</td>;
             } }))} />
 
           <BoardCard title="Controllers" cols={view.cols} mode={mode} today={today} onDay={setOpen} scrollRef={(el) => { scrollers.current[1] = el; }} onScroll={() => sync(1)}
@@ -158,7 +160,8 @@ export default function ControllersBoardPage({ profile }: { profile: UserProfile
               cell: (g: Col) => <td key={g.date} className={cx('h-7 rounded', g.morning === 'held' ? 'bg-amber-100 text-amber-700' : g.morning === 'empty' ? 'bg-red-200' : '')}>{g.morning === 'held' ? <Sun className="mx-auto h-3 w-3" /> : ''}</td> }]} />
 
           <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 px-1 text-[10px] text-slate-500">
-            <span className="flex items-center gap-1"><span className="rounded bg-slate-100 px-1 font-bold text-slate-600">M</span>own shift</span>
+            <span className="flex items-center gap-1">{CREWS.map((c) => <span key={c} className={cx('rounded px-1 font-bold', TINT[c])}>{c}</span>)}own crew / shift</span>
+            <span className="flex items-center gap-1"><span className="rounded bg-status-red px-1 font-bold text-white">M</span>cover needed</span>
             <span className="flex items-center gap-1"><span className="rounded bg-crew-b px-1 font-bold text-white">B</span>covering B</span>
             <span className="flex items-center gap-1"><span className="rounded bg-yellow-100 px-1 font-bold text-yellow-900">PV</span>leave</span>
             <span className="flex items-center gap-1"><span className="rounded bg-status-red px-1 font-bold text-white">PV</span>2 on leave</span>
@@ -336,7 +339,7 @@ function PersonCell({ c, wide }: { c: Cell; wide?: boolean }) {
     case 'leave': return <td className={cx(base, c.clash && !c.approved ? 'bg-status-red text-white' : 'bg-yellow-100 text-yellow-900', c.approved && 'ring-1 ring-green-500')} title={c.clash ? (c.approved ? 'Two on leave · approved' : 'Two on leave · needs approval') : 'On leave'}>{wide ? c.code : c.code.slice(0, 2)}</td>;
     case 'cover': return <td className={cx(base, CREW_IDENTITY[c.crew].bg, 'text-white')} title={`Covering ${c.crew} Shift`}>{wide ? `→${c.crew}` : c.crew}</td>;
     case 'morning': return <td className={cx(base, 'bg-amber-100 text-amber-600')} title="Morning post"><Sun className="mx-auto h-3 w-3" /></td>;
-    case 'shift': return <td className={cx(base, 'bg-slate-100 text-slate-600')}>{c.state}</td>;
+    case 'shift': return <td className={cx(base, TINT[c.crew])}>{c.state}</td>;
     case 'free': return <td className={cx(base, 'text-status-green ring-1 ring-inset ring-green-300')} title="VR free">{wide ? 'Free' : '·'}</td>;
     default: return <td className={base} />;
   }
