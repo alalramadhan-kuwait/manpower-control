@@ -15,6 +15,6 @@ export function OracleDot({ status, className }: { status: OracleStatus | null |
   return <span title={`Oracle: ${ORACLE_LABEL[status]}`} aria-label={`Oracle: ${ORACLE_LABEL[status]}`} className={cx('inline-block h-2 w-2 shrink-0 rounded-full', ORACLE_DOT[status], className)} />;
 }
 
-export function OraclePill({ status, className }: { status: OracleStatus; className?: string }) {
-  return <span className={cx('inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-semibold', ORACLE_PILL[status], className)}>{ORACLE_LABEL[status]}</span>;
+export function OraclePill({ status, small, className }: { status: OracleStatus; small?: boolean; className?: string }) {
+  return <span className={cx('inline-flex shrink-0 items-center rounded-full font-semibold', small ? 'px-1.5 text-[10px] leading-4' : 'px-2 py-0.5 text-[11px]', ORACLE_PILL[status], className)}>{ORACLE_LABEL[status]}</span>;
 }

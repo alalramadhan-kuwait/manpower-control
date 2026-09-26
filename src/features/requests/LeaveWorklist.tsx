@@ -1,6 +1,6 @@
 // Requests › Leave: every leave running today or starting in the next 30 days, one row per leave, with what the
 // Oracle HR request should say. Approve / Reject records the Oracle decision; tap a row to check or edit the dates.
-import { AlertTriangle, Check, X } from 'lucide-react';
+import { AlertTriangle, CalendarClock, Check, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { checkControllerLeave, isControllerRole, type LeaveApproval } from '@/core/controllers/leaveRules';
 import { evaluateRange, personOn, type MpAbsence } from '@/core/manpower';
@@ -19,7 +19,7 @@ import { CrewBadge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { OraclePill } from '@/ui/oracle';
 
-const DAYS = 30;
+const DAYS = 14;
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
 const weekday = (iso: string) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(`${iso}T00:00:00Z`).getUTCDay()];
 type Shift = 'all' | Crew | 'DAY';
@@ -86,7 +86,8 @@ export function LeaveWorklist({ adding, onAdded }: { adding: boolean; onAdded: (
         <Card key={g.title} className="mb-3 py-1.5">
           <h2 className="pt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{g.title} · {g.list.length}{g.list.some((r) => r.oracle !== 'approved') ? ` · ${g.list.filter((r) => r.oracle !== 'approved').length} to decide` : ''}</h2>
           {g.list.length === 0 ? <p className="py-2 text-sm text-slate-500">None</p> : (() => {
-            const todo = g.list.filter((r) => r.oracle !== 'approved'), done = g.list.filter((r) => r.oracle === 'approved');
+            const keep = g.title === 'On leave now';   // leave running now stays in view even when approved (review / edit)
+            const todo = keep ? g.list : g.list.filter((r) => r.oracle !== 'approved'), done = keep ? [] : g.list.filter((r) => r.oracle === 'approved');
             return (
               <div className="divide-y divide-slate-100">
                 {todo.map((r) => <Row key={r.key} r={r} busy={busy === r.key} onOpen={() => setOpen(r)} onDecide={(s) => decide(r, s)} onCancel={() => setCancelling(r)} />)}
@@ -108,46 +109,40 @@ export function LeaveWorklist({ adding, onAdded }: { adding: boolean; onAdded: (
   );
 }
 
+/** One leave on two short lines: who / status / quick decision, then the Oracle dates, day back and warnings. */
 function Row({ r, busy, onOpen, onDecide, onCancel }: { r: WorkRow; busy: boolean; onOpen: () => void; onDecide: (s: OracleStatus) => void; onCancel: () => void }) {
   const e = r.expected;
-  const done = r.oracle === 'approved';
+  const icon = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg disabled:opacity-50';
   return (
-    <div className={cx('py-2.5', done && 'opacity-60')}>
-      <button type="button" onClick={onOpen} className="block w-full text-left">
-        <span className="flex items-center gap-2">
-          {r.crew === 'DAY' ? <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-600">Day</span> : <CrewBadge crew={r.crew} size="sm" />}
-          <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">{r.person.name}{r.role === 'vr_controller' ? <span className="ml-1 text-[10px] font-semibold text-slate-400">VR</span> : null}</span>
-          {r.codes.length > 0 && <span className="rounded bg-yellow-100 px-1 text-[11px] font-semibold text-yellow-900">{r.codes.join('+')}</span>}
-          <OraclePill status={r.oracle} />
-        </span>
-        <span className="mt-0.5 block pl-8 text-xs text-slate-700">{e ? <>Oracle: <b>{range(e.start, e.end)}</b> · {e.days} days</> : 'Rest days only · no request'}</span>
-        {e && <span className="block pl-8 text-[11px] text-slate-500">{e.restAfter > 0 || e.restBefore > 0 ? `plan ${range(r.start, r.end)} · ` : ''}back {weekday(e.backOn)} {shortDate(e.backOn)}</span>}
-        {(r.oracle === 'rejected' || r.shortDuties > 0 || r.clashWith.length > 0 || r.extraNth) && (
-          <span className="mt-1 flex flex-wrap gap-1 pl-8">
-            {r.oracle === 'rejected' && <Badge red>Rejected · cancel or reschedule</Badge>}
-            {r.shortDuties > 0 && <Badge red>Crew short {r.shortDuties} dut{r.shortDuties === 1 ? 'y' : 'ies'}</Badge>}
-            {r.clashWith.length > 0 && <Badge red>2 Controllers off · {r.clashWith.join(', ')}</Badge>}
-            {r.extraNth && <Badge>Leave {r.extraNth} this year</Badge>}
+    <div className="flex items-center gap-2 py-2">
+      <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-2 text-left">
+        {r.crew === 'DAY' ? <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-600">Day</span> : <span className="mt-0.5"><CrewBadge crew={r.crew} size="sm" /></span>}
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1.5">
+            <span className="truncate text-sm font-medium text-slate-900">{r.person.name}</span>
+            {r.role === 'vr_controller' && <span className="text-[10px] font-semibold text-slate-400">VR</span>}
+            <OraclePill status={r.oracle} small />
           </span>
-        )}
+          <span className="block truncate text-xs text-slate-600">{r.codes.length > 0 && <span className="mr-1 rounded bg-yellow-100 px-1 text-[10px] font-semibold text-yellow-900">{r.codes.join('+')}</span>}{e ? <><b className="font-semibold text-slate-800">{range(e.start, e.end)}</b> · {e.days}d · back {weekday(e.backOn)} {shortDate(e.backOn)}</> : 'Rest days only'}</span>
+          {(r.oracle === 'rejected' || r.shortDuties > 0 || r.clashWith.length > 0 || r.extraNth) && (
+            <span className="flex flex-wrap gap-x-2 text-[11px] font-semibold">
+              {r.oracle === 'rejected' && <span className="text-status-red">Cancel or reschedule</span>}
+              {r.shortDuties > 0 && <span className="inline-flex items-center gap-0.5 text-status-red"><AlertTriangle className="h-3 w-3" />Short {r.shortDuties}d</span>}
+              {r.clashWith.length > 0 && <span className="inline-flex min-w-0 items-center gap-0.5 text-status-red"><AlertTriangle className="h-3 w-3 shrink-0" /><span className="truncate">With {r.clashWith.join(', ')}</span></span>}
+              {r.extraNth && <span className="text-amber-700">Leave {r.extraNth} this year</span>}
+            </span>
+          )}
+        </span>
       </button>
-      {!done && (
-        <div className="mt-1.5 flex gap-1.5 pl-8">
-          {r.oracle === 'rejected' ? <>
-            <Button variant="secondary" className="min-h-9 flex-1 px-2 text-xs" disabled={busy} onClick={onOpen}>Reschedule</Button>
-            <Button variant="danger" className="min-h-9 flex-1 px-2 text-xs" disabled={busy} onClick={onCancel}>Cancel leave</Button>
-          </> : <>
-            <button type="button" disabled={busy} onClick={() => onDecide('approved')} className="flex min-h-9 flex-1 items-center justify-center gap-1 rounded-xl bg-green-600 text-xs font-semibold text-white disabled:opacity-50"><Check className="h-3.5 w-3.5" />Approve</button>
-            <button type="button" disabled={busy} onClick={() => onDecide('rejected')} className="flex min-h-9 flex-1 items-center justify-center gap-1 rounded-xl bg-white text-xs font-semibold text-status-red ring-1 ring-red-300 disabled:opacity-50"><X className="h-3.5 w-3.5" />Reject</button>
-          </>}
-        </div>
-      )}
+      {r.oracle === 'rejected' ? <>
+        <button type="button" aria-label="Reschedule" title="Reschedule" disabled={busy} onClick={onOpen} className={cx(icon, 'bg-white text-brand-700 ring-1 ring-slate-300')}><CalendarClock className="h-4 w-4" /></button>
+        <button type="button" aria-label="Cancel leave" title="Cancel leave" disabled={busy} onClick={onCancel} className={cx(icon, 'bg-status-red text-white')}><Trash2 className="h-4 w-4" /></button>
+      </> : r.oracle !== 'approved' ? <>
+        <button type="button" aria-label="Approve" title="Approve" disabled={busy} onClick={() => onDecide('approved')} className={cx(icon, 'bg-green-600 text-white')}><Check className="h-4 w-4" /></button>
+        <button type="button" aria-label="Reject" title="Reject" disabled={busy} onClick={() => onDecide('rejected')} className={cx(icon, 'bg-white text-status-red ring-1 ring-red-300')}><X className="h-4 w-4" /></button>
+      </> : null}
     </div>
   );
-}
-
-function Badge({ children, red }: { children: React.ReactNode; red?: boolean }) {
-  return <span className={cx('inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[11px] font-semibold', red ? 'bg-red-50 text-status-red ring-1 ring-red-200' : 'bg-amber-50 text-amber-800 ring-1 ring-amber-200')}>{red && <AlertTriangle className="h-3 w-3" />}{children}</span>;
 }
 
 /**
