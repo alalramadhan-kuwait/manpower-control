@@ -316,6 +316,15 @@ function QualificationSheet({ emp, code, current, actor, onClose, onSaved }: { e
   );
 }
 
+/** The day and month of `iso` in the current year (29 Feb → 28 Feb in a common year); today when `iso` is empty. */
+function sameDayThisYear(iso: string): string {
+  const now = new Date(); const y = now.getFullYear();
+  if (!iso) return `${y}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const [m, d] = [Number(iso.slice(5, 7)), Number(iso.slice(8, 10))];
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return `${y}-${String(m).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
+}
+
 function BasicsSheet({ emp, onClose, onSaved }: { emp: EmployeeDirectoryRow; onClose: () => void; onSaved: () => void }) {
   const [shortName, setShortName] = useState(emp.short_name ?? '');
   const [fullName, setFullName] = useState(emp.official_name);
@@ -344,9 +353,10 @@ function BasicsSheet({ emp, onClose, onSaved }: { emp: EmployeeDirectoryRow; onC
           <Field label="Grade" hint={gradeBad ? 'A whole number, 1–25' : emp.grade != null && gradeNum !== emp.grade ? `Was ${emp.grade}` : undefined}>
             <input className="input" inputMode="numeric" value={grade} onChange={(e) => {
               const v = e.target.value.replace(/[^0-9]/g, ''); setGrade(v);
-              // a new grade suggests today as the promotion date (editable); back to the old grade restores it
+              // a new grade suggests the last promotion's day and month in this year (promotions fall on the same date),
+              // or today when none is recorded; editable. Back to the old grade restores the recorded date.
               const was = emp.last_promotion_date ?? '';
-              if (v === String(emp.grade ?? '')) setPromoted(was); else if (promoted === was) setPromoted(new Date().toISOString().slice(0, 10));
+              if (v === String(emp.grade ?? '')) setPromoted(was); else if (promoted === was) setPromoted(sameDayThisYear(was));
             }} />
           </Field>
           <Field label="Last promotion"><input type="date" className="input" value={promoted} onChange={(e) => setPromoted(e.target.value)} /></Field>
