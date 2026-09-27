@@ -81,3 +81,19 @@ export async function setFoLevel(employeeId: string, level: FoLevel | null) {
   if (error) throw error;
   dataChanged();
 }
+
+/** Every active member of every active plan (to see who worked the shutdown before / after). */
+export async function fetchAllSdMembers(): Promise<SdMember[]> {
+  const { data, error } = await supabase.from('sd_members').select('*, sd_plans!inner(status)').eq('status', 'active').eq('sd_plans.status', 'active');
+  if (error) throw error;
+  return (data as MemberRow[]).map(toMember);
+}
+
+/** Sick-leave days per person per year (from the workbook import): employee id → year → days. */
+export async function fetchSickTotals(years: number[]): Promise<Map<string, Record<number, number>>> {
+  const { data, error } = await supabase.from('sick_leave_totals').select('employee_id,year,days').in('year', years);
+  if (error) throw error;
+  const out = new Map<string, Record<number, number>>();
+  for (const r of data as { employee_id: string; year: number; days: number }[]) out.set(r.employee_id, { ...(out.get(r.employee_id) ?? {}), [r.year]: Number(r.days) });
+  return out;
+}

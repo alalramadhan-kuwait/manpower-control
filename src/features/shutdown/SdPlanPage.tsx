@@ -4,10 +4,10 @@ import { Link, useParams } from 'react-router-dom';
 import { COVER_GRADE } from '@/core/controllers';
 import { evaluateRange, personOn, SD_TEAM, type MpAbsence, type MpAssignment, type MpPerson } from '@/core/manpower';
 import { CREWS, addDaysIso, type Crew } from '@/core/roster';
-import { FO_LEVEL_LABEL, SD_SLOTS, SD_SLOT_LABEL, dayShort, dayState, isRampDay, memberHours, memberWorks, nextOffset, planDates, teamDay, cycleOf, type SdMember, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
+import { FO_LEVEL_LABEL, SD_SLOTS, SD_SLOT_LABEL, dayShort, dayState, isRampDay, neighbours, memberHours, memberWorks, nextOffset, planDates, teamDay, cycleOf, type SdMember, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { fetchDirectory } from '@/data/queries';
-import { addSdMember, fetchSdPlan, removeSdMember, updateSdMember, updateSdPlan, updateSdTeam } from '@/data/shutdown';
+import { addSdMember, fetchAllSdMembers, fetchSdPlan, fetchSdPlans, fetchSickTotals, removeSdMember, updateSdMember, updateSdPlan, updateSdTeam } from '@/data/shutdown';
 import type { EmployeeDirectoryRow } from '@/data/types';
 import { BottomSheet, Button, Card, ErrorBox, Field, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
@@ -16,7 +16,13 @@ import { shortDate } from '@/ui/leave';
 const CONTROLLER_ROLES = ['controller', 'vr_controller', 'morning_controller'];
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
 const wd = (iso: string) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(`${iso}T00:00:00Z`).getUTCDay()];
-type Data = { plan: SdPlan; teams: SdTeam[]; members: SdMember[]; inputs: ManpowerInputs; dir: Map<string, EmployeeDirectoryRow> };
+type Data = {
+  plan: SdPlan; teams: SdTeam[]; members: SdMember[]; inputs: ManpowerInputs; dir: Map<string, EmployeeDirectoryRow>;
+  /** Who worked the shutdown right before / is on the one right after (nobody works two in a row). */
+  prev: { plan: SdPlan; ids: Set<string> } | null; next: { plan: SdPlan; ids: Set<string> } | null;
+  /** Sick-leave days per person per year (workbook totals). */
+  sick: Map<string, Record<number, number>>;
+};
 
 /** Shutdown team planner: fill each team's slots, see the days each team is short, what the crews keep, and the overtime. */
 export default function SdPlanPage() {
@@ -31,8 +37,11 @@ export default function SdPlanPage() {
   const load = useCallback(async () => {
     try {
       const sd = await fetchSdPlan(id!);
-      const [inputs, dir] = await Promise.all([fetchManpowerInputs(addDaysIso(sd.plan.start, -1), addDaysIso(sd.plan.end, 1)), fetchDirectory()]);
-      setData({ ...sd, inputs, dir: new Map(dir.map((r) => [r.id, r])) });
+      const y = Number(sd.plan.start.slice(0, 4));
+      const [inputs, dir, plans, all, sick] = await Promise.all([fetchManpowerInputs(addDaysIso(sd.plan.start, -1), addDaysIso(sd.plan.end, 1)), fetchDirectory(), fetchSdPlans(), fetchAllSdMembers(), fetchSickTotals([y, y - 1])]);
+      const n = neighbours(plans, sd.plan);
+      const ids = (p: SdPlan | null) => (p ? { plan: p, ids: new Set(all.filter((m) => m.planId === p.id).map((m) => m.employeeId)) } : null);
+      setData({ ...sd, inputs, dir: new Map(dir.map((r) => [r.id, r])), prev: ids(n.prev), next: ids(n.next), sick });
     } catch (e) { setError(e); }
   }, [id]);
   useEffect(() => { load(); }, [load]);
@@ -189,6 +198,7 @@ function MemberRow({ m, data, view, onOpen }: { m: SdMember; data: Data; view: V
         <span className="block truncate text-sm font-medium text-slate-900">{r?.display_name ?? '—'}{r?.fo_level && m.slot !== 'controller' ? <span className="ml-1 text-[10px] font-semibold text-slate-400">{FO_LEVEL_LABEL[r.fo_level]}</span> : null}</span>
         <span className="block truncate text-[11px] text-slate-500">#{r?.employee_number} · off {off.join(', ')}…{m.start !== data.plan.start || m.end !== data.plan.end ? ` · ${range(m.start, m.end)}` : ''}</span>
       </span>
+      {(data.prev?.ids.has(m.employeeId) || data.next?.ids.has(m.employeeId)) && <span className="shrink-0 rounded-full bg-status-red px-1.5 text-[10px] font-semibold text-white">2 SD in a row</span>}
       {leave > 0 && <span className="shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-900">Leave {leave}d</span>}
       <span className={cx('shrink-0 rounded-full px-1.5 text-[10px] font-semibold tabular-nums', over ? 'bg-status-red text-white' : 'bg-slate-100 text-slate-600')}>OT {ot} h</span>
     </button>
@@ -199,6 +209,7 @@ function MemberRow({ m, data, view, onOpen }: { m: SdMember; data: Data; view: V
 function AddSheet({ plan, team, slot, data, view, onClose, onDone }: { plan: SdPlan; team: SdTeam; slot: SdSlot; data: Data; view: View; onClose: () => void; onDone: (m: string) => void }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const inPlan = new Set(data.members.map((m) => m.employeeId));
+  const year = Number(plan.start.slice(0, 4));
   const cands = useMemo(() => {
     const { inputs } = data;
     const base = evaluateRange(plan.start, plan.end, inputs.people, inputs.absences, inputs.rules, inputs.assignments);
@@ -221,9 +232,15 @@ function AddSheet({ plan, team, slot, data, view, onClose, onDone }: { plan: SdP
           return a.working && ((a.confirmedShortage && !b.confirmedShortage) || (a.controller.finding === 'coverage_required' && b.controller.finding !== 'coverage_required')); }).length;
       }
       const match = slot === 'controller' || level === slot;
-      return { p, crew, level, leave, hit, same: fromCrew(crew), match };
-    }).sort((a, b) => Number(b.match) - Number(a.match) || Number(!!a.leave) - Number(!!b.leave) || a.hit - b.hit || a.same - b.same || (b.p.grade ?? 0) - (a.p.grade ?? 0) || a.p.name.localeCompare(b.p.name));
-  }, [data, view, plan, slot]); // eslint-disable-line react-hooks/exhaustive-deps
+      const back = data.prev?.ids.has(p.id) ? data.prev.plan.title : data.next?.ids.has(p.id) ? data.next.plan.title : null;
+      const sick = data.sick.get(p.id)?.[year] ?? null;
+      return { p, crew, level, leave, hit, same: fromCrew(crew), match, back, sick, sickPrev: data.sick.get(p.id)?.[year - 1] ?? null };
+    // right level first; not two shutdowns in a row; free of leave and crew impact; then fewer sick days
+    }).sort((a, b) => Number(b.match) - Number(a.match) || Number(!!a.back) - Number(!!b.back) || Number(!!a.leave) - Number(!!b.leave) || a.hit - b.hit
+      || (a.sick ?? 0) - (b.sick ?? 0) || a.same - b.same || (b.p.grade ?? 0) - (a.p.grade ?? 0) || a.p.name.localeCompare(b.p.name));
+  }, [data, view, plan, slot, year]); // eslint-disable-line react-hooks/exhaustive-deps
+  const sickValues = cands.map((c) => c.sick).filter((x): x is number => x != null).sort((a, b) => a - b);
+  const sickMedian = sickValues.length ? sickValues[Math.floor(sickValues.length / 2)] : null;
 
   async function pick(p: MpPerson) {
     setBusy(true); setErr(null);
@@ -234,6 +251,7 @@ function AddSheet({ plan, team, slot, data, view, onClose, onDone }: { plan: SdP
   return (
     <BottomSheet open onClose={onClose} title={`${team.name} team · ${SD_SLOT_LABEL[slot]}`}>
       <div className="space-y-2">
+        <p className="text-[11px] text-slate-500">Order: right level · not on the shutdown {data.prev ? `before (${data.prev.plan.title})` : 'before'}{data.next ? ` or after (${data.next.plan.title})` : ''} · no leave · crew keeps its minimum · fewer sick days.</p>
         {unmarked && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">No Field Operator has a level yet. <Link to="/review/fo-levels" className="font-semibold underline">Mark Senior / Good / New</Link> to see the right people first.</p>}
         {err != null && <ErrorBox error={err} />}
         <div className="divide-y divide-slate-100">
@@ -243,10 +261,12 @@ function AddSheet({ plan, team, slot, data, view, onClose, onDone }: { plan: SdP
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-slate-900">{c.p.name} <span className="text-[11px] font-normal text-slate-500">G{c.p.grade ?? '—'}{c.level ? ` · ${FO_LEVEL_LABEL[c.level]}` : slot !== 'controller' ? ' · no level' : ''}</span></span>
                 <span className="flex flex-wrap gap-x-2 text-[11px] font-semibold">
+                  {c.back && <span className="inline-flex items-center gap-0.5 text-status-red"><AlertTriangle className="h-3 w-3" />Also on {c.back}</span>}
                   {c.leave > 0 && <span className="text-amber-700">Leave {c.leave}d</span>}
                   {c.hit > 0 && <span className="inline-flex items-center gap-0.5 text-status-red"><AlertTriangle className="h-3 w-3" />{c.crew} short {c.hit}d without him</span>}
                   {c.same > 0 && <span className="text-slate-500">{c.same} already from {c.crew}</span>}
-                  {!c.leave && !c.hit && <span className="text-status-green">Free · crew keeps its minimum</span>}
+                  {!c.leave && !c.hit && !c.back && <span className="text-status-green">Free · crew keeps its minimum</span>}
+                  {c.sick != null && <span className={cx('font-medium', sickMedian != null && c.sick > sickMedian ? 'text-amber-700' : 'text-slate-500')}>Sick {c.sick}d {year}{c.sickPrev != null ? ` · ${c.sickPrev}d ${year - 1}` : ''}</span>}
                 </span>
               </span>
               <Plus className="h-4 w-4 shrink-0 text-brand-700" />

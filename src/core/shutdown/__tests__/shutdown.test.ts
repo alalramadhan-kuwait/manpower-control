@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dayShort, dayState, hoursOn, isRampDay, memberHours, memberWorks, nextOffset, teamDay, type SdMember, type SdPlan, type SdTeam } from '..';
+import { dayShort, dayState, hoursOn, neighbours, isRampDay, memberHours, memberWorks, nextOffset, teamDay, type SdMember, type SdPlan, type SdTeam } from '..';
 
 const plan: SdPlan = { id: 'p', title: 'Train-2 SD', start: '2026-11-01', end: '2026-11-30', eventId: null, daysOn: 3, daysOff: 1, shiftHours: 12, rampDays: 2, rampHours: 8, normalHours: 8, maxOvertime: 80 };
 const team: SdTeam = { id: 'day', planId: 'p', name: 'Day', sort: 0, needs: { controller: 1, senior: 2, good: 2, new: 1 }, rampNeeds: { controller: 1, senior: 1, good: 1, new: 1 } };
@@ -33,5 +33,11 @@ describe('shutdown teams', () => {
     expect(nov.overtime).toBe(260 - 176);
     expect(nov.over).toBe(true);                    // 84 h > 80 h
     expect(memberHours(plan, m('y', 'controller', 0), null)[0]).toMatchObject({ normal: 22 * 8, overtime: 84 });   // day staff: Sun–Thu
+  });
+  it('the shutdowns right before and after a plan', () => {
+    const p = (id: string, start: string, end: string): SdPlan => ({ ...plan, id, start, end });
+    const all = [p('aug', '2026-08-01', '2026-08-20'), p('may', '2026-05-01', '2026-05-10'), plan, p('feb', '2027-02-01', '2027-02-15'), p('jun27', '2027-06-01', '2027-06-10')];
+    const n = neighbours(all, plan);
+    expect([n.prev?.id, n.next?.id]).toEqual(['aug', 'feb']);
   });
 });

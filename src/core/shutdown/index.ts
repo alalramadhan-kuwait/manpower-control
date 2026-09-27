@@ -68,3 +68,11 @@ export function nextOffset(p: SdPlan, teamId: string, slot: SdSlot, members: SdM
   for (const m of members) if (m.teamId === teamId && m.slot === slot) used[m.offset % used.length]++;
   return used.indexOf(Math.min(...used));
 }
+
+/** The shutdown plans right before and right after `plan` (by dates): nobody should work two shutdowns in a row. */
+export function neighbours(plans: SdPlan[], plan: SdPlan): { prev: SdPlan | null; next: SdPlan | null } {
+  const others = plans.filter((p) => p.id !== plan.id);
+  const prev = others.filter((p) => p.end < plan.start).sort((a, b) => b.end.localeCompare(a.end))[0] ?? null;
+  const next = others.filter((p) => p.start > plan.end).sort((a, b) => a.start.localeCompare(b.start))[0] ?? null;
+  return { prev, next };
+}
