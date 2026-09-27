@@ -7,7 +7,7 @@ Operations manpower planning and control for **KNPC — Mina Abdullah Refinery �
 This project is standalone. It shares **nothing** with Time Keeper / Time Gallery: separate repository,
 separate Supabase project (`fhnqaurtryfmmomvzrpl`), separate authentication, separate employees.
 
-## Status: stages A–J and the Notification Center are built
+## Status: stages A–K and the Notification Center are built
 
 | Stage | What it delivers |
 |---|---|
@@ -28,6 +28,7 @@ separate Supabase project (`fhnqaurtryfmmomvzrpl`), separate authentication, sep
 | Controllers calendar | Controllers only, by month: each crew's Controller cover, each Controller's day (own shift / covering / leave / Morning / VR free), the Morning post; leave rules: no two Controllers on leave together, max 4 annual leaves and min 25 days a year, exceptions approved by the Section Head |
 | VR placement | A VR Controller is placed in a crew until moved and works its rota: the crew's Controller when its own is away, an extra one otherwise; cover suggestions say which crew the VR moves from |
 | Requests · Leave 14 days | Leave running now or starting in 14 days, filtered by shift and position; what the Oracle HR request should say (rest days left out, days without Fridays, day back); Approve / Reject records the Oracle decision; typed EasyHR dates are checked against the plan, with their effect, and saved into the plan; rejected leave stays flagged until cancelled or rescheduled |
+| K · Shutdown teams | One plan per shutdown with Day and Night teams (Controller, Senior / Good / New FO); members leave their crew for the team dates; day strip per team (all on / fewer / a slot empty), crews against the shutdown minimums, overtime per month against the cap (3 on / 1 off, 12 h, reduced first/last days 8 h); FO levels marked by the Section Head |
 
 Roles: **Section Head** and **Manpower Coordinator** (several may hold it) are active; Controller and Employee
 logins exist but have no app access yet. Logins are managed only through the `manage-users` Edge Function.

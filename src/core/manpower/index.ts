@@ -37,13 +37,17 @@ export interface MpPerson {
   /** Set by personOn when the person is on day duty on that date: out of their own crew; evaluateDay counts them
    *  in the crew on Morning shift, Sunday to Thursday (Friday and Saturday off). */
   dayDuty?: boolean;
+  /** Set by personOn while the person is on a shutdown team: out of their crew for those dates. */
+  sdTeam?: boolean;
 }
 
 /** One period of the role history: `from`..`to` (inclusive, `to` null = still current). */
 export interface MpRolePeriod { from: string; to: string | null; role: Role | null; crew: Crew | null }
 /** A temporary cover: works with `crew` from `start` to `end` (null = until further notice). `DAY` = day duty.
  *  kind 'placement': a VR Controller placed in `crew` until moved (the VR works that crew's rota). */
-export interface MpCrewMove { start: string; end: string | null; crew: Crew | typeof DAY_DUTY; kind?: 'temporary' | 'placement' }
+export interface MpCrewMove { start: string; end: string | null; crew: Crew | typeof DAY_DUTY | typeof SD_TEAM; kind?: 'temporary' | 'placement' | 'sd' }
+/** Movement target for a shutdown team member (Stage K): off their crew for the team's dates. */
+export const SD_TEAM = 'SD' as const;
 /** Movement target for day duty: day shift Sunday to Thursday with the crew on Morning shift (Friday and Saturday off). */
 export const DAY_DUTY = 'DAY' as const;
 /** Day duty works Sunday to Thursday. */
@@ -70,8 +74,10 @@ export function personOn(p: MpPerson, date: string): MpPerson {
     return role === p.role && vrCrew === p.crew && !p.movedFrom && !p.dayDuty ? p : { ...p, role, crew: vrCrew, movedFrom: undefined, dayDuty: undefined };
   }
   const move = crew && CREW_ROLES.includes(role) ? p.moves?.find((m) => m.kind !== 'placement' && on(m) && m.crew !== crew) : undefined;
-  if (move) return move.crew === DAY_DUTY ? { ...p, role, crew: null, movedFrom: crew, dayDuty: true } : { ...p, role, crew: move.crew, movedFrom: crew, dayDuty: undefined };
-  return role === p.role && crew === p.crew && !p.movedFrom && !p.dayDuty ? p : { ...p, role, crew, movedFrom: undefined, dayDuty: undefined };
+  if (move) return move.crew === DAY_DUTY ? { ...p, role, crew: null, movedFrom: crew, dayDuty: true }
+    : move.crew === SD_TEAM ? { ...p, role, crew: null, movedFrom: crew, dayDuty: undefined, sdTeam: true }
+    : { ...p, role, crew: move.crew, movedFrom: crew, dayDuty: undefined };
+  return role === p.role && crew === p.crew && !p.movedFrom && !p.dayDuty && !p.sdTeam ? p : { ...p, role, crew, movedFrom: undefined, dayDuty: undefined, sdTeam: undefined };
 }
 
 /**
@@ -82,7 +88,8 @@ export function personOn(p: MpPerson, date: string): MpPerson {
  */
 export interface MpAssignment {
   id: string;
-  kind: 'shift_cover' | 'morning_rotation';
+  /** sd_team: a Controller on a shutdown team (Stage K), away from his crew for the team's dates. */
+  kind: 'shift_cover' | 'morning_rotation' | 'sd_team';
   employeeId: string;
   crew: Crew | null;
   start: string;
@@ -294,7 +301,8 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
   const dayDutyCrew = isDayDutyWorkday(date) ? morningCrew : null;
   const people = allPeople.map((p) => personOn(p, date)).map((p) => (p.dayDuty && dayDutyCrew ? { ...p, crew: dayDutyCrew } : p));
   const todays = assignments.filter((a) => a.start <= date && date <= a.end);
-  const assignmentOf = (p: MpPerson) => todays.find((a) => a.employeeId === p.id) ?? null;
+  // a cover or rotation on the day wins over the shutdown team (its Controller may cover a normal shift)
+  const assignmentOf = (p: MpPerson) => todays.find((a) => a.employeeId === p.id && a.kind !== 'sd_team') ?? todays.find((a) => a.employeeId === p.id) ?? null;
   const byId = new Map(people.map((p) => [p.id, p]));
   const byEmp = new Map<string, MpAbsence[]>();
   for (const a of absences) if (covers(a, date)) { const l = byEmp.get(a.employeeId) ?? []; l.push(a); byEmp.set(a.employeeId, l); }
@@ -363,7 +371,7 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
     const ctrlCoverage = !ctrlMet && (ctrlOnLeave.length > 0 || away.length > 0 || (cover !== null && !cover.counted));
     const ctrlPotentialMet = ctrlCount + ctrlNot.filter((n) => n.pendingData).length >= rules.controllerMin;
     if (ctrlCoverage) {
-      const why = [...ctrlOnLeave.map((p) => `${p.name} (${leaveOf(p)?.typeLabel ?? 'leave'})`), ...away.map((w) => `${w.person.name} (${w.assignment.kind === 'morning_rotation' ? 'Morning rotation' : `covering ${w.assignment.crew} Shift`})`)];
+      const why = [...ctrlOnLeave.map((p) => `${p.name} (${leaveOf(p)?.typeLabel ?? 'leave'})`), ...away.map((w) => `${w.person.name} (${w.assignment.kind === 'morning_rotation' ? 'Morning rotation' : w.assignment.kind === 'sd_team' ? 'shutdown team' : `covering ${w.assignment.crew} Shift`})`)];
       ctrlIssues.push(`Controller coverage required: ${why.join(', ')}${cover && !cover.counted ? ` — recorded cover ${cover.person.name} is ${cover.absence ? 'on leave' : 'not Grade ' + rules.controllerGrade + '+'}` : ' — no cover recorded'}`);
     }
     else if (!ctrlMet && ctrlPotentialMet) ctrlIssues.push('Controller grade not recorded');

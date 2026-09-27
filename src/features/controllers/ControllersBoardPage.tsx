@@ -17,7 +17,7 @@ import { localToday, shortDate } from '@/ui/leave';
 const pad = (n: number) => String(n).padStart(2, '0');
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
 const ORDER: Record<string, number> = { controller: 0, vr_controller: 1, morning_controller: 2 };
-type Cell = { kind: 'leave'; code: string; until: string; clash: boolean; approved: boolean } | { kind: 'cover'; crew: Crew } | { kind: 'morning' } | { kind: 'shift'; state: string; crew: Crew } | { kind: 'free' } | { kind: 'off' };
+type Cell = { kind: 'leave'; code: string; until: string; clash: boolean; approved: boolean } | { kind: 'cover'; crew: Crew } | { kind: 'morning' } | { kind: 'sd' } | { kind: 'shift'; state: string; crew: Crew } | { kind: 'free' } | { kind: 'off' };
 type Pending = { kind: 'overlap'; o: Overlap } | { kind: 'extra'; x: ExtraLeave } | { kind: 'withdraw'; a: LeaveApproval; what: string };
 type CrewCell = { state: string; ok: boolean } | null;
 /** Each crew's colour, light, for its own duties (A blue, B green, C orange, D purple). Red stays for "cover needed". */
@@ -75,7 +75,7 @@ export default function ControllersBoardPage({ profile }: { profile: UserProfile
       const lv = counted.find((a) => a.employeeId === p.id && a.start <= d && d <= a.end);
       if (lv) { const k = base.clash.get(`${p.id}|${d}`); return { kind: 'leave', code: lv.typeShort ?? 'L', until: lv.end, clash: k !== undefined, approved: k === true }; }
       const as = inputs.assignments.find((a) => a.employeeId === p.id && a.start <= d && d <= a.end);
-      if (as) return as.kind === 'shift_cover' && as.crew ? { kind: 'cover', crew: as.crew } : { kind: 'morning' };
+      if (as) return as.kind === 'shift_cover' && as.crew ? { kind: 'cover', crew: as.crew } : as.kind === 'sd_team' ? { kind: 'sd' } : { kind: 'morning' };
       if (p.role === 'vr_controller') {
         // placed in a crew until moved: works its rota; solid while he is the crew's Controller (its own one away)
         const placed = personOn(p, d).crew;
@@ -175,6 +175,7 @@ export default function ControllersBoardPage({ profile }: { profile: UserProfile
             <span className="flex items-center gap-1"><span className="rounded bg-status-red px-1 font-bold text-white">PV</span>2 on leave</span>
             <span className="flex items-center gap-1"><span className="rounded px-1 font-bold text-status-red ring-1 ring-red-300">—</span>VR not placed</span>
             <span className="flex items-center gap-1"><Sun className="h-3 w-3 text-amber-600" />Morning</span>
+            <span className="flex items-center gap-1"><span className="rounded bg-slate-700 px-1 font-bold text-white">SD</span>shutdown team</span>
           </div>
 
           <div ref={rulesRef} className="scroll-mt-4" />
@@ -281,6 +282,7 @@ const statusText = (c: Cell): { text: string; cls: string } => {
     case 'leave': return { text: `On leave (${c.code}) until ${shortDate(c.until)}${c.clash ? (c.approved ? ' · 2 on leave, approved' : ' · 2 on leave, needs approval') : ''}`, cls: c.clash && !c.approved ? 'text-status-red' : 'text-yellow-800' };
     case 'cover': return { text: `Covering ${c.crew} Shift`, cls: 'text-slate-800' };
     case 'morning': return { text: 'Morning post', cls: 'text-amber-700' };
+    case 'sd': return { text: 'Shutdown team', cls: 'text-slate-800' };
     case 'shift': return { text: `${c.crew} Shift · ${c.state === 'M' ? 'Morning' : c.state === 'A' ? 'Afternoon' : 'Night'}`, cls: 'text-slate-700' };
     case 'free': return { text: 'Not placed in a crew', cls: 'text-status-red' };
     default: return { text: 'Off', cls: 'text-slate-400' };
@@ -347,6 +349,7 @@ function PersonCell({ c, wide }: { c: Cell; wide?: boolean }) {
     case 'leave': return <td className={cx(base, c.clash && !c.approved ? 'bg-status-red text-white' : 'bg-yellow-100 text-yellow-900', c.approved && 'ring-1 ring-green-500')} title={c.clash ? (c.approved ? 'Two on leave · approved' : 'Two on leave · needs approval') : 'On leave'}>{wide ? c.code : c.code.slice(0, 2)}</td>;
     case 'cover': return <td className={cx(base, CREW_IDENTITY[c.crew].bg, 'text-white')} title={`Covering ${c.crew} Shift`}>{wide ? `→${c.crew}` : c.crew}</td>;
     case 'morning': return <td className={cx(base, 'bg-amber-100 text-amber-600')} title="Morning post"><Sun className="mx-auto h-3 w-3" /></td>;
+    case 'sd': return <td className={cx(base, 'bg-slate-700 text-white')} title="Shutdown team">SD</td>;
     case 'shift': return <td className={cx(base, TINT[c.crew])}>{c.state}</td>;
     case 'free': return <td className={cx(base, 'text-status-red ring-1 ring-inset ring-red-300')} title="VR not placed in a crew">{wide ? 'None' : '—'}</td>;
     default: return <td className={base} />;

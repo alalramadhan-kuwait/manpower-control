@@ -114,3 +114,19 @@ describe('VR placement', () => {
     expect(needs.find((n) => n.crew === 'C')).toBeUndefined();
   });
 });
+
+describe('shutdown team members (Stage K)', () => {
+  const sdMove = { start: '2026-11-01', end: '2026-11-30', crew: 'SD' as const, kind: 'sd' as const };
+  it('a Field Operator on the team is off his crew for the team dates', () => {
+    const withSd = people.map((p) => (p.id === 'fA1' ? { ...p, moves: [sdMove] } : p));
+    const a = (ps: MpPerson[]) => evaluateDay('2026-11-10', ps, []).crews.find((c) => c.crew === 'A')!;
+    expect(a(people).members - a(withSd).members).toBe(1);
+  });
+  it('a Controller on the team leaves his crew needing a cover, unless he covers it that day', () => {
+    const sd: MpAssignment = { id: 'sd1', kind: 'sd_team', employeeId: 'ctrlA', crew: null, start: '2026-11-01', end: '2026-11-30' };
+    const needs = coverageNeeds('2026-11-05', '2026-11-12', people, [], [sd]);
+    expect(needs.some((n) => n.crew === 'A')).toBe(true);
+    const back: MpAssignment = { id: 'c1', kind: 'shift_cover', employeeId: 'ctrlA', crew: 'A', start: '2026-11-05', end: '2026-11-12' };
+    expect(coverageNeeds('2026-11-05', '2026-11-12', people, [], [sd, back]).some((n) => n.crew === 'A')).toBe(false);
+  });
+});

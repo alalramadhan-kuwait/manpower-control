@@ -19,7 +19,7 @@ const ROLE: Record<string, string> = { vr_controller: 'Vacation Relief Controlle
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}${b.slice(0, 4) !== a.slice(0, 4) ? ` ${b.slice(0, 4)}` : ''}`);
 const days = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5) + 1;
 
-interface Draft { kind: MpAssignment['kind']; crew: Crew | null; start: string; end: string; coversId: string | null; suggestId?: string | null }
+interface Draft { kind: Exclude<MpAssignment['kind'], 'sd_team'>; crew: Crew | null; start: string; end: string; coversId: string | null; suggestId?: string | null }
 
 export default function ControllersPage({ profile }: { profile: UserProfile }) {
   const today = localToday();

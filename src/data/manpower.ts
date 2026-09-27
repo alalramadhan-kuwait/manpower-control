@@ -1,6 +1,7 @@
 // Data access for the manpower engine: maps Supabase rows to the engine's input types.
 import { supabase } from './supabase';
-import type { MpAbsence, MpAssignment, MpCrewMove, MpPerson, MpRolePeriod, Role, Rules } from '@/core/manpower';
+import { SD_TEAM, type MpAbsence, type MpAssignment, type MpCrewMove, type MpPerson, type MpRolePeriod, type Role, type Rules } from '@/core/manpower';
+import { fetchSdMembers } from './shutdown';
 import { rulesByDate, type OperationPlan } from '@/core/modes';
 import { fetchOperationPlan } from './modes';
 import { toMpAssignment } from './controllers';
@@ -39,7 +40,7 @@ interface MoveRow { employee_id: string; start_date: string; end_date: string | 
 export interface ManpowerInputs { people: MpPerson[]; absences: MpAbsence[]; assignments: MpAssignment[]; plan: OperationPlan; rules: (date: string) => Rules }
 
 export async function fetchManpowerInputs(from: string, to: string): Promise<ManpowerInputs> {
-  const [dir, lv, ca, ra, mv, op] = await Promise.all([
+  const [dir, lv, ca, ra, mv, op, sd] = await Promise.all([
     supabase.from('employee_directory_v').select('*').eq('in_unit12_scope', true).eq('is_active', true),
     supabase.from('leave_records')
       .select('id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,oracle_status,absence_types(label,short_code)')
@@ -48,7 +49,8 @@ export async function fetchManpowerInputs(from: string, to: string): Promise<Man
     supabase.from('controller_assignments').select('*').eq('status', 'active').lte('start_date', to).gte('end_date', from),
     supabase.from('employee_role_assignments').select('employee_id,effective_from,effective_to,positions(code),crews(code)').limit(5000),
     supabase.from('crew_movements').select('employee_id,start_date,end_date,to_crew,kind').eq('status', 'active').in('kind', ['temporary', 'placement']).lte('start_date', to).or(`end_date.is.null,end_date.gte.${from}`),
-    fetchOperationPlan(from, to)
+    fetchOperationPlan(from, to),
+    fetchSdMembers(from, to)
   ]);
   const err = [dir, lv, ca, ra, mv].find((r) => r.error)?.error; if (err) throw err;
   const history = new Map<string, MpRolePeriod[]>();
@@ -58,6 +60,14 @@ export async function fetchManpowerInputs(from: string, to: string): Promise<Man
   }
   const moves = new Map<string, MpCrewMove[]>();
   for (const m of mv.data as MoveRow[]) moves.set(m.employee_id, [...(moves.get(m.employee_id) ?? []), { start: m.start_date, end: m.end_date, crew: m.to_crew, kind: m.kind }]);
+  // shutdown team members leave their crew for the team's dates: Controllers as an assignment (their crew needs a
+  // cover, and they may still cover a normal shift), everyone else as a move out of the crew
+  const roleOf = new Map((dir.data as EmployeeDirectoryRow[]).map((r) => [r.id, r.position_code]));
+  const sdAssignments: MpAssignment[] = [];
+  for (const m of sd) {
+    if (['controller', 'vr_controller', 'morning_controller'].includes(roleOf.get(m.employeeId) ?? '')) sdAssignments.push({ id: `sd-${m.id}`, kind: 'sd_team', employeeId: m.employeeId, crew: null, start: m.start, end: m.end });
+    else moves.set(m.employeeId, [...(moves.get(m.employeeId) ?? []), { start: m.start, end: m.end, crew: SD_TEAM, kind: 'sd' }]);
+  }
   const people = (dir.data as EmployeeDirectoryRow[]).map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id) }));
-  return { people, absences: (lv.data as unknown as LeaveRow[]).map(toMpAbsence), assignments: (ca.data as ControllerAssignment[]).map(toMpAssignment), plan: op.plan, rules: rulesByDate(op.plan) };
+  return { people, absences: (lv.data as unknown as LeaveRow[]).map(toMpAbsence), assignments: [...(ca.data as ControllerAssignment[]).map(toMpAssignment), ...sdAssignments], plan: op.plan, rules: rulesByDate(op.plan) };
 }

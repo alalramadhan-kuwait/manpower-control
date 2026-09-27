@@ -25,12 +25,14 @@ export interface WorkRow {
   clashWith: string[];
   /** The n-th annual leave of the year when over the limit and not approved, else null. */
   extraNth: number | null;
+  /** The person is on a shutdown team during this leave. */
+  sdTeam: boolean;
 }
 
 const RANK: Record<OracleStatus, number> = { rejected: 0, not_submitted: 1, submitted: 2, approved: 3 };
 const worst = (xs: OracleStatus[]): OracleStatus => xs.reduce((w, s) => (RANK[s] < RANK[w] ? s : w), 'approved' as OracleStatus);
 
-export function buildWorklist(i: { today: string; days: number; people: MpPerson[]; absences: MpAbsence[]; results: DayResult[]; check: ControllerLeaveCheck | null }): WorkRow[] {
+export function buildWorklist(i: { today: string; days: number; people: MpPerson[]; absences: MpAbsence[]; results: DayResult[]; check: ControllerLeaveCheck | null; sd?: { employeeId: string; start: string; end: string }[] }): WorkRow[] {
   const horizon = addDaysIso(i.today, i.days);
   const people = new Map(i.people.map((p) => [p.id, p]));
   const counted = i.absences.filter((a) => (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && a.id && people.has(a.employeeId));
@@ -60,7 +62,8 @@ export function buildWorklist(i: { today: string; days: number; people: MpPerson
       oracle: worst(records.map((r) => r.oracle ?? 'not_submitted')),
       crew: at.dayDuty || !at.crew ? 'DAY' : at.crew, role: person.role,
       expected: expectedRequest(p.start, p.end, crewOn), now: p.start <= i.today,
-      shortDuties: short, clashWith: [...new Set(clashWith)], extraNth: extra ? extra.nth : null
+      shortDuties: short, clashWith: [...new Set(clashWith)], extraNth: extra ? extra.nth : null,
+      sdTeam: (i.sd ?? []).some((m) => m.employeeId === p.employeeId && m.start <= p.end && m.end >= p.start)
     });
   }
   return rows.sort((a, b) => Number(b.now) - Number(a.now) || RANK[a.oracle] - RANK[b.oracle] || a.start.localeCompare(b.start) || a.person.name.localeCompare(b.person.name));

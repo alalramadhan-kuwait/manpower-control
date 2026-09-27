@@ -4,13 +4,14 @@
 // Nothing here changes data; it only reads the before / after snapshots.
 import { ORACLE_LABEL, type OracleStatus } from '../oracle';
 
-export type AuditCategory = 'crews' | 'leave' | 'requests' | 'controllers' | 'modes' | 'qualifications' | 'staff' | 'logins' | 'other';
+export type AuditCategory = 'crews' | 'leave' | 'requests' | 'controllers' | 'shutdown' | 'modes' | 'qualifications' | 'staff' | 'logins' | 'other';
 
 export const AUDIT_CATEGORIES: { key: AuditCategory; label: string; tables: string[] }[] = [
   { key: 'crews', label: 'Crews & roles', tables: ['employee_role_assignments', 'crew_movements'] },
   { key: 'leave', label: 'Leave', tables: ['leave_records'] },
   { key: 'requests', label: 'Requests', tables: ['leave_requests'] },
   { key: 'controllers', label: 'Controllers', tables: ['controller_assignments', 'controller_rules', 'controller_leave_approvals'] },
+  { key: 'shutdown', label: 'Shutdown teams', tables: ['sd_plans', 'sd_teams', 'sd_members'] },
   { key: 'modes', label: 'Modes & calendar', tables: ['operating_modes', 'operation_periods', 'public_holidays', 'unit_events'] },
   { key: 'qualifications', label: 'Qualifications', tables: ['employee_qualifications'] },
   { key: 'staff', label: 'Staff records', tables: ['employees'] },
@@ -98,7 +99,7 @@ export function describe(row: AuditRow, lk: AuditLookups): AuditEntry {
       else {
         title = next?.is_active === false && prev?.is_active !== false ? `${name} marked inactive` : next?.is_active === true && prev?.is_active === false ? `${name} marked active again` : `Staff record changed: ${name}`;
         details = changes(prev, next, [['display_name', 'Name', w], ['grade', 'Grade', w], ['employment_type', 'Employment', w], ['cost_center', 'Cost centre', w],
-          ['in_unit12_scope', 'In Unit 12', (v) => (v ? 'Yes' : 'No')], ['last_promotion_date', 'Last promotion', day], ['master_position', 'Master position', w]]);
+          ['in_unit12_scope', 'In Unit 12', (v) => (v ? 'Yes' : 'No')], ['last_promotion_date', 'Last promotion', day], ['master_position', 'Master position', w], ['fo_level', 'FO level', w]]);
       }
       break;
     }
@@ -177,6 +178,21 @@ export function describe(row: AuditRow, lk: AuditLookups): AuditEntry {
       else if (next?.status === 'withdrawn' && prev?.status !== 'withdrawn') { title = `Approval withdrawn: ${what}`; if (s(next.withdraw_reason)) details.push(`Reason: ${next.withdraw_reason}`); }
       else title = `Approval changed: ${what}`;
       if (s(cur.note) && row.action === 'insert') details.push(String(cur.note));
+      break;
+    }
+    case 'sd_plans':
+      title = row.action === 'insert' ? `Shutdown plan added: ${s(cur.title) ?? ''} ${range(cur.start_date, cur.end_date)}` : next?.status === 'cancelled' && prev?.status !== 'cancelled' ? `Shutdown plan cancelled: ${s(cur.title) ?? ''}` : `Shutdown plan changed: ${s(cur.title) ?? ''}`;
+      if (row.action !== 'insert') details = changes(prev, next, [['start_date', 'First day', day], ['end_date', 'Last day', day], ['days_on', 'Days on', w], ['days_off', 'Days off', w], ['shift_hours', 'Shift hours', w], ['ramp_days', 'Reduced days', w], ['ramp_hours', 'Reduced-day hours', w], ['max_overtime', 'Overtime cap (h)', w]]);
+      break;
+    case 'sd_teams':
+      title = row.action === 'insert' ? `Shutdown team added: ${s(cur.name) ?? ''}` : `Shutdown team ${s(cur.name) ?? ''}: needs changed`;
+      if (row.action !== 'insert') details = changes(prev, next, [['controller_n', 'Controller', w], ['senior_n', 'Senior FO', w], ['good_n', 'Good FO', w], ['new_n', 'New FO', w], ['ramp_controller_n', 'Reduced: Controller', w], ['ramp_senior_n', 'Reduced: Senior FO', w], ['ramp_good_n', 'Reduced: Good FO', w], ['ramp_new_n', 'Reduced: New FO', w]]);
+      break;
+    case 'sd_members': {
+      const slot = ({ controller: 'Controller', senior: 'Senior FO', good: 'Good FO', new: 'New FO' } as Record<string, string>)[String(cur.slot)] ?? 'member';
+      title = row.action === 'insert' ? `${who(empId)}: on the shutdown team as ${slot}, ${range(cur.start_date, cur.end_date)}`
+        : next?.status === 'removed' && prev?.status !== 'removed' ? `${who(empId)}: taken off the shutdown team` : `${who(empId)}: shutdown team place changed`;
+      if (row.action === 'update' && next?.status === prev?.status) details = changes(prev, next, [['start_date', 'First day', day], ['end_date', 'Last day', day], ['day_offset', 'Pattern start', w], ['slot', 'Slot', w]]);
       break;
     }
     case 'controller_rules':

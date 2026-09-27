@@ -202,12 +202,12 @@ function notesFor(c: CrewDay, key: 'controller' | 'panel' | 'field', leave: Map<
   if (key === 'controller') {
     const p = c.controller;
     if (p.acting) notes.push({ text: `Acting: ${p.acting.name}`, tone: 'muted' });
-    const whoIsOut = [...p.onLeave.map((x) => `${x.name}${leave.get(x.id) ? ` (${leaveShort(leave.get(x.id)!)})` : ''}`), ...p.away.map((w) => `${w.person.name} (${w.assignment.kind === 'morning_rotation' ? 'Morning rotation' : `covering ${w.assignment.crew} Shift`})`)];
+    const whoIsOut = [...p.onLeave.map((x) => `${x.name}${leave.get(x.id) ? ` (${leaveShort(leave.get(x.id)!)})` : ''}`), ...p.away.map((w) => `${w.person.name} (${w.assignment.kind === 'morning_rotation' ? 'Morning rotation' : w.assignment.kind === 'sd_team' ? 'SD team' : `covering ${w.assignment.crew} Shift`})`)];
     if (p.cover?.counted) notes.push({ text: `Cover: ${p.cover.person.name} (${ROLE_SHORT[p.cover.person.role ?? ''] ?? 'Controller'}) · to ${shortDate(p.cover.assignment.end)}`, tone: 'good' });
     if (p.finding === 'coverage_required') {
       notes.push({ text: `Cover needed · ${whoIsOut.join(', ')}${p.cover && !p.cover.counted ? ` · cover ${p.cover.person.name} on leave` : ''}`, tone: 'pending', to: `/controllers?assign=cover&crew=${c.crew}&from=${date}`, link: 'Assign' });
       if (need?.additional) notes.push({ text: 'Extra Controller needed', tone: 'red' });
-      else if (need?.vr) notes.push({ text: need.vrNote ? `VR ${need.vr.name}: ${need.vrNote.replace(/^VR /, '').replace(/(\d{4}-\d{2}-\d{2})/g, (d) => shortDate(d))}` : `VR free: ${need.vr.name}`, tone: need.vrNote ? 'amber' : 'muted' });
+      else if (need?.vr) notes.push({ text: need.vrNote ? `VR ${need.vr.name}: ${need.vrNote.replace(/^VR /, '').replace(/(\d{4}-\d{2}-\d{2})/g, (d) => shortDate(d))}` : `Move VR ${need.vr.name}${need.vrFrom ? ` from ${need.vrFrom}` : ''}`, tone: need.vrNote ? 'amber' : 'muted' });
     }
     if (p.finding === 'shortage') notes.push({ text: 'No Controller', tone: 'red' });
     if (p.finding === 'data_incomplete') notes.push({ text: 'Grade missing', tone: 'pending' });
@@ -450,6 +450,7 @@ function DayStaffCard({ result, leave, date }: { result: DayResult; leave: Map<s
             <span className="shrink-0 text-right text-xs">
               {s.absence ? <span className="block text-status-red">{leave.get(s.person.id) ? leaveShort(leave.get(s.person.id)!) : s.absence.typeShort ?? 'On leave'}</span>
                 : s.assignment?.kind === 'shift_cover' && s.assignment.crew ? <span className="inline-flex items-center gap-1 font-medium text-slate-700"><CrewBadge crew={s.assignment.crew} size="sm" /> Covering until {shortDate(s.assignment.end)}</span>
+                : s.assignment?.kind === 'sd_team' ? <span className="block font-medium text-slate-700">SD team until {shortDate(s.assignment.end)}</span>
                 : <span className="block text-status-green">{s.morningPost ? 'On duty' : 'Available'}</span>}
               {s.unresolved ? <span className="block text-status-amber">Unresolved absence (warning only)</span> : null}
             </span>

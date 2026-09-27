@@ -16,6 +16,9 @@ import CalendarPage from '@/features/calendar/CalendarPage';
 import OracleHrPage from '@/features/oracle/OracleHrPage';
 import MorningPlanPage from '@/features/controllers/MorningPlanPage';
 import ControllersBoardPage from '@/features/controllers/ControllersBoardPage';
+import ShutdownListPage from '@/features/shutdown/ShutdownListPage';
+import SdPlanPage from '@/features/shutdown/SdPlanPage';
+import FoLevelsPage from '@/features/shutdown/FoLevelsPage';
 import LeavePlanPage from '@/features/leave/LeavePlanPage';
 import MovementsPage from '@/features/movements/MovementsPage';
 import ControllersPage from '@/features/controllers/ControllersPage';
@@ -87,6 +90,9 @@ export default function App() {
           <Route path="/controllers" element={<ControllersPage profile={profile} />} />
           <Route path="/controllers/morning" element={<MorningPlanPage />} />
           <Route path="/controllers/board" element={<ControllersBoardPage profile={profile} />} />
+          <Route path="/shutdown" element={<ShutdownListPage />} />
+          <Route path="/shutdown/:id" element={<SdPlanPage />} />
+          <Route path="/review/fo-levels" element={<FoLevelsPage />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/leave-plan" element={<LeavePlanPage />} />
           <Route path="/oracle" element={<OracleHrPage />} />

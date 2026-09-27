@@ -13,6 +13,8 @@ import { fetchLeaveApprovals } from '@/data/controllers';
 import { cancelLeave, saveLeave, setOracleStatus } from '@/data/leave';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { fetchReference } from '@/data/queries';
+import { fetchSdMembers } from '@/data/shutdown';
+import type { SdMember } from '@/core/shutdown';
 import type { AbsenceType } from '@/data/types';
 import { LeaveSheet } from '@/features/leave/LeaveSheet';
 import { BottomSheet, Button, Card, ErrorBox, Field, Spinner, cx } from '@/ui/components';
@@ -37,7 +39,7 @@ const POS: { key: Pos; label: string; of: (r: WorkRow) => boolean }[] = [
 export function LeaveWorklist({ adding, onAdded }: { adding: boolean; onAdded: () => void }) {
   const today = localToday();
   const y = Number(today.slice(0, 4));
-  const [data, setData] = useState<{ inputs: ManpowerInputs; approvals: LeaveApproval[]; types: AbsenceType[] } | null>(null);
+  const [data, setData] = useState<{ inputs: ManpowerInputs; approvals: LeaveApproval[]; types: AbsenceType[]; sd: SdMember[] } | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [shift, setShift] = useState<Shift>('all');
   const [pos, setPos] = useState<Pos>('all');
@@ -45,14 +47,14 @@ export function LeaveWorklist({ adding, onAdded }: { adding: boolean; onAdded: (
   const [cancelling, setCancelling] = useState<WorkRow | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const load = useCallback(() => Promise.all([fetchManpowerInputs(`${y}-01-01`, `${y + 1}-12-31`), fetchLeaveApprovals(), fetchReference()])
-    .then(([inputs, approvals, ref]) => setData({ inputs, approvals, types: ref.absenceTypes })).catch(setError), [y]);
+  const load = useCallback(() => Promise.all([fetchManpowerInputs(`${y}-01-01`, `${y + 1}-12-31`), fetchLeaveApprovals(), fetchReference(), fetchSdMembers(`${y}-01-01`, `${y + 1}-12-31`)])
+    .then(([inputs, approvals, ref, sd]) => setData({ inputs, approvals, types: ref.absenceTypes, sd })).catch(setError), [y]);
   useEffect(() => { load(); }, [load]);
 
   const rows = useMemo(() => {
     if (!data) return [];
     const { inputs, approvals } = data;
-    return buildWorklist({ today, days: DAYS, people: inputs.people, absences: inputs.absences, check: checkControllerLeave(inputs.people, inputs.absences, approvals, [y, y + 1]),
+    return buildWorklist({ today, days: DAYS, people: inputs.people, absences: inputs.absences, sd: data.sd, check: checkControllerLeave(inputs.people, inputs.absences, approvals, [y, y + 1]),
       results: evaluateRange(today, addDaysIso(today, DAYS + 60), inputs.people, inputs.absences, inputs.rules, inputs.assignments) });
   }, [data, today, y]);
   const byShift = (s: Shift) => rows.filter((r) => s === 'all' || r.crew === s);
@@ -121,12 +123,13 @@ function Row({ r, busy, onOpen, onDecide, onCancel }: { r: WorkRow; busy: boolea
             <OraclePill status={r.oracle} small />
           </span>
           <span className={cx('block truncate text-xs text-slate-600', fade)}>{r.codes.length > 0 && <span className="mr-1 rounded bg-yellow-100 px-1 text-[10px] font-semibold text-yellow-900">{r.codes.join('+')}</span>}{e ? <><b className="font-semibold text-slate-800">{range(e.start, e.end)}</b> · {e.days}d · back {weekday(e.backOn)} {shortDate(e.backOn)}</> : 'Rest days only'}</span>
-          {(r.oracle === 'rejected' || r.shortDuties > 0 || r.clashWith.length > 0 || r.extraNth) && (
+          {(r.oracle === 'rejected' || r.shortDuties > 0 || r.clashWith.length > 0 || r.extraNth || r.sdTeam) && (
             <span className="flex flex-wrap gap-x-2 text-[11px] font-semibold">
               {r.oracle === 'rejected' && <span className="text-status-red">Cancel or reschedule</span>}
               {r.shortDuties > 0 && <span className="inline-flex items-center gap-0.5 text-status-red"><AlertTriangle className="h-3 w-3" />Short {r.shortDuties}d</span>}
               {r.clashWith.length > 0 && <span className="inline-flex min-w-0 items-center gap-0.5 text-status-red"><AlertTriangle className="h-3 w-3 shrink-0" /><span className="truncate">With {r.clashWith.join(', ')}</span></span>}
               {r.extraNth && <span className="text-amber-700">Leave {r.extraNth} this year</span>}
+              {r.sdTeam && <span className="inline-flex items-center gap-0.5 text-status-red"><AlertTriangle className="h-3 w-3" />On SD team</span>}
             </span>
           )}
         </span>

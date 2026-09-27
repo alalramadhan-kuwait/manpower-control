@@ -1,4 +1,4 @@
-import { ArrowLeftRight, BadgeCheck, CalendarDays, Bell, BarChart3, CalendarRange, ChevronRight, ClipboardCheck, FileUp, Gauge, History, LogOut, ScrollText, ShieldCheck, Sun, UserCheck, UserCog } from 'lucide-react';
+import { ArrowLeftRight, BadgeCheck, CalendarDays, HardHat, Bell, BarChart3, CalendarRange, ChevronRight, ClipboardCheck, FileUp, Gauge, History, LogOut, ScrollText, ShieldCheck, Sun, UserCheck, UserCog } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/data/supabase';
 import type { UserProfile } from '@/data/types';
@@ -11,6 +11,7 @@ const active = [
   { to: '/oracle', label: 'Oracle HR', desc: 'Submitted · approved · pending', icon: BadgeCheck },
   { to: '/notifications', label: 'Notifications', desc: 'Next 60 days', icon: Bell },
   { to: '/operation', label: 'Operating modes', desc: 'Shutdown · one train', icon: Gauge },
+  { to: '/shutdown', label: 'Shutdown teams', desc: 'Day / Night teams · overtime', icon: HardHat },
   { to: '/controllers', label: 'Controllers', desc: 'Cover · VR assignments', icon: UserCheck },
   { to: '/controllers/board', label: 'Controllers calendar', desc: 'Cover · leave rules', icon: CalendarDays },
   { to: '/controllers/morning', label: 'Morning rotation', desc: 'Plan to end of next year', icon: Sun },

@@ -35,6 +35,8 @@ Supabase MCP or dashboard gets a matching file here, named with the version the 
 | `20260925205624_oracle_hr_leave_status` | Oracle HR tracking: `leave_records.oracle_status` (not_submitted / submitted / approved / rejected), `oracle_ref`, `oracle_updated_at`; leave already started backfilled as approved (no audit rows); new dates on future leave reset the status to not_submitted; `leave_set_oracle(records, status, ref)` for staff, audited |
 | `20260925213900_controller_leave_approvals` | Controller leave rules: `controller_leave_approvals` (Section Head approval of two Controllers on leave together, or a 5th+ annual leave in a year; names the leave record(s); withdrawn not deleted); staff read, Section Head writes; audited |
 | `20260926205619_vr_placement` | VR placement: `crew_movements` kind `placement` (a VR in a crew from a date until moved; no overlap per person); `vr_place(employee, crew, start, reason)`; `crew_move_end` / `crew_move_cancel` accept placements; the recorded VR covers turned into placements and the covers cancelled (history kept) |
+| `20260927211417_stage_k_shutdown_teams` | Stage K: `employees.fo_level` (senior / good / new, set by the Section Head); `sd_plans` (shutdown dates and pattern: days on/off, shift hours, reduced first/last days and hours, normal hours, overtime cap), `sd_teams` (needs per slot, full and reduced days), `sd_members` (slot, pattern offset, dates; off their crew); staff read/write, no delete, audited; seeded Train-2 SD (1–30 Nov 2026, Day and Night teams) |
+| `20260927211453_directory_fo_level` | Stage K: `employee_directory_v` gains `fo_level` |
 
 ## Edge Functions
 
