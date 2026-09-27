@@ -25,7 +25,7 @@ export default function RequestsPage() {
     <div>
       <PageHeader title="Requests" info={<div className="space-y-2 text-sm text-slate-700">
         <p><b>Leave · 14 days:</b> every leave running now or starting in the next 14 days, with what the Oracle HR (EasyHR) request should say: rest days left out, days counted without Fridays, and the day back.</p>
-        <p>Approve (✓) / Reject (✕) records your Oracle decision; leave running now stays listed after approval, to review or edit. Tap a leave to type the EasyHR dates: a match is approved as is; other dates show their effect first and update the plan. A rejected leave stays flagged until it is cancelled or rescheduled.</p>
+        <p>Approve (✓) / Reject (✕) records your Oracle decision; approved leave stays listed (faded), to review or edit. Tap a leave to type the EasyHR dates: a match is approved as is; other dates show their effect first and update the plan. A rejected leave stays flagged until it is cancelled or rescheduled.</p>
         <p><b>Forms:</b> the MAB paper leave request form, with the overtime review and the Section Head decision.</p>
       </div>} action={view === 'leave'
         ? <Button className="min-h-10 shrink-0 px-3" onClick={() => setAdding(true)}><Plus className="h-4 w-4" /> New</Button>

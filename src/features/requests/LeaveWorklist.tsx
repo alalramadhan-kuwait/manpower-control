@@ -45,7 +45,6 @@ export function LeaveWorklist({ adding, onAdded }: { adding: boolean; onAdded: (
   const [cancelling, setCancelling] = useState<WorkRow | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [showDone, setShowDone] = useState<Record<string, boolean>>({});
   const load = useCallback(() => Promise.all([fetchManpowerInputs(`${y}-01-01`, `${y + 1}-12-31`), fetchLeaveApprovals(), fetchReference()])
     .then(([inputs, approvals, ref]) => setData({ inputs, approvals, types: ref.absenceTypes })).catch(setError), [y]);
   useEffect(() => { load(); }, [load]);
@@ -87,18 +86,12 @@ export function LeaveWorklist({ adding, onAdded }: { adding: boolean; onAdded: (
       {[{ title: 'On leave now', list: now }, { title: `Starting in ${DAYS} days`, list: soon }].map((g) => (
         <Card key={g.title} className="mb-3 py-1.5">
           <h2 className="pt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{g.title} · {g.list.length}{g.list.some((r) => r.oracle !== 'approved') ? ` · ${g.list.filter((r) => r.oracle !== 'approved').length} to decide` : ''}</h2>
-          {g.list.length === 0 ? <p className="py-2 text-sm text-slate-500">None</p> : (() => {
-            const keep = g.title === 'On leave now';   // leave running now stays in view even when approved (review / edit)
-            const todo = keep ? g.list : g.list.filter((r) => r.oracle !== 'approved'), done = keep ? [] : g.list.filter((r) => r.oracle === 'approved');
-            return (
-              <div className="divide-y divide-slate-100">
-                {todo.map((r) => <Row key={r.key} r={r} busy={busy === r.key} onOpen={() => setOpen(r)} onDecide={(s) => decide(r, s)} onCancel={() => setCancelling(r)} />)}
-                {done.length > 0 && <button type="button" onClick={() => setShowDone((x) => ({ ...x, [g.title]: !x[g.title] }))} className="flex w-full items-center gap-1 py-2 text-left text-xs font-medium text-slate-500">
-                  <Check className="h-3.5 w-3.5 text-status-green" />{showDone[g.title] ? 'Hide' : 'Show'} {done.length} approved</button>}
-                {showDone[g.title] && done.map((r) => <Row key={r.key} r={r} busy={false} onOpen={() => setOpen(r)} onDecide={(s) => decide(r, s)} onCancel={() => setCancelling(r)} />)}
-              </div>
-            );
-          })()}
+          {g.list.length === 0 ? <p className="py-2 text-sm text-slate-500">None</p> : (
+            // every leave stays listed (approved ones faded, after the ones to decide) so nothing is hidden
+            <div className="divide-y divide-slate-100">
+              {g.list.map((r) => <Row key={r.key} r={r} busy={busy === r.key} onOpen={() => setOpen(r)} onDecide={(s) => decide(r, s)} onCancel={() => setCancelling(r)} />)}
+            </div>
+          )}
         </Card>
       ))}
 
