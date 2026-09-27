@@ -198,6 +198,12 @@ function EditSheet({ r, inputs, approvals, today, onClose, onDone }: { r: WorkRo
     } catch (e) { setErr(e); } finally { setBusy(false); }
   }
 
+  async function undo(status: OracleStatus) {
+    setBusy(true); setErr(null);
+    try { await setOracleStatus(r.records.map((x) => x.id!), status); onDone(`${r.person.name}: back to ${ORACLE_LABEL[status].toLowerCase()} in Oracle.`); }
+    catch (e) { setErr(e); } finally { setBusy(false); }
+  }
+
   return (
     <BottomSheet open onClose={onClose} title={r.person.name}>
       <div className="space-y-3">
@@ -231,6 +237,16 @@ function EditSheet({ r, inputs, approvals, today, onClose, onDone }: { r: WorkRo
           </div>
         )}
         {err != null && <ErrorBox error={err} />}
+        {(r.oracle === 'approved' || r.oracle === 'rejected') && (
+          <div className="rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
+            <div className="mb-1.5 text-xs font-medium text-slate-600">{r.oracle === 'approved' ? 'Approved by mistake?' : 'Rejected by mistake?'} Undo:</div>
+            <div className="grid grid-cols-2 gap-2">
+              {(['submitted', 'not_submitted'] as const).map((st) => (
+                <button key={st} type="button" disabled={busy} onClick={() => undo(st)} className="min-h-10 rounded-lg bg-white text-xs font-semibold text-slate-800 ring-1 ring-slate-300 disabled:opacity-50">Back to {ORACLE_LABEL[st]}</button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-2">
           <button type="button" disabled={busy || !valid} onClick={() => apply('approved')} className="flex min-h-11 items-center justify-center gap-1 rounded-xl bg-green-600 text-sm font-semibold text-white disabled:opacity-50"><Check className="h-4 w-4" />{same ? 'Approve' : 'Save & approve'}</button>
           <button type="button" disabled={busy} onClick={() => apply('rejected')} className="flex min-h-11 items-center justify-center gap-1 rounded-xl bg-white text-sm font-semibold text-status-red ring-1 ring-red-300 disabled:opacity-50"><X className="h-4 w-4" />Reject</button>
