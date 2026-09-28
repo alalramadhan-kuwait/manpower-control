@@ -39,6 +39,7 @@ Supabase MCP or dashboard gets a matching file here, named with the version the 
 | `20260927211453_directory_fo_level` | Stage K: `employee_directory_v` gains `fo_level` |
 | `20260928060816_stage_k_sd_days_and_documents` | Stage K: `sd_days` (a member's own day: works / off and hours, overriding the pattern; audited), slot `member`, `sd_teams.shift_code` / `shift_hours_label`, `sd_plans.signatures` (approval block of the overtime sheet) |
 | `20260928150309_stage_k_total_turnaround` | Stage K: `sd_plans.kind` (train / total turnaround) and `areas`, `sd_members.area`, `sd_phases` (people needed per team and area by date range; audited), operating mode `total_shutdown` (crew minimums 0) |
+| `20260928173400_stage_k_controller_sections` | Stage K: `sd_plans.sections` (total turnaround: the section each Controller handles, e.g. TR-I, TR-II, L.P; kept in `sd_members.area`; phase needs per section) |
 
 ## Edge Functions
 

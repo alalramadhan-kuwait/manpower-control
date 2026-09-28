@@ -22,6 +22,8 @@ export interface SdPlan {
   kind: SdKind;
   /** Area groups of a total turnaround (e.g. TR-II, L.P & TR-I); each team needs operators per area. */
   areas: string[];
+  /** Total turnaround: the sections a Controller handles (e.g. TR-I, TR-II, L.P); none = Controllers counted together. */
+  sections: string[];
   daysOn: number; daysOff: number; shiftHours: number;
   /** The first and the last `rampDays` days are reduced: fewer people needed, `rampHours` a shift. */
   rampDays: number; rampHours: number;
@@ -34,12 +36,15 @@ export interface SdMember {
   id: string; planId: string; teamId: string; employeeId: string; slot: SdSlot; offset: number; start: string; end: string;
   /** Area group (total turnaround). */
   area?: string | null;
+  /** Place on the section's own sheet (S.No), when recorded from one. */
+  order?: number | null;
   /** The member's own days (date → works / hours), overriding the pattern. */
   days?: Record<string, SdDay>;
 }
 
 /** Total turnaround: people needed per team, from a first to a last day (Controllers, and operators per area). */
-export interface SdPhase { id: string; start: string; end: string; needs: Record<string, { controller: number; areas: Record<string, number> }> }
+export interface PhaseNeed { controller: number; sections?: Record<string, number>; areas: Record<string, number> }
+export interface SdPhase { id: string; start: string; end: string; needs: Record<string, PhaseNeed> }
 export const phaseOn = (phases: SdPhase[], date: string) => phases.find((x) => x.start <= date && date <= x.end) ?? null;
 
 const days = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000);
@@ -74,7 +79,9 @@ export const isDutyDay = (crew: Crew | null, date: string) => (crew ? isWorkingD
 export interface SlotDay { need: number; have: number }
 /** Keys of a team day: the level slots (train shutdown), or 'controller' and 'area:<name>' (total turnaround). */
 export type DaySlots = Record<string, SlotDay>;
-export const slotLabel = (key: string) => (key.startsWith('area:') ? key.slice(5) || 'Operators' : SD_SLOT_LABEL[key as SdSlot] ?? key);
+export const slotLabel = (key: string) => (key.startsWith('area:') ? key.slice(5) || 'Operators' : key.startsWith('ctl:') ? `Controller ${key.slice(4)}` : SD_SLOT_LABEL[key as SdSlot] ?? key);
+/** The group a member counts in: its own area / section, or the first one when it has none (or one no longer on the plan). */
+export const groupOf = (names: string[], own: string | null | undefined) => (names.includes(own ?? '') ? own ?? '' : names[0] ?? '');
 /** Areas of a total turnaround ('' = one group when the plan has none). */
 export const areasOf = (p: SdPlan) => (p.areas.length ? p.areas : ['']);
 /**
@@ -88,9 +95,10 @@ export function teamDay(p: SdPlan, t: SdTeam, members: SdMember[], date: string,
   if (p.kind === 'total') {
     const n = phaseOn(phases, date)?.needs[t.id];
     const areas = areasOf(p);
-    out.controller = { need: n?.controller ?? 0, have: on((m) => m.slot === 'controller') };
-    // an operator without an area (or with one no longer on the plan) counts in the first area
-    for (const a of areas) out[`area:${a}`] = { need: n?.areas[a] ?? 0, have: on((m) => m.slot !== 'controller' && ((m.area ?? '') === a || (a === areas[0] && !areas.includes(m.area ?? '')))) };
+    // Controllers per section when the plan has sections, else together; a member without one counts in the first
+    if (p.sections.length) for (const s of p.sections) out[`ctl:${s}`] = { need: n?.sections?.[s] ?? 0, have: on((m) => m.slot === 'controller' && groupOf(p.sections, m.area) === s) };
+    else out.controller = { need: n?.controller ?? 0, have: on((m) => m.slot === 'controller') };
+    for (const a of areas) out[`area:${a}`] = { need: n?.areas[a] ?? 0, have: on((m) => m.slot !== 'controller' && groupOf(areas, m.area) === a) };
     return out;
   }
   const needs = isRampDay(p, date) ? t.rampNeeds : t.needs;

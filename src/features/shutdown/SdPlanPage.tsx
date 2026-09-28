@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { COVER_GRADE } from '@/core/controllers';
 import { evaluateRange, personOn, SD_TEAM, type MpAbsence, type MpAssignment, type MpPerson } from '@/core/manpower';
 import { CREWS, addDaysIso, type Crew } from '@/core/roster';
-import { FO_LEVEL_LABEL, SD_PO_MAX_GRADE, SD_SLOTS, SD_SLOT_LABEL, areasOf, dayOvertime, dayShort, dayState, isRampDay, neighbours, memberHours, memberWorks, nextOffset, planDates, sdOperatorEligible, slotLabel, teamDay, cycleOf, type SdDay, type SdKind, type SdMember, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
+import { FO_LEVEL_LABEL, SD_PO_MAX_GRADE, SD_SLOTS, SD_SLOT_LABEL, areasOf, groupOf, dayOvertime, dayShort, dayState, isRampDay, neighbours, memberHours, memberWorks, nextOffset, planDates, sdOperatorEligible, slotLabel, teamDay, cycleOf, type SdDay, type SdKind, type SdMember, type PhaseNeed, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { fetchOperationPlan, schedulePeriod, type PeriodRow } from '@/data/modes';
 import { fetchDirectory } from '@/data/queries';
@@ -30,7 +30,9 @@ const TOTAL_MODE = 'total_shutdown';
 /** Most people a team needs on any day: train, its full-day needs; total turnaround, its biggest phase. */
 function teamNeed(p: SdPlan, t: SdTeam, phases: SdPhase[]): Record<string, number> {
   if (p.kind !== 'total') return Object.fromEntries(SD_SLOTS.map((s) => [s, t.needs[s]]));
-  const out: Record<string, number> = { controller: Math.max(0, ...phases.map((x) => x.needs[t.id]?.controller ?? 0)) };
+  const out: Record<string, number> = {};
+  if (p.sections.length) for (const s of p.sections) out[`ctl:${s}`] = Math.max(0, ...phases.map((x) => x.needs[t.id]?.sections?.[s] ?? 0));
+  else out.controller = Math.max(0, ...phases.map((x) => x.needs[t.id]?.controller ?? 0));
   for (const a of areasOf(p)) out[`area:${a}`] = Math.max(0, ...phases.map((x) => x.needs[t.id]?.areas[a] ?? 0));
   return out;
 }
@@ -220,9 +222,14 @@ function TeamCard({ t, data, view, onAdd, onMember, onEdit }: { t: SdTeam; data:
 /** Total turnaround: the shift's Controllers, then its operators per area; placeholders up to the biggest phase. */
 function AreaGroups({ t, data, view, need, onAdd, onMember }: { t: SdTeam; data: Data; view: View; need: Record<string, number>; onAdd: (s: SdSlot, area?: string) => void; onMember: (m: SdMember) => void }) {
   const areas = areasOf(data.plan);
-  const groups = [{ key: 'controller', label: 'Controllers', list: data.members.filter((m) => m.teamId === t.id && m.slot === 'controller'), add: () => onAdd('controller') },
+  const sections = data.plan.sections;
+  const ctl = data.members.filter((m) => m.teamId === t.id && m.slot === 'controller');
+  const groups = [
+    ...(sections.length
+      ? sections.map((x) => ({ key: `ctl:${x}`, label: `Controller · ${x}`, list: ctl.filter((m) => groupOf(sections, m.area) === x), add: () => onAdd('controller', x) }))
+      : [{ key: 'controller', label: 'Controllers', list: ctl, add: () => onAdd('controller') }]),
     ...areas.map((a) => ({ key: `area:${a}`, label: a || 'Operators', add: () => onAdd('member', a),
-      list: data.members.filter((m) => m.teamId === t.id && m.slot !== 'controller' && ((m.area ?? '') === a || (a === areas[0] && !areas.includes(m.area ?? '')))) }))];
+      list: data.members.filter((m) => m.teamId === t.id && m.slot !== 'controller' && groupOf(areas, m.area) === a) }))];
   return (
     <div className="mt-1 divide-y divide-slate-100">
       {groups.map((g) => {
@@ -232,7 +239,7 @@ function AreaGroups({ t, data, view, need, onAdd, onMember }: { t: SdTeam; data:
             <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500"><span>{g.label} · {g.list.length}/{need[g.key] ?? 0}</span>
               <button type="button" onClick={g.add} className="flex items-center gap-0.5 text-brand-700"><Plus className="h-3.5 w-3.5" />Add</button></div>
             {g.list.map((m) => <MemberRow key={m.id} m={m} data={data} view={view} onOpen={() => onMember(m)} />)}
-            {Array.from({ length: missing }, (_, i) => <button key={i} type="button" onClick={g.add} className="mt-1 flex w-full items-center gap-1.5 rounded-lg border border-dashed border-red-300 px-2 py-1.5 text-left text-xs font-medium text-status-red"><Plus className="h-3.5 w-3.5" />{g.key === 'controller' ? 'Controller' : `${g.label} operator`} needed</button>)}
+            {Array.from({ length: missing }, (_, i) => <button key={i} type="button" onClick={g.add} className="mt-1 flex w-full items-center gap-1.5 rounded-lg border border-dashed border-red-300 px-2 py-1.5 text-left text-xs font-medium text-status-red"><Plus className="h-3.5 w-3.5" />{g.key.startsWith('area:') ? `${g.label} operator` : g.label} needed</button>)}
           </div>
         );
       })}
@@ -253,7 +260,7 @@ function MemberRow({ m, data, view, onOpen }: { m: SdMember; data: Data; view: V
       {crew ? <CrewBadge crew={crew} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-500">VR</span>}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-slate-900">{r?.display_name ?? '—'}{isPo(r) ? <span className="ml-1 text-[10px] font-semibold text-slate-400">PO</span> : r?.fo_level && m.slot !== 'controller' ? <span className="ml-1 text-[10px] font-semibold text-slate-400">{FO_LEVEL_LABEL[r.fo_level]}</span> : null}</span>
-        <span className="block truncate text-[11px] text-slate-500">#{r?.employee_number} · {off.length ? `off ${off.join(', ')}…` : 'every day'}{m.start !== data.plan.start || m.end !== data.plan.end ? ` · ${range(m.start, m.end)}` : ''}</span>
+        <span className="block truncate text-[11px] text-slate-500">#{r?.employee_number}{data.plan.kind === 'total' && m.slot === 'controller' && m.area ? ` · ${m.area}` : ''} · {off.length ? `off ${off.join(', ')}…` : 'every day'}{m.start !== data.plan.start || m.end !== data.plan.end ? ` · ${range(m.start, m.end)}` : ''}</span>
       </span>
       {(data.prev?.ids.has(m.employeeId) || data.next?.ids.has(m.employeeId)) && <span className="shrink-0 rounded-full bg-status-red px-1.5 text-[10px] font-semibold text-white">2 SD in a row</span>}
       {leave > 0 && <span className="shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-900">Leave {leave}d</span>}
@@ -307,14 +314,14 @@ function AddSheet({ plan, team, slot, area, data, view, onClose, onDone }: { pla
     const level = data.dir.get(p.id)?.fo_level ?? null;
     const use: SdSlot = total && slot === 'member' && p.role === 'field_operator' && level ? level : slot;
     try {
-      await addSdMember({ planId: plan.id, teamId: team.id, employeeId: p.id, slot: use, offset: nextOffset(plan, team.id, use, data.members), start: plan.start, end: plan.end, area: slot === 'controller' ? null : area ?? null });
-      onDone(`${p.name} added to the ${team.name} ${total ? `shift${slot === 'controller' ? ' as Controller' : area ? `, ${area}` : ''}` : `team as ${SD_SLOT_LABEL[slot]}`}.`);
+      await addSdMember({ planId: plan.id, teamId: team.id, employeeId: p.id, slot: use, offset: nextOffset(plan, team.id, use, data.members), start: plan.start, end: plan.end, area: area ?? null });
+      onDone(`${p.name} added to the ${team.name} ${total ? `shift${slot === 'controller' ? ` as Controller${area ? `, ${area}` : ''}` : area ? `, ${area}` : ''}` : `team as ${SD_SLOT_LABEL[slot]}`}.`);
     }
     catch (e) { setErr(e); } finally { setBusy(false); }
   }
   const unmarked = !total && slot !== 'controller' && cands.every((c) => !c.level);
   return (
-    <BottomSheet open onClose={onClose} title={total ? `${team.name} shift · ${slot === 'controller' ? 'Controller' : area || 'Operator'}` : `${team.name} team · ${SD_SLOT_LABEL[slot]}`}>
+    <BottomSheet open onClose={onClose} title={total ? `${team.name} shift · ${slot === 'controller' ? `Controller${area ? ` ${area}` : ''}` : area || 'Operator'}` : `${team.name} team · ${SD_SLOT_LABEL[slot]}`}>
       <div className="space-y-2">
         <p className="text-[11px] text-slate-500">{slot !== 'controller' && <>Field Operators, and Panel Operators up to Grade {SD_PO_MAX_GRADE} or contractors. </>}Order: {total ? '' : 'right level · '}not on the shutdown {data.prev ? `before (${data.prev.plan.title})` : 'before'}{data.next ? ` or after (${data.next.plan.title})` : ''} · no leave · {total ? '' : 'crew keeps its minimum · '}fewer sick days.</p>
         {unmarked && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">No Field Operator has a level yet. <Link to="/review/fo-levels" className="font-semibold underline">Mark Senior / Good / New</Link> to see the right people first.</p>}
@@ -350,7 +357,7 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
   const [start, setStart] = useState(m.start); const [end, setEnd] = useState(m.end);
   const [own, setOwn] = useState<Record<string, SdDay>>(m.days ?? {});
   const total = plan.kind === 'total';
-  const areas = areasOf(plan).filter(Boolean);
+  const areas = m.slot === 'controller' ? plan.sections : areasOf(plan).filter(Boolean);
   const [area, setArea] = useState<string | null>(m.area ?? areas[0] ?? null);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const trial: SdMember = { ...m, offset, start, end, days: own };
@@ -364,7 +371,7 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
   async function save() {
     setBusy(true); setErr(null);
     try {
-      await updateSdMember(m.id, { day_offset: offset, start_date: start, end_date: end, ...(total && m.slot !== 'controller' ? { area } : {}) });
+      await updateSdMember(m.id, { day_offset: offset, start_date: start, end_date: end, ...(total && areas.length ? { area } : {}) });
       await setSdDays(m.id, changedDays.map(([date, v]) => ({ date, works: v.works, hours: v.hours })));
       onDone(`${r?.display_name}: team place updated.`);
     } catch (e) { setErr(e); } finally { setBusy(false); }
@@ -400,8 +407,8 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
           </div>
           <p className="mt-1 text-[11px] text-slate-500">{code} working · O off (yellow). OT per day = hours less the normal {plan.normalHours} h on a {crew ? `${crew} Shift` : 'Sunday–Thursday'} duty day; a rest day counts in full.</p>
         </Field>
-        {total && m.slot !== 'controller' && areas.length > 0 && (
-          <Field label="Area">
+        {total && areas.length > 0 && (
+          <Field label={m.slot === 'controller' ? 'Section' : 'Area'}>
             <div className="flex flex-wrap gap-1.5">{areas.map((a) => <button key={a} type="button" onClick={() => setArea(a)} className={cx('rounded-full px-3 py-1 text-xs font-medium ring-1', area === a ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>{a}</button>)}</div>
           </Field>
         )}
@@ -496,54 +503,70 @@ function NeedsSheet({ t, onClose, onDone }: { t: SdTeam; onClose: () => void; on
 }
 
 
-/** Total turnaround: the area groups, and the people each shift needs per phase (e.g. full teams first, fewer after). */
+/** A list of names that keeps, for each, the name its numbers are saved under (key), so renaming keeps them. */
+type Named = { key: string; name: string };
+function NamesEditor({ label, list, set, placeholder }: { label: string; list: Named[]; set: (f: (l: Named[]) => Named[]) => void; placeholder: string }) {
+  return (
+    <Field label={label}>
+      <div className="space-y-1.5">
+        {list.map((a, i) => (
+          <div key={a.key || i} className="flex items-center gap-2">
+            <input className="input" value={a.name} placeholder={placeholder} onChange={(e) => set((l) => l.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
+            <button type="button" aria-label="Remove" onClick={() => set((l) => l.filter((_, j) => j !== i))} className="text-slate-400"><Trash2 className="h-4 w-4" /></button>
+          </div>
+        ))}
+        <button type="button" onClick={() => set((l) => [...l, { key: `new-${Date.now()}`, name: '' }])} className="flex items-center gap-1 text-sm font-medium text-brand-700"><Plus className="h-4 w-4" />Add</button>
+      </div>
+    </Field>
+  );
+}
+
+/** Total turnaround: the Controller sections and the operator areas, and the people each shift needs per phase
+ *  (e.g. full teams first, fewer after). */
 function PhasesSheet({ plan, teams, phases, onClose, onDone }: { plan: SdPlan; teams: SdTeam[]; phases: SdPhase[]; onClose: () => void; onDone: (m: string) => void }) {
-  // each area keeps the name its numbers are saved under (key), so renaming keeps them
-  const [areas, setAreas] = useState<{ key: string; name: string }[]>((plan.areas.length ? plan.areas : ['']).map((a) => ({ key: a, name: a })));
+  const [sections, setSections] = useState<Named[]>(plan.sections.map((a) => ({ key: a, name: a })));
+  const [areas, setAreas] = useState<Named[]>(plan.areas.map((a) => ({ key: a, name: a })));
   const [list, setList] = useState<SdPhase[]>(phases.length ? phases : [{ id: 'new0', start: plan.start, end: plan.end, needs: {} }]);
   const [removed, setRemoved] = useState<string[]>([]);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  const need = (x: SdPhase, t: string) => x.needs[t] ?? { controller: 0, areas: {} };
+  const need = (x: SdPhase, t: string): PhaseNeed => x.needs[t] ?? { controller: 0, sections: {}, areas: {} };
   const setPhase = (i: number, f: (x: SdPhase) => SdPhase) => setList((l) => l.map((x, j) => (j === i ? f(x) : x)));
-  const setNeed = (i: number, t: string, k: string | null, n: number) => setPhase(i, (x) => {
+  const setNeed = (i: number, t: string, kind: 'controller' | 'sections' | 'areas', k: string, n: number) => setPhase(i, (x) => {
     const cur = need(x, t);
-    return { ...x, needs: { ...x.needs, [t]: k == null ? { ...cur, controller: n } : { ...cur, areas: { ...cur.areas, [k]: n } } } };
+    return { ...x, needs: { ...x.needs, [t]: kind === 'controller' ? { ...cur, controller: n } : { ...cur, [kind]: { ...(cur[kind] ?? {}), [k]: n } } } };
   });
   function addPhase() {
     const last = list[list.length - 1];
     const start = last ? addDaysIso(last.end, 1) : plan.start;
     setList((l) => [...l, { id: `new${Date.now()}`, start: start > plan.end ? plan.end : start, end: plan.end, needs: last ? structuredClone(last.needs) : {} }]);
   }
-  const named = areas.map((a) => ({ ...a, name: a.name.trim() })).filter((a) => a.name);
+  const clean = (l: Named[]) => l.map((a) => ({ ...a, name: a.name.trim() })).filter((a) => a.name);
   const bad = list.some((x) => x.end < x.start || x.start < plan.start || x.end > plan.end)
     || [...list].sort((a, b) => a.start.localeCompare(b.start)).some((x, i, l) => i > 0 && x.start <= l[i - 1].end);
   async function save() {
     setBusy(true); setErr(null);
     try {
-      // renamed areas carry their numbers; a phase keeps only the areas of the plan
-      const use = named.length ? named : [{ key: areas[0]?.key ?? '', name: '' }];
-      const keep = list.map((x) => ({ ...x, needs: Object.fromEntries(Object.entries(x.needs).map(([t, n]) => [t, { controller: n.controller, areas: Object.fromEntries(use.map((a) => [a.name, n.areas[a.key] ?? 0])) }])) }));
-      await updateSdPlan(plan.id, { areas: named.map((a) => a.name) });
-      for (const a of named) if (plan.areas.includes(a.key) && a.key !== a.name) await renameSdArea(plan.id, a.key, a.name);
+      const secs = clean(sections), ars = clean(areas);
+      const useAreas = ars.length ? ars : [{ key: plan.areas[0] ?? '', name: '' }];
+      const keep = list.map((x) => ({ ...x, needs: Object.fromEntries(Object.entries(x.needs).map(([t, n]) => {
+        const bySection = Object.fromEntries(secs.map((a) => [a.name, n.sections?.[a.key] ?? 0]));
+        return [t, { controller: secs.length ? Object.values(bySection).reduce((a, b) => a + b, 0) : n.controller, sections: bySection,
+          areas: Object.fromEntries(useAreas.map((a) => [a.name, n.areas[a.key] ?? 0])) }];
+      })) }));
+      await updateSdPlan(plan.id, { areas: ars.map((a) => a.name), sections: secs.map((a) => a.name) });
+      for (const a of [...ars, ...secs]) if ([...plan.areas, ...plan.sections].includes(a.key) && a.key !== a.name) await renameSdArea(plan.id, a.key, a.name);
       await saveSdPhases(plan.id, keep, removed);
-      onDone('Areas and phases saved.');
+      onDone('Sections, areas and phases saved.');
     } catch (e) { setErr(e); } finally { setBusy(false); }
   }
-  const shown = areas.map((a) => ({ key: a.key, label: a.name.trim() || 'Operators' }));
+  const ctlCols = sections.length ? sections.map((a) => ({ kind: 'sections' as const, key: a.key, label: `Ctl ${a.name.trim() || '?'}` })) : [{ kind: 'controller' as const, key: '', label: 'Controllers' }];
+  const areaCols = (areas.length ? areas : [{ key: '', name: '' }]).map((a) => ({ kind: 'areas' as const, key: a.key, label: a.name.trim() || 'Operators' }));
+  const value = (x: SdPhase, t: string, c: { kind: 'controller' | 'sections' | 'areas'; key: string }) => (c.kind === 'controller' ? need(x, t).controller : need(x, t)[c.kind]?.[c.key] ?? 0);
   return (
-    <BottomSheet open onClose={onClose} title="Areas and phases">
+    <BottomSheet open onClose={onClose} title="Sections, areas and phases">
       <div className="space-y-3">
-        <Field label="Areas (operators are grouped by area in each shift)">
-          <div className="space-y-1.5">
-            {areas.map((a, i) => (
-              <div key={a.key || i} className="flex items-center gap-2">
-                <input className="input" value={a.name} placeholder="e.g. TR-II" onChange={(e) => setAreas((l) => l.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
-                {areas.length > 1 && <button type="button" aria-label="Remove area" onClick={() => setAreas((l) => l.filter((_, j) => j !== i))} className="text-slate-400"><Trash2 className="h-4 w-4" /></button>}
-              </div>
-            ))}
-            <button type="button" onClick={() => setAreas((l) => [...l, { key: `new-${Date.now()}`, name: '' }])} className="flex items-center gap-1 text-sm font-medium text-brand-700"><Plus className="h-4 w-4" />Add area</button>
-          </div>
-        </Field>
+        <NamesEditor label="Controller sections (one Controller each, e.g. TR-I, TR-II, L.P)" list={sections} set={setSections} placeholder="e.g. TR-I" />
+        <NamesEditor label="Operator areas (operators are grouped by area in each shift)" list={areas} set={setAreas} placeholder="e.g. TR-II" />
         {list.map((x, i) => (
           <div key={x.id} className="rounded-xl p-2 ring-1 ring-slate-200">
             <div className="flex items-end gap-2">
@@ -551,14 +574,15 @@ function PhasesSheet({ plan, teams, phases, onClose, onDone }: { plan: SdPlan; t
               <Field label="Until"><input type="date" className="input" value={x.end} min={plan.start} max={plan.end} onChange={(e) => setPhase(i, (p) => ({ ...p, end: e.target.value }))} /></Field>
               {list.length > 1 && <button type="button" aria-label="Remove phase" onClick={() => { if (!x.id.startsWith('new')) setRemoved((r) => [...r, x.id]); setList((l) => l.filter((_, j) => j !== i)); }} className="mb-3 text-slate-400"><Trash2 className="h-4 w-4" /></button>}
             </div>
-            <table className="mt-2 w-full text-sm">
-              <thead><tr className="text-left text-[11px] text-slate-500"><th className="font-medium">Shift</th><th className="font-medium">Controllers</th>{shown.map((a) => <th key={a.key} className="font-medium">{a.label}</th>)}</tr></thead>
-              <tbody>{teams.map((t) => (
-                <tr key={t.id}><td className="py-1 pr-1">{t.name}</td>
-                  <td><input className="input h-9 w-14" inputMode="numeric" value={need(x, t.id).controller} onChange={(e) => setNeed(i, t.id, null, Number(e.target.value) || 0)} /></td>
-                  {shown.map((a) => <td key={a.key}><input className="input h-9 w-14" inputMode="numeric" value={need(x, t.id).areas[a.key] ?? 0} onChange={(e) => setNeed(i, t.id, a.key, Number(e.target.value) || 0)} /></td>)}</tr>
-              ))}</tbody>
-            </table>
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="text-left text-[11px] text-slate-500"><th className="font-medium">Shift</th>{[...ctlCols, ...areaCols].map((c) => <th key={`${c.kind}${c.key}`} className="whitespace-nowrap px-0.5 font-medium">{c.label}</th>)}</tr></thead>
+                <tbody>{teams.map((t) => (
+                  <tr key={t.id}><td className="py-1 pr-1">{t.name}</td>
+                    {[...ctlCols, ...areaCols].map((c) => <td key={`${c.kind}${c.key}`} className="px-0.5"><input className="input h-9 w-12 px-2" inputMode="numeric" value={value(x, t.id, c)} onChange={(e) => setNeed(i, t.id, c.kind, c.key, Number(e.target.value) || 0)} /></td>)}</tr>
+                ))}</tbody>
+              </table>
+            </div>
           </div>
         ))}
         <button type="button" onClick={addPhase} className="flex items-center gap-1 text-sm font-medium text-brand-700"><Plus className="h-4 w-4" />Add phase (e.g. fewer people from a date)</button>

@@ -35,10 +35,11 @@ function useDoc(id: string) {
       const teamSort = new Map(sd.teams.map((t) => [t.id, t.sort]));
       const areas = areasOf(sd.plan);
       const groupOf = (m: SdMember) => (m.slot === 'controller' ? 'Controller' : sd.plan.kind === 'total' ? (areas.includes(m.area ?? '') ? m.area ?? '' : areas[0]) || 'Operators' : 'Operators');
+      const secRank = (m: SdMember) => (m.slot === 'controller' ? Math.max(0, sd.plan.sections.indexOf(m.area ?? '')) : 0);
       const groupRank = (g: string) => (g === 'Controller' ? -1 : Math.max(0, areas.indexOf(g)));
       const sorted = sd.members.map((m) => ({ m, team: sd.teams.find((t) => t.id === m.teamId)!, r: byId.get(m.employeeId), crew: crewOf(m.employeeId), group: groupOf(m), no: 0 }))
         .filter((x) => x.team)
-        .sort((a, b) => teamSort.get(a.m.teamId)! - teamSort.get(b.m.teamId)! || groupRank(a.group) - groupRank(b.group) || SLOT_ORDER[a.m.slot] - SLOT_ORDER[b.m.slot] || (a.r?.display_name ?? '').localeCompare(b.r?.display_name ?? ''));
+        .sort((a, b) => teamSort.get(a.m.teamId)! - teamSort.get(b.m.teamId)! || groupRank(a.group) - groupRank(b.group) || (a.m.order ?? 99) - (b.m.order ?? 99) || secRank(a.m) - secRank(b.m) || SLOT_ORDER[a.m.slot] - SLOT_ORDER[b.m.slot] || (a.r?.display_name ?? '').localeCompare(b.r?.display_name ?? ''));
       // numbered within the team: Controllers 1.., operators 1.. across the areas (as on the section's sheets)
       const rows = sorted.map((x, i) => { const same = sorted.slice(0, i).filter((y) => y.team.id === x.team.id && (y.group === 'Controller') === (x.group === 'Controller')); return { ...x, no: same.length + 1 }; });
       const dates = planDates(sd.plan);
@@ -102,7 +103,7 @@ export function SdSchedulePage() {
                 <tr key={x.m.id} className={cx(first && i > 0 && rows[i - 1].team.id !== x.team.id && 'border-t-2 border-slate-800')}>
                   {first && <td rowSpan={span < 0 ? rows.length - i : span} className={cx(td, 'w-6 bg-slate-100 font-semibold')}><span className="inline-block whitespace-nowrap [writing-mode:vertical-rl] rotate-180">{x.group}</span></td>}
                   <td className={td}>{x.no}</td><td className={cx(td, x.group === 'Controller' ? 'bg-green-100' : 'bg-amber-100')}>{x.r?.employee_number}</td>
-                  <td className={cx(td, 'whitespace-nowrap text-left', x.group === 'Controller' ? 'bg-green-100' : 'bg-amber-100')}>{x.r?.display_name}</td>
+                  <td className={cx(td, 'whitespace-nowrap text-left', x.group === 'Controller' ? 'bg-green-100' : 'bg-amber-100')}>{x.r?.display_name}{x.group === 'Controller' && plan.sections.includes(x.m.area ?? '') ? <span className="ml-1 font-semibold text-slate-600">· {x.m.area}</span> : null}</td>
                   {b.map((d) => {
                     // black: not on the team that day; red letter: working on the person's own crew rest day (full overtime)
                     if (d < x.m.start || d > x.m.end) return <td key={d} className={cx(td, 'bg-slate-900')} />;
