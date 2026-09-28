@@ -8,10 +8,20 @@ export type NeedSlot = Exclude<SdSlot, 'member'>;
 export const SD_SLOTS: NeedSlot[] = ['controller', 'senior', 'good', 'new'];
 export const SD_SLOT_LABEL: Record<SdSlot, string> = { controller: 'Controller', senior: 'Senior FO', good: 'Good FO', new: 'New FO', member: 'Operator' };
 export type FoLevel = 'senior' | 'good' | 'new';
+/** Panel Operators of this grade and below (and contractor Panel Operators) can work on a shutdown team. */
+export const SD_PO_MAX_GRADE = 13;
+/** Can this person fill an operator place on a shutdown team? Field Operators; Panel Operators up to Grade 13 or contractors. */
+export const sdOperatorEligible = (p: { role: string | null; grade: number | null; employmentType: string | null }) =>
+  p.role === 'field_operator' || (p.role === 'panel_operator' && (p.employmentType === 'contractor' || (p.grade != null && p.grade <= SD_PO_MAX_GRADE)));
 export const FO_LEVEL_LABEL: Record<FoLevel, string> = { senior: 'Senior', good: 'Good', new: 'New' };
 
+/** 'train': one train down, the crews keep running. 'total': the whole unit down (turnaround), everyone on the teams. */
+export type SdKind = 'train' | 'total';
 export interface SdPlan {
   id: string; title: string; start: string; end: string; eventId: string | null;
+  kind: SdKind;
+  /** Area groups of a total turnaround (e.g. TR-II, L.P & TR-I); each team needs operators per area. */
+  areas: string[];
   daysOn: number; daysOff: number; shiftHours: number;
   /** The first and the last `rampDays` days are reduced: fewer people needed, `rampHours` a shift. */
   rampDays: number; rampHours: number;
@@ -22,9 +32,15 @@ export interface SdTeam { id: string; planId: string; name: string; sort: number
 export interface SdDay { works: boolean; hours: number | null }
 export interface SdMember {
   id: string; planId: string; teamId: string; employeeId: string; slot: SdSlot; offset: number; start: string; end: string;
+  /** Area group (total turnaround). */
+  area?: string | null;
   /** The member's own days (date → works / hours), overriding the pattern. */
   days?: Record<string, SdDay>;
 }
+
+/** Total turnaround: people needed per team, from a first to a last day (Controllers, and operators per area). */
+export interface SdPhase { id: string; start: string; end: string; needs: Record<string, { controller: number; areas: Record<string, number> }> }
+export const phaseOn = (phases: SdPhase[], date: string) => phases.find((x) => x.start <= date && date <= x.end) ?? null;
 
 const days = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000);
 export const cycleOf = (p: SdPlan) => Math.max(1, p.daysOn + p.daysOff);
@@ -50,28 +66,46 @@ export const memberHoursOn = (p: SdPlan, m: SdMember, date: string) => (memberWo
 export function dayOvertime(p: SdPlan, m: SdMember, crew: Crew | null, date: string): number {
   const h = memberHoursOn(p, m, date);
   if (!h) return 0;
-  const duty = crew ? isWorkingDay(date, crew) : new Date(`${date}T00:00:00Z`).getUTCDay() <= 4;
-  return Math.max(0, h - (duty ? p.normalHours : 0));
+  return Math.max(0, h - (isDutyDay(crew, date) ? p.normalHours : 0));
 }
+/** A normal duty day of the person: their crew's roster; day staff (no crew) Sunday to Thursday. */
+export const isDutyDay = (crew: Crew | null, date: string) => (crew ? isWorkingDay(date, crew) : new Date(`${date}T00:00:00Z`).getUTCDay() <= 4);
 
 export interface SlotDay { need: number; have: number }
-/** People working per slot of one team on one date against what the team needs that day (reduced days use the reduced needs).
- *  Operators without a level ('member') fill the open Field Operator places. */
-export function teamDay(p: SdPlan, t: SdTeam, members: SdMember[], date: string, away: (employeeId: string, date: string) => boolean = () => false): Record<NeedSlot, SlotDay> {
+/** Keys of a team day: the level slots (train shutdown), or 'controller' and 'area:<name>' (total turnaround). */
+export type DaySlots = Record<string, SlotDay>;
+export const slotLabel = (key: string) => (key.startsWith('area:') ? key.slice(5) || 'Operators' : SD_SLOT_LABEL[key as SdSlot] ?? key);
+/** Areas of a total turnaround ('' = one group when the plan has none). */
+export const areasOf = (p: SdPlan) => (p.areas.length ? p.areas : ['']);
+/**
+ * People working per slot of one team on one date against what the team needs that day.
+ * Train shutdown: per level slot (reduced days use the reduced needs); operators without a level ('member') fill the
+ * open Field Operator places. Total turnaround: Controllers and operators per area, as the phase of that date needs.
+ */
+export function teamDay(p: SdPlan, t: SdTeam, members: SdMember[], date: string, away: (employeeId: string, date: string) => boolean = () => false, phases: SdPhase[] = []): DaySlots {
+  const on = (f: (m: SdMember) => boolean) => members.filter((m) => m.teamId === t.id && f(m) && memberWorks(p, m, date) && !away(m.employeeId, date)).length;
+  const out: DaySlots = {};
+  if (p.kind === 'total') {
+    const n = phaseOn(phases, date)?.needs[t.id];
+    const areas = areasOf(p);
+    out.controller = { need: n?.controller ?? 0, have: on((m) => m.slot === 'controller') };
+    // an operator without an area (or with one no longer on the plan) counts in the first area
+    for (const a of areas) out[`area:${a}`] = { need: n?.areas[a] ?? 0, have: on((m) => m.slot !== 'controller' && ((m.area ?? '') === a || (a === areas[0] && !areas.includes(m.area ?? '')))) };
+    return out;
+  }
   const needs = isRampDay(p, date) ? t.rampNeeds : t.needs;
-  const out = {} as Record<NeedSlot, SlotDay>;
-  const on = (s: SdSlot) => members.filter((m) => m.teamId === t.id && m.slot === s && memberWorks(p, m, date) && !away(m.employeeId, date)).length;
-  for (const s of SD_SLOTS) out[s] = { need: needs[s], have: on(s) };
+  for (const s of SD_SLOTS) out[s] = { need: needs[s], have: on((m) => m.slot === s) };
   // Operators without a level fill whatever Field Operator places are still open (Senior first)
-  let spare = on('member');
-  for (const s of ['senior', 'good', 'new'] as const) { const n = Math.min(spare, Math.max(0, out[s].need - out[s].have)); out[s].have += n; spare -= n; }
+  let spare = on((m) => m.slot === 'member');
+  for (const s of ['senior', 'good', 'new'] as const) { const k = Math.min(spare, Math.max(0, out[s].need - out[s].have)); out[s].have += k; spare -= k; }
   return out;
 }
-export const dayShort = (d: Record<NeedSlot, SlotDay>) => SD_SLOTS.reduce((n, s) => n + Math.max(0, d[s].need - d[s].have), 0);
+export const dayShort = (d: DaySlots) => Object.values(d).reduce((n, x) => n + Math.max(0, x.need - x.have), 0);
 /** A day is critical when a slot the team needs has nobody at all that day (e.g. no Controller); short = fewer than needed. */
-export const dayCritical = (d: Record<NeedSlot, SlotDay>) => SD_SLOTS.some((s) => d[s].need > 0 && d[s].have === 0);
-export type DayState = 'full' | 'short' | 'critical';
-export const dayState = (d: Record<NeedSlot, SlotDay>): DayState => (dayCritical(d) ? 'critical' : dayShort(d) > 0 ? 'short' : 'full');
+export const dayCritical = (d: DaySlots) => Object.values(d).some((x) => x.need > 0 && x.have === 0);
+/** idle = nobody needed that day (a total turnaround outside its phases). */
+export type DayState = 'full' | 'short' | 'critical' | 'idle';
+export const dayState = (d: DaySlots): DayState => (Object.values(d).every((x) => x.need === 0) ? 'idle' : dayCritical(d) ? 'critical' : dayShort(d) > 0 ? 'short' : 'full');
 
 export interface MonthHours { month: string; days: number; sd: number; overtime: number; over: boolean }
 /** Days worked, shutdown hours and overtime (day by day, see dayOvertime) per calendar month, against the monthly cap. */

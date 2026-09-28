@@ -1,13 +1,13 @@
 import { ChevronRight, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import type { SdPlan } from '@/core/shutdown';
+import type { SdKind, SdPlan } from '@/core/shutdown';
 import { fetchCalendarInfo } from '@/data/calendar';
 import { createSdPlan, fetchSdPlans } from '@/data/shutdown';
-import { BottomSheet, Button, Card, ErrorBox, Field, PageHeader, Spinner } from '@/ui/components';
+import { BottomSheet, Button, Card, ErrorBox, Field, PageHeader, Spinner, cx } from '@/ui/components';
 import { localToday, shortDate } from '@/ui/leave';
 
-/** Shutdown teams: one plan per shutdown; open it to fill the Day and Night teams. */
+/** Shutdown teams: one plan per shutdown; open it to fill the Morning and Night teams. */
 export default function ShutdownListPage() {
   const [plans, setPlans] = useState<SdPlan[] | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -16,7 +16,8 @@ export default function ShutdownListPage() {
   return (
     <div>
       <PageHeader title="Shutdown teams" info={<div className="space-y-2 text-sm text-slate-700">
-        <p>One plan per shutdown, with a Day and a Night team. Each team needs its own Controller, Senior, Good and New Field Operators.</p>
+        <p>One plan per shutdown, with a Morning and a Night team. Train shutdown: each team needs its own Controller, Senior, Good and New Field Operators; the crews keep running. Total turnaround: the whole unit is down, each shift has its Controllers and operators per area (e.g. TR-II, L.P &amp; TR-I), the numbers can step down by phase, and the crew minimums don't apply.</p>
+        <p>Panel Operators of Grade 13 and below, and contractor Panel Operators, can also be picked for a team.</p>
         <p>Team members leave their crew for the team's dates; the crews must still meet the shutdown's operating-mode minimums. The team's Controller can still cover a normal shift on a day (Controllers › Assign cover).</p>
         <p>Overtime = shutdown hours − the normal duty hours the person would have worked, per month, against the cap.</p>
         <p>Picking members: the right level first; nobody works two shutdowns in a row (flagged); then those free of leave whose crew keeps its minimum; then fewer sick days this year.</p>
@@ -27,7 +28,7 @@ export default function ShutdownListPage() {
           {plans.map((p) => (
             <Link key={p.id} to={`/shutdown/${p.id}`} className="flex items-center gap-3 px-3 py-3">
               <span className="min-w-0 flex-1"><span className="block font-medium text-slate-900">{p.title}</span>
-                <span className="block text-xs text-slate-500">{shortDate(p.start)} – {shortDate(p.end)} {p.end.slice(0, 4)} · {p.daysOn} on / {p.daysOff} off · {p.shiftHours} h</span></span>
+                <span className="block text-xs text-slate-500">{p.kind === 'total' ? 'Total turnaround · ' : ''}{shortDate(p.start)} – {shortDate(p.end)} {p.end.slice(0, 4)} · {p.daysOff ? `${p.daysOn} on / ${p.daysOff} off` : 'every day'} · {p.shiftHours} h</span></span>
               <ChevronRight className="h-4 w-4 text-slate-400" />
             </Link>
           ))}
@@ -43,6 +44,7 @@ function NewPlanSheet({ onClose }: { onClose: () => void }) {
   const today = localToday();
   const [events, setEvents] = useState<{ id: string; label: string; start: string; end: string }[]>([]);
   const [eventId, setEventId] = useState('');
+  const [kind, setKind] = useState<SdKind>('train');
   const [title, setTitle] = useState(''); const [start, setStart] = useState(today); const [end, setEnd] = useState(today);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   useEffect(() => {
@@ -52,11 +54,16 @@ function NewPlanSheet({ onClose }: { onClose: () => void }) {
   function pickEvent(id: string) { setEventId(id); const e = events.find((x) => x.id === id); if (e) { setTitle(e.label); setStart(e.start); setEnd(e.end); } }
   async function save() {
     setBusy(true); setErr(null);
-    try { const id = await createSdPlan({ title: title.trim(), start, end, eventId: eventId || null }); navigate(`/shutdown/${id}`); } catch (e) { setErr(e); setBusy(false); }
+    try { const id = await createSdPlan({ title: title.trim(), start, end, eventId: eventId || null, kind }); navigate(`/shutdown/${id}`); } catch (e) { setErr(e); setBusy(false); }
   }
   return (
     <BottomSheet open onClose={onClose} title="New shutdown plan">
       <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-1.5">
+          {([['train', 'Train shutdown'], ['total', 'Total turnaround']] as const).map(([k, l]) => (
+            <button key={k} type="button" onClick={() => setKind(k)} className={cx('rounded-lg px-2 py-2 text-sm font-medium ring-1', kind === k ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>{l}</button>
+          ))}
+        </div>
         <Field label="Shutdown (from the Calendar)">
           <select className="input" value={eventId} onChange={(e) => pickEvent(e.target.value)}>
             <option value="">Not linked</option>
@@ -68,7 +75,9 @@ function NewPlanSheet({ onClose }: { onClose: () => void }) {
           <Field label="First day"><input type="date" className="input" value={start} onChange={(e) => setStart(e.target.value)} /></Field>
           <Field label="Last day"><input type="date" className="input" value={end} onChange={(e) => setEnd(e.target.value)} /></Field>
         </div>
-        <p className="text-xs text-slate-500">Starts with a Day and a Night team (Controller 1 · Senior 2 · Good 2 · New 1), 3 on / 1 off, 12 h, first and last 2 days 8 h, overtime ≤ 80 h. All editable.</p>
+        <p className="text-xs text-slate-500">{kind === 'total'
+          ? 'Starts with a Morning and a Night shift, each 2 Controllers and 5 operators in TR-II and 5 in L.P & TR-I, everyone every day, 12 h, overtime ≤ 80 h. Areas, phases and numbers are all editable.'
+          : 'Starts with a Morning and a Night team (Controller 1 · Senior 2 · Good 2 · New 1), 3 on / 1 off, 12 h, first and last 2 days 8 h, overtime ≤ 80 h. All editable.'}</p>
         {err != null && <ErrorBox error={err} />}
         <Button className="w-full" disabled={busy || !title.trim() || end < start} onClick={save}>Create</Button>
       </div>

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { Link, useParams } from 'react-router-dom';
 import { personOn } from '@/core/manpower';
 import { addDaysIso, type Crew } from '@/core/roster';
-import { dayOvertime, memberWorks, planDates, type SdMember, type SdPlan, type SdTeam } from '@/core/shutdown';
+import { areasOf, dayOvertime, isDutyDay, memberWorks, planDates, type SdMember, type SdPlan, type SdTeam } from '@/core/shutdown';
 import { fetchManpowerInputs } from '@/data/manpower';
 import { fetchDirectory } from '@/data/queries';
 import { fetchSdPlan, updateSdPlan, type Signature } from '@/data/shutdown';
@@ -17,7 +17,8 @@ const MONTH = (ym: string) => new Date(`${ym}-01T00:00:00Z`).toLocaleDateString(
 const monthName = (ym: string) => new Date(`${ym}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' });
 const hrs = (label: string | null) => label?.replace(/(\d\d:\d\d)/g, '$1 HRS').replace(/\s*-\s*/, ' TO ') ?? '';
 
-interface Row { m: SdMember; team: SdTeam; r: EmployeeDirectoryRow | undefined; crew: Crew | null }
+/** A row: the member, the group it is printed under (Controller, an area, Operators) and its number within the team. */
+interface Row { m: SdMember; team: SdTeam; r: EmployeeDirectoryRow | undefined; crew: Crew | null; group: string; no: number }
 interface Doc { plan: SdPlan; teams: SdTeam[]; rows: Row[]; signatures: Signature[]; dates: string[]; months: string[]; name: string }
 
 function useDoc(id: string) {
@@ -32,9 +33,14 @@ function useDoc(id: string) {
       // the person's own crew, the shutdown aside: overtime counts against that crew's duty days
       const crewOf = (emp: string) => { const p = people.get(emp); return p ? personOn({ ...p, moves: p.moves?.filter((x) => x.kind !== 'sd') }, sd.plan.start).crew : null; };
       const teamSort = new Map(sd.teams.map((t) => [t.id, t.sort]));
-      const rows = sd.members.map((m) => ({ m, team: sd.teams.find((t) => t.id === m.teamId)!, r: byId.get(m.employeeId), crew: crewOf(m.employeeId) }))
+      const areas = areasOf(sd.plan);
+      const groupOf = (m: SdMember) => (m.slot === 'controller' ? 'Controller' : sd.plan.kind === 'total' ? (areas.includes(m.area ?? '') ? m.area ?? '' : areas[0]) || 'Operators' : 'Operators');
+      const groupRank = (g: string) => (g === 'Controller' ? -1 : Math.max(0, areas.indexOf(g)));
+      const sorted = sd.members.map((m) => ({ m, team: sd.teams.find((t) => t.id === m.teamId)!, r: byId.get(m.employeeId), crew: crewOf(m.employeeId), group: groupOf(m), no: 0 }))
         .filter((x) => x.team)
-        .sort((a, b) => teamSort.get(a.m.teamId)! - teamSort.get(b.m.teamId)! || SLOT_ORDER[a.m.slot] - SLOT_ORDER[b.m.slot] || (a.r?.display_name ?? '').localeCompare(b.r?.display_name ?? ''));
+        .sort((a, b) => teamSort.get(a.m.teamId)! - teamSort.get(b.m.teamId)! || groupRank(a.group) - groupRank(b.group) || SLOT_ORDER[a.m.slot] - SLOT_ORDER[b.m.slot] || (a.r?.display_name ?? '').localeCompare(b.r?.display_name ?? ''));
+      // numbered within the team: Controllers 1.., operators 1.. across the areas (as on the section's sheets)
+      const rows = sorted.map((x, i) => { const same = sorted.slice(0, i).filter((y) => y.team.id === x.team.id && (y.group === 'Controller') === (x.group === 'Controller')); return { ...x, no: same.length + 1 }; });
       const dates = planDates(sd.plan);
       const months = [...new Set(dates.map((d) => d.slice(0, 7)))];
       const period = months.length > 1 ? `${MONTH(months[0])} - ${MONTH(months[months.length - 1])}` : MONTH(months[0]);
@@ -83,26 +89,37 @@ export function SdSchedulePage() {
       {blocks.map((b, bi) => (
         <table key={bi} className="mb-3 w-full border-collapse text-center text-[10px] text-slate-900 print:break-inside-avoid">
           <thead>
-            <tr><th colSpan={3} className={cx(th, 'bg-amber-400')}>EMPLOYEES</th><th colSpan={b.length} className={cx(th, 'bg-sky-100')}>DAYS</th></tr>
-            <tr><th className={cx(th, 'w-px')}>S.NO</th><th className={cx(th, 'w-px')}>E NO.</th><th className={cx(th, 'w-px min-w-40 text-left')}>E. NAME</th>
+            <tr><th colSpan={4} className={cx(th, 'bg-amber-400')}>EMPLOYEES</th><th colSpan={b.length} className={cx(th, 'bg-sky-100')}>DAYS</th></tr>
+            <tr><th colSpan={4} className={th} />{b.map((d) => <th key={d} className={cx(th, 'font-medium')}>{new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' })}</th>)}</tr>
+            <tr><th className={cx(th, 'w-px')} /><th className={cx(th, 'w-px')}>S.NO</th><th className={cx(th, 'w-px')}>E NO.</th><th className={cx(th, 'w-px min-w-40 text-left')}>E. NAME</th>
               {b.map((d) => <th key={d} className={cx(th, 'w-8 whitespace-nowrap')}>{Number(d.slice(8))}-{new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })}</th>)}</tr>
           </thead>
           <tbody>
-            {rows.map((x, i) => (
-              <tr key={x.m.id}>
-                <td className={td}>{i + 1}</td><td className={td}>{x.r?.employee_number}</td><td className={cx(td, 'whitespace-nowrap text-left')}>{x.r?.display_name}</td>
-                {b.map((d) => {
-                  const w = memberWorks(plan, x.m, d);
-                  return <td key={d} className={cx(td, 'font-semibold', w ? (x.team.shiftCode === 'N' ? 'bg-slate-300' : 'bg-sky-50') : offInside(plan, x.m, dates, d) && 'bg-yellow-300')}>{w ? x.team.shiftCode : 'O'}</td>;
-                })}
-              </tr>
-            ))}
+            {rows.map((x, i) => {
+              const first = i === 0 || rows[i - 1].team.id !== x.team.id || rows[i - 1].group !== x.group;
+              const span = first ? rows.slice(i).findIndex((y) => y.team.id !== x.team.id || y.group !== x.group) : 0;
+              return (
+                <tr key={x.m.id} className={cx(first && i > 0 && rows[i - 1].team.id !== x.team.id && 'border-t-2 border-slate-800')}>
+                  {first && <td rowSpan={span < 0 ? rows.length - i : span} className={cx(td, 'w-6 bg-slate-100 font-semibold')}><span className="inline-block whitespace-nowrap [writing-mode:vertical-rl] rotate-180">{x.group}</span></td>}
+                  <td className={td}>{x.no}</td><td className={cx(td, x.group === 'Controller' ? 'bg-green-100' : 'bg-amber-100')}>{x.r?.employee_number}</td>
+                  <td className={cx(td, 'whitespace-nowrap text-left', x.group === 'Controller' ? 'bg-green-100' : 'bg-amber-100')}>{x.r?.display_name}</td>
+                  {b.map((d) => {
+                    // black: not on the team that day; red letter: working on the person's own crew rest day (full overtime)
+                    if (d < x.m.start || d > x.m.end) return <td key={d} className={cx(td, 'bg-slate-900')} />;
+                    const w = memberWorks(plan, x.m, d);
+                    return <td key={d} className={cx(td, 'font-semibold', w ? (x.team.shiftCode === 'N' ? 'bg-slate-300' : 'bg-sky-50') : offInside(plan, x.m, dates, d) && 'bg-yellow-300', w && !isDutyDay(x.crew, d) && 'text-red-600')}>{w ? x.team.shiftCode : 'O'}</td>;
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       ))}
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-700">
         {doc.teams.map((t) => <span key={t.id}><b className={cx('mr-1 inline-block w-5 border border-slate-500 text-center', t.shiftCode === 'N' ? 'bg-slate-300' : 'bg-sky-50')}>{t.shiftCode}</b>{t.name} shift {t.hoursLabel ?? ''}</span>)}
         <span><b className="mr-1 inline-block w-5 border border-slate-500 bg-yellow-300 text-center">O</b>Off</span>
+        <span><b className="mr-1 inline-block w-5 border border-slate-500 text-center text-red-600">{doc.teams[0]?.shiftCode ?? 'M'}</b>On the person's crew rest day (full overtime)</span>
+        <span><b className="mr-1 inline-block w-5 border border-slate-500 bg-slate-900 text-center">&nbsp;</b>Not on the team</span>
       </div>
     </Page>
   );

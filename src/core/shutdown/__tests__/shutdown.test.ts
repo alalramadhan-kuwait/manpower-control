@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { dayOvertime, dayShort, dayState, hoursOn, neighbours, isRampDay, memberHours, memberWorks, nextOffset, teamDay, type SdMember, type SdPlan, type SdTeam } from '..';
+import { dayOvertime, sdOperatorEligible, type SdPhase, dayShort, dayState, hoursOn, neighbours, isRampDay, memberHours, memberWorks, nextOffset, teamDay, type SdMember, type SdPlan, type SdTeam } from '..';
 
-const plan: SdPlan = { id: 'p', title: 'Train-2 SD', start: '2026-11-01', end: '2026-11-30', eventId: null, daysOn: 3, daysOff: 1, shiftHours: 12, rampDays: 2, rampHours: 8, normalHours: 8, maxOvertime: 80 };
-const team: SdTeam = { id: 'day', planId: 'p', name: 'Day', sort: 0, needs: { controller: 1, senior: 2, good: 2, new: 1 }, rampNeeds: { controller: 1, senior: 1, good: 1, new: 1 }, shiftCode: 'M', hoursLabel: null };
+const plan: SdPlan = { id: 'p', title: 'Train-2 SD', kind: 'train', areas: [], start: '2026-11-01', end: '2026-11-30', eventId: null, daysOn: 3, daysOff: 1, shiftHours: 12, rampDays: 2, rampHours: 8, normalHours: 8, maxOvertime: 80 };
+const team0: SdTeam = { id: 'day', planId: 'p', name: 'Day', sort: 0, needs: { controller: 1, senior: 2, good: 2, new: 1 }, rampNeeds: { controller: 1, senior: 1, good: 1, new: 1 }, shiftCode: 'M', hoursLabel: null };
+const team = team0;
 const m = (id: string, slot: SdMember['slot'], offset: number): SdMember => ({ id, planId: 'p', teamId: 'day', employeeId: id, slot, offset, start: plan.start, end: plan.end });
 
 describe('shutdown teams', () => {
@@ -25,6 +26,26 @@ describe('shutdown teams', () => {
     const full = [m('c', 'controller', 0), ...members, m('g1', 'good', 0), m('g2', 'good', 1), m('n', 'new', 0)];
     expect(dayState(teamDay(plan, team, full, '2026-11-03'))).toBe('short');                  // s2, g2 off, all slots covered
     expect(dayState(teamDay(plan, team, full, '2026-11-05'))).toBe('full');
+  });
+  it('total turnaround: Controllers and operators per area as the phase needs, everyone every day', () => {
+    const ta: SdPlan = { ...plan, kind: 'total', areas: ['TR-II', 'L.P & TR-I'], daysOn: 1, daysOff: 0, rampDays: 0, start: '2025-05-02', end: '2025-05-10' };
+    const phases: SdPhase[] = [
+      { id: 'a', start: '2025-05-02', end: '2025-05-05', needs: { day: { controller: 2, areas: { 'TR-II': 5, 'L.P & TR-I': 5 } } } },
+      { id: 'b', start: '2025-05-06', end: '2025-05-10', needs: { day: { controller: 2, areas: { 'TR-II': 3, 'L.P & TR-I': 3 } } } }];
+    const x = (id: string, area: string | null, end = ta.end): SdMember => ({ ...m(id, 'member', 0), start: ta.start, end, area });
+    const crew = [{ ...m('c1', 'controller', 0), start: ta.start, end: ta.end }, { ...m('c2', 'controller', 0), start: ta.start, end: ta.end },
+      x('t1', 'TR-II'), x('t2', 'TR-II'), x('t3', 'TR-II'), x('t4', 'TR-II', '2025-05-05'), x('t5', 'TR-II', '2025-05-05'),
+      x('l1', 'L.P & TR-I'), x('l2', 'L.P & TR-I'), x('l3', null)];
+    const d1 = teamDay(ta, { ...team0, id: 'day' }, crew, '2025-05-03', undefined, phases);
+    expect(d1).toEqual({ controller: { need: 2, have: 2 }, 'area:TR-II': { need: 5, have: 6 }, 'area:L.P & TR-I': { need: 5, have: 2 } });   // l3 (no area) counts in TR-II
+    const d2 = teamDay(ta, { ...team0, id: 'day' }, crew, '2025-05-07', undefined, phases);
+    expect([d2['area:TR-II'], dayState(d2)]).toEqual([{ need: 3, have: 4 }, 'short']);      // t4, t5 released after 5 May
+    expect(dayState(teamDay(ta, { ...team0, id: 'day' }, [], '2025-05-11', undefined, phases))).toBe('idle');
+  });
+  it('Panel Operators up to Grade 13, or contractors, can work on a shutdown team', () => {
+    const po = (grade: number | null, employmentType = 'knpc') => sdOperatorEligible({ role: 'panel_operator', grade, employmentType });
+    expect([po(12), po(13), po(14), po(null, 'contractor'), sdOperatorEligible({ role: 'field_operator', grade: 15, employmentType: 'knpc' }), sdOperatorEligible({ role: 'controller', grade: 13, employmentType: 'knpc' })])
+      .toEqual([true, true, false, true, true, false]);
   });
   it('operators without a level fill the open Field Operator places, Senior first', () => {
     const d = teamDay(plan, team, [m('c', 'controller', 0), m('o1', 'member', 0), m('o2', 'member', 0), m('o3', 'member', 0)], '2026-11-05');
