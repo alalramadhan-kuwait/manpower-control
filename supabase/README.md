@@ -37,6 +37,7 @@ Supabase MCP or dashboard gets a matching file here, named with the version the 
 | `20260926205619_vr_placement` | VR placement: `crew_movements` kind `placement` (a VR in a crew from a date until moved; no overlap per person); `vr_place(employee, crew, start, reason)`; `crew_move_end` / `crew_move_cancel` accept placements; the recorded VR covers turned into placements and the covers cancelled (history kept) |
 | `20260927211417_stage_k_shutdown_teams` | Stage K: `employees.fo_level` (senior / good / new, set by the Section Head); `sd_plans` (shutdown dates and pattern: days on/off, shift hours, reduced first/last days and hours, normal hours, overtime cap), `sd_teams` (needs per slot, full and reduced days), `sd_members` (slot, pattern offset, dates; off their crew); staff read/write, no delete, audited; seeded Train-2 SD (1–30 Nov 2026, Day and Night teams) |
 | `20260927211453_directory_fo_level` | Stage K: `employee_directory_v` gains `fo_level` |
+| `20260928060816_stage_k_sd_days_and_documents` | Stage K: `sd_days` (a member's own day: works / off and hours, overriding the pattern; audited), slot `member`, `sd_teams.shift_code` / `shift_hours_label`, `sd_plans.signatures` (approval block of the overtime sheet) |
 
 ## Edge Functions
 

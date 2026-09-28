@@ -3,14 +3,16 @@ import { supabase } from './supabase';
 import { dataChanged } from './changes';
 import type { FoLevel, SdMember, SdPlan, SdSlot, SdTeam } from '@/core/shutdown';
 
-interface PlanRow { id: string; event_id: string | null; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; status: string }
-interface TeamRow { id: string; plan_id: string; name: string; sort: number; controller_n: number; senior_n: number; good_n: number; new_n: number; ramp_controller_n: number; ramp_senior_n: number; ramp_good_n: number; ramp_new_n: number }
+export interface Signature { title: string; name: string }
+interface PlanRow { signatures: Signature[]; id: string; event_id: string | null; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; status: string }
+interface TeamRow { id: string; plan_id: string; name: string; sort: number; shift_code: 'M' | 'N'; shift_hours_label: string | null; controller_n: number; senior_n: number; good_n: number; new_n: number; ramp_controller_n: number; ramp_senior_n: number; ramp_good_n: number; ramp_new_n: number }
 interface MemberRow { id: string; plan_id: string; team_id: string; employee_id: string; slot: SdSlot; day_offset: number; start_date: string; end_date: string }
 
 const toPlan = (r: PlanRow): SdPlan => ({ id: r.id, eventId: r.event_id, title: r.title, start: r.start_date, end: r.end_date, daysOn: r.days_on, daysOff: r.days_off,
   shiftHours: Number(r.shift_hours), rampDays: r.ramp_days, rampHours: Number(r.ramp_hours), normalHours: Number(r.normal_hours), maxOvertime: Number(r.max_overtime) });
 const toTeam = (r: TeamRow): SdTeam => ({ id: r.id, planId: r.plan_id, name: r.name, sort: r.sort,
-  needs: { controller: r.controller_n, senior: r.senior_n, good: r.good_n, new: r.new_n }, rampNeeds: { controller: r.ramp_controller_n, senior: r.ramp_senior_n, good: r.ramp_good_n, new: r.ramp_new_n } });
+  needs: { controller: r.controller_n, senior: r.senior_n, good: r.good_n, new: r.new_n }, rampNeeds: { controller: r.ramp_controller_n, senior: r.ramp_senior_n, good: r.ramp_good_n, new: r.ramp_new_n },
+  shiftCode: r.shift_code, hoursLabel: r.shift_hours_label });
 export const toMember = (r: MemberRow): SdMember => ({ id: r.id, planId: r.plan_id, teamId: r.team_id, employeeId: r.employee_id, slot: r.slot, offset: r.day_offset, start: r.start_date, end: r.end_date });
 
 export async function fetchSdPlans(): Promise<SdPlan[]> {
@@ -19,14 +21,25 @@ export async function fetchSdPlans(): Promise<SdPlan[]> {
   return (data as PlanRow[]).map(toPlan);
 }
 
-export async function fetchSdPlan(id: string): Promise<{ plan: SdPlan; teams: SdTeam[]; members: SdMember[] }> {
+export async function fetchSdPlan(id: string): Promise<{ plan: SdPlan; teams: SdTeam[]; members: SdMember[]; signatures: Signature[] }> {
   const [p, t, m] = await Promise.all([
     supabase.from('sd_plans').select('*').eq('id', id).single(),
     supabase.from('sd_teams').select('*').eq('plan_id', id).eq('status', 'active').order('sort'),
     supabase.from('sd_members').select('*').eq('plan_id', id).eq('status', 'active')
   ]);
   const err = [p, t, m].find((r) => r.error)?.error; if (err) throw err;
-  return { plan: toPlan(p.data as PlanRow), teams: (t.data as TeamRow[]).map(toTeam), members: (m.data as MemberRow[]).map(toMember) };
+  const members = (m.data as MemberRow[]).map(toMember);
+  // each member's own days (overriding the pattern)
+  if (members.length) {
+    const d = await supabase.from('sd_days').select('member_id,work_date,works,hours').in('member_id', members.map((x) => x.id)).limit(10000);
+    if (d.error) throw d.error;
+    const by = new Map(members.map((x) => [x.id, x]));
+    for (const r of d.data as { member_id: string; work_date: string; works: boolean; hours: number | null }[]) {
+      const mem = by.get(r.member_id); if (!mem) continue;
+      (mem.days ??= {})[r.work_date] = { works: r.works, hours: r.hours == null ? null : Number(r.hours) };
+    }
+  }
+  return { plan: toPlan(p.data as PlanRow), teams: (t.data as TeamRow[]).map(toTeam), members, signatures: (p.data as PlanRow).signatures ?? [] };
 }
 
 /** Active shutdown team members overlapping [from, to] (plans not cancelled), for the manpower engine. */
@@ -46,7 +59,7 @@ export async function createSdPlan(v: { title: string; start: string; end: strin
   return id;
 }
 
-export async function updateSdPlan(id: string, v: Partial<{ title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; status: 'active' | 'cancelled' }>) {
+export async function updateSdPlan(id: string, v: Partial<{ signatures: Signature[]; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; status: 'active' | 'cancelled' }>) {
   const { error } = await supabase.from('sd_plans').update(v).eq('id', id);
   if (error) throw error;
   dataChanged();
@@ -96,4 +109,19 @@ export async function fetchSickTotals(years: number[]): Promise<Map<string, Reco
   const out = new Map<string, Record<number, number>>();
   for (const r of data as { employee_id: string; year: number; days: number }[]) out.set(r.employee_id, { ...(out.get(r.employee_id) ?? {}), [r.year]: Number(r.days) });
   return out;
+}
+
+/** Save a member's own days (works / off, hours) for the given dates. */
+export async function setSdDays(memberId: string, days: { date: string; works: boolean; hours: number | null }[]) {
+  if (!days.length) return;
+  const { error } = await supabase.from('sd_days').upsert(days.map((d) => ({ member_id: memberId, work_date: d.date, works: d.works, hours: d.hours })), { onConflict: 'member_id,work_date' });
+  if (error) throw error;
+  dataChanged();
+}
+
+/** Back to the plan pattern: forget the member's own days. */
+export async function clearSdDays(memberId: string) {
+  const { error } = await supabase.from('sd_days').delete().eq('member_id', memberId);
+  if (error) throw error;
+  dataChanged();
 }

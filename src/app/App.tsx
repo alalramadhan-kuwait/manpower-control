@@ -19,6 +19,7 @@ import ControllersBoardPage from '@/features/controllers/ControllersBoardPage';
 import ShutdownListPage from '@/features/shutdown/ShutdownListPage';
 import SdPlanPage from '@/features/shutdown/SdPlanPage';
 import FoLevelsPage from '@/features/shutdown/FoLevelsPage';
+import { SdOvertimePage, SdSchedulePage } from '@/features/shutdown/SdDocuments';
 import LeavePlanPage from '@/features/leave/LeavePlanPage';
 import MovementsPage from '@/features/movements/MovementsPage';
 import ControllersPage from '@/features/controllers/ControllersPage';
@@ -74,7 +75,7 @@ export default function App() {
   }
   return (
     <Shell profile={profile}>
-      <div className="sm:pl-44">
+      <div className="sm:pl-44 print:pl-0">
         <Routes>
           <Route path="/" element={<DayOverviewPage />} />
           <Route path="/summary" element={<HomePage />} />
@@ -92,6 +93,8 @@ export default function App() {
           <Route path="/controllers/board" element={<ControllersBoardPage profile={profile} />} />
           <Route path="/shutdown" element={<ShutdownListPage />} />
           <Route path="/shutdown/:id" element={<SdPlanPage />} />
+          <Route path="/shutdown/:id/schedule" element={<SdSchedulePage />} />
+          <Route path="/shutdown/:id/overtime" element={<SdOvertimePage />} />
           <Route path="/review/fo-levels" element={<FoLevelsPage />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/leave-plan" element={<LeavePlanPage />} />

@@ -1,13 +1,13 @@
-import { AlertTriangle, ArrowLeft, Check, Copy, Pencil, Plus, UserMinus } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, Copy, FileText, Pencil, Plus, RotateCcw, UserMinus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { COVER_GRADE } from '@/core/controllers';
 import { evaluateRange, personOn, SD_TEAM, type MpAbsence, type MpAssignment, type MpPerson } from '@/core/manpower';
 import { CREWS, addDaysIso, type Crew } from '@/core/roster';
-import { FO_LEVEL_LABEL, SD_SLOTS, SD_SLOT_LABEL, dayShort, dayState, isRampDay, neighbours, memberHours, memberWorks, nextOffset, planDates, teamDay, cycleOf, type SdMember, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
+import { FO_LEVEL_LABEL, SD_SLOTS, SD_SLOT_LABEL, dayOvertime, dayShort, dayState, isRampDay, neighbours, memberHours, memberWorks, nextOffset, planDates, teamDay, cycleOf, type SdDay, type SdMember, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { fetchDirectory } from '@/data/queries';
-import { addSdMember, fetchAllSdMembers, fetchSdPlan, fetchSdPlans, fetchSickTotals, removeSdMember, updateSdMember, updateSdPlan, updateSdTeam } from '@/data/shutdown';
+import { addSdMember, clearSdDays, fetchAllSdMembers, fetchSdPlan, fetchSdPlans, fetchSickTotals, removeSdMember, setSdDays, updateSdMember, updateSdPlan, updateSdTeam, type Signature } from '@/data/shutdown';
 import type { EmployeeDirectoryRow } from '@/data/types';
 import { BottomSheet, Button, Card, ErrorBox, Field, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
@@ -17,7 +17,7 @@ const CONTROLLER_ROLES = ['controller', 'vr_controller', 'morning_controller'];
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
 const wd = (iso: string) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(`${iso}T00:00:00Z`).getUTCDay()];
 type Data = {
-  plan: SdPlan; teams: SdTeam[]; members: SdMember[]; inputs: ManpowerInputs; dir: Map<string, EmployeeDirectoryRow>;
+  plan: SdPlan; teams: SdTeam[]; members: SdMember[]; signatures: Signature[]; inputs: ManpowerInputs; dir: Map<string, EmployeeDirectoryRow>;
   /** Who worked the shutdown right before / is on the one right after (nobody works two in a row). */
   prev: { plan: SdPlan; ids: Set<string> } | null; next: { plan: SdPlan; ids: Set<string> } | null;
   /** Sick-leave days per person per year (workbook totals). */
@@ -75,7 +75,7 @@ export default function SdPlanPage() {
     const lines = [`${plan.title} · ${range(plan.start, plan.end)} ${plan.end.slice(0, 4)}`, `${plan.daysOn} on / ${plan.daysOff} off · ${plan.shiftHours} h (first and last ${plan.rampDays} days ${plan.rampHours} h)`];
     for (const t of teams) {
       lines.push('', `${t.name} team`);
-      for (const s of SD_SLOTS) for (const m of members.filter((x) => x.teamId === t.id && x.slot === s)) {
+      for (const s of [...SD_SLOTS, 'member' as const]) for (const m of members.filter((x) => x.teamId === t.id && x.slot === s)) {
         const r = dir.get(m.employeeId);
         lines.push(`${SD_SLOT_LABEL[s]}: ${r?.display_name ?? ''} (${r?.employee_number ?? ''}${r?.crew_code ? `, ${r.crew_code} Shift` : ''})${m.start !== plan.start || m.end !== plan.end ? ` ${range(m.start, m.end)}` : ''}`);
       }
@@ -96,6 +96,10 @@ export default function SdPlanPage() {
           </button>
         </div>
         <Button variant="secondary" className="min-h-9 shrink-0 px-3 text-xs" onClick={copyList}><Copy className="h-3.5 w-3.5" />Copy list</Button>
+      </div>
+      <div className="mb-2 grid grid-cols-2 gap-2">
+        <Link to={`/shutdown/${plan.id}/schedule`} className="flex min-h-9 items-center justify-center gap-1 rounded-lg bg-white text-xs font-semibold text-brand-700 ring-1 ring-slate-300"><FileText className="h-3.5 w-3.5" />Shift schedule</Link>
+        <Link to={`/shutdown/${plan.id}/overtime`} className="flex min-h-9 items-center justify-center gap-1 rounded-lg bg-white text-xs font-semibold text-brand-700 ring-1 ring-slate-300"><FileText className="h-3.5 w-3.5" />Overtime sheet</Link>
       </div>
       {notice && <p className="mb-2 flex items-center gap-1 text-sm text-status-green"><Check className="h-4 w-4" />{notice}</p>}
 
@@ -149,6 +153,7 @@ function TeamCard({ t, data, view, onAdd, onMember, onEdit }: { t: SdTeam; data:
   const [day, setDay] = useState<string | null>(null);
   const days = view.teamDays.get(t.id)!;
   const sel = day ? days.find((d) => d.date === day) : null;
+  let spare = data.members.filter((m) => m.teamId === t.id && m.slot === 'member').length;
   return (
     <Card className="mb-3 py-1.5">
       <div className="flex items-center justify-between pt-1">
@@ -168,16 +173,25 @@ function TeamCard({ t, data, view, onAdd, onMember, onEdit }: { t: SdTeam; data:
       <div className="mt-1 divide-y divide-slate-100">
         {SD_SLOTS.map((s) => {
           const list = data.members.filter((m) => m.teamId === t.id && m.slot === s);
-          const missing = Math.max(0, t.needs[s] - list.length);
+          // operators without a level take the open FO places (Senior first)
+          const open = Math.max(0, t.needs[s] - list.length);
+          const filled = s === 'controller' ? 0 : Math.min(open, spare); spare -= filled;
+          const missing = open - filled;
           return (
             <div key={s} className="py-1.5">
-              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500"><span>{SD_SLOT_LABEL[s]} · {list.length}/{t.needs[s]}</span>
+              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500"><span>{SD_SLOT_LABEL[s]} · {list.length}{filled ? `+${filled} operator${filled > 1 ? 's' : ''}` : ''}/{t.needs[s]}</span>
                 <button type="button" onClick={() => onAdd(s)} className="flex items-center gap-0.5 text-brand-700"><Plus className="h-3.5 w-3.5" />Add</button></div>
               {list.map((m) => <MemberRow key={m.id} m={m} data={data} view={view} onOpen={() => onMember(m)} />)}
               {Array.from({ length: missing }, (_, i) => <button key={i} type="button" onClick={() => onAdd(s)} className="mt-1 flex w-full items-center gap-1.5 rounded-lg border border-dashed border-red-300 px-2 py-1.5 text-left text-xs font-medium text-status-red"><Plus className="h-3.5 w-3.5" />{SD_SLOT_LABEL[s]} needed</button>)}
             </div>
           );
         })}
+        {data.members.some((m) => m.teamId === t.id && m.slot === 'member') && (
+          <div className="py-1.5">
+            <div className="text-[11px] font-semibold text-slate-500">{SD_SLOT_LABEL.member}s (no level) · fill the open FO places</div>
+            {data.members.filter((m) => m.teamId === t.id && m.slot === 'member').map((m) => <MemberRow key={m.id} m={m} data={data} view={view} onOpen={() => onMember(m)} />)}
+          </div>
+        )}
       </div>
     </Card>
   );
@@ -280,29 +294,62 @@ function AddSheet({ plan, team, slot, data, view, onClose, onDone }: { plan: SdP
 
 function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m: SdMember; data: Data; view: View; onClose: () => void; onDone: (msg: string) => void }) {
   const r = data.dir.get(m.employeeId);
+  const team = data.teams.find((t) => t.id === m.teamId);
   const [offset, setOffset] = useState(m.offset);
   const [start, setStart] = useState(m.start); const [end, setEnd] = useState(m.end);
+  const [own, setOwn] = useState<Record<string, SdDay>>(m.days ?? {});
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  const trial = { ...m, offset, start, end };
-  const hours = memberHours(plan, trial, view.homeCrew(m.employeeId, plan.start));
+  const trial: SdMember = { ...m, offset, start, end, days: own };
+  const crew = view.homeCrew(m.employeeId, plan.start);
+  const hours = memberHours(plan, trial, crew);
   const cycle = cycleOf(plan);
   const valid = start >= plan.start && end <= plan.end && end >= start;
+  const changedDays = Object.entries(own).filter(([d, v]) => m.days?.[d]?.works !== v.works || m.days?.[d]?.hours !== v.hours);
+  const hasOwn = Object.keys(m.days ?? {}).length > 0;
+  const toggle = (d: string) => setOwn((x) => ({ ...x, [d]: { works: !memberWorks(plan, trial, d), hours: x[d]?.hours ?? null } }));
   async function save() {
     setBusy(true); setErr(null);
-    try { await updateSdMember(m.id, { day_offset: offset, start_date: start, end_date: end }); onDone(`${r?.display_name}: team place updated.`); } catch (e) { setErr(e); } finally { setBusy(false); }
+    try {
+      await updateSdMember(m.id, { day_offset: offset, start_date: start, end_date: end });
+      await setSdDays(m.id, changedDays.map(([date, v]) => ({ date, works: v.works, hours: v.hours })));
+      onDone(`${r?.display_name}: team place updated.`);
+    } catch (e) { setErr(e); } finally { setBusy(false); }
+  }
+  async function reset() {
+    setBusy(true); setErr(null);
+    try { await clearSdDays(m.id); onDone(`${r?.display_name}: back to the ${plan.daysOn} on / ${plan.daysOff} off pattern.`); } catch (e) { setErr(e); } finally { setBusy(false); }
   }
   async function remove() {
     setBusy(true); setErr(null);
     try { await removeSdMember(m.id); onDone(`${r?.display_name} taken off the team; back with his crew.`); } catch (e) { setErr(e); } finally { setBusy(false); }
   }
+  const code = team?.shiftCode ?? 'M';
   return (
     <BottomSheet open onClose={onClose} title={r?.display_name ?? 'Team member'}>
       <div className="space-y-3">
-        <p className="text-sm text-slate-600">#{r?.employee_number} · {SD_SLOT_LABEL[m.slot]}{r?.crew_code ? ` · from ${r.crew_code} Shift` : ''}</p>
-        <Field label={`Days off (${plan.daysOn} on / ${plan.daysOff} off)`}>
+        <p className="text-sm text-slate-600">#{r?.employee_number} · {SD_SLOT_LABEL[m.slot]}{r?.crew_code ? ` · from ${r.crew_code} Shift` : ''}{team ? ` · ${team.name} team` : ''}</p>
+        <Field label="Days (tap to switch working / off)">
+          <div className="grid grid-cols-7 gap-1">
+            {view.dates.map((d) => {
+              const inRange = d >= start && d <= end;
+              const works = memberWorks(plan, trial, d);
+              const ot = dayOvertime(plan, trial, crew, d);
+              return (
+                <button key={d} type="button" disabled={!inRange} onClick={() => toggle(d)} title={`${wd(d)} ${shortDate(d)}`}
+                  className={cx('flex flex-col items-center rounded-md py-0.5 text-[10px] leading-tight ring-1', !inRange ? 'bg-slate-50 text-slate-300 ring-slate-100' : works ? (code === 'N' ? 'bg-slate-300 text-slate-900 ring-slate-400' : 'bg-sky-50 text-slate-900 ring-sky-200') : 'bg-yellow-200 text-yellow-900 ring-yellow-300', own[d] && m.days?.[d]?.works !== own[d].works && 'outline outline-2 outline-brand-700')}>
+                  <span className="text-[9px] text-slate-500">{wd(d).slice(0, 2)} {Number(d.slice(8))}</span>
+                  <span className="font-bold">{inRange ? (works ? code : 'O') : '·'}</span>
+                  <span className="text-[9px] tabular-nums text-slate-500">{works ? `OT ${ot}` : ''}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-1 text-[11px] text-slate-500">{code} working · O off (yellow). OT per day = hours less the normal {plan.normalHours} h on a {crew ? `${crew} Shift` : 'Sunday–Thursday'} duty day; a rest day counts in full.</p>
+        </Field>
+        <Field label={`Pattern (${plan.daysOn} on / ${plan.daysOff} off)${hasOwn ? ' · only for days not set by hand' : ''}`}>
           <div className="grid grid-cols-4 gap-1.5">
             {Array.from({ length: cycle }, (_, o) => {
-              const offs = view.dates.filter((d) => !memberWorks(plan, { ...trial, offset: o, start: plan.start, end: plan.end }, d)).slice(0, 3).map((d) => Number(d.slice(8)));
+              const offs = view.dates.filter((d) => !memberWorks(plan, { ...m, days: undefined, offset: o, start: plan.start, end: plan.end }, d)).slice(0, 3).map((d) => Number(d.slice(8)));
               return <button key={o} type="button" onClick={() => setOffset(o)} className={cx('rounded-lg px-1 py-1.5 text-[11px] font-medium ring-1', offset === o ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>Off {offs.join(', ')}…</button>;
             })}
           </div>
@@ -312,14 +359,15 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
           <Field label="Until"><input type="date" className="input" value={end} min={plan.start} max={plan.end} onChange={(e) => setEnd(e.target.value)} /></Field>
         </div>
         <table className="w-full text-sm">
-          <thead><tr className="text-left text-[11px] text-slate-500"><th className="font-medium">Month</th><th className="text-right font-medium">SD h</th><th className="text-right font-medium">Normal h</th><th className="text-right font-medium">OT h</th></tr></thead>
-          <tbody>{hours.map((h) => <tr key={h.month}><td>{new Date(`${h.month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' })}</td><td className="text-right tabular-nums">{h.sd}</td><td className="text-right tabular-nums">{h.normal}</td>
+          <thead><tr className="text-left text-[11px] text-slate-500"><th className="font-medium">Month</th><th className="text-right font-medium">Days</th><th className="text-right font-medium">SD h</th><th className="text-right font-medium">OT h</th></tr></thead>
+          <tbody>{hours.map((h) => <tr key={h.month}><td>{new Date(`${h.month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' })}</td><td className="text-right tabular-nums">{h.days}</td><td className="text-right tabular-nums">{h.sd}</td>
             <td className={cx('text-right font-semibold tabular-nums', h.over ? 'text-status-red' : 'text-slate-800')}>{h.overtime}{h.over ? ` > ${plan.maxOvertime}` : ''}</td></tr>)}</tbody>
         </table>
         {err != null && <ErrorBox error={err} />}
+        {hasOwn && <Button variant="secondary" className="w-full" disabled={busy} onClick={reset}><RotateCcw className="h-4 w-4" />Back to the pattern (forget days set by hand)</Button>}
         <div className="flex gap-2">
           <Button variant="danger" className="flex-1" disabled={busy} onClick={remove}><UserMinus className="h-4 w-4" />Take off team</Button>
-          <Button className="flex-1" disabled={busy || !valid} onClick={save}>Save</Button>
+          <Button className="flex-1" disabled={busy || !valid} onClick={save}>Save{changedDays.length ? ` (${changedDays.length} day${changedDays.length > 1 ? 's' : ''})` : ''}</Button>
         </div>
       </div>
     </BottomSheet>

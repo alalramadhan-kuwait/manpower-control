@@ -37,8 +37,8 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
     return () => { window.removeEventListener('notices-changed', refresh); window.removeEventListener('requests-changed', refresh); };
   }, [pathname, profile.role_code]);
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col lg:max-w-7xl">
-      <header className="sticky top-0 z-40 bg-brand-700 text-white safe-top">
+    <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col lg:max-w-7xl print:max-w-none">
+      <header className="sticky top-0 z-40 bg-brand-700 text-white safe-top print:hidden">
         <div className="flex items-center justify-between gap-3 px-4 py-2.5">
           <div className="flex min-w-0 items-center gap-2.5">
             <BrandTile className="h-9 w-9" />
@@ -53,8 +53,8 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
           </Link>
         </div>
       </header>
-      <main className="flex-1 px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-4 sm:pb-8">{children}</main>
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur safe-bottom sm:hidden">
+      <main className="flex-1 px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-4 sm:pb-8 print:p-0">{children}</main>
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur safe-bottom sm:hidden print:hidden">
         <div className="mx-auto grid max-w-5xl grid-cols-5 lg:max-w-7xl">
           {tabs.map(({ to, label, icon: Icon }) => (
             <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => cx('flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px]', isActive ? 'text-brand-700 font-semibold' : 'text-slate-500')}>
@@ -64,7 +64,7 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
           ))}
         </div>
       </nav>
-      <nav className="fixed left-0 top-16 hidden w-44 flex-col gap-1 p-3 sm:flex" aria-label="Desktop navigation">
+      <nav className="fixed left-0 top-16 hidden w-44 flex-col gap-1 p-3 sm:flex print:hidden" aria-label="Desktop navigation">
         {tabs.map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => cx('flex items-center gap-2 rounded-xl px-3 py-2 text-sm', isActive ? 'bg-brand-50 font-semibold text-brand-700' : 'text-slate-600 hover:bg-slate-100')}>
             <Icon className="h-4 w-4" /> {label}{badge(to) > 0 && <span className="ml-auto rounded-full bg-brand-700 px-1.5 text-[10px] font-bold text-white">{badge(to)}</span>}
