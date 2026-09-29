@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, Check, Copy, FileText, Pencil, Plus, RotateCcw, Trash2, UserMinus } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, Copy, FileText, Pencil, Plus, RotateCcw, Shuffle, Trash2, UserMinus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { COVER_GRADE } from '@/core/controllers';
@@ -14,6 +14,7 @@ import { BottomSheet, Button, Card, ErrorBox, Field, Spinner, cx } from '@/ui/co
 import { CrewBadge } from '@/ui/crew';
 import { shortDate } from '@/ui/leave';
 import { PersonHistory } from './PersonHistory';
+import { SpreadDaysSheet } from './SpreadDays';
 
 const CONTROLLER_ROLES = ['controller', 'vr_controller', 'morning_controller'];
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
@@ -49,6 +50,7 @@ export default function SdPlanPage() {
   const [editPattern, setEditPattern] = useState(false);
   const [editTeam, setEditTeam] = useState<SdTeam | null>(null);
   const [editPhases, setEditPhases] = useState(false);
+  const [spreading, setSpreading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const load = useCallback(async () => {
     try {
@@ -62,7 +64,7 @@ export default function SdPlanPage() {
     } catch (e) { setError(e); }
   }, [id]);
   useEffect(() => { load(); }, [load]);
-  const done = (m: string) => { setAdding(null); setMember(null); setEditPattern(false); setEditTeam(null); setEditPhases(false); setNotice(m); load(); };
+  const done = (m: string) => { setAdding(null); setMember(null); setEditPattern(false); setEditTeam(null); setEditPhases(false); setSpreading(false); setNotice(m); load(); };
 
   const view = useMemo(() => {
     if (!data) return null;
@@ -116,6 +118,7 @@ export default function SdPlanPage() {
         <Button variant="secondary" className="min-h-9 shrink-0 px-3 text-xs" onClick={copyList}><Copy className="h-3.5 w-3.5" />Copy list</Button>
       </div>
       <div className="mb-2 grid grid-cols-2 gap-2">
+        <button type="button" onClick={() => setSpreading(true)} className="col-span-2 flex min-h-9 items-center justify-center gap-1 rounded-lg bg-brand-700 text-xs font-semibold text-white"><Shuffle className="h-3.5 w-3.5" />Spread the days off</button>
         <Link to={`/shutdown/${plan.id}/schedule`} className="flex min-h-9 items-center justify-center gap-1 rounded-lg bg-white text-xs font-semibold text-brand-700 ring-1 ring-slate-300"><FileText className="h-3.5 w-3.5" />Shift schedule</Link>
         <Link to={`/shutdown/${plan.id}/overtime`} className="flex min-h-9 items-center justify-center gap-1 rounded-lg bg-white text-xs font-semibold text-brand-700 ring-1 ring-slate-300"><FileText className="h-3.5 w-3.5" />Overtime sheet</Link>
       </div>
@@ -150,6 +153,7 @@ export default function SdPlanPage() {
 
       {adding && <AddSheet plan={plan} team={adding.team} slot={adding.slot} area={adding.area} data={data} view={view} onClose={() => setAdding(null)} onDone={done} />}
       {member && <MemberSheet plan={plan} m={member} data={data} view={view} onClose={() => setMember(null)} onDone={done} />}
+      {spreading && <SpreadDaysSheet plan={plan} teams={teams} members={members} phases={data.phases} crewOf={(e) => view.homeCrew(e, plan.start)} away={view.leaveOn} onClose={() => setSpreading(false)} onDone={done} />}
       {editPattern && <PatternSheet plan={plan} onClose={() => setEditPattern(false)} onDone={done} />}
       {editPhases && <PhasesSheet plan={plan} teams={teams} phases={data.phases} onClose={() => setEditPhases(false)} onDone={done} />}
       {editTeam && <NeedsSheet t={editTeam} onClose={() => setEditTeam(null)} onDone={done} />}

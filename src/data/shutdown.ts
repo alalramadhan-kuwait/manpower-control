@@ -163,6 +163,15 @@ export async function setSdDays(memberId: string, days: { date: string; works: b
   dataChanged();
 }
 
+/** Many members' own days at once (spread the days off), in chunks. */
+export async function setSdDaysMany(rows: { memberId: string; date: string; works: boolean }[]) {
+  for (let i = 0; i < rows.length; i += 500) {
+    const { error } = await supabase.from('sd_days').upsert(rows.slice(i, i + 500).map((r) => ({ member_id: r.memberId, work_date: r.date, works: r.works, hours: null })), { onConflict: 'member_id,work_date' });
+    if (error) throw error;
+  }
+  dataChanged();
+}
+
 /** Back to the plan pattern: forget the member's own days. */
 export async function clearSdDays(memberId: string) {
   const { error } = await supabase.from('sd_days').delete().eq('member_id', memberId);
