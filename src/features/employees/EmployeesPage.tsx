@@ -8,7 +8,7 @@ import { fetchDirectory, fetchLeaveSpans } from '@/data/queries';
 import { onLeaveOn, type LeaveSpan } from '@/core/leave';
 import type { EmployeeDirectoryRow, QualificationStatus, UserProfile } from '@/data/types';
 import { BottomSheet, Button, Chip, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components';
-import { CrewBadge, CrewTag, isCrew } from '@/ui/crew';
+import { CREW_IDENTITY, CrewBadge, isCrew } from '@/ui/crew';
 import { OnLeaveChip, localToday } from '@/ui/leave';
 import { positionRank } from '@/ui/positions';
 
@@ -96,17 +96,16 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
         </div>
       )}
 
-      <div className="lg:flex lg:items-center lg:gap-3">
+      <div className="lg:flex lg:items-start lg:gap-3">
         <label className="relative block lg:w-72 lg:shrink-0">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input className="input" style={{ paddingLeft: '2.25rem' }} placeholder="Search name or employee number" value={q} onChange={(e) => set('q', e.target.value)} inputMode="search" />
         </label>
-        <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] lg:mt-0 lg:flex-wrap">
-          {ROLE_FILTERS.map(([v, l]) => <FilterChip key={v} active={role === v} onClick={() => set('role', v)}>{l}</FilterChip>)}
-          <span className="mx-1 w-px shrink-0 bg-slate-300" />
-          {CREW_FILTERS.map((v) => <FilterChip key={v || 'all'} active={crew === v} onClick={() => set('crew', v)}>{v ? <CrewTag crew={v} /> : 'All crews'}</FilterChip>)}
-          <span className="mx-1 w-px shrink-0 bg-slate-300" />
-          {[['', 'KNPC + Contractor'], ['knpc', 'KNPC'], ['contractor', 'Contractor']].map(([v, l]) => <FilterChip key={v || 'both'} active={emp === v} onClick={() => set('type', v)}>{l}</FilterChip>)}
+        {/* one row per filter: role, crew, employment type */}
+        <div className="mt-3 space-y-1.5 lg:mt-0">
+          <div className="flex flex-wrap gap-1.5">{ROLE_FILTERS.map(([v, l]) => <FilterChip key={v} active={role === v} onClick={() => set('role', v)}>{l}</FilterChip>)}</div>
+          <div className="flex flex-wrap gap-1.5">{CREW_FILTERS.map((v) => <FilterChip key={v || 'all'} active={crew === v} onClick={() => set('crew', v)}>{v ? <span className="inline-flex items-center gap-1"><span className={cx('h-2.5 w-2.5 rounded-full', CREW_IDENTITY[v].bg)} />{v}</span> : 'All crews'}</FilterChip>)}</div>
+          <div className="flex flex-wrap gap-1.5">{[['', 'KNPC + Contractor'], ['knpc', 'KNPC'], ['contractor', 'Contractor']].map(([v, l]) => <FilterChip key={v || 'both'} active={emp === v} onClick={() => set('type', v)}>{l}</FilterChip>)}</div>
         </div>
       </div>
 
