@@ -4,7 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import type { SdKind, SdPlan } from '@/core/shutdown';
 import { fetchCalendarInfo } from '@/data/calendar';
 import { createSdPlan, fetchAllSdMembers, fetchSdPlans, updateSdPlan } from '@/data/shutdown';
-import { BottomSheet, Button, Card, ErrorBox, Field, PageHeader, Spinner, cx } from '@/ui/components';
+import { BottomSheet, Button, Card, ErrorBox, Field, PageHeader, Spinner, cx, fmtDate } from '@/ui/components';
 import { localToday, shortDate } from '@/ui/leave';
 
 /** Shutdown teams: one plan per shutdown; open it to fill the Morning and Night teams. */
@@ -28,20 +28,33 @@ export default function ShutdownListPage() {
   // still to come or running first (soonest first); the finished ones after, the latest first, greyed
   const ahead = (plans ?? []).filter((p) => p.end >= today).sort((a, b) => a.start.localeCompare(b.start));
   const done = (plans ?? []).filter((p) => p.end < today).sort((a, b) => b.end.localeCompare(a.end));
-  const row = (p: SdPlan, finished: boolean) => (
-    <div key={p.id} className={cx('flex items-center', finished && 'bg-slate-50/60')}>
-      <Link to={`/shutdown/${p.id}`} className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-3">
-        <span className={cx('min-w-0 flex-1', finished && 'opacity-60')}>
-          <span className="flex items-center gap-2"><span className={cx('block truncate font-medium', finished ? 'text-slate-600' : 'text-slate-900')}>{p.title}</span>
-            {finished ? <span className="shrink-0 rounded-full bg-slate-200 px-1.5 text-[10px] font-semibold text-slate-600">Done</span>
-              : p.start <= today ? <span className="shrink-0 rounded-full bg-green-100 px-1.5 text-[10px] font-semibold text-green-800">Running</span> : null}</span>
-          <span className="block text-xs text-slate-500">{p.kind === 'total' ? 'Total turnaround · ' : ''}{shortDate(p.start)} – {shortDate(p.end)} {p.end.slice(0, 4)} · {p.daysOff ? `${p.daysOn} on / ${p.daysOff} off` : 'every day'} · {p.shiftHours} h · {people.get(p.id) ?? 0} people</span>
-        </span>
-        <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
-      </Link>
-      <button type="button" aria-label={`Edit or delete ${p.title}`} onClick={() => setEditing(p)} className="flex h-12 w-12 shrink-0 items-center justify-center text-brand-700"><Pencil className="h-4 w-4" /></button>
-    </div>
-  );
+  const dayNo = (iso: string) => Math.round(Date.parse(`${iso}T00:00:00Z`) / 86400000);
+  const when = (p: SdPlan) => {
+    const length = dayNo(p.end) - dayNo(p.start) + 1;
+    const range = `${fmtDate(p.start)} – ${fmtDate(p.end)}`;
+    return { range, length, state: p.end < today ? 'Finished' : p.start <= today ? `Running · day ${dayNo(today) - dayNo(p.start) + 1} of ${length}` : `Starts in ${dayNo(p.start) - dayNo(today)} ${dayNo(p.start) - dayNo(today) === 1 ? 'day' : 'days'}` };
+  };
+  const row = (p: SdPlan, finished: boolean) => {
+    const w = when(p); const n = people.get(p.id) ?? 0;
+    return (
+      <div key={p.id} className={cx('flex items-center', finished && 'bg-slate-50/60')}>
+        <Link to={`/shutdown/${p.id}`} className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-3">
+          <span className={cx('min-w-0 flex-1 space-y-0.5', finished && 'opacity-60')}>
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span className={cx('font-medium', finished ? 'text-slate-600' : 'text-slate-900')}>{p.title}</span>
+              <span className={cx('rounded-full px-1.5 text-[10px] font-semibold', finished ? 'bg-slate-200 text-slate-600' : p.start <= today ? 'bg-green-100 text-green-800' : 'bg-brand-50 text-brand-700')}>{w.state}</span>
+            </span>
+            <span className="block text-xs text-slate-700">{w.range} · {w.length} days</span>
+            <span className="block text-xs text-slate-500">{p.kind === 'total' ? 'Total turnaround: the whole unit is down' : 'Train shutdown: the crews keep running'}</span>
+            <span className="block text-xs text-slate-500">{p.daysOff ? `Works ${p.daysOn} days, ${p.daysOff} off` : 'Works every day'} · {p.shiftHours} h shifts</span>
+            <span className={cx('block text-xs', n === 0 && !finished ? 'font-medium text-amber-700' : 'text-slate-500')}>{n === 0 ? 'No one is on the teams yet' : `${n} ${n === 1 ? 'person' : 'people'} on the teams`}</span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+        </Link>
+        <button type="button" aria-label={`Edit or delete ${p.title}`} onClick={() => setEditing(p)} className="flex h-12 w-12 shrink-0 items-center justify-center text-brand-700"><Pencil className="h-4 w-4" /></button>
+      </div>
+    );
+  };
   return (
     <div>
       <PageHeader title="Shutdown teams" info={<div className="space-y-2 text-sm text-slate-700">
