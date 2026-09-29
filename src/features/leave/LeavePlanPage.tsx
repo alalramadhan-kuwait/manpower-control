@@ -7,7 +7,7 @@ import { isWorkingDay, type Crew } from '@/core/roster';
 import { fetchLeavePlan, type LeavePlanData } from '@/data/leave';
 import type { EmployeeDirectoryRow, LeaveRecord } from '@/data/types';
 import { Button, Card, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components';
-import { CrewBadge, CrewTag, crewEdge, isCrew } from '@/ui/crew';
+import { CREW_IDENTITY, CrewBadge, CrewTag, crewEdge, isCrew } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { byPositionAndService, positionGroup } from '@/ui/positions';
 import { LeaveSheet, SOURCE_LABEL, changeLabel, type LeaveTarget, type SheetPerson } from './LeaveSheet';
@@ -21,6 +21,7 @@ const counts = (l: LeaveRecord) => l.in_current_plan && (l.status === 'approved'
 const range = (s: string, e: string) => (s === e ? shortDate(s) : `${shortDate(s)} – ${shortDate(e)}`);
 const dayCount = (s: string, e: string) => Math.round((Date.parse(e) - Date.parse(s)) / 864e5) + 1;
 const groupOf = (p: EmployeeDirectoryRow): Group => (isCrew(p.crew_code) ? p.crew_code : 'day');
+const CONTROLLER_CODES = ['controller', 'vr_controller', 'morning_controller'];
 
 export default function LeavePlanPage() {
   const [params, setParams] = useSearchParams();
@@ -43,11 +44,15 @@ export default function LeavePlanPage() {
     const leavesOf = new Map<string, LeaveRecord[]>();
     for (const l of data.leaves) leavesOf.set(l.employee_id, [...(leavesOf.get(l.employee_id) ?? []), l]);
     const q = query.trim().toLowerCase();
+    // Controllers of every crew (and the VR / Morning Controllers, who serve all crews) in their own table
+    const isCtl = (p: EmployeeDirectoryRow) => CONTROLLER_CODES.includes(p.position_code ?? '');
     const people = data.people
-      .filter((p) => (filter === 'all' || groupOf(p) === filter) && (!q || p.display_name.toLowerCase().includes(q) || p.employee_number.includes(q)))
+      .filter((p) => (filter === 'all' || groupOf(p) === filter || (isCtl(p) && !isCrew(p.crew_code))) && (!q || p.display_name.toLowerCase().includes(q) || p.employee_number.includes(q)))
       .sort(byPositionAndService);
-    const groups = GROUPS.map((g) => {
-      const rows = people.filter((p) => groupOf(p) === g).map((p) => {
+    const ctlOrder = (p: EmployeeDirectoryRow) => (isCrew(p.crew_code) ? 'ABCD'.indexOf(p.crew_code) : 4 + CONTROLLER_CODES.indexOf(p.position_code ?? ''));
+    const groups = (['ctl', ...GROUPS] as const).map((g) => {
+      const members = g === 'ctl' ? people.filter(isCtl).sort((a, b) => ctlOrder(a) - ctlOrder(b)) : people.filter((p) => !isCtl(p) && groupOf(p) === g);
+      const rows = members.map((p) => {
         const all = leavesOf.get(p.id) ?? [];
         const current = all.filter(counts).sort((a, b) => a.start_date.localeCompare(b.start_date));
         const days = current.reduce((n, l) => n + daysInYearRange(l.start_date, l.end_date, year), 0);
@@ -92,9 +97,9 @@ export default function LeavePlanPage() {
       {error ? <ErrorBox error={error} /> : !view ? <Spinner /> : view.groups.length === 0 ? <p className="text-sm text-slate-500">Nobody matches.</p> : (
         <div className="space-y-3">
           {view.groups.map(({ g, rows, onLeave }) => (
-            <Card key={g} className={cx('p-0', isCrew(g) && crewEdge(g))}>
+            <Card key={g} className={cx('p-0', isCrew(g) && crewEdge(g), g === 'ctl' && 'border-l-[6px] border-l-brand-700')}>
               <div className="flex items-center justify-between gap-2 px-3 pb-1 pt-3">
-                <h2 className="text-sm font-semibold text-slate-800">{isCrew(g) ? <CrewTag crew={g} size="md" /> : 'Day staff'}</h2>
+                <h2 className="text-sm font-semibold text-slate-800">{isCrew(g) ? <CrewTag crew={g} size="md" /> : g === 'ctl' ? 'Controllers' : 'Day staff'}</h2>
                 <span className="text-xs text-slate-500">{onLeave} on leave today</span>
               </div>
               <div className="flex items-end gap-1.5 px-2 pb-1 text-[10px] text-slate-400">
@@ -105,12 +110,13 @@ export default function LeavePlanPage() {
               {/* rows by position, a thin line between the groups; longest-serving first */}
               {positionRuns(rows).map((run) => (
                 <div key={run.group} className="border-t border-slate-200 first:border-t-0">
-                  <div className="px-2 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">{run.group}</div>
+                  {g !== 'ctl' && <div className="px-2 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">{run.group}</div>}
                   <ul className="divide-y divide-slate-100">
                     {run.rows.map((r) => (
                       <li key={r.p.id}>
                         <button type="button" aria-expanded={open === r.p.id} onClick={() => setOpen(open === r.p.id ? null : r.p.id)} className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left active:bg-slate-50">
                           <span className="w-[4.5rem] shrink-0 sm:w-40">
+                            {g === 'ctl' && <span className="mb-0.5 block text-[9px] font-semibold text-slate-500">{isCrew(r.p.crew_code) ? <span className="inline-flex items-center gap-1"><span className={cx('h-2 w-2 rounded-full', CREW_IDENTITY[r.p.crew_code].bg)} />{r.p.crew_code} Shift</span> : ROLE_SHORT[r.p.position_code ?? '']}</span>}
                             <span className="block text-[11px] font-medium leading-tight text-slate-800 [overflow-wrap:anywhere] sm:text-sm">{r.p.display_name}</span>
                             <span className="block text-[9px] tabular-nums leading-tight text-slate-400">#{r.p.employee_number}</span>
                           </span>
