@@ -1,7 +1,7 @@
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Pencil, Plus, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { coverOfBlock, daysInYearRange, yearSegment } from '@/core/calendar';
+import { coverOfBlock, daysInYearRange } from '@/core/calendar';
 import { firstDayBack } from '@/core/leave';
 import { isWorkingDay, type Crew } from '@/core/roster';
 import { fetchLeavePlan, type LeavePlanData } from '@/data/leave';
@@ -35,9 +35,6 @@ export default function LeavePlanPage() {
   const [query, setQuery] = useState('');
   const [sheet, setSheet] = useState<LeaveTarget | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
-  // three layouts to choose from (kept on this device)
-  const [layout, setLayoutState] = useState<Layout>(() => { try { const v = localStorage.getItem('leave-plan-layout'); return v === 'months' || v === 'next' ? v : 'strip'; } catch { return 'strip'; } });
-  const setLayout = (v: Layout) => { setLayoutState(v); try { localStorage.setItem('leave-plan-layout', v); } catch { /* private mode */ } };
   const load = useCallback(() => { setError(null); fetchLeavePlan(year).then(setData).catch(setError); }, [year]);
   useEffect(() => { setData(null); load(); }, [load]);
 
@@ -64,7 +61,6 @@ export default function LeavePlanPage() {
   }, [data, filter, query, today, year]);
 
   const thisMonth = today.slice(0, 4) === String(year) ? Number(today.slice(5, 7)) - 1 : -1;
-  const todayPos = today.slice(0, 4) === String(year) ? yearSegment(today, today, year)?.left ?? null : null;
   const done = (m: string) => { setSheet(null); setFlash(m); load(); };
 
   return (
@@ -87,12 +83,6 @@ export default function LeavePlanPage() {
           </button>
         ))}
       </div>
-      <div className="mb-2 grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1" role="tablist" aria-label="Layout">
-        {LAYOUTS.map(([k, l]) => (
-          <button key={k} type="button" role="tab" aria-selected={layout === k} onClick={() => setLayout(k)}
-            className={cx('min-h-8 rounded-lg text-xs font-semibold', layout === k ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-500')}>{l}</button>
-        ))}
-      </div>
       <label className="relative mb-3 block">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input className="input" style={{ paddingLeft: '2.25rem' }} placeholder="Search name or number" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -107,28 +97,25 @@ export default function LeavePlanPage() {
                 <h2 className="text-sm font-semibold text-slate-800">{isCrew(g) ? <CrewTag crew={g} size="md" /> : 'Day staff'}</h2>
                 <span className="text-xs text-slate-500">{onLeave} on leave today</span>
               </div>
-              {layout !== 'next' && (
-                <div className="flex items-end gap-2 px-3 pb-1 text-[10px] text-slate-400">
-                  <span className="w-24 shrink-0 sm:w-40" />
-                  <span className="flex flex-1 justify-between">{MONTH_LETTERS.map((m, i) => <span key={i} className={cx('w-0 flex-1 text-center', layout === 'months' && i === thisMonth && 'font-bold text-brand-700')}>{m}</span>)}</span>
-                  <span className="w-8 shrink-0 text-right">days</span>
-                </div>
-              )}
+              <div className="flex items-end gap-1.5 px-2 pb-1 text-[10px] text-slate-400">
+                <span className="w-[4.5rem] shrink-0 sm:w-40" />
+                <span className="grid flex-1 grid-cols-12 gap-0.5">{MONTH_LETTERS.map((m, i) => <span key={i} className={cx('text-center', i === thisMonth && 'font-bold text-brand-700')}>{m}</span>)}</span>
+                <span className="w-6 shrink-0 text-right">days</span>
+              </div>
               {/* rows by position, a thin line between the groups; longest-serving first */}
               {positionRuns(rows).map((run) => (
                 <div key={run.group} className="border-t border-slate-200 first:border-t-0">
-                  <div className="px-3 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">{run.group}</div>
+                  <div className="px-2 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">{run.group}</div>
                   <ul className="divide-y divide-slate-100">
                     {run.rows.map((r) => (
                       <li key={r.p.id}>
-                        <button type="button" aria-expanded={open === r.p.id} onClick={() => setOpen(open === r.p.id ? null : r.p.id)} className="flex w-full items-center gap-2 px-3 py-1.5 text-left active:bg-slate-50">
-                          <span className="w-24 shrink-0 sm:w-40">
-                            <span className="block truncate text-xs font-medium text-slate-800 sm:text-sm">{r.p.display_name}</span>
-                            <span className="block text-[10px] tabular-nums text-slate-400">#{r.p.employee_number}</span>
+                        <button type="button" aria-expanded={open === r.p.id} onClick={() => setOpen(open === r.p.id ? null : r.p.id)} className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left active:bg-slate-50">
+                          <span className="w-[4.5rem] shrink-0 sm:w-40">
+                            <span className="block text-[11px] font-medium leading-tight text-slate-800 [overflow-wrap:anywhere] sm:text-sm">{r.p.display_name}</span>
+                            <span className="block text-[9px] tabular-nums leading-tight text-slate-400">#{r.p.employee_number}</span>
                           </span>
-                          {layout === 'strip' && <><YearStrip year={year} blocks={r.current} todayPos={todayPos} /><span className="w-8 shrink-0 text-right text-xs tabular-nums text-slate-600">{r.days || '—'}</span></>}
-                          {layout === 'months' && <><MonthCells year={year} blocks={r.current} thisMonth={thisMonth} /><span className="w-8 shrink-0 text-right text-xs font-semibold tabular-nums text-slate-700">{r.days || '—'}</span></>}
-                          {layout === 'next' && <NextLeave blocks={r.current} today={today} days={r.days} year={year} />}
+                          <MonthCells year={year} blocks={r.current} thisMonth={thisMonth} />
+                          <span className="w-6 shrink-0 text-right text-[11px] font-semibold tabular-nums text-slate-700">{r.days || '—'}</span>
                         </button>
                         {open === r.p.id && data && <PersonDetail row={r} year={year} data={data} today={today} onEdit={(rec) => setSheet({ kind: 'edit', record: rec })} onAdd={() => setSheet({ kind: 'add', employeeId: r.p.id })} />}
                       </li>
@@ -138,16 +125,13 @@ export default function LeavePlanPage() {
               ))}
             </Card>
           ))}
-          <p className="px-1 text-xs text-slate-500">{layout === 'strip' ? 'Yellow = leave · outlined = by hand · line = today' : layout === 'months' ? 'Leave days in each month · darker = more days · this month in bold' : 'On leave now or the next leave · days = total this year'}</p>
+          <p className="px-1 text-xs text-slate-500">Leave days in each month · darker = more days · this month outlined · tap a name for the dates</p>
         </div>
       )}
       {sheet && view && data && <LeaveSheet target={sheet} people={view.sheetPeople} types={data.types} onClose={() => setSheet(null)} onDone={done} />}
     </div>
   );
 }
-
-type Layout = 'strip' | 'months' | 'next';
-const LAYOUTS: [Layout, string][] = [['strip', '1 · Year strip'], ['months', '2 · Month grid'], ['next', '3 · Next leave']];
 
 /** Consecutive rows of the same position group (the rows are already in position order). */
 function positionRuns<T extends { p: EmployeeDirectoryRow }>(rows: T[]) {
@@ -156,7 +140,7 @@ function positionRuns<T extends { p: EmployeeDirectoryRow }>(rows: T[]) {
   return out;
 }
 
-/** Layout 2: leave days in each month of the year, shaded by how many. */
+/** Leave days in each month of the year, shaded by how many; past months faded, this month outlined. */
 function MonthCells({ year, blocks, thisMonth }: { year: number; blocks: LeaveRecord[]; thisMonth: number }) {
   const days = Array.from({ length: 12 }, (_, m) => {
     const from = `${year}-${String(m + 1).padStart(2, '0')}-01`;
@@ -170,38 +154,6 @@ function MonthCells({ year, blocks, thisMonth }: { year: number; blocks: LeaveRe
           n === 0 ? 'bg-slate-100 text-transparent' : n < 10 ? 'bg-yellow-100 text-yellow-900' : n < 20 ? 'bg-yellow-300 text-yellow-950' : 'bg-amber-500 text-amber-950',
           m < thisMonth && 'opacity-60', m === thisMonth && 'ring-1 ring-brand-700')}>{n || '·'}</span>
       ))}
-    </span>
-  );
-}
-
-/** Layout 3: on leave now (until when) or the next leave (when, how long, how soon); the year's total. */
-function NextLeave({ blocks, today, days, year }: { blocks: LeaveRecord[]; today: string; days: number; year: number }) {
-  const now = blocks.find((l) => l.start_date <= today && today <= l.end_date);
-  const next = blocks.find((l) => l.start_date > today);
-  const inDays = next ? Math.round((Date.parse(next.start_date) - Date.parse(today)) / 864e5) : 0;
-  return (
-    <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
-      <span className="min-w-0">
-        {now ? <span className="inline-flex items-center rounded-full bg-yellow-400 px-2 py-0.5 text-[11px] font-semibold text-yellow-950">On leave until {shortDate(now.end_date)}</span>
-          : next ? <span className="block truncate text-xs text-slate-700"><span className="font-semibold">{range(next.start_date, next.end_date)}</span> · {dayCount(next.start_date, next.end_date)} d</span>
-          : <span className="text-xs text-slate-400">No leave ahead in {year}</span>}
-        {!now && next && <span className={cx('block text-[10px]', inDays <= 14 ? 'font-semibold text-amber-700' : 'text-slate-400')}>{inDays === 1 ? 'tomorrow' : `in ${inDays} days`}</span>}
-        {now && next && <span className="block text-[10px] text-slate-400">then {range(next.start_date, next.end_date)}</span>}
-      </span>
-      <span className="shrink-0 text-right"><span className="block text-xs font-semibold tabular-nums text-slate-700">{days || '—'}</span><span className="block text-[9px] text-slate-400">days</span></span>
-    </span>
-  );
-}
-
-function YearStrip({ year, blocks, todayPos }: { year: number; blocks: LeaveRecord[]; todayPos: number | null }) {
-  return (
-    <span className="relative h-4 flex-1 overflow-hidden rounded bg-slate-100" aria-hidden>
-      {Array.from({ length: 11 }, (_, i) => <span key={i} className="absolute inset-y-0 w-px bg-white" style={{ left: `${((i + 1) / 12) * 100}%` }} />)}
-      {blocks.map((l) => {
-        const seg = yearSegment(l.start_date, l.end_date, year);
-        return seg && <span key={l.id} className={cx('absolute inset-y-0.5 rounded-sm bg-yellow-400', l.hand_corrected && 'ring-1 ring-inset ring-yellow-800')} style={{ left: `${seg.left * 100}%`, width: `max(3px, ${seg.width * 100}%)` }} />;
-      })}
-      {todayPos !== null && <span className="absolute inset-y-0 w-0.5 bg-brand-700" style={{ left: `${todayPos * 100}%` }} />}
     </span>
   );
 }
