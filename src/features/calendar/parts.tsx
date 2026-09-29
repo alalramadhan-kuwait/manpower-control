@@ -22,9 +22,9 @@ export function calendarBars(inputs: ManpowerInputs, info: { events: UnitEvent[]
   ];
 }
 
-/** Crew duties needing attention, joined into periods; tap opens the first day. */
-export function AttentionList({ items, onOpen }: { items: AttentionPeriod[]; onOpen: (date: string) => void }) {
-  if (items.length === 0) return <p className="py-2 text-sm text-slate-500">All clear ✓</p>;
+/** Crew duties needing attention (today on: the past is only for tracking), joined into periods; tap opens the first day. */
+export function AttentionList({ items, onOpen, past = false }: { items: AttentionPeriod[]; onOpen: (date: string) => void; past?: boolean }) {
+  if (items.length === 0) return <p className="py-2 text-sm text-slate-500">{past ? 'These dates have passed: nothing to act on.' : 'All clear ✓'}</p>;
   return (
     <>
       {items.map((a) => (

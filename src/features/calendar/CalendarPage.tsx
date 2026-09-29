@@ -75,9 +75,9 @@ function MonthView() {
     const holidayOn = (d: string) => info.holidays.find((h) => h.start <= d && d <= h.end) ?? null;
     const bars = calendarBars(inputs, info);
     const filtered: DayResult[] = crew ? monthDays.map((d) => ({ ...d, crews: d.crews.filter((c) => c.crew === crew) })) : monthDays;
-    return { byDate, away, holidayOn, bars, summary: summarizeMonth(monthDays, crew), attention: attentionPeriods(filtered),
+    return { byDate, away, holidayOn, bars, summary: summarizeMonth(monthDays, crew), attention: attentionPeriods(filtered.filter((d) => d.date >= today)),
       monthHolidays: info.holidays.filter((h) => h.start <= to && h.end >= from), monthBars: bars.filter((b) => b.start <= to && b.end >= from) };
-  }, [inputs, info, from, to, gridFrom, gridTo, crew]);
+  }, [inputs, info, from, to, gridFrom, gridTo, crew, today]);
 
   const [py, pm] = shiftMonth(year, month, -1); const [ny, nm] = shiftMonth(year, month, 1);
   const isThisMonth = today.slice(0, 7) === from.slice(0, 7);
@@ -171,7 +171,7 @@ function MonthView() {
 
           {filter !== 'holidays' && filter !== 'shutdowns' && (
             <Section title="Needs attention">
-              <AttentionList items={view.attention} onOpen={setOpen} />
+              <AttentionList items={view.attention} onOpen={setOpen} past={to < today} />
             </Section>
           )}
           <Link to={`/leave-plan?year=${year}${crew ? `&crew=${crew}` : ''}`} className="mt-3 flex items-center justify-between rounded-2xl bg-white p-4 text-sm font-medium text-brand-700 shadow-sm ring-1 ring-slate-200">Annual Leave Plan {year}<ChevronRight className="h-4 w-4" /></Link>

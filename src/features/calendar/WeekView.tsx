@@ -53,10 +53,10 @@ export function WeekView({ start, today, onWeek, onMonth }: { start: string; tod
     const groups = new Map<Crew | null, { block: (typeof leave)[number]; person: ManpowerInputs['people'][number] }[]>();
     for (const block of leave) { const person = people.get(block.employeeId)!; groups.set(person.crew, [...(groups.get(person.crew) ?? []), { block, person }]); }
     for (const g of groups.values()) g.sort((a, b) => bySeniority(a.person, b.person) || a.block.start.localeCompare(b.block.start));
-    return { byDate, away, holidayOn, bars: calendarBars(inputs, info), summary: summarizeMonth(results), attention: attentionPeriods(results),
+    return { byDate, away, holidayOn, bars: calendarBars(inputs, info), summary: summarizeMonth(results), attention: attentionPeriods(results.filter((d) => d.date >= today)),
       groups: [...CREWS, null].filter((c) => groups.has(c)).map((c) => ({ crew: c, rows: groups.get(c)! })),
       onLeave: new Set(leave.map((b) => b.employeeId)).size, holidays: info.holidays.filter((h) => h.start <= end && h.end >= start) };
-  }, [inputs, info, start, end]);
+  }, [inputs, info, start, end, today]);
 
   const thisWeek = weekStartOf(today);
   const bars = view ? weekBars(days, view.bars, days) : [];
@@ -148,7 +148,7 @@ export function WeekView({ start, today, onWeek, onMonth }: { start: string; tod
             </div>
           )}
 
-          <Section title="Needs attention"><AttentionList items={view.attention} onOpen={setOpen} /></Section>
+          <Section title="Needs attention"><AttentionList items={view.attention} onOpen={setOpen} past={addDaysIso(start, 6) < today} /></Section>
 
           <Section title={`On leave (${view.onLeave})`} action={<Link to="/oracle" className="flex items-center gap-1.5 text-[10px] text-slate-500">Oracle
             {(['approved', 'submitted', 'not_submitted', 'rejected'] as const).map((s) => <OracleDot key={s} status={s} />)}<ChevronRight className="h-3 w-3" /></Link>}>
