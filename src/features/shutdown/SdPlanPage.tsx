@@ -441,13 +441,14 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
 }
 
 function PatternSheet({ plan, onClose, onDone }: { plan: SdPlan; onClose: () => void; onDone: (m: string) => void }) {
-  const [v, setV] = useState({ kind: plan.kind as SdKind, start_date: plan.start, end_date: plan.end, days_on: plan.daysOn, days_off: plan.daysOff, shift_hours: plan.shiftHours, ramp_days: plan.rampDays, ramp_hours: plan.rampHours, normal_hours: plan.normalHours, max_overtime: plan.maxOvertime });
+  const [v, setV] = useState({ title: plan.title, kind: plan.kind as SdKind, start_date: plan.start, end_date: plan.end, days_on: plan.daysOn, days_off: plan.daysOff, shift_hours: plan.shiftHours, ramp_days: plan.rampDays, ramp_hours: plan.rampHours, normal_hours: plan.normalHours, max_overtime: plan.maxOvertime });
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const num = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement>) => setV((x) => ({ ...x, [k]: Number(e.target.value) }));
-  async function save() { setBusy(true); setErr(null); try { await updateSdPlan(plan.id, v); onDone('Pattern saved.'); } catch (e) { setErr(e); } finally { setBusy(false); } }
+  async function save() { setBusy(true); setErr(null); try { await updateSdPlan(plan.id, { ...v, title: v.title.trim() || plan.title }); onDone('Pattern saved.'); } catch (e) { setErr(e); } finally { setBusy(false); } }
   return (
     <BottomSheet open onClose={onClose} title="Shutdown pattern">
       <div className="space-y-3">
+        <Field label="Title"><input className="input" value={v.title} onChange={(e) => setV((x) => ({ ...x, title: e.target.value }))} /></Field>
         <div className="grid grid-cols-2 gap-1.5">
           {([['train', 'Train shutdown'], ['total', 'Total turnaround']] as const).map(([k, l]) => (
             <button key={k} type="button" onClick={() => setV((x) => ({ ...x, kind: k }))} className={cx('rounded-lg px-2 py-2 text-sm font-medium ring-1', v.kind === k ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>{l}</button>
