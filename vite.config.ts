@@ -32,7 +32,8 @@ export default defineConfig({
         ]
       },
       // fonts and brand images are cached with the app so it looks the same offline
-      workbox: { navigateFallbackDenylist: [/^\/api/], globPatterns: ['**/*.{js,css,html,svg,png,woff2}'] }
+      // push-sw.js (public/) adds the push and notification-tap handlers for the shift alerts
+      workbox: { navigateFallbackDenylist: [/^\/api/], globPatterns: ['**/*.{js,css,html,svg,png,woff2}'], importScripts: ['push-sw.js'] }
     })
   ],
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },

@@ -5,6 +5,7 @@ import type { Notice, NoticeLevel } from '@/core/notifications';
 import { NOTICE_HORIZON_DAYS, loadNotices } from '@/data/notifications';
 import type { UserProfile } from '@/data/types';
 import { Card, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components';
+import { ShiftAlertsCard } from './ShiftAlertsCard';
 
 const GROUPS: { level: NoticeLevel; title: string; empty?: string }[] = [
   { level: 'action', title: 'Needs action', empty: 'Nothing needs action. Every duty in the coming weeks is staffed and covered.' },
@@ -27,6 +28,7 @@ export default function NotificationsPage({ profile }: { profile: UserProfile })
     <div>
       <PageHeader title="Notifications" info={`What needs attention in the next ${NOTICE_HORIZON_DAYS} days. Items clear themselves once resolved; tap one to fix it.`}
         action={<button type="button" aria-label="Refresh" onClick={() => load(true)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200"><RefreshCw className={cx('h-4 w-4 text-slate-600', busy && 'animate-spin')} /></button>} />
+      <ShiftAlertsCard canEdit={profile.role_code === 'section_head'} />
       {error ? <ErrorBox error={error} /> : !notices ? <Spinner /> : (
         <div className="space-y-4">
           {groups.map((g) => (g.items.length || g.empty) && (

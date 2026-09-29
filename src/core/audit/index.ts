@@ -12,7 +12,7 @@ export const AUDIT_CATEGORIES: { key: AuditCategory; label: string; tables: stri
   { key: 'requests', label: 'Requests', tables: ['leave_requests'] },
   { key: 'controllers', label: 'Controllers', tables: ['controller_assignments', 'controller_rules', 'controller_leave_approvals'] },
   { key: 'shutdown', label: 'Shutdown teams', tables: ['sd_plans', 'sd_teams', 'sd_members', 'sd_days', 'sd_phases'] },
-  { key: 'modes', label: 'Modes & calendar', tables: ['operating_modes', 'operation_periods', 'public_holidays', 'unit_events'] },
+  { key: 'modes', label: 'Modes & calendar', tables: ['operating_modes', 'operation_periods', 'public_holidays', 'unit_events', 'shift_alert_settings'] },
   { key: 'qualifications', label: 'Qualifications', tables: ['employee_qualifications'] },
   { key: 'staff', label: 'Staff records', tables: ['employees'] },
   { key: 'logins', label: 'Logins', tables: ['user_accounts'] }
@@ -72,6 +72,7 @@ const WORDS: Record<string, string> = {
 };
 const ora = (v: unknown) => ORACLE_LABEL[v as OracleStatus] ?? w(v);
 const w = (v: unknown) => { const t = s(v); return t === null ? 'not recorded' : WORDS[t] ?? t; };
+const hm = (v: unknown) => (typeof v === 'string' ? v.slice(0, 5) : '—');
 
 /** Field-by-field changes between two snapshots, only for the listed fields. */
 function changes(prev: Record<string, unknown> | null, next: Record<string, unknown> | null, fields: [string, string, (v: unknown) => string][]): string[] {
@@ -204,6 +205,10 @@ export function describe(row: AuditRow, lk: AuditLookups): AuditEntry {
     case 'controller_rules':
       title = 'Controller rules changed';
       details = changes(prev, next, [['shift_cover_max_days', 'Longest shift cover (days)', w]]);
+      break;
+    case 'shift_alert_settings':
+      title = 'Shift alerts changed';
+      details = changes(prev, next, [['enabled', 'On', (v) => (v ? 'yes' : 'no')], ['lead_minutes', 'Minutes before', w], ['morning_start', 'Morning starts', hm], ['afternoon_start', 'Afternoon starts', hm], ['night_start', 'Night starts', hm], ['tz', 'Time zone', w]]);
       break;
     case 'operating_modes': {
       const mins = (v: Record<string, unknown> | null) => (v ? `Controller ${v.controller_min} · Panel ${v.panel_min} (${v.panel_grade14_min} Grade 14+) · Field ${v.field_min}` : '—');
