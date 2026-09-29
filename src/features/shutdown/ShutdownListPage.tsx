@@ -45,9 +45,7 @@ export default function ShutdownListPage() {
               <span className={cx('rounded-full px-1.5 text-[10px] font-semibold', finished ? 'bg-slate-200 text-slate-600' : p.start <= today ? 'bg-green-100 text-green-800' : 'bg-brand-50 text-brand-700')}>{w.state}</span>
             </span>
             <span className="block text-xs text-slate-700">{w.range} · {w.length} days</span>
-            <span className="block text-xs text-slate-500">{p.kind === 'total' ? 'Total turnaround: the whole unit is down' : 'Train shutdown: the crews keep running'}</span>
-            <span className="block text-xs text-slate-500">{p.daysOff ? `Works ${p.daysOn} days, ${p.daysOff} off` : 'Works every day'} · {p.shiftHours} h shifts</span>
-            <span className={cx('block text-xs', n === 0 && !finished ? 'font-medium text-amber-700' : 'text-slate-500')}>{n === 0 ? 'No one is on the teams yet' : `${n} ${n === 1 ? 'person' : 'people'} on the teams`}</span>
+            <span className="block text-xs text-slate-500">{p.kind === 'total' ? 'Total · ' : ''}{p.daysOff ? `${p.daysOn} on, ${p.daysOff} off` : 'every day'} · {p.shiftHours} h · <span className={cx(n === 0 && !finished && 'font-medium text-amber-700')}>{n === 0 ? 'no one added yet' : `${n} ${n === 1 ? 'person' : 'people'}`}</span></span>
           </span>
           <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
         </Link>
