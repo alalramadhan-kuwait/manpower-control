@@ -8,8 +8,8 @@ import type { EmployeeDirectoryRow } from '@/data/types';
 import { Card, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components';
 import { CrewBadge, isCrew } from '@/ui/crew';
 
-const LEVELS: FoLevel[] = ['senior', 'good', 'new'];
-const TONE: Record<FoLevel, string> = { senior: 'bg-brand-700 text-white', good: 'bg-green-600 text-white', new: 'bg-amber-500 text-white' };
+const LEVELS: FoLevel[] = ['senior', 'good', 'new', 'below'];
+const TONE: Record<FoLevel, string> = { senior: 'bg-brand-700 text-white', good: 'bg-green-600 text-white', new: 'bg-amber-500 text-white', below: 'bg-red-600 text-white' };
 
 /** Mark each Field Operator, and each Panel Operator who can work on a shutdown team, Senior / Good / New. Saved on tap; kept in the audit history. */
 export default function FoLevelsPage() {
@@ -34,8 +34,8 @@ export default function FoLevelsPage() {
   return (
     <div>
       <Link to="/shutdown" className="mb-2 inline-flex items-center gap-1 text-sm font-medium text-brand-700"><ArrowLeft className="h-4 w-4" />Shutdown teams</Link>
-      <PageHeader title="FO levels" subtitle={`${count('senior')} Senior · ${count('good')} Good · ${count('new')} New · ${fos.length - count('senior') - count('good') - count('new')} not set`}
-        info="Your grading of each Field Operator, and of the Panel Operators who can work on a shutdown team (Grade 13 and below, and contractors), for shutdown teams. Tap a level to set it, tap it again to clear. Saved at once and kept in the audit history." />
+      <PageHeader title="FO levels" subtitle={`${count('senior')} Senior · ${count('good')} Good · ${count('new')} New · ${count('below')} Below · ${fos.length - LEVELS.reduce((n, l) => n + count(l), 0)} not set`}
+        info="Your grading of each Field Operator, and of the Panel Operators who can work on a shutdown team (Grade 13 and below, and contractors), for shutdown teams. Below = below average: ranked after everyone else when a shutdown team is picked. Tap a level to set it, tap it again to clear. Saved at once and kept in the audit history." />
       {saved && <p className="mb-2 flex items-center gap-1 text-sm text-status-green"><Check className="h-4 w-4" />{saved}</p>}
       {error ? <ErrorBox error={error} /> : !rows ? <Spinner /> : (
         <div className="space-y-4">
@@ -51,7 +51,7 @@ export default function FoLevelsPage() {
                     <div className="flex shrink-0 rounded-lg ring-1 ring-slate-300">
                       {LEVELS.map((l) => (
                         <button key={l} type="button" aria-pressed={r.fo_level === l} onClick={() => set(r, l)}
-                          className={cx('min-h-9 px-2 text-[11px] font-semibold first:rounded-l-lg last:rounded-r-lg', r.fo_level === l ? TONE[l] : 'bg-white text-slate-600')}>{FO_LEVEL_LABEL[l]}</button>
+                          className={cx('min-h-9 px-1.5 text-[11px] font-semibold first:rounded-l-lg last:rounded-r-lg', r.fo_level === l ? TONE[l] : 'bg-white text-slate-600')}>{FO_LEVEL_LABEL[l]}</button>
                       ))}
                     </div>
                   </div>

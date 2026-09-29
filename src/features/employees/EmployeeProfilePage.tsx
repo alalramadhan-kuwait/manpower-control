@@ -89,7 +89,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
           {isCrew(emp.crew_code) && <span className="inline-flex items-center rounded-full bg-white py-0.5 pl-0.5 pr-2.5 text-xs font-semibold text-slate-800 ring-1 ring-slate-200"><CrewTag crew={emp.crew_code} /></span>}
           <Chip tone={emp.employment_type_source === 'confirmed' ? 'neutral' : 'amber'}>{emp.employment_type === 'knpc' ? 'KNPC' : 'Contractor'}{emp.employment_type_source === 'inferred' ? ' (inferred)' : ''}</Chip>
           {emp.grade && <Chip>Grade {emp.grade}</Chip>}
-          {emp.position_code === 'field_operator' && emp.fo_level && <Link to="/review/fo-levels"><Chip tone="blue">{({ senior: 'Senior FO', good: 'Good FO', new: 'New FO' } as const)[emp.fo_level]}</Chip></Link>}
+          {(emp.position_code === 'field_operator' || emp.position_code === 'panel_operator') && emp.fo_level && <Link to="/review/fo-levels"><Chip tone={emp.fo_level === 'below' ? 'amber' : 'blue'}>{({ senior: 'Senior FO', good: 'Good FO', new: 'New FO', below: 'Below-average FO' } as const)[emp.fo_level]}</Chip></Link>}
           {emp.position_code === 'panel_operator' && (emp.can_cover_field || (emp.grade ?? 0) >= 13) && <Chip tone="blue">Can cover Field</Chip>}
           {!emp.is_active && <Chip tone="red">Inactive</Chip>}
         </div>

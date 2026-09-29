@@ -301,8 +301,8 @@ function AddSheet({ plan, team, slot, area, data, view, onClose, onDone }: { pla
       const back = data.prev?.ids.has(p.id) ? data.prev.plan.title : data.next?.ids.has(p.id) ? data.next.plan.title : null;
       const sick = data.sick.get(p.id)?.[year] ?? null;
       return { p, crew, level, leave, hit, same: fromCrew(crew), match, back, sick, sickPrev: data.sick.get(p.id)?.[year - 1] ?? null };
-    // right level first; not two shutdowns in a row; free of leave and crew impact; then fewer sick days
-    }).sort((a, b) => Number(b.match) - Number(a.match) || Number(!!a.back) - Number(!!b.back) || Number(!!a.leave) - Number(!!b.leave) || a.hit - b.hit
+    // right level first; below average last; not two shutdowns in a row; free of leave and crew impact; then fewer sick days
+    }).sort((a, b) => Number(b.match) - Number(a.match) || Number(a.level === 'below') - Number(b.level === 'below') || Number(!!a.back) - Number(!!b.back) || Number(!!a.leave) - Number(!!b.leave) || a.hit - b.hit
       || (a.sick ?? 0) - (b.sick ?? 0) || a.same - b.same || (b.p.grade ?? 0) - (a.p.grade ?? 0) || a.p.name.localeCompare(b.p.name));
   }, [data, view, plan, slot, year, total]); // eslint-disable-line react-hooks/exhaustive-deps
   const sickValues = cands.map((c) => c.sick).filter((x): x is number => x != null).sort((a, b) => a - b);
@@ -312,7 +312,7 @@ function AddSheet({ plan, team, slot, area, data, view, onClose, onDone }: { pla
     setBusy(true); setErr(null);
     // total turnaround operators keep their Field Operator level as the slot (Panel Operators and the unmarked: 'member')
     const level = data.dir.get(p.id)?.fo_level ?? null;
-    const use: SdSlot = total && slot === 'member' && p.role === 'field_operator' && level ? level : slot;
+    const use: SdSlot = total && slot === 'member' && p.role === 'field_operator' && level && level !== 'below' ? level : slot;
     try {
       await addSdMember({ planId: plan.id, teamId: team.id, employeeId: p.id, slot: use, offset: nextOffset(plan, team.id, use, data.members), start: plan.start, end: plan.end, area: area ?? null });
       onDone(`${p.name} added to the ${team.name} ${total ? `shift${slot === 'controller' ? ` as Controller${area ? `, ${area}` : ''}` : area ? `, ${area}` : ''}` : `team as ${SD_SLOT_LABEL[slot]}`}.`);

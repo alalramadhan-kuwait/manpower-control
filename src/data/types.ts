@@ -18,7 +18,7 @@ export interface EmployeeDirectoryRow {
   created_at: string; updated_at: string; section_code: string | null; section_name: string | null;
   role_assignment_id: string | null; role_effective_from: string | null; role_source: 'manual' | 'import' | null; role_note: string | null;
   /** Field Operator level for shutdown teams (Stage K), set by the Section Head. */
-  fo_level?: 'senior' | 'good' | 'new' | null;
+  fo_level?: 'senior' | 'good' | 'new' | 'below' | null;
   /** A Panel Operator cleared to cover a Field post (a contractor with no grade, say), set by the Section Head. */
   can_cover_field?: boolean;
   position_code: string | null; position_label: string | null; position_category: 'controller' | 'panel' | 'field' | 'other' | null;

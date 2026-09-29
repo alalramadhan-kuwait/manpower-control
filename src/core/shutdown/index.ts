@@ -7,13 +7,14 @@ export type SdSlot = 'controller' | 'senior' | 'good' | 'new' | 'member';
 export type NeedSlot = Exclude<SdSlot, 'member'>;
 export const SD_SLOTS: NeedSlot[] = ['controller', 'senior', 'good', 'new'];
 export const SD_SLOT_LABEL: Record<SdSlot, string> = { controller: 'Controller', senior: 'Senior FO', good: 'Good FO', new: 'New FO', member: 'Operator' };
-export type FoLevel = 'senior' | 'good' | 'new';
+/** The Section Head's grading for shutdown teams; 'below' = below average (ranks after everyone else when a team is picked). */
+export type FoLevel = 'senior' | 'good' | 'new' | 'below';
 /** Panel Operators of this grade and below (and contractor Panel Operators) can work on a shutdown team. */
 export const SD_PO_MAX_GRADE = 13;
 /** Can this person fill an operator place on a shutdown team? Field Operators; Panel Operators up to Grade 13 or contractors. */
 export const sdOperatorEligible = (p: { role: string | null; grade: number | null; employmentType: string | null }) =>
   p.role === 'field_operator' || (p.role === 'panel_operator' && (p.employmentType === 'contractor' || (p.grade != null && p.grade <= SD_PO_MAX_GRADE)));
-export const FO_LEVEL_LABEL: Record<FoLevel, string> = { senior: 'Senior', good: 'Good', new: 'New' };
+export const FO_LEVEL_LABEL: Record<FoLevel, string> = { senior: 'Senior', good: 'Good', new: 'New', below: 'Below' };
 
 /** 'train': one train down, the crews keep running. 'total': the whole unit down (turnaround), everyone on the teams. */
 export type SdKind = 'train' | 'total';
