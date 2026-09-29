@@ -13,6 +13,7 @@ import type { EmployeeDirectoryRow } from '@/data/types';
 import { BottomSheet, Button, Card, ErrorBox, Field, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { shortDate } from '@/ui/leave';
+import { PersonHistory } from './PersonHistory';
 
 const CONTROLLER_ROLES = ['controller', 'vr_controller', 'morning_controller'];
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
@@ -389,6 +390,7 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
     <BottomSheet open onClose={onClose} title={r?.display_name ?? 'Team member'}>
       <div className="space-y-3">
         <p className="text-sm text-slate-600">#{r?.employee_number} · {SD_SLOT_LABEL[m.slot]}{r?.crew_code ? ` · from ${r.crew_code} Shift` : ''}{team ? ` · ${team.name} team` : ''}</p>
+        <PersonHistory employeeId={m.employeeId} crew={crew} skipPlanId={plan.id} />
         <Field label="Days (tap to switch working / off)">
           <div className="grid grid-cols-7 gap-1">
             {view.dates.map((d) => {

@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@/data/supabase';
 import { fetchReference } from '@/data/queries';
 import { displayNameFor } from '@/core/names';
+import { PersonHistory } from '@/features/shutdown/PersonHistory';
 import type { AbsenceType, AuditEntry, Crew, EmployeeDirectoryRow, LeaveRecord, LeavePlanChange, Performance, Position, Qualification, QualificationCode, QualificationStatus, RoleAssignment, SickTotal, UserProfile } from '@/data/types';
 import { BottomSheet, Button, Card, Chip, ErrorBox, Field, Row, Spinner, fmtDate, qualificationLabel, qualificationTone, cx } from '@/ui/components';
 import { CrewBadge, CrewTag, isCrew, DayDutyBadge } from '@/ui/crew';
@@ -160,6 +161,10 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
         {data.perf.map((p) => <Row key={p.id} label={`Performance ${p.year}`} value={<>{p.perf_level ?? '—'}{p.increment_pct != null ? ` · increment ${p.increment_pct}%` : ''}{p.warnings ? ' · warning on file' : ''}</>} />)}
         {data.sick.map((s) => <Row key={s.id} label={`Sick leave ${s.year}`} value={`${s.days} days (as of ${fmtDate(s.reported_as_of)})`} />)}
       </Section>
+
+      {(emp.position_code === 'field_operator' || emp.position_code === 'panel_operator' || emp.position_code === 'controller' || emp.position_code === 'vr_controller') && (
+        <Section title="Shutdown history"><PersonHistory employeeId={emp.id} crew={isCrew(emp.crew_code) ? emp.crew_code : null} showSick={false} /></Section>
+      )}
 
       <Collapsible title="Original plan (PV Scheduled)" count={originalLeaves.length}>
         <p className="mb-1 text-xs text-slate-500">As first approved · history only</p>

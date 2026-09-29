@@ -126,6 +126,35 @@ export async function fetchSickTotals(years: number[]): Promise<Map<string, Reco
   return out;
 }
 
+/** One person's shutdowns, newest first: the plan, the team and their place, with their own days (for the hours). */
+export interface PersonShutdown { plan: SdPlan; team: SdTeam | null; member: SdMember }
+export async function fetchPersonShutdowns(employeeId: string): Promise<PersonShutdown[]> {
+  const m = await supabase.from('sd_members').select('*').eq('employee_id', employeeId).eq('status', 'active');
+  if (m.error) throw m.error;
+  const members = (m.data as MemberRow[]).map(toMember);
+  if (!members.length) return [];
+  const [p, t, d] = await Promise.all([
+    supabase.from('sd_plans').select('*').eq('status', 'active').in('id', [...new Set(members.map((x) => x.planId))]),
+    supabase.from('sd_teams').select('*').in('id', [...new Set(members.map((x) => x.teamId))]),
+    supabase.from('sd_days').select('member_id,work_date,works,hours').in('member_id', members.map((x) => x.id)).limit(10000)
+  ]);
+  const err = [p, t, d].find((r) => r.error)?.error; if (err) throw err;
+  const by = new Map(members.map((x) => [x.id, x]));
+  for (const r of d.data as { member_id: string; work_date: string; works: boolean; hours: number | null }[]) (by.get(r.member_id)!.days ??= {})[r.work_date] = { works: r.works, hours: r.hours == null ? null : Number(r.hours) };
+  const plans = new Map((p.data as PlanRow[]).map((x) => [x.id, toPlan(x)]));
+  const teams = new Map((t.data as TeamRow[]).map((x) => [x.id, toTeam(x)]));
+  return members.filter((x) => plans.has(x.planId)).map((x) => ({ plan: plans.get(x.planId)!, team: teams.get(x.teamId) ?? null, member: x }))
+    .sort((a, b) => b.plan.start.localeCompare(a.plan.start));
+}
+
+/** One person's recorded sick leave (from the leave records), newest first. The yearly totals come from fetchSickTotals. */
+export async function fetchPersonSickLeave(employeeId: string): Promise<{ start: string; end: string; long: boolean }[]> {
+  const { data, error } = await supabase.from('leave_records').select('start_date,end_date,absence_type_code')
+    .eq('employee_id', employeeId).in('absence_type_code', ['sick_leave', 'long_sick']).in('status', ['planned', 'approved']).eq('in_current_plan', true).order('start_date', { ascending: false });
+  if (error) throw error;
+  return (data as { start_date: string; end_date: string; absence_type_code: string }[]).map((r) => ({ start: r.start_date, end: r.end_date, long: r.absence_type_code === 'long_sick' }));
+}
+
 /** Save a member's own days (works / off, hours) for the given dates. */
 export async function setSdDays(memberId: string, days: { date: string; works: boolean; hours: number | null }[]) {
   if (!days.length) return;
