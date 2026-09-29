@@ -47,13 +47,13 @@ export default function FoLevelsPage() {
                   <div key={r.id} className="px-3 py-2">
                     <div className="flex items-center gap-2">
                       {isCrew(r.crew_code) ? <CrewBadge crew={r.crew_code} size="sm" /> : <span className="h-6 w-6" />}
-                      <span className="min-w-0 flex-1"><Link to={`/employees/${r.id}`} className="block text-sm font-medium text-slate-900">{r.display_name}</Link>
+                      <span className="min-w-0 flex-1"><Link to={`/employees/${r.id}`} className="block text-[13px] font-medium leading-tight text-slate-900">{r.display_name}</Link>
                         <span className="block text-[11px] leading-tight text-slate-500">#{r.employee_number} · {r.employment_type === 'contractor' ? 'Contractor' : `Grade ${r.grade ?? '—'}`}{r.position_code === 'panel_operator' && r.can_cover_field ? ' · covers Field' : ''}</span></span>
                     </div>
-                    <div className="mt-1.5 grid grid-cols-4 rounded-lg ring-1 ring-slate-300">
+                    <div className="mt-1 grid grid-cols-4 rounded-md ring-1 ring-slate-300">
                       {LEVELS.map((l) => (
                         <button key={l} type="button" aria-pressed={r.fo_level === l} onClick={() => set(r, l)}
-                          className={cx('min-h-9 text-xs font-semibold first:rounded-l-lg last:rounded-r-lg', r.fo_level === l ? TONE[l] : 'bg-white text-slate-600')}>{FO_LEVEL_LABEL[l]}</button>
+                          className={cx('min-h-7 text-[11px] font-semibold first:rounded-l-md last:rounded-r-md', r.fo_level === l ? TONE[l] : 'bg-white text-slate-600')}>{FO_LEVEL_LABEL[l]}</button>
                       ))}
                     </div>
                   </div>
