@@ -238,11 +238,11 @@ function notesFor(c: CrewDay, key: 'controller' | 'panel' | 'field', leave: Map<
 
 const leaveShort = (l: OnLeave) => `${l.typeShort ?? 'Leave'} · Return ${shortDate(l.returnOn)}`;
 
-function ManpowerLine({ label, pos, notes }: { label: string; pos: PositionResult; notes: Note[] }) {
+function ManpowerLine({ label, pos, notes, names = [] }: { label: string; pos: PositionResult; notes: Note[]; names?: string[] }) {
   return (
     <div className="py-2">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-sm font-medium text-slate-700">{label}</span>
+        <span className="min-w-0 truncate text-sm font-medium text-slate-700">{label}{names.length > 0 && <span className="font-normal text-slate-500"> · {names.join(', ')}</span>}</span>
         <span className={cx('text-lg font-semibold tabular-nums', findingColor(pos.finding))}>{pos.count} <span className="text-slate-400">/</span> {pos.min}</span>
       </div>
       {notes.length > 0 && (
@@ -327,7 +327,7 @@ function CrewCard({ crew: c, leave, date, need }: { crew: CrewDay; leave: Map<st
         <div className="mt-1 text-xs text-slate-500">Not final. Once resolved: <span className={cx('font-semibold', STATUS_TEXT_CLS[c.provisionalStatus])}>{STATUS_TEXT[c.provisionalStatus]}</span></div>
       )}
       <div className="mt-2 divide-y divide-slate-100">
-        <ManpowerLine label="Controller" pos={c.controller} notes={notesFor(c, 'controller', leave, date, need)} />
+        <ManpowerLine label="Controller" pos={c.controller} names={c.controller.counted.map((p) => p.name)} notes={notesFor(c, 'controller', leave, date, need)} />
         <ManpowerLine label="Panel" pos={c.panel} notes={notesFor(c, 'panel', leave, date)} />
         <ManpowerLine label="Field" pos={c.field} notes={notesFor(c, 'field', leave, date)} />
       </div>
