@@ -494,6 +494,16 @@ describe('Field buffer from a spare Grade-13+ Panel Operator', () => {
     expect(crewResult(evaluateDay(day, crew([14, 13, 13]), []), 'D').field).toMatchObject({ status: 'amber', backup: null });      // Panel 3 of 3
     expect(crewResult(evaluateDay(day, crew([14, 12, 12, 12]), []), 'D').field).toMatchObject({ status: 'amber', backup: null });  // only the Grade 14 is 13+
   });
+  it('a Panel Operator cleared to cover Field (no grade recorded) is the buffer too; without the clearance he is not', () => {
+    const withCover = [person('D', 'controller'), person('D', 'panel_operator', { grade: 14 }), person('D', 'panel_operator', { grade: 12 }), person('D', 'panel_operator', { grade: 12 }),
+      person('D', 'panel_operator', { grade: null, employmentType: 'contractor', fieldCover: true }), ...Array.from({ length: 6 }, () => person('D', 'field_operator', { grade: 10 }))];
+    const r = crewResult(evaluateDay(day, withCover, []), 'D');
+    expect(r.field).toMatchObject({ count: 6, status: 'green', finding: 'staffed' });
+    expect(r.field.backup?.grade).toBeNull();
+    expect(r.field.issues.join(' ')).toContain('(Panel Operator) can take a Field post');
+    const without = withCover.map((p) => ({ ...p, fieldCover: false }));
+    expect(crewResult(evaluateDay(day, without, []), 'D').field).toMatchObject({ status: 'amber', backup: null });
+  });
 });
 
 describe('Grade-13+ Field Operators fill empty Panel seats', () => {

@@ -289,8 +289,8 @@ function evaluateDay(date, allPeople, absences, rulesSource = FULL_OPERATION, as
     const fieldPotentialMet = fieldPotential >= rules.fieldMin;
     const fieldIssues = [];
     if (!fieldMet) fieldIssues.push(fieldPotentialMet ? `Take-Charge data incomplete: ${fieldCounted.length}/${rules.fieldMin} confirmed, ${fieldUnknown} not yet confirmed (up to ${fieldPotential}/${rules.fieldMin} if confirmed)` : `Confirmed shortage: Field ${fieldCounted.length} of ${rules.fieldMin} required${fieldUnknown ? ` (at most ${fieldPotential} even if all unconfirmed are confirmed)` : ""}`);
-    const fieldBackup = fieldMet && fieldCounted.length === rules.fieldMin && panelMet && panelCounted.length > rules.panelMin ? panelCounted.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade && grade14 - (isG14(p) ? 1 : 0) >= rules.panelGrade14Min).sort((a, b) => (a.grade ?? 0) - (b.grade ?? 0) || a.name.localeCompare(b.name))[0] ?? null : null;
-    if (fieldBackup) fieldIssues.push(`Buffer: ${fieldBackup.name} (Panel Operator, Grade ${fieldBackup.grade}) can take a Field post`);
+    const fieldBackup = fieldMet && fieldCounted.length === rules.fieldMin && panelMet && panelCounted.length > rules.panelMin ? panelCounted.filter((p) => (p.grade != null && p.grade >= rules.panelBackupGrade || p.fieldCover === true) && grade14 - (isG14(p) ? 1 : 0) >= rules.panelGrade14Min).sort((a, b) => (a.grade ?? 0) - (b.grade ?? 0) || a.name.localeCompare(b.name))[0] ?? null : null;
+    if (fieldBackup) fieldIssues.push(`Buffer: ${fieldBackup.name} (Panel Operator${fieldBackup.grade != null ? `, Grade ${fieldBackup.grade}` : ""}) can take a Field post`);
     const field = { ...finishPosition({
       key: "field",
       label: "Field",
@@ -500,6 +500,7 @@ function toMpPerson(r) {
     role: ROLES.includes(r.position_code) ? r.position_code : null,
     crew: r.crew_code ?? null,
     employmentType: r.employment_type,
+    fieldCover: r.can_cover_field === true,
     takeCharge: r.take_charge_status,
     panelQualified: r.panel_operator_status,
     actingController: r.acting_controller_status

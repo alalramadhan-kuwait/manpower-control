@@ -17,6 +17,7 @@ export function toMpPerson(r: EmployeeDirectoryRow): MpPerson {
     role: ROLES.includes(r.position_code as Role) ? (r.position_code as Role) : null,
     crew: (r.crew_code as Crew | null) ?? null,
     employmentType: r.employment_type,
+    fieldCover: r.can_cover_field === true,
     takeCharge: r.take_charge_status, panelQualified: r.panel_operator_status, actingController: r.acting_controller_status
   };
 }

@@ -215,7 +215,7 @@ function notesFor(c: CrewDay, key: 'controller' | 'panel' | 'field', leave: Map<
   if (key === 'panel') {
     const p = c.panel;
     if (p.fromField.length) notes.push({ text: `From Field: ${p.fromField.map((x) => `${x.name} (G${x.grade})`).join(', ')}`, tone: 'good' });
-    if (p.backup) notes.push({ text: `Buffer: ${p.backup.name} (G${p.backup.grade})`, tone: 'good' });
+    if (p.backup) notes.push({ text: `Buffer: ${p.backup.name}${p.backup.grade != null ? ` (G${p.backup.grade})` : ''}`, tone: 'good' });
     if (p.finding === 'shortage') {
       if (p.count < p.min) notes.push({ text: `−${p.min - p.count} short`, tone: 'red' });
       if (p.grade14 < 1) notes.push({ text: 'No Grade 14+', tone: 'red' });
@@ -227,7 +227,7 @@ function notesFor(c: CrewDay, key: 'controller' | 'panel' | 'field', leave: Map<
   }
   if (key === 'field') {
     const p = c.field;
-    if (p.backup) notes.push({ text: `Buffer: ${p.backup.name} (G${p.backup.grade})`, tone: 'good' });
+    if (p.backup) notes.push({ text: `Buffer: ${p.backup.name}${p.backup.grade != null ? ` (G${p.backup.grade})` : ''}`, tone: 'good' });
     if (p.finding === 'shortage') notes.push({ text: `−${p.min - p.count} short`, tone: 'red' });
     if (p.finding === 'data_incomplete') notes.push({ text: `${p.potential - p.count} Take-Charge to confirm`, tone: 'pending' });
   }
@@ -388,7 +388,7 @@ function PositionDetail({ pos, acting, grade14, backup, backupFrom, fromOther }:
         {backup && (
           <li className="flex items-center justify-between gap-2 py-1">
             <Link to={`/employees/${backup.id}`} className="min-w-0 truncate text-sm text-slate-700">{backup.name}</Link>
-            <span className="flex shrink-0 items-center gap-1"><Tag brand>Buffer from {backupFrom}</Tag><Tag>G{backup.grade}</Tag></span>
+            <span className="flex shrink-0 items-center gap-1"><Tag brand>Buffer from {backupFrom}</Tag>{backup.grade != null && <Tag>G{backup.grade}</Tag>}</span>
           </li>
         )}
         {counted.length + notCounted.length === 0 && <li className="py-1 text-xs text-slate-500">Nobody available in this position.</li>}

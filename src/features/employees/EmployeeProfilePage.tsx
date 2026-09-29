@@ -90,6 +90,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
           <Chip tone={emp.employment_type_source === 'confirmed' ? 'neutral' : 'amber'}>{emp.employment_type === 'knpc' ? 'KNPC' : 'Contractor'}{emp.employment_type_source === 'inferred' ? ' (inferred)' : ''}</Chip>
           {emp.grade && <Chip>Grade {emp.grade}</Chip>}
           {emp.position_code === 'field_operator' && emp.fo_level && <Link to="/review/fo-levels"><Chip tone="blue">{({ senior: 'Senior FO', good: 'Good FO', new: 'New FO' } as const)[emp.fo_level]}</Chip></Link>}
+          {emp.position_code === 'panel_operator' && (emp.can_cover_field || (emp.grade ?? 0) >= 13) && <Chip tone="blue">Can cover Field</Chip>}
           {!emp.is_active && <Chip tone="red">Inactive</Chip>}
         </div>
       </Card>
@@ -336,12 +337,13 @@ function BasicsSheet({ emp, onClose, onSaved }: { emp: EmployeeDirectoryRow; onC
   const [notes, setNotes] = useState(emp.notes ?? '');
   const [grade, setGrade] = useState(emp.grade != null ? String(emp.grade) : '');
   const [promoted, setPromoted] = useState(emp.last_promotion_date ?? '');
+  const [fieldCover, setFieldCover] = useState(emp.can_cover_field === true);
   const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
   const gradeNum = grade.trim() === '' ? null : Number(grade);
   const gradeBad = gradeNum !== null && (!Number.isInteger(gradeNum) || gradeNum < 1 || gradeNum > 25);
   async function save() {
     setBusy(true); setError(null);
-    const { error } = await supabase.from('employees').update({ short_name: shortName.trim() || null, official_name: fullName.trim(), display_name: displayName.trim() || displayNameFor({ officialName: fullName, shortName, employmentType: type, employmentTypeSource: confirmed ? 'confirmed' : 'inferred' }) || fullName.trim(), employment_type: type, employment_type_source: confirmed ? 'confirmed' : 'inferred', is_active: active, notes: notes.trim() || null, grade: gradeNum, last_promotion_date: promoted || null }).eq('id', emp.id);
+    const { error } = await supabase.from('employees').update({ short_name: shortName.trim() || null, official_name: fullName.trim(), display_name: displayName.trim() || displayNameFor({ officialName: fullName, shortName, employmentType: type, employmentTypeSource: confirmed ? 'confirmed' : 'inferred' }) || fullName.trim(), employment_type: type, employment_type_source: confirmed ? 'confirmed' : 'inferred', is_active: active, notes: notes.trim() || null, grade: gradeNum, last_promotion_date: promoted || null, ...(emp.position_code === 'panel_operator' ? { can_cover_field: fieldCover } : {}) }).eq('id', emp.id);
     setBusy(false); if (error) setError(error); else onSaved();
   }
   return (
@@ -365,6 +367,10 @@ function BasicsSheet({ emp, onClose, onSaved }: { emp: EmployeeDirectoryRow; onC
         <Field label="Employment classification" >
           <div className="flex gap-2">{(['knpc', 'contractor'] as const).map((t) => <button key={t} type="button" onClick={() => { setType(t); setConfirmed(true); }} className={`flex-1 rounded-xl py-2.5 text-sm font-medium ring-1 ${type === t ? 'bg-brand-700 text-white ring-brand-700' : 'ring-slate-300'}`}>{t === 'knpc' ? 'KNPC' : 'Contractor'}</button>)}</div>
         </Field>
+        {emp.position_code === 'panel_operator' && (
+          <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={fieldCover} onChange={(e) => setFieldCover(e.target.checked)} />
+            <span>Can cover a Field post{(emp.grade ?? 0) >= 13 ? <span className="block text-[11px] text-slate-500">Grade 13 and above count as Field cover anyway.</span> : <span className="block text-[11px] text-slate-500">Counts as the Field buffer when the crew has a Panel Operator to spare.</span>}</span></label>
+        )}
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> Classification confirmed (not just inferred from the number)</label>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Active in Unit-12 manpower</label>
         <Field label="Notes"><textarea className="input min-h-20" value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>

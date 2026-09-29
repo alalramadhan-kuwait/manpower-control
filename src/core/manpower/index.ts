@@ -25,6 +25,8 @@ export interface MpPerson {
   crew: Crew | null;
   grade: number | null;
   employmentType: 'knpc' | 'contractor';
+  /** A Panel Operator the Section Head cleared to cover a Field post (adds to the Grade 13+ rule; e.g. a contractor with no grade). */
+  fieldCover?: boolean;
   takeCharge: QualStatus;
   panelQualified: QualStatus;
   actingController: QualStatus;
@@ -440,10 +442,10 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
     // Field buffer from Panel: at exactly the minimum, a spare Grade-13+ Panel Operator can take a Field post, provided
     // Panel keeps its minimum and its Grade-14 requirement without them. Lowest grade first (Grade 14s stay on Panel).
     const fieldBackup = fieldMet && fieldCounted.length === rules.fieldMin && panelMet && panelCounted.length > rules.panelMin
-      ? panelCounted.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade && grade14 - (isG14(p) ? 1 : 0) >= rules.panelGrade14Min)
+      ? panelCounted.filter((p) => ((p.grade != null && p.grade >= rules.panelBackupGrade) || p.fieldCover === true) && grade14 - (isG14(p) ? 1 : 0) >= rules.panelGrade14Min)
           .sort((a, b) => (a.grade ?? 0) - (b.grade ?? 0) || a.name.localeCompare(b.name))[0] ?? null
       : null;
-    if (fieldBackup) fieldIssues.push(`Buffer: ${fieldBackup.name} (Panel Operator, Grade ${fieldBackup.grade}) can take a Field post`);
+    if (fieldBackup) fieldIssues.push(`Buffer: ${fieldBackup.name} (Panel Operator${fieldBackup.grade != null ? `, Grade ${fieldBackup.grade}` : ''}) can take a Field post`);
     const field: PositionResult = { ...finishPosition({ key: 'field', label: 'Field', count: fieldCounted.length, min: rules.fieldMin, buffer: fieldCounted.length - rules.fieldMin + (fieldBackup ? 1 : 0), potential: fieldPotential,
       counted: fieldCounted, notCounted: fieldNot, issues: fieldIssues, requirementMet: fieldMet, potentialMet: fieldPotentialMet, greenAtMinimum: fieldBackup !== null }), backup: fieldBackup };
 

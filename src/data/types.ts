@@ -19,6 +19,8 @@ export interface EmployeeDirectoryRow {
   role_assignment_id: string | null; role_effective_from: string | null; role_source: 'manual' | 'import' | null; role_note: string | null;
   /** Field Operator level for shutdown teams (Stage K), set by the Section Head. */
   fo_level?: 'senior' | 'good' | 'new' | null;
+  /** A Panel Operator cleared to cover a Field post (a contractor with no grade, say), set by the Section Head. */
+  can_cover_field?: boolean;
   position_code: string | null; position_label: string | null; position_category: 'controller' | 'panel' | 'field' | 'other' | null;
   crew_code: 'A' | 'B' | 'C' | 'D' | null;
   take_charge_status: QualificationStatus | null; panel_operator_status: QualificationStatus | null;
