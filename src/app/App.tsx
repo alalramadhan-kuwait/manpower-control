@@ -75,7 +75,7 @@ export default function App() {
   }
   return (
     <Shell profile={profile}>
-      <div className="sm:pl-44 print:pl-0">
+      <div className="sm:pl-44 lg:pl-0 print:pl-0">
         <Routes>
           <Route path="/" element={<DayOverviewPage />} />
           <Route path="/summary" element={<HomePage />} />
