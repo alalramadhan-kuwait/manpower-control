@@ -9,6 +9,7 @@ import { actionCount } from '@/core/notifications';
 import { cx } from '@/ui/components';
 import { BrandTile } from '@/ui/brand';
 import { GROUPS } from '@/app/moreItems';
+import { VersionLine } from '@/app/VersionLine';
 import { SidePanel } from '@/features/side/SidePanel';
 import { ROLE_LABEL } from '@/features/auth/useSession';
 import type { UserProfile } from '@/data/types';
@@ -75,6 +76,7 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
             </div>
           ))}
           <button type="button" onClick={() => supabase.auth.signOut()} className="mt-4 flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100"><LogOut className="h-4 w-4" />Sign out</button>
+          <VersionLine className="mt-4 px-3 text-[10px] leading-tight text-slate-400" />
         </nav>
         <main className="min-w-0 flex-1 px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-4 sm:pb-8 lg:px-0 print:p-0">{children}</main>
         {!wide && <aside aria-label="Side panel" className="sticky top-16 hidden max-h-[calc(100vh-4rem)] self-start overflow-y-auto py-4 xl:block print:hidden"><SidePanel isHead={isHead} /></aside>}

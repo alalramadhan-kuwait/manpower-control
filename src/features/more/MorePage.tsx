@@ -4,6 +4,7 @@ import { supabase } from '@/data/supabase';
 import type { UserProfile } from '@/data/types';
 import { ROLE_LABEL } from '@/features/auth/useSession';
 import { GROUPS } from '@/app/moreItems';
+import { VersionLine } from '@/app/VersionLine';
 import { Button, Card, PageHeader } from '@/ui/components';
 
 export default function MorePage({ profile }: { profile: UserProfile }) {
@@ -32,7 +33,8 @@ export default function MorePage({ profile }: { profile: UserProfile }) {
         <div className="text-sm text-slate-600">Signed in as <span className="font-medium text-slate-800">{profile.display_name}</span></div>
         <Button variant="secondary" className="mt-3 w-full" onClick={() => supabase.auth.signOut()}><LogOut className="h-4 w-4" /> Sign out</Button>
       </Card>
-      <p className="mt-6 text-center text-[11px] text-slate-400">ARDS Operations · Area 4 · Unit 12 · Manpower Control · standalone from Time Keeper</p>
+      <VersionLine className="mt-6 text-center text-[11px] text-slate-400" />
+      <p className="mt-2 text-center text-[11px] text-slate-400">ARDS Operations · Area 4 · Unit 12 · Manpower Control · standalone from Time Keeper</p>
     </div>
   );
 }
