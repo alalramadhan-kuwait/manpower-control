@@ -118,7 +118,7 @@ export default function SdPlanPage() {
         <Button variant="secondary" className="min-h-9 shrink-0 px-3 text-xs" onClick={copyList}><Copy className="h-3.5 w-3.5" />Copy list</Button>
       </div>
       <div className="mb-2 grid grid-cols-2 gap-2">
-        <button type="button" onClick={() => setSpreading(true)} className="col-span-2 flex min-h-9 items-center justify-center gap-1 rounded-lg bg-brand-700 text-xs font-semibold text-white"><Shuffle className="h-3.5 w-3.5" />{plan.kind === 'total' ? 'Spread the days off' : 'Balance days and hours'}</button>
+        <button type="button" onClick={() => setSpreading(true)} className="col-span-2 flex min-h-9 items-center justify-center gap-1 rounded-lg bg-brand-700 text-xs font-semibold text-white"><Shuffle className="h-3.5 w-3.5" />{plan.kind === 'total' ? 'Spread the days off' : 'Own-crew days and hours'}</button>
         <Link to={`/shutdown/${plan.id}/schedule`} className="flex min-h-9 items-center justify-center gap-1 rounded-lg bg-white text-xs font-semibold text-brand-700 ring-1 ring-slate-300"><FileText className="h-3.5 w-3.5" />Shift schedule</Link>
         <Link to={`/shutdown/${plan.id}/overtime`} className="flex min-h-9 items-center justify-center gap-1 rounded-lg bg-white text-xs font-semibold text-brand-700 ring-1 ring-slate-300"><FileText className="h-3.5 w-3.5" />Overtime sheet</Link>
       </div>
@@ -153,7 +153,7 @@ export default function SdPlanPage() {
 
       {adding && <AddSheet plan={plan} team={adding.team} slot={adding.slot} area={adding.area} data={data} view={view} onClose={() => setAdding(null)} onDone={done} />}
       {member && <MemberSheet plan={plan} m={member} data={data} view={view} onClose={() => setMember(null)} onDone={done} />}
-      {spreading && <SpreadDaysSheet plan={plan} teams={teams} members={members} phases={data.phases} crewOf={(e) => view.homeCrew(e, plan.start)} away={view.leaveOn} onClose={() => setSpreading(false)} onDone={done} />}
+      {spreading && <SpreadDaysSheet plan={plan} teams={teams} members={members} phases={data.phases} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} crewOf={(e) => view.homeCrew(e, plan.start)} away={view.leaveOn} onClose={() => setSpreading(false)} onDone={done} />}
       {editPattern && <PatternSheet plan={plan} onClose={() => setEditPattern(false)} onDone={done} />}
       {editPhases && <PhasesSheet plan={plan} teams={teams} phases={data.phases} onClose={() => setEditPhases(false)} onDone={done} />}
       {editTeam && <NeedsSheet t={editTeam} onClose={() => setEditTeam(null)} onDone={done} />}
@@ -287,6 +287,9 @@ function AddSheet({ plan, team, slot, area, data, view, onClose, onDone }: { pla
       ? CONTROLLER_ROLES.includes(p.role ?? '') && (p.grade ?? 0) >= COVER_GRADE
       : sdOperatorEligible(p)));
     const fromCrew = (c: Crew | null) => data.members.filter((m) => view.homeCrew(m.employeeId, plan.start) === c).length;
+    // who of this team's slot already comes from a crew: two from one crew rest on the same days (nobody covers them)
+    const inSlot = data.members.filter((m) => m.teamId === team.id && m.slot === slot);
+    const slotCrews = (c: Crew | null) => (c ? inSlot.filter((m) => view.homeCrew(m.employeeId, plan.start) === c).map((m) => data.dir.get(m.employeeId)?.display_name ?? '') : []);
     return pool.map((p) => {
       const crew = view.homeCrew(p.id, plan.start);
       const level = data.dir.get(p.id)?.fo_level ?? null;
@@ -305,9 +308,9 @@ function AddSheet({ plan, team, slot, area, data, view, onClose, onDone }: { pla
       const match = slot === 'controller' || level === slot || (total && slot === 'member');
       const back = data.prev?.ids.has(p.id) ? data.prev.plan.title : data.next?.ids.has(p.id) ? data.next.plan.title : null;
       const sick = data.sick.get(p.id)?.[year] ?? null;
-      return { p, crew, level, leave, hit, same: fromCrew(crew), match, back, sick, sickPrev: data.sick.get(p.id)?.[year - 1] ?? null };
+      return { p, crew, level, leave, hit, same: fromCrew(crew), twin: slotCrews(crew), match, back, sick, sickPrev: data.sick.get(p.id)?.[year - 1] ?? null };
     // right level first; below average last; not two shutdowns in a row; free of leave and crew impact; then fewer sick days
-    }).sort((a, b) => Number(b.match) - Number(a.match) || Number(a.level === 'below') - Number(b.level === 'below') || Number(!!a.back) - Number(!!b.back) || Number(!!a.leave) - Number(!!b.leave) || a.hit - b.hit
+    }).sort((a, b) => Number(b.match) - Number(a.match) || Number(a.level === 'below') - Number(b.level === 'below') || Number(!!a.back) - Number(!!b.back) || Number(a.twin.length > 0) - Number(b.twin.length > 0) || Number(!!a.leave) - Number(!!b.leave) || a.hit - b.hit
       || (a.sick ?? 0) - (b.sick ?? 0) || a.same - b.same || (b.p.grade ?? 0) - (a.p.grade ?? 0) || a.p.name.localeCompare(b.p.name));
   }, [data, view, plan, slot, year, total]); // eslint-disable-line react-hooks/exhaustive-deps
   const sickValues = cands.map((c) => c.sick).filter((x): x is number => x != null).sort((a, b) => a - b);
@@ -341,7 +344,8 @@ function AddSheet({ plan, team, slot, area, data, view, onClose, onDone }: { pla
                   {c.back && <span className="inline-flex items-center gap-0.5 text-status-red"><AlertTriangle className="h-3 w-3" />Also on {c.back}</span>}
                   {c.leave > 0 && <span className="text-amber-700">Leave {c.leave}d</span>}
                   {c.hit > 0 && <span className="inline-flex items-center gap-0.5 text-status-red"><AlertTriangle className="h-3 w-3" />{c.crew} short {c.hit}d without him</span>}
-                  {c.same > 0 && <span className="text-slate-500">{c.same} already from {c.crew}</span>}
+                  {c.twin.length > 0 ? <span className="inline-flex items-center gap-0.5 text-status-red"><AlertTriangle className="h-3 w-3" />Same crew as {c.twin.join(', ')}: they rest on the same days</span> : total && c.same > 0 && <span className="text-slate-500">{c.same} already from {c.crew}</span>}
+                  {!total && c.twin.length === 0 && c.crew && data.members.some((m) => m.teamId === team.id && m.slot === slot) && <span className="text-status-green">Different crew from the slot ✓</span>}
                   {!c.leave && !c.hit && !c.back && <span className="text-status-green">{total ? 'Free' : 'Free · crew keeps its minimum'}</span>}
                   {c.sick != null && <span className={cx('font-medium', sickMedian != null && c.sick > sickMedian ? 'text-amber-700' : 'text-slate-500')}>Sick {c.sick}d {year}{c.sickPrev != null ? ` · ${c.sickPrev}d ${year - 1}` : ''}</span>}
                 </span>
