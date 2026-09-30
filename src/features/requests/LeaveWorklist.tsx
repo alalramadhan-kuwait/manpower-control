@@ -49,6 +49,7 @@ export function LeaveWorklist({ adding, onAdded }: { adding: boolean; onAdded: (
   const [notice, setNotice] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [person, setPerson] = useState<MpPerson | null>(null);
+  const [changing, setChanging] = useState<{ person: MpPerson; records: MpAbsence[] } | null>(null);
   const [folded, setFolded] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('requests.folded') ?? '[]') as string[]; } catch { return []; } });
   const fold = (title: string) => setFolded((f) => { const n = f.includes(title) ? f.filter((x) => x !== title) : [...f, title]; try { localStorage.setItem('requests.folded', JSON.stringify(n)); } catch { /* not saved */ } return n; });
   const load = useCallback(() => Promise.all([fetchManpowerInputs(`${y}-01-01`, `${y + 1}-12-31`), fetchLeaveApprovals(), fetchReference(), fetchSdMembers(`${y}-01-01`, `${y + 1}-12-31`)])
@@ -137,7 +138,8 @@ export function LeaveWorklist({ adding, onAdded }: { adding: boolean; onAdded: (
         );
       })}
 
-      {person && <PersonLeavesSheet person={person} absences={data.inputs.absences} today={today} onClose={() => setPerson(null)} />}
+      {person && !changing && <PersonLeavesSheet person={person} absences={data.inputs.absences} today={today} onClose={() => setPerson(null)} onChange={(records) => setChanging({ person, records })} />}
+      {changing && <ChangeSheet person={changing.person} records={changing.records} inputs={data.inputs} approvals={data.approvals} today={today} onBack={() => setChanging(null)} onDone={(m) => { setChanging(null); setPerson(null); setNotice(m); load(); }} />}
       {open && <EditSheet r={open} inputs={data.inputs} approvals={data.approvals} today={today} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); setNotice(m); load(); }} />}
       {cancelling && <CancelSheet r={cancelling} onClose={() => setCancelling(null)} onDone={(m) => { setCancelling(null); setNotice(m); load(); }} />}
       {adding && <LeaveSheet target={{ kind: 'add' }} types={data.types}
@@ -148,19 +150,20 @@ export function LeaveWorklist({ adding, onAdded }: { adding: boolean; onAdded: (
 }
 
 /** One person's whole leave plan: every leave of this year and next (back-to-back records joined), with the Oracle status. */
-function PersonLeavesSheet({ person, absences, today, onClose }: { person: MpPerson; absences: MpAbsence[]; today: string; onClose: () => void }) {
+function PersonLeavesSheet({ person, absences, today, onClose, onChange }: { person: MpPerson; absences: MpAbsence[]; today: string; onClose: () => void; onChange: (records: MpAbsence[]) => void }) {
   const leaves = useMemo(() => {
     const mine = absences.filter((a) => a.employeeId === person.id && (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false).sort((a, b) => a.start.localeCompare(b.start));
-    const out: { start: string; end: string; codes: string[]; oracle: OracleStatus | undefined }[] = [];
+    const out: { start: string; end: string; codes: string[]; oracle: OracleStatus | undefined; records: MpAbsence[] }[] = [];
     const rank: OracleStatus[] = ['rejected', 'not_submitted', 'submitted', 'approved'];
     for (const a of mine) {
       const last = out[out.length - 1];
       const code = a.typeShort ?? a.typeCode ?? '';
       if (last && a.start <= addDaysIso(last.end, 1)) {
         if (a.end > last.end) last.end = a.end;
+        last.records.push(a);
         if (code && !last.codes.includes(code)) last.codes.push(code);
         if (a.oracle && (!last.oracle || rank.indexOf(a.oracle) < rank.indexOf(last.oracle))) last.oracle = a.oracle;
-      } else out.push({ start: a.start, end: a.end, codes: code ? [code] : [], oracle: a.oracle });
+      } else out.push({ start: a.start, end: a.end, codes: code ? [code] : [], oracle: a.oracle, records: [a] });
     }
     return out;
   }, [absences, person.id]);
@@ -180,6 +183,7 @@ function PersonLeavesSheet({ person, absences, today, onClose }: { person: MpPer
             <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-slate-400" />
           </Link>
         </div>
+        {leaves.length > 0 && <p className="text-[11px] text-slate-500">Tap a leave to change it (the employee asked to move it).</p>}
         {leaves.length === 0 ? <p className="text-sm text-slate-500">No leave in the plan.</p> : years.map((y) => {
           const list = leaves.filter((l) => l.start.slice(0, 4) === y);
           return (
@@ -189,12 +193,15 @@ function PersonLeavesSheet({ person, absences, today, onClose }: { person: MpPer
                 {list.map((l) => {
                   const past = l.end < today; const now = l.start <= today && today <= l.end;
                   return (
-                    <li key={l.start} className={cx('flex items-center gap-2 py-2', past && 'opacity-50')}>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-1.5 text-sm font-medium text-slate-900">{l.codes.length > 0 && <span className="rounded bg-yellow-100 px-1 text-[10px] font-semibold text-yellow-900">{l.codes.join('+')}</span>}{range(l.start, l.end)}</span>
-                        <span className="block text-xs text-slate-500">{days(l)} days · back {weekday(backOn(l))} {shortDate(backOn(l))}{now ? ' · on leave now' : past ? ' · done' : ''}</span>
-                      </span>
-                      {l.oracle && <OraclePill status={l.oracle} small />}
+                    <li key={l.start}>
+                      <button type="button" onClick={() => onChange(l.records)} className={cx('flex w-full items-center gap-2 py-2 text-left', past && 'opacity-50')}>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1.5 text-sm font-medium text-slate-900">{l.codes.length > 0 && <span className="rounded bg-yellow-100 px-1 text-[10px] font-semibold text-yellow-900">{l.codes.join('+')}</span>}{range(l.start, l.end)}</span>
+                          <span className="block text-xs text-slate-500">{days(l)} days · back {weekday(backOn(l))} {shortDate(backOn(l))}{now ? ' · on leave now' : past ? ' · done' : ''}</span>
+                        </span>
+                        {l.oracle && <OraclePill status={l.oracle} small />}
+                        <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                      </button>
                     </li>
                   );
                 })}
@@ -202,6 +209,68 @@ function PersonLeavesSheet({ person, absences, today, onClose }: { person: MpPer
             </section>
           );
         })}
+      </div>
+    </BottomSheet>
+  );
+}
+
+/**
+ * A change request: the employee asks to move a leave. Pick the new dates and say why; the crews' cover for the new dates
+ * is shown first. Saving keeps the old dates in the history and puts the leave back to Not submitted in Oracle, ready for
+ * the new EasyHR request.
+ */
+function ChangeSheet({ person, records, inputs, approvals, today, onBack, onDone }: { person: MpPerson; records: MpAbsence[]; inputs: ManpowerInputs; approvals: LeaveApproval[]; today: string; onBack: () => void; onDone: (m: string) => void }) {
+  const crewOn = (d: string) => { const q = personOn(person, d); return q.dayDuty ? null : q.crew; };
+  const cur = { start: records[0].start, end: records[records.length - 1].end };
+  const [start, setStart] = useState(cur.start); const [end, setEnd] = useState(cur.end);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const valid = isValidIsoDate(start) && isValidIsoDate(end) && end >= start;
+  const unchanged = start === cur.start && end === cur.end;
+  // the plan keeps the rest days after the last duty day (workbook convention)
+  let planEnd = end; if (valid) for (let i = 0; i < 10 && isRestDay(addDaysIso(planEnd, 1), crewOn(addDaysIso(planEnd, 1))); i++) planEnd = addDaysIso(planEnd, 1);
+  const exp = valid ? expectedRequest(start, planEnd, crewOn) : null;
+  const now = expectedRequest(cur.start, cur.end, crewOn);
+  const impact = useMemo(() => (valid && !unchanged ? leaveImpact(person, records, inputs, approvals, start, planEnd, today) : null), [valid, unchanged, person, records, inputs, approvals, start, planEnd, today]);
+  const oracle = records.find((r) => r.oracle && r.oracle !== 'not_submitted')?.oracle;
+  const over = cur.end < today;
+  async function save() {
+    setBusy(true); setErr(null);
+    try {
+      const ids = await saveLeaveDates(records, start, planEnd, `Change request: ${reason.trim()}`);
+      if (oracle && !over) await setOracleStatus(ids, 'not_submitted');
+      onDone(`${person.name}: leave moved to ${range(start, planEnd)}. Submit the new request in EasyHR.`);
+    } catch (e) { setErr(e); } finally { setBusy(false); }
+  }
+  return (
+    <BottomSheet open onClose={onBack} title="Change this leave">
+      <div className="space-y-3">
+        <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm ring-1 ring-slate-200">
+          <div className="font-medium text-slate-800">{person.name}</div>
+          <div className="text-xs text-slate-600">Now: <b>{range(cur.start, cur.end)}</b>{now ? ` · ${now.days} days in Oracle · back ${weekday(now.backOn)} ${shortDate(now.backOn)}` : ''}</div>
+          {records[0].oracle && <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">Oracle now <OraclePill status={records[0].oracle} /></div>}
+        </div>
+        {over && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">This leave is already over: changing it corrects the record (for example when he came back early).</p>}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="New first day"><input type="date" className="input" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value); }} /></Field>
+          <Field label="New last day"><input type="date" className="input" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></Field>
+        </div>
+        {valid && !unchanged && (
+          <div className="space-y-1 rounded-lg bg-slate-50 px-3 py-2 text-sm ring-1 ring-slate-200">
+            <div className="font-medium text-slate-800">New plan {range(start, planEnd)} · {oracleDays(start, end)} days in Oracle{exp ? ` · back ${weekday(exp.backOn)} ${shortDate(exp.backOn)}` : ''}</div>
+            {impact && (impact.short > 0 || impact.clash.length > 0) ? <>
+              {impact.short > 0 && <div className="text-xs font-semibold text-status-red">Crew short on {impact.short} dut{impact.short === 1 ? 'y' : 'ies'} with these dates</div>}
+              {impact.clash.length > 0 && <div className="text-xs font-semibold text-status-red">2 Controllers off · with {impact.clash.join(', ')}</div>}
+            </> : <div className="text-xs text-green-800">No shortage with these dates ✓</div>}
+          </div>
+        )}
+        <Field label="Reason for the change"><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Employee asked to move it a week later" /></Field>
+        <p className="text-xs text-slate-500">The old dates stay in the history. {oracle && !over ? 'The leave goes back to Not submitted in Oracle: submit the new request in EasyHR, then approve it here.' : 'Submit the new dates in EasyHR when it is time.'}</p>
+        {err != null && <ErrorBox error={err} />}
+        <div className="flex gap-2">
+          <Button variant="secondary" className="flex-1" onClick={onBack}>Back</Button>
+          <Button className="flex-1" disabled={busy || !valid || unchanged || !reason.trim()} onClick={save}>{busy ? 'Saving…' : 'Save the change'}</Button>
+        </div>
       </div>
     </BottomSheet>
   );
@@ -246,6 +315,36 @@ function Row({ r, busy, onOpen, onDecide, onCancel }: { r: WorkRow; busy: boolea
   );
 }
 
+/** What moving a leave to `start`–`planEnd` does: duties of the person's crew that fall short, and Controllers off together. */
+function leaveImpact(person: MpPerson, records: MpAbsence[], inputs: ManpowerInputs, approvals: LeaveApproval[], start: string, planEnd: string, today: string) {
+  const ids = new Set(records.map((x) => x.id));
+  const first = records[0];
+  const moved: MpAbsence[] = [...inputs.absences.filter((a) => !ids.has(a.id)), { ...first, id: `${first.id}-new`, start, end: planEnd }];
+  const from = start < today ? today : start;
+  let short = 0;
+  for (const d of evaluateRange(from, planEnd, inputs.people, moved, inputs.rules, inputs.assignments)) {
+    const q = personOn(person, d.date); const c = q.crew && !q.dayDuty ? d.crews.find((x) => x.crew === q.crew) : undefined;
+    if (c?.working && c.confirmedShortage) short++;
+  }
+  const y = Number(today.slice(0, 4));
+  const clash = isControllerRole(person.role)
+    ? checkControllerLeave(inputs.people, moved, approvals, [y, y + 1]).overlaps.filter((o) => !o.approval && (o.a.ids.includes(`${first.id}-new`) || o.b.ids.includes(`${first.id}-new`)))
+      .map((o) => inputs.people.find((p) => p.id === (o.a.employeeId === person.id ? o.b.employeeId : o.a.employeeId))?.name ?? '')
+    : [];
+  return { short, clash };
+}
+
+/** Save new dates over the records of one leave (joined back-to-back parts: only the first and the last part can move). Returns the record ids. */
+async function saveLeaveDates(records: MpAbsence[], start: string, planEnd: string, note: string): Promise<string[]> {
+  if (records.length === 1) return [await saveLeave({ record: records[0].id!, employee: null, type: records[0].typeCode ?? 'annual_leave_planned', start, end: planEnd, note })];
+  const [a, z] = [records[0], records[records.length - 1]];
+  if (start > a.end || planEnd < z.start) throw new Error('These dates change more than the first and last part of this leave. Correct it in the Leave plan.');
+  const out = records.map((x) => x.id!);
+  if (start !== a.start) out[0] = await saveLeave({ record: a.id!, employee: null, type: a.typeCode ?? 'annual_leave_planned', start, end: a.end, note });
+  if (planEnd !== z.end) out[out.length - 1] = await saveLeave({ record: z.id!, employee: null, type: z.typeCode ?? 'annual_leave_planned', start: z.start, end: planEnd, note });
+  return out;
+}
+
 /**
  * Check an EasyHR request against the plan: type its dates; a match (rest days aside) is approved as is, other dates
  * show their effect first and are saved into the plan (reason "Oracle request") before approving.
@@ -261,41 +360,14 @@ function EditSheet({ r, inputs, approvals, today, onClose, onDone }: { r: WorkRo
   let planEnd = end; if (valid) for (let i = 0; i < 10 && isRestDay(addDaysIso(planEnd, 1), crewOn(addDaysIso(planEnd, 1))); i++) planEnd = addDaysIso(planEnd, 1);
   const exp = valid ? expectedRequest(start, planEnd, crewOn) : null;
 
-  const impact = useMemo(() => {
-    if (!valid || same) return null;
-    const ids = new Set(r.records.map((x) => x.id));
-    const first = r.records[0];
-    const moved: MpAbsence[] = [...inputs.absences.filter((a) => !ids.has(a.id)), { ...first, id: `${first.id}-new`, start, end: planEnd }];
-    const from = start < today ? today : start;
-    let short = 0;
-    for (const d of evaluateRange(from, planEnd, inputs.people, moved, inputs.rules, inputs.assignments)) {
-      const q = personOn(r.person, d.date); const c = q.crew && !q.dayDuty ? d.crews.find((x) => x.crew === q.crew) : undefined;
-      if (c?.working && c.confirmedShortage) short++;
-    }
-    const y = Number(today.slice(0, 4));
-    const clash = isControllerRole(r.person.role)
-      ? checkControllerLeave(inputs.people, moved, approvals, [y, y + 1]).overlaps.filter((o) => !o.approval && (o.a.ids.includes(`${first.id}-new`) || o.b.ids.includes(`${first.id}-new`)))
-        .map((o) => inputs.people.find((p) => p.id === (o.a.employeeId === r.person.id ? o.b.employeeId : o.a.employeeId))?.name ?? '')
-      : [];
-    return { short, clash };
-  }, [valid, same, r, inputs, approvals, start, planEnd, today]);
+  const impact = useMemo(() => (!valid || same ? null : leaveImpact(r.person, r.records, inputs, approvals, start, planEnd, today)), [valid, same, r, inputs, approvals, start, planEnd, today]);
 
   async function apply(status: OracleStatus | null) {
     setBusy(true); setErr(null);
     try {
       let ids = r.records.map((x) => x.id!);
       if (!same) {
-        const recs = r.records;
-        const note = `Oracle request ${range(start, end)}`;
-        if (recs.length === 1) ids = [await saveLeave({ record: recs[0].id!, employee: null, type: recs[0].typeCode ?? 'annual_leave_planned', start, end: planEnd, note })];
-        else {
-          const [a, z] = [recs[0], recs[recs.length - 1]];
-          if (start > a.end || planEnd < z.start) throw new Error('These dates change more than the first and last part of this leave. Correct it in the Leave plan.');
-          const out = recs.map((x) => x.id!);
-          if (start !== a.start) out[0] = await saveLeave({ record: a.id!, employee: null, type: a.typeCode ?? 'annual_leave_planned', start, end: a.end, note });
-          if (planEnd !== z.end) out[out.length - 1] = await saveLeave({ record: z.id!, employee: null, type: z.typeCode ?? 'annual_leave_planned', start: z.start, end: planEnd, note });
-          ids = out;
-        }
+        ids = await saveLeaveDates(r.records, start, planEnd, `Oracle request ${range(start, end)}`);
       }
       if (status) await setOracleStatus(ids, status);
       onDone(`${r.person.name}: ${same ? '' : `plan now ${range(start, planEnd)}; `}${status ? `${ORACLE_LABEL[status].toLowerCase()} in Oracle` : 'saved'}.`);
