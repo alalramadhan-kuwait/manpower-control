@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Crew } from '../../roster';
 import { dayState, planDates, teamDay, type SdMember, type SdPlan, type SdTeam } from '..';
+import { suggestFollow } from '../overlap';
 import { defaultMaxRun, spreadGroup, spreadGroups, spreadPlan, type SpreadContext } from '../spread';
 
 const plan: SdPlan = { id: 'p', title: 'Train-2 SD', kind: 'train', areas: [], sections: [], start: '2026-11-01', end: '2026-11-30', eventId: null, daysOn: 3, daysOff: 1, shiftHours: 12, rampDays: 2, rampHours: 8, normalHours: 8, maxOvertime: 80 };
@@ -92,5 +93,33 @@ describe('total turnaround keeps the spread of days off', () => {
     expect(area.after.short).toBe(0);
     expect(area.after.overtime).toBeLessThan(area.before.overtime);
     expect(area.train).toBeNull();
+  });
+});
+
+describe('overlaps: follow another crew\'s rota', () => {
+  const crews = (c: Record<string, Crew>) => (x: SdMember) => c[x.id] ?? null;
+  it('two seniors of one crew: one follows another crew, so somebody is there every day', () => {
+    const list = [m('s1', 'senior', 'night'), m('s2', 'senior', 'night')];
+    const r = suggestFollow(plan, [night], list, [], crews({ s1: 'C', s2: 'C' }));
+    expect(r).toHaveLength(1);
+    expect(r[0].changes).toHaveLength(1);
+    expect(r[0].changes[0].from).toBe('C');
+    expect(r[0].after.gapDays).toBe(0);
+    expect(r[0].after.short).toBeLessThan(r[0].before.short);
+  });
+  it('leaves people of different crews alone, and a level with a single person', () => {
+    const list = [m('s1', 'senior'), m('s2', 'senior'), m('g1', 'good')];
+    expect(suggestFollow(plan, [team], list, [], crews({ s1: 'A', s2: 'C', g1: 'C' }))).toEqual([]);
+  });
+  it('four of one crew over three levels: the changes spread over different crews', () => {
+    const list = [m('s1', 'senior', 'night'), m('s2', 'senior', 'night'), m('g1', 'good', 'night'), m('g2', 'good', 'night')];
+    const r = suggestFollow(plan, [night], list, [], crews({ s1: 'C', s2: 'C', g1: 'C', g2: 'C' }));
+    const to = r.flatMap((g) => g.changes.map((c) => c.to));
+    expect(r.length).toBe(2);
+    expect(new Set(to).size).toBe(to.length);
+  });
+  it('a member who already follows a crew counts as that crew', () => {
+    const list = [m('s1', 'senior', 'night'), m('s2', 'senior', 'night')];
+    expect(suggestFollow(plan, [night], list, [], crews({ s1: 'C', s2: 'B' }))).toEqual([]);
   });
 });

@@ -16,6 +16,8 @@ import { shortDate } from '@/ui/leave';
 import { PersonHistory } from './PersonHistory';
 import { SpreadDaysSheet } from './SpreadDays';
 import { MoveLeaveSheet } from './MoveLeave';
+import { FollowInstruction, FollowSheet } from './FollowCrew';
+import { suggestFollow } from '@/core/shutdown/overlap';
 
 const CONTROLLER_ROLES = ['controller', 'vr_controller', 'morning_controller'];
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
@@ -53,6 +55,7 @@ export default function SdPlanPage() {
   const [editPhases, setEditPhases] = useState(false);
   const [spreading, setSpreading] = useState(false);
   const [moving, setMoving] = useState(false);
+  const [following, setFollowing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const load = useCallback(async () => {
     try {
@@ -66,7 +69,7 @@ export default function SdPlanPage() {
     } catch (e) { setError(e); }
   }, [id]);
   useEffect(() => { load(); }, [load]);
-  const done = (m: string) => { setAdding(null); setMember(null); setEditPattern(false); setEditTeam(null); setEditPhases(false); setSpreading(false); setMoving(false); setNotice(m); load(); };
+  const done = (m: string) => { setAdding(null); setMember(null); setEditPattern(false); setEditTeam(null); setEditPhases(false); setSpreading(false); setMoving(false); setFollowing(false); setNotice(m); load(); };
 
   const view = useMemo(() => {
     if (!data) return null;
@@ -78,12 +81,15 @@ export default function SdPlanPage() {
     const results = evaluateRange(plan.start, plan.end, inputs.people, inputs.absences, inputs.rules, inputs.assignments);
     const crewImpact = CREWS.map((c) => ({ crew: c, short: results.filter((d) => d.crews.find((x) => x.crew === c)?.confirmedShortage).length,
       cover: results.filter((d) => { const x = d.crews.find((k) => k.crew === c); return x?.working && x.controller.finding === 'coverage_required'; }).length }));
-    const hours = new Map(members.map((m) => [m.id, memberHours(plan, m, homeCrew(m.employeeId, plan.start))]));
+    // the crew whose duty and rest days the member keeps on the team: the one he is told to follow, else his own
+    const dutyCrew = (m: SdMember) => m.followCrew ?? homeCrew(m.employeeId, plan.start);
+    const hours = new Map(members.map((m) => [m.id, memberHours(plan, m, dutyCrew(m))]));
     // days of leave inside the member's shutdown days: the person's own duty days on a train shutdown (a rest day costs nothing),
     // every day of a total turnaround; counted whether or not the day is still marked working (balancing marks leave days off)
-    const leaveDays = (m: SdMember) => dates.filter((d) => d >= m.start && d <= m.end && leaveOn(m.employeeId, d) && (plan.kind === 'total' || isDutyDay(homeCrew(m.employeeId, plan.start), d))).length;
+    const leaveDays = (m: SdMember) => dates.filter((d) => d >= m.start && d <= m.end && leaveOn(m.employeeId, d) && (plan.kind === 'total' || isDutyDay(dutyCrew(m), d))).length;
     const teamDays = new Map(teams.map((t) => [t.id, dates.map((d) => ({ date: d, slots: teamDay(plan, t, members, d, leaveOn, data.phases) }))]));
-    return { people, leaveOn, homeCrew, dates, crewImpact, hours, leaveDays, teamDays };
+    const overlaps = plan.kind === 'total' ? [] : suggestFollow(plan, teams, members, data.phases, dutyCrew);
+    return { people, leaveOn, homeCrew, dutyCrew, dates, crewImpact, hours, leaveDays, teamDays, overlaps };
   }, [data]);
 
   if (error) return <ErrorBox error={error} />;
@@ -125,6 +131,7 @@ export default function SdPlanPage() {
       </div>
       <div className="mb-2 grid grid-cols-2 gap-2">
         <button type="button" onClick={() => setSpreading(true)} className="col-span-2 flex min-h-9 items-center justify-center gap-1 rounded-lg bg-brand-700 text-xs font-semibold text-white"><Shuffle className="h-3.5 w-3.5" />{plan.kind === 'total' ? 'Spread the days off' : 'Own-crew days and hours'}</button>
+        {!total && <button type="button" onClick={() => setFollowing(true)} className={cx('col-span-2 flex min-h-9 items-center justify-center gap-1 rounded-lg text-xs font-semibold ring-1', view.overlaps.length ? 'bg-amber-50 text-amber-900 ring-amber-300' : 'bg-white text-brand-700 ring-slate-300')}><Shuffle className="h-3.5 w-3.5" />{view.overlaps.length ? `Fix overlaps · ${view.overlaps.reduce((n, g) => n + g.changes.length, 0)} to follow another shift` : 'Overlaps · none'}</button>}
         <Link to={`/shutdown/${plan.id}/schedule`} className="flex min-h-9 items-center justify-center gap-1 rounded-lg bg-white text-xs font-semibold text-brand-700 ring-1 ring-slate-300"><FileText className="h-3.5 w-3.5" />Shift schedule</Link>
         <Link to={`/shutdown/${plan.id}/overtime`} className="flex min-h-9 items-center justify-center gap-1 rounded-lg bg-white text-xs font-semibold text-brand-700 ring-1 ring-slate-300"><FileText className="h-3.5 w-3.5" />Overtime sheet</Link>
       </div>
@@ -170,7 +177,8 @@ export default function SdPlanPage() {
       {adding && <AddSheet plan={plan} team={adding.team} slot={adding.slot} area={adding.area} data={data} view={view} onClose={() => setAdding(null)} onDone={done} />}
       {member && <MemberSheet plan={plan} m={member} data={data} view={view} onClose={() => setMember(null)} onDone={done} />}
       {moving && <MoveLeaveSheet plan={plan} members={members} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} inputs={data.inputs} onClose={() => setMoving(false)} onDone={done} />}
-      {spreading && <SpreadDaysSheet plan={plan} teams={teams} members={members} phases={data.phases} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} crewOf={(e) => view.homeCrew(e, plan.start)} conflicts={leaveConflicts} onClose={() => setSpreading(false)} onDone={done} />}
+      {following && <FollowSheet plan={plan} teams={teams} members={members} groups={view.overlaps} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} onClose={() => setFollowing(false)} onDone={done} />}
+      {spreading && <SpreadDaysSheet plan={plan} teams={teams} members={members} phases={data.phases} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} crewOf={(e) => { const mm = members.find((x) => x.employeeId === e); return mm ? view.dutyCrew(mm) : view.homeCrew(e, plan.start); }} conflicts={leaveConflicts} onClose={() => setSpreading(false)} onDone={done} />}
       {editPattern && <PatternSheet plan={plan} onClose={() => setEditPattern(false)} onDone={done} />}
       {editPhases && <PhasesSheet plan={plan} teams={teams} phases={data.phases} onClose={() => setEditPhases(false)} onDone={done} />}
       {editTeam && <NeedsSheet t={editTeam} onClose={() => setEditTeam(null)} onDone={done} />}
@@ -183,9 +191,12 @@ interface View {
   leaveOn: (employeeId: string, date: string) => boolean;
   /** The person's own crew on a date, the shutdown team aside (VRs: their placement crew). */
   homeCrew: (employeeId: string, date: string) => Crew | null;
+  /** The crew whose duty and rest days the member keeps on the team (the one they follow, else their own). */
+  dutyCrew: (m: SdMember) => Crew | null;
   dates: string[];
   hours: Map<string, ReturnType<typeof memberHours>>;
   leaveDays: (m: SdMember) => number;
+  overlaps: ReturnType<typeof suggestFollow>;
   teamDays: Map<string, { date: string; slots: ReturnType<typeof teamDay> }[]>;
 }
 
@@ -282,7 +293,7 @@ function MemberRow({ m, data, view, onOpen }: { m: SdMember; data: Data; view: V
       {crew ? <CrewBadge crew={crew} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-500">VR</span>}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-slate-900">{r?.display_name ?? '—'}{isPo(r) ? <span className="ml-1 text-[10px] font-semibold text-slate-400">PO</span> : r?.fo_level && m.slot !== 'controller' ? <span className="ml-1 text-[10px] font-semibold text-slate-400">{FO_LEVEL_LABEL[r.fo_level]}</span> : null}</span>
-        <span className="block truncate text-[11px] text-slate-500">#{r?.employee_number}{data.plan.kind === 'total' && m.slot === 'controller' && m.area ? ` · ${m.area}` : ''} · {off.length ? `off ${off.join(', ')}…` : 'every day'}{m.start !== data.plan.start || m.end !== data.plan.end ? ` · ${range(m.start, m.end)}` : ''}</span>
+        <span className="block truncate text-[11px] text-slate-500">#{r?.employee_number}{data.plan.kind === 'total' && m.slot === 'controller' && m.area ? ` · ${m.area}` : ''}{m.followCrew ? ` · follows ${m.followCrew}` : ''} · {off.length ? `off ${off.join(', ')}…` : 'every day'}{m.start !== data.plan.start || m.end !== data.plan.end ? ` · ${range(m.start, m.end)}` : ''}</span>
       </span>
       {(data.prev?.ids.has(m.employeeId) || data.next?.ids.has(m.employeeId)) && <span className="shrink-0 rounded-full bg-status-red px-1.5 text-[10px] font-semibold text-white">2 SD in a row</span>}
       {leave > 0 && <span className="shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-900">Leave {leave}d</span>}
@@ -306,7 +317,7 @@ function AddSheet({ plan, team, slot, area, data, view, onClose, onDone }: { pla
     const fromCrew = (c: Crew | null) => data.members.filter((m) => view.homeCrew(m.employeeId, plan.start) === c).length;
     // who of this team's slot already comes from a crew: two from one crew rest on the same days (nobody covers them)
     const inSlot = data.members.filter((m) => m.teamId === team.id && m.slot === slot);
-    const slotCrews = (c: Crew | null) => (c ? inSlot.filter((m) => view.homeCrew(m.employeeId, plan.start) === c).map((m) => data.dir.get(m.employeeId)?.display_name ?? '') : []);
+    const slotCrews = (c: Crew | null) => (c ? inSlot.filter((m) => view.dutyCrew(m) === c).map((m) => data.dir.get(m.employeeId)?.display_name ?? '') : []);
     return pool.map((p) => {
       const crew = view.homeCrew(p.id, plan.start);
       const level = data.dir.get(p.id)?.fo_level ?? null;
@@ -387,7 +398,8 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
   const [area, setArea] = useState<string | null>(m.area ?? areas[0] ?? null);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const trial: SdMember = { ...m, offset, start, end, days: own };
-  const crew = view.homeCrew(m.employeeId, plan.start);
+  const home = view.homeCrew(m.employeeId, plan.start);
+  const crew = m.followCrew ?? home;
   const hours = memberHours(plan, trial, crew);
   const cycle = cycleOf(plan);
   const valid = start >= plan.start && end <= plan.end && end >= start;
@@ -416,6 +428,7 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
       <div className="space-y-3">
         <p className="text-sm text-slate-600">#{r?.employee_number} · {SD_SLOT_LABEL[m.slot]}{r?.crew_code ? ` · from ${r.crew_code} Shift` : ''}{team ? ` · ${team.name} team` : ''}</p>
         <PersonHistory employeeId={m.employeeId} crew={crew} skipPlanId={plan.id} />
+        {!total && home && <FollowInstruction plan={plan} m={m} home={home} name={r?.display_name ?? 'Employee'} onDone={onDone} />}
         <Field label="Days (tap to switch working / off)">
           <div className="grid grid-cols-7 gap-1">
             {view.dates.map((d) => {

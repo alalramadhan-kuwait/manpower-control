@@ -37,7 +37,7 @@ function useDoc(id: string) {
       const groupOf = (m: SdMember) => (m.slot === 'controller' ? 'Controller' : sd.plan.kind === 'total' ? (areas.includes(m.area ?? '') ? m.area ?? '' : areas[0]) || 'Operators' : 'Operators');
       const secRank = (m: SdMember) => (m.slot === 'controller' ? Math.max(0, sd.plan.sections.indexOf(m.area ?? '')) : 0);
       const groupRank = (g: string) => (g === 'Controller' ? -1 : Math.max(0, areas.indexOf(g)));
-      const sorted = sd.members.map((m) => ({ m, team: sd.teams.find((t) => t.id === m.teamId)!, r: byId.get(m.employeeId), crew: crewOf(m.employeeId), group: groupOf(m), no: 0 }))
+      const sorted = sd.members.map((m) => ({ m, team: sd.teams.find((t) => t.id === m.teamId)!, r: byId.get(m.employeeId), crew: m.followCrew ?? crewOf(m.employeeId), group: groupOf(m), no: 0 }))
         .filter((x) => x.team)
         .sort((a, b) => teamSort.get(a.m.teamId)! - teamSort.get(b.m.teamId)! || groupRank(a.group) - groupRank(b.group) || (a.m.order ?? 99) - (b.m.order ?? 99) || secRank(a.m) - secRank(b.m) || SLOT_ORDER[a.m.slot] - SLOT_ORDER[b.m.slot] || (a.r?.display_name ?? '').localeCompare(b.r?.display_name ?? ''));
       // numbered within the team: Controllers 1.., operators 1.. across the areas (as on the section's sheets)

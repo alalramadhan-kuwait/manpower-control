@@ -37,6 +37,8 @@ export interface SdMember {
   id: string; planId: string; teamId: string; employeeId: string; slot: SdSlot; offset: number; start: string; end: string;
   /** Area group (total turnaround). */
   area?: string | null;
+  /** Instruction: the crew whose rota the member follows on the team (its duty and rest days) instead of their own; null = their own. */
+  followCrew?: Crew | null;
   /** Place on the section's own sheet (S.No), when recorded from one. */
   order?: number | null;
   /** The member's own days (date → works / hours), overriding the pattern. */

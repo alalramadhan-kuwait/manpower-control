@@ -425,6 +425,7 @@ var toMember = (r) => ({
   start: r.start_date,
   end: r.end_date,
   area: r.area,
+  followCrew: r.follow_crew ?? null,
   order: Number(/^S\.No (\d+)/.exec(r.note ?? "")?.[1]) || null
 });
 async function fetchSdMembers(from, to) {

@@ -1,12 +1,14 @@
 // Shutdown teams (Stage K): plans, teams and members; the Field Operator level. Staff read and write; every change is audited.
 import { supabase } from './supabase';
 import { dataChanged } from './changes';
+import type { Crew } from '@/core/roster';
+import { cancelMovement, fetchMovements, recordMovement } from './movements';
 import type { FoLevel, SdKind, SdMember, SdPhase, SdPlan, SdSlot, SdTeam } from '@/core/shutdown';
 
 export interface Signature { title: string; name: string }
 interface PlanRow { signatures: Signature[]; kind: SdKind; areas: string[] | null; sections: string[] | null; id: string; event_id: string | null; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; status: string }
 interface TeamRow { id: string; plan_id: string; name: string; sort: number; shift_code: 'M' | 'N'; shift_hours_label: string | null; controller_n: number; senior_n: number; good_n: number; new_n: number; ramp_controller_n: number; ramp_senior_n: number; ramp_good_n: number; ramp_new_n: number }
-interface MemberRow { id: string; plan_id: string; team_id: string; employee_id: string; slot: SdSlot; day_offset: number; start_date: string; end_date: string; area: string | null; note: string | null }
+interface MemberRow { id: string; plan_id: string; team_id: string; employee_id: string; slot: SdSlot; day_offset: number; start_date: string; end_date: string; area: string | null; note: string | null; follow_crew: Crew | null }
 interface PhaseRow { id: string; plan_id: string; start_date: string; end_date: string; needs: SdPhase['needs'] }
 
 const toPlan = (r: PlanRow): SdPlan => ({ id: r.id, eventId: r.event_id, title: r.title, kind: r.kind ?? 'train', areas: r.areas ?? [], sections: r.sections ?? [], start: r.start_date, end: r.end_date, daysOn: r.days_on, daysOff: r.days_off,
@@ -14,7 +16,7 @@ const toPlan = (r: PlanRow): SdPlan => ({ id: r.id, eventId: r.event_id, title: 
 const toTeam = (r: TeamRow): SdTeam => ({ id: r.id, planId: r.plan_id, name: r.name, sort: r.sort,
   needs: { controller: r.controller_n, senior: r.senior_n, good: r.good_n, new: r.new_n }, rampNeeds: { controller: r.ramp_controller_n, senior: r.ramp_senior_n, good: r.ramp_good_n, new: r.ramp_new_n },
   shiftCode: r.shift_code, hoursLabel: r.shift_hours_label });
-export const toMember = (r: MemberRow): SdMember => ({ id: r.id, planId: r.plan_id, teamId: r.team_id, employeeId: r.employee_id, slot: r.slot, offset: r.day_offset, start: r.start_date, end: r.end_date, area: r.area,
+export const toMember = (r: MemberRow): SdMember => ({ id: r.id, planId: r.plan_id, teamId: r.team_id, employeeId: r.employee_id, slot: r.slot, offset: r.day_offset, start: r.start_date, end: r.end_date, area: r.area, followCrew: r.follow_crew ?? null,
   order: Number(/^S\.No (\d+)/.exec(r.note ?? '')?.[1]) || null });
 const toPhase = (r: PhaseRow): SdPhase => ({ id: r.id, start: r.start_date, end: r.end_date, needs: r.needs ?? {} });
 
@@ -92,7 +94,7 @@ export async function addSdMember(v: { planId: string; teamId: string; employeeI
   dataChanged();
 }
 
-export async function updateSdMember(id: string, v: Partial<{ day_offset: number; start_date: string; end_date: string; team_id: string; slot: SdSlot; area: string | null }>) {
+export async function updateSdMember(id: string, v: Partial<{ day_offset: number; start_date: string; end_date: string; team_id: string; slot: SdSlot; area: string | null; follow_crew: Crew | null }>) {
   const { error } = await supabase.from('sd_members').update(v).eq('id', id);
   if (error) throw error;
   dataChanged();
@@ -194,4 +196,31 @@ export async function saveSdPhases(planId: string, phases: SdPhase[], removed: s
 export async function renameSdArea(planId: string, from: string, to: string) {
   const { error } = await supabase.from('sd_members').update({ area: to }).eq('plan_id', planId).eq('area', from).eq('status', 'active');
   if (error) throw error;
+}
+
+/** Reason text of the shift movement that belongs to a shutdown instruction (to find it again). */
+export const FOLLOW_MARK = 'Shutdown instruction';
+/** The active shift movements made by shutdown instructions, per employee. */
+export async function fetchFollowMovements(employeeIds: string[]): Promise<Map<string, { id: string; to: Crew; start: string; end: string | null }>> {
+  const out = new Map<string, { id: string; to: Crew; start: string; end: string | null }>();
+  if (!employeeIds.length) return out;
+  const all = await fetchMovements();
+  const ids = new Set(employeeIds);
+  for (const m of all) if (m.status === 'active' && m.kind === 'temporary' && ids.has(m.employee_id) && m.to_crew !== 'DAY' && (m.reason ?? '').startsWith(FOLLOW_MARK)) out.set(m.employee_id, { id: m.id, to: m.to_crew as Crew, start: m.start_date, end: m.end_date });
+  return out;
+}
+
+/**
+ * The instruction "follow crew X's shift, then join the team": on the team the member keeps X's duty and rest days; before
+ * joining (`from` to the day before `member.start`) they work X's shift, recorded as a temporary shift movement so the
+ * crews' cover counts it. `to` null removes the instruction (and the movement it made).
+ */
+export async function setFollow(v: { member: SdMember; title: string; to: Crew | null; from: string | null; previous?: { id: string } | null }) {
+  const { member: m, to } = v;
+  if (v.previous) await cancelMovement(v.previous.id, to ? 'Instruction changed' : 'Instruction removed');
+  if (to && v.from) {
+    const last = new Date(Date.parse(m.start) - 864e5).toISOString().slice(0, 10);
+    if (v.from <= last) await recordMovement({ employee: m.employeeId, kind: 'temporary', to, start: v.from, end: last, reason: `${FOLLOW_MARK} · ${v.title}: follow ${to} shift, take off, then join the team` });
+  }
+  await updateSdMember(m.id, { follow_crew: to });
 }

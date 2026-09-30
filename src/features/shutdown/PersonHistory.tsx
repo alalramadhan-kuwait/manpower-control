@@ -35,7 +35,7 @@ export function PersonHistory({ employeeId, crew, skipPlanId, showSick = true }:
       <section>
         {showSick && <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Shutdowns{skipPlanId ? ' before and after this one' : ''}</h3>}
         {sds.length === 0 ? <p className="text-sm text-slate-500">None.</p> : sds.map(({ plan, team, member }) => {
-          const h = memberHours(plan, member, crew);
+          const h = memberHours(plan, member, member.followCrew ?? crew);
           const worked = h.reduce((n, x) => n + x.days, 0); const ot = h.reduce((n, x) => n + x.overtime, 0);
           const state = plan.end < today ? 'Done' : plan.start <= today ? 'Running' : 'Coming';
           return (
