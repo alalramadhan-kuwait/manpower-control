@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { memberWorks, planDates, teamDay, type SdMember, type SdPlan, type SdTeam } from '..';
+import { dayState, memberWorks, planDates, teamDay, type SdMember, type SdPlan, type SdTeam } from '..';
 import { defaultMaxRun, spreadGroup, spreadGroups, spreadPlan, type SpreadContext } from '../spread';
 
 const plan: SdPlan = { id: 'p', title: 'Train-2 SD', kind: 'train', areas: [], sections: [], start: '2026-11-01', end: '2026-11-30', eventId: null, daysOn: 3, daysOff: 1, shiftHours: 12, rampDays: 2, rampHours: 8, normalHours: 8, maxOvertime: 80 };
@@ -20,15 +20,31 @@ describe('spread the days off', () => {
     expect(r.minPeople).toBeNull();
     for (const days of r.days.values()) expect(runs(days)).toBeLessThanOrEqual(3);
   });
-  it('an extra person gives everybody more days off, and less overtime, with the same cover', () => {
-    const three = [m('s1', 'senior', 0), m('s2', 'senior', 1), m('s3', 'senior', 2)];
+  it('train shutdown: nobody gets extra days off, every day one person works the full shift, the others 8 h, overtime shared', () => {
+    const two = [m('c1', 'controller', 0), m('c2', 'controller', 0)];   // both off on the same days today
+    const r = spreadGroup(plan, grp(two, 'controller'), two, { ...ctx, crewOf: () => 'A' });
+    expect(r.after).toMatchObject({ short: 0, gapDays: 0, noFullDays: 0 });
+    expect(r.before.gapDays).toBeGreaterThan(0);                       // as they stand nobody is there on the days both are off
+    const offDays = (id: string) => planDates(plan).filter((d) => r.days.get(id)![d] === false).length;
+    const pattern = (o: number) => planDates(plan).filter((d) => !memberWorks(plan, { ...two[0], offset: o }, d)).length;
+    expect([offDays('c1'), offDays('c2')]).toEqual([pattern(r.offsets.get('c1')!), pattern(r.offsets.get('c2')!)]);   // the plan's number of days off
+    for (const d of planDates(plan)) {
+      const h = two.map((x) => r.hours.get(x.id)![d]).filter((x) => x != null);
+      if (d >= '2026-11-03' && d <= '2026-11-28') { expect(h.filter((x) => x === 12).length).toBe(1); expect(h.every((x) => x === 12 || x === 8)).toBe(true); }
+    }
+    expect(r.after.balance).toBeLessThanOrEqual(12);
+  });
+  it('train shutdown: three seniors keep the two the team needs every day; the New FO slot may be empty', () => {
+    const three = [m('s1', 'senior', 0), m('s2', 'senior', 0), m('s3', 'senior', 0)];
     const r = spreadGroup(plan, grp(three, 'senior'), three, ctx);
-    expect(r.after.short).toBe(0);
-    expect(r.after.overtime).toBeLessThan(r.before.overtime);
-    expect(r.after.worst).toBeLessThanOrEqual(r.before.worst);
-    // never more people than the day needs
-    const members = three.map((x) => ({ ...x, days: Object.fromEntries(Object.entries(r.days.get(x.id)!).map(([d, w]) => [d, { works: w, hours: null }])) }));
-    for (const d of planDates(plan)) expect(teamDay(plan, team, members, d).senior.have).toBe(team.needs.senior > 0 ? (d <= '2026-11-02' || d >= '2026-11-29' ? 1 : 2) : 0);
+    expect(r.after).toMatchObject({ short: 0, gapDays: 0, noFullDays: 0 });
+    const withTeam = three.map((x) => ({ ...x, offset: r.offsets.get(x.id)!, days: Object.fromEntries(Object.entries(r.days.get(x.id)!).map(([d, w]) => [d, { works: w, hours: r.hours.get(x.id)![d] ?? null }])) }));
+    for (const d of planDates(plan)) expect(teamDay(plan, team, withTeam, d).senior.have).toBeGreaterThanOrEqual(team.needs.senior > 0 && (d < '2026-11-03' || d > '2026-11-28') ? 1 : 2);
+    // nobody on the New FO slot: only short, never critical (the other slots are covered)
+    const full = [m('c1', 'controller', 0), m('c2', 'controller', 2), ...withTeam, m('g1', 'good', 0), m('g2', 'good', 2)];
+    const day = teamDay(plan, team, full, '2026-11-10');
+    expect(day.new).toEqual({ need: 1, have: 0 });
+    expect(dayState(day)).toBe('short');
   });
   it('leave is respected and the run limit holds', () => {
     const two = [m('c1', 'controller'), m('c2', 'controller'), m('c3', 'controller')];

@@ -110,8 +110,11 @@ export function teamDay(p: SdPlan, t: SdTeam, members: SdMember[], date: string,
   return out;
 }
 export const dayShort = (d: DaySlots) => Object.values(d).reduce((n, x) => n + Math.max(0, x.need - x.have), 0);
-/** A day is critical when a slot the team needs has nobody at all that day (e.g. no Controller); short = fewer than needed. */
-export const dayCritical = (d: DaySlots) => Object.values(d).some((x) => x.need > 0 && x.have === 0);
+/**
+ * A day is critical when a slot the team needs has nobody at all that day (e.g. no Controller, Senior or Good FO);
+ * short = fewer than needed. The New Field Operator slot may be empty: it only counts as short.
+ */
+export const dayCritical = (d: DaySlots) => Object.entries(d).some(([k, x]) => k !== 'new' && x.need > 0 && x.have === 0);
 /** idle = nobody needed that day (a total turnaround outside its phases). */
 export type DayState = 'full' | 'short' | 'critical' | 'idle';
 export const dayState = (d: DaySlots): DayState => (Object.values(d).every((x) => x.need === 0) ? 'idle' : dayCritical(d) ? 'critical' : dayShort(d) > 0 ? 'short' : 'full');

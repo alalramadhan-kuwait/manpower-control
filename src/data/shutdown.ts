@@ -164,9 +164,9 @@ export async function setSdDays(memberId: string, days: { date: string; works: b
 }
 
 /** Many members' own days at once (spread the days off), in chunks. */
-export async function setSdDaysMany(rows: { memberId: string; date: string; works: boolean }[]) {
+export async function setSdDaysMany(rows: { memberId: string; date: string; works: boolean; hours?: number | null }[]) {
   for (let i = 0; i < rows.length; i += 500) {
-    const { error } = await supabase.from('sd_days').upsert(rows.slice(i, i + 500).map((r) => ({ member_id: r.memberId, work_date: r.date, works: r.works, hours: null })), { onConflict: 'member_id,work_date' });
+    const { error } = await supabase.from('sd_days').upsert(rows.slice(i, i + 500).map((r) => ({ member_id: r.memberId, work_date: r.date, works: r.works, hours: r.works ? r.hours ?? null : null })), { onConflict: 'member_id,work_date' });
     if (error) throw error;
   }
   dataChanged();

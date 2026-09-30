@@ -1,8 +1,12 @@
-// Spread the days off of a shutdown team: when a slot has more people than it needs on a day, the days off are
-// staggered so the slot still has its people every day, nobody works longer than a set run without a day off, and the
-// overtime is as low (and as even) as the roster allows. Pure functions; the app writes the result as the members' own days.
+// Balance a shutdown team's days and hours. Pure functions; the app writes the result as the members' own days.
+//   Train shutdown (Controller / Senior / Good FO / New FO): everybody keeps the days off of the plan (no extra days off);
+//     the days off are staggered so each slot has its people every day (New FO may be empty), and one person of the slot
+//     works the full shift every day while the others come for the normal 8 hours; who takes the full shift rotates so the
+//     overtime is shared evenly.
+//   Total turnaround: when a place has more people than it needs on a day, the days off are staggered so it still has its
+//     people every day, nobody works longer than a set run without a day off, and the overtime is as low and even as possible.
 import type { Crew } from '../roster';
-import { SD_SLOTS, areasOf, dayOvertime, groupOf, hoursOn, isDutyDay, isRampDay, memberWorks, phaseOn, planDates, type SdMember, type SdPhase, type SdPlan, type SdTeam } from './index';
+import { SD_SLOTS, areasOf, cycleOf, groupOf, hoursOn, isDutyDay, isRampDay, memberHoursOn, memberWorks, phaseOn, planDates, type SdMember, type SdPhase, type SdPlan, type SdTeam } from './index';
 
 /** One place people are counted together: a level slot (train shutdown), or Controllers / a Controller section / an area (total turnaround). */
 export interface SpreadGroup {
@@ -22,11 +26,19 @@ export interface SpreadStats {
   worst: number;
   /** People above the monthly overtime cap in some month. */
   over: number;
+  /** Days somebody is needed but nobody works the full shift (train shutdown: one per slot must). */
+  noFullDays: number;
+  /** Overtime of the person with most minus the person with least, over the whole shutdown (0 for one person). */
+  balance: number;
 }
 export interface SpreadResult {
   group: SpreadGroup; before: SpreadStats; after: SpreadStats;
   /** Proposed days: member id → date → works, for the dates the member is on the team. */
   days: Map<string, Record<string, boolean>>;
+  /** Hours on each working day (train shutdown: the full shift or the normal hours); empty when the plan's hours stand. */
+  hours: Map<string, Record<string, number>>;
+  /** New pattern offset per member (train shutdown). */
+  offsets: Map<string, number>;
   /** With the run limit, the least people that could cover every day (only when some days are still short). */
   minPeople: number | null;
 }
@@ -56,20 +68,96 @@ const month = (d: string) => d.slice(0, 7);
 /** Overtime of one person working `date`, on the plan's hours for that day (no hours of their own). */
 const workOt = (p: SdPlan, crew: Crew | null, date: string) => Math.max(0, hoursOn(p, date) - (isDutyDay(crew, date) ? p.normalHours : 0));
 
-function stats(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadContext, works: (m: SdMember, date: string) => boolean, otOf: (m: SdMember, date: string) => number): SpreadStats {
-  let short = 0, gapDays = 0, overtime = 0;
-  const perMonth = new Map<string, Map<string, number>>();
+function stats(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadContext, works: (m: SdMember, date: string) => boolean, hoursOf: (m: SdMember, date: string) => number): SpreadStats {
+  let short = 0, gapDays = 0, noFullDays = 0, overtime = 0;
+  const optional = g.key === 'new';
+  const perMonth = new Map<string, Map<string, number>>(); const total = new Map<string, number>();
   for (const date of planDates(p)) {
     const need = g.need(date);
     const on = members.filter((m) => works(m, date) && !ctx.away(m.employeeId, date));
-    if (need > 0) { short += Math.max(0, need - on.length); if (on.length === 0) gapDays++; }
+    if (need > 0) {
+      short += Math.max(0, need - on.length);
+      if (!optional && on.length === 0) gapDays++;
+      if (!optional && !isRampDay(p, date) && !on.some((m) => hoursOf(m, date) >= p.shiftHours)) noFullDays++;
+    }
     for (const m of on) {
-      const ot = otOf(m, date); overtime += ot;
+      const ot = Math.max(0, hoursOf(m, date) - (isDutyDay(ctx.crewOf(m.employeeId), date) ? p.normalHours : 0)); overtime += ot;
       const pm = perMonth.get(m.id) ?? new Map<string, number>(); pm.set(month(date), (pm.get(month(date)) ?? 0) + ot); perMonth.set(m.id, pm);
+      total.set(m.id, (total.get(m.id) ?? 0) + ot);
     }
   }
   const worsts = members.map((m) => Math.max(0, ...(perMonth.get(m.id)?.values() ?? [])));
-  return { short, gapDays, overtime, worst: Math.max(0, ...worsts), over: worsts.filter((w) => w > p.maxOvertime).length };
+  const totals = members.map((m) => total.get(m.id) ?? 0);
+  return { short, gapDays, noFullDays, overtime, worst: Math.max(0, ...worsts), over: worsts.filter((w) => w > p.maxOvertime).length, balance: members.length > 1 ? Math.max(...totals) - Math.min(...totals) : 0 };
+}
+
+/**
+ * Train shutdown: nobody gets extra days off. Each member keeps the plan's days on and off; only WHICH days off are
+ * chosen (the pattern offset) so that, with leave in mind, every slot has its people every day and, first of all,
+ * somebody. Then each day one member of the slot works the full shift and the others the normal hours; the full shift
+ * goes to whoever has the least overtime so far that month, so the overtime comes out even. The first and last days keep
+ * the plan's reduced hours for everyone.
+ */
+function balanceTrain(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadContext): { days: Map<string, Record<string, boolean>>; hours: Map<string, Record<string, number>>; offsets: Map<string, number> } {
+  const dates = planDates(p); const cycle = cycleOf(p); const optional = g.key === 'new';
+  const days = new Map<string, Record<string, boolean>>(members.map((m) => [m.id, {}]));
+  const hours = new Map<string, Record<string, number>>(members.map((m) => [m.id, {}]));
+  const need = dates.map((d) => g.need(d));
+  const free = members.map((m) => dates.map((d) => m.start <= d && d <= m.end && !ctx.away(m.employeeId, d)));
+  const rest = members.map((m) => dates.map((d) => !isDutyDay(ctx.crewOf(m.employeeId), d)));
+  const onWith = (i: number, k: number, off: number) => free[i][k] && (p.daysOff === 0 || ((k + off) % cycle) < p.daysOn);
+  // 1. which days off: the offsets with fewest empty days, then fewest missing people, then working duty days, then least change
+  const cost = (offs: number[]) => {
+    let c = 0;
+    for (let k = 0; k < dates.length; k++) {
+      let on = 0; for (let i = 0; i < members.length; i++) if (onWith(i, k, offs[i])) { on++; if (rest[i][k]) c += 0.3; }
+      if (need[k] > 0) { if (!optional && on === 0) c += 1000; c += Math.max(0, need[k] - on) * (optional ? 1 : 30); }
+    }
+    return c + offs.reduce((n, o, i) => n + (o !== members[i].offset % cycle ? 0.05 : 0), 0);
+  };
+  let best = members.map((m) => m.offset % cycle);
+  if (p.daysOff > 0 && members.length > 0) {
+    if (cycle ** members.length <= 60000) {
+      let bestCost = Infinity; const cur = new Array<number>(members.length).fill(0);
+      const walk = (i: number) => {
+        if (i === members.length) { const c = cost(cur); if (c < bestCost - 1e-9) { bestCost = c; best = [...cur]; } return; }
+        for (let o = 0; o < cycle; o++) { cur[i] = o; walk(i + 1); }
+      };
+      walk(0);
+    } else {
+      for (let pass = 0; pass < 6; pass++) {
+        let moved = false;
+        for (let i = 0; i < members.length; i++) {
+          let bc = cost(best); let bo = best[i];
+          for (let o = 0; o < cycle; o++) { const t = [...best]; t[i] = o; const c = cost(t); if (c < bc - 1e-9) { bc = c; bo = o; } }
+          if (bo !== best[i]) { best[i] = bo; moved = true; }
+        }
+        if (!moved) break;
+      }
+    }
+  }
+  // 2. hours: one full shift a day for the slot, the rest the normal hours; the full shift rotates to the least overtime
+  const short = Math.min(p.normalHours, p.shiftHours);
+  const monthOt = new Map<string, number>(); const grand = new Map<string, number>();
+  let cur = '';
+  dates.forEach((date, k) => {
+    if (month(date) !== cur) { cur = month(date); monthOt.clear(); }
+    const on = members.map((_, i) => i).filter((i) => onWith(i, k, best[i]));
+    const ramp = isRampDay(p, date);
+    let fullFor = -1;
+    if (!ramp && on.length > 0 && need[k] > 0) fullFor = on.slice().sort((a, b) => ((monthOt.get(members[a].id) ?? 0) - (monthOt.get(members[b].id) ?? 0)) || ((grand.get(members[a].id) ?? 0) - (grand.get(members[b].id) ?? 0)) || a - b)[0];
+    members.forEach((m, i) => {
+      if (date < m.start || date > m.end) return;
+      const works = on.includes(i);
+      days.get(m.id)![date] = works;
+      if (!works) return;
+      const h = ramp ? hoursOn(p, date) : i === fullFor ? p.shiftHours : short;
+      hours.get(m.id)![date] = h;
+      const ot = Math.max(0, h - (rest[i][k] ? 0 : p.normalHours));
+      monthOt.set(m.id, (monthOt.get(m.id) ?? 0) + ot); grand.set(m.id, (grand.get(m.id) ?? 0) + ot);
+    });
+  });
+  return { days, hours, offsets: new Map(members.map((m, i) => [m.id, best[i]])) };
 }
 
 /**
@@ -80,6 +168,16 @@ function stats(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadContex
  */
 export function spreadGroup(p: SdPlan, g: SpreadGroup, all: SdMember[], ctx: SpreadContext): SpreadResult {
   const members = g.memberIds.map((id) => all.find((m) => m.id === id)).filter((m): m is SdMember => !!m);
+  const beforeStats = () => stats(p, g, members, ctx, (m, date) => memberWorks(p, m, date), (m, date) => memberHoursOn(p, m, date));
+  if (p.kind !== 'total') {
+    const t = balanceTrain(p, g, members, ctx);
+    const after = stats(p, g, members, ctx, (m, date) => t.days.get(m.id)?.[date] === true, (m, date) => t.hours.get(m.id)?.[date] ?? hoursOn(p, date));
+    const maxNeed = Math.max(0, ...planDates(p).map(g.need));
+    const lacking = g.key !== 'new' && (after.short > 0 || after.noFullDays > 0);
+    // fewest people so that, with the plan's days off, the slot has its people every day
+    const minPeople = lacking && maxNeed > 0 ? Math.ceil((maxNeed * cycleOf(p)) / Math.max(1, p.daysOn)) : null;
+    return { group: g, before: beforeStats(), after, days: t.days, hours: t.hours, offsets: t.offsets, minPeople };
+  }
   const days = new Map<string, Record<string, boolean>>(members.map((m) => [m.id, {}]));
   const run = new Map<string, number>(); const worked = new Map<string, boolean>();
   const ot = new Map<string, number>(); // overtime so far in the month being worked
@@ -112,11 +210,11 @@ export function spreadGroup(p: SdPlan, g: SpreadGroup, all: SdMember[], ctx: Spr
   const fromPlan = runsOk ? improve(p, g, members, ctx, pattern) : null;
   const best = fromPlan && fromPlan.objective < fromGreedy.objective ? fromPlan : fromGreedy;
   members.forEach((m, i) => dates.forEach((d, k) => { if (m.start <= d && d <= m.end) days.get(m.id)![d] = best.works[i]?.[k] === true; }));
-  const after = stats(p, g, members, ctx, (m, date) => days.get(m.id)?.[date] === true, (m, date) => workOt(p, ctx.crewOf(m.employeeId), date));
-  const before = stats(p, g, members, ctx, (m, date) => memberWorks(p, m, date), (m, date) => dayOvertime(p, m, ctx.crewOf(m.employeeId), date));
+  const after = stats(p, g, members, ctx, (m, date) => days.get(m.id)?.[date] === true, (_m, date) => hoursOn(p, date));
+  const before = beforeStats();
   const maxNeed = Math.max(0, ...planDates(p).map(g.need));
   const minPeople = after.short > 0 && maxNeed > 0 ? Math.ceil((maxNeed * (ctx.maxRun + 1)) / ctx.maxRun) : null;
-  return { group: g, before, after, days, minPeople };
+  return { group: g, before, after, days, hours: new Map(), offsets: new Map(), minPeople };
 }
 
 const W_SHORT = 1000; const W_FAIR = 0.05; const W_CAP = 20;
