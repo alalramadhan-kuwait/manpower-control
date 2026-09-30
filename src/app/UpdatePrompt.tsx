@@ -11,6 +11,7 @@ const RECHECK_WHILE_OPEN = 60 * 60 * 1000;
  */
 export function UpdatePrompt() {
   const [later, setLater] = useState(false);
+  const [busy, setBusy] = useState(false);
   const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW({
     onRegisteredSW(_url, reg) {
       if (!reg) return;
@@ -25,10 +26,15 @@ export function UpdatePrompt() {
   });
   if (!needRefresh || later) return null;
   return (
-    <div role="status" className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+5rem)] z-[60] flex justify-center px-3 sm:bottom-4">
+    <div role="status" className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+5rem)] z-[100] flex justify-center px-3 sm:bottom-4">
       <div className="pointer-events-auto flex max-w-full items-center gap-2 rounded-full bg-slate-900 py-2 pl-4 pr-2 text-sm text-white shadow-lg">
         <span>A new version is ready.</span>
-        <button type="button" onClick={() => updateServiceWorker(true)} className="rounded-full bg-amber-400 px-3 py-1.5 text-[13px] font-semibold text-slate-900">Update</button>
+        <button type="button" disabled={busy} onClick={() => {
+          setBusy(true);
+          updateServiceWorker(true);
+          // the worker reloads the page itself; if it has not within a moment (another window holding the old one), reload anyway
+          window.setTimeout(() => window.location.reload(), 3000);
+        }} className="rounded-full bg-amber-400 px-3 py-1.5 text-[13px] font-semibold text-slate-900 disabled:opacity-60">{busy ? 'Updating…' : 'Update'}</button>
         <button type="button" onClick={() => setLater(true)} className="rounded-full px-2 py-1.5 text-[13px] font-medium text-slate-400">Later</button>
       </div>
     </div>
