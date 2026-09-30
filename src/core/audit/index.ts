@@ -9,7 +9,7 @@ export type AuditCategory = 'crews' | 'leave' | 'requests' | 'controllers' | 'sh
 export const AUDIT_CATEGORIES: { key: AuditCategory; label: string; tables: string[] }[] = [
   { key: 'crews', label: 'Crews & roles', tables: ['employee_role_assignments', 'crew_movements'] },
   { key: 'leave', label: 'Leave', tables: ['leave_records'] },
-  { key: 'requests', label: 'Requests', tables: ['leave_requests'] },
+  { key: 'requests', label: 'Requests', tables: ['leave_requests', 'leave_change_requests'] },
   { key: 'controllers', label: 'Controllers', tables: ['controller_assignments', 'controller_rules', 'controller_leave_approvals'] },
   { key: 'shutdown', label: 'Shutdown teams', tables: ['sd_plans', 'sd_teams', 'sd_members', 'sd_days', 'sd_phases'] },
   { key: 'modes', label: 'Modes & calendar', tables: ['operating_modes', 'operation_periods', 'public_holidays', 'unit_events', 'shift_alert_settings'] },
@@ -161,6 +161,17 @@ export function describe(row: AuditRow, lk: AuditLookups): AuditEntry {
         if (next?.status === 'reviewed' && typeof next?.overtime_required === 'boolean') details.push(`Overtime: ${next.overtime_required ? 'required' : 'not required'}`);
         if (s(remark)) details.push(String(remark));
       } else { title = `${who(empId)}: leave request ${span} edited`; details = changes(prev, next, [['start_date', 'First day', day], ['end_date', 'Last day', day], ['request_type', 'Type', w]]); }
+      break;
+    }
+    case 'leave_change_requests': {
+      const span = range(cur.old_start, cur.old_end);
+      const to = range(cur.new_start, cur.new_end);
+      if (row.action === 'insert') { title = `${who(empId)}: asked to move leave ${span} to ${to}`; if (s(cur.remark)) details.push(String(cur.remark)); }
+      else if (prev?.status !== next?.status) {
+        title = `${who(empId)}: change of leave ${span} to ${to} ${w(next?.status)}`;
+        const remark = next?.status === 'withdrawn' ? next?.withdraw_reason : next?.decision_remarks;
+        if (s(remark)) details.push(String(remark));
+      } else title = `${who(empId)}: change request for leave ${span} edited`;
       break;
     }
     case 'controller_assignments': {

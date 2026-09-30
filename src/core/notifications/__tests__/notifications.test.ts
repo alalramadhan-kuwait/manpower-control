@@ -40,6 +40,12 @@ describe('notification center', () => {
     expect(buildNotices(base({ requests })).find((x) => x.id === 'req-r1')).toMatchObject({ level: 'action', title: 'Waiting for your decision' });
     expect(buildNotices(base({ requests, isSectionHead: false })).find((x) => x.id === 'req-r1')).toMatchObject({ level: 'watch' });
   });
+  it('a reschedule request is the Section Head\'s to decide and says when the crew would be short', () => {
+    const changes = [{ id: 'c1', employeeName: 'Person X', oldStart: '2026-10-02', oldEnd: '2026-10-08', newStart: '2026-10-09', newEnd: '2026-10-15', short: 2, clash: 0 }];
+    expect(buildNotices(base({ changes })).find((x) => x.id === 'chg-c1')).toMatchObject({ level: 'action', title: 'Reschedule request to decide', to: '/requests?view=forms' });
+    expect(buildNotices(base({ changes })).find((x) => x.id === 'chg-c1')?.detail).toContain('crew short 2d');
+    expect(buildNotices(base({ changes, isSectionHead: false })).find((x) => x.id === 'chg-c1')).toMatchObject({ level: 'watch' });
+  });
   it('actions come first and only actions count in the badge; leave starting soon is info', () => {
     const n = buildNotices(base({ needsAction: 3, absences: [leave(C[5], '2026-09-28', '2026-10-02')] }));
     const levels = n.map((x) => x.level);

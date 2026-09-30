@@ -2,14 +2,16 @@ import { ChevronRight, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { REQUEST_TYPE_LABEL } from '@/core/requests';
+import { fetchChangeRequests, isChangeOpen, type ChangeRequest } from '@/data/changeRequests';
 import { fetchDirectory } from '@/data/queries';
 import { fetchRequests, isOpen, type LeaveRequest } from '@/data/requests';
-import type { EmployeeDirectoryRow } from '@/data/types';
+import type { EmployeeDirectoryRow, UserProfile } from '@/data/types';
 import { Button, Card, EmptyState, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components';
 import { CrewBadge, isCrew } from '@/ui/crew';
 import { shortDate } from '@/ui/leave';
 import { StatusChip, dayCount } from './shared';
 import { LeaveWorklist } from './LeaveWorklist';
+import { CHANGE_LABEL, ChangeChip, ChangeRequestSheet } from './ChangeRequests';
 
 const range = (s: string, e: string) => (s === e ? shortDate(s) : `${shortDate(s)} – ${shortDate(e)}`);
 
@@ -17,7 +19,7 @@ const range = (s: string, e: string) => (s === e ? shortDate(s) : `${shortDate(s
  * Requests: the leave work list (running now or starting in 30 days, with the Oracle HR decision), and the leave
  * request forms (MAB paper form: open ones first, waiting for review, then for the decision).
  */
-export default function RequestsPage() {
+export default function RequestsPage({ profile }: { profile: UserProfile }) {
   const [params, setParams] = useSearchParams();
   const view = params.get('view') === 'forms' || params.get('tab') === 'decided' ? 'forms' : 'leave';
   const [adding, setAdding] = useState(false);
@@ -26,7 +28,8 @@ export default function RequestsPage() {
       <PageHeader title="Requests" info={<div className="space-y-2 text-sm text-slate-700">
         <p><b>Leave · 14 days:</b> every leave running now or starting in the next 14 days, with what the Oracle HR (EasyHR) request should say: rest days left out, days counted without Fridays, and the day back.</p>
         <p>Approve (✓) / Reject (✕) records your Oracle decision; approved leave stays listed (faded), to review or edit. Tap a leave to type the EasyHR dates: a match is approved as is; other dates show their effect first and update the plan. A rejected leave stays flagged until it is cancelled or rescheduled.</p>
-        <p><b>Forms:</b> the MAB paper leave request form, with the overtime review and the Section Head decision.</p>
+        <p><b>New:</b> search the employee, then add a leave by hand or make a request. A reschedule request needs the leave, the new dates and a remark; the crews' cover is checked in red first. The Section Head decides it in Forms.</p>
+        <p><b>Forms:</b> the MAB paper leave request form, with the overtime review and the Section Head decision, and the reschedule requests.</p>
       </div>} action={view === 'leave'
         ? <Button className="min-h-10 shrink-0 px-3" onClick={() => setAdding(true)}><Plus className="h-4 w-4" /> New</Button>
         : <Link to="/requests/new"><Button className="min-h-10 shrink-0 px-3"><Plus className="h-4 w-4" /> New</Button></Link>} />
@@ -36,24 +39,27 @@ export default function RequestsPage() {
             className={cx('min-h-9 rounded-lg font-medium', view === t ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{t === 'leave' ? 'Leave · 14 days' : 'Forms'}</button>
         ))}
       </div>
-      {view === 'leave' ? <LeaveWorklist adding={adding} onAdded={() => setAdding(false)} /> : <Forms />}
+      {view === 'leave' ? <LeaveWorklist adding={adding} onAdded={() => setAdding(false)} isHead={profile.role_code === 'section_head'} /> : <Forms isHead={profile.role_code === 'section_head'} />}
     </div>
   );
 }
 
-function Forms() {
+function Forms({ isHead }: { isHead: boolean }) {
   const [params, setParams] = useSearchParams();
   const tab = params.get('tab') === 'decided' ? 'decided' : 'open';
-  const [data, setData] = useState<{ requests: LeaveRequest[]; people: Map<string, EmployeeDirectoryRow> } | null>(null);
+  const [data, setData] = useState<{ requests: LeaveRequest[]; changes: ChangeRequest[]; people: Map<string, EmployeeDirectoryRow> } | null>(null);
   const [error, setError] = useState<unknown>(null);
-  useEffect(() => {
-    Promise.all([fetchRequests(), fetchDirectory()]).then(([requests, dir]) => setData({ requests, people: new Map(dir.map((p) => [p.id, p])) })).catch(setError);
-  }, []);
+  const [change, setChange] = useState<ChangeRequest | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const load = () => Promise.all([fetchRequests(), fetchChangeRequests(), fetchDirectory()]).then(([requests, changes, dir]) => setData({ requests, changes, people: new Map(dir.map((p) => [p.id, p])) })).catch(setError);
+  useEffect(() => { load(); }, []);
 
+  type Item = { kind: 'form'; r: LeaveRequest; at: string; start: string } | { kind: 'change'; c: ChangeRequest; at: string; start: string };
   const lists = useMemo(() => {
-    const all = data?.requests ?? [];
-    const open = all.filter(isOpen).sort((a, b) => (a.status === b.status ? a.start_date.localeCompare(b.start_date) : a.status === 'reviewed' ? -1 : 1));
-    return { open, decided: all.filter((r) => !isOpen(r)) };
+    const all: Item[] = [...(data?.requests ?? []).map((r) => ({ kind: 'form' as const, r, at: r.created_at, start: r.start_date })), ...(data?.changes ?? []).map((c) => ({ kind: 'change' as const, c, at: c.requested_at, start: c.new_start }))];
+    const isOpenItem = (i: Item) => (i.kind === 'form' ? isOpen(i.r) : isChangeOpen(i.c));
+    const open = all.filter(isOpenItem).sort((a, b) => a.start.localeCompare(b.start));
+    return { open, decided: all.filter((i) => !isOpenItem(i)).sort((a, b) => b.at.localeCompare(a.at)) };
   }, [data]);
   const shown = tab === 'open' ? lists.open : lists.decided;
 
@@ -67,26 +73,38 @@ function Forms() {
           </button>
         ))}
       </div>
+      {notice && <p role="status" className="mb-2 text-sm text-status-green">{notice}</p>}
       {error ? <ErrorBox error={error} /> : !data ? <Spinner /> : shown.length === 0 ? (
         <EmptyState title={tab === 'open' ? 'No open requests' : 'Nothing decided yet'} body={tab === 'open' ? 'Tap New to enter a form.' : undefined} />
       ) : (
         <Card className="divide-y divide-slate-100 p-0">
-          {shown.map((r) => {
-            const p = data.people.get(r.employee_id);
-            return (
-              <Link key={r.id} to={`/requests/${r.id}`} className="flex items-center gap-3 px-3 py-3 active:bg-slate-50">
-                {p && isCrew(p.crew_code) ? <CrewBadge crew={p.crew_code} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">DS</span>}
+          {shown.map((i) => {
+            const id = i.kind === 'form' ? i.r.employee_id : i.c.employee_id;
+            const p = data.people.get(id);
+            const badge = p && isCrew(p.crew_code) ? <CrewBadge crew={p.crew_code} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">DS</span>;
+            const body = (
+              <>
+                {badge}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium text-slate-800">{p?.display_name ?? 'Employee'}</span>
-                  <span className="block truncate text-xs text-slate-500">{REQUEST_TYPE_LABEL[r.request_type]} · {range(r.start_date, r.end_date)} · {dayCount(r.start_date, r.end_date)} d{r.overtime_required ? ' · overtime required' : ''}</span>
+                  <span className="block truncate text-xs text-slate-500">{i.kind === 'form'
+                    ? `${REQUEST_TYPE_LABEL[i.r.request_type]} · ${range(i.r.start_date, i.r.end_date)} · ${dayCount(i.r.start_date, i.r.end_date)} d${i.r.overtime_required ? ' · overtime required' : ''}`
+                    : `Reschedule · now ${range(i.c.old_start, i.c.old_end)}`}</span>
+                  {i.kind === 'change' && <span className="block truncate text-xs text-slate-700">Asked {range(i.c.new_start, i.c.new_end)}</span>}
+                  {i.kind === 'change' && i.c.impact && (i.c.impact.short > 0 || i.c.impact.clash.length > 0) && isChangeOpen(i.c) && <span className="block truncate text-[11px] font-semibold text-status-red">{i.c.impact.short > 0 ? `Crew short ${i.c.impact.short}d` : ''}{i.c.impact.short > 0 && i.c.impact.clash.length > 0 ? ' · ' : ''}{i.c.impact.clash.length > 0 ? '2 Controllers off' : ''}</span>}
+                  {i.kind === 'change' && <span className="mt-1 block"><ChangeChip status={i.c.status} /></span>}
                 </span>
-                <StatusChip status={r.status} />
+                {i.kind === 'form' ? <StatusChip status={i.r.status} /> : null}
                 <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
-              </Link>
+              </>
             );
+            return i.kind === 'form'
+              ? <Link key={i.r.id} to={`/requests/${i.r.id}`} className="flex items-center gap-3 px-3 py-3 active:bg-slate-50">{body}</Link>
+              : <button key={i.c.id} type="button" onClick={() => setChange(i.c)} className="flex w-full items-center gap-3 px-3 py-3 text-left active:bg-slate-50" title={CHANGE_LABEL[i.c.status]}>{body}</button>;
           })}
         </Card>
       )}
+      {change && <ChangeRequestSheet req={change} name={data?.people.get(change.employee_id)?.display_name ?? 'Employee'} isHead={isHead} onClose={() => setChange(null)} onDone={(m) => { setChange(null); setNotice(m); load(); }} />}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { Bell, CalendarDays, ClipboardList, Home, MoreHorizontal, Users } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
+import { countOpenChangeRequests } from '@/data/changeRequests';
 import { countOpenRequests } from '@/data/requests';
 import { loadNotices } from '@/data/notifications';
 import { actionCount } from '@/core/notifications';
@@ -22,7 +23,7 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
   const { pathname } = useLocation();
   const [openRequests, setOpenRequests] = useState(0);
   useEffect(() => {
-    const refresh = () => countOpenRequests().then(setOpenRequests).catch(() => setOpenRequests(0));
+    const refresh = () => Promise.all([countOpenRequests(), countOpenChangeRequests()]).then(([a, b]) => setOpenRequests(a + b)).catch(() => setOpenRequests(0));
     refresh();
     window.addEventListener('requests-changed', refresh);
     return () => window.removeEventListener('requests-changed', refresh);

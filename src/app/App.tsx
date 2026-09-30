@@ -100,7 +100,7 @@ export default function App() {
           <Route path="/leave-plan" element={<LeavePlanPage />} />
           <Route path="/oracle" element={<OracleHrPage />} />
           <Route path="/movements" element={<MovementsPage />} />
-          <Route path="/requests" element={<RequestsPage />} />
+          <Route path="/requests" element={<RequestsPage profile={profile} />} />
           <Route path="/requests/:id" element={<RequestPage profile={profile} />} />
           <Route path="/audit" element={<AuditPage />} />
           <Route path="/operation" element={<OperationPage profile={profile} />} />

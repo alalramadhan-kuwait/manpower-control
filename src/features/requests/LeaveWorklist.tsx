@@ -3,7 +3,7 @@
 import { AlertTriangle, CalendarClock, Check, ChevronDown, ChevronRight, Copy, Search, Trash2, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { checkControllerLeave, isControllerRole, type LeaveApproval } from '@/core/controllers/leaveRules';
+import { checkControllerLeave, type LeaveApproval } from '@/core/controllers/leaveRules';
 import { evaluateRange, personOn, type MpAbsence, type MpPerson } from '@/core/manpower';
 import { ORACLE_LABEL, type OracleStatus } from '@/core/oracle';
 import { expectedRequest, isRestDay, matchesPlan, oracleDays } from '@/core/oracle/expected';
@@ -17,6 +17,8 @@ import { fetchSdMembers } from '@/data/shutdown';
 import type { SdMember } from '@/core/shutdown';
 import type { AbsenceType } from '@/data/types';
 import { LeaveSheet } from '@/features/leave/LeaveSheet';
+import { NewRequestFlow, ProposeSheet } from './ChangeRequests';
+import { leaveImpact, mergedLeaves, type MergedLeave } from './leaveTools';
 import { BottomSheet, Button, Card, ErrorBox, Field, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
@@ -36,7 +38,7 @@ const POS: { key: Pos; label: string; of: (r: WorkRow) => boolean }[] = [
   { key: 'field', label: 'Field', of: (r) => r.role === 'field_operator' }
 ];
 
-export function LeaveWorklist({ adding, onAdded }: { adding: boolean; onAdded: () => void }) {
+export function LeaveWorklist({ adding, onAdded, isHead }: { adding: boolean; onAdded: () => void; isHead: boolean }) {
   const today = localToday();
   const y = Number(today.slice(0, 4));
   const [data, setData] = useState<{ inputs: ManpowerInputs; approvals: LeaveApproval[]; types: AbsenceType[]; sd: SdMember[] } | null>(null);
@@ -49,7 +51,8 @@ export function LeaveWorklist({ adding, onAdded }: { adding: boolean; onAdded: (
   const [notice, setNotice] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [person, setPerson] = useState<MpPerson | null>(null);
-  const [changing, setChanging] = useState<{ person: MpPerson; records: MpAbsence[] } | null>(null);
+  const [changing, setChanging] = useState<{ person: MpPerson; leave: MergedLeave } | null>(null);
+  const [addFor, setAddFor] = useState<string | null>(null);
   const [folded, setFolded] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('requests.folded') ?? '[]') as string[]; } catch { return []; } });
   const fold = (title: string) => setFolded((f) => { const n = f.includes(title) ? f.filter((x) => x !== title) : [...f, title]; try { localStorage.setItem('requests.folded', JSON.stringify(n)); } catch { /* not saved */ } return n; });
   const load = useCallback(() => Promise.all([fetchManpowerInputs(`${y}-01-01`, `${y + 1}-12-31`), fetchLeaveApprovals(), fetchReference(), fetchSdMembers(`${y}-01-01`, `${y + 1}-12-31`)])
@@ -138,35 +141,23 @@ export function LeaveWorklist({ adding, onAdded }: { adding: boolean; onAdded: (
         );
       })}
 
-      {person && !changing && <PersonLeavesSheet person={person} absences={data.inputs.absences} today={today} onClose={() => setPerson(null)} onChange={(records) => setChanging({ person, records })} />}
-      {changing && <ChangeSheet person={changing.person} records={changing.records} inputs={data.inputs} approvals={data.approvals} today={today} onBack={() => setChanging(null)} onDone={(m) => { setChanging(null); setPerson(null); setNotice(m); load(); }} />}
+      {person && !changing && <PersonLeavesSheet person={person} absences={data.inputs.absences} today={today} onClose={() => setPerson(null)} onChange={(leave) => setChanging({ person, leave })} isHead={isHead} />}
+      {changing && (isHead
+        ? <ChangeSheet person={changing.person} records={changing.leave.records} inputs={data.inputs} approvals={data.approvals} today={today} onBack={() => setChanging(null)} onDone={(m) => { setChanging(null); setPerson(null); setNotice(m); load(); }} />
+        : <ProposeSheet person={changing.person} leave={changing.leave} inputs={data.inputs} approvals={data.approvals} today={today} onBack={() => setChanging(null)} onDone={(m) => { setChanging(null); setPerson(null); setNotice(m); load(); }} />)}
       {open && <EditSheet r={open} inputs={data.inputs} approvals={data.approvals} today={today} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); setNotice(m); load(); }} />}
       {cancelling && <CancelSheet r={cancelling} onClose={() => setCancelling(null)} onDone={(m) => { setCancelling(null); setNotice(m); load(); }} />}
-      {adding && <LeaveSheet target={{ kind: 'add' }} types={data.types}
+      {adding && !addFor && <NewRequestFlow inputs={data.inputs} approvals={data.approvals} today={today} onClose={onAdded} onAddLeave={setAddFor} onDone={(m) => { onAdded(); setNotice(m); load(); }} />}
+      {adding && addFor && <LeaveSheet target={{ kind: 'add', employeeId: addFor }} types={data.types}
         people={data.inputs.people.map((p) => ({ id: p.id, name: p.name, crew: personOn(p, today).crew })).sort((a, b) => a.name.localeCompare(b.name))}
-        onClose={onAdded} onDone={(m) => { onAdded(); setNotice(m); load(); }} />}
+        onClose={() => { setAddFor(null); onAdded(); }} onDone={(m) => { setAddFor(null); onAdded(); setNotice(m); load(); }} />}
     </div>
   );
 }
 
 /** One person's whole leave plan: every leave of this year and next (back-to-back records joined), with the Oracle status. */
-function PersonLeavesSheet({ person, absences, today, onClose, onChange }: { person: MpPerson; absences: MpAbsence[]; today: string; onClose: () => void; onChange: (records: MpAbsence[]) => void }) {
-  const leaves = useMemo(() => {
-    const mine = absences.filter((a) => a.employeeId === person.id && (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false).sort((a, b) => a.start.localeCompare(b.start));
-    const out: { start: string; end: string; codes: string[]; oracle: OracleStatus | undefined; records: MpAbsence[] }[] = [];
-    const rank: OracleStatus[] = ['rejected', 'not_submitted', 'submitted', 'approved'];
-    for (const a of mine) {
-      const last = out[out.length - 1];
-      const code = a.typeShort ?? a.typeCode ?? '';
-      if (last && a.start <= addDaysIso(last.end, 1)) {
-        if (a.end > last.end) last.end = a.end;
-        last.records.push(a);
-        if (code && !last.codes.includes(code)) last.codes.push(code);
-        if (a.oracle && (!last.oracle || rank.indexOf(a.oracle) < rank.indexOf(last.oracle))) last.oracle = a.oracle;
-      } else out.push({ start: a.start, end: a.end, codes: code ? [code] : [], oracle: a.oracle, records: [a] });
-    }
-    return out;
-  }, [absences, person.id]);
+function PersonLeavesSheet({ person, absences, today, onClose, onChange, isHead }: { person: MpPerson; absences: MpAbsence[]; today: string; onClose: () => void; onChange: (leave: MergedLeave) => void; isHead: boolean }) {
+  const leaves = useMemo(() => mergedLeaves(absences, person.id), [absences, person.id]);
   const days = (l: { start: string; end: string }) => Math.round((Date.parse(`${l.end}T00:00:00Z`) - Date.parse(`${l.start}T00:00:00Z`)) / 86400000) + 1;
   const years = [...new Set(leaves.map((l) => l.start.slice(0, 4)))];
   const c = personOn(person, today);
@@ -183,7 +174,7 @@ function PersonLeavesSheet({ person, absences, today, onClose, onChange }: { per
             <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-slate-400" />
           </Link>
         </div>
-        {leaves.length > 0 && <p className="text-[11px] text-slate-500">Tap a leave to change it (the employee asked to move it).</p>}
+        {leaves.length > 0 && <p className="text-[11px] text-slate-500">{isHead ? 'Tap a leave to change it (the employee asked to move it).' : 'Tap a leave to request a change from the Section Head.'}</p>}
         {leaves.length === 0 ? <p className="text-sm text-slate-500">No leave in the plan.</p> : years.map((y) => {
           const list = leaves.filter((l) => l.start.slice(0, 4) === y);
           return (
@@ -194,7 +185,7 @@ function PersonLeavesSheet({ person, absences, today, onClose, onChange }: { per
                   const past = l.end < today; const now = l.start <= today && today <= l.end;
                   return (
                     <li key={l.start}>
-                      <button type="button" onClick={() => onChange(l.records)} className={cx('flex w-full items-center gap-2 py-2 text-left', past && 'opacity-50')}>
+                      <button type="button" onClick={() => onChange(l)} className={cx('flex w-full items-center gap-2 py-2 text-left', past && 'opacity-50')}>
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center gap-1.5 text-sm font-medium text-slate-900">{l.codes.length > 0 && <span className="rounded bg-yellow-100 px-1 text-[10px] font-semibold text-yellow-900">{l.codes.join('+')}</span>}{range(l.start, l.end)}</span>
                           <span className="block text-xs text-slate-500">{days(l)} days · back {weekday(backOn(l))} {shortDate(backOn(l))}{now ? ' · on leave now' : past ? ' · done' : ''}</span>
@@ -313,25 +304,6 @@ function Row({ r, busy, onOpen, onDecide, onCancel }: { r: WorkRow; busy: boolea
       </> : null}
     </div>
   );
-}
-
-/** What moving a leave to `start`–`planEnd` does: duties of the person's crew that fall short, and Controllers off together. */
-function leaveImpact(person: MpPerson, records: MpAbsence[], inputs: ManpowerInputs, approvals: LeaveApproval[], start: string, planEnd: string, today: string) {
-  const ids = new Set(records.map((x) => x.id));
-  const first = records[0];
-  const moved: MpAbsence[] = [...inputs.absences.filter((a) => !ids.has(a.id)), { ...first, id: `${first.id}-new`, start, end: planEnd }];
-  const from = start < today ? today : start;
-  let short = 0;
-  for (const d of evaluateRange(from, planEnd, inputs.people, moved, inputs.rules, inputs.assignments)) {
-    const q = personOn(person, d.date); const c = q.crew && !q.dayDuty ? d.crews.find((x) => x.crew === q.crew) : undefined;
-    if (c?.working && c.confirmedShortage) short++;
-  }
-  const y = Number(today.slice(0, 4));
-  const clash = isControllerRole(person.role)
-    ? checkControllerLeave(inputs.people, moved, approvals, [y, y + 1]).overlaps.filter((o) => !o.approval && (o.a.ids.includes(`${first.id}-new`) || o.b.ids.includes(`${first.id}-new`)))
-      .map((o) => inputs.people.find((p) => p.id === (o.a.employeeId === person.id ? o.b.employeeId : o.a.employeeId))?.name ?? '')
-    : [];
-  return { short, clash };
 }
 
 /** Save new dates over the records of one leave (joined back-to-back parts: only the first and the last part can move). Returns the record ids. */
