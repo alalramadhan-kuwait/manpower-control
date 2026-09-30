@@ -2,9 +2,9 @@ import { ChevronRight, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { REQUEST_TYPE_LABEL } from '@/core/requests';
-import { fetchChangeRequests, isChangeOpen, type ChangeRequest } from '@/data/changeRequests';
+import { countOpenChangeRequests, fetchChangeRequests, isChangeOpen, type ChangeRequest } from '@/data/changeRequests';
 import { fetchDirectory } from '@/data/queries';
-import { fetchRequests, isOpen, type LeaveRequest } from '@/data/requests';
+import { countOpenRequests, fetchRequests, isOpen, type LeaveRequest } from '@/data/requests';
 import type { EmployeeDirectoryRow, UserProfile } from '@/data/types';
 import { Button, Card, EmptyState, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components';
 import { CrewBadge, isCrew } from '@/ui/crew';
@@ -23,6 +23,14 @@ export default function RequestsPage({ profile }: { profile: UserProfile }) {
   const [params, setParams] = useSearchParams();
   const view = params.get('view') === 'forms' || params.get('tab') === 'decided' ? 'forms' : 'leave';
   const [adding, setAdding] = useState(false);
+  // open requests (forms and reschedule requests) wait in the Forms tab: say so on the tab and on the Leave tab
+  const [open, setOpen] = useState(0);
+  useEffect(() => {
+    const load = () => Promise.all([countOpenRequests(), countOpenChangeRequests()]).then(([a, b]) => setOpen(a + b)).catch(() => setOpen(0));
+    load();
+    window.addEventListener('requests-changed', load);
+    return () => window.removeEventListener('requests-changed', load);
+  }, []);
   return (
     <div>
       <PageHeader title="Requests" info={<div className="space-y-2 text-sm text-slate-700">
@@ -36,9 +44,14 @@ export default function RequestsPage({ profile }: { profile: UserProfile }) {
       <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
         {(['leave', 'forms'] as const).map((t) => (
           <button key={t} type="button" onClick={() => setParams(t === 'leave' ? {} : { view: t }, { replace: true })}
-            className={cx('min-h-9 rounded-lg font-medium', view === t ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{t === 'leave' ? 'Leave · 14 days' : 'Forms'}</button>
+            className={cx('min-h-9 rounded-lg font-medium', view === t ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{t === 'leave' ? 'Leave · 14 days' : <>Forms{open > 0 && <span className="ml-1.5 rounded-full bg-brand-700 px-1.5 text-[11px] font-bold text-white">{open}</span>}</>}</button>
         ))}
       </div>
+      {view === 'leave' && open > 0 && (
+        <button type="button" onClick={() => setParams({ view: 'forms' }, { replace: true })} className="mb-3 flex w-full items-center justify-between gap-2 rounded-xl bg-amber-50 px-3 py-2 text-left text-sm text-amber-900 ring-1 ring-amber-300">
+          <span><b>{open} {open === 1 ? 'request is' : 'requests are'} waiting</b> {profile.role_code === 'section_head' ? 'for your decision' : 'for the Section Head'} in Forms</span><ChevronRight className="h-4 w-4 shrink-0" />
+        </button>
+      )}
       {view === 'leave' ? <LeaveWorklist adding={adding} onAdded={() => setAdding(false)} isHead={profile.role_code === 'section_head'} /> : <Forms isHead={profile.role_code === 'section_head'} />}
     </div>
   );
