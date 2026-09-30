@@ -1,10 +1,10 @@
 // Requests › Leave: every leave running today or starting in the next 30 days, one row per leave, with what the
 // Oracle HR request should say. Approve / Reject records the Oracle decision; tap a row to check or edit the dates.
-import { AlertTriangle, CalendarClock, Check, ChevronRight, Copy, Trash2, X } from 'lucide-react';
+import { AlertTriangle, CalendarClock, Check, ChevronDown, ChevronRight, Copy, Search, Trash2, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { checkControllerLeave, isControllerRole, type LeaveApproval } from '@/core/controllers/leaveRules';
-import { evaluateRange, personOn, type MpAbsence } from '@/core/manpower';
+import { evaluateRange, personOn, type MpAbsence, type MpPerson } from '@/core/manpower';
 import { ORACLE_LABEL, type OracleStatus } from '@/core/oracle';
 import { expectedRequest, isRestDay, matchesPlan, oracleDays } from '@/core/oracle/expected';
 import { buildWorklist, type WorkRow } from '@/core/oracle/worklist';
@@ -47,6 +47,10 @@ export function LeaveWorklist({ adding, onAdded }: { adding: boolean; onAdded: (
   const [cancelling, setCancelling] = useState<WorkRow | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [person, setPerson] = useState<MpPerson | null>(null);
+  const [folded, setFolded] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('requests.folded') ?? '[]') as string[]; } catch { return []; } });
+  const fold = (title: string) => setFolded((f) => { const n = f.includes(title) ? f.filter((x) => x !== title) : [...f, title]; try { localStorage.setItem('requests.folded', JSON.stringify(n)); } catch { /* not saved */ } return n; });
   const load = useCallback(() => Promise.all([fetchManpowerInputs(`${y}-01-01`, `${y + 1}-12-31`), fetchLeaveApprovals(), fetchReference(), fetchSdMembers(`${y}-01-01`, `${y + 1}-12-31`)])
     .then(([inputs, approvals, ref, sd]) => setData({ inputs, approvals, types: ref.absenceTypes, sd })).catch(setError), [y]);
   useEffect(() => { load(); }, [load]);
@@ -61,6 +65,13 @@ export function LeaveWorklist({ adding, onAdded }: { adding: boolean; onAdded: (
   const byPos = (p: Pos, list: WorkRow[]) => list.filter(POS.find((x) => x.key === p)!.of);
   const shown = byPos(pos, byShift(shift));
   const now = shown.filter((r) => r.now), soon = shown.filter((r) => !r.now);
+  const q = query.trim().toLowerCase();
+  const matches = useMemo(() => {
+    if (!data || !q) return [];
+    const words = q.split(/\s+/);
+    return data.inputs.people.filter((p) => { const hay = `${p.name} ${p.employeeNumber}`.toLowerCase(); return words.every((w) => hay.includes(w)); })
+      .sort((a, b) => a.name.localeCompare(b.name)).slice(0, 8);
+  }, [data, q]);
 
   async function decide(r: WorkRow, status: OracleStatus) {
     setBusy(r.key); setNotice(null);
@@ -73,6 +84,29 @@ export function LeaveWorklist({ adding, onAdded }: { adding: boolean; onAdded: (
   const chip = (on: boolean) => cx('shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-medium ring-1', on ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-600 ring-slate-200');
   return (
     <div>
+      <div className="relative mb-2">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <input type="text" inputMode="search" autoComplete="off" className="input" style={{ paddingLeft: 36, paddingRight: 40 }} placeholder="Search an employee to see their leave plan" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Find an employee" />
+        {query && <button type="button" aria-label="Clear the search" onClick={() => setQuery('')} className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500"><X className="h-4 w-4" /></button>}
+      </div>
+      {q && (
+        <Card className="mb-3 py-1">
+          {matches.length === 0 ? <p className="py-2 text-sm text-slate-500">Nobody found.</p> : (
+            <ul className="divide-y divide-slate-100">
+              {matches.map((p) => { const c = personOn(p, today); return (
+                <li key={p.id}>
+                  <button type="button" onClick={() => setPerson(p)} className="flex w-full items-center gap-2 py-2 text-left">
+                    {c.dayDuty || !c.crew ? <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-600">Day</span> : <CrewBadge crew={c.crew} size="sm" />}
+                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-900">{p.name}</span>
+                      <span className="block truncate text-xs text-slate-500">#{p.employeeNumber} · {ROLE_LABEL[p.role ?? ''] ?? ''}</span></span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                  </button>
+                </li>
+              ); })}
+            </ul>
+          )}
+        </Card>
+      )}
       <div className="-mx-4 mb-1.5 flex gap-1 overflow-x-auto px-4 [scrollbar-width:none]">
         {(['all', ...CREWS, 'DAY'] as Shift[]).map((s) => { const n = byPos(pos, byShift(s)).length; return (
           <button key={s} type="button" aria-pressed={shift === s} onClick={() => setShift(s)} className={chip(shift === s)}>{s === 'all' ? 'All' : s === 'DAY' ? 'Day' : s} <span className="opacity-70">{n}</span></button>
@@ -85,24 +119,91 @@ export function LeaveWorklist({ adding, onAdded }: { adding: boolean; onAdded: (
       </div>
       {notice && <p className="mb-2 flex items-center gap-1 text-sm text-status-green"><Check className="h-4 w-4" />{notice}</p>}
 
-      {[{ title: 'On leave now', list: now }, { title: `Starting in ${DAYS} days`, list: soon }].map((g) => (
-        <Card key={g.title} className="mb-3 py-1.5">
-          <h2 className="pt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{g.title} · {g.list.length}{g.list.some((r) => r.oracle !== 'approved') ? ` · ${g.list.filter((r) => r.oracle !== 'approved').length} to decide` : ''}</h2>
-          {g.list.length === 0 ? <p className="py-2 text-sm text-slate-500">None</p> : (
-            // every leave stays listed (approved ones faded, after the ones to decide) so nothing is hidden
-            <div className="divide-y divide-slate-100">
-              {g.list.map((r) => <Row key={r.key} r={r} busy={busy === r.key} onOpen={() => setOpen(r)} onDecide={(s) => decide(r, s)} onCancel={() => setCancelling(r)} />)}
-            </div>
-          )}
-        </Card>
-      ))}
+      {[{ title: 'On leave now', list: now }, { title: `Starting in ${DAYS} days`, list: soon }].map((g) => {
+        const shut = folded.includes(g.title);
+        return (
+          <Card key={g.title} className="mb-3 py-1.5">
+            <button type="button" aria-expanded={!shut} onClick={() => fold(g.title)} className="flex w-full items-center justify-between gap-2 pt-1 text-left">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{g.title} · {g.list.length}{g.list.some((r) => r.oracle !== 'approved') ? ` · ${g.list.filter((r) => r.oracle !== 'approved').length} to decide` : ''}</h2>
+              <ChevronDown className={cx('h-4 w-4 shrink-0 text-slate-500 transition-transform', shut && '-rotate-90')} />
+            </button>
+            {shut ? null : g.list.length === 0 ? <p className="py-2 text-sm text-slate-500">None</p> : (
+              // every leave stays listed (approved ones faded, after the ones to decide) so nothing is hidden
+              <div className="divide-y divide-slate-100">
+                {g.list.map((r) => <Row key={r.key} r={r} busy={busy === r.key} onOpen={() => setOpen(r)} onDecide={(s) => decide(r, s)} onCancel={() => setCancelling(r)} />)}
+              </div>
+            )}
+          </Card>
+        );
+      })}
 
+      {person && <PersonLeavesSheet person={person} absences={data.inputs.absences} today={today} onClose={() => setPerson(null)} />}
       {open && <EditSheet r={open} inputs={data.inputs} approvals={data.approvals} today={today} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); setNotice(m); load(); }} />}
       {cancelling && <CancelSheet r={cancelling} onClose={() => setCancelling(null)} onDone={(m) => { setCancelling(null); setNotice(m); load(); }} />}
       {adding && <LeaveSheet target={{ kind: 'add' }} types={data.types}
         people={data.inputs.people.map((p) => ({ id: p.id, name: p.name, crew: personOn(p, today).crew })).sort((a, b) => a.name.localeCompare(b.name))}
         onClose={onAdded} onDone={(m) => { onAdded(); setNotice(m); load(); }} />}
     </div>
+  );
+}
+
+/** One person's whole leave plan: every leave of this year and next (back-to-back records joined), with the Oracle status. */
+function PersonLeavesSheet({ person, absences, today, onClose }: { person: MpPerson; absences: MpAbsence[]; today: string; onClose: () => void }) {
+  const leaves = useMemo(() => {
+    const mine = absences.filter((a) => a.employeeId === person.id && (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false).sort((a, b) => a.start.localeCompare(b.start));
+    const out: { start: string; end: string; codes: string[]; oracle: OracleStatus | undefined }[] = [];
+    const rank: OracleStatus[] = ['rejected', 'not_submitted', 'submitted', 'approved'];
+    for (const a of mine) {
+      const last = out[out.length - 1];
+      const code = a.typeShort ?? a.typeCode ?? '';
+      if (last && a.start <= addDaysIso(last.end, 1)) {
+        if (a.end > last.end) last.end = a.end;
+        if (code && !last.codes.includes(code)) last.codes.push(code);
+        if (a.oracle && (!last.oracle || rank.indexOf(a.oracle) < rank.indexOf(last.oracle))) last.oracle = a.oracle;
+      } else out.push({ start: a.start, end: a.end, codes: code ? [code] : [], oracle: a.oracle });
+    }
+    return out;
+  }, [absences, person.id]);
+  const days = (l: { start: string; end: string }) => Math.round((Date.parse(`${l.end}T00:00:00Z`) - Date.parse(`${l.start}T00:00:00Z`)) / 86400000) + 1;
+  const years = [...new Set(leaves.map((l) => l.start.slice(0, 4)))];
+  const c = personOn(person, today);
+  const crewOn = (d: string) => { const x = personOn(person, d); return x.dayDuty ? null : x.crew; };
+  const backOn = (l: { start: string; end: string }) => expectedRequest(l.start, l.end, crewOn)?.backOn ?? addDaysIso(l.end, 1);
+  return (
+    <BottomSheet open onClose={onClose} title={person.name}>
+      <div className="space-y-3">
+        <div className="-mt-2 flex items-center gap-2 text-sm">
+          <CopyNumber value={person.employeeNumber} />
+          <Link to={`/employees/${person.id}`} className="flex min-w-0 flex-1 items-center gap-2">
+            {c.crew && !c.dayDuty && <CrewBadge crew={c.crew} size="sm" />}
+            <span className="truncate text-slate-500">{ROLE_LABEL[person.role ?? ''] ?? ''}{person.grade ? ` · Grade ${person.grade}` : ''}</span>
+            <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-slate-400" />
+          </Link>
+        </div>
+        {leaves.length === 0 ? <p className="text-sm text-slate-500">No leave in the plan.</p> : years.map((y) => {
+          const list = leaves.filter((l) => l.start.slice(0, 4) === y);
+          return (
+            <section key={y}>
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{y} · {list.length} {list.length === 1 ? 'leave' : 'leaves'} · {list.reduce((n, l) => n + days(l), 0)} days</h3>
+              <ul className="divide-y divide-slate-100 rounded-xl bg-slate-50 px-3 ring-1 ring-slate-200">
+                {list.map((l) => {
+                  const past = l.end < today; const now = l.start <= today && today <= l.end;
+                  return (
+                    <li key={l.start} className={cx('flex items-center gap-2 py-2', past && 'opacity-50')}>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-1.5 text-sm font-medium text-slate-900">{l.codes.length > 0 && <span className="rounded bg-yellow-100 px-1 text-[10px] font-semibold text-yellow-900">{l.codes.join('+')}</span>}{range(l.start, l.end)}</span>
+                        <span className="block text-xs text-slate-500">{days(l)} days · back {weekday(backOn(l))} {shortDate(backOn(l))}{now ? ' · on leave now' : past ? ' · done' : ''}</span>
+                      </span>
+                      {l.oracle && <OraclePill status={l.oracle} small />}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          );
+        })}
+      </div>
+    </BottomSheet>
   );
 }
 
