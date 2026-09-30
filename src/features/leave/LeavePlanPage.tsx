@@ -1,7 +1,7 @@
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Pencil, Plus, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { coverOfBlock, daysInYearRange } from '@/core/calendar';
+import { MONTH_NAMES, coverOfBlock, daysInYearRange, monthEnd, monthStart, monthWeeks, shiftMonth } from '@/core/calendar';
 import { firstDayBack } from '@/core/leave';
 import { isWorkingDay, type Crew } from '@/core/roster';
 import { fetchLeavePlan, type LeavePlanData } from '@/data/leave';
@@ -30,6 +30,11 @@ export default function LeavePlanPage() {
   const today = localToday();
   const year = Number(params.get('year')) || Number(today.slice(0, 4));
   const filter = (params.get('crew') ?? 'all') as Group | 'all';
+  // Year: leave days in each month. Month: one month by weeks, each day of the week shown
+  const mode = params.get('view') === 'month' ? 'month' : 'year';
+  const thisMonthNo = today.slice(0, 4) === String(year) ? Number(today.slice(5, 7)) : 0;
+  const month = Math.min(12, Math.max(1, Number(params.get('month')) || thisMonthNo || 1));
+  const goMonth = (by: number) => { const [y, m] = shiftMonth(year, month, by); const n = new URLSearchParams(params); n.set('year', String(y)); n.set('month', String(m)); setParams(n, { replace: true }); };
   const setParam = (k: string, v: string | null) => { const n = new URLSearchParams(params); if (v === null) n.delete(k); else n.set(k, v); setParams(n, { replace: true }); };
 
   const [data, setData] = useState<LeavePlanData | null>(null);
@@ -57,7 +62,9 @@ export default function LeavePlanPage() {
       const rows = members.map((p) => {
         const all = leavesOf.get(p.id) ?? [];
         const current = all.filter(counts).sort((a, b) => a.start_date.localeCompare(b.start_date));
-        const days = current.reduce((n, l) => n + daysInYearRange(l.start_date, l.end_date, year), 0);
+        const days = mode === 'month'
+          ? current.reduce((n, l) => (l.start_date <= monthEnd(year, month) && l.end_date >= monthStart(year, month) ? n + dayCount(l.start_date < monthStart(year, month) ? monthStart(year, month) : l.start_date, l.end_date > monthEnd(year, month) ? monthEnd(year, month) : l.end_date) : n), 0)
+          : current.reduce((n, l) => n + daysInYearRange(l.start_date, l.end_date, year), 0);
         const onLeave = current.some((l) => l.start_date <= today && today <= l.end_date);
         return { p, all, current, days, onLeave };
       });
@@ -65,8 +72,16 @@ export default function LeavePlanPage() {
     }).filter((x) => x.rows.length);
     const sheetPeople: SheetPerson[] = data.people.map((p) => ({ id: p.id, name: p.display_name, crew: isCrew(p.crew_code) ? p.crew_code : null })).sort((a, b) => a.name.localeCompare(b.name));
     return { groups, sheetPeople };
-  }, [data, filter, query, today, year]);
+  }, [data, filter, mode, month, query, today, year]);
 
+  const weeks = useMemo(() => monthWeeks(year, month), [year, month]);
+  // types on leave somewhere in the month shown (for the colour key)
+  const legend = useMemo(() => {
+    if (!data || mode !== 'month') return [];
+    const from = monthStart(year, month), to = monthEnd(year, month);
+    const used = new Set(data.leaves.filter((l) => counts(l) && l.start_date <= to && l.end_date >= from).map((l) => l.absence_type_code));
+    return data.types.filter((t) => used.has(t.code));
+  }, [data, mode, month, year]);
   const thisMonth = today.slice(0, 4) === String(year) ? Number(today.slice(5, 7)) - 1 : -1;
   const done = (m: string) => { setSheet(null); setFlash(m); load(); };
 
@@ -75,10 +90,16 @@ export default function LeavePlanPage() {
       <PageHeader title="Leave plan" info="The current plan: monthly sheets, PV plan and leave entered by hand. Tap a person for dates and history."
         action={<Button className="min-h-10 shrink-0 px-3" onClick={() => setSheet({ kind: 'add' })}><Plus className="h-4 w-4" /> Add</Button>} />
 
+      <div className="mb-2 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
+        {(['year', 'month'] as const).map((m) => (
+          <button key={m} type="button" aria-pressed={mode === m} onClick={() => setParam('view', m === 'year' ? null : m)}
+            className={cx('min-h-9 rounded-lg font-medium', mode === m ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{m === 'year' ? 'Year' : 'Month by weeks'}</button>
+        ))}
+      </div>
       <div className="mb-3 flex items-center gap-2">
-        <button aria-label="Previous year" onClick={() => setParam('year', String(year - 1))} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-300"><ChevronLeft className="h-5 w-5" /></button>
-        <div className="flex-1 text-center text-lg font-semibold text-brand-800">{year}</div>
-        <button aria-label="Next year" onClick={() => setParam('year', String(year + 1))} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-300"><ChevronRight className="h-5 w-5" /></button>
+        <button aria-label={mode === 'month' ? 'Previous month' : 'Previous year'} onClick={() => (mode === 'month' ? goMonth(-1) : setParam('year', String(year - 1)))} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-300"><ChevronLeft className="h-5 w-5" /></button>
+        <div className="flex-1 text-center text-lg font-semibold text-brand-800">{mode === 'month' ? `${MONTH_NAMES[month - 1]} ${year}` : year}</div>
+        <button aria-label={mode === 'month' ? 'Next month' : 'Next year'} onClick={() => (mode === 'month' ? goMonth(1) : setParam('year', String(year + 1)))} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-300"><ChevronRight className="h-5 w-5" /></button>
         <Link to="/calendar" className="flex h-10 shrink-0 items-center gap-1 rounded-xl bg-white px-3 text-sm font-medium text-brand-700 ring-1 ring-slate-300"><CalendarDays className="h-4 w-4" /> Calendar</Link>
       </div>
 
@@ -106,7 +127,9 @@ export default function LeavePlanPage() {
               </div>
               <div className="flex items-end gap-1.5 px-2 pb-1 text-[10px] text-slate-400">
                 <span className="w-[4.5rem] shrink-0 sm:w-40" />
-                <span className="grid flex-1 grid-cols-12 gap-0.5">{MONTH_LETTERS.map((m, i) => <span key={i} className={cx('text-center', i === thisMonth && 'font-bold text-brand-700')}>{m}</span>)}</span>
+                {mode === 'month'
+                  ? <span className="flex flex-1 gap-1.5">{weeks.map((w, i) => <span key={i} className="flex-1 text-center leading-tight">{weekLabel(w)}</span>)}</span>
+                  : <span className="grid flex-1 grid-cols-12 gap-0.5">{MONTH_LETTERS.map((m, i) => <span key={i} className={cx('text-center', i === thisMonth && 'font-bold text-brand-700')}>{m}</span>)}</span>}
                 <span className="w-6 shrink-0 text-right">days</span>
               </div>
               {/* rows by position, a thin line between the groups; longest-serving first */}
@@ -122,7 +145,9 @@ export default function LeavePlanPage() {
                             <span className="block text-[11px] font-medium leading-tight text-slate-800 [overflow-wrap:anywhere] sm:text-sm">{r.p.display_name}</span>
                             <span className="block text-[9px] tabular-nums leading-tight text-slate-400">#{r.p.employee_number}</span>
                           </span>
-                          <MonthCells year={year} blocks={r.current} thisMonth={thisMonth} />
+                          {mode === 'month'
+                            ? <WeekCells weeks={weeks} blocks={r.current} today={today} shortOf={(c) => data?.types.find((t) => t.code === c)?.short_code} />
+                            : <MonthCells year={year} blocks={r.current} thisMonth={thisMonth} />}
                           <span className="w-6 shrink-0 text-right text-[11px] font-semibold tabular-nums text-slate-700">{r.days || '—'}</span>
                         </button>
                         {open === r.p.id && data && <PersonDetail row={r} year={year} data={data} today={today} onEdit={(rec) => setSheet({ kind: 'edit', record: rec })} onAdd={() => setSheet({ kind: 'add', employeeId: r.p.id })} />}
@@ -133,7 +158,12 @@ export default function LeavePlanPage() {
               ))}
             </Card>
           ))}
-          <p className="px-1 text-xs text-slate-500">Leave days in each month · darker = more days · this month outlined · tap a name for the dates</p>
+          {mode === 'month'
+            ? <div className="px-1 text-xs text-slate-500">
+                <p>Each week Sun → Sat, one box a day · coloured = on leave · Friday shaded · today outlined · tap a name for the dates</p>
+                {legend.length > 0 && <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">{legend.map((t) => <span key={t.code} className="inline-flex items-center gap-1"><span className={cx('h-2.5 w-2.5 rounded-[3px]', leaveToneShort(t.short_code).dot)} />{t.short_code} {t.label}</span>)}</p>}
+              </div>
+            : <p className="px-1 text-xs text-slate-500">Leave days in each month · darker = more days · this month outlined · tap a name for the dates</p>}
         </div>
       )}
       {sheet && view && data && <LeaveSheet target={sheet} people={view.sheetPeople} types={data.types} onClose={() => setSheet(null)} onDone={done} />}
@@ -161,6 +191,29 @@ function MonthCells({ year, blocks, thisMonth }: { year: number; blocks: LeaveRe
         <span key={m} className={cx('flex h-6 items-center justify-center overflow-hidden rounded-[3px] text-[9px] font-bold tabular-nums tracking-tighter',
           n === 0 ? 'bg-slate-100 text-transparent' : n < 10 ? 'bg-yellow-100 text-yellow-900' : n < 20 ? 'bg-yellow-300 text-yellow-950' : 'bg-amber-500 text-amber-950',
           m < thisMonth && 'opacity-60', m === thisMonth && 'ring-1 ring-brand-700')}>{n || '·'}</span>
+      ))}
+    </span>
+  );
+}
+
+/** "1–3", "4–10" … the dates of a week that fall in the month. */
+function weekLabel(w: (string | null)[]) {
+  const d = w.filter((x): x is string => !!x).map((x) => Number(x.slice(8)));
+  return d.length === 1 ? String(d[0]) : `${d[0]}–${d[d.length - 1]}`;
+}
+
+/** The weeks of one month: seven small boxes per week (Sun → Sat), coloured by the leave type on that day. */
+function WeekCells({ weeks, blocks, today, shortOf }: { weeks: (string | null)[][]; blocks: LeaveRecord[]; today: string; shortOf: (code: string | null) => string | null | undefined }) {
+  return (
+    <span className="flex flex-1 gap-1.5" aria-hidden>
+      {weeks.map((w, i) => (
+        <span key={i} className="flex flex-1 gap-px">
+          {w.map((d, j) => {
+            const l = d ? blocks.find((x) => x.start_date <= d && d <= x.end_date) : null;
+            return <span key={j} title={d && l ? `${shortDate(d)} · ${shortOf(l.absence_type_code) ?? 'Leave'}` : undefined}
+              className={cx('h-6 flex-1 rounded-[2px]', !d ? 'bg-transparent' : l ? leaveToneShort(shortOf(l.absence_type_code)).dot : j === 5 ? 'bg-slate-200' : 'bg-slate-100', d === today && 'ring-1 ring-brand-700', d && d < today && 'opacity-60')} />;
+          })}
+        </span>
       ))}
     </span>
   );
