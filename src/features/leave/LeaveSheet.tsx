@@ -6,6 +6,7 @@ import type { AbsenceType, LeaveRecord } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Field, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
+import { leaveTone } from '@/ui/leaveTypes';
 import { OraclePill } from '@/ui/oracle';
 
 export interface SheetPerson { id: string; name: string; crew: Crew | null }
@@ -103,13 +104,18 @@ export function LeaveSheet({ target, people, types, onClose, onDone }: { target:
             <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
               {(['leave', 'sick'] as const).map((g) => (
                 <button key={g} type="button" aria-pressed={group === g} onClick={() => { setGroup(g); if (groupOf(type) !== g) setType(''); }}
-                  className={cx('min-h-9 rounded-lg font-medium', group === g ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{GROUP_LABEL[g]}</button>
+                  className={cx('min-h-9 rounded-lg font-medium', group === g ? (g === 'sick' ? 'bg-red-600 text-white shadow-sm' : 'bg-brand-700 text-white shadow-sm') : g === 'sick' ? 'text-red-700' : 'text-brand-700')}>{GROUP_LABEL[g]}</button>
               ))}
             </div>
-            <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
-              <option value="">Choose…</option>
-              {inGroup.map((t) => <option key={t.code} value={t.code}>{t.short_code} · {t.label}</option>)}
-            </select>
+            <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Leave type">
+              {inGroup.map((t) => { const c = leaveTone(t.code); const on = type === t.code; return (
+                <button key={t.code} type="button" role="radio" aria-checked={on} onClick={() => setType(t.code)}
+                  className={cx('flex min-h-11 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-medium ring-1', on ? c.on : c.chip)}>
+                  <span className={cx('h-2.5 w-2.5 shrink-0 rounded-full', on ? 'bg-white' : c.dot)} />
+                  <span className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-wide opacity-80">{t.short_code}</span><span className="block leading-tight">{t.label}</span></span>
+                </button>
+              ); })}
+            </div>
           </div>
         </Field>
         <div className="grid grid-cols-2 gap-3">

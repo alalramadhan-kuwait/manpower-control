@@ -23,6 +23,7 @@ import { BottomSheet, Button, Card, ErrorBox, Field, Spinner, cx } from '@/ui/co
 import { CrewBadge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { OraclePill } from '@/ui/oracle';
+import { LeaveCodes } from '@/ui/LeaveCodes';
 
 const DAYS = 14;
 const ROLE_LABEL: Record<string, string> = { controller: 'Shift Controller', vr_controller: 'VR Controller', morning_controller: 'Morning Controller', panel_operator: 'Panel Operator', field_operator: 'Field Operator' };
@@ -187,7 +188,7 @@ function PersonLeavesSheet({ person, absences, today, onClose, onChange, isHead 
                     <li key={l.start}>
                       <button type="button" onClick={() => onChange(l)} className={cx('flex w-full items-center gap-2 py-2 text-left', past && 'opacity-50')}>
                         <span className="min-w-0 flex-1">
-                          <span className="flex items-center gap-1.5 text-sm font-medium text-slate-900">{l.codes.length > 0 && <span className="rounded bg-yellow-100 px-1 text-[10px] font-semibold text-yellow-900">{l.codes.join('+')}</span>}{range(l.start, l.end)}</span>
+                          <span className="flex items-center gap-1.5 text-sm font-medium text-slate-900"><LeaveCodes codes={l.codes} />{range(l.start, l.end)}</span>
                           <span className="block text-xs text-slate-500">{days(l)} days · back {weekday(backOn(l))} {shortDate(backOn(l))}{now ? ' · on leave now' : past ? ' · done' : ''}</span>
                         </span>
                         {l.oracle && <OraclePill status={l.oracle} small />}
@@ -283,7 +284,7 @@ function Row({ r, busy, onOpen, onDecide, onCancel }: { r: WorkRow; busy: boolea
             {r.role === 'vr_controller' && <span className="text-[10px] font-semibold text-slate-400">VR</span>}
             <OraclePill status={r.oracle} small />
           </span>
-          <span className={cx('block truncate text-xs text-slate-600', fade)}>{r.codes.length > 0 && <span className="mr-1 rounded bg-yellow-100 px-1 text-[10px] font-semibold text-yellow-900">{r.codes.join('+')}</span>}{e ? <><b className="font-semibold text-slate-800">{range(e.start, e.end)}</b> · {e.days}d · back {weekday(e.backOn)} {shortDate(e.backOn)}</> : 'Rest days only'}</span>
+          <span className={cx('block truncate text-xs text-slate-600', fade)}><LeaveCodes codes={r.codes} />{e ? <><b className="font-semibold text-slate-800">{range(e.start, e.end)}</b> · {e.days}d · back {weekday(e.backOn)} {shortDate(e.backOn)}</> : 'Rest days only'}</span>
           {(r.oracle === 'rejected' || r.shortDuties > 0 || r.clashWith.length > 0 || r.extraNth || r.sdTeam) && (
             <span className="flex flex-wrap gap-x-2 text-[11px] font-semibold">
               {r.oracle === 'rejected' && <span className="text-status-red">Cancel or reschedule</span>}

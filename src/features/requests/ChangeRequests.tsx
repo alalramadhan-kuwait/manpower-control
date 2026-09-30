@@ -14,6 +14,7 @@ import { CrewBadge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { OraclePill } from '@/ui/oracle';
 import { leaveImpact, mergedLeaves, type LeaveImpact, type MergedLeave } from './leaveTools';
+import { LeaveCodes } from '@/ui/LeaveCodes';
 
 const ROLE_LABEL: Record<string, string> = { controller: 'Shift Controller', vr_controller: 'VR Controller', morning_controller: 'Morning Controller', panel_operator: 'Panel Operator', field_operator: 'Field Operator' };
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
@@ -152,7 +153,7 @@ export function NewRequestFlow({ inputs, approvals, today, onClose, onAddLeave, 
               <li key={l.start}>
                 <button type="button" onClick={() => setLeave(l)} className={cx('flex w-full items-center gap-2 py-2 text-left', over && 'opacity-50')}>
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1.5 text-sm font-medium text-slate-900">{l.codes.length > 0 && <span className="rounded bg-yellow-100 px-1 text-[10px] font-semibold text-yellow-900">{l.codes.join('+')}</span>}{range(l.start, l.end)} <span className="text-xs font-normal text-slate-500">{l.start.slice(0, 4)}</span></span>
+                    <span className="flex items-center gap-1.5 text-sm font-medium text-slate-900"><LeaveCodes codes={l.codes} />{range(l.start, l.end)} <span className="text-xs font-normal text-slate-500">{l.start.slice(0, 4)}</span></span>
                     <span className="block text-xs text-slate-500">{daysIn(l.start, l.end)} days{over ? ' · done' : l.start <= today ? ' · on leave now' : ''}</span>
                   </span>
                   {l.oracle && <OraclePill status={l.oracle} small />}

@@ -11,6 +11,7 @@ import { Card, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components';
 import { CrewBadge, isCrew } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { ORACLE_DOT, ORACLE_PILL } from '@/ui/oracle';
+import { leaveToneShort } from '@/ui/leaveTypes';
 
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}${a.slice(0, 4) !== b.slice(0, 4) ? ` ${b.slice(0, 4)}` : ''}`);
 
@@ -101,7 +102,7 @@ export default function OracleHrPage() {
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center gap-1.5"><span className="truncate text-sm font-medium text-slate-900">{p.display_name}</span>{isCrew(p.crew_code) && <CrewBadge crew={p.crew_code} size="sm" />}</span>
                           <span className="block truncate text-xs text-slate-500">
-                            {r.absence_types?.short_code && <span className="mr-1 rounded bg-yellow-100 px-1 font-semibold text-yellow-900">{r.absence_types.short_code}</span>}
+                            {r.absence_types?.short_code && <span className={`mr-1 rounded px-1 font-semibold ring-1 ${leaveToneShort(r.absence_types.short_code).chip}`}>{r.absence_types.short_code}</span>}
                             {range(r.start_date, r.end_date)}{r.oracle_ref ? ` · #${r.oracle_ref}` : ''}
                           </span>
                         </span>

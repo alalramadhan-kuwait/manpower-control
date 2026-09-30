@@ -17,6 +17,7 @@ import { bySeniority } from '@/ui/positions';
 import { DaySheet } from './DaySheet';
 import { EventSheet, HolidaySheet } from './InfoSheets';
 import { AttentionList, Legend, PILL, Section, SummaryTiles, ViewToggle, calendarBars } from './parts';
+import { leaveToneShort } from '@/ui/leaveTypes';
 
 const range = (a: string, b: string) => {
   if (a === b) return shortDate(a);
@@ -161,7 +162,7 @@ export function WeekView({ start, today, onWeek, onMonth }: { start: string; tod
                 {g.rows.map(({ block, person }) => (
                   <Link key={block.employeeId + block.start} to={`/employees/${person.id}`} className="flex items-center gap-1.5 py-1 pl-8 text-sm">
                     <OracleDot status={block.oracle} /><span className="min-w-0 flex-1 truncate text-slate-900">{person.name}</span>
-                    <span className="shrink-0 text-xs tabular-nums text-slate-500">{block.typeShort ? <span className="mr-1 rounded bg-yellow-100 px-1 font-semibold text-yellow-900">{block.typeShort}</span> : null}{range(block.start, block.end)}</span>
+                    <span className="shrink-0 text-xs tabular-nums text-slate-500">{block.typeShort ? <span className={`mr-1 rounded px-1 font-semibold ring-1 ${leaveToneShort(block.typeShort).chip}`}>{block.typeShort}</span> : null}{range(block.start, block.end)}</span>
                   </Link>
                 ))}
               </div>
