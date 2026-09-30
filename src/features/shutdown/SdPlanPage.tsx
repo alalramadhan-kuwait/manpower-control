@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { COVER_GRADE } from '@/core/controllers';
 import { evaluateRange, personOn, SD_TEAM, type MpAbsence, type MpAssignment, type MpPerson } from '@/core/manpower';
 import { CREWS, addDaysIso, type Crew } from '@/core/roster';
-import { FO_LEVEL_LABEL, SD_PO_MAX_GRADE, SD_SLOTS, SD_SLOT_LABEL, areasOf, groupOf, dayOvertime, dayShort, dayState, isRampDay, neighbours, memberHours, memberWorks, nextOffset, planDates, sdOperatorEligible, slotLabel, teamDay, cycleOf, type SdDay, type SdKind, type SdMember, type PhaseNeed, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
+import { FO_LEVEL_LABEL, SD_PO_MAX_GRADE, SD_SLOTS, SD_SLOT_LABEL, areasOf, groupOf, dayOvertime, dayShort, dayState, isDutyDay, isRampDay, neighbours, memberHours, memberWorks, nextOffset, planDates, sdOperatorEligible, slotLabel, teamDay, cycleOf, type SdDay, type SdKind, type SdMember, type PhaseNeed, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { fetchOperationPlan, schedulePeriod, type PeriodRow } from '@/data/modes';
 import { fetchDirectory } from '@/data/queries';
@@ -77,7 +77,9 @@ export default function SdPlanPage() {
     const crewImpact = CREWS.map((c) => ({ crew: c, short: results.filter((d) => d.crews.find((x) => x.crew === c)?.confirmedShortage).length,
       cover: results.filter((d) => { const x = d.crews.find((k) => k.crew === c); return x?.working && x.controller.finding === 'coverage_required'; }).length }));
     const hours = new Map(members.map((m) => [m.id, memberHours(plan, m, homeCrew(m.employeeId, plan.start))]));
-    const leaveDays = (m: SdMember) => dates.filter((d) => memberWorks(plan, m, d) && leaveOn(m.employeeId, d)).length;
+    // days of leave inside the member's shutdown days: the person's own duty days on a train shutdown (a rest day costs nothing),
+    // every day of a total turnaround; counted whether or not the day is still marked working (balancing marks leave days off)
+    const leaveDays = (m: SdMember) => dates.filter((d) => d >= m.start && d <= m.end && leaveOn(m.employeeId, d) && (plan.kind === 'total' || isDutyDay(homeCrew(m.employeeId, plan.start), d))).length;
     const teamDays = new Map(teams.map((t) => [t.id, dates.map((d) => ({ date: d, slots: teamDay(plan, t, members, d, leaveOn, data.phases) }))]));
     return { people, leaveOn, homeCrew, dates, crewImpact, hours, leaveDays, teamDays };
   }, [data]);
