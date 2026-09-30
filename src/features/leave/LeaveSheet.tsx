@@ -3,7 +3,7 @@ import { firstDayBack } from '@/core/leave';
 import { isValidIsoDate, type Crew } from '@/core/roster';
 import { cancelLeave, saveLeave } from '@/data/leave';
 import type { AbsenceType, LeaveRecord } from '@/data/types';
-import { BottomSheet, Button, ErrorBox, Field } from '@/ui/components';
+import { BottomSheet, Button, ErrorBox, Field, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { OraclePill } from '@/ui/oracle';
@@ -12,6 +12,13 @@ export interface SheetPerson { id: string; name: string; crew: Crew | null }
 export type LeaveTarget = { kind: 'add'; employeeId?: string; start?: string } | { kind: 'edit'; record: LeaveRecord };
 
 export const SOURCE_LABEL: Record<LeaveRecord['source_kind'], string> = { pv_schedule: 'PV plan', monthly_grid: 'Monthly sheet', manual: 'Entered by hand' };
+/** The two groups of the type picker: sick and medical absences, and every other leave. */
+type Group = 'leave' | 'sick';
+const SICK_TYPES = ['sick_leave', 'long_sick', 'medical_absence'];
+const GROUP_LABEL: Record<Group, string> = { leave: 'Leave', sick: 'Sick & medical' };
+/** Leave in the PV plan (planned, rescheduled) comes from the plan and its requests, not from adding leave by hand. */
+const PLAN_ONLY = ['annual_leave_planned', 'annual_leave_rescheduled'];
+const groupOf = (code: string | null | undefined): Group => (code && SICK_TYPES.includes(code) ? 'sick' : 'leave');
 const range = (s: string, e: string) => (s === e ? shortDate(s) : `${shortDate(s)} – ${shortDate(e)}${e.slice(0, 4) !== s.slice(0, 4) ? ` ${e.slice(0, 4)}` : ''}`);
 
 /**
@@ -29,7 +36,10 @@ export function LeaveSheet({ target, people, types, onClose, onDone }: { target:
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
 
   const person = people.find((p) => p.id === employee) ?? null;
-  const active = types.filter((t) => t.is_active || t.code === rec?.absence_type_code);
+  const [group, setGroup] = useState<Group>(groupOf(rec?.absence_type_code));
+  // adding by hand offers only leave outside the PV plan; correcting keeps every type (the record's own too)
+  const active = types.filter((t) => (t.is_active || t.code === rec?.absence_type_code) && (rec || !PLAN_ONLY.includes(t.code)));
+  const inGroup = active.filter((t) => groupOf(t.code) === group);
   const typeOf = (code: string | null) => types.find((t) => t.code === code);
   const unchanged = rec && rec.absence_type_code === type && rec.start_date === start && rec.end_date === end;
   const problem = !employee ? 'Choose the employee.' : !type ? 'Choose the leave type.' : !isValidIsoDate(start) || !isValidIsoDate(end) ? 'Enter both dates.'
@@ -89,10 +99,18 @@ export function LeaveSheet({ target, people, types, onClose, onDone }: { target:
           </Field>
         )}
         <Field label="Type">
-          <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
-            <option value="">Choose…</option>
-            {active.map((t) => <option key={t.code} value={t.code}>{t.short_code} · {t.label}</option>)}
-          </select>
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
+              {(['leave', 'sick'] as const).map((g) => (
+                <button key={g} type="button" aria-pressed={group === g} onClick={() => { setGroup(g); if (groupOf(type) !== g) setType(''); }}
+                  className={cx('min-h-9 rounded-lg font-medium', group === g ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{GROUP_LABEL[g]}</button>
+              ))}
+            </div>
+            <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
+              <option value="">Choose…</option>
+              {inGroup.map((t) => <option key={t.code} value={t.code}>{t.short_code} · {t.label}</option>)}
+            </select>
+          </div>
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="First day"><input type="date" className="input" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value); }} /></Field>
