@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { firstDayBack } from '@/core/leave';
 import { isValidIsoDate, type Crew } from '@/core/roster';
-import { cancelLeave, saveLeave } from '@/data/leave';
+import { cancelLeave, saveLeave, setLeaveEstimated } from '@/data/leave';
 import type { AbsenceType, LeaveRecord } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Field, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
@@ -17,8 +17,10 @@ export const SOURCE_LABEL: Record<LeaveRecord['source_kind'], string> = { pv_sch
 type Group = 'leave' | 'sick';
 const SICK_TYPES = ['sick_leave', 'long_sick', 'medical_absence'];
 const GROUP_LABEL: Record<Group, string> = { leave: 'Leave', sick: 'Sick & medical' };
-/** Leave in the PV plan (planned, rescheduled) comes from the plan and its requests, not from adding leave by hand. */
-const PLAN_ONLY = ['annual_leave_planned', 'annual_leave_rescheduled'];
+/** Leave that is part of the plan (PV planned and rescheduled, short leave, Hajj, long courses, other known absences) comes from the plan and its requests, not from adding leave by hand. */
+const PLAN_ONLY = ['annual_leave_planned', 'annual_leave_rescheduled', 'short_leave', 'hajj_leave', 'long_course', 'other_known_absence'];
+/** Leave whose dates can be an estimate until the final notice. */
+const CAN_ESTIMATE = ['escort_leave'];
 const groupOf = (code: string | null | undefined): Group => (code && SICK_TYPES.includes(code) ? 'sick' : 'leave');
 const range = (s: string, e: string) => (s === e ? shortDate(s) : `${shortDate(s)} – ${shortDate(e)}${e.slice(0, 4) !== s.slice(0, 4) ? ` ${e.slice(0, 4)}` : ''}`);
 
@@ -33,6 +35,7 @@ export function LeaveSheet({ target, people, types, onClose, onDone }: { target:
   const [start, setStart] = useState(rec?.start_date ?? (target.kind === 'add' ? target.start ?? localToday() : localToday()));
   const [end, setEnd] = useState(rec?.end_date ?? (target.kind === 'add' ? target.start ?? localToday() : localToday()));
   const [note, setNote] = useState('');
+  const [estimated, setEstimated] = useState(rec?.dates_estimated ?? false);
   const [mode, setMode] = useState<'edit' | 'cancel'>('edit');
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
 
@@ -43,17 +46,28 @@ export function LeaveSheet({ target, people, types, onClose, onDone }: { target:
   const inGroup = active.filter((t) => groupOf(t.code) === group);
   const typeOf = (code: string | null) => types.find((t) => t.code === code);
   const unchanged = rec && rec.absence_type_code === type && rec.start_date === start && rec.end_date === end;
+  const wasEstimated = rec?.dates_estimated ?? false;
+  // only the estimate flag changed (the final notice arrived with the same dates): no correction to record
+  const onlyEstimate = !!unchanged && estimated !== wasEstimated;
+  const canEstimate = CAN_ESTIMATE.includes(type) || wasEstimated;
   const problem = !employee ? 'Choose the employee.' : !type ? 'Choose the leave type.' : !isValidIsoDate(start) || !isValidIsoDate(end) ? 'Enter both dates.'
-    : end < start ? 'The last day is before the first day.' : unchanged ? 'Change the type or the dates.' : rec && !note.trim() ? 'Give the reason for the correction.' : null;
+    : end < start ? 'The last day is before the first day.' : unchanged && !onlyEstimate ? 'Change the type or the dates.' : rec && !onlyEstimate && !note.trim() ? 'Give the reason for the correction.' : null;
   const back = isValidIsoDate(start) && isValidIsoDate(end) && end >= start ? firstDayBack(end, person?.crew ?? null, (d) => d >= start && d <= end) : null;
   const days = back ? Math.round((Date.parse(end) - Date.parse(start)) / 864e5) + 1 : 0;
 
   async function save() {
     setBusy(true); setErr(null);
     try {
-      await saveLeave({ record: rec?.id ?? null, employee: rec ? null : employee, type, start, end, note: note.trim() });
+      if (onlyEstimate) {
+        await setLeaveEstimated(rec!.id, estimated);
+        onDone(`${person?.name ?? 'Leave'}: ${range(start, end)} ${estimated ? 'marked as an estimate' : 'dates confirmed'}.`);
+        return;
+      }
+      const id = await saveLeave({ record: rec?.id ?? null, employee: rec ? null : employee, type, start, end, note: note.trim() });
+      const wants = CAN_ESTIMATE.includes(type) && estimated;
+      if (wants !== wasEstimated) await setLeaveEstimated(id, wants);
       const code = typeOf(type)?.short_code ?? '';
-      onDone(`${person?.name ?? 'Leave'}: ${code} ${range(start, end)} ${rec ? 'corrected' : 'added'}. Imports will not change it.`);
+      onDone(`${person?.name ?? 'Leave'}: ${code} ${range(start, end)} ${rec ? 'corrected' : 'added'}${wants ? ' (dates are an estimate)' : ''}. Imports will not change it.`);
     } catch (e) { setErr(e); } finally { setBusy(false); }
   }
   async function cancel() {
@@ -109,7 +123,7 @@ export function LeaveSheet({ target, people, types, onClose, onDone }: { target:
             </div>
             <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Leave type">
               {inGroup.map((t) => { const c = leaveTone(t.code); const on = type === t.code; return (
-                <button key={t.code} type="button" role="radio" aria-checked={on} onClick={() => setType(t.code)}
+                <button key={t.code} type="button" role="radio" aria-checked={on} onClick={() => { setType(t.code); if (!rec) setEstimated(CAN_ESTIMATE.includes(t.code)); }}
                   className={cx('flex min-h-11 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-medium ring-1', on ? c.on : c.chip)}>
                   <span className={cx('h-2.5 w-2.5 shrink-0 rounded-full', on ? 'bg-white' : c.dot)} />
                   <span className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-wide opacity-80">{t.short_code}</span><span className="block leading-tight">{t.label}</span></span>
@@ -123,7 +137,14 @@ export function LeaveSheet({ target, people, types, onClose, onDone }: { target:
           <Field label="Last day"><input type="date" className="input" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></Field>
         </div>
         {back && <p className="-mt-2 text-xs text-slate-600">{days} day{days === 1 ? '' : 's'} · back to work <span className="font-semibold">{shortDate(back)}</span>{person?.crew ? ' (next duty day)' : ''}</p>}
-        <Field label={rec ? 'Reason for the correction' : 'Note (optional)'} hint={rec && rec.source_kind !== 'manual' && (start !== rec.start_date || end !== rec.end_date) ? 'The imported record stays in the history; the corrected leave replaces it in the plan.' : undefined}>
+        {canEstimate && (
+          <label className={cx('flex items-start gap-2 rounded-xl px-3 py-2 text-sm ring-1', estimated ? 'bg-amber-50 text-amber-900 ring-amber-300' : 'bg-slate-50 text-slate-700 ring-slate-200')}>
+            <input type="checkbox" className="mt-0.5 h-4 w-4" checked={estimated} onChange={(e) => setEstimated(e.target.checked)} />
+            <span><span className="block font-medium">{wasEstimated ? 'Dates still an estimate' : 'The dates are an estimate'}</span>
+              <span className="block text-xs opacity-80">{estimated ? 'It counts in the manpower and stays marked until the final notice. Untick it when the dates are confirmed.' : 'Tick it while the dates are not final.'}</span></span>
+          </label>
+        )}
+        <Field label={rec && !onlyEstimate ? 'Reason for the correction' : 'Note (optional)'} hint={rec && rec.source_kind !== 'manual' && (start !== rec.start_date || end !== rec.end_date) ? 'The imported record stays in the history; the corrected leave replaces it in the plan.' : undefined}>
           <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={rec ? 'e.g. Came back two days early' : 'e.g. Sick leave, certificate received'} />
         </Field>
         <p className="text-xs text-slate-500">Imports never change leave entered by hand.</p>

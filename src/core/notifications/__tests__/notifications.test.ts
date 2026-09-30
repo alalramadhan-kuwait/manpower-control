@@ -46,6 +46,12 @@ describe('notification center', () => {
     expect(buildNotices(base({ changes })).find((x) => x.id === 'chg-c1')?.detail).toContain('crew short 2d');
     expect(buildNotices(base({ changes, isSectionHead: false })).find((x) => x.id === 'chg-c1')).toMatchObject({ level: 'watch' });
   });
+  it('leave with estimated dates is a reminder until the final notice, an action once it is about to start', () => {
+    const estimated = [{ id: 'e1', employeeId: 'x', employeeName: 'Person X', start: '2026-10-20', end: '2026-10-30' }, { id: 'e2', employeeId: 'y', employeeName: 'Person Y', start: '2026-10-01', end: '2026-10-10' }];
+    const n = buildNotices(base({ estimated }));
+    expect(n.find((x) => x.id === 'est-e1')).toMatchObject({ level: 'watch', title: 'Leave dates still an estimate', to: '/employees/x' });
+    expect(n.find((x) => x.id === 'est-e2')).toMatchObject({ level: 'action' });
+  });
   it('actions come first and only actions count in the badge; leave starting soon is info', () => {
     const n = buildNotices(base({ needsAction: 3, absences: [leave(C[5], '2026-09-28', '2026-10-02')] }));
     const levels = n.map((x) => x.level);

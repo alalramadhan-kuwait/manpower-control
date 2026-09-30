@@ -12,6 +12,8 @@ import { CREWS, addDaysIso, isValidIsoDate, type Crew } from '@/core/roster';
 import { fetchLeaveApprovals } from '@/data/controllers';
 import { cancelLeave, saveLeave, setOracleStatus } from '@/data/leave';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
+import { fetchEstimatedLeaves } from '@/data/leave';
+import { EstimatedTag } from '@/ui/LeaveCodes';
 import { fetchReference } from '@/data/queries';
 import { fetchSdMembers } from '@/data/shutdown';
 import type { SdMember } from '@/core/shutdown';
@@ -42,7 +44,7 @@ const POS: { key: Pos; label: string; of: (r: WorkRow) => boolean }[] = [
 export function LeaveWorklist({ adding, onAdded, isHead }: { adding: boolean; onAdded: () => void; isHead: boolean }) {
   const today = localToday();
   const y = Number(today.slice(0, 4));
-  const [data, setData] = useState<{ inputs: ManpowerInputs; approvals: LeaveApproval[]; types: AbsenceType[]; sd: SdMember[] } | null>(null);
+  const [data, setData] = useState<{ inputs: ManpowerInputs; approvals: LeaveApproval[]; types: AbsenceType[]; sd: SdMember[]; est: Set<string> } | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [shift, setShift] = useState<Shift>('all');
   const [pos, setPos] = useState<Pos>('all');
@@ -56,8 +58,8 @@ export function LeaveWorklist({ adding, onAdded, isHead }: { adding: boolean; on
   const [addFor, setAddFor] = useState<string | null>(null);
   const [folded, setFolded] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('requests.folded') ?? '[]') as string[]; } catch { return []; } });
   const fold = (title: string) => setFolded((f) => { const n = f.includes(title) ? f.filter((x) => x !== title) : [...f, title]; try { localStorage.setItem('requests.folded', JSON.stringify(n)); } catch { /* not saved */ } return n; });
-  const load = useCallback(() => Promise.all([fetchManpowerInputs(`${y}-01-01`, `${y + 1}-12-31`), fetchLeaveApprovals(), fetchReference(), fetchSdMembers(`${y}-01-01`, `${y + 1}-12-31`)])
-    .then(([inputs, approvals, ref, sd]) => setData({ inputs, approvals, types: ref.absenceTypes, sd })).catch(setError), [y]);
+  const load = useCallback(() => Promise.all([fetchManpowerInputs(`${y}-01-01`, `${y + 1}-12-31`), fetchLeaveApprovals(), fetchReference(), fetchSdMembers(`${y}-01-01`, `${y + 1}-12-31`), fetchEstimatedLeaves()])
+    .then(([inputs, approvals, ref, sd, est]) => setData({ inputs, approvals, types: ref.absenceTypes, sd, est: new Set(est.map((e) => e.id)) })).catch(setError), [y]);
   useEffect(() => { load(); }, [load]);
 
   const rows = useMemo(() => {
@@ -135,20 +137,20 @@ export function LeaveWorklist({ adding, onAdded, isHead }: { adding: boolean; on
             {shut ? null : g.list.length === 0 ? <p className="py-2 text-sm text-slate-500">None</p> : (
               // every leave stays listed (approved ones faded, after the ones to decide) so nothing is hidden
               <div className="divide-y divide-slate-100">
-                {g.list.map((r) => <Row key={r.key} r={r} busy={busy === r.key} onOpen={() => setOpen(r)} onDecide={(s) => decide(r, s)} onCancel={() => setCancelling(r)} />)}
+                {g.list.map((r) => <Row key={r.key} r={r} estimated={r.records.some((x) => !!x.id && data.est.has(x.id))} busy={busy === r.key} onOpen={() => setOpen(r)} onDecide={(s) => decide(r, s)} onCancel={() => setCancelling(r)} />)}
               </div>
             )}
           </Card>
         );
       })}
 
-      {person && !changing && <PersonLeavesSheet person={person} absences={data.inputs.absences} today={today} onClose={() => setPerson(null)} onChange={(leave) => setChanging({ person, leave })} isHead={isHead} />}
+      {person && !changing && <PersonLeavesSheet person={person} absences={data.inputs.absences} estimated={data.est} today={today} onClose={() => setPerson(null)} onChange={(leave) => setChanging({ person, leave })} isHead={isHead} />}
       {changing && (isHead
         ? <ChangeSheet person={changing.person} records={changing.leave.records} inputs={data.inputs} approvals={data.approvals} today={today} onBack={() => setChanging(null)} onDone={(m) => { setChanging(null); setPerson(null); setNotice(m); load(); }} />
         : <ProposeSheet person={changing.person} leave={changing.leave} inputs={data.inputs} approvals={data.approvals} today={today} onBack={() => setChanging(null)} onDone={(m) => { setChanging(null); setPerson(null); setNotice(m); load(); }} />)}
       {open && <EditSheet r={open} inputs={data.inputs} approvals={data.approvals} today={today} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); setNotice(m); load(); }} />}
       {cancelling && <CancelSheet r={cancelling} onClose={() => setCancelling(null)} onDone={(m) => { setCancelling(null); setNotice(m); load(); }} />}
-      {adding && !addFor && <NewRequestFlow inputs={data.inputs} approvals={data.approvals} today={today} onClose={onAdded} onAddLeave={setAddFor} onDone={(m) => { onAdded(); setNotice(m); load(); }} />}
+      {adding && !addFor && <NewRequestFlow inputs={data.inputs} estimated={data.est} approvals={data.approvals} today={today} onClose={onAdded} onAddLeave={setAddFor} onDone={(m) => { onAdded(); setNotice(m); load(); }} />}
       {adding && addFor && <LeaveSheet target={{ kind: 'add', employeeId: addFor }} types={data.types}
         people={data.inputs.people.map((p) => ({ id: p.id, name: p.name, crew: personOn(p, today).crew })).sort((a, b) => a.name.localeCompare(b.name))}
         onClose={() => { setAddFor(null); onAdded(); }} onDone={(m) => { setAddFor(null); onAdded(); setNotice(m); load(); }} />}
@@ -157,8 +159,8 @@ export function LeaveWorklist({ adding, onAdded, isHead }: { adding: boolean; on
 }
 
 /** One person's whole leave plan: every leave of this year and next (back-to-back records joined), with the Oracle status. */
-function PersonLeavesSheet({ person, absences, today, onClose, onChange, isHead }: { person: MpPerson; absences: MpAbsence[]; today: string; onClose: () => void; onChange: (leave: MergedLeave) => void; isHead: boolean }) {
-  const leaves = useMemo(() => mergedLeaves(absences, person.id), [absences, person.id]);
+function PersonLeavesSheet({ person, absences, estimated, today, onClose, onChange, isHead }: { person: MpPerson; absences: MpAbsence[]; estimated: Set<string>; today: string; onClose: () => void; onChange: (leave: MergedLeave) => void; isHead: boolean }) {
+  const leaves = useMemo(() => mergedLeaves(absences, person.id, estimated), [absences, person.id, estimated]);
   const days = (l: { start: string; end: string }) => Math.round((Date.parse(`${l.end}T00:00:00Z`) - Date.parse(`${l.start}T00:00:00Z`)) / 86400000) + 1;
   const years = [...new Set(leaves.map((l) => l.start.slice(0, 4)))];
   const c = personOn(person, today);
@@ -191,6 +193,7 @@ function PersonLeavesSheet({ person, absences, today, onClose, onChange, isHead 
                           <span className="flex items-center gap-1.5 text-sm font-medium text-slate-900"><LeaveCodes codes={l.codes} />{range(l.start, l.end)}</span>
                           <span className="block text-xs text-slate-500">{days(l)} days · back {weekday(backOn(l))} {shortDate(backOn(l))}{now ? ' · on leave now' : past ? ' · done' : ''}</span>
                         </span>
+                        {l.estimated && <EstimatedTag />}
                         {l.oracle && <OraclePill status={l.oracle} small />}
                         <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
                       </button>
@@ -269,7 +272,7 @@ function ChangeSheet({ person, records, inputs, approvals, today, onBack, onDone
 }
 
 /** One leave on two short lines: who / status / quick decision, then the Oracle dates, day back and warnings. */
-function Row({ r, busy, onOpen, onDecide, onCancel }: { r: WorkRow; busy: boolean; onOpen: () => void; onDecide: (s: OracleStatus) => void; onCancel: () => void }) {
+function Row({ r, estimated, busy, onOpen, onDecide, onCancel }: { r: WorkRow; estimated: boolean; busy: boolean; onOpen: () => void; onDecide: (s: OracleStatus) => void; onCancel: () => void }) {
   const e = r.expected;
   const icon = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg disabled:opacity-50';
   // approved leave is faded so what still needs a decision stands out; its warnings stay clear
@@ -283,6 +286,7 @@ function Row({ r, busy, onOpen, onDecide, onCancel }: { r: WorkRow; busy: boolea
             <span className="truncate text-sm font-medium text-slate-900">{r.person.name}</span>
             {r.role === 'vr_controller' && <span className="text-[10px] font-semibold text-slate-400">VR</span>}
             <OraclePill status={r.oracle} small />
+            {estimated && <EstimatedTag />}
           </span>
           <span className={cx('block truncate text-xs text-slate-600', fade)}><LeaveCodes codes={r.codes} />{e ? <><b className="font-semibold text-slate-800">{range(e.start, e.end)}</b> · {e.days}d · back {weekday(e.backOn)} {shortDate(e.backOn)}</> : 'Rest days only'}</span>
           {(r.oracle === 'rejected' || r.shortDuties > 0 || r.clashWith.length > 0 || r.extraNth || r.sdTeam) && (

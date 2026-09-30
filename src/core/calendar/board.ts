@@ -52,7 +52,7 @@ export function leaveGroup(typeCode: string | null | undefined): LeaveGroup {
   if (c.startsWith('annual_leave') || c === 'leave_extension') return 'Annual leave';
   if (c === 'sick_leave' || c === 'long_sick') return 'Sick leave';
   if (c === 'short_leave') return 'Short leave';
-  if (c === 'personal_qb') return 'Personal Compassion Leave';
+  if (c === 'personal_qb' || c === 'death_leave') return 'Personal Compassion Leave';
   if (c === 'medical_absence') return 'Injury / surgery';
   return 'Other approved absence';
 }

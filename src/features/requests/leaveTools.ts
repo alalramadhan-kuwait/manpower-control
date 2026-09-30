@@ -5,11 +5,11 @@ import type { OracleStatus } from '@/core/oracle';
 import { addDaysIso } from '@/core/roster';
 import type { ManpowerInputs } from '@/data/manpower';
 
-export interface MergedLeave { start: string; end: string; codes: string[]; oracle: OracleStatus | undefined; records: MpAbsence[] }
+export interface MergedLeave { start: string; end: string; codes: string[]; oracle: OracleStatus | undefined; records: MpAbsence[]; estimated: boolean }
 const RANK: OracleStatus[] = ['rejected', 'not_submitted', 'submitted', 'approved'];
 
 /** A person's leaves in the current plan, oldest first; records that touch are one leave. */
-export function mergedLeaves(absences: MpAbsence[], personId: string): MergedLeave[] {
+export function mergedLeaves(absences: MpAbsence[], personId: string, estimated: Set<string> = new Set()): MergedLeave[] {
   const mine = absences.filter((a) => a.employeeId === personId && (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false).sort((a, b) => a.start.localeCompare(b.start));
   const out: MergedLeave[] = [];
   for (const a of mine) {
@@ -18,9 +18,10 @@ export function mergedLeaves(absences: MpAbsence[], personId: string): MergedLea
     if (last && a.start <= addDaysIso(last.end, 1)) {
       if (a.end > last.end) last.end = a.end;
       last.records.push(a);
+      if (a.id && estimated.has(a.id)) last.estimated = true;
       if (code && !last.codes.includes(code)) last.codes.push(code);
       if (a.oracle && (!last.oracle || RANK.indexOf(a.oracle) < RANK.indexOf(last.oracle))) last.oracle = a.oracle;
-    } else out.push({ start: a.start, end: a.end, codes: code ? [code] : [], oracle: a.oracle, records: [a] });
+    } else out.push({ start: a.start, end: a.end, codes: code ? [code] : [], oracle: a.oracle, records: [a], estimated: !!a.id && estimated.has(a.id) });
   }
   return out;
 }

@@ -141,12 +141,14 @@ export function describe(row: AuditRow, lk: AuditLookups): AuditEntry {
       else {
         const st = prev?.status !== next?.status;
         const oracle = prev?.oracle_status !== next?.oracle_status && prev?.start_date === next?.start_date && prev?.end_date === next?.end_date;
-        title = oracle && !st ? `${who(empId)}: ${type} ${span} · Oracle: ${ora(next?.oracle_status)}`
+        const est = prev?.dates_estimated !== next?.dates_estimated && prev?.start_date === next?.start_date && prev?.end_date === next?.end_date;
+        title = est && !st && !oracle ? `${who(empId)}: ${type} ${span} · dates ${next?.dates_estimated ? 'marked as an estimate' : 'confirmed'}`
+          : oracle && !st ? `${who(empId)}: ${type} ${span} · Oracle: ${ora(next?.oracle_status)}`
           : st && next?.status === 'cancelled' ? `${who(empId)}: ${type} ${span} cancelled`
           : st && next?.status === 'rescheduled' ? `${who(empId)}: ${type} ${span} not taken on these dates`
           : `${who(empId)}: ${type} ${span} changed`;
         details = changes(prev, next, [['start_date', 'First day', day], ['end_date', 'Last day', day], ['status', 'Status', w],
-          ['absence_type_code', 'Type', (v) => lk.absence.get(String(v)) ?? w(v)], ['in_current_plan', 'Counts', (v) => (v === false ? 'No' : 'Yes')], ['oracle_status', 'Oracle', ora], ['oracle_ref', 'Oracle no.', (v) => (s(v) ? String(v) : '—')]]);
+          ['absence_type_code', 'Type', (v) => lk.absence.get(String(v)) ?? w(v)], ['in_current_plan', 'Counts', (v) => (v === false ? 'No' : 'Yes')], ['oracle_status', 'Oracle', ora], ['oracle_ref', 'Oracle no.', (v) => (s(v) ? String(v) : '—')], ['dates_estimated', 'Dates', (v) => (v ? 'Estimate' : 'Confirmed')]]);
       }
       if (s(cur.note) && row.action === 'insert') details.push(String(cur.note));
       break;

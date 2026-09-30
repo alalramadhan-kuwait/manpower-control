@@ -16,6 +16,7 @@ import { fetchMovements, type CrewMovement } from '@/data/movements';
 import { fetchAuditLookups } from '@/data/audit';
 import { describe, type AuditLookups, type AuditRow } from '@/core/audit';
 import { Entry as AuditLine } from '@/features/audit/AuditPage';
+import { EstimatedTag } from '@/ui/LeaveCodes';
 
 const QUALS: { code: QualificationCode; label: string; help: string }[] = [
   { code: 'take_charge', label: 'Take-Charge qualified', help: 'Only Take-Charge = Yes counts toward the Field Operator minimum of 6.' },
@@ -252,7 +253,7 @@ function BlockRow({ b, today, showReturn, onEdit }: { b: LeaveBlock<ProfileSpan>
     <li>
       <button type="button" onClick={onEdit} className="flex w-full items-center justify-between gap-3 py-2 text-left text-sm active:bg-slate-50">
         <div className="min-w-0">
-          <div className="font-medium text-slate-800"><LeaveCode code={b.record.typeShort} /> {dateRange(b.start, b.end, today)}</div>
+          <div className="font-medium text-slate-800"><LeaveCode code={b.record.typeShort} /> {dateRange(b.start, b.end, today)}{b.record.rec.dates_estimated && <> <EstimatedTag /></>}</div>
           <div className="text-xs text-slate-500">{b.record.typeLabel ?? 'Leave'} · {dayCount(b.start, b.end)}{b.record.rec.hand_corrected ? ' · by hand' : ''}</div>
         </div>
         <span className="flex shrink-0 items-center gap-2">

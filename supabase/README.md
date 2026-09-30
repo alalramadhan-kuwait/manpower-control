@@ -44,6 +44,7 @@ Supabase MCP or dashboard gets a matching file here, named with the version the 
 | `20260929174407_fo_level_below_average` | `employees.fo_level` gains a fourth value, `below` (below average): it ranks after everyone else when a shutdown team is picked; no row changes. |
 | `20260930061633_leave_change_requests` | `leave_change_requests` (a request to move a leave: records, old and new dates, remark, impact snapshot, decision; audited, one open per leave) and `change_request_create` / `_decide` (Section Head only; approval moves the leave through `leave_save` and puts it back to Not submitted in Oracle) / `_withdraw`. Tested in a rolled-back transaction. |
 | `20260930064303_unplanned_leave_label` | `absence_types.label` for `annual_leave_unscheduled` (UL) changes from Unscheduled Leave to Unplanned Leave: leave entered by hand is not in the PV plan. Label only; codes and records unchanged. |
+| `20260930091425_death_leave_and_estimated_dates` | New leave type Death Leave (`death_leave`, DEATH, no approval step); `leave_records.dates_estimated` (dates are an estimate until the final notice, e.g. Escort Leave) and `leave_set_estimated`. Counts in the manpower like any leave; the app marks it and reminds until confirmed. |
 | `20260929172632_panel_can_cover_field` | `employees.can_cover_field` (a Panel Operator the Section Head cleared to cover a Field post, e.g. a contractor with no grade; adds to the Grade 13+ rule) and the directory view shows it. **Data, not in this file:** who has it set. |
 
 ## Edge Functions

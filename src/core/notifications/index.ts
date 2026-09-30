@@ -6,6 +6,7 @@ import type { CoverageNeed } from '../controllers';
 import { personOn, type DayResult, type MpAbsence, type MpPerson } from '../manpower';
 import type { OperationPlan } from '../modes';
 import { oracleDue } from '../oracle';
+import { addDaysIso } from '../roster';
 
 /** action: someone has to do something (counts in the badge) · watch: check it · info: good to know. */
 export type NoticeLevel = 'action' | 'watch' | 'info';
@@ -24,6 +25,8 @@ export interface NoticeRequest { id: string; employeeName: string; typeLabel: st
 
 export interface NoticeChange { id: string; employeeName: string; oldStart: string; oldEnd: string; newStart: string; newEnd: string; short: number; clash: number }
 
+export interface NoticeEstimated { id: string; employeeId: string; employeeName: string; start: string; end: string }
+
 export interface NoticeInput {
   today: string;
   /** Evaluated days from today onward (the horizon). */
@@ -32,6 +35,8 @@ export interface NoticeInput {
   requests: NoticeRequest[];
   /** Open requests to move a leave (the Coordinator asks, the Section Head decides). */
   changes?: NoticeChange[];
+  /** Leave whose dates are still an estimate (Escort Leave): to be confirmed at the final notice. */
+  estimated?: NoticeEstimated[];
   /** Staff whose records need action (Employees → Needs action). */
   needsAction: number;
   absences: MpAbsence[];
@@ -86,6 +91,12 @@ export function buildNotices(i: NoticeInput): Notice[] {
   for (const c of i.changes ?? []) {
     out.push({ id: `chg-${c.id}`, level: i.isSectionHead ? 'action' : 'watch', area: 'request', title: i.isSectionHead ? 'Reschedule request to decide' : 'Reschedule waiting for the Section Head',
       detail: `${c.employeeName} · ${span(c.oldStart, c.oldEnd)} → ${span(c.newStart, c.newEnd)}${c.short > 0 ? ` · crew short ${c.short}d` : ''}${c.clash > 0 ? ' · 2 Controllers off' : ''}`, date: c.newStart, to: '/requests?view=forms' });
+  }
+
+  // 3a2. leave with estimated dates: to confirm at the final notice; an action once it is about to start or has started
+  for (const e of i.estimated ?? []) {
+    const soon = e.start <= addDaysIso(i.today, 7);
+    out.push({ id: `est-${e.id}`, level: soon ? 'action' : 'watch', area: 'leave', title: 'Leave dates still an estimate', detail: `${e.employeeName} · ${span(e.start, e.end)} · confirm at the final notice`, date: e.start, to: `/employees/${e.employeeId}` });
   }
 
   // 3b. every VR Controller works in a crew: one not placed in any crew today

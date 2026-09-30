@@ -9,3 +9,8 @@ export function LeaveCodes({ codes, className }: { codes: string[]; className?: 
     </>
   );
 }
+
+/** Marks leave whose dates are an estimate until the final notice. */
+export function EstimatedTag({ className }: { className?: string }) {
+  return <span className={cx('inline-block rounded border border-dashed border-amber-500 bg-amber-50 px-1 text-[10px] font-semibold leading-4 text-amber-800', className)}>Est. dates</span>;
+}

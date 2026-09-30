@@ -13,6 +13,7 @@ import { BottomSheet, Button, Chip, ErrorBox, Field, Spinner, cx, type Tone } fr
 import { CrewBadge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { OraclePill } from '@/ui/oracle';
+import { EstimatedTag } from '@/ui/LeaveCodes';
 import { leaveImpact, mergedLeaves, type LeaveImpact, type MergedLeave } from './leaveTools';
 import { LeaveCodes } from '@/ui/LeaveCodes';
 
@@ -89,7 +90,7 @@ export function ProposeSheet({ person, leave, inputs, approvals, today, onBack, 
 
 type Step = 'who' | 'what' | 'kind' | 'leave';
 /** New: search the employee, then Add leave or a Request (reschedule is the only request for now), then the leave, then the new dates. */
-export function NewRequestFlow({ inputs, approvals, today, onClose, onAddLeave, onDone }: { inputs: ManpowerInputs; approvals: LeaveApproval[]; today: string; onClose: () => void; onAddLeave: (personId: string) => void; onDone: (m: string) => void }) {
+export function NewRequestFlow({ inputs, estimated, approvals, today, onClose, onAddLeave, onDone }: { inputs: ManpowerInputs; estimated: Set<string>; approvals: LeaveApproval[]; today: string; onClose: () => void; onAddLeave: (personId: string) => void; onDone: (m: string) => void }) {
   const [step, setStep] = useState<Step>('who');
   const [query, setQuery] = useState('');
   const [person, setPerson] = useState<MpPerson | null>(null);
@@ -100,7 +101,7 @@ export function NewRequestFlow({ inputs, approvals, today, onClose, onAddLeave, 
     const words = q.split(/\s+/);
     return inputs.people.filter((p) => { const hay = `${p.name} ${p.employeeNumber}`.toLowerCase(); return words.every((w) => hay.includes(w)); }).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 8);
   }, [inputs.people, q]);
-  const leaves = useMemo(() => (person ? mergedLeaves(inputs.absences, person.id) : []), [inputs.absences, person]);
+  const leaves = useMemo(() => (person ? mergedLeaves(inputs.absences, person.id, estimated) : []), [inputs.absences, person, estimated]);
   const crewBadge = (p: MpPerson) => { const c = personOn(p, today); return c.dayDuty || !c.crew ? <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-600">Day</span> : <CrewBadge crew={c.crew} size="sm" />; };
 
   if (person && leave) return <ProposeSheet person={person} leave={leave} inputs={inputs} approvals={approvals} today={today} onBack={() => setLeave(null)} onDone={onDone} />;
@@ -156,6 +157,7 @@ export function NewRequestFlow({ inputs, approvals, today, onClose, onAddLeave, 
                     <span className="flex items-center gap-1.5 text-sm font-medium text-slate-900"><LeaveCodes codes={l.codes} />{range(l.start, l.end)} <span className="text-xs font-normal text-slate-500">{l.start.slice(0, 4)}</span></span>
                     <span className="block text-xs text-slate-500">{daysIn(l.start, l.end)} days{over ? ' · done' : l.start <= today ? ' · on leave now' : ''}</span>
                   </span>
+                  {l.estimated && <EstimatedTag />}
                   {l.oracle && <OraclePill status={l.oracle} small />}
                   <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
                 </button>

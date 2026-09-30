@@ -11,6 +11,7 @@ import { fetchControllerLeave } from './controllers';
 import { checkControllerLeave, openIssues } from '@/core/controllers/leaveRules';
 import { fetchDirectory } from './queries';
 import { fetchChangeRequests, isChangeOpen } from './changeRequests';
+import { fetchEstimatedLeaves } from './leave';
 import { fetchRequests, isOpen } from './requests';
 
 export const NOTICE_HORIZON_DAYS = 60;
@@ -30,7 +31,7 @@ export async function loadNotices(isSectionHead: boolean, force = false): Promis
   pending = (async () => {
     const to = addDaysIso(today, NOTICE_HORIZON_DAYS);
     const y = Number(today.slice(0, 4));
-    const [inputs, reqs, changes, dir, ctl] = await Promise.all([fetchManpowerInputs(today, addDaysIso(to, 1)), fetchRequests(), fetchChangeRequests(), fetchDirectory(), fetchControllerLeave(`${y}-01-01`, `${y + 1}-12-31`)]);
+    const [inputs, reqs, changes, estimated, dir, ctl] = await Promise.all([fetchManpowerInputs(today, addDaysIso(to, 1)), fetchRequests(), fetchChangeRequests(), fetchEstimatedLeaves(), fetchDirectory(), fetchControllerLeave(`${y}-01-01`, `${y + 1}-12-31`)]);
     const open = openIssues(checkControllerLeave(ctl.people, ctl.absences, ctl.approvals, [y, y + 1]), today);
     const who = (id: string) => ctl.people.find((p) => p.id === id)?.name ?? 'Controller';
     const names = new Map(dir.map((r) => [r.id, r.display_name]));
@@ -40,6 +41,7 @@ export async function loadNotices(isSectionHead: boolean, force = false): Promis
       needs: coverageNeeds(today, to, inputs.people, inputs.absences, inputs.assignments, inputs.rules),
       requests: reqs.filter(isOpen).map((r) => ({ id: r.id, employeeName: names.get(r.employee_id) ?? 'Employee', typeLabel: REQUEST_TYPE_LABEL[r.request_type], start: r.start_date, end: r.end_date, status: r.status as 'submitted' | 'reviewed', overtime: r.overtime_required })),
       changes: changes.filter(isChangeOpen).map((c) => ({ id: c.id, employeeName: names.get(c.employee_id) ?? 'Employee', oldStart: c.old_start, oldEnd: c.old_end, newStart: c.new_start, newEnd: c.new_end, short: c.impact?.short ?? 0, clash: c.impact?.clash.length ?? 0 })),
+      estimated: estimated.filter((e) => e.end_date >= today).map((e) => ({ id: e.id, employeeId: e.employee_id, employeeName: names.get(e.employee_id) ?? 'Employee', start: e.start_date, end: e.end_date })),
       needsAction: dir.filter((r) => r.is_active && r.in_unit12_scope && actionsFor(r).length > 0).length,
       absences: inputs.absences, people: inputs.people, plan: inputs.plan, isSectionHead,
       controllerLeave: {

@@ -49,6 +49,8 @@ export interface LeaveRecord {
   in_original_plan: boolean; in_current_plan: boolean; superseded_by: string | null; rescheduled_from: string | null;
   /** Added, corrected or cancelled by hand; imports never change it. */
   hand_corrected: boolean;
+  /** The dates are an estimate until the final notice (Escort Leave). */
+  dates_estimated: boolean;
   /** Where the leave stands in Oracle HR; new dates on future leave reset it to not_submitted. */
   oracle_status: OracleStatus; oracle_ref: string | null; oracle_updated_at: string | null;
 }

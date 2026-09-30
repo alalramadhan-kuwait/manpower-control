@@ -16,6 +16,22 @@ export async function saveLeave(v: { record: string | null; employee: string | n
   return data as string;
 }
 
+/** Mark a current leave's dates as an estimate (until the final notice) or confirmed. */
+export async function setLeaveEstimated(record: string, estimated: boolean): Promise<void> {
+  const { error } = await supabase.rpc('leave_set_estimated', { p_record: record, p_estimated: estimated });
+  if (error) throw plain(error);
+  dataChanged();
+}
+
+export interface EstimatedLeave { id: string; employee_id: string; start_date: string; end_date: string; absence_type_code: string | null }
+/** Current leave whose dates are still an estimate. */
+export async function fetchEstimatedLeaves(): Promise<EstimatedLeave[]> {
+  const { data, error } = await supabase.from('leave_records').select('id,employee_id,start_date,end_date,absence_type_code')
+    .eq('dates_estimated', true).eq('in_current_plan', true).in('status', ['approved', 'planned']).gte('end_date', '2000-01-01').order('start_date').limit(500);
+  if (error) throw error;
+  return data as EstimatedLeave[];
+}
+
 /** Take one current record out of the plan (kept in history as cancelled). */
 export async function cancelLeave(record: string, reason: string): Promise<void> {
   const { error } = await supabase.rpc('leave_cancel', { p_record: record, p_reason: reason });

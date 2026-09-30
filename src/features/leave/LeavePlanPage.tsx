@@ -12,6 +12,7 @@ import { localToday, shortDate } from '@/ui/leave';
 import { byPositionAndService, positionGroup } from '@/ui/positions';
 import { LeaveSheet, SOURCE_LABEL, changeLabel, type LeaveTarget, type SheetPerson } from './LeaveSheet';
 import { leaveToneShort } from '@/ui/leaveTypes';
+import { EstimatedTag } from '@/ui/LeaveCodes';
 
 const GROUPS = ['A', 'B', 'C', 'D', 'day'] as const;
 type Group = (typeof GROUPS)[number];
@@ -194,7 +195,7 @@ function PersonDetail({ row, year, data, today, onEdit, onAdd }: { row: Row; yea
             <li key={l.id} className="flex items-start gap-2 py-2">
               <span className={`mt-0.5 inline-flex min-w-11 justify-center rounded-md px-1.5 py-0.5 text-xs font-bold ring-1 ${leaveToneShort(type(l.absence_type_code)?.short_code).chip}`}>{type(l.absence_type_code)?.short_code ?? '—'}</span>
               <span className="min-w-0 flex-1">
-                <span className={cx('block text-sm font-medium', past ? 'text-slate-500' : 'text-slate-800')}>{range(l.start_date, l.end_date)} <span className="font-normal text-slate-500">· {dayCount(l.start_date, l.end_date)} d{past ? '' : ` · back ${shortDate(back)}`}</span></span>
+                <span className={cx('block text-sm font-medium', past ? 'text-slate-500' : 'text-slate-800')}>{range(l.start_date, l.end_date)}{l.dates_estimated && <> <EstimatedTag /></>} <span className="font-normal text-slate-500">· {dayCount(l.start_date, l.end_date)} d{past ? '' : ` · back ${shortDate(back)}`}</span></span>
                 <span className="block text-xs text-slate-500">{type(l.absence_type_code)?.label ?? 'Leave'} · {l.hand_corrected ? (l.source_kind === 'manual' ? SOURCE_LABEL.manual : 'Corrected by hand') : SOURCE_LABEL[l.source_kind]}</span>
                 {cover && (cover.covers.length > 0
                   ? <span className="block text-xs text-slate-600">Covered by {[...new Set(cover.covers.map((c) => name(c.employeeId)))].join(', ')}{cover.uncoveredDutyDays ? ` · ${cover.uncoveredDutyDays} duty day${cover.uncoveredDutyDays === 1 ? '' : 's'} without cover` : ''}</span>
