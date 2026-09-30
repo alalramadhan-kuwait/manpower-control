@@ -1,7 +1,7 @@
 import { Minus, Plus, Shuffle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { Crew } from '@/core/roster';
-import { OT_TARGET, defaultMaxRun, spreadPlan, MAX_WEEK_HOURS } from '@/core/shutdown/spread';
+import { OT_LIMIT, defaultMaxRun, spreadPlan, MAX_WEEK_HOURS } from '@/core/shutdown/spread';
 import { slotLabel, type SdMember, type SdPhase, type SdPlan, type SdTeam } from '@/core/shutdown';
 import { setSdDaysMany } from '@/data/shutdown';
 import { BottomSheet, Button, ErrorBox, cx } from '@/ui/components';
@@ -20,7 +20,8 @@ export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, a
   onClose: () => void; onDone: (msg: string) => void;
 }) {
   const [maxRun, setMaxRun] = useState(defaultMaxRun(plan));
-  const results = useMemo(() => spreadPlan(plan, teams, members, phases, { crewOf, away, maxRun }), [plan, teams, members, phases, crewOf, away, maxRun]);
+  const [reach, setReach] = useState(false);
+  const results = useMemo(() => spreadPlan(plan, teams, members, phases, { crewOf, away, maxRun, reachLimit: reach }), [plan, teams, members, phases, crewOf, away, maxRun, reach]);
   const [off, setOff] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const id = (r: (typeof results)[number]) => `${r.group.teamId}:${r.group.key}`;
@@ -43,7 +44,10 @@ export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, a
     <BottomSheet open onClose={onClose} title={train ? 'Own-crew days and hours' : 'Spread the days off'}>
       <div className="space-y-3">
         {train ? (
-          <p className="text-xs text-slate-600">Everyone works only the duty days of their own crew, so nobody works a rest day and nobody gets an extra day off. Each day one person of a slot works the full {plan.shiftHours} h and the others {Math.min(plan.normalHours, plan.shiftHours)} h; the full shifts are shared out evenly. The days are safe when the slot has people from different crews. Overtime is planned under {OT_TARGET} h (the cap is {plan.maxOvertime} h). New FO may stay empty.</p>
+          <>
+          <p className="text-xs text-slate-600">Everyone works only the duty days of their own crew, so nobody works a rest day and nobody gets an extra day off. Each day one person of a slot works the full {plan.shiftHours} h and the others {Math.min(plan.normalHours, plan.shiftHours)} h; the full shifts are shared out evenly and then topped up so each person reaches {OT_LIMIT} h of overtime where the fatigue limits allow (the plan's cap of {plan.maxOvertime} h stays). The days are safe when the slot has people from different crews. New FO may stay empty.</p>
+          <label className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700 ring-1 ring-slate-200"><input type="checkbox" className="mt-0.5 h-4 w-4" checked={reach} onChange={(e) => setReach(e.target.checked)} /><span>Reach {OT_LIMIT} h for everyone, even if it needs up to 6 full shifts in a row (the crew&apos;s whole block of duty days). Off keeps at most 4 by day and 3 by night.</span></label>
+          </>
         ) : <>
           <p className="text-xs text-slate-600">Staggers the days off inside each place of each team so it has the people it needs every day, with as many days off and as little overtime as the people allow. A day off is given on a rest day of the person&apos;s own crew where it can.</p>
           <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
@@ -70,13 +74,13 @@ export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, a
                         <ul className="mt-0.5 space-y-0.5">
                           {r.train.people.map((x) => {
                             const emp = members.find((mm) => mm.id === x.id)?.employeeId ?? '';
-                            const tone = x.overtime >= plan.maxOvertime ? 'text-status-red' : x.overtime >= OT_TARGET ? 'text-amber-700' : 'text-status-green';
+                            const tone = x.overtime > OT_LIMIT ? 'text-status-red' : x.overtime >= OT_LIMIT - 4 ? 'text-status-green' : 'text-amber-700';
                             return (
                               <li key={x.id} className="flex items-center gap-1.5 text-xs">
                                 {x.crew ? <CrewBadge crew={x.crew} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-500">Day</span>}
                                 <span className="min-w-0 flex-1 truncate text-slate-800">{names.get(emp) ?? 'Employee'}</span>
                                 <span className="shrink-0 text-slate-500">{x.days} d · {x.full}×{plan.shiftHours} h + {x.short}×{Math.min(plan.normalHours, plan.shiftHours)} h</span>
-                                <span className={cx('w-14 shrink-0 text-right font-semibold tabular-nums', tone)}>OT {x.overtime}</span>
+                                <span className={cx('w-16 shrink-0 text-right font-semibold tabular-nums', tone)}>OT {x.overtime}<span className="font-normal text-slate-400">/{OT_LIMIT}</span></span>
                               </li>
                             );
                           })}

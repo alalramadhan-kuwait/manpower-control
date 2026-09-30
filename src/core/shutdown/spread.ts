@@ -46,8 +46,8 @@ export interface SpreadResult {
   /** With the run limit, the least people that could cover every day (only when some days are still short). */
   minPeople: number | null;
 }
-/** Overtime planned to this (the cap is the plan's maxOvertime): amber from here. */
-export const OT_TARGET = 70;
+/** The overtime each person is planned up to (a train shutdown tops the 8 h days up to it, within the fatigue limits); above it is red. */
+export const OT_LIMIT = 72;
 export const DEFAULT_FULL_RUN_DAY = 4;
 export const DEFAULT_FULL_RUN_NIGHT = 3;
 export const MAX_WEEK_HOURS = 72;
@@ -66,6 +66,8 @@ export interface TrainInfo {
 export interface SpreadContext {
   /** Most full 12 h days in a row (day team / night team). */
   fullRunDay?: number; fullRunNight?: number;
+  /** Top the overtime up to the limit even when that needs as many full shifts in a row as the crew's own block of duty days (6). */
+  reachLimit?: boolean;
   crewOf: (employeeId: string) => Crew | null;
   away: (employeeId: string, date: string) => boolean;
   /** Most days in a row a person works without a day off. */
@@ -146,6 +148,30 @@ function followCrew(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadC
       if (run[fullOf[k]] > limit) runBreaks++;
     } else for (let i = 0; i < m; i++) run[i] = 0;
   }
+  // top the overtime up: turn 8 h days into full shifts, the person with the least overtime first, up to the limit and
+  // without going past the full shifts in a row (unless the limit is to be reached whatever it takes)
+  const fullNow = members.map((_, i) => dates.map((_d, k) => fullOf[k] === i));
+  const rampK = dates.map((d) => isRampDay(p, d));
+  const otNow = members.map((_, i) => dates.reduce((t, _d, k) => t + (present[i][k] ? Math.max(0, (rampK[k] ? hoursOn(p, dates[k]) : fullNow[i][k] ? p.shiftHours : short) - (isDutyDay(crews[i], dates[k]) ? p.normalHours : 0)) : 0), 0));
+  const topRun = ctx.reachLimit ? Math.max(limit, 6) : limit;
+  const runAround = (i: number, k: number) => { let a = 0, b = 0; while (k - a - 1 >= 0 && fullNow[i][k - a - 1]) a++; while (k + b + 1 < n && fullNow[i][k + b + 1]) b++; return a + b + 1; };
+  const gain = (_i: number, _k: number) => p.shiftHours - short;   // a full shift instead of the short one, on a duty day
+  for (let guard = 0; guard < 2000; guard++) {
+    const order = members.map((_, i) => i).sort((a, b) => otNow[a] - otNow[b] || a - b);
+    let done = false;
+    for (const i of order) {
+      let bestK = -1, bestRun = Infinity;
+      for (let k = 0; k < n; k++) {
+        if (!present[i][k] || rampK[k] || fullNow[i][k] || need[k] <= 0) continue;
+        if (otNow[i] + gain(i, k) > OT_LIMIT) continue;
+        const run = runAround(i, k);
+        if (run > topRun) continue;
+        if (run < bestRun) { bestRun = run; bestK = k; }
+      }
+      if (bestK >= 0) { fullNow[i][bestK] = true; otNow[i] += gain(i, bestK); done = true; break; }
+    }
+    if (!done) break;
+  }
   const days = new Map<string, Record<string, boolean>>(members.map((x) => [x.id, {}]));
   const hours = new Map<string, Record<string, number>>(members.map((x) => [x.id, {}]));
   const people: PersonLine[] = members.map((x, i) => {
@@ -155,7 +181,7 @@ function followCrew(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadC
       const works = present[i][k];
       days.get(x.id)![d] = works;
       if (!works) { hs.push(0); return; }
-      const h = isRampDay(p, d) ? hoursOn(p, d) : fullOf[k] === i ? p.shiftHours : short;
+      const h = isRampDay(p, d) ? hoursOn(p, d) : fullNow[i][k] ? p.shiftHours : short;
       hours.get(x.id)![d] = h; hs.push(h); dWorked++; if (h >= p.shiftHours) full++;
       ot += Math.max(0, h - (isDutyDay(crews[i], d) ? p.normalHours : 0));
     });

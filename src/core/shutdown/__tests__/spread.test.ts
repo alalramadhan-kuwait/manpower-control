@@ -14,13 +14,16 @@ const dates = planDates(plan);
 const run12 = (hours: Record<string, number>) => { let best = 0, cur = 0; for (const d of dates) { cur = hours[d] === 12 ? cur + 1 : 0; best = Math.max(best, cur); } return best; };
 
 describe('follow your own crew (train shutdown)', () => {
-  it('two people from different crews: someone every day, one full shift, 52 h overtime each, the cap is not reached', () => {
+  it('two people from different crews: someone every day, one full shift every day, overtime topped up to 72 h and never above', () => {
     const list = [m('c1', 'controller'), m('c2', 'controller')];
     const r = spreadGroup(plan, grp(list, 'controller'), list, ctxOf({ c1: 'A', c2: 'C' }));
     expect(r.after).toMatchObject({ short: 0, gapDays: 0, noFullDays: 0 });
-    expect(r.train!.people.map((x) => x.overtime)).toEqual([52, 52]);
+    expect(r.train!.people.map((x) => x.overtime)).toEqual([72, 68]);      // within 4 full shifts in a row by day
+    expect(r.train!.people.every((x) => x.overtime <= 72 && x.weekHours <= 72)).toBe(true);
     expect(r.after.over).toBe(0);
-    for (const d of dates.slice(2, -2)) { const h = list.map((x) => r.hours.get(x.id)![d]).filter((x) => x != null); expect(h.filter((x) => x === 12).length).toBe(1); expect(h.every((x) => x === 12 || x === 8)).toBe(true); }
+    const reach = spreadGroup(plan, grp(list, 'controller'), list, ctxOf({ c1: 'A', c2: 'C' }, { reachLimit: true }));
+    expect(reach.train!.people.map((x) => x.overtime)).toEqual([72, 72]);  // everybody at the limit when 6 full shifts in a row are allowed
+    for (const d of dates.slice(2, -2)) { const h = list.map((x) => r.hours.get(x.id)![d]).filter((x) => x != null); expect(h.filter((x) => x === 12).length).toBeGreaterThanOrEqual(1); expect(h.every((x) => x === 12 || x === 8)).toBe(true); }
   });
   it('nobody works a rest day of their own crew, and the plan\'s reduced days are 8 h for everyone', () => {
     const list = [m('s1', 'senior'), m('s2', 'senior'), m('s3', 'senior')];
@@ -30,8 +33,8 @@ describe('follow your own crew (train shutdown)', () => {
     for (const d of ['2026-11-07', '2026-11-08', '2026-11-15', '2026-11-16']) expect(r.days.get('s1')![d]).toBe(false);
     for (const d of ['2026-11-01', '2026-11-02', '2026-11-29', '2026-11-30']) for (const id of ['s1', 's2', 's3']) if (r.days.get(id)![d]) expect(r.hours.get(id)![d]).toBe(8);
     expect(r.after).toMatchObject({ short: 0, gapDays: 0 });
-    expect(r.train!.people.every((x) => x.overtime < 40)).toBe(true);
-    expect(Math.max(...r.train!.people.map((x) => x.full)) - Math.min(...r.train!.people.map((x) => x.full))).toBeLessThanOrEqual(2);   // full shifts shared out
+    expect(r.train!.people.every((x) => x.overtime <= 72 && x.overtime >= 56)).toBe(true);
+    expect(Math.max(...r.train!.people.map((x) => x.overtime)) - Math.min(...r.train!.people.map((x) => x.overtime))).toBeLessThanOrEqual(12);   // overtime shared out
   });
   it('two people of the same crew rest together: days with nobody, a warning and the crews to add from', () => {
     const list = [m('c1', 'controller'), m('c2', 'controller')];
