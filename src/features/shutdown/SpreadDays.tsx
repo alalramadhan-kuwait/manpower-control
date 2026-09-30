@@ -5,6 +5,7 @@ import { OT_LIMIT, defaultMaxRun, spreadPlan, MAX_WEEK_HOURS } from '@/core/shut
 import { slotLabel, type SdMember, type SdPhase, type SdPlan, type SdTeam } from '@/core/shutdown';
 import { setSdDaysMany } from '@/data/shutdown';
 import { BottomSheet, Button, ErrorBox, cx } from '@/ui/components';
+import { Link } from 'react-router-dom';
 import { CrewBadge } from '@/ui/crew';
 
 const arrow = (a: number, b: number, unit = '') => (a === b ? <span className="text-slate-700">{b}{unit}</span> : <span className={b < a ? 'font-semibold text-status-green' : 'font-semibold text-status-red'}>{a}{unit} → {b}{unit}</span>);
@@ -14,14 +15,17 @@ const arrow = (a: number, b: number, unit = '') => (a === b ? <span className="t
  * its people every day and one person for the full shift, the others the normal hours, overtime shared evenly.
  * Total turnaround: stagger the days off inside each place so it keeps its people every day with the least overtime.
  */
-export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, away, onClose, onDone }: {
+export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, conflicts, onClose, onDone }: {
   plan: SdPlan; teams: SdTeam[]; members: SdMember[]; phases: SdPhase[]; names: Map<string, string>;
-  crewOf: (employeeId: string) => Crew | null; away: (employeeId: string, date: string) => boolean;
+  crewOf: (employeeId: string) => Crew | null;
+  /** Team members who have leave inside the shutdown (a team member takes none): balanced as if they were all present. */
+  conflicts: { employeeId: string; number: string; days: number }[];
   onClose: () => void; onDone: (msg: string) => void;
 }) {
   const [maxRun, setMaxRun] = useState(defaultMaxRun(plan));
   const [reach, setReach] = useState(false);
-  const results = useMemo(() => spreadPlan(plan, teams, members, phases, { crewOf, away, maxRun, reachLimit: reach }), [plan, teams, members, phases, crewOf, away, maxRun, reach]);
+  // shutdown team members take no leave: the days are planned with everybody present, the leave to move is listed above
+  const results = useMemo(() => spreadPlan(plan, teams, members, phases, { crewOf, away: () => false, maxRun, reachLimit: reach }), [plan, teams, members, phases, crewOf, maxRun, reach]);
   const [off, setOff] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const id = (r: (typeof results)[number]) => `${r.group.teamId}:${r.group.key}`;
@@ -59,6 +63,15 @@ export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, a
             </span>
           </div>
         </>}
+        {conflicts.length > 0 && (
+          <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-300">
+            <p className="font-semibold">Leave inside the shutdown · {conflicts.length}</p>
+            <p>A team member takes no leave during the shutdown, so the days below are planned as if everyone is present. Move this leave first:</p>
+            <ul className="mt-1 space-y-0.5">
+              {conflicts.map((c) => <li key={c.employeeId} className="flex items-center justify-between gap-2"><span className="truncate">{names.get(c.employeeId) ?? 'Employee'} · {c.days} {c.days === 1 ? 'day' : 'days'}</span><Link to={`/requests?q=${encodeURIComponent(c.number)}`} className="shrink-0 font-semibold text-brand-700 underline">Move leave</Link></li>)}
+            </ul>
+          </div>
+        )}
         {results.length === 0 && <p className="text-sm text-slate-500">Nobody is placed yet.</p>}
         <ul className="divide-y divide-slate-100">
           {results.map((r) => {
@@ -109,7 +122,7 @@ export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, a
             );
           })}
         </ul>
-        <p className="text-[11px] text-slate-500">Applying replaces the days set by hand for these people. Days a person is on leave are set to off. You can still tap any person to change a day.</p>
+        <p className="text-[11px] text-slate-500">Applying replaces the days set by hand for these people. You can still tap any person to change a day.</p>
         {err != null && <ErrorBox error={err} />}
         <Button className="w-full" disabled={busy || chosen.length === 0} onClick={apply}><Shuffle className="h-4 w-4" />Apply to {people} {people === 1 ? 'person' : 'people'}</Button>
       </div>

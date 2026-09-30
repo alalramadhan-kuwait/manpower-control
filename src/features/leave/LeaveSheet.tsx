@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { firstDayBack } from '@/core/leave';
 import { isValidIsoDate, type Crew } from '@/core/roster';
 import { cancelLeave, saveLeave, setLeaveEstimated } from '@/data/leave';
+import { fetchSdMembers } from '@/data/shutdown';
 import type { AbsenceType, LeaveRecord } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Field, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
@@ -39,6 +40,14 @@ export function LeaveSheet({ target, people, types, onClose, onDone }: { target:
   const [mode, setMode] = useState<'edit' | 'cancel'>('edit');
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
 
+  // a shutdown team member takes no leave during the shutdown: say so when the dates fall inside it
+  const [team, setTeam] = useState<{ start: string; end: string }[]>([]);
+  useEffect(() => {
+    if (!employee || !isValidIsoDate(start) || !isValidIsoDate(end) || end < start) { setTeam([]); return; }
+    let live = true;
+    fetchSdMembers(start, end).then((ms) => { if (live) setTeam(ms.filter((m) => m.employeeId === employee).map((m) => ({ start: m.start, end: m.end }))); }).catch(() => { if (live) setTeam([]); });
+    return () => { live = false; };
+  }, [employee, start, end]);
   const person = people.find((p) => p.id === employee) ?? null;
   const [group, setGroup] = useState<Group>(groupOf(rec?.absence_type_code));
   // adding by hand offers only leave outside the PV plan; correcting keeps every type (the record's own too)
@@ -137,6 +146,11 @@ export function LeaveSheet({ target, people, types, onClose, onDone }: { target:
           <Field label="Last day"><input type="date" className="input" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></Field>
         </div>
         {back && <p className="-mt-2 text-xs text-slate-600">{days} day{days === 1 ? '' : 's'} · back to work <span className="font-semibold">{shortDate(back)}</span>{person?.crew ? ' (next duty day)' : ''}</p>}
+        {team.length > 0 && (
+          <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-300">
+            <b>{person?.name ?? 'This person'}</b> is on a shutdown team ({range(team[0].start, team[0].end)}). A team member takes no leave during the shutdown: keep these dates only for sick or other leave that cannot wait.
+          </p>
+        )}
         {canEstimate && (
           <label className={cx('flex items-start gap-2 rounded-xl px-3 py-2 text-sm ring-1', estimated ? 'bg-amber-50 text-amber-900 ring-amber-300' : 'bg-slate-50 text-slate-700 ring-slate-200')}>
             <input type="checkbox" className="mt-0.5 h-4 w-4" checked={estimated} onChange={(e) => setEstimated(e.target.checked)} />

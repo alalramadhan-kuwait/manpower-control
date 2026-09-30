@@ -90,6 +90,8 @@ export default function SdPlanPage() {
   const total = plan.kind === 'total';
   const needTotal = teams.reduce((n, t) => n + Object.values(teamNeed(plan, t, data.phases)).reduce((k, x) => k + x, 0), 0);
   const gapDays = teams.reduce((n, t) => n + view.teamDays.get(t.id)!.filter((d) => dayState(d.slots) === 'critical').length, 0);
+  // a shutdown team member takes no leave: who still has some inside the shutdown
+  const leaveConflicts = members.map((m) => ({ employeeId: m.employeeId, number: data.dir.get(m.employeeId)?.employee_number ?? '', days: view.leaveDays(m) })).filter((c) => c.days > 0);
   const overCap = members.filter((m) => view.hours.get(m.id)!.some((h) => h.over)).length;
   const crewShort = total ? 0 : view.crewImpact.reduce((n, c) => n + c.short, 0);
 
@@ -125,6 +127,15 @@ export default function SdPlanPage() {
         <Link to={`/shutdown/${plan.id}/overtime`} className="flex min-h-9 items-center justify-center gap-1 rounded-lg bg-white text-xs font-semibold text-brand-700 ring-1 ring-slate-300"><FileText className="h-3.5 w-3.5" />Overtime sheet</Link>
       </div>
       {notice && <p className="mb-2 flex items-center gap-1 text-sm text-status-green"><Check className="h-4 w-4" />{notice}</p>}
+      {leaveConflicts.length > 0 && (
+        <div className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-300">
+          <p className="font-semibold">Leave inside the shutdown · {leaveConflicts.length} {leaveConflicts.length === 1 ? 'person' : 'people'}</p>
+          <p>A team member takes no leave during the shutdown. Move the leave, or take the person off the team.</p>
+          <ul className="mt-1 space-y-0.5">
+            {leaveConflicts.map((c) => <li key={c.employeeId} className="flex items-center justify-between gap-2"><span className="truncate">{data.dir.get(c.employeeId)?.display_name ?? 'Employee'} · {c.days} {c.days === 1 ? 'day' : 'days'}</span><Link to={`/requests?q=${encodeURIComponent(c.number)}`} className="shrink-0 font-semibold text-brand-700 underline">Move leave</Link></li>)}
+          </ul>
+        </div>
+      )}
 
       <div className="mb-3 grid grid-cols-4 gap-1 text-center">
         {[{ n: `${members.length}/${needTotal}`, label: 'Placed', dot: members.length >= needTotal ? 'bg-status-green' : 'bg-status-amber' },
@@ -155,7 +166,7 @@ export default function SdPlanPage() {
 
       {adding && <AddSheet plan={plan} team={adding.team} slot={adding.slot} area={adding.area} data={data} view={view} onClose={() => setAdding(null)} onDone={done} />}
       {member && <MemberSheet plan={plan} m={member} data={data} view={view} onClose={() => setMember(null)} onDone={done} />}
-      {spreading && <SpreadDaysSheet plan={plan} teams={teams} members={members} phases={data.phases} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} crewOf={(e) => view.homeCrew(e, plan.start)} away={view.leaveOn} onClose={() => setSpreading(false)} onDone={done} />}
+      {spreading && <SpreadDaysSheet plan={plan} teams={teams} members={members} phases={data.phases} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} crewOf={(e) => view.homeCrew(e, plan.start)} conflicts={leaveConflicts} onClose={() => setSpreading(false)} onDone={done} />}
       {editPattern && <PatternSheet plan={plan} onClose={() => setEditPattern(false)} onDone={done} />}
       {editPhases && <PhasesSheet plan={plan} teams={teams} phases={data.phases} onClose={() => setEditPhases(false)} onDone={done} />}
       {editTeam && <NeedsSheet t={editTeam} onClose={() => setEditTeam(null)} onDone={done} />}
@@ -344,7 +355,7 @@ function AddSheet({ plan, team, slot, area, data, view, onClose, onDone }: { pla
                 <span className="block truncate text-sm font-medium text-slate-900">{c.p.name} <span className="text-[11px] font-normal text-slate-500">{c.p.employmentType === 'contractor' ? 'Contractor' : `G${c.p.grade ?? '—'}`}{c.p.role === 'panel_operator' ? ' · Panel Operator' : c.level ? ` · ${FO_LEVEL_LABEL[c.level]}` : slot !== 'controller' ? ' · no level' : ''}</span></span>
                 <span className="flex flex-wrap gap-x-2 text-[11px] font-semibold">
                   {c.back && <span className="inline-flex items-center gap-0.5 text-status-red"><AlertTriangle className="h-3 w-3" />Also on {c.back}</span>}
-                  {c.leave > 0 && <span className="text-amber-700">Leave {c.leave}d</span>}
+                  {c.leave > 0 && <span className="inline-flex items-center gap-0.5 font-semibold text-status-red"><AlertTriangle className="h-3 w-3" />Leave {c.leave}d in the shutdown: move it first</span>}
                   {c.hit > 0 && <span className="inline-flex items-center gap-0.5 text-status-red"><AlertTriangle className="h-3 w-3" />{c.crew} short {c.hit}d without him</span>}
                   {c.twin.length > 0 ? <span className="inline-flex items-center gap-0.5 text-status-red"><AlertTriangle className="h-3 w-3" />Same crew as {c.twin.join(', ')}: they rest on the same days</span> : total && c.same > 0 && <span className="text-slate-500">{c.same} already from {c.crew}</span>}
                   {!total && c.twin.length === 0 && c.crew && data.members.some((m) => m.teamId === team.id && m.slot === slot) && <span className="text-status-green">Different crew from the slot ✓</span>}

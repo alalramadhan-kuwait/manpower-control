@@ -1,7 +1,7 @@
 // Requests › Leave: every leave running today or starting in the next 30 days, one row per leave, with what the
 // Oracle HR request should say. Approve / Reject records the Oracle decision; tap a row to check or edit the dates.
 import { AlertTriangle, CalendarClock, Check, ChevronDown, ChevronRight, Copy, Search, Trash2, X } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { checkControllerLeave, type LeaveApproval } from '@/core/controllers/leaveRules';
 import { evaluateRange, personOn, type MpAbsence, type MpPerson } from '@/core/manpower';
@@ -52,7 +52,8 @@ export function LeaveWorklist({ adding, onAdded, isHead }: { adding: boolean; on
   const [cancelling, setCancelling] = useState<WorkRow | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
+  const [params] = useSearchParams();
+  const [query, setQuery] = useState(params.get('q') ?? '');
   const [person, setPerson] = useState<MpPerson | null>(null);
   const [changing, setChanging] = useState<{ person: MpPerson; leave: MergedLeave } | null>(null);
   const [addFor, setAddFor] = useState<string | null>(null);
