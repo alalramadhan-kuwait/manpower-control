@@ -15,6 +15,7 @@ import { CrewBadge } from '@/ui/crew';
 import { shortDate } from '@/ui/leave';
 import { PersonHistory } from './PersonHistory';
 import { SpreadDaysSheet } from './SpreadDays';
+import { MoveLeaveSheet } from './MoveLeave';
 
 const CONTROLLER_ROLES = ['controller', 'vr_controller', 'morning_controller'];
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
@@ -51,6 +52,7 @@ export default function SdPlanPage() {
   const [editTeam, setEditTeam] = useState<SdTeam | null>(null);
   const [editPhases, setEditPhases] = useState(false);
   const [spreading, setSpreading] = useState(false);
+  const [moving, setMoving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const load = useCallback(async () => {
     try {
@@ -64,7 +66,7 @@ export default function SdPlanPage() {
     } catch (e) { setError(e); }
   }, [id]);
   useEffect(() => { load(); }, [load]);
-  const done = (m: string) => { setAdding(null); setMember(null); setEditPattern(false); setEditTeam(null); setEditPhases(false); setSpreading(false); setNotice(m); load(); };
+  const done = (m: string) => { setAdding(null); setMember(null); setEditPattern(false); setEditTeam(null); setEditPhases(false); setSpreading(false); setMoving(false); setNotice(m); load(); };
 
   const view = useMemo(() => {
     if (!data) return null;
@@ -131,6 +133,7 @@ export default function SdPlanPage() {
         <div className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-300">
           <p className="font-semibold">Leave inside the shutdown · {leaveConflicts.length} {leaveConflicts.length === 1 ? 'person' : 'people'}</p>
           <p>A team member takes no leave during the shutdown. Move the leave, or take the person off the team.</p>
+          <Button className="my-1.5 min-h-9 w-full px-3 text-xs" onClick={() => setMoving(true)}>Propose new dates for all</Button>
           <ul className="mt-1 space-y-0.5">
             {leaveConflicts.map((c) => <li key={c.employeeId} className="flex items-center justify-between gap-2"><span className="truncate">{data.dir.get(c.employeeId)?.display_name ?? 'Employee'} · {c.days} {c.days === 1 ? 'day' : 'days'}</span><Link to={`/requests?q=${encodeURIComponent(c.number)}`} className="shrink-0 font-semibold text-brand-700 underline">Move leave</Link></li>)}
           </ul>
@@ -166,6 +169,7 @@ export default function SdPlanPage() {
 
       {adding && <AddSheet plan={plan} team={adding.team} slot={adding.slot} area={adding.area} data={data} view={view} onClose={() => setAdding(null)} onDone={done} />}
       {member && <MemberSheet plan={plan} m={member} data={data} view={view} onClose={() => setMember(null)} onDone={done} />}
+      {moving && <MoveLeaveSheet plan={plan} members={members} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} inputs={data.inputs} onClose={() => setMoving(false)} onDone={done} />}
       {spreading && <SpreadDaysSheet plan={plan} teams={teams} members={members} phases={data.phases} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} crewOf={(e) => view.homeCrew(e, plan.start)} conflicts={leaveConflicts} onClose={() => setSpreading(false)} onDone={done} />}
       {editPattern && <PatternSheet plan={plan} onClose={() => setEditPattern(false)} onDone={done} />}
       {editPhases && <PhasesSheet plan={plan} teams={teams} phases={data.phases} onClose={() => setEditPhases(false)} onDone={done} />}
