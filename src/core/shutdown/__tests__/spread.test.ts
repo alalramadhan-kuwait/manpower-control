@@ -122,4 +122,9 @@ describe('overlaps: follow another crew\'s rota', () => {
     const list = [m('s1', 'senior', 'night'), m('s2', 'senior', 'night')];
     expect(suggestFollow(plan, [night], list, [], crews({ s1: 'C', s2: 'B' }))).toEqual([]);
   });
+  it('two Controllers in one crew, one of them a VR: the VR is the one told to follow another crew', () => {
+    const list = [m('c1', 'controller', 'night'), m('vr', 'controller', 'night')];
+    const asked = (first: string) => suggestFollow(plan, [night], first === 'c1' ? list : [...list].reverse(), [], crews({ c1: 'B', vr: 'B' }), (x) => x.id === 'vr');
+    for (const order of ['c1', 'vr']) { const r = asked(order); expect(r).toHaveLength(1); expect(r[0].changes.map((c) => c.memberId)).toEqual(['vr']); }
+  });
 });

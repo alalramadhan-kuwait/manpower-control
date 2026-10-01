@@ -88,7 +88,7 @@ export default function SdPlanPage() {
     // every day of a total turnaround; counted whether or not the day is still marked working (balancing marks leave days off)
     const leaveDays = (m: SdMember) => dates.filter((d) => d >= m.start && d <= m.end && leaveOn(m.employeeId, d) && (plan.kind === 'total' || isDutyDay(dutyCrew(m), d))).length;
     const teamDays = new Map(teams.map((t) => [t.id, dates.map((d) => ({ date: d, slots: teamDay(plan, t, members, d, leaveOn, data.phases) }))]));
-    const overlaps = plan.kind === 'total' ? [] : suggestFollow(plan, teams, members, data.phases, dutyCrew);
+    const overlaps = plan.kind === 'total' ? [] : suggestFollow(plan, teams, members, data.phases, dutyCrew, (m) => data.dir.get(m.employeeId)?.position_code === 'vr_controller');
     return { people, leaveOn, homeCrew, dutyCrew, dates, crewImpact, hours, leaveDays, teamDays, overlaps };
   }, [data]);
 
@@ -177,7 +177,7 @@ export default function SdPlanPage() {
       {adding && <AddSheet plan={plan} team={adding.team} slot={adding.slot} area={adding.area} data={data} view={view} onClose={() => setAdding(null)} onDone={done} />}
       {member && <MemberSheet plan={plan} m={member} data={data} view={view} onClose={() => setMember(null)} onDone={done} />}
       {moving && <MoveLeaveSheet plan={plan} members={members} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} inputs={data.inputs} onClose={() => setMoving(false)} onDone={done} />}
-      {following && <FollowSheet plan={plan} teams={teams} members={members} groups={view.overlaps} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} onClose={() => setFollowing(false)} onDone={done} />}
+      {following && <FollowSheet plan={plan} teams={teams} members={members} groups={view.overlaps} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} isVr={(e) => data.dir.get(e)?.position_code === 'vr_controller'} onClose={() => setFollowing(false)} onDone={done} />}
       {spreading && <SpreadDaysSheet plan={plan} teams={teams} members={members} phases={data.phases} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} crewOf={(e) => { const mm = members.find((x) => x.employeeId === e); return mm ? view.dutyCrew(mm) : view.homeCrew(e, plan.start); }} conflicts={leaveConflicts} onClose={() => setSpreading(false)} onDone={done} />}
       {editPattern && <PatternSheet plan={plan} onClose={() => setEditPattern(false)} onDone={done} />}
       {editPhases && <PhasesSheet plan={plan} teams={teams} phases={data.phases} onClose={() => setEditPhases(false)} onDone={done} />}
@@ -428,7 +428,7 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
       <div className="space-y-3">
         <p className="text-sm text-slate-600">#{r?.employee_number} · {SD_SLOT_LABEL[m.slot]}{r?.crew_code ? ` · from ${r.crew_code} Shift` : ''}{team ? ` · ${team.name} team` : ''}</p>
         <PersonHistory employeeId={m.employeeId} crew={crew} skipPlanId={plan.id} />
-        {!total && home && <FollowInstruction plan={plan} m={m} home={home} name={r?.display_name ?? 'Employee'} onDone={onDone} />}
+        {!total && home && <FollowInstruction plan={plan} m={m} home={home} name={r?.display_name ?? 'Employee'} vr={r?.position_code === 'vr_controller'} onDone={onDone} />}
         <Field label="Days (tap to switch working / off)">
           <div className="grid grid-cols-7 gap-1">
             {view.dates.map((d) => {

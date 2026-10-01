@@ -213,10 +213,12 @@ export async function fetchFollowMovements(employeeIds: string[]): Promise<Map<s
 /**
  * The instruction "follow crew X's shift, then join the team": on the team the member keeps X's duty and rest days; before
  * joining (`from` to the day before `member.start`) they work X's shift, recorded as a temporary shift movement so the
- * crews' cover counts it. `to` null removes the instruction (and the movement it made).
+ * crews' cover counts it. `to` null removes the instruction (and the movement it made). A VR Controller has no crew of his own
+ * (the shift movement is refused for him; his placements are the Section Head's): only the rota on the team changes.
  */
-export async function setFollow(v: { member: SdMember; title: string; to: Crew | null; from: string | null; previous?: { id: string } | null }) {
+export async function setFollow(v: { member: SdMember; title: string; to: Crew | null; from: string | null; previous?: { id: string } | null; vr?: boolean }) {
   const { member: m, to } = v;
+  if (v.vr) { await updateSdMember(m.id, { follow_crew: to }); return; }
   if (v.previous) await cancelMovement(v.previous.id, to ? 'Instruction changed' : 'Instruction removed');
   if (to && v.from) {
     const last = new Date(Date.parse(m.start) - 864e5).toISOString().slice(0, 10);

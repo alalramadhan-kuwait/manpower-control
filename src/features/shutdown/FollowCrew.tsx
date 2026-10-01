@@ -29,7 +29,7 @@ function crewShortDays(inputs: ManpowerInputs, from: string, to: string, moves: 
 }
 
 /** Suggested instructions for the team's overlaps, to accept all at once. */
-export function FollowSheet({ plan, teams, members, groups, names, onClose, onDone }: { plan: SdPlan; teams: SdTeam[]; members: SdMember[]; groups: FollowGroup[]; names: Map<string, string>; onClose: () => void; onDone: (msg: string) => void }) {
+export function FollowSheet({ plan, teams, members, groups, names, isVr, onClose, onDone }: { plan: SdPlan; teams: SdTeam[]; members: SdMember[]; groups: FollowGroup[]; names: Map<string, string>; isVr: (employeeId: string) => boolean; onClose: () => void; onDone: (msg: string) => void }) {
   const today = localToday();
   const [from, setFrom] = useState(defaultFrom(plan, today));
   const [skip, setSkip] = useState<Set<string>>(new Set());
@@ -43,7 +43,7 @@ export function FollowSheet({ plan, teams, members, groups, names, onClose, onDo
   const hasBefore = from <= lastDay;
   useEffect(() => { fetchFollowMovements(changes.map((c) => c.employeeId)).then(setPrevious).catch(setErr); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!hasBefore) { setInputs(null); return; } setInputs(null); fetchManpowerInputs(from, lastDay).then(setInputs).catch(setErr); }, [from, lastDay, hasBefore]);
-  const impact = useMemo(() => (inputs && hasBefore ? crewShortDays(inputs, from, lastDay, chosen.map((c) => ({ id: c.employeeId, crew: c.to }))) : null), [inputs, from, lastDay, hasBefore, chosen]);
+  const impact = useMemo(() => (inputs && hasBefore ? crewShortDays(inputs, from, lastDay, chosen.filter((c) => !isVr(c.employeeId)).map((c) => ({ id: c.employeeId, crew: c.to }))) : null), [inputs, from, lastDay, hasBefore, chosen, isVr]);
   const worse = impact ? CREWS.filter((c) => impact.after[c] > impact.before[c]) : [];
   const teamName = (id: string) => teams.find((t) => t.id === id)?.name ?? '';
 
@@ -53,7 +53,7 @@ export function FollowSheet({ plan, teams, members, groups, names, onClose, onDo
     for (const c of chosen) {
       const m = members.find((x) => x.id === c.memberId); if (!m) continue;
       try {
-        await setFollow({ member: m, title: plan.title, to: c.to, from: hasBefore ? from : null, previous: previous?.get(c.employeeId) ?? null });
+        await setFollow({ member: m, title: plan.title, to: c.to, from: hasBefore ? from : null, previous: previous?.get(c.employeeId) ?? null, vr: isVr(c.employeeId) });
         await clearSdDays(m.id);   // the days set by hand followed the old crew
         ok++;
       } catch (e) { failed.push(`${names.get(c.employeeId) ?? 'Employee'}: ${e instanceof Error ? e.message : 'failed'}`); }
@@ -74,7 +74,7 @@ export function FollowSheet({ plan, teams, members, groups, names, onClose, onDo
                   <label className="flex items-center gap-2 px-3 py-2">
                     <input type="checkbox" className="h-4 w-4" checked={!skip.has(c.memberId)} onChange={() => setSkip((s) => { const n = new Set(s); if (n.has(c.memberId)) n.delete(c.memberId); else n.add(c.memberId); return n; })} />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-slate-900">{names.get(c.employeeId) ?? 'Employee'}</span>
+                      <span className="block truncate text-sm font-medium text-slate-900">{names.get(c.employeeId) ?? 'Employee'}{isVr(c.employeeId) && <span className="ml-1 text-[10px] font-semibold text-slate-400">VR</span>}</span>
                       <span className="block text-[11px] text-slate-500">{teamName(c.g.teamId)} · {slotLabel(c.g.key)} · days nobody there {c.g.before.gapDays} → {c.g.after.gapDays} · short {c.g.before.short} → {c.g.after.short}</span>
                     </span>
                     <span className="flex shrink-0 items-center gap-1 text-xs font-semibold"><CrewBadge crew={c.from} size="sm" /><ArrowRight className="h-3.5 w-3.5 text-slate-400" /><CrewBadge crew={c.to} size="sm" /></span>
@@ -88,6 +88,7 @@ export function FollowSheet({ plan, teams, members, groups, names, onClose, onDo
             {hasBefore && (!inputs ? <Spinner label="Checking the crews' cover…" /> : worse.length === 0
               ? <p className="flex items-center gap-1.5 rounded-lg bg-green-50 px-3 py-2 text-xs text-green-800 ring-1 ring-green-200"><Check className="h-4 w-4 shrink-0" />Before joining ({shortDate(from)} – {shortDate(lastDay)}) no crew falls short because of the moves.</p>
               : <p className="flex items-start gap-1.5 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-status-red ring-1 ring-red-200"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />Before joining, {worse.map((c) => `${c} Shift short ${impact!.after[c] - impact!.before[c]} more ${impact!.after[c] - impact!.before[c] === 1 ? 'day' : 'days'}`).join(' · ')}. Start later, or untick the person.</p>)}
+            {chosen.some((c) => isVr(c.employeeId)) && <p className="text-[11px] text-slate-500">A VR Controller has no crew of his own: his instruction changes his rota on the team only. His placement before joining stays as the Section Head set it (VR placement).</p>}
             <p className="text-[11px] text-slate-500">Saving also clears the days set by hand for these people; then press Own-crew days and hours to set the days and hours again.</p>
           </>
         )}
@@ -99,31 +100,31 @@ export function FollowSheet({ plan, teams, members, groups, names, onClose, onDo
 }
 
 /** One person's instruction, by hand (in the member sheet): follow another crew, from when, or back to his own. */
-export function FollowInstruction({ plan, m, home, name, onDone }: { plan: SdPlan; m: SdMember; home: Crew; name: string; onDone: (msg: string) => void }) {
+export function FollowInstruction({ plan, m, home, name, vr = false, onDone }: { plan: SdPlan; m: SdMember; home: Crew; name: string; vr?: boolean; onDone: (msg: string) => void }) {
   const today = localToday();
   const [to, setTo] = useState<Crew | null>(m.followCrew ?? null);
   const [from, setFrom] = useState(defaultFrom(plan, today));
   const [previous, setPrevious] = useState<{ id: string; to: Crew; start: string; end: string | null } | null>(null);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  useEffect(() => { fetchFollowMovements([m.employeeId]).then((x) => { const p = x.get(m.employeeId) ?? null; setPrevious(p); if (p) setFrom(p.start); }).catch(() => {}); }, [m.employeeId]);
-  const hasBefore = to !== null && from <= dayBefore(m.start);
+  useEffect(() => { if (vr) return; fetchFollowMovements([m.employeeId]).then((x) => { const p = x.get(m.employeeId) ?? null; setPrevious(p); if (p) setFrom(p.start); }).catch(() => {}); }, [m.employeeId, vr]);
+  const hasBefore = !vr && to !== null && from <= dayBefore(m.start);
   const changed = to !== (m.followCrew ?? null);
   async function save() {
     setBusy(true); setErr(null);
     try {
-      await setFollow({ member: m, title: plan.title, to, from: hasBefore ? from : null, previous });
+      await setFollow({ member: m, title: plan.title, to, from: hasBefore ? from : null, previous, vr });
       if (changed) await clearSdDays(m.id);
       onDone(to ? `${name} follows ${to} Shift, then joins the team${changed ? '. Press Own-crew days and hours to set the days.' : '.'}` : `${name} is back on his own crew's days.`);
     } catch (e) { setErr(e); setBusy(false); }
   }
   return (
-    <Field label="Instruction" hint={to ? `Follows ${to} Shift: works it${hasBefore ? ` from ${shortDate(from)}` : ''}, takes its days off, then joins the team on ${shortDate(m.start)} and keeps its duty and rest days.` : `Own crew (${home} Shift): its duty and rest days. Choose another crew to follow its shift, take off, then join the team.`}>
+    <Field label="Instruction" hint={to ? `Follows ${to} Shift: ${vr ? 'keeps its duty and rest days on the team (his placement before joining is not changed)' : 'works it'}${hasBefore ? ` from ${shortDate(from)}` : ''}, takes its days off, then joins the team on ${shortDate(m.start)} and keeps its duty and rest days.` : `Own crew (${home} Shift): its duty and rest days. Choose another crew to follow its shift, take off, then join the team.`}>
       <div className="space-y-2">
         <div className="flex flex-wrap gap-1.5">
           <button type="button" onClick={() => setTo(null)} className={cx('flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ring-1', to === null ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>Own crew ({home})</button>
           {CREWS.filter((c) => c !== home).map((c) => <button key={c} type="button" onClick={() => setTo(c)} className={cx('flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ring-1', to === c ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>Follow {c}</button>)}
         </div>
-        {to && <Field label="Works that crew's shift from"><input type="date" className="input" value={from} max={m.start} onChange={(e) => setFrom(e.target.value || defaultFrom(plan, today))} /></Field>}
+        {to && !vr && <Field label="Works that crew's shift from"><input type="date" className="input" value={from} max={m.start} onChange={(e) => setFrom(e.target.value || defaultFrom(plan, today))} /></Field>}
         {err != null && <ErrorBox error={err} />}
         {(changed || (to && previous && previous.start !== from)) && <Button variant="secondary" className="w-full" disabled={busy} onClick={save}>{to ? `Save: follow ${to} Shift` : 'Back to his own crew'}</Button>}
       </div>
