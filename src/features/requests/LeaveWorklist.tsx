@@ -230,6 +230,12 @@ function ChangeSheet({ person, records, inputs, approvals, today, onBack, onDone
   const impact = useMemo(() => (valid && !unchanged ? leaveImpact(person, records, inputs, approvals, start, planEnd, today) : null), [valid, unchanged, person, records, inputs, approvals, start, planEnd, today]);
   const oracle = records.find((r) => r.oracle && r.oracle !== 'not_submitted')?.oracle;
   const over = cur.end < today;
+  // the Oracle (EasyHR) decision on the leave as it is now, when the dates are not being changed
+  const status = records[0].oracle ?? null;
+  async function decide(next: OracleStatus) {
+    setBusy(true); setErr(null);
+    try { await setOracleStatus(records.map((x) => x.id!), next); onDone(`${person.name}: ${ORACLE_LABEL[next].toLowerCase()} in Oracle.`); } catch (e) { setErr(e); } finally { setBusy(false); }
+  }
   async function save() {
     setBusy(true); setErr(null);
     try {
@@ -258,6 +264,17 @@ function ChangeSheet({ person, records, inputs, approvals, today, onBack, onDone
               {impact.short > 0 && <div className="text-xs font-semibold text-status-red">Crew short on {impact.short} dut{impact.short === 1 ? 'y' : 'ies'} with these dates</div>}
               {impact.clash.length > 0 && <div className="text-xs font-semibold text-status-red">2 Controllers off · with {impact.clash.join(', ')}</div>}
             </> : <div className="text-xs text-green-800">No shortage with these dates ✓</div>}
+          </div>
+        )}
+        {unchanged && !over && status !== 'approved' && (
+          <div className="space-y-2 rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Oracle decision on these dates</div>
+            <div className="grid grid-cols-3 gap-2">
+              <button type="button" className="flex min-h-10 items-center justify-center gap-1 rounded-xl bg-green-600 px-2 text-sm font-semibold text-white disabled:opacity-50" disabled={busy} onClick={() => decide('approved')}><Check className="h-4 w-4" />Approve</button>
+              <Button variant="secondary" className="min-h-10 px-2 text-sm" disabled={busy || status === 'submitted'} onClick={() => decide('submitted')}>Submitted</Button>
+              <Button variant="secondary" className="min-h-10 px-2 text-sm text-status-red" disabled={busy || status === 'rejected'} onClick={() => decide('rejected')}><X className="h-4 w-4" />Reject</Button>
+            </div>
+            <p className="text-[11px] text-slate-500">Record what EasyHR decided. To move the leave instead, change the dates below.</p>
           </div>
         )}
         <Field label="Reason for the change"><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Employee asked to move it a week later" /></Field>
