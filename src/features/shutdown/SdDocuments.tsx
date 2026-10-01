@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { Link, useParams } from 'react-router-dom';
 import { personOn } from '@/core/manpower';
 import { addDaysIso, type Crew } from '@/core/roster';
-import { areasOf, dayOvertime, isDutyDay, memberWorks, planDates, type SdMember, type SdPlan, type SdTeam } from '@/core/shutdown';
+import { areasOf, dayOvertime, isDutyDay, memberHoursOn, memberWorks, planDates, type SdMember, type SdPlan, type SdTeam } from '@/core/shutdown';
 import { fetchManpowerInputs } from '@/data/manpower';
 import { fetchDirectory } from '@/data/queries';
 import { fetchSdPlan, updateSdPlan, type Signature } from '@/data/shutdown';
@@ -108,7 +108,11 @@ export function SdSchedulePage() {
                     // black: not on the team that day; red letter: working on the person's own crew rest day (full overtime)
                     if (d < x.m.start || d > x.m.end) return <td key={d} className={cx(td, 'bg-slate-900')} />;
                     const w = memberWorks(plan, x.m, d);
-                    return <td key={d} className={cx(td, 'font-semibold', w ? (x.team.shiftCode === 'N' ? 'bg-slate-300' : 'bg-sky-50') : offInside(plan, x.m, dates, d) && 'bg-yellow-300', w && !isDutyDay(x.crew, d) && 'text-red-600')}>{w ? x.team.shiftCode : 'O'}</td>;
+                    // a shorter day (the reduced first and last days, or the normal hours beside the full shift): the hours beside the letter, a lighter fill
+                    const h = w ? memberHoursOn(plan, x.m, d) : 0;
+                    const short = w && h < plan.shiftHours;
+                    const night = x.team.shiftCode === 'N';
+                    return <td key={d} className={cx(td, 'font-semibold', w ? (night ? (short ? 'bg-slate-100' : 'bg-slate-300') : short ? 'bg-white' : 'bg-sky-100') : offInside(plan, x.m, dates, d) && 'bg-yellow-300', w && !isDutyDay(x.crew, d) && 'text-red-600')}>{w ? <>{x.team.shiftCode}{short && <sub className="text-[8px] font-bold">{h}</sub>}</> : 'O'}</td>;
                   })}
                 </tr>
               );
@@ -117,7 +121,8 @@ export function SdSchedulePage() {
         </table>
       ))}
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-700">
-        {doc.teams.map((t) => <span key={t.id}><b className={cx('mr-1 inline-block w-5 border border-slate-500 text-center', t.shiftCode === 'N' ? 'bg-slate-300' : 'bg-sky-50')}>{t.shiftCode}</b>{t.name} shift {t.hoursLabel ?? ''}</span>)}
+        {doc.teams.map((t) => <span key={t.id}><b className={cx('mr-1 inline-block w-6 border border-slate-500 text-center', t.shiftCode === 'N' ? 'bg-slate-300' : 'bg-sky-100')}>{t.shiftCode}</b>{t.name} shift {plan.shiftHours} hrs {t.hoursLabel ?? ''}</span>)}
+        {[...new Set(doc.teams.map((t) => t.shiftCode))].map((c) => <span key={`s${c}`}><b className={cx('mr-1 inline-block w-6 border border-slate-500 text-center', c === 'N' ? 'bg-slate-100' : 'bg-white')}>{c}<sub className="text-[8px] font-bold">{plan.normalHours}</sub></b>{c === 'N' ? 'Night' : 'Day'} shift {plan.normalHours} hrs: a shorter day, the small number is the hours</span>)}
         <span><b className="mr-1 inline-block w-5 border border-slate-500 bg-yellow-300 text-center">O</b>Off</span>
         <span><b className="mr-1 inline-block w-5 border border-slate-500 text-center text-red-600">{doc.teams[0]?.shiftCode ?? 'M'}</b>On the person's crew rest day (full overtime)</span>
         <span><b className="mr-1 inline-block w-5 border border-slate-500 bg-slate-900 text-center">&nbsp;</b>Not on the team</span>

@@ -64,8 +64,8 @@ export async function createSdPlan(v: { title: string; start: string; end: strin
     ...(total ? { days_on: 1, days_off: 0, ramp_days: 0, areas, sections } : {}) }).select('id').single();
   if (error) throw error;
   const id = (data as { id: string }).id;
-  const t = await supabase.from('sd_teams').insert([{ plan_id: id, name: 'Morning', sort: 0, shift_code: 'M', shift_hours_label: '06:00 - 18:00' },
-    { plan_id: id, name: 'Night', sort: 1, shift_code: 'N', shift_hours_label: '18:00 - 06:00' }]).select('id');
+  const t = await supabase.from('sd_teams').insert([{ plan_id: id, name: 'Morning', sort: 0, shift_code: 'M', shift_hours_label: '07:00 - 19:00' },
+    { plan_id: id, name: 'Night', sort: 1, shift_code: 'N', shift_hours_label: '19:00 - 07:00' }]).select('id');
   if (t.error) throw t.error;
   if (total) {
     const needs = Object.fromEntries((t.data as { id: string }[]).map((x) => [x.id, { controller: sections.length, sections: Object.fromEntries(sections.map((x) => [x, 1])), areas: Object.fromEntries(areas.map((a) => [a, 5])) }]));

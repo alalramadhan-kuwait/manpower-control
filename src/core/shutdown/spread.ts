@@ -14,7 +14,7 @@ import { SD_SLOTS, areasOf, groupOf, hoursOn, isDutyDay, isRampDay, memberHoursO
 export interface SpreadGroup {
   /** Same keys as a team day: 'controller', 'senior', 'good', 'new', 'ctl:<section>', 'area:<name>'. */
   key: string; teamId: string; memberIds: string[];
-  /** The team works nights (18:00-06:00): a lower limit of full shifts in a row. */
+  /** The team works nights (19:00-07:00): a lower limit of full shifts in a row. */
   night: boolean;
   /** People needed on a date. */
   need: (date: string) => number;
