@@ -97,6 +97,8 @@ export interface MpAssignment {
   start: string;
   end: string;
   coversEmployeeId?: string | null;
+  /** sd_team: does he work the team shift on this date? (undefined = not known: counted as working.) */
+  works?: (date: string) => boolean;
 }
 
 export interface MpAbsence {
@@ -311,6 +313,8 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
   const leaveOf = (p: MpPerson) => (byEmp.get(p.id) ?? []).find(isLeave) ?? null;
   const unresolvedOf = (p: MpPerson) => (byEmp.get(p.id) ?? []).find(isUnresolved) ?? null;
 
+  // a shutdown-team Controller covers a normal shift that has no Controller, in addition to his team duty (one shift a day)
+  const autoUsed = new Set<string>();
   const crews: CrewDay[] = CREWS.map((crew) => {
     const duty = dutyFor(date, crew);
     const state = stateOf(duty);
@@ -353,6 +357,16 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
       cover = { person: coverPerson, assignment: coverAssignment, counted, absence };
       if (counted && !ctrlCounted.includes(coverPerson)) ctrlCounted.push(coverPerson);
     }
+    // No recorded cover and the crew's Controller is out (leave, or away on a shutdown team / another assignment): fill the shift
+    // automatically with a shutdown-team Controller who is free (no leave, no other assignment): one not working the team that
+    // day first, then one who does both; his own crew's shift before another crew's.
+    if (!cover && working && ctrlCounted.length < rules.controllerMin && (away.length > 0 || members.some((p) => p.role === 'controller' && leaveOf(p) && qualifiesAsController(p)))) {
+      const candidates = todays.filter((a) => a.kind === 'sd_team' && !autoUsed.has(a.employeeId)).map((a) => ({ a, p: byId.get(a.employeeId) ?? null }))
+        .filter((x): x is { a: MpAssignment; p: MpPerson } => !!x.p && x.p.grade != null && x.p.grade >= rules.controllerGrade && !leaveOf(x.p) && assignmentOf(x.p)?.kind === 'sd_team')
+        .sort((x, y) => Number(x.a.works?.(date) ?? true) - Number(y.a.works?.(date) ?? true) || Number(y.p.crew === crew) - Number(x.p.crew === crew) || x.p.name.localeCompare(y.p.name));
+      const pick = candidates[0];
+      if (pick) { autoUsed.add(pick.p.id); cover = { person: pick.p, assignment: pick.a, counted: true, absence: null }; ctrlCounted.push(pick.p); }
+    }
     if (ctrlCounted.length < rules.controllerMin) {
       // Draw a Grade-14 Acting Controller from the crew — only someone with the Acting Controller qualification
       // explicitly recorded as Yes; never inferred — from the position with the larger buffer.
@@ -366,7 +380,7 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
       }
     }
     if (acting) ctrlIssues.push(`Acting Controller: ${acting.name} (Grade ${acting.grade})`);
-    if (cover?.counted) ctrlIssues.push(`Covered by ${cover.person.name}`);
+    if (cover?.counted) ctrlIssues.push(`Covered by ${cover.person.name}${cover.assignment.kind === 'sd_team' ? ` (shutdown team Controller${cover.assignment.works?.(date) ?? true ? ', in addition to his team shift' : ', off the team today'})` : ''}`);
     const ctrlOnLeave = working ? members.filter((p) => p.role === 'controller' && leaveOf(p) && qualifiesAsController(p)) : [];
     const ctrlCount = ctrlCounted.length;
     const ctrlMet = ctrlCount >= rules.controllerMin;

@@ -203,7 +203,7 @@ function notesFor(c: CrewDay, key: 'controller' | 'panel' | 'field', leave: Map<
     const p = c.controller;
     if (p.acting) notes.push({ text: `Acting: ${p.acting.name}`, tone: 'muted' });
     const whoIsOut = [...p.onLeave.map((x) => `${x.name}${leave.get(x.id) ? ` (${leaveShort(leave.get(x.id)!)})` : ''}`), ...p.away.map((w) => `${w.person.name} (${w.assignment.kind === 'morning_rotation' ? 'Morning rotation' : w.assignment.kind === 'sd_team' ? 'SD team' : `covering ${w.assignment.crew} Shift`})`)];
-    if (p.cover?.counted) notes.push({ text: `Cover: ${p.cover.person.name} (${ROLE_SHORT[p.cover.person.role ?? ''] ?? 'Controller'}) · to ${shortDate(p.cover.assignment.end)}`, tone: 'good' });
+    if (p.cover?.counted) notes.push({ text: p.cover.assignment.kind === 'sd_team' ? `Cover: ${p.cover.person.name} (shutdown team Controller${p.cover.assignment.works?.(date) ?? true ? ', in addition to his team shift' : ', off the team today'})` : `Cover: ${p.cover.person.name} (${ROLE_SHORT[p.cover.person.role ?? ''] ?? 'Controller'}) · to ${shortDate(p.cover.assignment.end)}`, tone: 'good' });
     if (p.finding === 'coverage_required') {
       notes.push({ text: `Cover needed · ${whoIsOut.join(', ')}${p.cover && !p.cover.counted ? ` · cover ${p.cover.person.name} on leave` : ''}`, tone: 'pending', to: `/controllers?assign=cover&crew=${c.crew}&from=${date}`, link: 'Assign' });
       if (need?.additional) notes.push({ text: 'Extra Controller needed', tone: 'red' });

@@ -126,7 +126,7 @@ export function checkCandidates(kind: MpAssignment['kind'], crew: Crew | null, s
       if (p.grade == null || p.grade < COVER_GRADE) blocked.push(`Grade ${p.grade ?? '—'}; Grade ${COVER_GRADE}+ required`);
       if (kind === 'shift_cover' && crew && p.crew === crew) blocked.push('Own crew');
       const onSd = assignments.find((a) => a.kind === 'sd_team' && a.employeeId === p.id && a.start <= end && a.end >= start);
-      if (onSd) warnings.push('On a shutdown team: the team is without its Controller on these days');
+      if (onSd) warnings.push('On a shutdown team: covers in addition to his team shift (extra duty, overtime)');
       const clash = assignments.find((a) => a.id !== editingId && a.kind !== 'sd_team' && a.employeeId === p.id && a.start <= end && a.end >= start);
       if (clash) blocked.push(`Already ${clash.kind === 'morning_rotation' ? 'on Morning rotation' : `covering ${clash.crew} Shift`} ${clash.start} – ${clash.end}`);
       const leaveDays = new Set<string>();

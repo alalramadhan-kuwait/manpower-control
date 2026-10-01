@@ -3,7 +3,7 @@ import { supabase } from './supabase';
 import { dataChanged } from './changes';
 import type { Crew } from '@/core/roster';
 import { cancelMovement, fetchMovements, recordMovement } from './movements';
-import type { FoLevel, SdKind, SdMember, SdPhase, SdPlan, SdSlot, SdTeam } from '@/core/shutdown';
+import { memberWorks, type FoLevel, type SdDay, type SdKind, type SdMember, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
 
 export interface Signature { title: string; name: string }
 interface PlanRow { signatures: Signature[]; kind: SdKind; areas: string[] | null; sections: string[] | null; id: string; event_id: string | null; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; status: string }
@@ -53,6 +53,22 @@ export async function fetchSdMembers(from: string, to: string): Promise<SdMember
   const { data, error } = await supabase.from('sd_members').select('*, sd_plans!inner(status)').eq('status', 'active').eq('sd_plans.status', 'active').lte('start_date', to).gte('end_date', from);
   if (error) throw error;
   return (data as MemberRow[]).map(toMember);
+}
+
+/** For shutdown-team members: on which dates each works the team shift (the plan's pattern and the member's own days). */
+export async function fetchSdWorks(members: SdMember[]): Promise<Map<string, (date: string) => boolean>> {
+  const out = new Map<string, (date: string) => boolean>();
+  if (!members.length) return out;
+  const [p, d] = await Promise.all([
+    supabase.from('sd_plans').select('*').in('id', [...new Set(members.map((m) => m.planId))]),
+    supabase.from('sd_days').select('member_id,work_date,works,hours').in('member_id', members.map((m) => m.id)).limit(10000)
+  ]);
+  if (p.error) throw p.error; if (d.error) throw d.error;
+  const plans = new Map((p.data as PlanRow[]).map((x) => [x.id, toPlan(x)]));
+  const by = new Map(members.map((m) => [m.id, { ...m, days: {} as Record<string, SdDay> }]));
+  for (const r of d.data as { member_id: string; work_date: string; works: boolean; hours: number | null }[]) { const m = by.get(r.member_id); if (m) m.days![r.work_date] = { works: r.works, hours: r.hours == null ? null : Number(r.hours) }; }
+  for (const m of by.values()) { const plan = plans.get(m.planId); if (plan) out.set(m.id, (date) => memberWorks(plan, m, date)); }
+  return out;
 }
 
 /** A new plan with a Morning and a Night team. A total turnaround: everyone every day, two areas, one phase for all its days. */

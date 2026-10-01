@@ -36,9 +36,9 @@ function dutyLabel(duty) {
   const s = stateOf(duty);
   return s === "Off" ? `Off ${duty.slice(3)}` : `${SHIFT_LABEL[s]} ${duty}`;
 }
-function addDaysIso(iso, days) {
+function addDaysIso(iso, days2) {
   const d = /* @__PURE__ */ new Date(iso + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() + days);
+  d.setUTCDate(d.getUTCDate() + days2);
   return d.toISOString().slice(0, 10);
 }
 function crewsByShift(date) {
@@ -136,6 +136,7 @@ function evaluateDay(date, allPeople, absences, rulesSource = FULL_OPERATION, as
   }
   const leaveOf = (p) => (byEmp.get(p.id) ?? []).find(isLeave) ?? null;
   const unresolvedOf = (p) => (byEmp.get(p.id) ?? []).find(isUnresolved) ?? null;
+  const autoUsed = /* @__PURE__ */ new Set();
   const crews = CREWS.map((crew) => {
     const duty = dutyFor(date, crew);
     const state = stateOf(duty);
@@ -180,6 +181,15 @@ function evaluateDay(date, allPeople, absences, rulesSource = FULL_OPERATION, as
       cover = { person: coverPerson, assignment: coverAssignment, counted, absence };
       if (counted && !ctrlCounted.includes(coverPerson)) ctrlCounted.push(coverPerson);
     }
+    if (!cover && working && ctrlCounted.length < rules.controllerMin && (away.length > 0 || members.some((p) => p.role === "controller" && leaveOf(p) && qualifiesAsController(p)))) {
+      const candidates = todays.filter((a) => a.kind === "sd_team" && !autoUsed.has(a.employeeId)).map((a) => ({ a, p: byId.get(a.employeeId) ?? null })).filter((x) => !!x.p && x.p.grade != null && x.p.grade >= rules.controllerGrade && !leaveOf(x.p) && assignmentOf(x.p)?.kind === "sd_team").sort((x, y) => Number(x.a.works?.(date) ?? true) - Number(y.a.works?.(date) ?? true) || Number(y.p.crew === crew) - Number(x.p.crew === crew) || x.p.name.localeCompare(y.p.name));
+      const pick = candidates[0];
+      if (pick) {
+        autoUsed.add(pick.p.id);
+        cover = { person: pick.p, assignment: pick.a, counted: true, absence: null };
+        ctrlCounted.push(pick.p);
+      }
+    }
     if (ctrlCounted.length < rules.controllerMin) {
       const canAct = (p) => p.grade != null && p.grade >= rules.actingControllerGrade && p.grade < rules.controllerGrade && p.actingController === "yes";
       const panelBuffer = pool.panel.filter((p) => p.panelQualified === "yes").length - rules.panelMin;
@@ -196,7 +206,7 @@ function evaluateDay(date, allPeople, absences, rulesSource = FULL_OPERATION, as
       }
     }
     if (acting) ctrlIssues.push(`Acting Controller: ${acting.name} (Grade ${acting.grade})`);
-    if (cover?.counted) ctrlIssues.push(`Covered by ${cover.person.name}`);
+    if (cover?.counted) ctrlIssues.push(`Covered by ${cover.person.name}${cover.assignment.kind === "sd_team" ? ` (shutdown team Controller${cover.assignment.works?.(date) ?? true ? ", in addition to his team shift" : ", off the team today"})` : ""}`);
     const ctrlOnLeave = working ? members.filter((p) => p.role === "controller" && leaveOf(p) && qualifiesAsController(p)) : [];
     const ctrlCount = ctrlCounted.length;
     const ctrlMet = ctrlCount >= rules.controllerMin;
@@ -414,7 +424,34 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 var serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}").default;
 var supabase = createClient(Deno.env.get("SUPABASE_URL"), serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
+// src/core/shutdown/index.ts
+var days = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
+var cycleOf = (p) => Math.max(1, p.daysOn + p.daysOff);
+function memberWorks(p, m, date) {
+  if (date < m.start || date > m.end || date < p.start || date > p.end) return false;
+  const own = m.days?.[date];
+  if (own) return own.works;
+  return (days(p.start, date) + m.offset) % cycleOf(p) < p.daysOn;
+}
+
 // src/data/shutdown.ts
+var toPlan = (r) => ({
+  id: r.id,
+  eventId: r.event_id,
+  title: r.title,
+  kind: r.kind ?? "train",
+  areas: r.areas ?? [],
+  sections: r.sections ?? [],
+  start: r.start_date,
+  end: r.end_date,
+  daysOn: r.days_on,
+  daysOff: r.days_off,
+  shiftHours: Number(r.shift_hours),
+  rampDays: r.ramp_days,
+  rampHours: Number(r.ramp_hours),
+  normalHours: Number(r.normal_hours),
+  maxOvertime: Number(r.max_overtime)
+});
 var toMember = (r) => ({
   id: r.id,
   planId: r.plan_id,
@@ -432,6 +469,27 @@ async function fetchSdMembers(from, to) {
   const { data, error } = await supabase.from("sd_members").select("*, sd_plans!inner(status)").eq("status", "active").eq("sd_plans.status", "active").lte("start_date", to).gte("end_date", from);
   if (error) throw error;
   return data.map(toMember);
+}
+async function fetchSdWorks(members) {
+  const out = /* @__PURE__ */ new Map();
+  if (!members.length) return out;
+  const [p, d] = await Promise.all([
+    supabase.from("sd_plans").select("*").in("id", [...new Set(members.map((m) => m.planId))]),
+    supabase.from("sd_days").select("member_id,work_date,works,hours").in("member_id", members.map((m) => m.id)).limit(1e4)
+  ]);
+  if (p.error) throw p.error;
+  if (d.error) throw d.error;
+  const plans = new Map(p.data.map((x) => [x.id, toPlan(x)]));
+  const by = new Map(members.map((m) => [m.id, { ...m, days: {} }]));
+  for (const r of d.data) {
+    const m = by.get(r.member_id);
+    if (m) m.days[r.work_date] = { works: r.works, hours: r.hours == null ? null : Number(r.hours) };
+  }
+  for (const m of by.values()) {
+    const plan = plans.get(m.planId);
+    if (plan) out.set(m.id, (date) => memberWorks(plan, m, date));
+  }
+  return out;
 }
 
 // src/core/modes/index.ts
@@ -543,8 +601,10 @@ async function fetchManpowerInputs(from, to) {
   for (const m of mv.data) moves.set(m.employee_id, [...moves.get(m.employee_id) ?? [], { start: m.start_date, end: m.end_date, crew: m.to_crew, kind: m.kind }]);
   const roleOf = new Map(dir.data.map((r) => [r.id, r.position_code]));
   const sdAssignments = [];
+  const isCtl = (id) => ["controller", "vr_controller", "morning_controller"].includes(roleOf.get(id) ?? "");
+  const sdWorks = await fetchSdWorks(sd.filter((m) => isCtl(m.employeeId)));
   for (const m of sd) {
-    if (["controller", "vr_controller", "morning_controller"].includes(roleOf.get(m.employeeId) ?? "")) sdAssignments.push({ id: `sd-${m.id}`, kind: "sd_team", employeeId: m.employeeId, crew: null, start: m.start, end: m.end });
+    if (isCtl(m.employeeId)) sdAssignments.push({ id: `sd-${m.id}`, kind: "sd_team", employeeId: m.employeeId, crew: null, start: m.start, end: m.end, works: sdWorks.get(m.id) });
     else moves.set(m.employeeId, [...moves.get(m.employeeId) ?? [], { start: m.start, end: m.end, crew: SD_TEAM, kind: "sd" }]);
   }
   const people = dir.data.map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id) }));

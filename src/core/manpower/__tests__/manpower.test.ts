@@ -529,3 +529,44 @@ describe('Grade-13+ Field Operators fill empty Panel seats', () => {
     expect(lowGrades.panel).toMatchObject({ count: 2, fromField: [] });
   });
 });
+
+describe('shutdown-team Controller covers a normal shift (automatic)', () => {
+  const sd = (who: MpPerson, works: boolean): MpAssignment => ({ id: `sd-${who.id}`, kind: 'sd_team', employeeId: who.id, crew: null, start: DAY, end: DAY, works: () => works });
+  const world = () => { const [a, b, c, d] = [crewOf('A'), crewOf('B'), crewOf('C'), crewOf('D')]; return { a, b, c, d, all: [...a, ...b, ...c, ...d] }; };
+  it('B\'s Controller is on the team: the Controller of D (off today, on the team) covers B\'s shift', () => {
+    const w = world();
+    const r = evaluateDay(DAY, w.all, [], FULL_OPERATION, [sd(w.b[0], true), sd(w.d[0], false)]);
+    const b = crewResult(r, 'B').controller;
+    expect(b).toMatchObject({ count: 1, finding: 'staffed' });
+    expect(b.cover?.person.id).toBe(w.d[0].id);
+    expect(b.issues.join(' ')).toContain('off the team today');
+  });
+  it('nobody else free: his own team shift and his crew\'s shift, in addition', () => {
+    const w = world();
+    const r = evaluateDay(DAY, w.all, [], FULL_OPERATION, [sd(w.b[0], true)]);
+    const b = crewResult(r, 'B').controller;
+    expect(b.finding).toBe('staffed');
+    expect(b.cover?.person.id).toBe(w.b[0].id);
+    expect(b.issues.join(' ')).toContain('in addition to his team shift');
+  });
+  it('a team Controller on leave covers nothing: the shift needs a cover as before', () => {
+    const w = world();
+    const r = evaluateDay(DAY, w.all, [leave(w.d[0], DAY, DAY)], FULL_OPERATION, [sd(w.b[0], true), sd(w.d[0], false)]);
+    expect(crewResult(r, 'B').controller.cover?.person.id).toBe(w.b[0].id);
+    const r2 = evaluateDay(DAY, w.all, [leave(w.b[0], DAY, DAY)], FULL_OPERATION, [sd(w.b[0], true)]);
+    expect(crewResult(r2, 'B').controller.finding).toBe('coverage_required');
+  });
+  it('one Controller covers one shift a day', () => {
+    const w = world();
+    const r = evaluateDay(DAY, w.all, [], FULL_OPERATION, [sd(w.a[0], true), sd(w.b[0], true), sd(w.c[0], true)].slice(0, 2).concat([sd(w.d[0], false)]));
+    const covered = ['A', 'B', 'C'].filter((k) => crewResult(r, k as Crew).controller.cover?.counted);
+    expect(new Set(['A', 'B', 'C'].map((k) => crewResult(r, k as Crew).controller.cover?.person.id).filter(Boolean)).size).toBe(covered.length);
+  });
+  it('a recorded cover wins over the automatic one', () => {
+    const w = world();
+    const m = person(null, 'vr_controller');
+    const r = evaluateDay(DAY, [...w.all, m], [], FULL_OPERATION, [sd(w.b[0], true), sd(w.d[0], false), { id: 'c', kind: 'shift_cover', employeeId: m.id, crew: 'B', start: DAY, end: DAY }]);
+    expect(crewResult(r, 'B').controller.cover?.person.id).toBe(m.id);
+  });
+});
+
