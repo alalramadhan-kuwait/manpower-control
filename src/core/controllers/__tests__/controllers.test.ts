@@ -122,10 +122,14 @@ describe('shutdown team members (Stage K)', () => {
     const a = (ps: MpPerson[]) => evaluateDay('2026-11-10', ps, []).crews.find((c) => c.crew === 'A')!;
     expect(a(people).members - a(withSd).members).toBe(1);
   });
-  it('a Controller on the team leaves his crew needing a cover, unless he covers it that day', () => {
+  it('a Controller on the team: his crew\'s shift is covered automatically by a free team Controller, else it needs a cover', () => {
     const sd: MpAssignment = { id: 'sd1', kind: 'sd_team', employeeId: 'ctrlA', crew: null, start: '2026-11-01', end: '2026-11-30' };
-    const needs = coverageNeeds('2026-11-05', '2026-11-12', people, [], [sd]);
-    expect(needs.some((n) => n.crew === 'A')).toBe(true);
+    // nobody else on the team: he covers his own crew's shift in addition to his team shift
+    expect(coverageNeeds('2026-11-05', '2026-11-12', people, [], [sd]).some((n) => n.crew === 'A')).toBe(false);
+    // on leave he cannot: the crew needs a cover
+    const onLeave = leave('ctrlA', '2026-11-05', '2026-11-12');
+    expect(coverageNeeds('2026-11-05', '2026-11-12', people, [onLeave], [sd]).some((n) => n.crew === 'A')).toBe(true);
+    // a recorded cover for the crew still counts
     const back: MpAssignment = { id: 'c1', kind: 'shift_cover', employeeId: 'ctrlA', crew: 'A', start: '2026-11-05', end: '2026-11-12' };
     expect(coverageNeeds('2026-11-05', '2026-11-12', people, [], [sd, back]).some((n) => n.crew === 'A')).toBe(false);
   });
