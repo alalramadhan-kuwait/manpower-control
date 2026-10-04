@@ -26,6 +26,7 @@ import { CrewBadge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { OraclePill } from '@/ui/oracle';
 import { LeaveCodes } from '@/ui/LeaveCodes';
+import { nameFilter } from '@/ui/nameSearch';
 
 const DAYS = 14;
 const ROLE_LABEL: Record<string, string> = { controller: 'Shift Controller', vr_controller: 'VR Controller', morning_controller: 'Morning Controller', panel_operator: 'Panel Operator', field_operator: 'Field Operator' };
@@ -76,8 +77,8 @@ export function LeaveWorklist({ adding, onAdded, isHead }: { adding: boolean; on
   const q = query.trim().toLowerCase();
   const matches = useMemo(() => {
     if (!data || !q) return [];
-    const words = q.split(/\s+/);
-    return data.inputs.people.filter((p) => { const hay = `${p.name} ${p.employeeNumber}`.toLowerCase(); return words.every((w) => hay.includes(w)); })
+    const match = nameFilter(q);
+    return data.inputs.people.filter((p) => match([p.name, p.employeeNumber]))
       .sort((a, b) => a.name.localeCompare(b.name)).slice(0, 8);
   }, [data, q]);
 

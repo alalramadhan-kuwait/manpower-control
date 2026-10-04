@@ -13,6 +13,7 @@ import { byPositionAndService, positionGroup } from '@/ui/positions';
 import { LeaveSheet, SOURCE_LABEL, changeLabel, type LeaveTarget, type SheetPerson } from './LeaveSheet';
 import { leaveToneShort } from '@/ui/leaveTypes';
 import { EstimatedTag } from '@/ui/LeaveCodes';
+import { nameFilter } from '@/ui/nameSearch';
 
 const GROUPS = ['A', 'B', 'C', 'D', 'day'] as const;
 type Group = (typeof GROUPS)[number];
@@ -50,11 +51,11 @@ export default function LeavePlanPage() {
     if (!data) return null;
     const leavesOf = new Map<string, LeaveRecord[]>();
     for (const l of data.leaves) leavesOf.set(l.employee_id, [...(leavesOf.get(l.employee_id) ?? []), l]);
-    const q = query.trim().toLowerCase();
+    const match = nameFilter(query);
     // Controllers of every crew (and the VR / Morning Controllers, who serve all crews) in their own table
     const isCtl = (p: EmployeeDirectoryRow) => CONTROLLER_CODES.includes(p.position_code ?? '');
     const people = data.people
-      .filter((p) => (filter === 'all' || groupOf(p) === filter || (isCtl(p) && !isCrew(p.crew_code))) && (!q || p.display_name.toLowerCase().includes(q) || p.employee_number.includes(q)))
+      .filter((p) => (filter === 'all' || groupOf(p) === filter || (isCtl(p) && !isCrew(p.crew_code))) && match([p.display_name, p.official_name, p.employee_number]))
       .sort(byPositionAndService);
     const ctlOrder = (p: EmployeeDirectoryRow) => (isCrew(p.crew_code) ? 'ABCD'.indexOf(p.crew_code) : 4 + CONTROLLER_CODES.indexOf(p.position_code ?? ''));
     const groups = (['ctl', ...GROUPS] as const).map((g) => {

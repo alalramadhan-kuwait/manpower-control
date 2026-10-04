@@ -8,6 +8,7 @@ import { addRelease, cancelRelease, fetchReleases, type TaskRelease } from '@/da
 import { BottomSheet, Button, Card, ErrorBox, Field, PageHeader, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
+import { nameFilter } from '@/ui/nameSearch';
 
 const ROLE_LABEL: Record<string, string> = { controller: 'Shift Controller', vr_controller: 'VR Controller', morning_controller: 'Morning Controller', panel_operator: 'Panel Operator', field_operator: 'Field Operator' };
 const MAX_DAYS = 31;
@@ -59,9 +60,10 @@ export default function ReleasePage() {
 
   const person = inputs?.people.find((p) => p.id === personId) ?? null;
   const people = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = query.trim();
     if (!inputs || !q) return [];
-    return inputs.people.filter((p) => p.name.toLowerCase().includes(q) || p.employeeNumber.includes(q)).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 8);
+    const match = nameFilter(q);
+    return inputs.people.filter((p) => match([p.name, p.employeeNumber])).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 8);
   }, [inputs, query]);
   const nameOf = (id: string) => inputs?.people.find((p) => p.id === id)?.name ?? 'Employee';
 
