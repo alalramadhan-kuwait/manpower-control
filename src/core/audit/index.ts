@@ -100,7 +100,7 @@ export function describe(row: AuditRow, lk: AuditLookups): AuditEntry {
       else {
         title = next?.is_active === false && prev?.is_active !== false ? `${name} marked inactive` : next?.is_active === true && prev?.is_active === false ? `${name} marked active again` : `Staff record changed: ${name}`;
         details = changes(prev, next, [['display_name', 'Name', w], ['grade', 'Grade', w], ['employment_type', 'Employment', w], ['cost_center', 'Cost centre', w],
-          ['in_unit12_scope', 'In Unit 12', (v) => (v ? 'Yes' : 'No')], ['last_promotion_date', 'Last promotion', day], ['master_position', 'Master position', w], ['fo_level', 'FO level', w], ['can_cover_field', 'Can cover Field', (v) => (v ? 'Yes' : 'No')]]);
+          ['in_unit12_scope', 'In Unit 12', (v) => (v ? 'Yes' : 'No')], ['last_promotion_date', 'Last promotion', day], ['master_position', 'Master position', w], ['fo_level', 'FO level', w], ['can_cover_field', 'Can cover Field', (v) => (v ? 'Yes' : 'No')], ['arabic_name', 'Arabic name', w]]);
       }
       break;
     }

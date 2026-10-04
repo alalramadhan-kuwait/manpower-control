@@ -67,7 +67,7 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
       .filter((r) => !role || r.position_category === role)
       .filter((r) => !crew || r.crew_code === crew)
       .filter((r) => !emp || r.employment_type === emp)
-      .filter((r) => match([r.employee_number, r.official_name, r.display_name, r.short_name]))
+      .filter((r) => match([r.employee_number, r.official_name, r.display_name, r.short_name, r.arabic_name]))
       .sort((a, b) => positionRank(a.position_code) - positionRank(b.position_code) || (a.crew_code ?? 'Z').localeCompare(b.crew_code ?? 'Z') || a.display_name.localeCompare(b.display_name));
   }, [rows, q, role, crew, emp, view, need]);
 

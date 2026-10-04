@@ -63,7 +63,7 @@ export default function ReleasePage() {
     const q = query.trim();
     if (!inputs || !q) return [];
     const match = nameFilter(q);
-    return inputs.people.filter((p) => match([p.name, p.employeeNumber])).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 8);
+    return inputs.people.filter((p) => match([p.name, p.employeeNumber, p.arabicName])).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 8);
   }, [inputs, query]);
   const nameOf = (id: string) => inputs?.people.find((p) => p.id === id)?.name ?? 'Employee';
 

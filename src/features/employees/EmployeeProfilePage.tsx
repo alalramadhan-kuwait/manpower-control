@@ -81,6 +81,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
           <div className="min-w-0">
             <h1 className="text-xl font-semibold text-brand-800">{emp.display_name}</h1>
             {emp.official_name !== emp.display_name && <div className="text-sm text-slate-600">{emp.official_name}</div>}
+            {emp.arabic_name && <div dir="rtl" lang="ar" className="text-sm text-slate-600">{emp.arabic_name}</div>}
             <div className="mt-1 text-sm text-slate-500">Employee No. <span className="font-mono font-medium text-slate-700">{emp.employee_number}</span></div>
           </div>
           <Button variant="ghost" className="min-h-9 px-2" onClick={() => setSheet({ kind: 'basics' })} aria-label="Edit basics"><Pencil className="h-4 w-4" /></Button>
@@ -344,12 +345,13 @@ function BasicsSheet({ emp, onClose, onSaved }: { emp: EmployeeDirectoryRow; onC
   const [grade, setGrade] = useState(emp.grade != null ? String(emp.grade) : '');
   const [promoted, setPromoted] = useState(emp.last_promotion_date ?? '');
   const [fieldCover, setFieldCover] = useState(emp.can_cover_field === true);
+  const [arabicName, setArabicName] = useState(emp.arabic_name ?? '');
   const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
   const gradeNum = grade.trim() === '' ? null : Number(grade);
   const gradeBad = gradeNum !== null && (!Number.isInteger(gradeNum) || gradeNum < 1 || gradeNum > 25);
   async function save() {
     setBusy(true); setError(null);
-    const { error } = await supabase.from('employees').update({ short_name: shortName.trim() || null, official_name: fullName.trim(), display_name: displayName.trim() || displayNameFor({ officialName: fullName, shortName, employmentType: type, employmentTypeSource: confirmed ? 'confirmed' : 'inferred' }) || fullName.trim(), employment_type: type, employment_type_source: confirmed ? 'confirmed' : 'inferred', is_active: active, notes: notes.trim() || null, grade: gradeNum, last_promotion_date: promoted || null, ...(emp.position_code === 'panel_operator' ? { can_cover_field: fieldCover } : {}) }).eq('id', emp.id);
+    const { error } = await supabase.from('employees').update({ short_name: shortName.trim() || null, official_name: fullName.trim(), display_name: displayName.trim() || displayNameFor({ officialName: fullName, shortName, employmentType: type, employmentTypeSource: confirmed ? 'confirmed' : 'inferred' }) || fullName.trim(), employment_type: type, employment_type_source: confirmed ? 'confirmed' : 'inferred', is_active: active, notes: notes.trim() || null, grade: gradeNum, last_promotion_date: promoted || null, arabic_name: arabicName.trim() || null, ...(emp.position_code === 'panel_operator' ? { can_cover_field: fieldCover } : {}) }).eq('id', emp.id);
     setBusy(false); if (error) setError(error); else onSaved();
   }
   return (
@@ -358,6 +360,7 @@ function BasicsSheet({ emp, onClose, onSaved }: { emp: EmployeeDirectoryRow; onC
         <Field label="Official name" hint="As in the KNPC Promotion Master"><input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} /></Field>
         <Field label="Display name" hint="Empty = first and last name"><input className="input" value={displayName} onChange={(e) => setDisplayName(e.target.value)} /></Field>
         <Field label="Workbook name" hint="As on the U-12 sheets"><input className="input" value={shortName} onChange={(e) => setShortName(e.target.value)} /></Field>
+        <Field label="Name in Arabic" hint="For search: the Arabic name finds him in Employees, Leave plan and Requests"><input className="input" dir="rtl" lang="ar" value={arabicName} onChange={(e) => setArabicName(e.target.value)} /></Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Grade" hint={gradeBad ? 'A whole number, 1–25' : emp.grade != null && gradeNum !== emp.grade ? `Was ${emp.grade}` : undefined}>
             <input className="input" inputMode="numeric" value={grade} onChange={(e) => {

@@ -100,7 +100,7 @@ export function NewRequestFlow({ inputs, estimated, approvals, today, onClose, o
   const matches = useMemo(() => {
     if (!q) return [];
     const match = nameFilter(q);
-    return inputs.people.filter((p) => match([p.name, p.employeeNumber])).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 8);
+    return inputs.people.filter((p) => match([p.name, p.employeeNumber, p.arabicName])).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 8);
   }, [inputs.people, q]);
   const leaves = useMemo(() => (person ? mergedLeaves(inputs.absences, person.id, estimated) : []), [inputs.absences, person, estimated]);
   const crewBadge = (p: MpPerson) => { const c = personOn(p, today); return c.dayDuty || !c.crew ? <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-600">Day</span> : <CrewBadge crew={c.crew} size="sm" />; };

@@ -19,6 +19,7 @@ export function toMpPerson(r: EmployeeDirectoryRow): MpPerson {
     crew: (r.crew_code as Crew | null) ?? null,
     employmentType: r.employment_type,
     fieldCover: r.can_cover_field === true,
+    arabicName: r.arabic_name ?? null,
     takeCharge: r.take_charge_status, panelQualified: r.panel_operator_status, actingController: r.acting_controller_status
   };
 }

@@ -41,24 +41,39 @@ const words = (s: string) => s.split(/[\s\-_/.]+/).filter(Boolean);
  * A filter for the typed text: empty text lets everybody through. English words must all be found in the fields (any part of a
  * name or the number); an Arabic word is matched by sound against the words of the names. `fields` are the name(s) and the number.
  */
+/** An Arabic word for comparing with names typed in Arabic: marks off, the letters that are written both ways joined, the leading ال off. */
+const normArabic = (w: string) => {
+  const x = w.replace(/[\u064B-\u065F\u0670\u0640]/g, '').replace(/[أإآٱ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه');
+  return /^ال.{2,}/.test(x) ? x.slice(2) : x;
+};
+
 export function nameFilter(query: string): (fields: (string | null | undefined)[]) => boolean {
   const q = toAsciiDigits(query.trim());
   if (!q) return () => true;
   const parts = words(q);
-  const arabic = parts.filter(hasArabic).map((w) => ({ w, key: skeletonArabic(w) }));
+  const arabic = parts.filter(hasArabic).map((w) => ({ w, key: skeletonArabic(w), norm: normArabic(w) }));
   const plain = parts.filter((w) => !hasArabic(w)).map((w) => w.toLowerCase());
-  const keys = arabic.map((a) => a.key).filter(Boolean);
-  // the words run together, the ال kept (عبد العزيز → Abdulaziz)
-  const joined = collapse(arabic.map((a) => skeletonArabic(a.w, true)).join(''));
   return (fields) => {
     const list = fields.filter((f): f is string => !!f);
-    const hay = list.join(' ').toLowerCase();
+    // a name recorded in Arabic letters is compared as it is; the names in English letters by sound
+    const arabicWords = list.filter(hasArabic).flatMap(words).map(normArabic);
+    const latin = list.filter((f) => !hasArabic(f));
+    const hay = latin.join(' ').toLowerCase();
     if (!plain.every((w) => hay.includes(w))) return false;
     if (!arabic.length) return true;
-    if (!keys.length) return false;
-    const names = list.flatMap(words).map(skeletonLatin).filter(Boolean);
-    if (keys.every((k) => names.some((n) => n.startsWith(k)))) return true;
-    // a name written as one word in English but two in Arabic (عبد الله / Abdullah)
-    return keys.length > 1 && list.some((f) => words(f).map(skeletonLatin).join('').includes(joined));
+    const names = latin.flatMap(words).map(skeletonLatin).filter(Boolean);
+    const hit = (a: (typeof arabic)[number]) => arabicWords.some((n) => n.startsWith(a.norm)) || (!!a.key && names.some((n) => n.startsWith(a.key)));
+    // a name written as one word in English but two in Arabic (عبد الله / Abdullah): words that found nothing alone are run together
+    const whole = latin.map((f) => words(f).map(skeletonLatin).join(''));
+    for (let i = 0; i < arabic.length; ) {
+      let best = -1;
+      for (let j = i; j < arabic.length; j++) {
+        const seg = collapse(arabic.slice(i, j + 1).map((a) => skeletonArabic(a.w, true)).join(''));
+        if (j === i ? hit(arabic[i]) : !!seg && whole.some((n) => n.includes(seg))) best = j;
+      }
+      if (best < 0) return false;
+      i = best + 1;
+    }
+    return true;
   };
 }

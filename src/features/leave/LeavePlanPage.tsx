@@ -55,7 +55,7 @@ export default function LeavePlanPage() {
     // Controllers of every crew (and the VR / Morning Controllers, who serve all crews) in their own table
     const isCtl = (p: EmployeeDirectoryRow) => CONTROLLER_CODES.includes(p.position_code ?? '');
     const people = data.people
-      .filter((p) => (filter === 'all' || groupOf(p) === filter || (isCtl(p) && !isCrew(p.crew_code))) && match([p.display_name, p.official_name, p.employee_number]))
+      .filter((p) => (filter === 'all' || groupOf(p) === filter || (isCtl(p) && !isCrew(p.crew_code))) && match([p.display_name, p.official_name, p.employee_number, p.arabic_name]))
       .sort(byPositionAndService);
     const ctlOrder = (p: EmployeeDirectoryRow) => (isCrew(p.crew_code) ? 'ABCD'.indexOf(p.crew_code) : 4 + CONTROLLER_CODES.indexOf(p.position_code ?? ''));
     const groups = (['ctl', ...GROUPS] as const).map((g) => {

@@ -78,7 +78,7 @@ export function LeaveWorklist({ adding, onAdded, isHead }: { adding: boolean; on
   const matches = useMemo(() => {
     if (!data || !q) return [];
     const match = nameFilter(q);
-    return data.inputs.people.filter((p) => match([p.name, p.employeeNumber]))
+    return data.inputs.people.filter((p) => match([p.name, p.employeeNumber, p.arabicName]))
       .sort((a, b) => a.name.localeCompare(b.name)).slice(0, 8);
   }, [data, q]);
 

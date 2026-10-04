@@ -27,6 +27,8 @@ export interface MpPerson {
   employmentType: 'knpc' | 'contractor';
   /** A Panel Operator the Section Head cleared to cover a Field post (adds to the Grade 13+ rule; e.g. a contractor with no grade). */
   fieldCover?: boolean;
+  /** The name in Arabic letters, for search. */
+  arabicName?: string | null;
   takeCharge: QualStatus;
   panelQualified: QualStatus;
   actingController: QualStatus;

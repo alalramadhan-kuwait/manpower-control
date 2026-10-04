@@ -42,4 +42,14 @@ describe('name search', () => {
     expect(skeletonArabic('الصايغ')).toBe(skeletonLatin('Al-Saegh'));
     expect(skeletonLatin('Mohammed')).toBe(skeletonLatin('Muhammad'));
   });
+  it('a name recorded in Arabic is matched as it is', () => {
+    const a = nameFilter('المناصير'), b = nameFilter('منصير');
+    expect(a(['Ebraheem Almanaseer', 'المناصير'])).toBe(true);
+    expect(a(['Abdullah Almunies', 'المنيس'])).toBe(false);
+    expect(b(['Ebraheem Almanaseer', 'المناصير'])).toBe(true);    // spelled a little differently: still found by sound
+    expect(nameFilter('بدر')(['Ebraheem Almanaseer', 'المناصير'])).toBe(false);
+    expect(nameFilter('ساليش')(['Shailish Kumar', 'ساليش'])).toBe(true);
+    expect(nameFilter('عبد الله المنيس')(['Abdullah Almunies', 'المنيس'])).toBe(true);
+    expect(nameFilter('هيتيس')(['Hitesh Prajapati', 'هيتيس'])).toBe(true);
+  });
 });

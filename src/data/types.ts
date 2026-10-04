@@ -21,6 +21,8 @@ export interface EmployeeDirectoryRow {
   fo_level?: 'senior' | 'good' | 'new' | 'below' | null;
   /** A Panel Operator cleared to cover a Field post (a contractor with no grade, say), set by the Section Head. */
   can_cover_field?: boolean;
+  /** The name in Arabic letters, for search (typed by the Section Head). */
+  arabic_name?: string | null;
   position_code: string | null; position_label: string | null; position_category: 'controller' | 'panel' | 'field' | 'other' | null;
   crew_code: 'A' | 'B' | 'C' | 'D' | null;
   take_charge_status: QualificationStatus | null; panel_operator_status: QualificationStatus | null;
