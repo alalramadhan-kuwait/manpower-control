@@ -48,14 +48,14 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
 
   const byId = useMemo(() => new Map((inputs?.people ?? []).map((p) => [p.id, p])), [inputs]);
   const name = (id: string | null) => (id ? byId.get(id)?.name ?? 'Unknown' : '');
-  const needs = useMemo(() => (inputs ? coverageNeeds(today, addDaysIso(today, HORIZON - 1), inputs.people, inputs.absences, inputs.assignments, inputs.rules) : []), [inputs, today]);
+  const needs = useMemo(() => (inputs ? coverageNeeds(today, addDaysIso(today, HORIZON - 1), inputs.people, inputs.absencesAll, inputs.assignments, inputs.rules) : []), [inputs, today]);
   /** Who is on leave on a date, with code and true return date (for the coverage-needed list). */
   const leaveOnDate = useCallback((date: string) => {
     if (!inputs) return new Map<string, OnLeave>();
     const crewOf = new Map(inputs.people.map((p) => [p.id, p.crew]));
     return onLeaveOn(date, inputs.absences.map((a) => ({ employeeId: a.employeeId, start: a.start, end: a.end, status: a.status, inCurrentPlan: a.inCurrentPlan !== false, typeLabel: a.typeLabel ?? null, typeShort: a.typeShort ?? null })), (id) => crewOf.get(id) ?? null);
   }, [inputs]);
-  const morningToday = useMemo(() => (inputs ? evaluateDay(today, inputs.people, inputs.absences, inputs.rules, inputs.assignments).dayStaff.find((s) => s.morningPost) ?? null : null), [inputs, today]);
+  const morningToday = useMemo(() => (inputs ? evaluateDay(today, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments).dayStaff.find((s) => s.morningPost) ?? null : null), [inputs, today]);
 
   // Opened from Today's "Assign cover" link: ?assign=cover&crew=A&from=YYYY-MM-DD
   useEffect(() => {
@@ -63,7 +63,7 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
     if (!inputs || (kind !== 'cover' && kind !== 'morning')) return;
     const crew = params.get('crew') as Crew | null; const from = params.get('from') ?? today;
     if ((kind === 'cover' && (!crew || !CREW_LIST.includes(crew))) || !isValidIsoDate(from)) return;
-    const found = coverageNeeds(addDaysIso(from, -40), addDaysIso(from, 60), inputs.people, inputs.absences, inputs.assignments, inputs.rules)
+    const found = coverageNeeds(addDaysIso(from, -40), addDaysIso(from, 60), inputs.people, inputs.absencesAll, inputs.assignments, inputs.rules)
       .find((n) => (kind === 'morning' ? n.kind === 'morning' : n.crew === crew) && n.start <= from && from <= n.end);
     // from the Morning rotation plan: a proposed period and person (?to=…&who=…)
     const to = params.get('to'); const who = params.get('who');

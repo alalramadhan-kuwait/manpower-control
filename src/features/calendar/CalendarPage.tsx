@@ -66,7 +66,7 @@ function MonthView() {
 
   const view = useMemo(() => {
     if (!inputs || inputs.key !== from || !info || info.key !== from) return null;
-    const days = evaluateRange(gridFrom, gridTo, inputs.people, inputs.absences, inputs.rules, inputs.assignments);
+    const days = evaluateRange(gridFrom, gridTo, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments);
     const byDate = new Map(days.map((d) => [d.date, d]));
     const monthDays = days.filter((d) => d.date >= from && d.date <= to);
     const crewOf = new Map(inputs.people.map((p) => [p.id, p.crew]));
@@ -178,7 +178,7 @@ function MonthView() {
         </>
       )}
       {open && view && inputs && (
-        <DaySheet date={open} day={view.byDate.get(open) ?? evaluateRange(open, open, inputs.people, inputs.absences, inputs.rules, inputs.assignments)[0]} inputs={inputs}
+        <DaySheet date={open} day={view.byDate.get(open) ?? evaluateRange(open, open, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments)[0]} inputs={inputs}
           holiday={view.holidayOn(open)} bars={view.bars.filter((b) => b.start <= open && open <= b.end)} onClose={() => setOpen(null)}
           onAddEvent={() => { setSheet({ kind: 'event', event: null, date: open }); setOpen(null); }} onAddHoliday={() => { setSheet({ kind: 'holiday', holiday: null, date: open }); setOpen(null); }} />
       )}

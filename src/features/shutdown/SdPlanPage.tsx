@@ -78,7 +78,7 @@ export default function SdPlanPage() {
     const leaveOn = (emp: string, d: string) => inputs.absences.some((a) => a.employeeId === emp && (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && a.start <= d && d <= a.end);
     const homeCrew = (emp: string, d: string) => { const p = people.get(emp); return p ? personOn({ ...p, moves: p.moves?.filter((m) => m.kind !== 'sd') }, d).crew : null; };
     const dates = planDates(plan);
-    const results = evaluateRange(plan.start, plan.end, inputs.people, inputs.absences, inputs.rules, inputs.assignments);
+    const results = evaluateRange(plan.start, plan.end, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments);
     const crewImpact = CREWS.map((c) => ({ crew: c, short: results.filter((d) => d.crews.find((x) => x.crew === c)?.confirmedShortage).length,
       cover: results.filter((d) => { const x = d.crews.find((k) => k.crew === c); return x?.working && x.controller.finding === 'coverage_required'; }).length }));
     // the crew whose duty and rest days the member keeps on the team: the one he is told to follow, else his own
@@ -310,7 +310,7 @@ function AddSheet({ plan, team, slot, area, data, view, onClose, onDone }: { pla
   const total = plan.kind === 'total';
   const cands = useMemo(() => {
     const { inputs } = data;
-    const base = evaluateRange(plan.start, plan.end, inputs.people, inputs.absences, inputs.rules, inputs.assignments);
+    const base = evaluateRange(plan.start, plan.end, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments);
     const pool = inputs.people.filter((p) => !inPlan.has(p.id) && (slot === 'controller'
       ? CONTROLLER_ROLES.includes(p.role ?? '') && (p.grade ?? 0) >= COVER_GRADE
       : sdOperatorEligible(p)));
@@ -329,7 +329,7 @@ function AddSheet({ plan, team, slot, area, data, view, onClose, onDone }: { pla
         const isCtl = CONTROLLER_ROLES.includes(p.role ?? '');
         const people2: MpPerson[] = isCtl ? inputs.people : inputs.people.map((x) => (x.id === p.id ? { ...x, moves: [...(x.moves ?? []), { start: plan.start, end: plan.end, crew: SD_TEAM, kind: 'sd' as const }] } : x));
         const assign2: MpAssignment[] = isCtl ? [...inputs.assignments, { id: 'cand', kind: 'sd_team', employeeId: p.id, crew: null, start: plan.start, end: plan.end }] : inputs.assignments;
-        const after = evaluateRange(plan.start, plan.end, people2, inputs.absences as MpAbsence[], inputs.rules, assign2);
+        const after = evaluateRange(plan.start, plan.end, people2, inputs.absencesAll as MpAbsence[], inputs.rules, assign2);
         hit = after.filter((d, i) => { const a = d.crews.find((x) => x.crew === crew)!, b = base[i].crews.find((x) => x.crew === crew)!;
           return a.working && ((a.confirmedShortage && !b.confirmedShortage) || (a.controller.finding === 'coverage_required' && b.controller.finding !== 'coverage_required')); }).length;
       }

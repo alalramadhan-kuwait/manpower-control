@@ -64,7 +64,7 @@ export default function DayOverviewPage() {
     fetchManpowerInputs(from, to).then((r) => setInputs({ ...r, from, to })).catch(setError);
   }, [date, inputs]);
 
-  const result = useMemo(() => (inputs ? evaluateDay(date, inputs.people, inputs.absences, inputs.rules, inputs.assignments) : null), [date, inputs]);
+  const result = useMemo(() => (inputs ? evaluateDay(date, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments) : null), [date, inputs]);
   const period = useMemo(() => (inputs ? periodOn(date, inputs.plan) : null), [date, inputs]);
   // holiday and unit events on this date (calendar information)
   const [info, setInfo] = useState<{ date: string; holidays: Holiday[]; events: UnitEvent[] } | null>(null);
@@ -75,7 +75,7 @@ export default function DayOverviewPage() {
     return onLeaveOn(date, inputs.absences.map((a) => ({ employeeId: a.employeeId, start: a.start, end: a.end, status: a.status, inCurrentPlan: a.inCurrentPlan !== false, typeLabel: a.typeLabel ?? null, typeShort: a.typeShort ?? null })), (id) => crewOf.get(id) ?? null);
   }, [date, inputs]);
   // Controller cover planning around this date (VR suggestion / "Additional Controller required")
-  const needs = useMemo(() => (inputs ? coverageNeeds(addDaysIso(date, -40), addDaysIso(date, 40), inputs.people, inputs.absences, inputs.assignments, inputs.rules) : []), [date, inputs]);
+  const needs = useMemo(() => (inputs ? coverageNeeds(addDaysIso(date, -40), addDaysIso(date, 40), inputs.people, inputs.absencesAll, inputs.assignments, inputs.rules) : []), [date, inputs]);
   const needFor = (crew: string) => needs.find((n) => n.kind === 'crew' && n.crew === crew && n.start <= date && date <= n.end);
   const tcPending = inputs?.people.filter((p) => p.role === 'field_operator' && p.takeCharge !== 'yes').length ?? 0;
 

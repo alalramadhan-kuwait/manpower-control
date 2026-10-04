@@ -7,7 +7,7 @@ import { ORACLE_LABEL, type OracleStatus } from '../oracle';
 export type AuditCategory = 'crews' | 'leave' | 'requests' | 'controllers' | 'shutdown' | 'modes' | 'qualifications' | 'staff' | 'logins' | 'other';
 
 export const AUDIT_CATEGORIES: { key: AuditCategory; label: string; tables: string[] }[] = [
-  { key: 'crews', label: 'Crews & roles', tables: ['employee_role_assignments', 'crew_movements'] },
+  { key: 'crews', label: 'Crews & roles', tables: ['employee_role_assignments', 'crew_movements', 'task_releases'] },
   { key: 'leave', label: 'Leave', tables: ['leave_records'] },
   { key: 'requests', label: 'Requests', tables: ['leave_requests', 'leave_change_requests'] },
   { key: 'controllers', label: 'Controllers', tables: ['controller_assignments', 'controller_rules', 'controller_leave_approvals'] },
@@ -198,6 +198,14 @@ export function describe(row: AuditRow, lk: AuditLookups): AuditEntry {
       title = row.action === 'insert' ? `Shutdown plan added: ${s(cur.title) ?? ''} ${range(cur.start_date, cur.end_date)}` : next?.status === 'cancelled' && prev?.status !== 'cancelled' ? `Shutdown plan cancelled: ${s(cur.title) ?? ''}` : `Shutdown plan changed: ${s(cur.title) ?? ''}`;
       if (row.action !== 'insert') details = changes(prev, next, [['start_date', 'First day', day], ['end_date', 'Last day', day], ['kind', 'Kind', w], ['days_on', 'Days on', w], ['days_off', 'Days off', w], ['shift_hours', 'Shift hours', w], ['ramp_days', 'Reduced days', w], ['ramp_hours', 'Reduced-day hours', w], ['max_overtime', 'Overtime cap (h)', w]]);
       break;
+    case 'task_releases': {
+      const span = cur.start_date === cur.end_date ? day(cur.start_date) : range(cur.start_date, cur.end_date);
+      const hrs = s(cur.from_time) ? ` ${String(cur.from_time).slice(0, 5)}–${String(cur.to_time).slice(0, 5)}` : '';
+      if (row.action === 'insert') { title = `${who(empId)}: released from duty for a task, ${span}${hrs}`; if (s(cur.task)) details.push(`Task: ${cur.task}`); }
+      else if (next?.status === 'cancelled' && prev?.status !== 'cancelled') { title = `${who(empId)}: task release cancelled (${span})`; if (s(next.cancel_reason)) details.push(`Reason: ${next.cancel_reason}`); }
+      else title = `${who(empId)}: task release changed`;
+      break;
+    }
     case 'sd_teams':
       title = row.action === 'insert' ? `Shutdown team added: ${s(cur.name) ?? ''}` : `Shutdown team ${s(cur.name) ?? ''}: needs changed`;
       if (row.action !== 'insert') details = changes(prev, next, [['controller_n', 'Controller', w], ['senior_n', 'Senior FO', w], ['good_n', 'Good FO', w], ['new_n', 'New FO', w], ['ramp_controller_n', 'Reduced: Controller', w], ['ramp_senior_n', 'Reduced: Senior FO', w], ['ramp_good_n', 'Reduced: Good FO', w], ['ramp_new_n', 'Reduced: New FO', w]]);

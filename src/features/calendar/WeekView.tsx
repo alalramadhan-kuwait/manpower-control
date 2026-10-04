@@ -44,7 +44,7 @@ export function WeekView({ start, today, onWeek, onMonth }: { start: string; tod
 
   const view = useMemo(() => {
     if (!inputs || inputs.key !== start || !info || info.key !== start) return null;
-    const results = evaluateRange(start, end, inputs.people, inputs.absences, inputs.rules, inputs.assignments);
+    const results = evaluateRange(start, end, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments);
     const byDate = new Map(results.map((d) => [d.date, d]));
     const people = new Map(inputs.people.map((p) => [p.id, p]));
     const leave = leaveInRange(inputs.absences, start, end).filter((b) => people.has(b.employeeId));

@@ -87,7 +87,7 @@ export default function ControllersBoardPage({ profile }: { profile: UserProfile
       if (p.crew) { const c = crews.find((x) => x.crew === p.crew); return c?.working ? { kind: 'shift', state: c.state, crew: p.crew } : { kind: 'off' }; }
       return { kind: 'off' };
     };
-    const cols: Col[] = evaluateRange(from, to, inputs.people, inputs.absences, inputs.rules, inputs.assignments).map((d) => ({
+    const cols: Col[] = evaluateRange(from, to, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments).map((d) => ({
       date: d.date, day: d,
       crews: Object.fromEntries(CREWS.map((c) => { const x = d.crews.find((k) => k.crew === c)!; return [c, x.working ? { state: x.state, ok: x.controller.finding !== 'coverage_required' && x.controller.finding !== 'shortage' } : null]; })) as Record<Crew, CrewCell>,
       people: Object.fromEntries(base.ctl.map((p) => [p.id, cell(p, d.date, d.crews)])),

@@ -21,7 +21,7 @@ const dayBefore = (d: string) => addDaysIso(d, -1);
 /** Days each crew falls short between `from` and the day before `to` with the people moved to the given crews. */
 function crewShortDays(inputs: ManpowerInputs, from: string, to: string, moves: { id: string; crew: Crew }[]) {
   const count = (people: MpPerson[]) => {
-    const r = evaluateRange(from, to, people, inputs.absences, inputs.rules, inputs.assignments);
+    const r = evaluateRange(from, to, people, inputs.absencesAll, inputs.rules, inputs.assignments);
     return Object.fromEntries(CREWS.map((c) => [c, r.filter((d) => d.crews.find((x) => x.crew === c)?.confirmedShortage).length])) as Record<Crew, number>;
   };
   const moved = inputs.people.map((p) => { const mv = moves.find((x) => x.id === p.id); return mv ? { ...p, moves: [...(p.moves ?? []), { start: from, end: to, crew: mv.crew, kind: 'temporary' as const }] } : p; });

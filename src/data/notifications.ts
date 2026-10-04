@@ -37,8 +37,8 @@ export async function loadNotices(isSectionHead: boolean, force = false): Promis
     const names = new Map(dir.map((r) => [r.id, r.display_name]));
     const notices = buildNotices({
       today,
-      days: evaluateRange(today, to, inputs.people, inputs.absences, inputs.rules, inputs.assignments),
-      needs: coverageNeeds(today, to, inputs.people, inputs.absences, inputs.assignments, inputs.rules),
+      days: evaluateRange(today, to, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments),
+      needs: coverageNeeds(today, to, inputs.people, inputs.absencesAll, inputs.assignments, inputs.rules),
       requests: reqs.filter(isOpen).map((r) => ({ id: r.id, employeeName: names.get(r.employee_id) ?? 'Employee', typeLabel: REQUEST_TYPE_LABEL[r.request_type], start: r.start_date, end: r.end_date, status: r.status as 'submitted' | 'reviewed', overtime: r.overtime_required })),
       changes: changes.filter(isChangeOpen).map((c) => ({ id: c.id, employeeName: names.get(c.employee_id) ?? 'Employee', oldStart: c.old_start, oldEnd: c.old_end, newStart: c.new_start, newEnd: c.new_end, short: c.impact?.short ?? 0, clash: c.impact?.clash.length ?? 0 })),
       estimated: estimated.filter((e) => e.end_date >= today).map((e) => ({ id: e.id, employeeId: e.employee_id, employeeName: names.get(e.employee_id) ?? 'Employee', start: e.start_date, end: e.end_date })),

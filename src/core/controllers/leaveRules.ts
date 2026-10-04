@@ -16,7 +16,8 @@ export interface LeaveApproval { id: string; kind: 'overlap' | 'extra_leave'; le
 /** One leave period: back-to-back or overlapping records of one person joined. `ids` in date order; ids[0] is its key. */
 export interface LeavePeriod { employeeId: string; ids: string[]; start: string; end: string; codes: string[] }
 
-const counted = (a: MpAbsence) => (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && !!a.id;
+// a task release is not leave: it never counts toward Controllers' leave overlaps or leave totals
+const counted = (a: MpAbsence) => (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && !!a.id && a.typeCode !== 'task_release';
 const days = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000) + 1;
 
 export function joinPeriods(records: MpAbsence[]): LeavePeriod[] {

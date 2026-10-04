@@ -44,7 +44,7 @@ async function settings(): Promise<ShiftAlertSettings> {
 /** The crew coming on, who is in charge, and what is short, from the app's own engine. */
 async function factsFor(s: ShiftStart, test = false): Promise<AlertFacts> {
   const inputs = await fetchManpowerInputs(addDaysIso(s.date, -1), addDaysIso(s.date, 1));
-  const day = evaluateRange(s.date, s.date, inputs.people, inputs.absences, inputs.rules, inputs.assignments)[0];
+  const day = evaluateRange(s.date, s.date, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments)[0];
   const crew = crewsByShift(s.date)[s.shift];
   const cd = day.crews.find((c) => c.crew === crew)!;
   // in charge: the crew's own Controller(s); when none is counted, whoever is (the cover, a VR); the rest are listed as also on

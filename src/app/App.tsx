@@ -22,6 +22,7 @@ import FoLevelsPage from '@/features/shutdown/FoLevelsPage';
 import { SdOvertimePage, SdSchedulePage } from '@/features/shutdown/SdDocuments';
 import LeavePlanPage from '@/features/leave/LeavePlanPage';
 import MovementsPage from '@/features/movements/MovementsPage';
+import ReleasePage from '@/features/release/ReleasePage';
 import ControllersPage from '@/features/controllers/ControllersPage';
 import RequestsPage from '@/features/requests/RequestsPage';
 import AuditPage from '@/features/audit/AuditPage';
@@ -100,6 +101,7 @@ export default function App() {
           <Route path="/leave-plan" element={<LeavePlanPage />} />
           <Route path="/oracle" element={<OracleHrPage />} />
           <Route path="/movements" element={<MovementsPage />} />
+          <Route path="/release" element={<ReleasePage />} />
           <Route path="/requests" element={<RequestsPage profile={profile} />} />
           <Route path="/requests/:id" element={<RequestPage profile={profile} />} />
           <Route path="/audit" element={<AuditPage />} />

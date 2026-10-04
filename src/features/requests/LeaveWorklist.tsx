@@ -67,7 +67,7 @@ export function LeaveWorklist({ adding, onAdded, isHead }: { adding: boolean; on
     if (!data) return [];
     const { inputs, approvals } = data;
     return buildWorklist({ today, days: DAYS, people: inputs.people, absences: inputs.absences, sd: data.sd, check: checkControllerLeave(inputs.people, inputs.absences, approvals, [y, y + 1]),
-      results: evaluateRange(today, addDaysIso(today, DAYS + 60), inputs.people, inputs.absences, inputs.rules, inputs.assignments) });
+      results: evaluateRange(today, addDaysIso(today, DAYS + 60), inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments) });
   }, [data, today, y]);
   const byShift = (s: Shift) => rows.filter((r) => s === 'all' || r.crew === s);
   const byPos = (p: Pos, list: WorkRow[]) => list.filter(POS.find((x) => x.key === p)!.of);

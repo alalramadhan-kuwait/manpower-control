@@ -492,6 +492,12 @@ async function fetchSdWorks(members) {
   return out;
 }
 
+// src/core/release/index.ts
+var RELEASE_TYPE = "task_release";
+
+// src/data/releases.ts
+var releaseAbsence = (r) => ({ id: `release-${r.id}`, employeeId: r.employee_id, start: r.start_date, end: r.end_date, status: "approved", typeCode: RELEASE_TYPE, typeLabel: "Task release", typeShort: "TASK", inCurrentPlan: true });
+
 // src/core/modes/index.ts
 var DEFAULT_MODE = {
   code: FULL_OPERATION.modeCode,
@@ -581,16 +587,17 @@ function toMpAbsence(l) {
   };
 }
 async function fetchManpowerInputs(from, to) {
-  const [dir, lv, ca, ra, mv, op, sd] = await Promise.all([
+  const [dir, lv, ca, ra, mv, op, sd, tr] = await Promise.all([
     supabase.from("employee_directory_v").select("*").eq("in_unit12_scope", true).eq("is_active", true),
     supabase.from("leave_records").select("id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,oracle_status,absence_types(label,short_code)").eq("in_current_plan", true).in("status", ["approved", "planned", "unresolved"]).lte("start_date", to).gte("end_date", from),
     supabase.from("controller_assignments").select("*").eq("status", "active").lte("start_date", to).gte("end_date", from),
     supabase.from("employee_role_assignments").select("employee_id,effective_from,effective_to,positions(code),crews(code)").limit(5e3),
     supabase.from("crew_movements").select("employee_id,start_date,end_date,to_crew,kind").eq("status", "active").in("kind", ["temporary", "placement"]).lte("start_date", to).or(`end_date.is.null,end_date.gte.${from}`),
     fetchOperationPlan(from, to),
-    fetchSdMembers(from, to)
+    fetchSdMembers(from, to),
+    supabase.from("task_releases").select("id,employee_id,start_date,end_date").eq("status", "active").lte("start_date", to).gte("end_date", from)
   ]);
-  const err = [dir, lv, ca, ra, mv].find((r) => r.error)?.error;
+  const err = [dir, lv, ca, ra, mv, tr].find((r) => r.error)?.error;
   if (err) throw err;
   const history = /* @__PURE__ */ new Map();
   for (const r of ra.data) {
@@ -607,8 +614,9 @@ async function fetchManpowerInputs(from, to) {
     if (isCtl(m.employeeId)) sdAssignments.push({ id: `sd-${m.id}`, kind: "sd_team", employeeId: m.employeeId, crew: null, start: m.start, end: m.end, works: sdWorks.get(m.id) });
     else moves.set(m.employeeId, [...moves.get(m.employeeId) ?? [], { start: m.start, end: m.end, crew: SD_TEAM, kind: "sd" }]);
   }
+  const leaveAbsences = lv.data.map(toMpAbsence);
   const people = dir.data.map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id) }));
-  return { people, absences: lv.data.map(toMpAbsence), assignments: [...ca.data.map(toMpAssignment), ...sdAssignments], plan: op.plan, rules: rulesByDate(op.plan) };
+  return { people, absences: leaveAbsences, absencesAll: [...leaveAbsences, ...tr.data.map(releaseAbsence)], assignments: [...ca.data.map(toMpAssignment), ...sdAssignments], plan: op.plan, rules: rulesByDate(op.plan) };
 }
 
 // supabase/functions/shift-alerts/main.ts
@@ -636,7 +644,7 @@ async function settings() {
 }
 async function factsFor(s, test = false) {
   const inputs = await fetchManpowerInputs(addDaysIso(s.date, -1), addDaysIso(s.date, 1));
-  const day = evaluateRange(s.date, s.date, inputs.people, inputs.absences, inputs.rules, inputs.assignments)[0];
+  const day = evaluateRange(s.date, s.date, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments)[0];
   const crew = crewsByShift(s.date)[s.shift];
   const cd = day.crews.find((c) => c.crew === crew);
   const counted = cd.controller.counted;

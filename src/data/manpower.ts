@@ -2,6 +2,7 @@
 import { supabase } from './supabase';
 import { SD_TEAM, type MpAbsence, type MpAssignment, type MpCrewMove, type MpPerson, type MpRolePeriod, type Role, type Rules } from '@/core/manpower';
 import { fetchSdMembers, fetchSdWorks } from './shutdown';
+import { releaseAbsence } from './releases';
 import { rulesByDate, type OperationPlan } from '@/core/modes';
 import { fetchOperationPlan } from './modes';
 import { toMpAssignment } from './controllers';
@@ -38,10 +39,11 @@ interface MoveRow { employee_id: string; start_date: string; end_date: string | 
  * Active Section-1 people (with their dated role history and temporary shift covers, so each date uses the crew
  * the person was in that day), every current-plan absence and every active Controller assignment overlapping [from, to].
  */
-export interface ManpowerInputs { people: MpPerson[]; absences: MpAbsence[]; assignments: MpAssignment[]; plan: OperationPlan; rules: (date: string) => Rules }
+/** `absences` are leave only (lists, requests, Controller leave rules); `absencesAll` adds the task releases, for the manpower engine. */
+export interface ManpowerInputs { people: MpPerson[]; absences: MpAbsence[]; absencesAll: MpAbsence[]; assignments: MpAssignment[]; plan: OperationPlan; rules: (date: string) => Rules }
 
 export async function fetchManpowerInputs(from: string, to: string): Promise<ManpowerInputs> {
-  const [dir, lv, ca, ra, mv, op, sd] = await Promise.all([
+  const [dir, lv, ca, ra, mv, op, sd, tr] = await Promise.all([
     supabase.from('employee_directory_v').select('*').eq('in_unit12_scope', true).eq('is_active', true),
     supabase.from('leave_records')
       .select('id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,oracle_status,absence_types(label,short_code)')
@@ -51,9 +53,10 @@ export async function fetchManpowerInputs(from: string, to: string): Promise<Man
     supabase.from('employee_role_assignments').select('employee_id,effective_from,effective_to,positions(code),crews(code)').limit(5000),
     supabase.from('crew_movements').select('employee_id,start_date,end_date,to_crew,kind').eq('status', 'active').in('kind', ['temporary', 'placement']).lte('start_date', to).or(`end_date.is.null,end_date.gte.${from}`),
     fetchOperationPlan(from, to),
-    fetchSdMembers(from, to)
+    fetchSdMembers(from, to),
+    supabase.from('task_releases').select('id,employee_id,start_date,end_date').eq('status', 'active').lte('start_date', to).gte('end_date', from)
   ]);
-  const err = [dir, lv, ca, ra, mv].find((r) => r.error)?.error; if (err) throw err;
+  const err = [dir, lv, ca, ra, mv, tr].find((r) => r.error)?.error; if (err) throw err;
   const history = new Map<string, MpRolePeriod[]>();
   for (const r of ra.data as unknown as RoleRow[]) {
     const role = ROLES.includes(r.positions?.code as Role) ? (r.positions!.code as Role) : null;
@@ -72,6 +75,7 @@ export async function fetchManpowerInputs(from: string, to: string): Promise<Man
     if (isCtl(m.employeeId)) sdAssignments.push({ id: `sd-${m.id}`, kind: 'sd_team', employeeId: m.employeeId, crew: null, start: m.start, end: m.end, works: sdWorks.get(m.id) });
     else moves.set(m.employeeId, [...(moves.get(m.employeeId) ?? []), { start: m.start, end: m.end, crew: SD_TEAM, kind: 'sd' }]);
   }
+  const leaveAbsences = (lv.data as unknown as LeaveRow[]).map(toMpAbsence);
   const people = (dir.data as EmployeeDirectoryRow[]).map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id) }));
-  return { people, absences: (lv.data as unknown as LeaveRow[]).map(toMpAbsence), assignments: [...(ca.data as ControllerAssignment[]).map(toMpAssignment), ...sdAssignments], plan: op.plan, rules: rulesByDate(op.plan) };
+  return { people, absences: leaveAbsences, absencesAll: [...leaveAbsences, ...(tr.data as { id: string; employee_id: string; start_date: string; end_date: string }[]).map(releaseAbsence)], assignments: [...(ca.data as ControllerAssignment[]).map(toMpAssignment), ...sdAssignments], plan: op.plan, rules: rulesByDate(op.plan) };
 }
