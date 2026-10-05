@@ -106,6 +106,9 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
   const [dir, setDir] = useState<Map<string, EmployeeDirectoryRow> | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const [query, setQuery] = useState('');
+  const [crew, setCrew] = useState<'all' | 'A' | 'B' | 'C' | 'D' | 'day'>('all');
+  const [pos, setPos] = useState<'all' | 'controller' | 'vr' | 'panel' | 'field'>('all');
+  const [sort, setSort] = useState<'most' | 'name' | 'number' | 'latest'>('most');
   const today = localToday();
   useEffect(() => { fetchDirectory().then((d) => setDir(new Map(d.map((r) => [r.id, r])))).catch(setErr); }, []);
   const rows = useMemo(() => {
@@ -114,10 +117,16 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
     const by = new Map<string, Map<string, SdPlan>>();
     for (const m of members) { const p = planOf.get(m.planId); if (p) { const x = by.get(m.employeeId) ?? new Map<string, SdPlan>(); x.set(p.id, p); by.set(m.employeeId, x); } }
     const match = nameFilter(query);
+    const posOf = (code: string | null) => (code === 'controller' || code === 'morning_controller' ? 'controller' : code === 'vr_controller' ? 'vr' : code === 'panel_operator' ? 'panel' : code === 'field_operator' ? 'field' : 'other');
+    const byName = (a: { r?: EmployeeDirectoryRow }, b: { r?: EmployeeDirectoryRow }) => a.r!.display_name.localeCompare(b.r!.display_name);
     return [...by].map(([id, ps]) => ({ id, r: dir.get(id), list: [...ps.values()].sort((a, b) => b.start.localeCompare(a.start)) }))
-      .filter((x) => x.r && match([x.r.display_name, x.r.official_name, x.r.employee_number, x.r.arabic_name]))
-      .sort((a, b) => b.list.length - a.list.length || (a.r!.display_name).localeCompare(b.r!.display_name));
-  }, [dir, plans, members, query]);
+      .filter((x) => x.r && match([x.r.display_name, x.r.official_name, x.r.employee_number, x.r.arabic_name])
+        && (crew === 'all' || (crew === 'day' ? !isCrew(x.r.crew_code) : x.r.crew_code === crew)) && (pos === 'all' || posOf(x.r.position_code) === pos))
+      .sort((a, b) => sort === 'name' ? byName(a, b)
+        : sort === 'number' ? Number(a.r!.employee_number) - Number(b.r!.employee_number)
+        : sort === 'latest' ? b.list[0].start.localeCompare(a.list[0].start) || byName(a, b)
+        : b.list.length - a.list.length || byName(a, b));
+  }, [dir, plans, members, query, crew, pos, sort]);
   if (err) return <ErrorBox error={err} />;
   if (!dir) return <Spinner />;
   const total = rows.reduce((n, x) => n + x.list.length, 0);
@@ -127,6 +136,28 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input className="input" style={{ paddingLeft: '2.25rem' }} placeholder="Search name or number" value={query} onChange={(e) => setQuery(e.target.value)} />
       </label>
+      <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+        {(['all', 'A', 'B', 'C', 'D', 'day'] as const).map((c) => (
+          <button key={c} type="button" aria-pressed={crew === c} onClick={() => setCrew(c)}
+            className={cx('flex min-h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium ring-1', crew === c ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>
+            {c === 'all' ? 'All shifts' : c === 'day' ? 'Day staff' : <><CrewBadge crew={c} size="sm" /> {c}</>}
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+        {([['all', 'All positions'], ['controller', 'Controller'], ['vr', 'VR'], ['panel', 'Panel'], ['field', 'Field']] as const).map(([k, l]) => (
+          <button key={k} type="button" aria-pressed={pos === k} onClick={() => setPos(k)}
+            className={cx('min-h-9 shrink-0 rounded-full px-3 text-sm font-medium ring-1', pos === k ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>{l}</button>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 text-xs text-slate-600">
+        <span className="shrink-0 font-medium">Sort</span>
+        <div className="grid flex-1 grid-cols-4 gap-1 rounded-lg bg-slate-100 p-0.5">
+          {([['most', 'Most times'], ['name', 'Name'], ['number', 'Number'], ['latest', 'Latest']] as const).map(([k, l]) => (
+            <button key={k} type="button" aria-pressed={sort === k} onClick={() => setSort(k)} className={cx('min-h-8 rounded-md font-medium', sort === k ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{l}</button>
+          ))}
+        </div>
+      </div>
       <p className="px-1 text-xs text-slate-500">{rows.length} {rows.length === 1 ? 'person' : 'people'} · {total} {total === 1 ? 'time' : 'times'} on a shutdown team · {plans.length} {plans.length === 1 ? 'shutdown' : 'shutdowns'} recorded</p>
       {rows.length === 0 ? <Card><p className="text-sm text-slate-500">Nobody matches.</p></Card> : (
         <Card className="divide-y divide-slate-100 p-0">
