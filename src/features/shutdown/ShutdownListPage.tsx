@@ -1,11 +1,15 @@
-import { ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import type { SdKind, SdPlan } from '@/core/shutdown';
+import { ChevronRight, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import type { SdKind, SdMember, SdPlan } from '@/core/shutdown';
 import { fetchCalendarInfo } from '@/data/calendar';
+import { fetchDirectory } from '@/data/queries';
 import { createSdPlan, fetchAllSdMembers, fetchSdPlans, updateSdPlan } from '@/data/shutdown';
+import type { EmployeeDirectoryRow } from '@/data/types';
 import { BottomSheet, Button, Card, ErrorBox, Field, PageHeader, Spinner, cx, fmtDate } from '@/ui/components';
+import { CrewBadge, isCrew } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
+import { nameFilter } from '@/ui/nameSearch';
 
 /** Shutdown teams: one plan per shutdown; open it to fill the Morning and Night teams. */
 export default function ShutdownListPage() {
@@ -14,11 +18,14 @@ export default function ShutdownListPage() {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<SdPlan | null>(null);
   const [people, setPeople] = useState<Map<string, number>>(new Map());
+  const [members, setMembers] = useState<SdMember[]>([]);
+  const [params, setParams] = useSearchParams();
+  const view = params.get('view') === 'people' ? 'people' : 'plans';
   const [notice, setNotice] = useState<string | null>(null);
   const today = localToday();
   const load = () => {
     Promise.all([fetchSdPlans(), fetchAllSdMembers()]).then(([ps, ms]) => {
-      setPlans(ps);
+      setPlans(ps); setMembers(ms);
       const n = new Map<string, number>();
       for (const m of ms) n.set(m.planId, (n.get(m.planId) ?? 0) + 1);
       setPeople(n);
@@ -62,9 +69,16 @@ export default function ShutdownListPage() {
         <p>Overtime = shutdown hours − the normal duty hours the person would have worked, per month, against the cap.</p>
         <p>Picking members: the right level first; nobody works two shutdowns in a row (flagged); then those free of leave whose crew keeps its minimum; then fewer sick days this year.</p>
       </div>} action={<Button className="min-h-10 shrink-0 px-3" onClick={() => setAdding(true)}><Plus className="h-4 w-4" /> New</Button>} />
-      <p className="mb-2 text-xs text-slate-500">Field Operator levels: <Link to="/review/fo-levels" className="font-medium text-brand-700">Senior / Good / New ›</Link></p>
+      <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
+        {(['plans', 'people'] as const).map((t) => (
+          <button key={t} type="button" aria-pressed={view === t} onClick={() => setParams(t === 'plans' ? {} : { view: t }, { replace: true })}
+            className={cx('min-h-9 rounded-lg font-medium', view === t ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{t === 'plans' ? 'Shutdowns' : 'Who took part'}</button>
+        ))}
+      </div>
+      {view === 'people' && (error ? <ErrorBox error={error} /> : !plans ? <Spinner /> : <PeopleTab plans={plans} members={members} />)}
+      {view === 'plans' && <p className="mb-2 text-xs text-slate-500">Field Operator levels: <Link to="/review/fo-levels" className="font-medium text-brand-700">Senior / Good / New ›</Link></p>}
       {notice && <p role="status" className="mb-2 text-sm text-status-green">{notice}</p>}
-      {error ? <ErrorBox error={error} /> : !plans ? <Spinner /> : plans.length === 0 ? <Card><p className="text-sm text-slate-500">No shutdown plan yet.</p></Card> : (
+      {view === 'plans' && (error ? <ErrorBox error={error} /> : !plans ? <Spinner /> : plans.length === 0 ? <Card><p className="text-sm text-slate-500">No shutdown plan yet.</p></Card> : (
         <div className="space-y-4">
           {ahead.length > 0 && <Card className="divide-y divide-slate-100 p-0">{ahead.map((p) => row(p, false))}</Card>}
           {done.length > 0 && (
@@ -74,9 +88,62 @@ export default function ShutdownListPage() {
             </section>
           )}
         </div>
-      )}
+      ))}
       {adding && <NewPlanSheet onClose={() => setAdding(false)} />}
       {editing && <EditPlanSheet plan={editing} people={people.get(editing.id) ?? 0} onClose={() => setEditing(null)} onDone={(m) => { setEditing(null); setNotice(m); load(); }} />}
+    </div>
+  );
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const monthSpan = (a: string, b: string) => {
+  const [ya, ma, yb, mb] = [a.slice(0, 4), Number(a.slice(5, 7)) - 1, b.slice(0, 4), Number(b.slice(5, 7)) - 1];
+  return ya === yb ? (ma === mb ? `${MONTHS[ma]} ${ya}` : `${MONTHS[ma]}–${MONTHS[mb]} ${ya}`) : `${MONTHS[ma]} ${ya} – ${MONTHS[mb]} ${yb}`;
+};
+
+/** Everyone who has been on a shutdown team: name and number, how many shutdowns, and which (newest first). */
+function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] }) {
+  const [dir, setDir] = useState<Map<string, EmployeeDirectoryRow> | null>(null);
+  const [err, setErr] = useState<unknown>(null);
+  const [query, setQuery] = useState('');
+  const today = localToday();
+  useEffect(() => { fetchDirectory().then((d) => setDir(new Map(d.map((r) => [r.id, r])))).catch(setErr); }, []);
+  const rows = useMemo(() => {
+    if (!dir) return [];
+    const planOf = new Map(plans.map((p) => [p.id, p]));
+    const by = new Map<string, Map<string, SdPlan>>();
+    for (const m of members) { const p = planOf.get(m.planId); if (p) { const x = by.get(m.employeeId) ?? new Map<string, SdPlan>(); x.set(p.id, p); by.set(m.employeeId, x); } }
+    const match = nameFilter(query);
+    return [...by].map(([id, ps]) => ({ id, r: dir.get(id), list: [...ps.values()].sort((a, b) => b.start.localeCompare(a.start)) }))
+      .filter((x) => x.r && match([x.r.display_name, x.r.official_name, x.r.employee_number, x.r.arabic_name]))
+      .sort((a, b) => b.list.length - a.list.length || (a.r!.display_name).localeCompare(b.r!.display_name));
+  }, [dir, plans, members, query]);
+  if (err) return <ErrorBox error={err} />;
+  if (!dir) return <Spinner />;
+  const total = rows.reduce((n, x) => n + x.list.length, 0);
+  return (
+    <div className="space-y-2">
+      <label className="relative block">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <input className="input" style={{ paddingLeft: '2.25rem' }} placeholder="Search name or number" value={query} onChange={(e) => setQuery(e.target.value)} />
+      </label>
+      <p className="px-1 text-xs text-slate-500">{rows.length} {rows.length === 1 ? 'person' : 'people'} · {total} {total === 1 ? 'time' : 'times'} on a shutdown team · {plans.length} {plans.length === 1 ? 'shutdown' : 'shutdowns'} recorded</p>
+      {rows.length === 0 ? <Card><p className="text-sm text-slate-500">Nobody matches.</p></Card> : (
+        <Card className="divide-y divide-slate-100 p-0">
+          {rows.map(({ id, r, list }) => (
+            <Link key={id} to={`/employees/${id}`} className="flex items-start gap-2.5 px-3 py-2.5 active:bg-slate-50">
+              {r && isCrew(r.crew_code) ? <span className="mt-0.5"><CrewBadge crew={r.crew_code} size="sm" /></span> : <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-600">{r?.position_code === 'vr_controller' ? 'VR' : 'DS'}</span>}
+              <span className="min-w-0 flex-1">
+                <span className="flex items-baseline gap-1.5"><span className="truncate text-sm font-medium text-slate-900">{r?.display_name}</span><span className="shrink-0 text-xs tabular-nums text-slate-500">#{r?.employee_number}</span>{r && !r.is_active && <span className="shrink-0 text-[10px] font-semibold text-slate-400">inactive</span>}</span>
+                <span className="mt-1 flex flex-wrap gap-1">
+                  {list.map((p) => <span key={p.id} className={cx('rounded-md px-1.5 py-0.5 text-[11px]', p.start > today ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-200' : 'bg-slate-100 text-slate-700')}>{p.title} · {monthSpan(p.start, p.end)}{p.start > today ? ' · planned' : ''}</span>)}
+                </span>
+              </span>
+              <span className="shrink-0 text-right"><span className="block text-lg font-semibold leading-tight tabular-nums text-brand-800">{list.length}×</span></span>
+            </Link>
+          ))}
+        </Card>
+      )}
     </div>
   );
 }
