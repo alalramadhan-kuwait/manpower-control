@@ -1,4 +1,4 @@
-import { ChevronRight, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { ChevronRight, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { yearSegment } from '@/core/calendar';
@@ -179,6 +179,16 @@ const monthSpan = (a: string, b: string) => {
   return ya === yb ? (ma === mb ? `${MONTHS[ma]} ${ya}` : `${MONTHS[ma]}–${MONTHS[mb]} ${ya}`) : `${MONTHS[ma]} ${ya} – ${MONTHS[mb]} ${yb}`;
 };
 
+const chip = (on: boolean, out = false) => cx('flex min-h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ring-1', on ? (out ? 'bg-red-50 text-status-red line-through ring-red-300' : 'bg-brand-700 text-white ring-brand-700') : 'bg-white text-slate-700 ring-slate-300');
+function FilterRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-2">
+      <span className="w-16 shrink-0 pt-1.5 text-xs font-medium text-slate-600">{label}</span>
+      <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">{children}</div>
+    </div>
+  );
+}
+
 /** Everyone who has been on a shutdown team: name and number, how many shutdowns, and which (newest first). */
 function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] }) {
   const [dir, setDir] = useState<Map<string, EmployeeDirectoryRow> | null>(null);
@@ -191,6 +201,8 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
   // excluded: positions and grades left out of the list (tap again to bring them back)
   const [exPos, setExPos] = useState<Set<string>>(new Set());
   const [exGrade, setExGrade] = useState<Set<number>>(new Set());
+  const [exPlan, setExPlan] = useState<Set<string>>(new Set());
+  const [open, setOpen] = useState(false);
   const toggle = <T,>(set: Set<T>, v: T, put: (s: Set<T>) => void) => { const n = new Set(set); if (n.has(v)) n.delete(v); else n.add(v); put(n); };
   const today = localToday();
   useEffect(() => { fetchDirectory().then((d) => setDir(new Map(d.map((r) => [r.id, r])))).catch(setErr); }, []);
@@ -206,7 +218,7 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
       && (crew === 'all' || (crew === 'day' ? !isCrew(r.crew_code) : r.crew_code === crew)) && (pos === 'all' || posOf(r.position_code) === pos)
       && !exPos.has(posOf(r.position_code)) && !(r.grade != null && exGrade.has(r.grade));
     const rows = [...by].map(([id, ps]) => ({ id, r: dir.get(id), list: [...ps.values()].sort((a, b) => b.start.localeCompare(a.start)) }))
-      .filter((x) => x.r && keep(x.r))
+      .filter((x) => x.r && keep(x.r) && !x.list.some((p) => exPlan.has(p.id)))
       .sort((a, b) => sort === 'name' ? byName(a, b)
         : sort === 'number' ? Number(a.r!.employee_number) - Number(b.r!.employee_number)
         : sort === 'latest' ? b.list[0].start.localeCompare(a.list[0].start) || byName(a, b)
@@ -216,10 +228,13 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
     const never = pool.filter(keep).map((r) => ({ id: r.id, r }))
       .sort((a, b) => sort === 'number' ? Number(a.r.employee_number) - Number(b.r.employee_number) : byName(a, b));
     return { rows, never, neverAll: pool.length, tookAll: by.size };
-  }, [dir, plans, members, query, crew, pos, sort, exPos, exGrade]);
+  }, [dir, plans, members, query, crew, pos, sort, exPos, exGrade, exPlan]);
+  const newestFirst = useMemo(() => [...plans].sort((a, b) => b.start.localeCompare(a.start)), [plans]);
+  const lastId = newestFirst.find((p) => p.start <= today)?.id;
   const grades = useMemo(() => [...new Set([...(dir?.values() ?? [])].filter((r) => r.in_unit12_scope && r.grade != null).map((r) => r.grade as number))].sort((a, b) => a - b), [dir]);
   if (err) return <ErrorBox error={err} />;
   if (!dir) return <Spinner />;
+  const active = (crew !== 'all' ? 1 : 0) + (pos !== 'all' ? 1 : 0) + exPos.size + exGrade.size + exPlan.size;
   const total = rows.reduce((n, x) => n + x.list.length, 0);
   return (
     <div className="space-y-2">
@@ -229,37 +244,55 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
             className={cx('min-h-9 rounded-lg font-medium', mode === k ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{l}</button>
         ))}
       </div>
-      <label className="relative block">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-        <input className="input" style={{ paddingLeft: '2.25rem' }} placeholder="Search name or number" value={query} onChange={(e) => setQuery(e.target.value)} />
-      </label>
-      <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-        {(['all', 'A', 'B', 'C', 'D', 'day'] as const).map((c) => (
-          <button key={c} type="button" aria-pressed={crew === c} onClick={() => setCrew(c)}
-            className={cx('flex min-h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium ring-1', crew === c ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>
-            {c === 'all' ? 'All shifts' : c === 'day' ? 'Day staff' : <><CrewBadge crew={c} size="sm" /> {c}</>}
-          </button>
-        ))}
+      <div className="flex gap-2">
+        <label className="relative block min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input className="input" style={{ paddingLeft: '2.25rem' }} placeholder="Search name or number" value={query} onChange={(e) => setQuery(e.target.value)} />
+        </label>
+        <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}
+          className={cx('flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl px-3 text-sm font-medium ring-1', active > 0 ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>
+          <SlidersHorizontal className="h-4 w-4" />Filters{active > 0 ? ` · ${active}` : ''}
+        </button>
       </div>
-      <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-        {([['all', 'All positions'], ['controller', 'Controller'], ['vr', 'VR'], ['panel', 'Panel'], ['field', 'Field']] as const).map(([k, l]) => (
-          <button key={k} type="button" aria-pressed={pos === k} onClick={() => setPos(k)}
-            className={cx('min-h-9 shrink-0 rounded-full px-3 text-sm font-medium ring-1', pos === k ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>{l}</button>
-        ))}
-      </div>
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
-        <span className="shrink-0 text-xs font-medium text-slate-600">Exclude</span>
-        {([['controller', 'Controller'], ['vr', 'VR'], ['panel', 'Panel'], ['field', 'Field']] as const).map(([k, l]) => (
-          <button key={k} type="button" aria-pressed={exPos.has(k)} onClick={() => toggle(exPos, k, setExPos)}
-            className={cx('min-h-8 shrink-0 rounded-full px-2.5 text-xs font-medium ring-1', exPos.has(k) ? 'bg-red-50 text-status-red line-through ring-red-300' : 'bg-white text-slate-700 ring-slate-300')}>{l}</button>
-        ))}
-        <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-300" />
-        {grades.map((g) => (
-          <button key={g} type="button" aria-pressed={exGrade.has(g)} onClick={() => toggle(exGrade, g, setExGrade)}
-            className={cx('min-h-8 shrink-0 rounded-full px-2.5 text-xs font-medium ring-1', exGrade.has(g) ? 'bg-red-50 text-status-red line-through ring-red-300' : 'bg-white text-slate-700 ring-slate-300')}>G{g}</button>
-        ))}
-        {(exPos.size > 0 || exGrade.size > 0) && <button type="button" onClick={() => { setExPos(new Set()); setExGrade(new Set()); }} className="shrink-0 px-1 text-xs font-medium text-brand-700">Clear</button>}
-      </div>
+      {open && (
+        <Card className="space-y-3">
+          <FilterRow label="Shift">
+            {(['all', 'A', 'B', 'C', 'D', 'day'] as const).map((c) => (
+              <button key={c} type="button" aria-pressed={crew === c} onClick={() => setCrew(c)} className={chip(crew === c)}>
+                {c === 'all' ? 'All' : c === 'day' ? 'Day staff' : <><CrewBadge crew={c} size="sm" /> {c}</>}
+              </button>
+            ))}
+          </FilterRow>
+          <FilterRow label="Position">
+            {([['all', 'All'], ['controller', 'Controller'], ['vr', 'VR'], ['panel', 'Panel'], ['field', 'Field']] as const).map(([k, l]) => (
+              <button key={k} type="button" aria-pressed={pos === k} onClick={() => setPos(k)} className={chip(pos === k)}>{l}</button>
+            ))}
+          </FilterRow>
+          <div className="border-t border-slate-100 pt-2">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Leave out <span className="font-normal normal-case text-slate-400">(tap to hide, tap again to bring back)</span></p>
+            <div className="space-y-3">
+              <FilterRow label="Position">
+                {([['controller', 'Controller'], ['vr', 'VR'], ['panel', 'Panel'], ['field', 'Field']] as const).map(([k, l]) => (
+                  <button key={k} type="button" aria-pressed={exPos.has(k)} onClick={() => toggle(exPos, k, setExPos)} className={chip(exPos.has(k), true)}>{l}</button>
+                ))}
+              </FilterRow>
+              <FilterRow label="Grade">
+                {grades.map((g) => (
+                  <button key={g} type="button" aria-pressed={exGrade.has(g)} onClick={() => toggle(exGrade, g, setExGrade)} className={chip(exGrade.has(g), true)}>G{g}</button>
+                ))}
+              </FilterRow>
+              <FilterRow label="Took part in">
+                {newestFirst.map((p) => (
+                  <button key={p.id} type="button" aria-pressed={exPlan.has(p.id)} onClick={() => toggle(exPlan, p.id, setExPlan)} className={chip(exPlan.has(p.id), true)}>
+                    {p.id === lastId && <span className="mr-1 font-semibold">Last ·</span>}{p.title} · {monthSpan(p.start, p.end)}{p.start > today ? ' · planned' : ''}
+                  </button>
+                ))}
+              </FilterRow>
+            </div>
+          </div>
+          {active > 0 && <button type="button" onClick={() => { setCrew('all'); setPos('all'); setExPos(new Set()); setExGrade(new Set()); setExPlan(new Set()); }} className="text-xs font-medium text-brand-700">Clear all filters</button>}
+        </Card>
+      )}
       <div className="flex items-center gap-2 text-xs text-slate-600">
         <span className="shrink-0 font-medium">Sort</span>
         <div className={cx('grid flex-1 gap-1 rounded-lg bg-slate-100 p-0.5', mode === 'in' ? 'grid-cols-4' : 'grid-cols-2')}>
