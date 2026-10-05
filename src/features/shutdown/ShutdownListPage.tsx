@@ -1,6 +1,7 @@
 import { ChevronRight, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { yearSegment } from '@/core/calendar';
 import type { SdKind, SdMember, SdPlan } from '@/core/shutdown';
 import { fetchCalendarInfo } from '@/data/calendar';
 import { fetchDirectory } from '@/data/queries';
@@ -20,7 +21,7 @@ export default function ShutdownListPage() {
   const [people, setPeople] = useState<Map<string, number>>(new Map());
   const [members, setMembers] = useState<SdMember[]>([]);
   const [params, setParams] = useSearchParams();
-  const view = params.get('view') === 'people' ? 'people' : 'plans';
+  const view = params.get('view') === 'people' ? 'people' : params.get('view') === 'timeline' ? 'timeline' : 'plans';
   const [notice, setNotice] = useState<string | null>(null);
   const today = localToday();
   const load = () => {
@@ -69,12 +70,13 @@ export default function ShutdownListPage() {
         <p>Overtime = shutdown hours − the normal duty hours the person would have worked, per month, against the cap.</p>
         <p>Picking members: the right level first; nobody works two shutdowns in a row (flagged); then those free of leave whose crew keeps its minimum; then fewer sick days this year.</p>
       </div>} action={<Button className="min-h-10 shrink-0 px-3" onClick={() => setAdding(true)}><Plus className="h-4 w-4" /> New</Button>} />
-      <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
-        {(['plans', 'people'] as const).map((t) => (
+      <div className="mb-3 grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
+        {(['plans', 'timeline', 'people'] as const).map((t) => (
           <button key={t} type="button" aria-pressed={view === t} onClick={() => setParams(t === 'plans' ? {} : { view: t }, { replace: true })}
-            className={cx('min-h-9 rounded-lg font-medium', view === t ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{t === 'plans' ? 'Shutdowns' : 'Who took part'}</button>
+            className={cx('min-h-9 rounded-lg font-medium', view === t ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{t === 'plans' ? 'Shutdowns' : t === 'timeline' ? 'Timeline' : 'Who took part'}</button>
         ))}
       </div>
+      {view === 'timeline' && (error ? <ErrorBox error={error} /> : !plans ? <Spinner /> : <TimelineTab plans={plans} people={people} today={today} />)}
       {view === 'people' && (error ? <ErrorBox error={error} /> : !plans ? <Spinner /> : <PeopleTab plans={plans} members={members} />)}
       {view === 'plans' && <p className="mb-2 text-xs text-slate-500">Field Operator levels: <Link to="/review/fo-levels" className="font-medium text-brand-700">Senior / Good / New ›</Link></p>}
       {notice && <p role="status" className="mb-2 text-sm text-status-green">{notice}</p>}
@@ -91,6 +93,82 @@ export default function ShutdownListPage() {
       ))}
       {adding && <NewPlanSheet onClose={() => setAdding(false)} />}
       {editing && <EditPlanSheet plan={editing} people={people.get(editing.id) ?? 0} onClose={() => setEditing(null)} onDone={(m) => { setEditing(null); setNotice(m); load(); }} />}
+    </div>
+  );
+}
+
+/** Every shutdown on a time scale: one strip per year (months across), bars placed by date, today marked; the list under each strip has the details. */
+function TimelineTab({ plans, people, today }: { plans: SdPlan[]; people: Map<string, number>; today: string }) {
+  if (plans.length === 0) return <Card><p className="text-sm text-slate-500">No shutdown plan yet.</p></Card>;
+  const sorted = [...plans].sort((a, b) => a.start.localeCompare(b.start));
+  const first = Number(sorted[0].start.slice(0, 4));
+  const last = Math.max(Number(sorted[sorted.length - 1].end.slice(0, 4)), Number(today.slice(0, 4)));
+  const years = Array.from({ length: last - first + 1 }, (_, i) => last - i);   // newest year on top
+  const days = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
+  const prevOf = new Map(sorted.map((p, i) => [p.id, i > 0 ? sorted[i - 1] : null]));
+  const finished = sorted.filter((p) => p.end < today);
+  const ahead = sorted.filter((p) => p.end >= today);
+  const lastDone = finished[finished.length - 1] ?? null;
+  const next = ahead[0] ?? null;
+  const colour = (p: SdPlan) => (p.kind === 'total' ? 'bg-amber-500' : 'bg-brand-600');
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200"><div className="text-slate-500">Last finished</div>
+          {lastDone ? <><div className="truncate font-medium text-slate-900">{lastDone.title}</div><div className="text-slate-600">{days(lastDone.end, today)} days ago</div></> : <div className="text-slate-500">none</div>}</div>
+        <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200"><div className="text-slate-500">{next && next.start <= today ? 'Running now' : 'Next'}</div>
+          {next ? <><div className="truncate font-medium text-slate-900">{next.title}</div><div className="text-slate-600">{next.start <= today ? `ends in ${days(today, next.end)} days` : `in ${days(today, next.start)} days`}</div></> : <div className="text-slate-500">none planned</div>}</div>
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 px-1 text-[11px] text-slate-600">
+        <span className="inline-flex items-center gap-1"><span className="h-2.5 w-4 rounded-sm bg-brand-600" />Train shutdown</span>
+        <span className="inline-flex items-center gap-1"><span className="h-2.5 w-4 rounded-sm bg-amber-500" />Total turnaround</span>
+        <span className="inline-flex items-center gap-1"><span className="h-2.5 w-4 rounded-sm bg-white ring-1 ring-slate-400" />Planned</span>
+        <span className="inline-flex items-center gap-1"><span className="h-3 w-0.5 bg-status-red" />Today</span>
+      </div>
+      {years.map((y) => {
+        const inYear = sorted.filter((p) => yearSegment(p.start, p.end, y));
+        // lanes: bars that overlap in time go on separate lines
+        const lanes: string[] = []; const laneOf = new Map<string, number>();
+        for (const p of inYear) { let i = lanes.findIndex((end) => end < p.start); if (i < 0) { i = lanes.length; lanes.push(p.end); } else lanes[i] = p.end; laneOf.set(p.id, i); }
+        const todaySeg = String(y) === today.slice(0, 4) ? yearSegment(today, today, y) : null;
+        const starting = sorted.filter((p) => p.start.startsWith(String(y))).reverse();
+        const height = Math.max(1, lanes.length) * 26 + 8;
+        return (
+          <Card key={y} className="p-3">
+            <div className="mb-1 flex items-baseline justify-between"><h2 className="text-lg font-semibold text-brand-800">{y}</h2><span className="text-xs text-slate-500">{inYear.length === 0 ? 'no shutdown' : `${inYear.length} ${inYear.length === 1 ? 'shutdown' : 'shutdowns'}`}</span></div>
+            <div className="grid grid-cols-12 text-center text-[10px] text-slate-400">{['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'].map((m, i) => <span key={i}>{m}</span>)}</div>
+            <div className="relative rounded-md bg-slate-50 ring-1 ring-slate-200" style={{ height }}>
+              {Array.from({ length: 11 }, (_, i) => <span key={i} className="absolute top-0 h-full w-px bg-slate-200" style={{ left: `${((i + 1) / 12) * 100}%` }} />)}
+              {inYear.map((p) => { const seg = yearSegment(p.start, p.end, y)!; const planned = p.start > today;
+                return (
+                  <Link key={p.id} to={`/shutdown/${p.id}`} title={`${p.title} · ${fmtDate(p.start)} – ${fmtDate(p.end)}`} aria-label={`${p.title}, ${fmtDate(p.start)} to ${fmtDate(p.end)}`}
+                    className={cx('absolute flex items-center overflow-hidden rounded px-1 text-[10px] font-semibold leading-none', planned ? 'bg-white text-slate-700 ring-2 ring-inset ' + (p.kind === 'total' ? 'ring-amber-500' : 'ring-brand-600') : cx(colour(p), 'text-white'))}
+                    style={{ left: `${seg.left * 100}%`, width: `max(${seg.width * 100}%, 6px)`, top: 4 + (laneOf.get(p.id) ?? 0) * 26, height: 22 }}>
+                    <span className="truncate">{seg.width > 0.12 ? p.title : ''}</span>
+                  </Link>
+                ); })}
+              {todaySeg && <span className="pointer-events-none absolute top-0 h-full w-0.5 bg-status-red" style={{ left: `${todaySeg.left * 100}%` }} />}
+            </div>
+            {starting.length > 0 && (
+              <ul className="mt-2 divide-y divide-slate-100">
+                {starting.map((p) => { const prev = prevOf.get(p.id); const gap = prev ? days(prev.end, p.start) - 1 : null; const n = people.get(p.id) ?? 0;
+                  return (
+                    <li key={p.id}>
+                      <Link to={`/shutdown/${p.id}`} className="flex items-start gap-2 py-1.5">
+                        <span className={cx('mt-1 h-2.5 w-2.5 shrink-0 rounded-sm', colour(p))} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium text-slate-900">{p.title}{p.start > today ? <span className="ml-1.5 text-[10px] font-semibold text-brand-700">planned</span> : p.end >= today ? <span className="ml-1.5 text-[10px] font-semibold text-green-700">running</span> : null}</span>
+                          <span className="block text-xs text-slate-600">{fmtDate(p.start)} – {fmtDate(p.end)} · {days(p.start, p.end) + 1} days · {n} {n === 1 ? 'person' : 'people'}{p.end.slice(0, 4) !== p.start.slice(0, 4) ? ` · continues into ${p.end.slice(0, 4)}` : ''}</span>
+                          {gap != null && gap >= 0 && <span className="block text-[11px] text-slate-400">{gap} days after {prev!.title}</span>}
+                        </span>
+                      </Link>
+                    </li>
+                  ); })}
+              </ul>
+            )}
+          </Card>
+        );
+      })}
     </div>
   );
 }
