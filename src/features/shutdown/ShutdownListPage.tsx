@@ -2,7 +2,7 @@ import { ChevronRight, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { yearSegment } from '@/core/calendar';
-import type { SdKind, SdMember, SdPlan } from '@/core/shutdown';
+import { FO_LEVEL_LABEL, sdOperatorEligible, type SdKind, type SdMember, type SdPlan } from '@/core/shutdown';
 import { fetchCalendarInfo } from '@/data/calendar';
 import { fetchDirectory } from '@/data/queries';
 import { createSdPlan, fetchAllSdMembers, fetchSdPlans, updateSdPlan } from '@/data/shutdown';
@@ -187,29 +187,42 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
   const [crew, setCrew] = useState<'all' | 'A' | 'B' | 'C' | 'D' | 'day'>('all');
   const [pos, setPos] = useState<'all' | 'controller' | 'vr' | 'panel' | 'field'>('all');
   const [sort, setSort] = useState<'most' | 'name' | 'number' | 'latest'>('most');
+  const [mode, setMode] = useState<'in' | 'out'>('in');
   const today = localToday();
   useEffect(() => { fetchDirectory().then((d) => setDir(new Map(d.map((r) => [r.id, r])))).catch(setErr); }, []);
-  const rows = useMemo(() => {
-    if (!dir) return [];
+  const { rows, never, neverAll, tookAll } = useMemo(() => {
+    if (!dir) return { rows: [], never: [], neverAll: 0, tookAll: 0 };
     const planOf = new Map(plans.map((p) => [p.id, p]));
     const by = new Map<string, Map<string, SdPlan>>();
     for (const m of members) { const p = planOf.get(m.planId); if (p) { const x = by.get(m.employeeId) ?? new Map<string, SdPlan>(); x.set(p.id, p); by.set(m.employeeId, x); } }
     const match = nameFilter(query);
     const posOf = (code: string | null) => (code === 'controller' || code === 'morning_controller' ? 'controller' : code === 'vr_controller' ? 'vr' : code === 'panel_operator' ? 'panel' : code === 'field_operator' ? 'field' : 'other');
     const byName = (a: { r?: EmployeeDirectoryRow }, b: { r?: EmployeeDirectoryRow }) => a.r!.display_name.localeCompare(b.r!.display_name);
-    return [...by].map(([id, ps]) => ({ id, r: dir.get(id), list: [...ps.values()].sort((a, b) => b.start.localeCompare(a.start)) }))
-      .filter((x) => x.r && match([x.r.display_name, x.r.official_name, x.r.employee_number, x.r.arabic_name])
-        && (crew === 'all' || (crew === 'day' ? !isCrew(x.r.crew_code) : x.r.crew_code === crew)) && (pos === 'all' || posOf(x.r.position_code) === pos))
+    const keep = (r: EmployeeDirectoryRow) => match([r.display_name, r.official_name, r.employee_number, r.arabic_name])
+      && (crew === 'all' || (crew === 'day' ? !isCrew(r.crew_code) : r.crew_code === crew)) && (pos === 'all' || posOf(r.position_code) === pos);
+    const rows = [...by].map(([id, ps]) => ({ id, r: dir.get(id), list: [...ps.values()].sort((a, b) => b.start.localeCompare(a.start)) }))
+      .filter((x) => x.r && keep(x.r))
       .sort((a, b) => sort === 'name' ? byName(a, b)
         : sort === 'number' ? Number(a.r!.employee_number) - Number(b.r!.employee_number)
         : sort === 'latest' ? b.list[0].start.localeCompare(a.list[0].start) || byName(a, b)
         : b.list.length - a.list.length || byName(a, b));
+    // the people who could be on a team (active, in Unit 12, a Controller, VR, Panel or Field Operator) and never were
+    const pool = [...dir.values()].filter((r) => r.is_active && r.in_unit12_scope && posOf(r.position_code) !== 'other' && !by.has(r.id));
+    const never = pool.filter(keep).map((r) => ({ id: r.id, r }))
+      .sort((a, b) => sort === 'number' ? Number(a.r.employee_number) - Number(b.r.employee_number) : byName(a, b));
+    return { rows, never, neverAll: pool.length, tookAll: by.size };
   }, [dir, plans, members, query, crew, pos, sort]);
   if (err) return <ErrorBox error={err} />;
   if (!dir) return <Spinner />;
   const total = rows.reduce((n, x) => n + x.list.length, 0);
   return (
     <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
+        {([['in', `Took part · ${tookAll}`], ['out', `Never took part · ${neverAll}`]] as const).map(([k, l]) => (
+          <button key={k} type="button" aria-pressed={mode === k} onClick={() => { setMode(k); if (k === 'out' && (sort === 'most' || sort === 'latest')) setSort('name'); if (k === 'in' && sort === 'name') setSort('most'); }}
+            className={cx('min-h-9 rounded-lg font-medium', mode === k ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{l}</button>
+        ))}
+      </div>
       <label className="relative block">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input className="input" style={{ paddingLeft: '2.25rem' }} placeholder="Search name or number" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -230,12 +243,33 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
       </div>
       <div className="flex items-center gap-2 text-xs text-slate-600">
         <span className="shrink-0 font-medium">Sort</span>
-        <div className="grid flex-1 grid-cols-4 gap-1 rounded-lg bg-slate-100 p-0.5">
-          {([['most', 'Most times'], ['name', 'Name'], ['number', 'Number'], ['latest', 'Latest']] as const).map(([k, l]) => (
+        <div className={cx('grid flex-1 gap-1 rounded-lg bg-slate-100 p-0.5', mode === 'in' ? 'grid-cols-4' : 'grid-cols-2')}>
+          {([['most', 'Most times'], ['name', 'Name'], ['number', 'Number'], ['latest', 'Latest']] as const).filter(([k]) => mode === 'in' || k === 'name' || k === 'number').map(([k, l]) => (
             <button key={k} type="button" aria-pressed={sort === k} onClick={() => setSort(k)} className={cx('min-h-8 rounded-md font-medium', sort === k ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{l}</button>
           ))}
         </div>
       </div>
+      {mode === 'out' ? <>
+        <p className="px-1 text-xs text-slate-500">{never.length} {never.length === 1 ? 'person' : 'people'} never on a shutdown team (active in Unit 12) · {plans.length} {plans.length === 1 ? 'shutdown' : 'shutdowns'} recorded</p>
+        {never.length === 0 ? <Card><p className="text-sm text-slate-500">Nobody matches.</p></Card> : (
+          <Card className="divide-y divide-slate-100 p-0">
+            {never.map(({ id, r }) => {
+              const level = (r.position_code === 'field_operator' || r.position_code === 'panel_operator') && r.fo_level ? FO_LEVEL_LABEL[r.fo_level] : null;
+              const eligible = r.position_code === 'panel_operator' || r.position_code === 'field_operator' ? sdOperatorEligible({ role: r.position_code, grade: r.grade, employmentType: r.employment_type }) : true;
+              return (
+                <Link key={id} to={`/employees/${id}`} className="flex items-center gap-2.5 px-3 py-2.5 active:bg-slate-50">
+                  {isCrew(r.crew_code) ? <CrewBadge crew={r.crew_code} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-600">{r.position_code === 'vr_controller' ? 'VR' : 'DS'}</span>}
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-baseline gap-1.5"><span className="truncate text-sm font-medium text-slate-900">{r.display_name}</span><span className="shrink-0 text-xs tabular-nums text-slate-500">#{r.employee_number}</span></span>
+                    <span className="block text-xs text-slate-500">{r.position_label ?? '—'}{r.grade ? ` · Grade ${r.grade}` : ''}{r.employment_type === 'contractor' ? ' · Contractor' : ''}{level ? ` · ${level}` : ''}{!eligible ? ' · not eligible for a team place' : ''}</span>
+                  </span>
+                  <span className="shrink-0 text-lg font-semibold tabular-nums text-slate-300">0×</span>
+                </Link>
+              );
+            })}
+          </Card>
+        )}
+      </> : <>
       <p className="px-1 text-xs text-slate-500">{rows.length} {rows.length === 1 ? 'person' : 'people'} · {total} {total === 1 ? 'time' : 'times'} on a shutdown team · {plans.length} {plans.length === 1 ? 'shutdown' : 'shutdowns'} recorded</p>
       {rows.length === 0 ? <Card><p className="text-sm text-slate-500">Nobody matches.</p></Card> : (
         <Card className="divide-y divide-slate-100 p-0">
@@ -253,6 +287,7 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
           ))}
         </Card>
       )}
+      </>}
     </div>
   );
 }
