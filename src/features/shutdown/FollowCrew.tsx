@@ -31,7 +31,7 @@ function crewShortDays(inputs: ManpowerInputs, from: string, to: string, moves: 
 }
 
 /** Suggested instructions for the team's overlaps, to accept all at once. */
-export function FollowSheet({ plan, teams, members, groups, names, isVr, onClose, onDone }: { plan: SdPlan; teams: SdTeam[]; members: SdMember[]; groups: FollowGroup[]; names: Map<string, string>; isVr: (employeeId: string) => boolean; onClose: () => void; onDone: (msg: string) => void }) {
+export function FollowSheet({ asPage, plan, teams, members, groups, names, isVr, onClose, onDone }: { asPage?: boolean; plan: SdPlan; teams: SdTeam[]; members: SdMember[]; groups: FollowGroup[]; names: Map<string, string>; isVr: (employeeId: string) => boolean; onClose: () => void; onDone: (msg: string) => void }) {
   const today = localToday();
   const [from, setFrom] = useState(defaultFrom(plan, today));
   const [skip, setSkip] = useState<Set<string>>(new Set());
@@ -64,8 +64,7 @@ export function FollowSheet({ plan, teams, members, groups, names, isVr, onClose
     onDone(`${ok} instruction${ok === 1 ? '' : 's'} saved. Press Set days & hours to set the days again.`);
   }
 
-  return (
-    <BottomSheet open onClose={onClose} title="Shift instructions">
+  const body = (
       <div className="space-y-3">
         <PersonalList planId={plan.id} memberIds={members.map((m) => m.employeeId)} />
         <p className="pt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Fix overlaps</p>
@@ -99,8 +98,8 @@ export function FollowSheet({ plan, teams, members, groups, names, isVr, onClose
         {err != null && <ErrorBox error={err} />}
         {changes.length > 0 && <Button className="w-full" disabled={busy || chosen.length === 0} onClick={apply}><Shuffle className="h-4 w-4" />Save {chosen.length} {chosen.length === 1 ? 'instruction' : 'instructions'}</Button>}
       </div>
-    </BottomSheet>
   );
+  return asPage ? body : <BottomSheet open onClose={onClose} title="Shift instructions">{body}</BottomSheet>;
 }
 
 /** Everyone's instruction, as it goes into the Excel file, in two parts: how to begin and how to end. Only people who change are listed. */

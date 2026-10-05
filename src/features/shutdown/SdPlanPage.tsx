@@ -1,6 +1,6 @@
 import { AlertTriangle, ArrowLeft, Check, Copy, FileSpreadsheet, FileText, Pencil, Plus, RotateCcw, Shuffle, Trash2, UserMinus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { COVER_GRADE } from '@/core/controllers';
 import { evaluateRange, personOn, SD_TEAM, type MpAbsence, type MpAssignment, type MpPerson } from '@/core/manpower';
 import { CREWS, addDaysIso, type Crew } from '@/core/roster';
@@ -55,7 +55,10 @@ export default function SdPlanPage() {
   const [editPhases, setEditPhases] = useState(false);
   const [spreading, setSpreading] = useState(false);
   const [moving, setMoving] = useState(false);
-  const [following, setFollowing] = useState(false);
+  // the instructions are a page of their own (?view=instructions), so Back returns to the plan
+  const [search, setSearch] = useSearchParams();
+  const following = search.get('view') === 'instructions';
+  const setFollowing = (on: boolean) => { if (on) setSearch({ view: 'instructions' }); else if (following) setSearch({}, { replace: true }); };
   const [moveError, setMoveError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -145,6 +148,14 @@ export default function SdPlanPage() {
     navigator.clipboard.writeText(lines.join('\n')).then(() => setNotice('Team list copied.'), () => setNotice('Could not copy.'));
   }
 
+  if (following) return (
+    <div>
+      <Link to={`/shutdown/${plan.id}`} className="mb-2 inline-flex items-center gap-1 text-sm font-medium text-brand-700"><ArrowLeft className="h-4 w-4" />{plan.title}</Link>
+      <h1 className="mb-2 text-xl font-semibold text-brand-800">Shift instructions</h1>
+      <FollowSheet asPage plan={plan} teams={teams} members={members} groups={view.overlaps} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} isVr={(e) => data.dir.get(e)?.position_code === 'vr_controller'} onClose={() => setFollowing(false)} onDone={done} />
+    </div>
+  );
+
   return (
     <div>
       <Link to="/shutdown" className="mb-2 inline-flex items-center gap-1 text-sm font-medium text-brand-700"><ArrowLeft className="h-4 w-4" />Shutdown teams</Link>
@@ -213,7 +224,6 @@ export default function SdPlanPage() {
       {adding && <AddSheet plan={plan} team={adding.team} slot={adding.slot} area={adding.area} data={data} view={view} onClose={() => setAdding(null)} onDone={done} />}
       {member && <MemberSheet plan={plan} m={member} data={data} view={view} onClose={() => setMember(null)} onDone={done} />}
       {moving && <MoveLeaveSheet plan={plan} members={members} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} inputs={data.inputs} onClose={() => setMoving(false)} onDone={done} />}
-      {following && <FollowSheet plan={plan} teams={teams} members={members} groups={view.overlaps} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} isVr={(e) => data.dir.get(e)?.position_code === 'vr_controller'} onClose={() => setFollowing(false)} onDone={done} />}
       {spreading && <SpreadDaysSheet plan={plan} teams={teams} members={members} phases={data.phases} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} crewOf={(e) => { const mm = members.find((x) => x.employeeId === e); return mm ? view.dutyCrew(mm) : view.homeCrew(e, plan.start); }} conflicts={leaveConflicts} onClose={() => setSpreading(false)} onDone={done} />}
       {editPattern && <PatternSheet plan={plan} onClose={() => setEditPattern(false)} onDone={done} />}
       {editPhases && <PhasesSheet plan={plan} teams={teams} phases={data.phases} onClose={() => setEditPhases(false)} onDone={done} />}
