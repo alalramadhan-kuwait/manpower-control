@@ -18,7 +18,7 @@ const monthName = (ym: string) => new Date(`${ym}-01T00:00:00Z`).toLocaleDateStr
 const hrs = (label: string | null) => label?.replace(/(\d\d:\d\d)/g, '$1 HRS').replace(/\s*-\s*/, ' TO ') ?? '';
 
 /** A row: the member, the group it is printed under (Controller, an area, Operators) and its number within the team. */
-export interface Row { m: SdMember; team: SdTeam; r: EmployeeDirectoryRow | undefined; /** the crew whose duty days he keeps on the team (the one he follows, else his own) */ crew: Crew | null; /** his own crew, the shutdown aside */ home: Crew | null; group: string; no: number }
+export interface Row { m: SdMember; team: SdTeam; r: EmployeeDirectoryRow | undefined; /** the crew whose duty days he keeps on the team (the one he follows, else his own) */ crew: Crew | null; /** the shift he is counted in: his own crew, the shutdown aside (a VR Controller on the team: the shift he follows) */ home: Crew | null; /** the crew he is in the day after the shutdown (a VR Controller: his placement then) */ after: Crew | null; vr: boolean; group: string; no: number }
 export interface Doc { plan: SdPlan; teams: SdTeam[]; rows: Row[]; signatures: Signature[]; dates: string[]; months: string[]; name: string }
 
 /** Everything the shutdown documents (and the Excel file) are made of. */
@@ -29,12 +29,13 @@ export async function loadSdDoc(id: string): Promise<Doc> {
   const byId = new Map(dir.map((r) => [r.id, r]));
   // the person's own crew, the shutdown aside: overtime counts against that crew's duty days
   const crewOf = (emp: string) => { const p = people.get(emp); return p ? personOn({ ...p, moves: p.moves?.filter((x) => x.kind !== 'sd') }, sd.plan.start).crew : null; };
+  const crewAfter = (emp: string) => { const p = people.get(emp); return p ? personOn({ ...p, moves: p.moves?.filter((x) => x.kind !== 'sd') }, addDaysIso(sd.plan.end, 1)).crew : null; };
   const teamSort = new Map(sd.teams.map((t) => [t.id, t.sort]));
   const areas = areasOf(sd.plan);
   const groupOf = (m: SdMember) => (m.slot === 'controller' ? 'Controller' : sd.plan.kind === 'total' ? (areas.includes(m.area ?? '') ? m.area ?? '' : areas[0]) || 'Operators' : 'Operators');
   const secRank = (m: SdMember) => (m.slot === 'controller' ? Math.max(0, sd.plan.sections.indexOf(m.area ?? '')) : 0);
   const groupRank = (g: string) => (g === 'Controller' ? -1 : Math.max(0, areas.indexOf(g)));
-  const sorted = sd.members.map((m) => ({ m, team: sd.teams.find((t) => t.id === m.teamId)!, r: byId.get(m.employeeId), crew: m.followCrew ?? crewOf(m.employeeId), home: crewOf(m.employeeId), group: groupOf(m), no: 0 }))
+  const sorted = sd.members.map((m) => ({ m, team: sd.teams.find((t) => t.id === m.teamId)!, r: byId.get(m.employeeId), crew: m.followCrew ?? crewOf(m.employeeId), home: byId.get(m.employeeId)?.position_code === 'vr_controller' && m.followCrew ? m.followCrew : crewOf(m.employeeId), after: crewAfter(m.employeeId), vr: byId.get(m.employeeId)?.position_code === 'vr_controller', group: groupOf(m), no: 0 }))
     .filter((x) => x.team)
     .sort((a, b) => teamSort.get(a.m.teamId)! - teamSort.get(b.m.teamId)! || groupRank(a.group) - groupRank(b.group) || (a.m.order ?? 99) - (b.m.order ?? 99) || secRank(a.m) - secRank(b.m) || SLOT_ORDER[a.m.slot] - SLOT_ORDER[b.m.slot] || (a.r?.display_name ?? '').localeCompare(b.r?.display_name ?? ''));
   // numbered within the team: Controllers 1.., operators 1.. across the areas (as on the section's sheets)
