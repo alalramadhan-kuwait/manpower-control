@@ -162,7 +162,7 @@ export default function SdPlanPage() {
       <div className="mb-2 space-y-2">
         <div className="grid grid-cols-2 gap-2">
           <ActionButton onClick={() => setSpreading(true)} icon={<Shuffle className="h-4 w-4" />} title={total ? 'Spread days off' : 'Set days & hours'} hint={total ? 'Choose each person\'s days off' : 'Which days each person works, and 8 h or 12 h'} />
-          {!total && <ActionButton onClick={() => setFollowing(true)} warn={view.overlaps.length > 0} icon={<Shuffle className="h-4 w-4" />} title={view.overlaps.length ? `Shift instructions · ${view.overlaps.reduce((n, g) => n + g.changes.length, 0)}` : 'Shift instructions'} hint={view.overlaps.length ? 'People clash with their own shift. Review who should follow another shift' : 'No clashes. Nobody needs to follow another shift'} />}
+          {<ActionButton onClick={() => setFollowing(true)} warn={view.overlaps.length > 0} icon={<Shuffle className="h-4 w-4" />} title={view.overlaps.length ? `Shift instructions · ${view.overlaps.reduce((n, g) => n + g.changes.length, 0)}` : 'Shift instructions'} hint={view.overlaps.length ? 'See everyone\'s instructions. Some people clash and should follow another shift' : 'See everyone\'s instructions: when to join and rejoin'} />}
         </div>
         <div className="grid grid-cols-3 gap-2">
           <Link to={`/shutdown/${plan.id}/schedule`} className="flex min-h-12 flex-col items-center justify-center rounded-lg bg-white px-1 text-center ring-1 ring-slate-300"><span className="flex items-center gap-1 text-xs font-semibold text-brand-700"><FileText className="h-3.5 w-3.5" />Duty schedule</span><span className="text-[10px] leading-tight text-slate-500">Who works which day</span></Link>

@@ -12,6 +12,8 @@ import { clearSdDays, fetchFollowMovements, setFollow } from '@/data/shutdown';
 import { BottomSheet, Button, ErrorBox, Field, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
+import { loadSdDoc, type Doc } from './SdDocuments';
+import { personalInstruction, type FollowMove } from './sdExcel';
 
 type Previous = Map<string, { id: string; to: Crew; start: string; end: string | null }>;
 /** When the person starts on the new crew's shift: a full rota (8 days) before the team starts, never in the past. */
@@ -58,13 +60,15 @@ export function FollowSheet({ plan, teams, members, groups, names, isVr, onClose
         ok++;
       } catch (e) { failed.push(`${names.get(c.employeeId) ?? 'Employee'}: ${e instanceof Error ? e.message : 'failed'}`); }
     }
-    if (failed.length) { setErr(new Error(`${ok} done, ${failed.length} not: ${failed.join(' · ')}`)); setBusy(false); if (ok) onDone(`${ok} instruction${ok === 1 ? '' : 's'} saved; ${failed.length} not (${failed.join(' · ')}). Press Own-crew days and hours to set the days.`); return; }
-    onDone(`${ok} instruction${ok === 1 ? '' : 's'} saved. Press Own-crew days and hours to set the days again.`);
+    if (failed.length) { setErr(new Error(`${ok} done, ${failed.length} not: ${failed.join(' · ')}`)); setBusy(false); if (ok) onDone(`${ok} instruction${ok === 1 ? '' : 's'} saved; ${failed.length} not (${failed.join(' · ')}). Press Set days & hours to set the days.`); return; }
+    onDone(`${ok} instruction${ok === 1 ? '' : 's'} saved. Press Set days & hours to set the days again.`);
   }
 
   return (
-    <BottomSheet open onClose={onClose} title="Fix overlaps">
+    <BottomSheet open onClose={onClose} title="Shift instructions">
       <div className="space-y-3">
+        <PersonalList planId={plan.id} memberIds={members.map((m) => m.employeeId)} />
+        <p className="pt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Fix overlaps</p>
         <p className="text-xs text-slate-600">People of one crew rest on the same days, so a level that needs two has nobody then. An instruction tells a person to <b>follow another crew&apos;s shift, take off, then join the team</b>: on the team he keeps that crew&apos;s duty and rest days, so the rest days of the level fall on different days. Before joining he works that crew&apos;s shift and counts in it.</p>
         {changes.length === 0 ? <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">No overlaps: every level has people of different crews (or nobody can change).</p> : (
           <>
@@ -89,13 +93,46 @@ export function FollowSheet({ plan, teams, members, groups, names, isVr, onClose
               ? <p className="flex items-center gap-1.5 rounded-lg bg-green-50 px-3 py-2 text-xs text-green-800 ring-1 ring-green-200"><Check className="h-4 w-4 shrink-0" />Before joining ({shortDate(from)} – {shortDate(lastDay)}) no crew falls short because of the moves.</p>
               : <p className="flex items-start gap-1.5 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-status-red ring-1 ring-red-200"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />Before joining, {worse.map((c) => `${c} Shift short ${impact!.after[c] - impact!.before[c]} more ${impact!.after[c] - impact!.before[c] === 1 ? 'day' : 'days'}`).join(' · ')}. Start later, or untick the person.</p>)}
             {chosen.some((c) => isVr(c.employeeId)) && <p className="text-[11px] text-slate-500">A VR Controller has no crew of his own: his instruction changes his rota on the team only. His placement before joining stays as the Section Head set it (VR placement).</p>}
-            <p className="text-[11px] text-slate-500">Saving also clears the days set by hand for these people; then press Own-crew days and hours to set the days and hours again.</p>
+            <p className="text-[11px] text-slate-500">Saving also clears the days set by hand for these people; then press Set days & hours to set the days and hours again.</p>
           </>
         )}
         {err != null && <ErrorBox error={err} />}
         {changes.length > 0 && <Button className="w-full" disabled={busy || chosen.length === 0} onClick={apply}><Shuffle className="h-4 w-4" />Save {chosen.length} {chosen.length === 1 ? 'instruction' : 'instructions'}</Button>}
       </div>
     </BottomSheet>
+  );
+}
+
+/** Everyone's instruction, as it goes into the Excel file: before joining, joining, on the team and after the shutdown. */
+function PersonalList({ planId, memberIds }: { planId: string; memberIds: string[] }) {
+  const [data, setData] = useState<{ doc: Doc; moves: Map<string, FollowMove> } | null>(null);
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => {
+    Promise.all([loadSdDoc(planId), fetchFollowMovements(memberIds)])
+      .then(([doc, found]) => setData({ doc, moves: new Map([...found].map(([id, m]) => [id, { start: m.start, end: m.end, to: m.to }])) })).catch(setErr);
+  }, [planId]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (err != null) return <ErrorBox error={err} />;
+  if (!data) return <Spinner label="Loading the instructions…" />;
+  const list = data.doc.rows.map((x) => ({ x, p: personalInstruction(data.doc, x, data.moves.get(x.m.employeeId)) })).filter((e) => e.p);
+  const need = list.filter((e) => e.p!.action).length;
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Everyone&apos;s instructions · {need} need an action</p>
+      {list.length === 0 ? <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">Nobody is on the team yet.</p> : (
+        <ul className="divide-y divide-slate-100 rounded-xl bg-white ring-1 ring-slate-200">
+          {list.map(({ x, p }) => (
+            <li key={x.m.id} className={cx('px-3 py-2', p!.action && 'bg-amber-50')}>
+              <div className="flex items-baseline gap-1.5"><span className="truncate text-sm font-medium text-slate-900">{x.r?.display_name ?? 'Employee'}</span><span className="shrink-0 text-xs tabular-nums text-slate-500">#{x.r?.employee_number}</span><span className="ml-auto shrink-0 text-[11px] text-slate-500">{x.team.name} · {x.home ? `${x.home} Shift` : 'Day staff'}</span></div>
+              <ul className="mt-1 space-y-0.5 text-xs text-slate-700">
+                <li><b>Before:</b> {p!.before}</li>
+                <li><b>Joining:</b> {p!.joining}</li>
+                <li><b>After:</b> {p!.after}</li>
+              </ul>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -114,7 +151,7 @@ export function FollowInstruction({ plan, m, home, name, vr = false, onDone }: {
     try {
       await setFollow({ member: m, title: plan.title, to, from: hasBefore ? from : null, previous, vr });
       if (changed) await clearSdDays(m.id);
-      onDone(to ? `${name} follows ${to} Shift, then joins the team${changed ? '. Press Own-crew days and hours to set the days.' : '.'}` : `${name} is back on his own crew's days.`);
+      onDone(to ? `${name} follows ${to} Shift, then joins the team${changed ? '. Press Set days & hours to set the days.' : '.'}` : `${name} is back on his own crew's days.`);
     } catch (e) { setErr(e); setBusy(false); }
   }
   return (
