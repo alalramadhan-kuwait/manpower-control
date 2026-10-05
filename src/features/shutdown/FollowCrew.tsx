@@ -103,10 +103,11 @@ export function FollowSheet({ plan, teams, members, groups, names, isVr, onClose
   );
 }
 
-/** Everyone's instruction, as it goes into the Excel file: before joining, joining, on the team and after the shutdown. */
+/** Everyone's instruction, as it goes into the Excel file, in two parts: how to begin and how to end. Only people who change are listed. */
 function PersonalList({ planId, memberIds }: { planId: string; memberIds: string[] }) {
   const [data, setData] = useState<{ doc: Doc; moves: Map<string, FollowMove> } | null>(null);
   const [err, setErr] = useState<unknown>(null);
+  const [part, setPart] = useState<'begin' | 'end'>('begin');
   useEffect(() => {
     Promise.all([loadSdDoc(planId), fetchFollowMovements(memberIds)])
       .then(([doc, found]) => setData({ doc, moves: new Map([...found].map(([id, m]) => [id, { start: m.start, end: m.end, to: m.to }])) })).catch(setErr);
@@ -114,24 +115,28 @@ function PersonalList({ planId, memberIds }: { planId: string; memberIds: string
   if (err != null) return <ErrorBox error={err} />;
   if (!data) return <Spinner label="Loading the instructions…" />;
   const list = data.doc.rows.map((x) => ({ x, p: personalInstruction(data.doc, x, data.moves.get(x.m.employeeId)) })).filter((e) => e.p);
-  const need = list.filter((e) => e.p!.action).length;
+  const changes = (k: 'begin' | 'end') => list.filter((e) => (k === 'begin' ? e.p!.beginAction : e.p!.endAction));
+  const shown = changes(part);
+  const same = list.filter((e) => !(part === 'begin' ? e.p!.beginAction : e.p!.endAction));
   return (
-    <div className="space-y-1.5">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Everyone&apos;s instructions · {need} need an action</p>
-      {list.length === 0 ? <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">Nobody is on the team yet.</p> : (
-        <ul className="divide-y divide-slate-100 rounded-xl bg-white ring-1 ring-slate-200">
-          {list.map(({ x, p }) => (
-            <li key={x.m.id} className={cx('px-3 py-2', p!.action && 'bg-amber-50')}>
-              <div className="flex items-baseline gap-1.5"><span className="truncate text-sm font-medium text-slate-900">{x.r?.display_name ?? 'Employee'}</span><span className="shrink-0 text-xs tabular-nums text-slate-500">#{x.r?.employee_number}</span><span className="ml-auto shrink-0 text-[11px] text-slate-500">{x.team.name} · {x.home ? `${x.home} Shift` : 'Day staff'}</span></div>
-              <ul className="mt-1 space-y-0.5 text-xs text-slate-700">
-                <li><b>Before:</b> {p!.before}</li>
-                <li><b>Joining:</b> {p!.joining}</li>
-                <li><b>After:</b> {p!.after}</li>
-              </ul>
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
+        {([['begin', 'Begin'], ['end', 'End']] as const).map(([k, l]) => (
+          <button key={k} type="button" aria-pressed={part === k} onClick={() => setPart(k)} className={cx('min-h-9 rounded-lg font-medium', part === k ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{l} · {changes(k).length}</button>
+        ))}
+      </div>
+      <p className="text-xs text-slate-600">{part === 'begin' ? 'How each person joins the shutdown team.' : 'How each person goes back to his own shift afterwards.'} Only people who need a change are listed.</p>
+      {list.length === 0 ? <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">Nobody is on the team yet.</p> : shown.length === 0 ? <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">No change for anybody.</p> : (
+        <ul className="divide-y divide-slate-100 rounded-xl bg-amber-50 ring-1 ring-amber-200">
+          {shown.map(({ x, p }) => (
+            <li key={x.m.id} className="px-3 py-2">
+              <div className="flex items-baseline gap-1.5"><span className="truncate text-sm font-medium text-slate-900">{x.r?.display_name ?? 'Employee'}</span><span className="shrink-0 text-xs tabular-nums text-slate-500">#{x.r?.employee_number}</span><span className="ml-auto shrink-0 text-[11px] text-slate-500">{x.home ? `${x.home} Shift` : 'Day staff'}</span></div>
+              <p className="mt-0.5 text-sm text-slate-800">{part === 'begin' ? p!.begin : p!.end}</p>
             </li>
           ))}
         </ul>
       )}
+      {same.length > 0 && shown.length > 0 && <p className="px-1 text-xs text-slate-500"><b>No change:</b> {same.map((e) => e.x.r?.display_name).join(', ')}</p>}
     </div>
   );
 }

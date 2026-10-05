@@ -175,7 +175,7 @@ function summarySheet(ws: Worksheet, doc: Doc) {
 
 export interface FollowMove { start: string; end: string | null; to: Crew }
 
-/** What one person is told: before joining, on the team, and after the shutdown. */
+/** What one person is told, in two parts: how to begin (before and when joining) and how to end (rejoining his own shift). "No change" when nothing differs. */
 export function personalInstruction(doc: Doc, x: Row, move?: FollowMove) {
   const { plan, dates } = doc;
   const worked = dates.filter((d) => memberWorks(plan, x.m, d));
@@ -183,46 +183,42 @@ export function personalInstruction(doc: Doc, x: Row, move?: FollowMove) {
   const first = worked[0]; const last = worked[worked.length - 1];
   const from = x.m.start > plan.start ? x.m.start : plan.start;
   const home = x.home;
-  const homeName = home ? `${home} Shift` : 'day duty (Sunday – Thursday)';
-  // before: the shift he keeps working (his own, or the one he is told to follow) until the team starts
-  const joinFrom = from;
-  const dayBefore = addDaysIso(joinFrom, -1);
-  let before: string;
-  if (move) before = `Follow ${move.to} Shift from ${dayText(move.start)}${move.end ? ` to ${dayText(move.end)}` : ''}, then take off and join the team.`;
-  else before = `Stay on ${homeName} until ${dayText(dayBefore)}${x.m.followCrew ? `; on the team he keeps the ${x.m.followCrew} Shift days` : ''}.`;
-  // joining: the days off first, when his first working day is not the day he joins
-  const offFirst = first > joinFrom;
-  const joining = `${offFirst ? `Take off ${rangeText(joinFrom, addDaysIso(first, -1))}, then j` : 'J'}oin the ${x.team.name} ${plan.kind === 'total' ? 'shift' : 'team'} on ${dayText(first)}${x.r && x.group ? ` · ${x.group === 'Controller' ? 'Controller' : x.group}` : ''}.`;
-  const offDays = dates.filter((d) => d >= first && d <= last && !memberWorks(plan, x.m, d));
-  const rota = `Works until ${dayText(last)}${offDays.length ? `. Days off: ${offDays.slice(0, 14).map((d) => `${wd(d)} ${Number(d.slice(8))}`).join(', ')}${offDays.length > 14 ? '…' : ''}` : ', no day off'}.`;
-  // after: back to his own shift on its first duty day; the days between are off
+  const homeName = home ? `${home} Shift` : 'day duty';
+  const team = `the ${x.team.name} ${plan.kind === 'total' ? 'shift' : 'team'}`;
+  const offFirst = first > from;
+  let begin = 'No change';
+  if (move) begin = `Follow ${move.to} Shift from ${dayText(move.start)}${offFirst ? `, take off ${rangeText(from, addDaysIso(first, -1))}` : ''}, join ${team} ${dayText(first)}`;
+  else if (offFirst) begin = `Take off ${rangeText(from, addDaysIso(first, -1))}, join ${team} ${dayText(first)}`;
+  else if (x.m.followCrew) begin = `Join ${team} ${dayText(first)}, working ${x.m.followCrew} Shift's days`;
   const e = addDaysIso(last, 1);
   let back = e;
   for (let i = 0; i < 16 && !isDutyDay(home, back); i++) back = addDaysIso(back, 1);
-  const after = back === e ? `Rejoin ${homeName} on ${dayText(back)}.` : `Take off ${rangeText(e, addDaysIso(back, -1))}, then rejoin ${homeName} on ${dayText(back)}.`;
-  return { first, last, before, joining, rota, after, action: !!move || !!x.m.followCrew || offFirst || back !== e };
+  const end = back === e ? 'No change' : `Take off ${rangeText(e, addDaysIso(back, -1))}, rejoin ${homeName} ${dayText(back)}`;
+  const beginAction = begin !== 'No change', endAction = end !== 'No change';
+  return { first, last, begin, end, beginAction, endAction, action: beginAction || endAction };
 }
 
 function instructionSheet(ws: Worksheet, doc: Doc, moves: Map<string, FollowMove>) {
-  const { plan, rows } = doc;
-  ws.getCell(1, 1).value = `ARDS UNIT-12 ${doc.name} SHUTDOWN: PERSONAL INSTRUCTIONS`; ws.mergeCells(1, 1, 1, 8); style(ws.getCell(1, 1), { bold: true, size: 12, border: false, align: 'left' });
-  ws.getCell(2, 1).value = 'For each person: what to do before joining the shutdown team, when to join (the days off first, when there are any), and when to rejoin his own shift afterwards. Rows in yellow need an action (a shift to follow, days to take off).';
-  ws.mergeCells(2, 1, 2, 8); ws.getCell(2, 1).font = { size: 9, italic: true }; ws.getCell(2, 1).alignment = { wrapText: true, vertical: 'top' }; ws.getRow(2).height = 28;
-  const heads = ['S.NO', 'E NO.', 'E. NAME', 'TEAM · OWN SHIFT', 'BEFORE JOINING', 'JOINING THE TEAM', 'ON THE TEAM', 'AFTER THE SHUTDOWN'];
-  heads.forEach((h, i) => { const c = ws.getCell(4, 1 + i); c.value = h; style(c, { bold: true, fill: FILL.head, wrap: true }); });
+  const { rows } = doc;
+  ws.getCell(1, 1).value = `ARDS UNIT-12 ${doc.name} SHUTDOWN: PERSONAL INSTRUCTIONS`; ws.mergeCells(1, 1, 1, 6); style(ws.getCell(1, 1), { bold: true, size: 12, border: false, align: 'left' });
+  ws.getCell(2, 1).value = 'BEGIN: what to do to join the shutdown team. END: what to do to return to the own shift. "No change" = keep the own shift as it is. Yellow = needs action.';
+  ws.mergeCells(2, 1, 2, 6); ws.getCell(2, 1).font = { size: 9, italic: true }; ws.getCell(2, 1).alignment = { wrapText: true, vertical: 'top' }; ws.getRow(2).height = 28;
+  ['S.NO', 'E NO.', 'E. NAME', 'TEAM · OWN SHIFT', 'BEGIN', 'END'].forEach((h, i) => { const c = ws.getCell(4, 1 + i); c.value = h; style(c, { bold: true, fill: FILL.head, wrap: true }); });
   let r = 5;
   rows.forEach((x, i) => {
     const p = personalInstruction(doc, x, moves.get(x.m.employeeId));
     if (!p) return;
-    const fill = p.action ? 'FFFFF2CC' : undefined;
-    const vals: (string | number)[] = [i + 1, x.r ? Number(x.r.employee_number) || x.r.employee_number : '', x.r?.display_name ?? '', `${x.team.name} · ${x.home ? `${x.home} Shift` : 'Day staff'}`, p.before, p.joining, p.rota, p.after];
-    vals.forEach((v, k) => { const c = ws.getCell(r, 1 + k); c.value = v; style(c, { fill, align: k >= 4 ? 'left' : 'center', wrap: true, bold: k === 2 }); c.alignment = { ...c.alignment, vertical: 'top' }; });
-    ws.getRow(r).height = 54;
+    const vals: (string | number)[] = [i + 1, x.r ? Number(x.r.employee_number) || x.r.employee_number : '', x.r?.display_name ?? '', `${x.team.name} · ${x.home ? `${x.home} Shift` : 'Day staff'}`, p.begin, p.end];
+    vals.forEach((v, k) => {
+      const c = ws.getCell(r, 1 + k); c.value = v;
+      style(c, { fill: (k === 4 && p.beginAction) || (k === 5 && p.endAction) ? 'FFFFF2CC' : undefined, align: k >= 4 ? 'left' : 'center', wrap: true, bold: k === 2 });
+      c.alignment = { ...c.alignment, vertical: 'middle' };
+    });
+    ws.getRow(r).height = 32;
     r++;
   });
-  [6, 9, 24, 18, 34, 34, 34, 34].forEach((w, i) => { ws.getColumn(1 + i).width = w; });
+  [6, 9, 24, 18, 52, 44].forEach((w, i) => { ws.getColumn(1 + i).width = w; });
   ws.views = [{ state: 'frozen', xSplit: 3, ySplit: 4 }];
-  void plan;
 }
 
 /** Builds the workbook (ExcelJS is loaded on demand: it is large and only needed here). */
