@@ -186,18 +186,19 @@ export function personalInstruction(doc: Doc, x: Row, move?: FollowMove) {
   const homeName = home ? `${home} Shift` : 'day duty';
   const team = `the ${x.team.name} ${plan.kind === 'total' ? 'shift' : 'team'}`;
   const offFirst = first > from;
-  let begin = 'No change';
-  if (move) begin = `Follow ${move.to} Shift from ${dayText(move.start)}${offFirst ? `, take off ${rangeText(from, addDaysIso(first, -1))}` : ''}, join ${team} ${dayText(first)}`;
-  else if (offFirst) begin = `Take off ${rangeText(from, addDaysIso(first, -1))}, join ${team} ${dayText(first)}`;
-  else if (x.vr && x.m.followCrew) begin = `Move to ${x.m.followCrew} Shift${offFirst ? `, take off ${rangeText(from, addDaysIso(first, -1))}` : ''}, join ${team} ${dayText(first)}`;
-  else if (x.m.followCrew) begin = `Join ${team} ${dayText(first)}, working ${x.m.followCrew} Shift's days`;
+  let begin = 'No change'; let beginKind: 'follow' | 'off' | 'move' | 'days' | null = null;
+  if (move) { beginKind = 'follow'; begin = `Follow ${move.to} Shift from ${dayText(move.start)}${offFirst ? `, take off ${rangeText(from, addDaysIso(first, -1))}` : ''}, join ${team} ${dayText(first)}`; }
+  else if (offFirst) { beginKind = 'off'; begin = `Take off ${rangeText(from, addDaysIso(first, -1))}, join ${team} ${dayText(first)}`; }
+  else if (x.vr && x.m.followCrew) { beginKind = 'move'; begin = `Move to ${x.m.followCrew} Shift${offFirst ? `, take off ${rangeText(from, addDaysIso(first, -1))}` : ''}, join ${team} ${dayText(first)}`; }
+  else if (x.m.followCrew) { beginKind = 'days'; begin = `Join ${team} ${dayText(first)}, working ${x.m.followCrew} Shift's days`; }
   const e = addDaysIso(last, 1);
   let back = e;
   for (let i = 0; i < 16 && !isDutyDay(home, back); i++) back = addDaysIso(back, 1);
   const vrMove = x.vr && !!x.m.followCrew && !!home;   // a VR Controller moves back to his placement, even when the days line up
   const end = back === e ? (vrMove ? `Move to ${homeName} ${dayText(e)}` : 'No change') : `Take off ${rangeText(e, addDaysIso(back, -1))}, ${vrMove ? 'move to' : 'rejoin'} ${homeName} ${dayText(back)}`;
   const beginAction = begin !== 'No change', endAction = end !== 'No change';
-  return { first, last, begin, end, beginAction, endAction, action: beginAction || endAction };
+  const endKind: 'off' | 'move' | null = !endAction ? null : back !== e ? 'off' : 'move';
+  return { first, last, begin, end, beginAction, endAction, action: beginAction || endAction, beginKind, endKind, beginOn: move ? move.start : from, endOn: e };
 }
 
 function instructionSheet(ws: Worksheet, doc: Doc, moves: Map<string, FollowMove>) {
