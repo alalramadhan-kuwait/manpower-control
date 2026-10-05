@@ -18,37 +18,38 @@ const monthName = (ym: string) => new Date(`${ym}-01T00:00:00Z`).toLocaleDateStr
 const hrs = (label: string | null) => label?.replace(/(\d\d:\d\d)/g, '$1 HRS').replace(/\s*-\s*/, ' TO ') ?? '';
 
 /** A row: the member, the group it is printed under (Controller, an area, Operators) and its number within the team. */
-interface Row { m: SdMember; team: SdTeam; r: EmployeeDirectoryRow | undefined; crew: Crew | null; group: string; no: number }
-interface Doc { plan: SdPlan; teams: SdTeam[]; rows: Row[]; signatures: Signature[]; dates: string[]; months: string[]; name: string }
+export interface Row { m: SdMember; team: SdTeam; r: EmployeeDirectoryRow | undefined; /** the crew whose duty days he keeps on the team (the one he follows, else his own) */ crew: Crew | null; /** his own crew, the shutdown aside */ home: Crew | null; group: string; no: number }
+export interface Doc { plan: SdPlan; teams: SdTeam[]; rows: Row[]; signatures: Signature[]; dates: string[]; months: string[]; name: string }
+
+/** Everything the shutdown documents (and the Excel file) are made of. */
+export async function loadSdDoc(id: string): Promise<Doc> {
+  const sd = await fetchSdPlan(id);
+  const [inputs, dir] = await Promise.all([fetchManpowerInputs(addDaysIso(sd.plan.start, -1), addDaysIso(sd.plan.end, 1)), fetchDirectory()]);
+  const people = new Map(inputs.people.map((p) => [p.id, p]));
+  const byId = new Map(dir.map((r) => [r.id, r]));
+  // the person's own crew, the shutdown aside: overtime counts against that crew's duty days
+  const crewOf = (emp: string) => { const p = people.get(emp); return p ? personOn({ ...p, moves: p.moves?.filter((x) => x.kind !== 'sd') }, sd.plan.start).crew : null; };
+  const teamSort = new Map(sd.teams.map((t) => [t.id, t.sort]));
+  const areas = areasOf(sd.plan);
+  const groupOf = (m: SdMember) => (m.slot === 'controller' ? 'Controller' : sd.plan.kind === 'total' ? (areas.includes(m.area ?? '') ? m.area ?? '' : areas[0]) || 'Operators' : 'Operators');
+  const secRank = (m: SdMember) => (m.slot === 'controller' ? Math.max(0, sd.plan.sections.indexOf(m.area ?? '')) : 0);
+  const groupRank = (g: string) => (g === 'Controller' ? -1 : Math.max(0, areas.indexOf(g)));
+  const sorted = sd.members.map((m) => ({ m, team: sd.teams.find((t) => t.id === m.teamId)!, r: byId.get(m.employeeId), crew: m.followCrew ?? crewOf(m.employeeId), home: crewOf(m.employeeId), group: groupOf(m), no: 0 }))
+    .filter((x) => x.team)
+    .sort((a, b) => teamSort.get(a.m.teamId)! - teamSort.get(b.m.teamId)! || groupRank(a.group) - groupRank(b.group) || (a.m.order ?? 99) - (b.m.order ?? 99) || secRank(a.m) - secRank(b.m) || SLOT_ORDER[a.m.slot] - SLOT_ORDER[b.m.slot] || (a.r?.display_name ?? '').localeCompare(b.r?.display_name ?? ''));
+  // numbered within the team: Controllers 1.., operators 1.. across the areas (as on the section's sheets)
+  const rows = sorted.map((x, i) => { const same = sorted.slice(0, i).filter((y) => y.team.id === x.team.id && (y.group === 'Controller') === (x.group === 'Controller')); return { ...x, no: same.length + 1 }; });
+  const dates = planDates(sd.plan);
+  const months = [...new Set(dates.map((d) => d.slice(0, 7)))];
+  const period = months.length > 1 ? `${MONTH(months[0])} - ${MONTH(months[months.length - 1])}` : MONTH(months[0]);
+  const name = `${sd.plan.title.toUpperCase().replace(/\s*SD$/, '')} ${period}`;
+  return { plan: sd.plan, teams: sd.teams, rows, signatures: sd.signatures, dates, months, name };
+}
 
 function useDoc(id: string) {
   const [doc, setDoc] = useState<Doc | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const load = useCallback(async () => {
-    try {
-      const sd = await fetchSdPlan(id);
-      const [inputs, dir] = await Promise.all([fetchManpowerInputs(addDaysIso(sd.plan.start, -1), addDaysIso(sd.plan.end, 1)), fetchDirectory()]);
-      const people = new Map(inputs.people.map((p) => [p.id, p]));
-      const byId = new Map(dir.map((r) => [r.id, r]));
-      // the person's own crew, the shutdown aside: overtime counts against that crew's duty days
-      const crewOf = (emp: string) => { const p = people.get(emp); return p ? personOn({ ...p, moves: p.moves?.filter((x) => x.kind !== 'sd') }, sd.plan.start).crew : null; };
-      const teamSort = new Map(sd.teams.map((t) => [t.id, t.sort]));
-      const areas = areasOf(sd.plan);
-      const groupOf = (m: SdMember) => (m.slot === 'controller' ? 'Controller' : sd.plan.kind === 'total' ? (areas.includes(m.area ?? '') ? m.area ?? '' : areas[0]) || 'Operators' : 'Operators');
-      const secRank = (m: SdMember) => (m.slot === 'controller' ? Math.max(0, sd.plan.sections.indexOf(m.area ?? '')) : 0);
-      const groupRank = (g: string) => (g === 'Controller' ? -1 : Math.max(0, areas.indexOf(g)));
-      const sorted = sd.members.map((m) => ({ m, team: sd.teams.find((t) => t.id === m.teamId)!, r: byId.get(m.employeeId), crew: m.followCrew ?? crewOf(m.employeeId), group: groupOf(m), no: 0 }))
-        .filter((x) => x.team)
-        .sort((a, b) => teamSort.get(a.m.teamId)! - teamSort.get(b.m.teamId)! || groupRank(a.group) - groupRank(b.group) || (a.m.order ?? 99) - (b.m.order ?? 99) || secRank(a.m) - secRank(b.m) || SLOT_ORDER[a.m.slot] - SLOT_ORDER[b.m.slot] || (a.r?.display_name ?? '').localeCompare(b.r?.display_name ?? ''));
-      // numbered within the team: Controllers 1.., operators 1.. across the areas (as on the section's sheets)
-      const rows = sorted.map((x, i) => { const same = sorted.slice(0, i).filter((y) => y.team.id === x.team.id && (y.group === 'Controller') === (x.group === 'Controller')); return { ...x, no: same.length + 1 }; });
-      const dates = planDates(sd.plan);
-      const months = [...new Set(dates.map((d) => d.slice(0, 7)))];
-      const period = months.length > 1 ? `${MONTH(months[0])} - ${MONTH(months[months.length - 1])}` : MONTH(months[0]);
-      const name = `${sd.plan.title.toUpperCase().replace(/\s*SD$/, '')} ${period}`;
-      setDoc({ plan: sd.plan, teams: sd.teams, rows, signatures: sd.signatures, dates, months, name });
-    } catch (e) { setError(e); }
-  }, [id]);
+  const load = useCallback(async () => { try { setDoc(await loadSdDoc(id)); } catch (e) { setError(e); } }, [id]);
   useEffect(() => { load(); }, [load]);
   return { doc, error, reload: load };
 }

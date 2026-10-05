@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, Check, Copy, FileText, Pencil, Plus, RotateCcw, Shuffle, Trash2, UserMinus } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, Copy, FileSpreadsheet, FileText, Pencil, Plus, RotateCcw, Shuffle, Trash2, UserMinus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { COVER_GRADE } from '@/core/controllers';
@@ -8,7 +8,7 @@ import { FO_LEVEL_LABEL, SD_PO_MAX_GRADE, SD_SLOTS, SD_SLOT_LABEL, areasOf, grou
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { fetchOperationPlan, schedulePeriod, type PeriodRow } from '@/data/modes';
 import { fetchDirectory } from '@/data/queries';
-import { addSdMember, clearSdDays, fetchAllSdMembers, fetchSdPlan, fetchSdPlans, fetchSickTotals, removeSdMember, renameSdArea, saveSdPhases, setSdDays, updateSdMember, updateSdPlan, updateSdTeam, type Signature } from '@/data/shutdown';
+import { addSdMember, clearSdDays, fetchAllSdMembers, fetchFollowMovements, fetchSdPlan, fetchSdPlans, fetchSickTotals, removeSdMember, renameSdArea, saveSdPhases, setSdDays, updateSdMember, updateSdPlan, updateSdTeam, type Signature } from '@/data/shutdown';
 import type { EmployeeDirectoryRow } from '@/data/types';
 import { BottomSheet, Button, Card, ErrorBox, Field, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
@@ -57,6 +57,7 @@ export default function SdPlanPage() {
   const [moving, setMoving] = useState(false);
   const [following, setFollowing] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const load = useCallback(async () => {
     try {
@@ -121,6 +122,17 @@ export default function SdPlanPage() {
   const overCap = members.filter((m) => view.hours.get(m.id)!.some((h) => h.over)).length;
   const crewShort = total ? 0 : view.crewImpact.reduce((n, c) => n + c.short, 0);
 
+  async function generate() {
+    setGenerating(true); setNotice(null); setMoveError(null);
+    try {
+      const [{ loadSdDoc }, excel, found] = await Promise.all([import('./SdDocuments'), import('./sdExcel'), fetchFollowMovements(members.map((m) => m.employeeId))]);
+      const moves = new Map([...found].map(([id, m]) => [id, { start: m.start, end: m.end, to: m.to }]));
+      await excel.downloadSdWorkbook(await loadSdDoc(plan.id), moves);
+      setNotice('Excel file created: OT hrs, Duty, Summary and Instruction sheets.');
+    } catch (e) { setMoveError(e instanceof Error ? e.message : 'Could not create the Excel file.'); }
+    finally { setGenerating(false); }
+  }
+
   function copyList() {
     const lines = [`${plan.title} · ${range(plan.start, plan.end)} ${plan.end.slice(0, 4)}`, `${plan.daysOff ? `${plan.daysOn} on / ${plan.daysOff} off` : 'Every day'} · ${plan.shiftHours} h${plan.rampDays ? ` (first and last ${plan.rampDays} days ${plan.rampHours} h)` : ''}`];
     for (const t of teams) {
@@ -147,11 +159,16 @@ export default function SdPlanPage() {
         </div>
         <Button variant="secondary" className="min-h-9 shrink-0 px-3 text-xs" onClick={copyList}><Copy className="h-3.5 w-3.5" />Copy list</Button>
       </div>
-      <div className="mb-2 grid grid-cols-2 gap-2">
-        <button type="button" onClick={() => setSpreading(true)} className="col-span-2 flex min-h-9 items-center justify-center gap-1 rounded-lg bg-brand-700 text-xs font-semibold text-white"><Shuffle className="h-3.5 w-3.5" />{plan.kind === 'total' ? 'Spread the days off' : 'Own-crew days and hours'}</button>
-        {!total && <button type="button" onClick={() => setFollowing(true)} className={cx('col-span-2 flex min-h-9 items-center justify-center gap-1 rounded-lg text-xs font-semibold ring-1', view.overlaps.length ? 'bg-amber-50 text-amber-900 ring-amber-300' : 'bg-white text-brand-700 ring-slate-300')}><Shuffle className="h-3.5 w-3.5" />{view.overlaps.length ? `Fix overlaps · ${view.overlaps.reduce((n, g) => n + g.changes.length, 0)} to follow another shift` : 'Overlaps · none'}</button>}
-        <Link to={`/shutdown/${plan.id}/schedule`} className="flex min-h-9 items-center justify-center gap-1 rounded-lg bg-white text-xs font-semibold text-brand-700 ring-1 ring-slate-300"><FileText className="h-3.5 w-3.5" />Shift schedule</Link>
-        <Link to={`/shutdown/${plan.id}/overtime`} className="flex min-h-9 items-center justify-center gap-1 rounded-lg bg-white text-xs font-semibold text-brand-700 ring-1 ring-slate-300"><FileText className="h-3.5 w-3.5" />Overtime sheet</Link>
+      <div className="mb-2 space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <ActionButton onClick={() => setSpreading(true)} icon={<Shuffle className="h-4 w-4" />} title={total ? 'Spread days off' : 'Set days & hours'} hint={total ? 'Choose each person\'s days off' : 'Which days each person works, and 8 h or 12 h'} />
+          {!total && <ActionButton onClick={() => setFollowing(true)} warn={view.overlaps.length > 0} icon={<Shuffle className="h-4 w-4" />} title={view.overlaps.length ? `Shift instructions · ${view.overlaps.reduce((n, g) => n + g.changes.length, 0)}` : 'Shift instructions'} hint={view.overlaps.length ? 'People clash with their own shift. Review who should follow another shift' : 'No clashes. Nobody needs to follow another shift'} />}
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <Link to={`/shutdown/${plan.id}/schedule`} className="flex min-h-12 flex-col items-center justify-center rounded-lg bg-white px-1 text-center ring-1 ring-slate-300"><span className="flex items-center gap-1 text-xs font-semibold text-brand-700"><FileText className="h-3.5 w-3.5" />Duty schedule</span><span className="text-[10px] leading-tight text-slate-500">Who works which day</span></Link>
+          <Link to={`/shutdown/${plan.id}/overtime`} className="flex min-h-12 flex-col items-center justify-center rounded-lg bg-white px-1 text-center ring-1 ring-slate-300"><span className="flex items-center gap-1 text-xs font-semibold text-brand-700"><FileText className="h-3.5 w-3.5" />Summary</span><span className="text-[10px] leading-tight text-slate-500">Overtime for approval</span></Link>
+          <button type="button" disabled={generating} onClick={generate} className="flex min-h-12 flex-col items-center justify-center rounded-lg bg-brand-700 px-1 text-center text-white disabled:opacity-60"><span className="flex items-center gap-1 text-xs font-semibold"><FileSpreadsheet className="h-3.5 w-3.5" />{generating ? 'Preparing…' : 'Generate Excel'}</span><span className="text-[10px] leading-tight text-white/80">All 4 sheets in one file</span></button>
+        </div>
       </div>
       {notice && <p className="mb-2 flex items-center gap-1 text-sm text-status-green"><Check className="h-4 w-4" />{notice}</p>}
       {moveError && <p role="alert" className="mb-2 flex items-center gap-1 text-sm text-status-red"><AlertTriangle className="h-4 w-4 shrink-0" />{moveError}</p>}
@@ -301,6 +318,15 @@ function AreaGroups({ t, data, view, need, onMove, onAdd, onMember }: { t: SdTea
 
 const DND = 'application/x-sd-member';
 /** A place a name can be dropped on (desktop drag and drop): the place lights up while a name is over it. */
+function ActionButton({ onClick, icon, title, hint, warn }: { onClick: () => void; icon: React.ReactNode; title: string; hint: string; warn?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} className={cx('flex min-h-14 flex-col items-center justify-center rounded-lg px-2 text-center ring-1', warn ? 'bg-amber-50 text-amber-900 ring-amber-300' : 'bg-white text-brand-700 ring-slate-300')}>
+      <span className="flex items-center gap-1 text-xs font-semibold">{icon}{title}</span>
+      <span className={cx('text-[10px] leading-tight', warn ? 'text-amber-800' : 'text-slate-500')}>{hint}</span>
+    </button>
+  );
+}
+
 function DropZone({ onDropMember, className, children }: { onDropMember: (memberId: string) => void; className?: string; children: React.ReactNode }) {
   const [over, setOver] = useState(false);
   return (
