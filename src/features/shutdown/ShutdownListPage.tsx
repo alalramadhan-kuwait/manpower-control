@@ -188,6 +188,10 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
   const [pos, setPos] = useState<'all' | 'controller' | 'vr' | 'panel' | 'field'>('all');
   const [sort, setSort] = useState<'most' | 'name' | 'number' | 'latest'>('most');
   const [mode, setMode] = useState<'in' | 'out'>('in');
+  // excluded: positions and grades left out of the list (tap again to bring them back)
+  const [exPos, setExPos] = useState<Set<string>>(new Set());
+  const [exGrade, setExGrade] = useState<Set<number>>(new Set());
+  const toggle = <T,>(set: Set<T>, v: T, put: (s: Set<T>) => void) => { const n = new Set(set); if (n.has(v)) n.delete(v); else n.add(v); put(n); };
   const today = localToday();
   useEffect(() => { fetchDirectory().then((d) => setDir(new Map(d.map((r) => [r.id, r])))).catch(setErr); }, []);
   const { rows, never, neverAll, tookAll } = useMemo(() => {
@@ -199,7 +203,8 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
     const posOf = (code: string | null) => (code === 'controller' || code === 'morning_controller' ? 'controller' : code === 'vr_controller' ? 'vr' : code === 'panel_operator' ? 'panel' : code === 'field_operator' ? 'field' : 'other');
     const byName = (a: { r?: EmployeeDirectoryRow }, b: { r?: EmployeeDirectoryRow }) => a.r!.display_name.localeCompare(b.r!.display_name);
     const keep = (r: EmployeeDirectoryRow) => match([r.display_name, r.official_name, r.employee_number, r.arabic_name])
-      && (crew === 'all' || (crew === 'day' ? !isCrew(r.crew_code) : r.crew_code === crew)) && (pos === 'all' || posOf(r.position_code) === pos);
+      && (crew === 'all' || (crew === 'day' ? !isCrew(r.crew_code) : r.crew_code === crew)) && (pos === 'all' || posOf(r.position_code) === pos)
+      && !exPos.has(posOf(r.position_code)) && !(r.grade != null && exGrade.has(r.grade));
     const rows = [...by].map(([id, ps]) => ({ id, r: dir.get(id), list: [...ps.values()].sort((a, b) => b.start.localeCompare(a.start)) }))
       .filter((x) => x.r && keep(x.r))
       .sort((a, b) => sort === 'name' ? byName(a, b)
@@ -211,7 +216,8 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
     const never = pool.filter(keep).map((r) => ({ id: r.id, r }))
       .sort((a, b) => sort === 'number' ? Number(a.r.employee_number) - Number(b.r.employee_number) : byName(a, b));
     return { rows, never, neverAll: pool.length, tookAll: by.size };
-  }, [dir, plans, members, query, crew, pos, sort]);
+  }, [dir, plans, members, query, crew, pos, sort, exPos, exGrade]);
+  const grades = useMemo(() => [...new Set([...(dir?.values() ?? [])].filter((r) => r.in_unit12_scope && r.grade != null).map((r) => r.grade as number))].sort((a, b) => a - b), [dir]);
   if (err) return <ErrorBox error={err} />;
   if (!dir) return <Spinner />;
   const total = rows.reduce((n, x) => n + x.list.length, 0);
@@ -240,6 +246,19 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
           <button key={k} type="button" aria-pressed={pos === k} onClick={() => setPos(k)}
             className={cx('min-h-9 shrink-0 rounded-full px-3 text-sm font-medium ring-1', pos === k ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>{l}</button>
         ))}
+      </div>
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+        <span className="shrink-0 text-xs font-medium text-slate-600">Exclude</span>
+        {([['controller', 'Controller'], ['vr', 'VR'], ['panel', 'Panel'], ['field', 'Field']] as const).map(([k, l]) => (
+          <button key={k} type="button" aria-pressed={exPos.has(k)} onClick={() => toggle(exPos, k, setExPos)}
+            className={cx('min-h-8 shrink-0 rounded-full px-2.5 text-xs font-medium ring-1', exPos.has(k) ? 'bg-red-50 text-status-red line-through ring-red-300' : 'bg-white text-slate-700 ring-slate-300')}>{l}</button>
+        ))}
+        <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-300" />
+        {grades.map((g) => (
+          <button key={g} type="button" aria-pressed={exGrade.has(g)} onClick={() => toggle(exGrade, g, setExGrade)}
+            className={cx('min-h-8 shrink-0 rounded-full px-2.5 text-xs font-medium ring-1', exGrade.has(g) ? 'bg-red-50 text-status-red line-through ring-red-300' : 'bg-white text-slate-700 ring-slate-300')}>G{g}</button>
+        ))}
+        {(exPos.size > 0 || exGrade.size > 0) && <button type="button" onClick={() => { setExPos(new Set()); setExGrade(new Set()); }} className="shrink-0 px-1 text-xs font-medium text-brand-700">Clear</button>}
       </div>
       <div className="flex items-center gap-2 text-xs text-slate-600">
         <span className="shrink-0 font-medium">Sort</span>

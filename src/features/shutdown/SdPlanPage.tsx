@@ -56,6 +56,7 @@ export default function SdPlanPage() {
   const [spreading, setSpreading] = useState(false);
   const [moving, setMoving] = useState(false);
   const [following, setFollowing] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const load = useCallback(async () => {
     try {
@@ -69,6 +70,23 @@ export default function SdPlanPage() {
     } catch (e) { setError(e); }
   }, [id]);
   useEffect(() => { load(); }, [load]);
+  /** Drag and drop: a name dropped on another place of a team (or the other team): same person, new team / level / area. */
+  async function moveMember(memberId: string, team: SdTeam, slot: SdSlot, area?: string) {
+    if (!data) return;
+    const m = data.members.find((x) => x.id === memberId); if (!m) return;
+    const r = data.dir.get(m.employeeId);
+    const isCtl = CONTROLLER_ROLES.includes(r?.position_code ?? '');
+    setMoveError(null);
+    if (slot === 'controller' && !isCtl) { setMoveError(`${r?.display_name ?? 'This person'} is not a Controller: a Controller place takes only a Controller.`); return; }
+    if (slot !== 'controller' && isCtl) { setMoveError(`${r?.display_name ?? 'This person'} is a Controller: only a Controller place fits.`); return; }
+    const total = data.plan.kind === 'total';
+    const sameArea = !total || !area || (m.area ?? '') === area || (m.slot === 'controller' && area === undefined);
+    if (m.teamId === team.id && m.slot === slot && sameArea) return;
+    try {
+      await updateSdMember(m.id, { team_id: team.id, slot, ...(total && area !== undefined ? { area } : {}) });
+      done(`${r?.display_name ?? 'Member'} moved to the ${team.name} ${total ? 'shift' : 'team'}${total ? (area ? ` · ${area}` : '') : ` · ${SD_SLOT_LABEL[slot]}`}.`);
+    } catch (e) { setMoveError(e instanceof Error ? e.message : 'Could not move.'); }
+  }
   const done = (m: string) => { setAdding(null); setMember(null); setEditPattern(false); setEditTeam(null); setEditPhases(false); setSpreading(false); setMoving(false); setFollowing(false); setNotice(m); load(); };
 
   const view = useMemo(() => {
@@ -136,6 +154,7 @@ export default function SdPlanPage() {
         <Link to={`/shutdown/${plan.id}/overtime`} className="flex min-h-9 items-center justify-center gap-1 rounded-lg bg-white text-xs font-semibold text-brand-700 ring-1 ring-slate-300"><FileText className="h-3.5 w-3.5" />Overtime sheet</Link>
       </div>
       {notice && <p className="mb-2 flex items-center gap-1 text-sm text-status-green"><Check className="h-4 w-4" />{notice}</p>}
+      {moveError && <p role="alert" className="mb-2 flex items-center gap-1 text-sm text-status-red"><AlertTriangle className="h-4 w-4 shrink-0" />{moveError}</p>}
       {leaveConflicts.length > 0 && (
         <div className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-300">
           <p className="font-semibold">Leave inside the shutdown · {leaveConflicts.length} {leaveConflicts.length === 1 ? 'person' : 'people'}</p>
@@ -159,7 +178,7 @@ export default function SdPlanPage() {
         ))}
       </div>
 
-      {teams.map((t) => <TeamCard key={t.id} t={t} data={data} view={view} onAdd={(slot, area) => setAdding({ team: t, slot, area })} onMember={setMember} onEdit={() => (total ? setEditPhases(true) : setEditTeam(t))} />)}
+      {teams.map((t) => <TeamCard key={t.id} t={t} data={data} view={view} onMove={moveMember} onAdd={(slot, area) => setAdding({ team: t, slot, area })} onMember={setMember} onEdit={() => (total ? setEditPhases(true) : setEditTeam(t))} />)}
 
       {total ? <UnitDownCard plan={plan} periods={data.periods} onDone={done} /> : <Card className="mb-3 py-1.5">
         <h2 className="pt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Crews without the team · {plan.title} minimums</h2>
@@ -200,7 +219,7 @@ interface View {
   teamDays: Map<string, { date: string; slots: ReturnType<typeof teamDay> }[]>;
 }
 
-function TeamCard({ t, data, view, onAdd, onMember, onEdit }: { t: SdTeam; data: Data; view: View; onAdd: (s: SdSlot, area?: string) => void; onMember: (m: SdMember) => void; onEdit: () => void }) {
+function TeamCard({ t, data, view, onMove, onAdd, onMember, onEdit }: { t: SdTeam; data: Data; view: View; onMove: (memberId: string, team: SdTeam, slot: SdSlot, area?: string) => void; onAdd: (s: SdSlot, area?: string) => void; onMember: (m: SdMember) => void; onEdit: () => void }) {
   const [day, setDay] = useState<string | null>(null);
   const days = view.teamDays.get(t.id)!;
   const sel = day ? days.find((d) => d.date === day) : null;
@@ -225,7 +244,7 @@ function TeamCard({ t, data, view, onAdd, onMember, onEdit }: { t: SdTeam; data:
       <div className="mt-0.5 flex justify-between text-[9px] text-slate-400"><span>{shortDate(days[0].date)}</span><span>green all on · amber fewer · red a slot empty{total ? ' · grey not needed' : ''}</span><span>{shortDate(days[days.length - 1].date)}</span></div>
       {sel && <p className="mt-1 rounded-md bg-slate-50 px-2 py-1 text-[11px] text-slate-700">{wd(sel.date)} {shortDate(sel.date)}{isRampDay(data.plan, sel.date) ? ' · reduced' : ''}: {Object.entries(sel.slots).map(([k, x]) => <span key={k} className={cx('ml-1', x.have < x.need && 'font-semibold text-status-red')}>{slotLabel(k)} {x.have}/{x.need}</span>)}</p>}
 
-      {total ? <AreaGroups t={t} data={data} view={view} need={need} onAdd={onAdd} onMember={onMember} /> : <div className="mt-1 divide-y divide-slate-100">
+      {total ? <AreaGroups t={t} data={data} view={view} need={need} onMove={onMove} onAdd={onAdd} onMember={onMember} /> : <div className="mt-1 divide-y divide-slate-100">
         {SD_SLOTS.map((s) => {
           const list = data.members.filter((m) => m.teamId === t.id && m.slot === s);
           // operators without a level take the open FO places (Senior first)
@@ -233,19 +252,19 @@ function TeamCard({ t, data, view, onAdd, onMember, onEdit }: { t: SdTeam; data:
           const filled = s === 'controller' ? 0 : Math.min(open, spare); spare -= filled;
           const missing = open - filled;
           return (
-            <div key={s} className="py-1.5">
+            <DropZone key={s} className="py-1.5" onDropMember={(id) => onMove(id, t, s)}>
               <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500"><span>{SD_SLOT_LABEL[s]} · {list.length}{filled ? `+${filled} operator${filled > 1 ? 's' : ''}` : ''}/{t.needs[s]}</span>
                 <button type="button" onClick={() => onAdd(s)} className="flex items-center gap-0.5 text-brand-700"><Plus className="h-3.5 w-3.5" />Add</button></div>
               {list.map((m) => <MemberRow key={m.id} m={m} data={data} view={view} onOpen={() => onMember(m)} />)}
               {Array.from({ length: missing }, (_, i) => <button key={i} type="button" onClick={() => onAdd(s)} className="mt-1 flex w-full items-center gap-1.5 rounded-lg border border-dashed border-red-300 px-2 py-1.5 text-left text-xs font-medium text-status-red"><Plus className="h-3.5 w-3.5" />{SD_SLOT_LABEL[s]} needed</button>)}
-            </div>
+            </DropZone>
           );
         })}
         {data.members.some((m) => m.teamId === t.id && m.slot === 'member') && (
-          <div className="py-1.5">
+          <DropZone className="py-1.5" onDropMember={(id) => onMove(id, t, 'member')}>
             <div className="text-[11px] font-semibold text-slate-500">{SD_SLOT_LABEL.member}s (no level) · fill the open FO places</div>
             {data.members.filter((m) => m.teamId === t.id && m.slot === 'member').map((m) => <MemberRow key={m.id} m={m} data={data} view={view} onOpen={() => onMember(m)} />)}
-          </div>
+          </DropZone>
         )}
       </div>}
     </Card>
@@ -253,29 +272,43 @@ function TeamCard({ t, data, view, onAdd, onMember, onEdit }: { t: SdTeam; data:
 }
 
 /** Total turnaround: the shift's Controllers, then its operators per area; placeholders up to the biggest phase. */
-function AreaGroups({ t, data, view, need, onAdd, onMember }: { t: SdTeam; data: Data; view: View; need: Record<string, number>; onAdd: (s: SdSlot, area?: string) => void; onMember: (m: SdMember) => void }) {
+function AreaGroups({ t, data, view, need, onMove, onAdd, onMember }: { t: SdTeam; data: Data; view: View; need: Record<string, number>; onMove: (memberId: string, team: SdTeam, slot: SdSlot, area?: string) => void; onAdd: (s: SdSlot, area?: string) => void; onMember: (m: SdMember) => void }) {
   const areas = areasOf(data.plan);
   const sections = data.plan.sections;
   const ctl = data.members.filter((m) => m.teamId === t.id && m.slot === 'controller');
   const groups = [
     ...(sections.length
-      ? sections.map((x) => ({ key: `ctl:${x}`, label: `Controller · ${x}`, list: ctl.filter((m) => groupOf(sections, m.area) === x), add: () => onAdd('controller', x) }))
-      : [{ key: 'controller', label: 'Controllers', list: ctl, add: () => onAdd('controller') }]),
-    ...areas.map((a) => ({ key: `area:${a}`, label: a || 'Operators', add: () => onAdd('member', a),
+      ? sections.map((x) => ({ key: `ctl:${x}`, label: `Controller · ${x}`, slot: 'controller' as SdSlot, area: x, list: ctl.filter((m) => groupOf(sections, m.area) === x), add: () => onAdd('controller', x) }))
+      : [{ key: 'controller', label: 'Controllers', slot: 'controller' as SdSlot, area: undefined as string | undefined, list: ctl, add: () => onAdd('controller') }]),
+    ...areas.map((a) => ({ key: `area:${a}`, label: a || 'Operators', slot: 'member' as SdSlot, area: a as string | undefined, add: () => onAdd('member', a),
       list: data.members.filter((m) => m.teamId === t.id && m.slot !== 'controller' && groupOf(areas, m.area) === a) }))];
   return (
     <div className="mt-1 divide-y divide-slate-100">
       {groups.map((g) => {
         const missing = Math.max(0, (need[g.key] ?? 0) - g.list.length);
         return (
-          <div key={g.key} className="py-1.5">
+          <DropZone key={g.key} className="py-1.5" onDropMember={(id) => onMove(id, t, g.slot, g.area)}>
             <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500"><span>{g.label} · {g.list.length}/{need[g.key] ?? 0}</span>
               <button type="button" onClick={g.add} className="flex items-center gap-0.5 text-brand-700"><Plus className="h-3.5 w-3.5" />Add</button></div>
             {g.list.map((m) => <MemberRow key={m.id} m={m} data={data} view={view} onOpen={() => onMember(m)} />)}
             {Array.from({ length: missing }, (_, i) => <button key={i} type="button" onClick={g.add} className="mt-1 flex w-full items-center gap-1.5 rounded-lg border border-dashed border-red-300 px-2 py-1.5 text-left text-xs font-medium text-status-red"><Plus className="h-3.5 w-3.5" />{g.key.startsWith('area:') ? `${g.label} operator` : g.label} needed</button>)}
-          </div>
+          </DropZone>
         );
       })}
+    </div>
+  );
+}
+
+const DND = 'application/x-sd-member';
+/** A place a name can be dropped on (desktop drag and drop): the place lights up while a name is over it. */
+function DropZone({ onDropMember, className, children }: { onDropMember: (memberId: string) => void; className?: string; children: React.ReactNode }) {
+  const [over, setOver] = useState(false);
+  return (
+    <div className={cx(className, over && 'rounded-lg bg-brand-50 ring-2 ring-brand-300')}
+      onDragOver={(e) => { if (e.dataTransfer.types.includes(DND)) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOver(true); } }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false); }}
+      onDrop={(e) => { const id = e.dataTransfer.getData(DND); setOver(false); if (id) { e.preventDefault(); onDropMember(id); } }}>
+      {children}
     </div>
   );
 }
@@ -289,7 +322,9 @@ function MemberRow({ m, data, view, onOpen }: { m: SdMember; data: Data; view: V
   // the member's first days off, e.g. "off 4, 8, 12…"
   const off = view.dates.filter((d) => d >= m.start && d <= m.end && !memberWorks(data.plan, m, d)).slice(0, 3).map((d) => Number(d.slice(8)));
   return (
-    <button type="button" onClick={onOpen} className="flex w-full items-center gap-2 py-1 text-left">
+    <button type="button" onClick={onOpen} draggable title="Drag the name to another place or team"
+      onDragStart={(e) => { e.dataTransfer.setData(DND, m.id); e.dataTransfer.effectAllowed = 'move'; }}
+      className="flex w-full cursor-grab items-center gap-2 py-1 text-left active:cursor-grabbing">
       {crew ? <CrewBadge crew={crew} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-500">VR</span>}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-slate-900">{r?.display_name ?? '—'}{isPo(r) ? <span className="ml-1 text-[10px] font-semibold text-slate-400">PO</span> : r?.fo_level && m.slot !== 'controller' ? <span className="ml-1 text-[10px] font-semibold text-slate-400">{FO_LEVEL_LABEL[r.fo_level]}</span> : null}</span>
