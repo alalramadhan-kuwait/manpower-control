@@ -16,7 +16,7 @@ import { OracleDot } from '@/ui/oracle';
 import { bySeniority } from '@/ui/positions';
 import { DaySheet } from './DaySheet';
 import { EventSheet, HolidaySheet } from './InfoSheets';
-import { AttentionList, Legend, PILL, Section, SummaryTiles, ViewToggle, calendarBars } from './parts';
+import { AttentionList, Legend, SHIFT_STYLE, Section, StatusBar, SummaryTiles, ViewToggle, calendarBars, isShiftLetter } from './parts';
 import { leaveToneShort } from '@/ui/leaveTypes';
 
 const range = (a: string, b: string) => {
@@ -107,10 +107,11 @@ export function WeekView({ start, today, onWeek, onMonth }: { start: string; tod
                     const n = m.mark === 'red' ? shortfall(day.crews.find((c) => c.crew === crew)!) : 0;
                     return (
                       <button key={d} type="button" onClick={() => setOpen(d)} aria-label={`${crew} Shift ${shortDate(d)}: ${m.shift}`}
-                        className={cx('flex h-9 flex-col items-center justify-center rounded-md text-sm font-bold leading-none tabular-nums',
-                          m.mark === 'off' ? 'text-slate-300 ring-1 ring-slate-100' : PILL[m.mark], d === today && 'ring-2 ring-brand-700')}>
+                        className={cx('relative flex h-9 flex-col items-center justify-center overflow-hidden rounded-md text-sm font-bold leading-none tabular-nums',
+                          m.mark === 'off' || !isShiftLetter(m.shift) ? 'text-slate-300 ring-1 ring-slate-100' : SHIFT_STYLE[m.shift].cell, d === today && 'ring-2 ring-brand-700')}>
                         {m.shift === 'Off' ? '·' : m.shift}
                         {n > 0 && <span className="mt-0.5 text-[9px]">−{n}</span>}
+                        {m.mark !== 'off' && <StatusBar mark={m.mark} thick />}
                       </button>
                     );
                   })}

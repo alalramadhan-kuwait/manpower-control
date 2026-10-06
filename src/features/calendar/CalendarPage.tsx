@@ -12,7 +12,7 @@ import { isCrew } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { DaySheet } from './DaySheet';
 import { EventSheet, HolidaySheet } from './InfoSheets';
-import { AttentionList, Legend, PILL, Section, SummaryTiles, ViewToggle, calendarBars } from './parts';
+import { AttentionList, Legend, SHIFT_STYLE, Section, StatusBar, SummaryTiles, ViewToggle, calendarBars } from './parts';
 import { WeekView } from './WeekView';
 
 type Filter = 'all' | Crew | 'shutdowns' | 'holidays' | 'shortage';
@@ -197,13 +197,14 @@ function DayCell({ date, day, today, crew, filter, showPills, away, holiday, inE
   const mine = crew ? marks.find((x) => x.crew === crew) : null;
   const short = marks.some((x) => x.mark === 'red' || x.mark === 'pending');
   const dim = (filter === 'shortage' && !short) || (filter === 'holidays' && !holiday) || (filter === 'shutdowns' && !inEvent);
-  const pill = (x: { crew: Crew; shift: string; mark: DayMark } | undefined, text?: string) => {
+  const pill = (x: { crew: Crew; shift: string; mark: DayMark } | undefined, text?: string, shiftKey?: 'M' | 'A' | 'N') => {
     if (!x) return <span className="h-[14px]" />;
     const hide = filter === 'shortage' && x.mark !== 'red' && x.mark !== 'pending';
     const n = x.mark === 'red' ? shortfall(byCrew.get(x.crew)!) : 0;
     return (
-      <span className={cx('flex h-[14px] items-center justify-center rounded text-[10px] font-bold leading-none tabular-nums', x.mark === 'off' ? 'bg-slate-100 text-slate-500' : PILL[x.mark], hide && 'invisible')}>
+      <span className={cx('relative flex h-[14px] items-center justify-center overflow-hidden rounded text-[10px] font-bold leading-none tabular-nums', x.mark === 'off' || !shiftKey ? 'bg-slate-100 text-slate-500' : SHIFT_STYLE[shiftKey].cell, hide && 'invisible')}>
         {text ?? x.crew}{n > 0 ? <span className="ml-px text-[9px]">−{n}</span> : null}
+        {x.mark !== 'off' && <StatusBar mark={x.mark} />}
       </span>
     );
   };
@@ -223,8 +224,8 @@ function DayCell({ date, day, today, crew, filter, showPills, away, holiday, inE
         {away > 0 && <span className="flex items-center text-[9px] leading-none text-slate-500"><UserMinus className="h-2.5 w-2.5" />{away}</span>}
       </span>
       {showPills && (crew
-        ? pill(mine ?? undefined, mine?.shift === 'Off' ? 'Off' : mine?.shift)
-        : <>{pill(duty('M'))}{pill(duty('A'))}{pill(duty('N'))}</>)}
+        ? pill(mine ?? undefined, mine?.shift === 'Off' ? 'Off' : mine?.shift, mine && (mine.shift === 'M' || mine.shift === 'A' || mine.shift === 'N') ? mine.shift : undefined)
+        : <>{pill(duty('M'), undefined, 'M')}{pill(duty('A'), undefined, 'A')}{pill(duty('N'), undefined, 'N')}</>)}
       {!showPills && <span className="h-[14px]" />}
     </button>
   );

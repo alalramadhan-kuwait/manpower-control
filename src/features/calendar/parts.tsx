@@ -41,10 +41,18 @@ export function AttentionList({ items, onOpen, past = false }: { items: Attentio
   );
 }
 
-/** Status colours only: green safe, amber at minimum, red below minimum, grey pending. */
-export const PILL: Record<Exclude<DayMark, 'off'>, string> = {
-  green: 'bg-green-100 text-green-900', amber: 'bg-amber-100 text-amber-900', red: 'bg-status-red text-white', pending: 'bg-slate-200 text-slate-700'
+/** Shift colours: morning sky, afternoon orange, night indigo. They say which shift a cell is; the cover status is the bar under it (STATUS_BAR). */
+export const SHIFT_STYLE: Record<'M' | 'A' | 'N', { cell: string; name: string }> = {
+  M: { cell: 'bg-sky-200 text-sky-950', name: 'Morning' }, A: { cell: 'bg-orange-200 text-orange-950', name: 'Afternoon' }, N: { cell: 'bg-indigo-800 text-white', name: 'Night' }
 };
+/** Cover status as a bar along the bottom of a shift cell: green safe, amber at minimum, red below minimum, grey pending. */
+export const STATUS_BAR: Record<Exclude<DayMark, 'off'>, string> = { green: 'bg-green-600', amber: 'bg-amber-500', red: 'bg-status-red', pending: 'bg-slate-400' };
+export const isShiftLetter = (s: string): s is 'M' | 'A' | 'N' => s === 'M' || s === 'A' || s === 'N';
+/** The bar itself: put it inside a `relative overflow-hidden` shift cell. */
+export function StatusBar({ mark, thick = false }: { mark: Exclude<DayMark, 'off'>; thick?: boolean }) {
+  return <span aria-hidden className={cx('absolute inset-x-0 bottom-0', thick ? 'h-1' : 'h-[3px]', STATUS_BAR[mark])} />;
+}
+
 const SUMMARY: { key: Exclude<DayMark, 'off'>; label: string; dot: string }[] = [
   { key: 'red', label: 'Short', dot: 'bg-status-red' }, { key: 'amber', label: 'At min', dot: 'bg-status-amber' },
   { key: 'green', label: 'Safe', dot: 'bg-status-green' }, { key: 'pending', label: 'Pending', dot: 'bg-slate-400' }
@@ -76,17 +84,24 @@ export function ViewToggle({ view, onChange }: { view: CalendarView; onChange: (
   );
 }
 
-/** Colour key. The month grid has a row per shift holding crew letters; the week grid a row per crew holding shift letters. */
+/** Colour key: the colour of a cell is its shift; the bar under it is the cover status. The month grid has a row per shift holding crew letters; the week grid a row per crew holding shift letters. */
 export function Legend({ rows = 'M / A / N rows:', sample = 'B' }: { rows?: string; sample?: string }) {
+  const bar = (mark: Exclude<DayMark, 'off'>) => <span className="relative inline-block h-3 w-4 overflow-hidden rounded bg-slate-100"><StatusBar mark={mark} thick /></span>;
   return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 px-1 text-[10px] text-slate-500">
-      <span className="font-medium text-slate-600">{rows}</span>
-      <span className="flex items-center gap-1"><span className="rounded bg-green-100 px-1 font-bold text-green-900">{sample}</span>safe</span>
-      <span className="flex items-center gap-1"><span className="rounded bg-amber-100 px-1 font-bold text-amber-900">{sample}</span>at minimum</span>
-      <span className="flex items-center gap-1"><span className="rounded bg-status-red px-1 font-bold text-white">{sample}−1</span>short</span>
-      <span className="flex items-center gap-1"><span className="rounded bg-slate-200 px-1 font-bold text-slate-700">{sample}</span>pending</span>
-      <span className="flex items-center gap-1"><Star className="h-2.5 w-2.5 fill-pink-500 text-pink-600" />holiday</span>
-      <span className="flex items-center gap-1"><UserMinus className="h-2.5 w-2.5" />on leave</span>
+    <div className="mt-1.5 space-y-1 px-1 text-[10px] text-slate-500">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+        <span className="font-medium text-slate-600">{rows}</span>
+        {(['M', 'A', 'N'] as const).map((k) => <span key={k} className="flex items-center gap-1"><span className={cx('rounded px-1 font-bold', SHIFT_STYLE[k].cell)}>{sample === 'B' ? k === 'M' ? 'B' : k === 'A' ? 'C' : 'D' : k}</span>{SHIFT_STYLE[k].name}</span>)}
+        <span className="flex items-center gap-1"><Star className="h-2.5 w-2.5 fill-pink-500 text-pink-600" />holiday</span>
+        <span className="flex items-center gap-1"><UserMinus className="h-2.5 w-2.5" />on leave</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+        <span className="font-medium text-slate-600">Bar under it:</span>
+        <span className="flex items-center gap-1">{bar('green')}safe</span>
+        <span className="flex items-center gap-1">{bar('amber')}at minimum</span>
+        <span className="flex items-center gap-1">{bar('red')}short (−1)</span>
+        <span className="flex items-center gap-1">{bar('pending')}pending</span>
+      </div>
     </div>
   );
 }
