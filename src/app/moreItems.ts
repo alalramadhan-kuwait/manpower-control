@@ -1,4 +1,4 @@
-import { ArrowLeftRight, BadgeCheck, CalendarDays, HardHat, Bell, BarChart3, CalendarRange, ClipboardCheck, FileUp, Gauge, History, ScrollText, ShieldCheck, Sun, UserCheck, UserCog, UserMinus } from 'lucide-react';
+import { ArrowLeftRight, BadgeCheck, CalendarDays, HardHat, Bell, BarChart3, CalendarRange, CalendarCheck, ClipboardCheck, FileUp, Gauge, History, ScrollText, ShieldCheck, Sun, UserCheck, UserCog, UserMinus } from 'lucide-react';
 
 export type Item = { to: string; label: string; desc: string; icon: typeof Bell; headOnly?: boolean };
 /** Related pages together, two to a row. */
@@ -11,6 +11,7 @@ export const GROUPS: { title: string; items: Item[] }[] = [
     { to: '/release', label: 'Task release', desc: 'Check the crew first', icon: UserMinus }] },
   { title: 'Leave', items: [
     { to: '/leave-plan', label: 'Leave plan', desc: 'Year plan · add / correct', icon: CalendarRange },
+    { to: '/pv', label: 'PV plan', desc: 'Annual leave by cycle', icon: CalendarCheck },
     { to: '/oracle', label: 'Oracle HR', desc: 'Submitted · approved · pending', icon: BadgeCheck },
     { to: '/notifications', label: 'Notifications', desc: 'Next 60 days', icon: Bell }] },
   { title: 'Planning', items: [

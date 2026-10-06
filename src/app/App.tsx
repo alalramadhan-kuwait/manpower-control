@@ -21,6 +21,7 @@ import SdPlanPage from '@/features/shutdown/SdPlanPage';
 import FoLevelsPage from '@/features/shutdown/FoLevelsPage';
 import { SdOvertimePage, SdSchedulePage } from '@/features/shutdown/SdDocuments';
 import LeavePlanPage from '@/features/leave/LeavePlanPage';
+import PvPage from '@/features/pv/PvPage';
 import MovementsPage from '@/features/movements/MovementsPage';
 import ReleasePage from '@/features/release/ReleasePage';
 import ControllersPage from '@/features/controllers/ControllersPage';
@@ -99,6 +100,7 @@ export default function App() {
           <Route path="/review/fo-levels" element={<FoLevelsPage />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/leave-plan" element={<LeavePlanPage />} />
+          <Route path="/pv" element={<PvPage />} />
           <Route path="/oracle" element={<OracleHrPage />} />
           <Route path="/movements" element={<MovementsPage />} />
           <Route path="/release" element={<ReleasePage />} />

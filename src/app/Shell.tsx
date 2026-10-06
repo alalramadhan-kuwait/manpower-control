@@ -103,7 +103,7 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
 }
 
 /** Pages that need the whole width (grids, calendars, printed sheets): no side panel. */
-const WIDE = [/^\/calendar/, /^\/leave-plan/, /^\/controllers\/board/, /^\/shutdown\/[^/]+\/(schedule|overtime)/, /^\/audit/];
+const WIDE = [/^\/calendar/, /^\/leave-plan/, /^\/pv/, /^\/controllers\/board/, /^\/shutdown\/[^/]+\/(schedule|overtime)/, /^\/audit/];
 
 function RailLink({ to, label, icon: Icon, end, count = 0 }: { to: string; label: string; icon: typeof Bell; end?: boolean; count?: number }) {
   return (
