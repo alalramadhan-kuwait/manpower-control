@@ -13,8 +13,6 @@ import { SHIFT_STYLE } from '@/features/calendar/parts';
 
 const ROLES = new Set<string>(['controller', 'vr_controller', 'morning_controller', 'panel_operator', 'field_operator']);
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const COL = 34;
-const NAME_W = 156;
 type Tab = Crew | 'ctl';
 
 interface Model {
@@ -118,14 +116,14 @@ export default function PvPage() {
         <p>A cycle that would break a rule is shown in pink with the reason. You can still book it after a confirmation; it stays red until it is approved or moved.</p>
       </div>} />
       <div className="mb-2 flex items-center gap-2">
-        <div className="flex flex-1 items-center justify-between rounded-xl bg-white px-1 py-0.5 ring-1 ring-slate-200">
+        <div className="flex flex-1 items-center justify-between rounded-xl bg-white px-1 py-0.5 ring-1 ring-slate-200 lg:w-64 lg:flex-none">
           <button type="button" aria-label="Previous year" onClick={() => set('year', String(year - 1))} className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 active:bg-slate-100"><ChevronLeft className="h-5 w-5" /></button>
           <span className="text-base font-semibold text-brand-800">{year}</span>
           <button type="button" aria-label="Next year" onClick={() => set('year', String(year + 1))} className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 active:bg-slate-100"><ChevronRight className="h-5 w-5" /></button>
         </div>
         <StatusLine issues={issues} saving={busy > 0} saved={saved} ready={!!model} />
       </div>
-      <div role="tablist" className="mb-2 grid grid-cols-5 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
+      <div role="tablist" className="mb-2 grid grid-cols-5 gap-1 rounded-xl bg-slate-100 p-1 text-sm lg:max-w-2xl">
         {([...CREWS, 'ctl'] as const).map((t) => (
           <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => set('shift', t === 'A' ? null : t)} className={cx('flex min-h-10 items-center justify-center gap-1 rounded-lg font-medium', tab === t ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>
             {t === 'ctl' ? 'Controllers' : <><CrewBadge crew={t} size="sm" />{t}</>}
@@ -177,34 +175,58 @@ function ShiftGrid({ model, crew, picks, issues, ctx, busy, onTap, onPerson }: {
     if (i.kind === 'summer' || i.kind === 'leaves') { for (const c of picks.get(id) ?? []) if (i.kind === 'leaves' || cycles[c]?.summer) bad.add(`${id}|${c}`); }
     else if (i.cycle != null) bad.add(`${id}|${i.cycle}`);
   }
-  const grid = { gridTemplateColumns: `${NAME_W}px repeat(${cycles.length}, ${COL}px)` };
+  const grid = { gridTemplateColumns: `var(--name) repeat(${cycles.length}, minmax(var(--col), 1fr))` };
+  const gridMin = { minWidth: `calc(var(--name) + ${cycles.length} * var(--col))` };
+  const [overflow, setOverflow] = useState(true);
+  useEffect(() => { const el = scroller.current; if (!el) return; const f = () => setOverflow(el.scrollWidth > el.clientWidth + 2); f(); const ro = new ResizeObserver(f); ro.observe(el); return () => ro.disconnect(); }, [cycles.length]);
   const panelIds = [...g.panel, ...g.acting].map((p) => p.id);
   const sections: { title: string; sub?: string; people: PvPerson[]; ids: string[]; max?: number; acting?: Set<string> }[] = [
     { title: 'Controller', people: g.controllers, ids: g.controllers.map((p) => p.id) },
     { title: `Panel · ${PV_RULES.panelSeats} seats`, sub: 'one at a time', people: [...g.panel, ...g.acting], ids: panelIds, max: PV_RULES.panelMaxOff, acting: new Set(g.acting.map((p) => p.id)) },
     { title: 'Field', sub: 'two at most', people: g.field, ids: g.field.map((p) => p.id), max: PV_RULES.fieldMaxOff }
   ];
-  const jump = (m: number) => { const i = cycles.findIndex((c) => Number(c.start.slice(5, 7)) >= m); if (i >= 0) scroller.current?.scrollTo({ left: i * COL, behavior: 'smooth' }); };
+  const jump = (m: number) => {
+    const i = cycles.findIndex((c) => Number(c.start.slice(5, 7)) >= m); const box = scroller.current; if (i < 0 || !box) return;
+    const col = box.querySelector<HTMLElement>(`[data-cycle="${i}"]`), name = box.querySelector<HTMLElement>('[data-name]');
+    if (col) box.scrollTo({ left: col.offsetLeft - (name?.offsetWidth ?? 0), behavior: 'smooth' });
+  };
+  const everyone = [...g.controllers, ...g.panel, ...g.acting, ...g.field];
+  const withLeave = everyone.filter((p) => (picks.get(p.id)?.size ?? 0) > 0).length;
+  const booked = everyone.reduce((n, p) => n + (picks.get(p.id)?.size ?? 0), 0);
+  const inSummer = everyone.reduce((n, p) => n + [...(picks.get(p.id) ?? [])].filter((i) => cycles[i]?.summer).length, 0);
+  const breaks = new Set(mine.map((i) => i.text)).size;
+  const tiles: { label: string; value: string; tone?: 'bad' | 'ok' }[] = [
+    { label: 'People with leave booked', value: `${withLeave} of ${everyone.length}` }, { label: 'Cycles booked', value: String(booked) },
+    { label: 'In summer', value: String(inSummer) }, { label: 'Rules broken', value: String(breaks), tone: breaks > 0 ? 'bad' : 'ok' }
+  ];
   return (
     <div className="space-y-2">
-      <PanelCard crew={crew} g={g} />
-      <div className="flex gap-1 overflow-x-auto pb-0.5" aria-label="Jump to month">
+     <div className="min-w-0 space-y-2">
+      <div className="hidden grid-cols-4 gap-2 lg:grid">
+        {tiles.map((t) => (
+          <div key={t.label} className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
+            <div className={cx('text-xl font-semibold tabular-nums', t.tone === 'bad' ? 'text-status-red' : t.tone === 'ok' ? 'text-status-green' : 'text-brand-800')}>{t.value}</div>
+            <div className="text-xs text-slate-500">{t.label}</div>
+          </div>
+        ))}
+      </div>
+      <div className={cx('flex gap-1 overflow-x-auto pb-0.5', !overflow && 'hidden')} aria-label="Jump to month">
         {MONTHS.map((m, i) => (
           <button key={m} type="button" onClick={() => jump(i + 1)} className={cx('min-h-8 shrink-0 rounded-full px-3 text-xs font-medium ring-1', i + 1 >= 6 && i + 1 <= 9 ? 'bg-amber-50 text-amber-900 ring-amber-200' : 'bg-white text-slate-700 ring-slate-300')}>{m}</button>
         ))}
       </div>
       <Card className="p-0">
         <div ref={scroller} className="overflow-x-auto">
-          <div className="min-w-max pb-1">
+          <div className="pb-1 [--col:34px] [--name:156px] lg:[--col:20px] lg:[--name:190px]" style={gridMin}>
             <div className="sticky top-0 z-10 grid bg-white" style={grid}>
-              <div className="sticky left-0 z-20 flex items-end bg-white px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{crew} Shift · {cycles.length} cycles</div>
+              <div data-name className="sticky left-0 z-20 flex items-end bg-white px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{crew} Shift · {cycles.length} cycles</div>
               {cycles.map((c, i) => {
                 const newMonth = i === 0 || cycles[i - 1].start.slice(5, 7) !== c.start.slice(5, 7);
                 return (
-                  <div key={c.index} className={cx('flex flex-col items-center gap-0.5 pb-1 pt-0.5 text-center', c.summer && 'bg-amber-50')}>
+                  <div key={c.index} data-cycle={c.index} className={cx('flex flex-col items-center gap-0.5 pb-1 pt-0.5 text-center', c.summer && 'bg-amber-50')}>
                     <span className="h-3 text-[9px] font-semibold leading-3 text-slate-500">{newMonth ? MONTHS[Number(c.start.slice(5, 7)) - 1] : ''}</span>
                     <span className="text-[11px] font-semibold leading-none text-slate-800">{Number(c.start.slice(8))}</span>
-                    <span aria-hidden className="flex h-1.5 w-[28px] overflow-hidden rounded-sm"><Stripe crew={crew} start={c.start} /></span>
+                    <span aria-hidden className="flex h-1.5 w-[calc(100%-6px)] overflow-hidden rounded-sm"><Stripe crew={crew} start={c.start} /></span>
                   </div>
                 );
               })}
@@ -236,7 +258,7 @@ function ShiftGrid({ model, crew, picks, issues, ctx, busy, onTap, onPerson }: {
                         return (
                           <button key={c.index} type="button" disabled={busy || (!on && !!away)} aria-pressed={on} aria-label={`${p.name} ${rangeLabel(c)}${on ? ': booked' : why ? ': not allowed' : ''}`}
                             title={away ? `Other leave ${shortDate(away.start)} – ${shortDate(away.end)}` : why ?? rangeLabel(c)} onClick={() => onTap(p, c.index)}
-                            className={cx('mx-px my-px flex h-8 items-center justify-center rounded text-white', on ? (flag ? 'bg-status-red' : 'bg-brand-700')
+                            className={cx('mx-px my-px flex h-8 items-center justify-center rounded text-white lg:h-9', on ? (flag ? 'bg-status-red' : 'bg-brand-700')
                               : away ? 'bg-slate-200 bg-[repeating-linear-gradient(45deg,transparent,transparent_3px,rgba(100,116,139,.35)_3px,rgba(100,116,139,.35)_4px)]'
                               : why ? 'bg-red-50 ring-1 ring-red-100 active:bg-red-100'
                               : c.summer ? 'bg-amber-50 ring-1 ring-amber-100 active:bg-amber-100' : 'ring-1 ring-slate-100 active:bg-slate-100')}>
@@ -253,7 +275,11 @@ function ShiftGrid({ model, crew, picks, issues, ctx, busy, onTap, onPerson }: {
         </div>
       </Card>
       <Key />
+     </div>
+     <div className="grid items-start gap-2 lg:grid-cols-2">
+      <PanelCard crew={crew} g={g} />
       <IssueList issues={mine} />
+     </div>
     </div>
   );
 }
