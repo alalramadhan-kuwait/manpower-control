@@ -219,14 +219,19 @@ function ShiftGrid({ model, crew, picks, issues, ctx, busy, onTap, onPerson }: {
         <div ref={scroller} className="overflow-x-auto">
           <div className="pb-1 [--col:34px] [--name:156px] lg:[--col:20px] lg:[--name:190px]" style={gridMin}>
             <div className="sticky top-0 z-10 grid bg-white" style={grid}>
-              <div data-name className="sticky left-0 z-20 flex items-end bg-white px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{crew} Shift · {cycles.length} cycles</div>
+              <div data-name className="sticky left-0 z-20 flex flex-col justify-end bg-white px-2 pb-1 text-[10px] leading-[14px] text-slate-500">
+                <span className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide">{crew} Shift · {cycles.length} cycles</span>
+                <span>Starts · first Morning</span>
+                <span className="mt-[8px]">Ends · second Off day</span>
+              </div>
               {cycles.map((c, i) => {
                 const newMonth = i === 0 || cycles[i - 1].start.slice(5, 7) !== c.start.slice(5, 7);
                 return (
                   <div key={c.index} data-cycle={c.index} className={cx('flex flex-col items-center gap-0.5 pb-1 pt-0.5 text-center', c.summer && 'bg-amber-50')}>
                     <span className="h-3 text-[9px] font-semibold leading-3 text-slate-500">{newMonth ? MONTHS[Number(c.start.slice(5, 7)) - 1] : ''}</span>
                     <span className="text-[11px] font-semibold leading-none text-slate-800">{Number(c.start.slice(8))}</span>
-                    <span aria-hidden className="flex h-1.5 w-[calc(100%-6px)] overflow-hidden rounded-sm"><Stripe crew={crew} start={c.start} /></span>
+                    <span aria-hidden className="flex h-2 w-[calc(100%-6px)] overflow-hidden rounded-sm"><Stripe crew={crew} start={c.start} /></span>
+                    <span className="text-[10px] leading-none text-slate-500">{Number(c.end.slice(8))}</span>
                   </div>
                 );
               })}
@@ -258,11 +263,12 @@ function ShiftGrid({ model, crew, picks, issues, ctx, busy, onTap, onPerson }: {
                         return (
                           <button key={c.index} type="button" disabled={busy || (!on && !!away)} aria-pressed={on} aria-label={`${p.name} ${rangeLabel(c)}${on ? ': booked' : why ? ': not allowed' : ''}`}
                             title={away ? `Other leave ${shortDate(away.start)} – ${shortDate(away.end)}` : why ?? rangeLabel(c)} onClick={() => onTap(p, c.index)}
-                            className={cx('mx-px my-px flex h-8 items-center justify-center rounded text-white lg:h-9', on ? (flag ? 'bg-status-red' : 'bg-brand-700')
+                            className={cx('relative mx-px my-px flex h-8 items-center justify-center overflow-hidden rounded pr-[25%] text-white lg:h-9', on ? (flag ? 'bg-status-red' : 'bg-brand-700')
                               : away ? 'bg-slate-200 bg-[repeating-linear-gradient(45deg,transparent,transparent_3px,rgba(100,116,139,.35)_3px,rgba(100,116,139,.35)_4px)]'
                               : why ? 'bg-red-50 ring-1 ring-red-100 active:bg-red-100'
                               : c.summer ? 'bg-amber-50 ring-1 ring-amber-100 active:bg-amber-100' : 'ring-1 ring-slate-100 active:bg-slate-100')}>
                             {on ? <Check className="h-4 w-4" /> : why ? <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-red-300" /> : null}
+                            <span aria-hidden className={cx('pointer-events-none absolute inset-y-0 right-0 w-1/4 border-l', on ? 'border-white/40 bg-white/30' : 'border-slate-200 bg-slate-200/60 bg-[repeating-linear-gradient(45deg,transparent,transparent_2px,rgba(255,255,255,.7)_2px,rgba(255,255,255,.7)_3px)]')} />
                           </button>
                         );
                       })}
@@ -329,14 +335,14 @@ function PersonSheet({ model, person, picks, ctx, busy, onTap, onClose }: { mode
 function Stripe({ crew, start }: { crew: Crew; start: string }) {
   const order: ('M' | 'A' | 'N' | 'Off')[] = [];
   for (let i = 0; i < 8; i++) order.push(stateOf(dutyFor(addDaysIso(start, i), crew)));
-  return <>{order.map((s, i) => <span key={i} className={cx('h-full flex-1', s === 'Off' ? 'bg-slate-200' : SHIFT_STYLE[s].cell)} />)}</>;
+  return <>{order.map((s, i) => <span key={i} className={cx('h-full flex-1', s === 'Off' ? 'bg-slate-300 bg-[repeating-linear-gradient(45deg,transparent,transparent_1.5px,rgba(255,255,255,.7)_1.5px,rgba(255,255,255,.7)_2.5px)]' : SHIFT_STYLE[s].cell)} />)}</>;
 }
 
 function Key() {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[10px] text-slate-500">
       <span className="flex items-center gap-1"><span className="flex h-2 w-12 overflow-hidden rounded-sm"><span className={cx('flex-1', SHIFT_STYLE.M.cell)} /><span className={cx('flex-1', SHIFT_STYLE.M.cell)} /><span className={cx('flex-1', SHIFT_STYLE.A.cell)} /><span className={cx('flex-1', SHIFT_STYLE.A.cell)} /><span className={cx('flex-1', SHIFT_STYLE.N.cell)} /><span className={cx('flex-1', SHIFT_STYLE.N.cell)} /><span className="flex-1 bg-slate-200" /><span className="flex-1 bg-slate-200" /></span>cycle: 2 M · 2 A · 2 N · 2 Off</span>
-      <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-brand-700" />booked</span>
+      <span className="flex items-center gap-1"><span className="relative h-3 w-5 overflow-hidden rounded bg-brand-700"><span className="absolute inset-y-0 right-0 w-1/4 bg-white/40" /></span>booked (the light end = the 2 off days)</span>
       <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-red-50 ring-1 ring-red-200" />would break a rule</span>
       <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-status-red" />booked, breaks a rule</span>
       <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-amber-50 ring-1 ring-amber-200" /><Sun className="h-3 w-3 text-amber-600" />summer</span>
