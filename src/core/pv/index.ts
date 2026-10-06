@@ -106,3 +106,36 @@ export function checkPv(input: PvInput): PvIssue[] {
   }
   return issues;
 }
+
+export type PvContext = Pick<PvInput, 'shifts' | 'picks' | 'controllerLeave' | 'shutdowns' | 'names'>;
+
+/**
+ * Why booking this cycle for this person would break a rule, or null when it is fine. Cheap enough to ask for every free cell
+ * of the calendar, so the page can show what is taken before anyone taps.
+ */
+export function blockReason(ctx: PvContext, personId: string, index: number): string | null {
+  const shift = ctx.shifts.find((s) => s.controllers.includes(personId) || s.panel.includes(personId) || s.field.includes(personId));
+  const cycle = shift?.cycles[index];
+  if (!shift || !cycle) return null;
+  const nm = (id: string) => ctx.names.get(id) ?? 'Employee';
+  const off = (ids: string[]) => ids.filter((id) => id !== personId && ctx.picks.get(id)?.has(index));
+  const mine = ctx.picks.get(personId) ?? new Set<number>();
+  if (cycle.summer) {
+    const summer = [...mine].filter((i) => shift.cycles[i]?.summer);
+    if (summer.length >= PV_RULES.summerMaxCycles) return `Summer is peak time: already ${summer.length} cycles (two at the longest).`;
+    if (summer.length > 0 && !summer.some((i) => Math.abs(i - index) === 1)) return 'Summer is peak time: only one leave, and it must be one run of cycles.';
+  }
+  for (const sd of ctx.shutdowns ?? []) if (sd.employeeId === personId && overlap(cycle, sd)) return `In ${sd.title}: a shutdown team member takes no leave then.`;
+  if (shift.panel.includes(personId)) { const o = off(shift.panel); if (o.length >= PV_RULES.panelMaxOff) return `${o.map(nm).join(', ')} (Panel) is off then; one Panel Operator at a time.`; }
+  if (shift.field.includes(personId)) { const o = off(shift.field); if (o.length >= PV_RULES.fieldMaxOff) return `${o.map(nm).join(' and ')} (Field) are off then; ${PV_RULES.fieldMaxOff} at most.`; }
+  if (shift.controllers.includes(personId)) {
+    const clash: string[] = [];
+    for (const s of ctx.shifts) for (const id of s.controllers) {
+      if (id === personId) continue;
+      if ([...(ctx.picks.get(id) ?? [])].some((i) => s.cycles[i] && overlap(s.cycles[i], cycle))) clash.push(nm(id));
+    }
+    for (const l of ctx.controllerLeave ?? []) if (l.employeeId !== personId && overlap(l, cycle)) clash.push(nm(l.employeeId));
+    if (clash.length) return `${[...new Set(clash)].join(', ')} (Controller) is off then; two Controllers are never off together.`;
+  }
+  return null;
+}

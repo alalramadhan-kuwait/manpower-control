@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { dutyFor } from '../../roster';
-import { checkPv, cyclesOf, panelFill, runsOf, type PvPerson, type PvShift } from '..';
+import { blockReason, checkPv, cyclesOf, panelFill, runsOf, type PvPerson, type PvShift } from '..';
 
 const p = (id: string, role: PvPerson['role'], o: Partial<PvPerson> = {}): PvPerson => ({ id, name: id, number: id, crew: 'A', role, grade: null, gradeSince: null, sick: 0, ...o });
 
@@ -69,5 +69,23 @@ describe('checkPv', () => {
     const s = shift('A', A, { field: ['f1'] });
     const out = checkPv({ shifts: [s], picks: new Map([['f1', new Set([4])]]), shutdowns: [{ employeeId: 'f1', start: A[4].start, end: A[4].end, title: 'SD' }], names });
     expect(out.map((i) => i.kind)).toContain('shutdown');
+  });
+});
+
+describe('blockReason', () => {
+  const A = cyclesOf('A', 2027), B = cyclesOf('B', 2027);
+  const names = new Map<string, string>([['p1', 'Pat'], ['ca', 'Cal'], ['cb', 'Cy']]);
+  const shifts: PvShift[] = [{ crew: 'A', cycles: A, controllers: ['ca'], panel: ['p1', 'p2'], field: ['f1', 'f2', 'f3'] }, { crew: 'B', cycles: B, controllers: ['cb'], panel: [], field: [] }];
+  it('is free when nothing is in the way', () => expect(blockReason({ shifts, picks: new Map(), names }, 'p2', 5)).toBeNull());
+  it('names the Panel Operator already off', () => expect(blockReason({ shifts, picks: new Map([['p1', new Set([5])]]), names }, 'p2', 5)).toContain('Pat'));
+  it('stops a third Field Operator and a Controller overlapping another shift', () => {
+    expect(blockReason({ shifts, picks: new Map([['f1', new Set([5])], ['f2', new Set([5])]]), names }, 'f3', 5)).not.toBeNull();
+    expect(blockReason({ shifts, picks: new Map([['cb', new Set([5])]]), names }, 'ca', 5)).toContain('Cy');
+  });
+  it('allows a second summer cycle next to the first but not a separate one', () => {
+    const s = A.filter((c) => c.summer).map((c) => c.index);
+    const picks = new Map([['f1', new Set([s[0]])]]);
+    expect(blockReason({ shifts, picks, names }, 'f1', s[1])).toBeNull();
+    expect(blockReason({ shifts, picks, names }, 'f1', s[3])).not.toBeNull();
   });
 });
