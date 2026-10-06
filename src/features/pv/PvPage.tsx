@@ -14,6 +14,9 @@ import { SHIFT_STYLE } from '@/features/calendar/parts';
 const ROLES = new Set<string>(['controller', 'vr_controller', 'morning_controller', 'panel_operator', 'field_operator']);
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 type Tab = Crew | 'ctl';
+type Span = 'year' | 'q1' | 'q2' | 'q3' | 'q4';
+const SPANS: { key: Span; label: string; sub: string }[] = [{ key: 'q1', label: 'Q1', sub: 'Jan–Mar' }, { key: 'q2', label: 'Q2', sub: 'Apr–Jun' }, { key: 'q3', label: 'Q3', sub: 'Jul–Sep' }, { key: 'q4', label: 'Q4', sub: 'Oct–Dec' }, { key: 'year', label: 'Year', sub: 'all 46' }];
+const quarterOf = (c: PvCycle): Span => `q${Math.ceil(Number(c.start.slice(5, 7)) / 3)}` as Span;
 
 interface Model {
   year: number;
@@ -70,6 +73,7 @@ const rangeLabel = (c: PvCycle) => `${Number(c.start.slice(8))} ${MONTHS[Number(
 export default function PvPage() {
   const [params, setParams] = useSearchParams();
   const year = Number(params.get('year')) || new Date().getFullYear() + 1;
+  const span: Span = (SPANS.find((x) => x.key === params.get('span'))?.key) ?? 'q1';
   const tab: Tab = (['A', 'B', 'C', 'D', 'ctl'] as const).find((t) => t === params.get('shift')) ?? 'A';
   const [data, setData] = useState<PvData | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -130,8 +134,17 @@ export default function PvPage() {
           </button>
         ))}
       </div>
+      {tab !== 'ctl' && (
+        <div role="tablist" aria-label="Part of the year" className="mb-2 grid grid-cols-5 gap-1 rounded-xl bg-slate-100 p-1 text-sm lg:max-w-2xl">
+          {SPANS.map((x) => (
+            <button key={x.key} type="button" role="tab" aria-selected={span === x.key} onClick={() => set('span', x.key === 'q1' ? null : x.key)} className={cx('min-h-10 rounded-lg font-medium leading-tight', span === x.key ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>
+              {x.label}<span className="block text-[10px] font-normal text-slate-500">{x.sub}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {error ? <ErrorBox error={error} /> : !model ? <Spinner /> : tab === 'ctl' ? <ControllersTimeline model={model} picks={picks} issues={issues} /> : (
-        <ShiftGrid model={model} crew={tab} picks={picks} issues={issues} ctx={ctx} busy={busy > 0} onTap={tap} onPerson={setSheet} />
+        <ShiftGrid model={model} crew={tab} span={span} picks={picks} issues={issues} ctx={ctx} busy={busy > 0} onTap={tap} onPerson={setSheet} />
       )}
       {saveError && <p role="alert" className="mt-2 flex items-start gap-1 text-sm text-status-red"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{saveError}</p>}
 
@@ -166,7 +179,7 @@ function StatusLine({ issues, saving, saved, ready }: { issues: PvIssue[]; savin
   );
 }
 
-function ShiftGrid({ model, crew, picks, issues, ctx, busy, onTap, onPerson }: { model: Model; crew: Crew; picks: Map<string, Set<number>>; issues: PvIssue[]; ctx: PvContext; busy: boolean; onTap: (p: PvPerson, i: number) => void; onPerson: (p: PvPerson) => void }) {
+function ShiftGrid({ model, crew, span, picks, issues, ctx, busy, onTap, onPerson }: { model: Model; crew: Crew; span: Span; picks: Map<string, Set<number>>; issues: PvIssue[]; ctx: PvContext; busy: boolean; onTap: (p: PvPerson, i: number) => void; onPerson: (p: PvPerson) => void }) {
   const cycles = model.cycles[crew], g = model.groups[crew];
   const scroller = useRef<HTMLDivElement>(null);
   const mine = issues.filter((i) => i.crew === crew || i.crew === null);
@@ -175,8 +188,10 @@ function ShiftGrid({ model, crew, picks, issues, ctx, busy, onTap, onPerson }: {
     if (i.kind === 'summer' || i.kind === 'leaves') { for (const c of picks.get(id) ?? []) if (i.kind === 'leaves' || cycles[c]?.summer) bad.add(`${id}|${c}`); }
     else if (i.cycle != null) bad.add(`${id}|${i.cycle}`);
   }
-  const grid = { gridTemplateColumns: `var(--name) repeat(${cycles.length}, minmax(var(--col), 1fr))` };
-  const gridMin = { minWidth: `calc(var(--name) + ${cycles.length} * var(--col))` };
+  const shown = span === 'year' ? cycles : cycles.filter((c) => quarterOf(c) === span);
+  const detail = span !== 'year';
+  const grid = { gridTemplateColumns: `var(--name) repeat(${shown.length}, minmax(var(--col), 1fr))` };
+  const gridMin = { minWidth: `calc(var(--name) + ${shown.length} * var(--col))` };
   const [overflow, setOverflow] = useState(true);
   useEffect(() => { const el = scroller.current; if (!el) return; const f = () => setOverflow(el.scrollWidth > el.clientWidth + 2); f(); const ro = new ResizeObserver(f); ro.observe(el); return () => ro.disconnect(); }, [cycles.length]);
   const panelIds = [...g.panel, ...g.acting].map((p) => p.id);
@@ -217,21 +232,23 @@ function ShiftGrid({ model, crew, picks, issues, ctx, busy, onTap, onPerson }: {
       </div>
       <Card className="p-0">
         <div ref={scroller} className="overflow-x-auto">
-          <div className="pb-1 [--col:34px] [--name:156px] lg:[--col:20px] lg:[--name:190px]" style={gridMin}>
+          <div className={cx('pb-1 [--name:156px] lg:[--name:190px]', detail ? '[--col:60px] lg:[--col:56px]' : '[--col:34px] lg:[--col:20px]')} style={gridMin}>
             <div className="sticky top-0 z-10 grid bg-white" style={grid}>
               <div data-name className="sticky left-0 z-20 flex flex-col justify-end bg-white px-2 pb-1 text-[10px] leading-[14px] text-slate-500">
-                <span className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide">{crew} Shift · {cycles.length} cycles</span>
+                <span className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide">{crew} Shift · {shown.length} cycles</span>
                 <span>Starts · first Morning</span>
                 <span className="mt-[8px]">Ends · second Off day</span>
               </div>
-              {cycles.map((c, i) => {
-                const newMonth = i === 0 || cycles[i - 1].start.slice(5, 7) !== c.start.slice(5, 7);
+              {shown.map((c, i) => {
+                const newMonth = i === 0 || shown[i - 1].start.slice(5, 7) !== c.start.slice(5, 7);
                 return (
                   <div key={c.index} data-cycle={c.index} className={cx('flex flex-col items-center gap-0.5 pb-1 pt-0.5 text-center', c.summer && 'bg-amber-50')}>
                     <span className="h-3 text-[9px] font-semibold leading-3 text-slate-500">{newMonth ? MONTHS[Number(c.start.slice(5, 7)) - 1] : ''}</span>
                     <span className="text-[11px] font-semibold leading-none text-slate-800">{Number(c.start.slice(8))}</span>
-                    <span aria-hidden className="flex h-2 w-[calc(100%-6px)] overflow-hidden rounded-sm"><Stripe crew={crew} start={c.start} /></span>
-                    <span className="text-[10px] leading-none text-slate-500">{Number(c.end.slice(8))}</span>
+                    {detail
+                      ? <span aria-hidden className="flex h-4 w-[calc(100%-6px)] overflow-hidden rounded-sm"><Stripe crew={crew} start={c.start} numbers /></span>
+                      : <span aria-hidden className="flex h-2 w-[calc(100%-6px)] overflow-hidden rounded-sm"><Stripe crew={crew} start={c.start} /></span>}
+                    <span className="text-[10px] leading-none text-slate-500">{Number(c.end.slice(8))}{detail && ` ${MONTHS[Number(c.end.slice(5, 7)) - 1]}`}</span>
                   </div>
                 );
               })}
@@ -240,7 +257,7 @@ function ShiftGrid({ model, crew, picks, issues, ctx, busy, onTap, onPerson }: {
               <div key={s.title}>
                 <div className="grid bg-slate-50" style={grid}>
                   <div className="sticky left-0 z-10 bg-slate-50 px-2 py-1.5 text-xs font-semibold text-slate-700">{s.title}{s.sub && <span className="ml-1 font-normal text-slate-500">· {s.sub}</span>}</div>
-                  {cycles.map((c) => {
+                  {shown.map((c) => {
                     const off = s.ids.filter((id) => picks.get(id)?.has(c.index)).length;
                     const full = s.max != null && off === s.max, over = s.max != null && off > s.max;
                     return <div key={c.index} title={s.max != null && off > 0 ? `${off} of ${s.max} allowed off` : undefined} className={cx('flex items-center justify-center text-[10px] font-semibold tabular-nums', over ? 'bg-status-red text-white' : full ? 'bg-amber-100 text-amber-900' : off > 0 ? 'text-slate-700' : 'text-slate-300')}>{off > 0 ? (s.max != null ? `${off}/${s.max}` : off) : ''}</div>;
@@ -255,7 +272,7 @@ function ShiftGrid({ model, crew, picks, issues, ctx, busy, onTap, onPerson }: {
                         <span className="block truncate text-xs font-medium text-slate-900">{p.name}</span>
                         <span className="block truncate text-[10px] text-slate-500">{s.acting?.has(p.id) ? `acting G13 · since ${p.gradeSince ? p.gradeSince.slice(0, 4) : '?'}` : p.grade ? `G${p.grade}` : `#${p.number}`} · <span className={cx(mineCycles > 0 && 'font-semibold text-brand-700')}>{mineCycles} {mineCycles === 1 ? 'cycle' : 'cycles'}</span></span>
                       </button>
-                      {cycles.map((c) => {
+                      {shown.map((c) => {
                         const on = picks.get(p.id)?.has(c.index) ?? false;
                         const away = (model.others.get(p.id) ?? []).find((o) => overlaps(o, c));
                         const flag = bad.has(`${p.id}|${c.index}`);
@@ -263,11 +280,12 @@ function ShiftGrid({ model, crew, picks, issues, ctx, busy, onTap, onPerson }: {
                         return (
                           <button key={c.index} type="button" disabled={busy || (!on && !!away)} aria-pressed={on} aria-label={`${p.name} ${rangeLabel(c)}${on ? ': booked' : why ? ': not allowed' : ''}`}
                             title={away ? `Other leave ${shortDate(away.start)} – ${shortDate(away.end)}` : why ?? rangeLabel(c)} onClick={() => onTap(p, c.index)}
-                            className={cx('relative mx-px my-px flex h-8 items-center justify-center overflow-hidden rounded pr-[25%] text-white lg:h-9', on ? (flag ? 'bg-status-red' : 'bg-brand-700')
+                            className={cx('relative mx-px my-px flex items-center justify-center overflow-hidden rounded pr-[25%] text-white', detail ? 'h-11' : 'h-8 lg:h-9', on ? (flag ? 'bg-status-red' : 'bg-brand-700')
                               : away ? 'bg-slate-200 bg-[repeating-linear-gradient(45deg,transparent,transparent_3px,rgba(100,116,139,.35)_3px,rgba(100,116,139,.35)_4px)]'
                               : why ? 'bg-red-50 ring-1 ring-red-100 active:bg-red-100'
                               : c.summer ? 'bg-amber-50 ring-1 ring-amber-100 active:bg-amber-100' : 'ring-1 ring-slate-100 active:bg-slate-100')}>
                             {on ? <Check className="h-4 w-4" /> : why ? <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-red-300" /> : null}
+                            {detail && <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 flex h-1.5"><Stripe crew={crew} start={c.start} /></span>}
                             <span aria-hidden className={cx('pointer-events-none absolute inset-y-0 right-0 w-1/4 border-l', on ? 'border-white/40 bg-white/30' : 'border-slate-200 bg-slate-200/60 bg-[repeating-linear-gradient(45deg,transparent,transparent_2px,rgba(255,255,255,.7)_2px,rgba(255,255,255,.7)_3px)]')} />
                           </button>
                         );
@@ -332,10 +350,10 @@ function PersonSheet({ model, person, picks, ctx, busy, onTap, onClose }: { mode
 }
 
 /** The crew's 8 days as a colour strip: Morning, Afternoon, Night, Off. */
-function Stripe({ crew, start }: { crew: Crew; start: string }) {
+function Stripe({ crew, start, numbers = false }: { crew: Crew; start: string; numbers?: boolean }) {
   const order: ('M' | 'A' | 'N' | 'Off')[] = [];
   for (let i = 0; i < 8; i++) order.push(stateOf(dutyFor(addDaysIso(start, i), crew)));
-  return <>{order.map((s, i) => <span key={i} className={cx('h-full flex-1', s === 'Off' ? 'bg-slate-300 bg-[repeating-linear-gradient(45deg,transparent,transparent_1.5px,rgba(255,255,255,.7)_1.5px,rgba(255,255,255,.7)_2.5px)]' : SHIFT_STYLE[s].cell)} />)}</>;
+  return <>{order.map((s, i) => <span key={i} className={cx('flex h-full flex-1 items-center justify-center text-[9px] font-semibold leading-none', s === 'Off' ? 'bg-slate-300 bg-[repeating-linear-gradient(45deg,transparent,transparent_1.5px,rgba(255,255,255,.7)_1.5px,rgba(255,255,255,.7)_2.5px)] text-slate-600' : SHIFT_STYLE[s].cell)}>{numbers ? (s === 'Off' ? 'O' : s) : ''}</span>)}</>;
 }
 
 function Key() {
