@@ -5,9 +5,10 @@ import { checkCandidates, coverageNeeds, maxEndDate, shiftCoverMaxEnd, type Cove
 import { evaluateDay, personOn, type MpAbsence, type MpAssignment, type MpPerson } from '@/core/manpower';
 import { onLeaveOn, type OnLeave } from '@/core/leave';
 import { addDaysIso, isValidIsoDate, type Crew } from '@/core/roster';
-import { cancelAssignment, createAssignment, endAssignmentEarly, fetchAssignments, fetchShiftCoverMaxDays, setShiftCoverMaxDays } from '@/data/controllers';
+import { cancelAssignment, endAssignmentEarly, fetchAssignments, fetchShiftCoverMaxDays, setShiftCoverMaxDays } from '@/data/controllers';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
-import { fetchMovements, placeVr, type CrewMovement } from '@/data/movements';
+import { fetchMovements, type CrewMovement } from '@/data/movements';
+import { submitApproval, submittedText } from '@/data/approvals';
 import type { ControllerAssignment, UserProfile } from '@/data/types';
 import { BottomSheet, Button, Card, Chip, ErrorBox, Field, PageHeader, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
@@ -239,13 +240,18 @@ function AssignSheet({ initial, maxDays, people, absences, assignments, onClose,
     try {
       const vr = people.find((p) => p.id === pick);
       if (d.kind === 'shift_cover' && d.crew && vr?.role === 'vr_controller') {
-        await placeVr({ employee: pick, crew: d.crew, start: d.start, reason: note.trim() || `Cover for ${people.find((p) => p.id === d.coversId)?.name ?? `${d.crew} Shift Controller`}` });
-        onDone(`${vr.name} placed in ${d.crew} Shift from ${shortDate(d.start)}, until moved.`);
+        const msg = `${vr.name} placed in ${d.crew} Shift from ${shortDate(d.start)}, until moved.`;
+        const r = await submitApproval({ kind: 'vr_placement', employee: pick, start: d.start, end: null, summary: msg,
+          payload: { crew: d.crew, reason: note.trim() || `Cover for ${people.find((p) => p.id === d.coversId)?.name ?? `${d.crew} Shift Controller`}` } });
+        onDone(submittedText(r, msg));
         return;
       }
-      await createAssignment({ kind: d.kind, employee_id: pick, crew_code: d.kind === 'shift_cover' ? d.crew : null, covers_employee_id: d.kind === 'shift_cover' ? d.coversId : null, start_date: d.start, end_date: d.end, note: note.trim() || null });
       const who = people.find((p) => p.id === pick)?.name ?? 'Controller';
-      onDone(d.kind === 'shift_cover' ? `${who} covers ${d.crew} Shift ${range(d.start, d.end)}.` : `${who} holds the Morning Controller post ${range(d.start, d.end)}.`);
+      const msg = d.kind === 'shift_cover' ? `${who} covers ${d.crew} Shift ${range(d.start, d.end)}.` : `${who} holds the Morning Controller post ${range(d.start, d.end)}.`;
+      const a = { kind: d.kind, employee_id: pick, crew_code: d.kind === 'shift_cover' ? d.crew : null, covers_employee_id: d.kind === 'shift_cover' ? d.coversId : null, start_date: d.start, end_date: d.end, note: note.trim() || null };
+      const r = await submitApproval({ kind: 'controller_cover', employee: pick, start: d.start, end: d.end, summary: msg,
+        payload: { kind: a.kind, crew_code: a.crew_code, covers_employee_id: a.covers_employee_id, note: a.note } });
+      onDone(submittedText(r, msg));
     } catch (e) { setErr(e); } finally { setBusy(false); }
   }
   return (
@@ -389,7 +395,11 @@ function PlaceSheet({ vr, today, onClose, onDone }: { vr: MpPerson; today: strin
   const problem = !crew ? 'Choose the crew.' : !isValidIsoDate(start) ? 'Enter the first day.' : null;
   async function save() {
     setBusy(true); setErr(null);
-    try { await placeVr({ employee: vr.id, crew: crew!, start, reason: reason.trim() || 'VR placement' }); onDone(`${vr.name} placed in ${crew} Shift from ${shortDate(start)}, until moved.`); }
+    try {
+      const msg = `${vr.name} placed in ${crew} Shift from ${shortDate(start)}, until moved.`;
+      const r = await submitApproval({ kind: 'vr_placement', employee: vr.id, start, end: null, summary: msg, payload: { crew: crew!, reason: reason.trim() || 'VR placement' } });
+      onDone(submittedText(r, msg));
+    }
     catch (e) { setErr(e); } finally { setBusy(false); }
   }
   return (

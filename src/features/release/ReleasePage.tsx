@@ -4,7 +4,8 @@ import { personOn } from '@/core/manpower';
 import { checkRelease, type ReleaseDay, type ReleaseVerdict } from '@/core/release';
 import { addDaysIso, isValidIsoDate } from '@/core/roster';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
-import { addRelease, cancelRelease, fetchReleases, type TaskRelease } from '@/data/releases';
+import { cancelRelease, fetchReleases, type TaskRelease } from '@/data/releases';
+import { submitApproval, submittedText } from '@/data/approvals';
 import { BottomSheet, Button, Card, ErrorBox, Field, PageHeader, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
@@ -75,8 +76,9 @@ export default function ReleasePage() {
     if (!person) return;
     setBusy(true); setError(null);
     try {
-      await addRelease({ employeeId: person.id, start, end, fromTime: fromTime || null, toTime: toTime || null, task });
-      setNotice(`${person.name} released for ${range(start, end)}${fromTime ? ` ${fromTime}–${toTime}` : ''}: ${task.trim()}.`);
+      const msg = `${person.name} released for ${range(start, end)}${fromTime ? ` ${fromTime}–${toTime}` : ''}: ${task.trim()}.`;
+      const r = await submitApproval({ kind: 'task_release', employee: person.id, start, end, summary: msg, payload: { from_time: fromTime || null, to_time: fromTime ? toTime || null : null, task: task.trim() } });
+      setNotice(submittedText(r, msg));
       setPersonId(null); setQuery(''); setTask(''); setFromTime(''); setToTime('');
       loadReleases();
     } catch (e) { setError(e); } finally { setBusy(false); }

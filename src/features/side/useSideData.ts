@@ -10,6 +10,7 @@ import { fetchManpowerInputs } from '@/data/manpower';
 import { loadNotices } from '@/data/notifications';
 import { fetchDirectory } from '@/data/queries';
 import { fetchRequests, isOpen, type LeaveRequest } from '@/data/requests';
+import { fetchApprovals, type ApprovalRequest } from '@/data/approvals';
 import { localToday } from '@/ui/leave';
 
 export interface SideData {
@@ -20,6 +21,8 @@ export interface SideData {
   names: Map<string, string>;
   requests: LeaveRequest[];
   changes: ChangeRequest[];
+  /** The Manpower Coordinator's changes waiting for the Section Head. */
+  approvals: ApprovalRequest[];
   estimated: EstimatedLeave[];
 }
 const TTL = 3 * 60 * 1000;
@@ -31,13 +34,13 @@ async function load(isHead: boolean): Promise<SideData> {
   const key = `${today}|${isHead}`;
   if (cache && cache.key === key && Date.now() - cache.at < TTL) return cache.data;
   const to = addDaysIso(today, 14);
-  const [inputs, notices, dir, reqs, changes, estimated] = await Promise.all([fetchManpowerInputs(addDaysIso(today, -1), addDaysIso(to, 8)), loadNotices(isHead), fetchDirectory(), fetchRequests(), fetchChangeRequests(), fetchEstimatedLeaves()]);
+  const [inputs, notices, dir, reqs, changes, estimated, approvals] = await Promise.all([fetchManpowerInputs(addDaysIso(today, -1), addDaysIso(to, 8)), loadNotices(isHead), fetchDirectory(), fetchRequests(), fetchChangeRequests(), fetchEstimatedLeaves(), fetchApprovals().catch(() => [] as ApprovalRequest[])]);
   const data: SideData = {
     today, notices,
     days: evaluateRange(today, to, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments),
     absences: inputs.absences.filter((a) => (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false),
     names: new Map(dir.map((r) => [r.id, r.display_name])),
-    requests: reqs.filter(isOpen), changes: changes.filter(isChangeOpen), estimated: estimated.filter((e) => e.end_date >= today)
+    requests: reqs.filter(isOpen), changes: changes.filter(isChangeOpen), approvals: approvals.filter((a) => a.status === 'pending'), estimated: estimated.filter((e) => e.end_date >= today)
   };
   cache = { key, at: Date.now(), data };
   return data;

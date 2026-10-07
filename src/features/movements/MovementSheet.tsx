@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CREWS, isValidIsoDate, type Crew } from '@/core/roster';
-import { cancelMovement, endMovement, recordMovement, type CrewMovement } from '@/data/movements';
+import { cancelMovement, endMovement, type CrewMovement } from '@/data/movements';
+import { submitApproval, submittedText, type SubmitResult } from '@/data/approvals';
 import { BottomSheet, Button, ErrorBox, Field, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
@@ -13,7 +14,7 @@ const range = (m: CrewMovement) => `${shortDate(m.start_date)} – ${m.end_date 
 /** Record a shift movement, or end / cancel a temporary cover. The database checks every rule and keeps history. */
 export function MovementSheet({ target, people, onClose, onDone }: { target: MoveTarget; people: MovePerson[]; onClose: () => void; onDone: (m: string) => void }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  const run = async (fn: () => Promise<unknown>, msg: string) => { setBusy(true); setErr(null); try { await fn(); onDone(msg); } catch (e) { setErr(e); } finally { setBusy(false); } };
+  const run = async (fn: () => Promise<unknown>, msg: string) => { setBusy(true); setErr(null); try { const r = await fn(); onDone(r && typeof r === 'object' && 'status' in r ? submittedText(r as SubmitResult, msg) : msg); } catch (e) { setErr(e); } finally { setBusy(false); } };
   if (target.kind !== 'new') return <ChangeSheet target={target} people={people} busy={busy} err={err} run={run} onClose={onClose} />;
 
   return <NewSheet target={target} people={people} busy={busy} err={err} run={run} onClose={onClose} />;
@@ -34,8 +35,9 @@ function NewSheet({ target, people, busy, err, run, onClose }: { target: Extract
   const problem = !employee ? 'Choose the employee.' : !day && !to ? 'Choose the crew.' : !day && person?.crew === to ? `Already in ${to} Shift.` : !isValidIsoDate(start) ? 'Enter the first day.'
     : dated && !openEnded && (!isValidIsoDate(end) || end < start) ? 'The last day must be on or after the first day.' : !reason.trim() ? 'Give the reason.' : null;
   const until = openEnded ? 'until further notice' : shortDate(end);
-  const save = () => run(() => recordMovement({ employee, kind: day ? 'temporary' : kind, to: day ? 'DAY' : to!, start, end: dated && !openEnded ? end : null, reason: reason.trim() }),
-    kind === 'permanent' ? `${person?.name}: in ${to} Shift from ${shortDate(start)}.` : day ? `${person?.name}: day duty ${shortDate(start)} – ${until} (Sunday to Thursday).` : `${person?.name}: covering ${to} Shift ${shortDate(start)} – ${until}.`);
+  const message = kind === 'permanent' ? `${person?.name}: in ${to} Shift from ${shortDate(start)}.` : day ? `${person?.name}: day duty ${shortDate(start)} – ${until} (Sunday to Thursday).` : `${person?.name}: covering ${to} Shift ${shortDate(start)} – ${until}.`;
+  const save = () => run(() => submitApproval({ kind: 'movement', employee, start, end: dated && !openEnded ? end : null, summary: message,
+    payload: { kind: day ? 'temporary' : kind, to: day ? 'DAY' : to!, reason: reason.trim() } }), message);
   const KINDS = [['temporary', 'Temporary cover'], ['permanent', 'Permanent move'], ['day', 'Day duty']] as const;
   const HELP = { temporary: 'With another crew for a period, then back.', permanent: 'New crew from the first day.',
     day: 'Day shift Sun–Thu, counted with the Morning crew.' };

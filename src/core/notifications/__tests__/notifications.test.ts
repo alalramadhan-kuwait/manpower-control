@@ -66,7 +66,7 @@ describe('notification center', () => {
     const n = buildNotices(base({ absences }));
     expect(n.find((x) => x.id.startsWith('oracle-rej'))).toMatchObject({ level: 'action', title: '1 leave rejected in Oracle', to: '/oracle?s=rejected' });
     const w = n.find((x) => x.id === 'oracle-2026-09-25')!;
-    expect(w).toMatchObject({ level: 'action', title: '2 leaves not approved in Oracle · next 30 days', to: '/requests' });
+    expect(w).toMatchObject({ level: 'action', title: '2 leaves not approved in Oracle · next 30 days', to: '/requests?view=leave' });
     expect(w.detail).toBe(`${B[4].name} 1 Oct · ${B[5].name} 3 Oct`);
   });
   it('Controller leave rules: one grouped notice each; actions for the Section Head only', () => {

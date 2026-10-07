@@ -1,3 +1,4 @@
+import { LEAVE_NEEDS_APPROVAL, submitApproval, submittedText } from '@/data/approvals';
 import { useEffect, useState } from 'react';
 import { firstDayBack } from '@/core/leave';
 import { isValidIsoDate, type Crew } from '@/core/roster';
@@ -70,6 +71,13 @@ export function LeaveSheet({ target, people, types, onClose, onDone }: { target:
       if (onlyEstimate) {
         await setLeaveEstimated(rec!.id, estimated);
         onDone(`${person?.name ?? 'Leave'}: ${range(start, end)} ${estimated ? 'marked as an estimate' : 'dates confirmed'}.`);
+        return;
+      }
+      if (!rec && LEAVE_NEEDS_APPROVAL.has(type)) {
+        // unplanned annual leave and sick leave added by hand wait for the Section Head (the Section Head's own apply at once)
+        const msg = `${person?.name ?? 'Leave'}: ${typeOf(type)?.short_code ?? ''} ${range(start, end)} added.`;
+        const r = await submitApproval({ kind: 'leave', employee, start, end, summary: `${person?.name ?? 'Leave'}: ${typeOf(type)?.label ?? type} ${range(start, end)}`, payload: { type, note: note.trim() } });
+        onDone(submittedText(r, msg));
         return;
       }
       const id = await saveLeave({ record: rec?.id ?? null, employee: rec ? null : employee, type, start, end, note: note.trim() });

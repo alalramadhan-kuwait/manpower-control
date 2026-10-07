@@ -8,6 +8,7 @@ import { addDaysIso } from '@/core/roster';
 import { Card, Spinner, cx } from '@/ui/components';
 import { shortDate } from '@/ui/leave';
 import { useSideData, type SideData } from './useSideData';
+import { APPROVAL_KIND_LABEL } from '@/data/approvals';
 
 type Widget = 'attention' | 'strip' | 'leave' | 'waiting' | 'estimates';
 /** Which cards each page gets, in order. Pages not listed get the default. */
@@ -99,7 +100,7 @@ function LeaveNow({ d }: { d: SideData }) {
   const rest = [...byPerson.values()].filter((l) => l.end > back).length;
   const starting = d.absences.filter((a) => a.start > d.today && a.start <= addDaysIso(d.today, 3));
   return (
-    <Panel title={`On leave now · ${byPerson.size}`} icon={<CalendarOff className="h-3.5 w-3.5" />} to="/requests">
+    <Panel title={`On leave now · ${byPerson.size}`} icon={<CalendarOff className="h-3.5 w-3.5" />} to="/requests?view=leave">
       {byPerson.size === 0 ? <Empty>Nobody is on leave today.</Empty> : (
         <>
           {soon.length > 0 && <p className="mb-0.5 text-[11px] font-medium text-slate-600">Back within 7 days</p>}
@@ -118,14 +119,20 @@ function LeaveNow({ d }: { d: SideData }) {
 }
 
 function Waiting({ d, isHead }: { d: SideData; isHead: boolean }) {
-  const forms = d.requests; const changes = d.changes;
-  const total = forms.length + changes.length;
+  const forms = d.requests; const changes = d.changes; const approvals = d.approvals;
+  const total = forms.length + changes.length + approvals.length;
   return (
-    <Panel title={`${isHead ? 'Waiting for your decision' : 'Waiting for the Section Head'}${total ? ` · ${total}` : ''}`} icon={<ClipboardList className="h-3.5 w-3.5" />} to="/requests?view=forms">
+    <Panel title={`${isHead ? 'Waiting for your decision' : 'Waiting for the Section Head'}${total ? ` · ${total}` : ''}`} icon={<ClipboardList className="h-3.5 w-3.5" />} to="/requests">
       {total === 0 ? <Empty>No open requests.</Empty> : (
         <ul className="divide-y divide-slate-100">
+          {approvals.slice(0, 5).map((a) => (
+            <li key={a.id}><Link to="/requests" className="block py-1.5">
+              <span className="block truncate text-xs font-medium text-slate-800">{d.names.get(a.employee_id) ?? 'Employee'} · {APPROVAL_KIND_LABEL[a.kind]}</span>
+              <span className="block truncate text-[11px] text-slate-500">{a.summary}</span>
+            </Link></li>
+          ))}
           {changes.slice(0, 5).map((c) => (
-            <li key={c.id}><Link to="/requests?view=forms" className="block py-1.5">
+            <li key={c.id}><Link to="/requests" className="block py-1.5">
               <span className="block truncate text-xs font-medium text-slate-800">{d.names.get(c.employee_id) ?? 'Employee'} · Reschedule</span>
               <span className="block truncate text-[11px] text-slate-500">{span(c.old_start, c.old_end)} → {span(c.new_start, c.new_end)}</span>
               {c.impact && (c.impact.short > 0 || c.impact.clash.length > 0) && <span className="block text-[11px] font-semibold text-status-red">{c.impact.short > 0 ? `Crew short ${c.impact.short}d` : '2 Controllers off'}</span>}

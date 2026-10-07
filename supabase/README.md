@@ -48,6 +48,7 @@ Supabase MCP or dashboard gets a matching file here, named with the version the 
 | `20260930202732_sd_member_follow_crew` | `sd_members.follow_crew` (A–D, null = own crew): the crew whose rota a shutdown team member follows on the team, so people of one crew can rest on different days. |
 | `20261004102252_task_releases` | `task_releases`: the Section Head releases an employee from the crew's duty for a task (dates, optional hours, the task). Counts as an absence of the crew for the day; not leave. Staff read / write, audited, never deleted (cancelled). |
 | `20261004193934_employee_arabic_name` | `employees.arabic_name` (and in `employee_directory_v`): the name in Arabic letters, typed in Employees › profile › Edit; search matches it directly. |
+| `20261007081012_approval_requests` | `approval_requests` and `approval_submit` / `approval_decide` / `approval_withdraw` (internal `approval_apply`): unplanned or sick leave added by hand, shift movements, VR placements, task releases and Controller covers made by the Manpower Coordinator wait for the Section Head; checked by a rolled-back dry run when made and applied through the same functions when approved. The Section Head's own changes apply at once and are kept as approved. |
 | `20260929172632_panel_can_cover_field` | `employees.can_cover_field` (a Panel Operator the Section Head cleared to cover a Field post, e.g. a contractor with no grade; adds to the Grade 13+ rule) and the directory view shows it. **Data, not in this file:** who has it set. |
 
 ## Edge Functions

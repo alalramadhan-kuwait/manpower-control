@@ -4,6 +4,7 @@ import { Link, NavLink, useLocation } from 'react-router-dom';
 import { supabase } from '@/data/supabase';
 import { countOpenChangeRequests } from '@/data/changeRequests';
 import { countOpenRequests } from '@/data/requests';
+import { countPendingApprovals } from '@/data/approvals';
 import { loadNotices } from '@/data/notifications';
 import { actionCount } from '@/core/notifications';
 import { cx } from '@/ui/components';
@@ -27,7 +28,7 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
   const { pathname } = useLocation();
   const [openRequests, setOpenRequests] = useState(0);
   useEffect(() => {
-    const refresh = () => Promise.all([countOpenRequests(), countOpenChangeRequests()]).then(([a, b]) => setOpenRequests(a + b)).catch(() => setOpenRequests(0));
+    const refresh = () => Promise.all([countOpenRequests(), countOpenChangeRequests(), countPendingApprovals()]).then(([a, b, c]) => setOpenRequests(a + b + c)).catch(() => setOpenRequests(0));
     refresh();
     window.addEventListener('requests-changed', refresh);
     return () => window.removeEventListener('requests-changed', refresh);

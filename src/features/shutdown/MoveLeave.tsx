@@ -105,7 +105,7 @@ export function MoveLeaveSheet({ plan, members, names, inputs, onClose, onDone }
           ))}
         </ul>
         {err != null && <ErrorBox error={err} />}
-        {list && list.some((p) => p.sent) && <Link to="/requests?view=forms" className="block text-center text-sm font-semibold text-brand-700 underline">Open the requests</Link>}
+        {list && list.some((p) => p.sent) && <Link to="/requests" className="block text-center text-sm font-semibold text-brand-700 underline">Open the requests</Link>}
         <Button className="w-full" disabled={busy || ready.length === 0} onClick={send}>{busy ? 'Sending…' : `Send ${ready.length} ${ready.length === 1 ? 'request' : 'requests'}`}</Button>
       </div>
     </BottomSheet>
