@@ -3,13 +3,12 @@
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, Loader2, Sun } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { CREWS, addDaysIso, dutyFor, stateOf, type Crew } from '@/core/roster';
+import { CREWS, addDaysIso, type Crew } from '@/core/roster';
 import { PV_RULES, blockReason, checkPv, cyclesOf, panelFill, runsOf, type PvContext, type PvCycle, type PvIssue, type PvPerson, type PvRole, type PvShift } from '@/core/pv';
 import { applyPvBlocks, fetchPv, type PvData } from '@/data/pv';
 import { BottomSheet, Button, Card, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { shortDate } from '@/ui/leave';
-import { SHIFT_STYLE } from '@/features/calendar/parts';
 
 const ROLES = new Set<string>(['controller', 'vr_controller', 'morning_controller', 'panel_operator', 'field_operator']);
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -114,7 +113,7 @@ export default function PvPage() {
   return (
     <div>
       <PageHeader title="PV plan" subtitle="Annual leave by whole cycle" info={<div className="space-y-2 text-sm text-slate-700">
-        <p>A cycle is 8 days: 2 Morning, 2 Afternoon, 2 Night, 2 Off (6 duty days). A leave starts on the crew&apos;s first Morning day and covers whole cycles; cycles side by side make one longer leave. Tap a cycle to book it, tap again to free it. Tap a name to see the whole year of that person.</p>
+        <p>A cycle is 8 days: 6 duty days as one block, then 2 off days. A leave starts on the first day of the crew&apos;s cycle and covers whole cycles; cycles side by side make one longer leave. Tap a cycle to book it, tap again to free it. Tap a name to see the whole year of that person.</p>
         <p><b>Rules:</b> two Controllers are never off together (all shifts) · Panel: one off at a time per shift · Field: two at most per shift · summer (June to September) is peak time: one leave of two cycles at the longest · a shutdown team member takes no leave in the shutdown.</p>
         <p><b>Panel seats:</b> each shift keeps {PV_RULES.panelSeats}. When there are fewer Panel Operators than that, Grade 13 Field Operators fill the seats for the plan: longest in grade first, then the least sick leave.</p>
         <p>A cycle that would break a rule is shown in pink with the reason. You can still book it after a confirmation; it stays red until it is approved or moved.</p>
@@ -236,8 +235,8 @@ function ShiftGrid({ model, crew, span, picks, issues, ctx, busy, onTap, onPerso
             <div className="sticky top-0 z-10 grid bg-white" style={grid}>
               <div data-name className="sticky left-0 z-20 flex flex-col justify-end bg-white px-2 pb-1 text-[10px] leading-[14px] text-slate-500">
                 <span className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide">{crew} Shift · {shown.length} cycles</span>
-                <span>Starts · first Morning</span>
-                <span className="mt-[8px]">Ends · second Off day</span>
+                <span>Cycle starts (6 duty days)</span>
+                <span className="mt-[8px]">Cycle ends (after 2 off days)</span>
               </div>
               {shown.map((c, i) => {
                 const newMonth = i === 0 || shown[i - 1].start.slice(5, 7) !== c.start.slice(5, 7);
@@ -246,8 +245,8 @@ function ShiftGrid({ model, crew, span, picks, issues, ctx, busy, onTap, onPerso
                     <span className="h-3 text-[9px] font-semibold leading-3 text-slate-500">{newMonth ? MONTHS[Number(c.start.slice(5, 7)) - 1] : ''}</span>
                     <span className="text-[11px] font-semibold leading-none text-slate-800">{Number(c.start.slice(8))}</span>
                     {detail
-                      ? <span aria-hidden className="flex h-4 w-[calc(100%-6px)] overflow-hidden rounded-sm"><Stripe crew={crew} start={c.start} numbers /></span>
-                      : <span aria-hidden className="flex h-2 w-[calc(100%-6px)] overflow-hidden rounded-sm"><Stripe crew={crew} start={c.start} /></span>}
+                      ? <span aria-hidden className="flex h-4 w-[calc(100%-6px)] overflow-hidden rounded-sm"><Stripe labels /></span>
+                      : <span aria-hidden className="flex h-2 w-[calc(100%-6px)] overflow-hidden rounded-sm"><Stripe /></span>}
                     <span className="text-[10px] leading-none text-slate-500">{Number(c.end.slice(8))}{detail && ` ${MONTHS[Number(c.end.slice(5, 7)) - 1]}`}</span>
                   </div>
                 );
@@ -285,7 +284,7 @@ function ShiftGrid({ model, crew, span, picks, issues, ctx, busy, onTap, onPerso
                               : why ? 'bg-red-50 ring-1 ring-red-100 active:bg-red-100'
                               : c.summer ? 'bg-amber-50 ring-1 ring-amber-100 active:bg-amber-100' : 'ring-1 ring-slate-100 active:bg-slate-100')}>
                             {on ? <Check className="h-4 w-4" /> : why ? <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-red-300" /> : null}
-                            {detail && <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 flex h-1.5"><Stripe crew={crew} start={c.start} /></span>}
+                            {detail && <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 flex h-1.5"><Stripe onDark={on} /></span>}
                             <span aria-hidden className={cx('pointer-events-none absolute inset-y-0 right-0 w-1/4 border-l', on ? 'border-white/40 bg-white/30' : 'border-slate-200 bg-slate-200/60 bg-[repeating-linear-gradient(45deg,transparent,transparent_2px,rgba(255,255,255,.7)_2px,rgba(255,255,255,.7)_3px)]')} />
                           </button>
                         );
@@ -349,17 +348,21 @@ function PersonSheet({ model, person, picks, ctx, busy, onTap, onClose }: { mode
   );
 }
 
-/** The crew's 8 days as a colour strip: Morning, Afternoon, Night, Off. */
-function Stripe({ crew, start, numbers = false }: { crew: Crew; start: string; numbers?: boolean }) {
-  const order: ('M' | 'A' | 'N' | 'Off')[] = [];
-  for (let i = 0; i < 8; i++) order.push(stateOf(dutyFor(addDaysIso(start, i), crew)));
-  return <>{order.map((s, i) => <span key={i} className={cx('flex h-full flex-1 items-center justify-center text-[9px] font-semibold leading-none', s === 'Off' ? 'bg-slate-300 bg-[repeating-linear-gradient(45deg,transparent,transparent_1.5px,rgba(255,255,255,.7)_1.5px,rgba(255,255,255,.7)_2.5px)] text-slate-600' : SHIFT_STYLE[s].cell)}>{numbers ? (s === 'Off' ? 'O' : s) : ''}</span>)}</>;
+/** One cycle: the 6 duty days as a single block, then the 2 off days apart (no Morning / Afternoon / Night letters). */
+function Stripe({ labels = false, onDark = false }: { labels?: boolean; onDark?: boolean }) {
+  return (
+    <>
+      <span className={cx('flex h-full flex-[6] items-center justify-center text-[9px] font-semibold leading-none', onDark ? 'bg-white/50 text-slate-800' : 'bg-sky-300 text-sky-950')}>{labels ? '6 days' : ''}</span>
+      <span className="w-px shrink-0 bg-white" />
+      <span className="flex h-full flex-[2] items-center justify-center bg-slate-300 bg-[repeating-linear-gradient(45deg,transparent,transparent_1.5px,rgba(255,255,255,.7)_1.5px,rgba(255,255,255,.7)_2.5px)] text-[9px] font-semibold leading-none text-slate-600">{labels ? 'Off' : ''}</span>
+    </>
+  );
 }
 
 function Key() {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[10px] text-slate-500">
-      <span className="flex items-center gap-1"><span className="flex h-2 w-12 overflow-hidden rounded-sm"><span className={cx('flex-1', SHIFT_STYLE.M.cell)} /><span className={cx('flex-1', SHIFT_STYLE.M.cell)} /><span className={cx('flex-1', SHIFT_STYLE.A.cell)} /><span className={cx('flex-1', SHIFT_STYLE.A.cell)} /><span className={cx('flex-1', SHIFT_STYLE.N.cell)} /><span className={cx('flex-1', SHIFT_STYLE.N.cell)} /><span className="flex-1 bg-slate-200" /><span className="flex-1 bg-slate-200" /></span>cycle: 2 M · 2 A · 2 N · 2 Off</span>
+      <span className="flex items-center gap-1"><span className="flex h-2 w-12 overflow-hidden rounded-sm"><Stripe /></span>one cycle: 6 duty days in one block, then 2 off days</span>
       <span className="flex items-center gap-1"><span className="relative h-3 w-5 overflow-hidden rounded bg-brand-700"><span className="absolute inset-y-0 right-0 w-1/4 bg-white/40" /></span>booked (the light end = the 2 off days)</span>
       <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-red-50 ring-1 ring-red-200" />would break a rule</span>
       <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-status-red" />booked, breaks a rule</span>
