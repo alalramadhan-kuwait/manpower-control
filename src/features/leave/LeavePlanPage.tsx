@@ -14,6 +14,7 @@ import { LeaveSheet, SOURCE_LABEL, changeLabel, type LeaveTarget, type SheetPers
 import { leaveToneShort } from '@/ui/leaveTypes';
 import { EstimatedTag } from '@/ui/LeaveCodes';
 import { nameFilter } from '@/ui/nameSearch';
+import { PlanBadge, planContext, usePlanYears } from '@/ui/PlanBadge';
 
 const GROUPS = ['A', 'B', 'C', 'D', 'day'] as const;
 type Group = (typeof GROUPS)[number];
@@ -44,6 +45,8 @@ export default function LeavePlanPage() {
   const [query, setQuery] = useState('');
   const [sheet, setSheet] = useState<LeaveTarget | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  const planYears = usePlanYears();
+  const plan = planYears ? planContext(planYears, year) : null;
   const load = useCallback(() => { setError(null); fetchLeavePlan(year).then(setData).catch(setError); }, [year]);
   useEffect(() => { setData(null); load(); }, [load]);
 
@@ -88,7 +91,7 @@ export default function LeavePlanPage() {
 
   return (
     <div>
-      <PageHeader title="Leave plan" info="The current plan: monthly sheets, PV plan and leave entered by hand. Tap a person for dates and history."
+      <PageHeader title="Leave plan" subtitle={plan && <PlanBadge context={plan} />} info="The current plan: monthly sheets, PV plan and leave entered by hand. Tap a person for dates and history."
         action={<Button className="min-h-10 shrink-0 px-3" onClick={() => setSheet({ kind: 'add' })}><Plus className="h-4 w-4" /> Add</Button>} />
 
       <div className="mb-2 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm">

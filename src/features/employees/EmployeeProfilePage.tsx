@@ -17,6 +17,8 @@ import { fetchAuditLookups } from '@/data/audit';
 import { describe, type AuditLookups, type AuditRow } from '@/core/audit';
 import { Entry as AuditLine } from '@/features/audit/AuditPage';
 import { EstimatedTag } from '@/ui/LeaveCodes';
+import { leaveChains } from '@/core/leave/versions';
+import { VersionList } from '@/features/leave/LeaveVersions';
 
 const QUALS: { code: QualificationCode; label: string; help: string }[] = [
   { code: 'take_charge', label: 'Take-Charge qualified', help: 'Only Take-Charge = Yes counts toward the Field Operator minimum of 6.' },
@@ -172,6 +174,12 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
         <p className="mb-1 text-xs text-slate-500">As first approved · history only</p>
         {originalLeaves.length === 0 && <p className="text-sm text-slate-500">None</p>}
         <ul className="divide-y divide-slate-100">{originalLeaves.map((l) => <LeaveLine key={l.id} l={l} types={data.absenceTypes} />)}</ul>
+      </Collapsible>
+
+      <Collapsible title="Leave versions (moved or corrected)" count={leaveChains(data.leaves).length}>
+        <p className="mb-1 text-xs text-slate-500">Dates are never edited: each change is a new version · oldest first</p>
+        {leaveChains(data.leaves).length === 0 && <p className="text-sm text-slate-500">None</p>}
+        <ul className="divide-y divide-slate-100">{leaveChains(data.leaves).map((c) => <li key={c[0].root_id} className="py-2"><VersionList versions={c} /></li>)}</ul>
       </Collapsible>
 
       <Collapsible title="Leave change history" count={data.changes.length}>

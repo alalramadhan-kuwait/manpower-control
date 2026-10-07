@@ -84,3 +84,10 @@ export async function fetchLeavePlan(year: number): Promise<LeavePlanData> {
     types: ty.data as AbsenceType[], covers: ca.data as ControllerAssignment[]
   };
 }
+
+/** Every version of one leave (its first record and all later ones), oldest first. */
+export async function fetchLeaveVersions(rootId: string): Promise<LeaveRecord[]> {
+  const { data, error } = await supabase.from('leave_records').select('*').eq('root_id', rootId).order('version_no').order('created_at').limit(50);
+  if (error) throw error;
+  return data as LeaveRecord[];
+}

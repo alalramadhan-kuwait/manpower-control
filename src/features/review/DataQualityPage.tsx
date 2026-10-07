@@ -106,7 +106,7 @@ function ResolveSheet({ record, absenceTypes, actor, onClose, onSaved }: { recor
   async function save(cancel: boolean) {
     setBusy(true); setError(null);
     const patch = cancel
-      ? { status: 'cancelled', review_status: 'resolved', note: `${record.note ?? ''}\nCancelled by ${actor.display_name}: ${note}`.trim() }
+      ? { status: 'cancelled', in_current_plan: false, review_status: 'resolved', note: `${record.note ?? ''}\nCancelled by ${actor.display_name}: ${note}`.trim() }
       : { status: 'approved', absence_type_code: type, review_status: 'resolved', note: `${record.note ?? ''}\nClassified by ${actor.display_name}: ${note}`.trim() };
     const { error } = await supabase.from('leave_records').update(patch).eq('id', record.id);
     setBusy(false); if (error) setError(error); else onSaved();

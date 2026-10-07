@@ -55,6 +55,14 @@ export interface LeaveRecord {
   dates_estimated: boolean;
   /** Where the leave stands in Oracle HR; new dates on future leave reset it to not_submitted. */
   oracle_status: OracleStatus; oracle_ref: string | null; oracle_updated_at: string | null;
+  /** The plan the leave belongs to (kept by every later version). */
+  plan_year: number;
+  /** How this version came to be. */
+  origin: 'import' | 'manual' | 'request' | 'oracle_correction' | 'system';
+  /** The request that produced this version. */
+  request_header_id: string | null;
+  /** The first version of this leave, and this version's number (dates are never edited: each change is a new version). */
+  root_id: string; version_no: number; change_reason: string | null;
 }
 
 export interface LeavePlanChange {

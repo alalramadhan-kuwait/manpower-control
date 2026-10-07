@@ -9,6 +9,7 @@ import { applyPvBlocks, fetchPv, type PvData } from '@/data/pv';
 import { BottomSheet, Button, Card, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { shortDate } from '@/ui/leave';
+import { PlanBadge, planContext, usePlanYears } from '@/ui/PlanBadge';
 
 const ROLES = new Set<string>(['controller', 'vr_controller', 'morning_controller', 'panel_operator', 'field_operator']);
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -82,6 +83,9 @@ export default function PvPage() {
   const [saved, setSaved] = useState(false);
   const [pending, setPending] = useState<{ p: PvPerson; index: number; reason: string } | null>(null);
   const [sheet, setSheet] = useState<PvPerson | null>(null);
+  const planYears = usePlanYears();
+  // Only the Active Plan is written here; next year's PV waits for the PV draft (nothing saved, nothing in use)
+  const plan = planYears ? planContext(planYears, year) : null;
   const set = (k: string, v: string | null) => { const n = new URLSearchParams(params); if (v === null) n.delete(k); else n.set(k, v); setParams(n, { replace: true }); };
   const load = useCallback(() => fetchPv(year).then((d) => { setData(d); setLocal(new Map()); }).catch(setError), [year]);
   useEffect(() => { setData(null); load(); }, [load]);
@@ -93,7 +97,7 @@ export default function PvPage() {
   const issues = useMemo(() => (model ? checkPv({ ...ctx, shifts }) : [] as PvIssue[]), [model, ctx, shifts]);
 
   async function book(p: PvPerson, index: number) {
-    if (!model || !p.crew) return;
+    if (!model || !p.crew || !plan?.writable) return;
     const cycles = model.cycles[p.crew];
     const next = new Set(picks.get(p.id) ?? []); if (next.has(index)) next.delete(index); else next.add(index);
     setLocal((m) => new Map(m).set(p.id, next)); setSaveError(null); setBusy((n) => n + 1);
@@ -104,6 +108,7 @@ export default function PvPage() {
   }
   /** A tap: booking a cycle that breaks a rule asks first; freeing one never does. */
   function tap(p: PvPerson, index: number) {
+    if (!plan?.writable) return;
     const on = picks.get(p.id)?.has(index) ?? false;
     const reason = on ? null : blockReason(ctx, p.id, index);
     if (reason) setPending({ p, index, reason }); else void book(p, index);
@@ -124,8 +129,17 @@ export default function PvPage() {
           <span className="text-base font-semibold text-brand-800">{year}</span>
           <button type="button" aria-label="Next year" onClick={() => set('year', String(year + 1))} className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 active:bg-slate-100"><ChevronRight className="h-5 w-5" /></button>
         </div>
+        {plan && <PlanBadge context={plan} className="shrink-0" />}
         <StatusLine issues={issues} saving={busy > 0} saved={saved} ready={!!model} />
       </div>
+      {plan && !plan.writable && (
+        <p role="note" className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-300">
+          {plan.kind === 'draft'
+            ? <><b>{plan.label}</b> · view only for now. The {year} PV is planned in its own draft, which is not ready yet: nothing tapped here is saved, and the Active Plan is not changed.</>
+            : <><b>{plan.label}</b> · view only.</>}
+        </p>
+      )}
+      {plan?.writable && <p className="mb-2 text-xs text-slate-600">Changes here change the <b>{plan.label}</b>: the plan in use.</p>}
       <div role="tablist" className="mb-2 grid grid-cols-5 gap-1 rounded-xl bg-slate-100 p-1 text-sm lg:max-w-2xl">
         {([...CREWS, 'ctl'] as const).map((t) => (
           <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => set('shift', t === 'A' ? null : t)} className={cx('flex min-h-10 items-center justify-center gap-1 rounded-lg font-medium', tab === t ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>

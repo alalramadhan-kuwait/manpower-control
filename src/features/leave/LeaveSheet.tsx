@@ -10,6 +10,7 @@ import { CrewBadge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { leaveTone } from '@/ui/leaveTypes';
 import { OraclePill } from '@/ui/oracle';
+import { LeaveVersions } from './LeaveVersions';
 
 export interface SheetPerson { id: string; name: string; crew: Crew | null }
 export type LeaveTarget = { kind: 'add'; employeeId?: string; start?: string } | { kind: 'edit'; record: LeaveRecord };
@@ -166,7 +167,7 @@ export function LeaveSheet({ target, people, types, onClose, onDone }: { target:
               <span className="block text-xs opacity-80">{estimated ? 'It counts in the manpower and stays marked until the final notice. Untick it when the dates are confirmed.' : 'Tick it while the dates are not final.'}</span></span>
           </label>
         )}
-        <Field label={rec && !onlyEstimate ? 'Reason for the correction' : 'Note (optional)'} hint={rec && rec.source_kind !== 'manual' && (start !== rec.start_date || end !== rec.end_date) ? 'The imported record stays in the history; the corrected leave replaces it in the plan.' : undefined}>
+        <Field label={rec && !onlyEstimate ? 'Reason for the correction' : 'Note (optional)'} hint={rec && (start !== rec.start_date || end !== rec.end_date) ? `New dates are saved as version ${rec.version_no + 1}; version ${rec.version_no} stays in the history.` : undefined}>
           <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={rec ? 'e.g. Came back two days early' : 'e.g. Sick leave, certificate received'} />
         </Field>
         <p className="text-xs text-slate-500">Imports never change leave entered by hand.</p>
@@ -177,6 +178,7 @@ export function LeaveSheet({ target, people, types, onClose, onDone }: { target:
           <Button className="flex-1" disabled={busy || !!problem} onClick={save}>{busy ? 'Saving…' : rec ? 'Save correction' : 'Add leave'}</Button>
         </div>
         {rec && <button type="button" onClick={() => { setMode('cancel'); setErr(null); setNote(''); }} className="w-full py-1 text-center text-sm font-medium text-status-red">Cancel this leave…</button>}
+        {rec && <LeaveVersions record={rec} />}
       </div>
     </BottomSheet>
   );
