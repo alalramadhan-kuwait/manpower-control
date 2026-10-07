@@ -1,8 +1,6 @@
 import { ChevronRight, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { countOpenChangeRequests } from '@/data/changeRequests';
-import { countOpenRequests } from '@/data/requests';
 import type { UserProfile } from '@/data/types';
 import { Button, PageHeader, cx } from '@/ui/components';
 import { LeaveWorklist } from './LeaveWorklist';
@@ -21,7 +19,7 @@ export default function RequestsPage({ profile }: { profile: UserProfile }) {
   // open requests (forms and reschedule requests) wait in the Forms tab: say so on the tab and on the Leave tab
   const [open, setOpen] = useState(0);
   useEffect(() => {
-    const load = () => Promise.all([countOpenRequests(), countOpenChangeRequests(), countPendingApprovals()]).then(([a, b, c]) => setOpen(a + b + c)).catch(() => setOpen(0));
+    const load = () => countPendingApprovals().then(setOpen).catch(() => setOpen(0));
     load();
     window.addEventListener('requests-changed', load);
     return () => window.removeEventListener('requests-changed', load);

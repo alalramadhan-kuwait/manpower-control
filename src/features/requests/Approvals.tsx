@@ -1,5 +1,6 @@
-// Requests › Approvals: everything that waits for the Section Head, in one list. Leave request forms and reschedule
-// requests keep their own pages; the Coordinator's other changes (unplanned / sick leave added by hand, shift moves,
+// Requests › Approvals: everything that waits for the Section Head, in one list, read from the request history
+// (request_headers). Leave request forms and reschedule requests keep their own pages (each has one linked header,
+// kept in step by the database); the Coordinator's other changes (unplanned / sick leave added by hand, shift moves,
 // VR placements, task releases, Controller covers) are approved or not approved here, with the crews' check first.
 import { AlertTriangle, Check, ChevronRight, Search } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
@@ -7,11 +8,11 @@ import { Link } from 'react-router-dom';
 import { DAY_DUTY, evaluateRange, type MpAbsence, type MpAssignment, type MpCrewMove, type MpPerson } from '@/core/manpower';
 import { REQUEST_TYPE_LABEL } from '@/core/requests';
 import { CREWS, addDaysIso, type Crew } from '@/core/roster';
-import { APPROVAL_KIND_LABEL, decideApproval, fetchApprovals, withdrawApproval, type ApprovalKind, type ApprovalRequest, type ApprovalStatus } from '@/data/approvals';
-import { fetchChangeRequests, fetchRequesterNames, isChangeOpen, type ChangeRequest } from '@/data/changeRequests';
+import { APPROVAL_KIND_LABEL, decideApproval, fetchRequestLog, withdrawApproval, type ApprovalKind, type ApprovalRequest, type ApprovalStatus } from '@/data/approvals';
+import { fetchChangeRequests, fetchRequesterNames, type ChangeRequest } from '@/data/changeRequests';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { fetchDirectory } from '@/data/queries';
-import { fetchRequests, isOpen, type LeaveRequest } from '@/data/requests';
+import { fetchRequests, type LeaveRequest } from '@/data/requests';
 import type { EmployeeDirectoryRow } from '@/data/types';
 import { BottomSheet, Button, Card, Chip, EmptyState, ErrorBox, Field, Spinner, cx, type Tone } from '@/ui/components';
 import { CrewBadge, isCrew } from '@/ui/crew';
@@ -33,27 +34,38 @@ const when = (iso: string) => { const d = new Date(iso); const p2 = (n: number) 
 interface Item { key: string; kind: Kind; open: boolean; status: string; tone: Tone; employeeId: string; text: string; dates: string; start: string; at: string; by: string | null; note: string | null; form?: LeaveRequest; change?: ChangeRequest; approval?: ApprovalRequest }
 
 export function Approvals({ isHead }: { isHead: boolean }) {
-  const [data, setData] = useState<{ items: Item[]; people: Map<string, EmployeeDirectoryRow> } | null>(null);
+  const [data, setData] = useState<{ items: Item[]; people: Map<string, EmployeeDirectoryRow>; unlinked: number } | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [tab, setTab] = useState<'open' | 'decided'>('open');
   const [kind, setKind] = useState<Kind | 'all'>('all');
   const [query, setQuery] = useState('');
   const [openItem, setOpenItem] = useState<Item | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const load = () => Promise.all([fetchApprovals(), fetchRequests(), fetchChangeRequests(), fetchDirectory()]).then(async ([approvals, forms, changes, dir]) => {
-    const names = await fetchRequesterNames([...new Set([...approvals.flatMap((a) => [a.requested_by, a.decided_by]), ...changes.map((c) => c.requested_by)].filter((x): x is string => !!x))]);
+  const load = () => Promise.all([fetchRequestLog(), fetchRequests(), fetchChangeRequests(), fetchDirectory()]).then(async ([{ approvals, legacy }, formRows, changeRows, dir]) => {
+    const names = await fetchRequesterNames([...new Set([...approvals.flatMap((a) => [a.requested_by, a.decided_by]), ...changeRows.map((c) => c.requested_by)].filter((x): x is string => !!x))]);
+    // the list comes from the request headers; a form or reschedule request opens its own page or sheet
+    const forms = new Map(formRows.map((r) => [r.id, r])), changes = new Map(changeRows.map((c) => [c.id, c]));
+    const linked = new Set(legacy.map((l) => l.legacyId));
     const items: Item[] = [
       ...approvals.map((a): Item => ({ key: `a-${a.id}`, kind: a.kind, open: a.status === 'pending', status: APPROVAL_STATUS[a.status].label, tone: APPROVAL_STATUS[a.status].tone, employeeId: a.employee_id,
         text: a.summary, dates: range(a.start_date, a.end_date), start: a.start_date, at: a.decided_at ?? a.requested_at,
         by: a.status === 'approved' && a.requested_by === a.decided_by ? `${names.get(a.decided_by ?? '') ?? 'Section Head'} (own change)` : names.get(a.requested_by ?? '') ?? null, note: a.decision_note, approval: a })),
-      ...forms.map((r): Item => ({ key: `f-${r.id}`, kind: 'form', open: isOpen(r), status: STATUS_LABEL[r.status], tone: r.status === 'approved' ? 'green' : r.status === 'not_approved' ? 'red' : isOpen(r) ? 'blue' : 'neutral',
-        employeeId: r.employee_id, text: `${REQUEST_TYPE_LABEL[r.request_type]} leave${r.overtime_required ? ' · overtime required' : ''}`, dates: range(r.start_date, r.end_date), start: r.start_date,
-        at: r.decided_at ?? r.created_at, by: null, note: r.decision_remarks, form: r })),
-      ...changes.map((c): Item => ({ key: `c-${c.id}`, kind: 'change', open: isChangeOpen(c), status: CHANGE_LABEL[c.status], tone: c.status === 'approved' ? 'green' : c.status === 'not_approved' ? 'red' : isChangeOpen(c) ? 'blue' : 'neutral',
-        employeeId: c.employee_id, text: `Leave now ${range(c.old_start, c.old_end)} → asked ${range(c.new_start, c.new_end)}`, dates: range(c.new_start, c.new_end), start: c.new_start,
-        at: c.decided_at ?? c.requested_at, by: names.get(c.requested_by ?? '') ?? null, note: c.decision_remarks, change: c }))
+      ...legacy.flatMap((l): Item[] => {
+        const open = l.status === 'pending', tone: Tone = l.status === 'approved' ? 'green' : l.status === 'not_approved' ? 'red' : open ? 'blue' : 'neutral';
+        const r = l.table === 'leave_requests' ? forms.get(l.legacyId) : undefined;
+        if (r) return [{ key: `f-${r.id}`, kind: 'form', open, status: STATUS_LABEL[r.status], tone,
+          employeeId: r.employee_id, text: `${REQUEST_TYPE_LABEL[r.request_type]} leave${r.overtime_required ? ' · overtime required' : ''}`, dates: range(r.start_date, r.end_date), start: r.start_date,
+          at: l.decidedAt ?? l.requestedAt, by: null, note: r.decision_remarks, form: r }];
+        const c = l.table === 'leave_change_requests' ? changes.get(l.legacyId) : undefined;
+        if (c) return [{ key: `c-${c.id}`, kind: 'change', open, status: CHANGE_LABEL[c.status], tone,
+          employeeId: c.employee_id, text: `Leave now ${range(c.old_start, c.old_end)} → asked ${range(c.new_start, c.new_end)}`, dates: range(c.new_start, c.new_end), start: c.new_start,
+          at: l.decidedAt ?? l.requestedAt, by: names.get(c.requested_by ?? '') ?? null, note: c.decision_remarks, change: c }];
+        return [];
+      })
     ];
-    setData({ items, people: new Map(dir.map((p) => [p.id, p])) });
+    // a form or reschedule request without its header would be missing here: say so (never expected)
+    const unlinked = formRows.filter((r) => !linked.has(r.id)).length + changeRows.filter((c) => !linked.has(c.id)).length;
+    setData({ items, people: new Map(dir.map((p) => [p.id, p])), unlinked });
   }).catch(setError);
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -93,6 +105,7 @@ export function Approvals({ isHead }: { isHead: boolean }) {
           </button>
         ))}
       </div>
+      {data.unlinked > 0 && <p role="alert" className="flex items-center gap-1 text-sm text-status-red"><AlertTriangle className="h-4 w-4" />{data.unlinked} leave form or reschedule request{data.unlinked === 1 ? ' is' : 's are'} not in the request history. Report this.</p>}
       {notice && <p role="status" className="flex items-center gap-1 text-sm text-status-green"><Check className="h-4 w-4" />{notice}</p>}
       {shown.length === 0 ? <EmptyState title={tab === 'open' ? 'Nothing is waiting' : 'Nothing decided yet'} body={tab === 'open' ? 'Requests from the Manpower Coordinator, leave forms and reschedule requests appear here until they are decided.' : undefined} /> : (
         <Card className="divide-y divide-slate-100 p-0">

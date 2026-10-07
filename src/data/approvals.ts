@@ -1,7 +1,8 @@
 // Approvals: changes the Manpower Coordinator makes (unplanned / sick leave added by hand, shift movements, VR placements,
 // task releases, Controller covers) wait for the Section Head; the Section Head's own apply at once and are kept as approved.
-// Kept in request_headers with a typed detail row (request_leave / request_shift / request_assignment); leave forms and PV
-// reschedule requests are mirrored there too (legacy_table set) but still listed from their own tables.
+// Kept in request_headers with a typed detail row (request_leave / request_shift / request_assignment).
+// Leave forms and PV reschedule requests are still written by their own screens; the database keeps one linked header
+// for each (legacy_table + legacy_id, unique) in the same transaction, so the inbox and the counts read request_headers only.
 import { supabase } from './supabase';
 import { dataChanged } from './changes';
 
@@ -66,15 +67,32 @@ export function toApproval(h: Row): ApprovalRequest | null {
     plan_year: h.plan_year as number, source: h.source as string, workflow: h.workflow as string
   };
 }
-export async function fetchApprovals(): Promise<ApprovalRequest[]> {
+export type LegacyTable = 'leave_requests' | 'leave_change_requests';
+/** A leave form or reschedule request, as its linked header sees it. */
+export interface LegacyLink { id: string; table: LegacyTable; legacyId: string; status: ApprovalStatus; legacyStatus: string | null; requestedAt: string; decidedAt: string | null }
+const SKIP_SHUTDOWN = 'shutdown_adjustment';
+
+/** Every request in the history: the Coordinator's changes, and the links to leave forms and reschedule requests. */
+export async function fetchRequestLog(): Promise<{ approvals: ApprovalRequest[]; legacy: LegacyLink[] }> {
   const { data, error } = await supabase.from('request_headers').select('*, request_leave(*), request_shift(*), request_assignment(*)')
-    .is('legacy_table', null).neq('type', 'shutdown_adjustment').order('requested_at', { ascending: false }).limit(1000);
+    .neq('type', SKIP_SHUTDOWN).order('requested_at', { ascending: false }).limit(2000);
   if (error) throw error;
-  return (data as Row[]).map(toApproval).filter((r): r is ApprovalRequest => r !== null);
+  const rows = data as Row[];
+  return {
+    approvals: rows.filter((h) => !h.legacy_table).map(toApproval).filter((r): r is ApprovalRequest => r !== null),
+    legacy: rows.filter((h) => h.legacy_table).map((h) => ({
+      id: h.id as string, table: h.legacy_table as LegacyTable, legacyId: h.legacy_id as string, status: STATUS[h.status as string] ?? 'pending',
+      legacyStatus: (h.legacy_status as string) ?? null, requestedAt: h.requested_at as string, decidedAt: (h.decided_at as string) ?? null
+    }))
+  };
 }
+export async function fetchApprovals(): Promise<ApprovalRequest[]> {
+  return (await fetchRequestLog()).approvals;
+}
+/** Everything waiting for the Section Head (leave forms and reschedule requests included). */
 export async function countPendingApprovals(): Promise<number> {
   const { count, error } = await supabase.from('request_headers').select('id', { count: 'exact', head: true })
-    .eq('status', 'submitted').is('legacy_table', null).neq('type', 'shutdown_adjustment');
+    .eq('status', 'submitted').neq('type', SKIP_SHUTDOWN);
   if (error) throw error;
   return count ?? 0;
 }
