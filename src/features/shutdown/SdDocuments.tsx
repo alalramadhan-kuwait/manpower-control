@@ -17,6 +17,26 @@ const MONTH = (ym: string) => new Date(`${ym}-01T00:00:00Z`).toLocaleDateString(
 const monthName = (ym: string) => new Date(`${ym}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' });
 const hrs = (label: string | null) => label?.replace(/(\d\d:\d\d)/g, '$1 HRS').replace(/\s*-\s*/, ' TO ') ?? '';
 
+const KNPC_BLUE = '#005DAA';
+/** The KNPC letterhead, as on the Excel sheets: the logo, the title, the refinery and unit, the period and the flame's colours. */
+function Letterhead({ title, sub }: { title: string; sub: string }) {
+  return (
+    <header className="mb-3">
+      <div className="flex items-center gap-3">
+        <img src={`${import.meta.env.BASE_URL}brand/knpc-logo.png`} alt="KNPC" className="h-10 w-auto shrink-0 sm:h-12" />
+        <div className="min-w-0 flex-1 text-center">
+          <h1 className="text-sm font-bold" style={{ color: KNPC_BLUE }}>{title}</h1>
+          <p className="text-[10px] text-slate-500">{sub}</p>
+        </div>
+        <div className="hidden w-24 shrink-0 sm:block" />
+      </div>
+      <div className="mt-2 flex h-1 overflow-hidden rounded-full"><span className="w-[12%] bg-[#E31E24]" /><span className="w-[12%] bg-[#009A3E]" /><span className="flex-1 bg-[#005DAA]" /></div>
+    </header>
+  );
+}
+const unitLine = 'Mina Abdullah Refinery · ARDS Operations · Area 4 · Unit 12';
+const periodOf = (p: SdPlan) => { const f = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }); return `${f(p.start)} – ${f(p.end)} ${p.end.slice(0, 4)}`; };
+
 /** A row: the member, the group it is printed under (Controller, an area, Operators) and its number within the team. */
 export interface Row { m: SdMember; team: SdTeam; r: EmployeeDirectoryRow | undefined; /** the crew whose duty days he keeps on the team (the one he follows, else his own) */ crew: Crew | null; /** the shift he is counted in: his own crew, the shutdown aside (a VR Controller on the team: the shift he follows) */ home: Crew | null; /** the crew he is in the day after the shutdown (a VR Controller: his placement then) */ after: Crew | null; vr: boolean; group: string; no: number }
 export interface Doc { plan: SdPlan; teams: SdTeam[]; rows: Row[]; signatures: Signature[]; dates: string[]; months: string[]; name: string }
@@ -88,11 +108,11 @@ export function SdSchedulePage() {
   for (let i = 0; i < dates.length; i += 15) blocks.push(dates.slice(i, i + 15));
   return (
     <Page back={`/shutdown/${plan.id}`} title={plan.title}>
-      <h1 className="mb-2 text-center text-sm font-bold text-slate-900">ARDS UNIT-12 {doc.name} SHUTDOWN MANPOWER SCHEDULE</h1>
+      <Letterhead title={`ARDS UNIT-12 ${doc.name} SHUTDOWN MANPOWER SCHEDULE`} sub={`${unitLine} · ${periodOf(plan)}`} />
       {blocks.map((b, bi) => (
         <table key={bi} className="mb-3 w-full border-collapse text-center text-[10px] text-slate-900 print:break-inside-avoid">
           <thead>
-            <tr><th colSpan={4} className={cx(th, 'bg-amber-400')}>EMPLOYEES</th><th colSpan={b.length} className={cx(th, 'bg-sky-100')}>DAYS</th></tr>
+            <tr><th colSpan={4} className={cx(th, 'bg-[#005DAA] text-white')}>EMPLOYEES</th><th colSpan={b.length} className={cx(th, 'bg-[#005DAA] text-white')}>DAYS</th></tr>
             <tr><th colSpan={4} className={th} />{b.map((d) => <th key={d} className={cx(th, 'font-medium')}>{new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' })}</th>)}</tr>
             <tr><th className={cx(th, 'w-px')} /><th className={cx(th, 'w-px')}>S.NO</th><th className={cx(th, 'w-px')}>E NO.</th><th className={cx(th, 'w-px min-w-40 text-left')}>E. NAME</th>
               {b.map((d) => <th key={d} className={cx(th, 'w-8 whitespace-nowrap')}>{Number(d.slice(8))}-{new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })}</th>)}</tr>
@@ -152,7 +172,7 @@ export function SdOvertimePage() {
     <Page back={`/shutdown/${plan.id}`} title={plan.title} actions={<Button variant="secondary" className="min-h-9 px-3 text-xs" onClick={() => setEditSigs(true)}><Pencil className="h-3.5 w-3.5" />Signatures</Button>}>
       {months.map((ym, mi) => (
         <section key={ym} className={cx(mi > 0 && 'mt-8 border-t border-dashed border-slate-300 pt-4 print:mt-0 print:border-0 print:pt-0', mi < months.length - 1 && 'print:break-after-page')}>
-          <h1 className="mb-2 text-center text-sm font-bold text-slate-900">KNPC-MAB - ARDS UNIT-12 {doc.name} SHUTDOWN MANPOWER OVERTIME</h1>
+          <Letterhead title={`KNPC-MAB - ARDS UNIT-12 ${doc.name} SHUTDOWN MANPOWER OVERTIME`} sub={`${unitLine} · ${MONTH(ym)}`} />
           {teams.map((t) => {
             const list = rows.filter((x) => x.team.id === t.id);
             const days = dates.filter((d) => d.startsWith(ym));
