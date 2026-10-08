@@ -1,13 +1,14 @@
 import { Minus, Plus, Shuffle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { Crew } from '@/core/roster';
-import { OT_LIMIT, defaultMaxRun, spreadPlan, MAX_WEEK_HOURS } from '@/core/shutdown/spread';
+import { defaultMaxRun, spreadPlan, MAX_WEEK_HOURS } from '@/core/shutdown/spread';
 import { slotLabel, type SdMember, type SdPhase, type SdPlan, type SdTeam } from '@/core/shutdown';
 import { setSdDaysMany } from '@/data/shutdown';
 import { BottomSheet, Button, ErrorBox, cx } from '@/ui/components';
 import { Link } from 'react-router-dom';
 import { CrewBadge } from '@/ui/crew';
 
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const arrow = (a: number, b: number, unit = '') => (a === b ? <span className="text-slate-700">{b}{unit}</span> : <span className={b < a ? 'font-semibold text-status-green' : 'font-semibold text-status-red'}>{a}{unit} → {b}{unit}</span>);
 
 /**
@@ -32,7 +33,11 @@ export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, c
   const train = plan.kind !== 'total';
   // total turnaround: a place that would end up with more days short than now is kept as it is; a train slot follows the crews' days, and the gaps it shows are for you to fill
   const worse = (r: (typeof results)[number]) => !train && r.after.short > r.before.short;
-  const chosen = results.filter((r) => r.group.memberIds.length > 0 && !off.has(id(r)) && !worse(r));
+  // a train shutdown needs a Controller, a Senior and a Good FO on the full shift every day: a slot that would leave a
+  // day without one is not applied (add a person from another crew first; working a rest day would make 7 duty days in a row)
+  const gaps = (r: (typeof results)[number]) => (train && r.group.key !== 'new' ? [...new Set([...r.after.gapDates, ...r.after.noFullDates])].sort() : []);
+  const blocked = results.filter((r) => r.group.memberIds.length > 0 && gaps(r).length > 0);
+  const chosen = results.filter((r) => r.group.memberIds.length > 0 && !off.has(id(r)) && !worse(r) && gaps(r).length === 0);
   const people = new Set(chosen.flatMap((r) => r.group.memberIds)).size;
   const sum = (f: (r: (typeof results)[number]) => number) => chosen.reduce((n, r) => n + f(r), 0);
   const teamName = (tid: string) => teams.find((t) => t.id === tid)?.name ?? '';
@@ -49,8 +54,14 @@ export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, c
       <div className="space-y-3">
         {train ? (
           <>
-          <p className="text-xs text-slate-600">Everyone works only the duty days of their own crew, so nobody works a rest day and nobody gets an extra day off. Each day one person of a slot works the full {plan.shiftHours} h and the others {Math.min(plan.normalHours, plan.shiftHours)} h; the full shifts are shared out evenly and then topped up so each person reaches {OT_LIMIT} h of overtime where the fatigue limits allow (the plan's cap of {plan.maxOvertime} h stays). The days are safe when the slot has people from different crews. New FO may stay empty.</p>
-          <label className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700 ring-1 ring-slate-200"><input type="checkbox" className="mt-0.5 h-4 w-4" checked={reach} onChange={(e) => setReach(e.target.checked)} /><span>Reach {OT_LIMIT} h for everyone, even if it needs up to 6 full shifts in a row (the crew&apos;s whole block of duty days). Off keeps at most 4 by day and 3 by night.</span></label>
+          <p className="text-xs text-slate-600">Everyone works only the duty days of their own crew, so nobody works a rest day and nobody gets an extra day off. Every day each team has a Controller, a Senior and a Good FO on the full {plan.shiftHours} h; the others come for {Math.min(plan.normalHours, plan.shiftHours)} h. The full shifts are shared out evenly, then topped up so each person reaches {plan.maxOvertime} h of overtime in each calendar month where the fatigue limits allow, never above. New FO may stay empty.</p>
+          <label className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700 ring-1 ring-slate-200"><input type="checkbox" className="mt-0.5 h-4 w-4" checked={reach} onChange={(e) => setReach(e.target.checked)} /><span>Reach {plan.maxOvertime} h a month for everyone, even if it needs up to 6 full shifts in a row (the crew&apos;s whole block of duty days). Off keeps at most 4 by day and 3 by night.</span></label>
+          {blocked.length > 0 && (
+            <div className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-900 ring-1 ring-red-300">
+              <p className="font-semibold">Not ready: {blocked.length} {blocked.length === 1 ? 'place has' : 'places have'} days without the full shift covered</p>
+              <p>Each place below is not applied until it has a person from another crew (nobody can work a rest day: it would be the 7th duty day in a row).</p>
+            </div>
+          )}
           </>
         ) : <>
           <p className="text-xs text-slate-600">Staggers the days off inside each place of each team so it has the people it needs every day, with as many days off and as little overtime as the people allow. A day off is given on a rest day of the person&apos;s own crew where it can.</p>
@@ -87,18 +98,21 @@ export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, c
                         <ul className="mt-0.5 space-y-0.5">
                           {r.train.people.map((x) => {
                             const emp = members.find((mm) => mm.id === x.id)?.employeeId ?? '';
-                            const tone = x.overtime > OT_LIMIT ? 'text-status-red' : x.overtime >= OT_LIMIT - 4 ? 'text-status-green' : 'text-amber-700';
+                            const months = Object.entries(x.months).sort(([a], [b]) => a.localeCompare(b));
+                            const worst = Math.max(0, ...months.map(([, h]) => h));
+                            const tone = worst > plan.maxOvertime ? 'text-status-red' : worst >= plan.maxOvertime - 4 ? 'text-status-green' : 'text-amber-700';
                             return (
                               <li key={x.id} className="flex items-center gap-1.5 text-xs">
                                 {x.crew ? <CrewBadge crew={x.crew} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-500">Day</span>}
                                 <span className="min-w-0 flex-1 truncate text-slate-800">{names.get(emp) ?? 'Employee'}</span>
                                 <span className="shrink-0 text-slate-500">{x.days} d · {x.full}×{plan.shiftHours} h + {x.short}×{Math.min(plan.normalHours, plan.shiftHours)} h</span>
-                                <span className={cx('w-16 shrink-0 text-right font-semibold tabular-nums', tone)}>OT {x.overtime}<span className="font-normal text-slate-400">/{OT_LIMIT}</span></span>
+                                <span className={cx('shrink-0 text-right font-semibold tabular-nums', tone)}>{months.length > 1 ? months.map(([mo, h]) => `${MONTH_SHORT[Number(mo.slice(5)) - 1]} ${h}`).join(' · ') : `OT ${x.overtime}`}<span className="font-normal text-slate-400">/{plan.maxOvertime}</span></span>
                               </li>
                             );
                           })}
                         </ul>
                         {r.group.key !== 'new' && (r.after.gapDays > 0 || r.after.short > 0 || r.after.noFullDays > 0) && <p className="text-xs font-semibold text-status-red">{[r.after.gapDays > 0 ? `${r.after.gapDays} ${r.after.gapDays === 1 ? 'day' : 'days'} with nobody` : '', r.after.gapDays === 0 && r.after.noFullDays > 0 ? `${r.after.noFullDays} days without a full-shift person` : '', r.after.short > 0 ? `${r.after.short} person-days short` : ''].filter(Boolean).join(' · ')}</p>}
+                        {gaps(r).length > 0 && <p className="text-xs font-semibold text-status-red">Not applied · no {slotLabel(r.group.key)} on the full {plan.shiftHours} h on {gaps(r).map((d) => `${Number(d.slice(8))}/${Number(d.slice(5, 7))}`).join(', ')}</p>}
                         {r.train.sameCrew && <p className="text-xs text-amber-800">Two of them are from the same crew, so they rest on the same days.</p>}
                         {r.train.runBreaks > 0 && <p className="text-xs text-amber-800">Full shifts in a row go over the limit on {r.train.runBreaks} days: the crews are too close together.</p>}
                         {r.train.people.some((x) => x.weekHours > MAX_WEEK_HOURS) && <p className="text-xs text-amber-800">Someone works more than {MAX_WEEK_HOURS} h in a week.</p>}
@@ -116,7 +130,7 @@ export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, c
                     )}
                     {worse(r) && <p className="text-xs text-amber-800">Kept as it is: more days would be short than now.</p>}
                   </div>
-                  {n > 0 && !worse(r) && <label className="flex shrink-0 items-center gap-1 text-xs text-slate-600"><input type="checkbox" checked={!off.has(id(r))} onChange={() => setOff((x) => { const y = new Set(x); if (y.has(id(r))) y.delete(id(r)); else y.add(id(r)); return y; })} />Apply</label>}
+                  {n > 0 && !worse(r) && gaps(r).length === 0 && <label className="flex shrink-0 items-center gap-1 text-xs text-slate-600"><input type="checkbox" checked={!off.has(id(r))} onChange={() => setOff((x) => { const y = new Set(x); if (y.has(id(r))) y.delete(id(r)); else y.add(id(r)); return y; })} />Apply</label>}
                 </div>
               </li>
             );

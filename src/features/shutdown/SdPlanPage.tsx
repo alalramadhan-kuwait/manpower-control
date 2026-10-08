@@ -225,7 +225,7 @@ export default function SdPlanPage() {
       {member && <MemberSheet plan={plan} m={member} data={data} view={view} onClose={() => setMember(null)} onDone={done} />}
       {moving && <MoveLeaveSheet plan={plan} members={members} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} inputs={data.inputs} onClose={() => setMoving(false)} onDone={done} />}
       {spreading && <SpreadDaysSheet plan={plan} teams={teams} members={members} phases={data.phases} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} crewOf={(e) => { const mm = members.find((x) => x.employeeId === e); return mm ? view.dutyCrew(mm) : view.homeCrew(e, plan.start); }} conflicts={leaveConflicts} onClose={() => setSpreading(false)} onDone={done} />}
-      {editPattern && <PatternSheet plan={plan} onClose={() => setEditPattern(false)} onDone={done} />}
+      {editPattern && <PatternSheet plan={plan} hasPeople={members.length > 0} onClose={() => setEditPattern(false)} onDone={done} />}
       {editPhases && <PhasesSheet plan={plan} teams={teams} phases={data.phases} onClose={() => setEditPhases(false)} onDone={done} />}
       {editTeam && <NeedsSheet t={editTeam} onClose={() => setEditTeam(null)} onDone={done} />}
     </div>
@@ -551,7 +551,7 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
   );
 }
 
-function PatternSheet({ plan, onClose, onDone }: { plan: SdPlan; onClose: () => void; onDone: (m: string) => void }) {
+function PatternSheet({ plan, hasPeople, onClose, onDone }: { plan: SdPlan; hasPeople: boolean; onClose: () => void; onDone: (m: string) => void }) {
   const [v, setV] = useState({ title: plan.title, kind: plan.kind as SdKind, start_date: plan.start, end_date: plan.end, days_on: plan.daysOn, days_off: plan.daysOff, shift_hours: plan.shiftHours, ramp_days: plan.rampDays, ramp_hours: plan.rampHours, normal_hours: plan.normalHours, max_overtime: plan.maxOvertime });
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const num = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement>) => setV((x) => ({ ...x, [k]: Number(e.target.value) }));
@@ -571,8 +571,8 @@ function PatternSheet({ plan, onClose, onDone }: { plan: SdPlan; onClose: () => 
           ))}
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="First day"><input type="date" className="input" value={v.start_date} onChange={(e) => setV((x) => ({ ...x, start_date: e.target.value }))} /></Field>
-          <Field label="Last day"><input type="date" className="input" value={v.end_date} onChange={(e) => setV((x) => ({ ...x, end_date: e.target.value }))} /></Field>
+          <Field label="First day"><input type="date" className="input disabled:bg-slate-100 disabled:text-slate-500" disabled={hasPeople} value={v.start_date} onChange={(e) => setV((x) => ({ ...x, start_date: e.target.value }))} /></Field>
+          <Field label="Last day"><input type="date" className="input disabled:bg-slate-100 disabled:text-slate-500" disabled={hasPeople} value={v.end_date} onChange={(e) => setV((x) => ({ ...x, end_date: e.target.value }))} /></Field>
           <Field label="Days on"><input className="input" inputMode="numeric" value={v.days_on} onChange={num('days_on')} /></Field>
           <Field label="Days off"><input className="input" inputMode="numeric" value={v.days_off} onChange={num('days_off')} /></Field>
           <Field label="Shift hours"><input className="input" inputMode="numeric" value={v.shift_hours} onChange={num('shift_hours')} /></Field>
@@ -581,6 +581,7 @@ function PatternSheet({ plan, onClose, onDone }: { plan: SdPlan; onClose: () => 
           <Field label="Reduced-day hours"><input className="input" inputMode="numeric" value={v.ramp_hours} onChange={num('ramp_hours')} /></Field>
           <Field label="Max overtime / month (h)"><input className="input" inputMode="numeric" value={v.max_overtime} onChange={num('max_overtime')} /></Field>
         </div>
+        {hasPeople && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">The dates are locked: people are placed on this shutdown, and their days, hours and shift instructions follow the dates. Moving the whole shutdown with its people comes with the shutdown package.</p>}
         {err != null && <ErrorBox error={err} />}
         <Button className="w-full" disabled={busy} onClick={save}>Save</Button>
       </div>

@@ -34,6 +34,8 @@ export interface SpreadStats {
   noFullDays: number;
   /** Overtime of the person with most minus the person with least, over the whole shutdown (0 for one person). */
   balance: number;
+  /** The days counted in gapDays and noFullDays (Controller / Senior / Good FO: nobody, or nobody on the full shift). */
+  gapDates: string[]; noFullDates: string[];
 }
 export interface SpreadResult {
   group: SpreadGroup; before: SpreadStats; after: SpreadStats;
@@ -46,12 +48,15 @@ export interface SpreadResult {
   /** With the run limit, the least people that could cover every day (only when some days are still short). */
   minPeople: number | null;
 }
-/** The overtime each person is planned up to (a train shutdown tops the 8 h days up to it, within the fatigue limits); above it is red. */
+/** The default monthly overtime cap of a new plan. The plan's own cap (max_overtime, per person per calendar month) is
+ *  what a train shutdown tops the 8 h days up to, month by month, within the fatigue limits; above it is red. */
 export const OT_LIMIT = 72;
 export const DEFAULT_FULL_RUN_DAY = 4;
 export const DEFAULT_FULL_RUN_NIGHT = 3;
 export const MAX_WEEK_HOURS = 72;
-export interface PersonLine { id: string; crew: Crew | null; days: number; full: number; short: number; overtime: number; weekHours: number }
+export interface PersonLine { id: string; crew: Crew | null; days: number; full: number; short: number; overtime: number; weekHours: number;
+  /** Overtime per calendar month (YYYY-MM), against the plan's monthly cap. */
+  months: Record<string, number> }
 export interface TrainInfo {
   people: PersonLine[];
   /** Crews the slot has nobody from, when it needs more people or a better mix. */
@@ -94,7 +99,7 @@ const month = (d: string) => d.slice(0, 7);
 const workOt = (p: SdPlan, crew: Crew | null, date: string) => Math.max(0, hoursOn(p, date) - (isDutyDay(crew, date) ? p.normalHours : 0));
 
 function stats(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadContext, works: (m: SdMember, date: string) => boolean, hoursOf: (m: SdMember, date: string) => number): SpreadStats {
-  let short = 0, gapDays = 0, noFullDays = 0, overtime = 0;
+  let short = 0, gapDays = 0, noFullDays = 0, overtime = 0; const gapDates: string[] = [], noFullDates: string[] = [];
   const optional = g.key === 'new';
   const perMonth = new Map<string, Map<string, number>>(); const total = new Map<string, number>();
   for (const date of planDates(p)) {
@@ -102,8 +107,8 @@ function stats(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadContex
     const on = members.filter((m) => works(m, date) && !ctx.away(m.employeeId, date));
     if (need > 0) {
       short += Math.max(0, need - on.length);
-      if (!optional && on.length === 0) gapDays++;
-      if (!optional && !isRampDay(p, date) && !on.some((m) => hoursOf(m, date) >= p.shiftHours)) noFullDays++;
+      if (!optional && on.length === 0) { gapDays++; gapDates.push(date); }
+      if (!optional && !isRampDay(p, date) && !on.some((m) => hoursOf(m, date) >= p.shiftHours)) { noFullDays++; noFullDates.push(date); }
     }
     for (const m of on) {
       const ot = Math.max(0, hoursOf(m, date) - (isDutyDay(ctx.crewOf(m.employeeId), date) ? p.normalHours : 0)); overtime += ot;
@@ -113,7 +118,7 @@ function stats(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadContex
   }
   const worsts = members.map((m) => Math.max(0, ...(perMonth.get(m.id)?.values() ?? [])));
   const totals = members.map((m) => total.get(m.id) ?? 0);
-  return { short, gapDays, noFullDays, overtime, worst: Math.max(0, ...worsts), over: worsts.filter((w) => w > p.maxOvertime).length, balance: members.length > 1 ? Math.max(...totals) - Math.min(...totals) : 0 };
+  return { short, gapDays, noFullDays, overtime, worst: Math.max(0, ...worsts), over: worsts.filter((w) => w > p.maxOvertime).length, balance: members.length > 1 ? Math.max(...totals) - Math.min(...totals) : 0, gapDates, noFullDates };
 }
 
 /**
@@ -148,34 +153,40 @@ function followCrew(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadC
       if (run[fullOf[k]] > limit) runBreaks++;
     } else for (let i = 0; i < m; i++) run[i] = 0;
   }
-  // top the overtime up: turn 8 h days into full shifts, the person with the least overtime first, up to the limit and
-  // without going past the full shifts in a row (unless the limit is to be reached whatever it takes)
+  // top the overtime up: turn 8 h days into full shifts, the person with the least overtime first, up to the plan's cap
+  // in each calendar month (the cap is per month, so a shutdown over two months may reach it in both) and without going
+  // past the full shifts in a row (unless the cap is to be reached whatever it takes)
   const fullNow = members.map((_, i) => dates.map((_d, k) => fullOf[k] === i));
   const rampK = dates.map((d) => isRampDay(p, d));
-  const otNow = members.map((_, i) => dates.reduce((t, _d, k) => t + (present[i][k] ? Math.max(0, (rampK[k] ? hoursOn(p, dates[k]) : fullNow[i][k] ? p.shiftHours : short) - (isDutyDay(crews[i], dates[k]) ? p.normalHours : 0)) : 0), 0));
+  const months = [...new Set(dates.map(month))]; const mk = dates.map((d) => months.indexOf(month(d)));
+  const otDay = (i: number, k: number) => (present[i][k] ? Math.max(0, (rampK[k] ? hoursOn(p, dates[k]) : fullNow[i][k] ? p.shiftHours : short) - (isDutyDay(crews[i], dates[k]) ? p.normalHours : 0)) : 0);
+  const otMonth = members.map((_, i) => months.map((_m, q) => dates.reduce((t, _d, k) => t + (mk[k] === q ? otDay(i, k) : 0), 0)));
+  const otTotal = (i: number) => otMonth[i].reduce((a, b) => a + b, 0);
   const topRun = ctx.reachLimit ? Math.max(limit, 6) : limit;
   const runAround = (i: number, k: number) => { let a = 0, b = 0; while (k - a - 1 >= 0 && fullNow[i][k - a - 1]) a++; while (k + b + 1 < n && fullNow[i][k + b + 1]) b++; return a + b + 1; };
-  const gain = (_i: number, _k: number) => p.shiftHours - short;   // a full shift instead of the short one, on a duty day
-  for (let guard = 0; guard < 2000; guard++) {
-    const order = members.map((_, i) => i).sort((a, b) => otNow[a] - otNow[b] || a - b);
+  const gain = p.shiftHours - short;   // a full shift instead of the short one, on a duty day
+  for (let guard = 0; guard < 4000; guard++) {
+    const order = members.map((_, i) => i).sort((a, b) => otTotal(a) - otTotal(b) || a - b);
     let done = false;
     for (const i of order) {
-      let bestK = -1, bestRun = Infinity;
+      // the month with the most room first, then the shortest run of full shifts
+      let bestK = -1, bestRoom = -Infinity, bestRun = Infinity;
       for (let k = 0; k < n; k++) {
         if (!present[i][k] || rampK[k] || fullNow[i][k] || need[k] <= 0) continue;
-        if (otNow[i] + gain(i, k) > OT_LIMIT) continue;
+        const room = p.maxOvertime - otMonth[i][mk[k]] - gain;
+        if (room < 0) continue;
         const run = runAround(i, k);
         if (run > topRun) continue;
-        if (run < bestRun) { bestRun = run; bestK = k; }
+        if (room > bestRoom || (room === bestRoom && run < bestRun)) { bestRoom = room; bestRun = run; bestK = k; }
       }
-      if (bestK >= 0) { fullNow[i][bestK] = true; otNow[i] += gain(i, bestK); done = true; break; }
+      if (bestK >= 0) { fullNow[i][bestK] = true; otMonth[i][mk[bestK]] += gain; done = true; break; }
     }
     if (!done) break;
   }
   const days = new Map<string, Record<string, boolean>>(members.map((x) => [x.id, {}]));
   const hours = new Map<string, Record<string, number>>(members.map((x) => [x.id, {}]));
   const people: PersonLine[] = members.map((x, i) => {
-    let dWorked = 0, full = 0, ot = 0; const hs: number[] = [];
+    let dWorked = 0, full = 0, ot = 0; const hs: number[] = []; const byMonth: Record<string, number> = {};
     dates.forEach((d, k) => {
       if (d < x.start || d > x.end) { hs.push(0); return; }
       const works = present[i][k];
@@ -183,10 +194,10 @@ function followCrew(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadC
       if (!works) { hs.push(0); return; }
       const h = isRampDay(p, d) ? hoursOn(p, d) : fullNow[i][k] ? p.shiftHours : short;
       hours.get(x.id)![d] = h; hs.push(h); dWorked++; if (h >= p.shiftHours) full++;
-      ot += Math.max(0, h - (isDutyDay(crews[i], d) ? p.normalHours : 0));
+      const o = Math.max(0, h - (isDutyDay(crews[i], d) ? p.normalHours : 0)); ot += o; byMonth[month(d)] = (byMonth[month(d)] ?? 0) + o;
     });
     let week = 0; for (let k = 0; k < n; k++) { let t = 0; for (let j = k; j < Math.min(n, k + 7); j++) t += hs[j]; week = Math.max(week, t); }
-    return { id: x.id, crew: crews[i], days: dWorked, full, short: dWorked - full, overtime: ot, weekHours: week };
+    return { id: x.id, crew: crews[i], days: dWorked, full, short: dWorked - full, overtime: ot, weekHours: week, months: byMonth };
   });
   const maxNeed = Math.max(0, ...need);
   const wanted = g.key === 'new' ? 0 : Math.min(CREWS.length, maxNeed + 1);

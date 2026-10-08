@@ -4,7 +4,7 @@ import { dayState, planDates, teamDay, type SdMember, type SdPlan, type SdTeam }
 import { suggestFollow } from '../overlap';
 import { defaultMaxRun, spreadGroup, spreadGroups, spreadPlan, type SpreadContext } from '../spread';
 
-const plan: SdPlan = { id: 'p', title: 'Train-2 SD', kind: 'train', areas: [], sections: [], start: '2026-11-01', end: '2026-11-30', eventId: null, daysOn: 3, daysOff: 1, shiftHours: 12, rampDays: 2, rampHours: 8, normalHours: 8, maxOvertime: 80 };
+const plan: SdPlan = { id: 'p', title: 'Train-2 SD', kind: 'train', areas: [], sections: [], start: '2026-11-01', end: '2026-11-30', eventId: null, daysOn: 3, daysOff: 1, shiftHours: 12, rampDays: 2, rampHours: 8, normalHours: 8, maxOvertime: 72 };
 const team: SdTeam = { id: 'day', planId: 'p', name: 'Day', sort: 0, needs: { controller: 1, senior: 2, good: 2, new: 1 }, rampNeeds: { controller: 1, senior: 1, good: 1, new: 1 }, shiftCode: 'M', hoursLabel: null };
 const night: SdTeam = { ...team, id: 'night', name: 'Night', shiftCode: 'N' };
 const m = (id: string, slot: SdMember['slot'], teamId = 'day'): SdMember => ({ id, planId: 'p', teamId, employeeId: id, slot, offset: 0, start: plan.start, end: plan.end });
@@ -15,6 +15,24 @@ const dates = planDates(plan);
 const run12 = (hours: Record<string, number>) => { let best = 0, cur = 0; for (const d of dates) { cur = hours[d] === 12 ? cur + 1 : 0; best = Math.max(best, cur); } return best; };
 
 describe('follow your own crew (train shutdown)', () => {
+  it('the cap is per calendar month: a shutdown over two months reaches it in each month, never above', () => {
+    const two: SdPlan = { ...plan, start: '2026-10-17', end: '2026-11-15' };
+    const list = [{ ...m('c1', 'controller'), start: two.start, end: two.end }, { ...m('c2', 'controller'), start: two.start, end: two.end }];
+    const g = spreadGroups(two, team, list, []).find((x) => x.key === 'controller')!;
+    const r = spreadGroup(two, g, list, ctxOf({ c1: 'A', c2: 'C' }, { reachLimit: true }));
+    for (const x of r.train!.people) {
+      expect(Object.keys(x.months).sort()).toEqual(['2026-10', '2026-11']);
+      expect(Object.values(x.months).every((h) => h <= 72)).toBe(true);
+      expect(x.overtime).toBeGreaterThan(72);   // more than one month's cap in total: the cap is per month
+    }
+    expect(r.after.over).toBe(0);
+  });
+  it('days without a Controller on the full 12 h are listed by date', () => {
+    const list = [m('c1', 'controller'), m('c2', 'controller')];
+    const r = spreadGroup(plan, grp(list, 'controller'), list, ctxOf({ c1: 'A', c2: 'A' }));
+    expect(r.after.gapDates.length).toBe(r.after.gapDays);
+    expect(r.after.gapDates).toContain('2026-11-07');   // crew A rests on 7 Nov
+  });
   it('two people from different crews: someone every day, one full shift every day, overtime topped up to 72 h and never above', () => {
     const list = [m('c1', 'controller'), m('c2', 'controller')];
     const r = spreadGroup(plan, grp(list, 'controller'), list, ctxOf({ c1: 'A', c2: 'C' }));
