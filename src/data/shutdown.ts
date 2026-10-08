@@ -3,7 +3,7 @@ import { supabase } from './supabase';
 import { dataChanged } from './changes';
 import type { Crew } from '@/core/roster';
 import { cancelMovement, fetchMovements, recordMovement } from './movements';
-import { memberWorks, type FoLevel, type SdDay, type SdKind, type SdMember, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
+import { memberHoursOn, memberWorks, type FoLevel, type SdDay, type SdKind, type SdMember, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
 
 export interface Signature { title: string; name: string }
 interface PlanRow { signatures: Signature[]; kind: SdKind; areas: string[] | null; sections: string[] | null; id: string; event_id: string | null; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; status: string }
@@ -241,4 +241,32 @@ export async function setFollow(v: { member: SdMember; title: string; to: Crew |
     if (v.from <= last) await recordMovement({ employee: m.employeeId, kind: 'temporary', to, start: v.from, end: last, reason: `${FOLLOW_MARK} · ${v.title}: follow ${to} shift, take off, then join the team` });
   }
   await updateSdMember(m.id, { follow_crew: to });
+}
+
+/** Shutdown team duties for the validation engine: on which dates each member works the team shift, when it starts
+ *  (from the team's hours, e.g. "07:00 - 19:00") and for how many hours (ramp days shorter). */
+export async function fetchSdDuties(from: string, to: string): Promise<(employeeId: string, date: string) => { code: 'SD-D' | 'SD-N'; start: string; hours: number } | null> {
+  const members = await fetchSdMembers(from, to);
+  if (!members.length) return () => null;
+  const [p, t, d] = await Promise.all([
+    supabase.from('sd_plans').select('*').in('id', [...new Set(members.map((m) => m.planId))]),
+    supabase.from('sd_teams').select('*').in('id', [...new Set(members.map((m) => m.teamId))]),
+    supabase.from('sd_days').select('member_id,work_date,works,hours').in('member_id', members.map((m) => m.id)).limit(10000)
+  ]);
+  const err = [p, t, d].find((x) => x.error)?.error; if (err) throw err;
+  const plans = new Map((p.data as PlanRow[]).map((x) => [x.id, toPlan(x)]));
+  const teams = new Map((t.data as TeamRow[]).map((x) => [x.id, toTeam(x)]));
+  const by = new Map(members.map((m) => [m.id, { ...m, days: {} as Record<string, SdDay> }]));
+  for (const r of d.data as { member_id: string; work_date: string; works: boolean; hours: number | null }[]) { const m = by.get(r.member_id); if (m) m.days[r.work_date] = { works: r.works, hours: r.hours == null ? null : Number(r.hours) }; }
+  const ofEmployee = new Map<string, typeof members>();
+  for (const m of by.values()) ofEmployee.set(m.employeeId, [...(ofEmployee.get(m.employeeId) ?? []), m]);
+  return (employeeId, date) => {
+    for (const m of ofEmployee.get(employeeId) ?? []) {
+      const plan = plans.get(m.planId), team = teams.get(m.teamId);
+      if (!plan || !team || !memberWorks(plan, m, date)) continue;
+      const start = /(\d{1,2}):(\d{2})/.exec(team.hoursLabel ?? '');
+      return { code: team.shiftCode === 'N' ? 'SD-N' : 'SD-D', start: start ? `${start[1].padStart(2, '0')}:${start[2]}` : team.shiftCode === 'N' ? '19:00' : '07:00', hours: memberHoursOn(plan, m, date) };
+    }
+    return null;
+  };
 }

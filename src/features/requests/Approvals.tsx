@@ -1,16 +1,14 @@
 // Requests › Approvals: everything that waits for the Section Head, in one list, read from the request history
 // (request_headers). Leave request forms and reschedule requests keep their own pages (each has one linked header,
 // kept in step by the database); the Coordinator's other changes (unplanned / sick leave added by hand, shift moves,
-// VR placements, task releases, Controller covers) are approved or not approved here, with the crews' check first.
-import { AlertTriangle, Check, ChevronRight, Search } from 'lucide-react';
+// VR placements, task releases, Controller covers) are approved or not approved here, after the check (days in a row,
+// rest, overlaps, crew minimums) and the person's days around the change.
+import { AlertTriangle, Check as CheckIcon, ChevronRight, Search } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { DAY_DUTY, evaluateRange, type MpAbsence, type MpAssignment, type MpCrewMove, type MpPerson } from '@/core/manpower';
 import { REQUEST_TYPE_LABEL } from '@/core/requests';
-import { CREWS, addDaysIso, type Crew } from '@/core/roster';
-import { APPROVAL_KIND_LABEL, decideApproval, fetchRequestLog, withdrawApproval, type ApprovalKind, type ApprovalRequest, type ApprovalStatus } from '@/data/approvals';
+import { APPROVAL_KIND_LABEL, decideApproval, fetchRequestLog, proposalOf, withdrawApproval, type ApprovalKind, type ApprovalRequest, type ApprovalStatus } from '@/data/approvals';
 import { fetchChangeRequests, fetchRequesterNames, type ChangeRequest } from '@/data/changeRequests';
-import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { fetchDirectory } from '@/data/queries';
 import { fetchRequests, type LeaveRequest } from '@/data/requests';
 import type { EmployeeDirectoryRow } from '@/data/types';
@@ -19,6 +17,9 @@ import { CrewBadge, isCrew } from '@/ui/crew';
 import { shortDate } from '@/ui/leave';
 import { nameFilter } from '@/ui/nameSearch';
 import { CHANGE_LABEL, ChangeRequestSheet } from './ChangeRequests';
+import { CheckPanel } from './CheckPanel';
+import { checkProposal, type Check } from '@/data/validation';
+import { hasHardStop } from '@/core/validation';
 import { STATUS_LABEL } from './shared';
 
 type Kind = 'form' | 'change' | ApprovalKind;
@@ -106,7 +107,7 @@ export function Approvals({ isHead }: { isHead: boolean }) {
         ))}
       </div>
       {data.unlinked > 0 && <p role="alert" className="flex items-center gap-1 text-sm text-status-red"><AlertTriangle className="h-4 w-4" />{data.unlinked} leave form or reschedule request{data.unlinked === 1 ? ' is' : 's are'} not in the request history. Report this.</p>}
-      {notice && <p role="status" className="flex items-center gap-1 text-sm text-status-green"><Check className="h-4 w-4" />{notice}</p>}
+      {notice && <p role="status" className="flex items-center gap-1 text-sm text-status-green"><CheckIcon className="h-4 w-4" />{notice}</p>}
       {shown.length === 0 ? <EmptyState title={tab === 'open' ? 'Nothing is waiting' : 'Nothing decided yet'} body={tab === 'open' ? 'Requests from the Manpower Coordinator, leave forms and reschedule requests appear here until they are decided.' : undefined} /> : (
         <Card className="divide-y divide-slate-100 p-0">
           {shown.map((i) => {
@@ -139,31 +140,17 @@ export function Approvals({ isHead }: { isHead: boolean }) {
   );
 }
 
-/** Days each crew is short over the request's dates, without and with the change. */
-function crewCheck(inputs: ManpowerInputs, a: ApprovalRequest, from: string, to: string) {
-  const p = a.payload as Record<string, string | null>;
-  let people: MpPerson[] = inputs.people, absences: MpAbsence[] = inputs.absencesAll, assignments: MpAssignment[] = inputs.assignments;
-  const move = (m: MpCrewMove) => { people = people.map((x) => (x.id === a.employee_id ? { ...x, moves: [m, ...(x.moves ?? [])] } : x)); };
-  if (a.kind === 'leave' || a.kind === 'task_release') absences = [...absences, { employeeId: a.employee_id, start: a.start_date, end: a.end_date ?? a.start_date, status: 'approved', typeCode: p.type ?? 'task_release', inCurrentPlan: true }];
-  else if (a.kind === 'movement') move({ start: a.start_date, end: a.end_date, crew: p.to === 'DAY' ? DAY_DUTY : (p.to as Crew), kind: p.kind === 'permanent' ? undefined : 'temporary' });
-  else if (a.kind === 'vr_placement') move({ start: a.start_date, end: a.end_date, crew: p.crew as Crew, kind: 'placement' });
-  else if (a.kind === 'controller_cover') assignments = [...assignments, { id: 'new', kind: (p.kind as 'shift_cover' | 'morning_rotation') ?? 'shift_cover', employeeId: a.employee_id, crew: (p.crew_code as Crew) ?? null, start: a.start_date, end: a.end_date ?? a.start_date, coversEmployeeId: p.covers_employee_id }];
-  const count = (ppl: MpPerson[], abs: MpAbsence[], asg: MpAssignment[]) => {
-    const r = evaluateRange(from, to, ppl, abs, inputs.rules, asg);
-    return Object.fromEntries(CREWS.map((c) => [c, r.filter((d) => d.crews.find((x) => x.crew === c)?.confirmedShortage).length])) as Record<Crew, number>;
-  };
-  const before = count(inputs.people, inputs.absencesAll, inputs.assignments), after = count(people, absences, assignments);
-  return { before, after, worse: CREWS.filter((c) => after[c] > before[c]), better: CREWS.filter((c) => after[c] < before[c]) };
-}
-
 function ApprovalSheet({ item, person, isHead, onClose, onDone }: { item: Item; person: EmployeeDirectoryRow | undefined; isHead: boolean; onClose: () => void; onDone: (m: string) => void }) {
   const a = item.approval!;
   const p = a.payload as Record<string, string | null>;
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  const from = a.start_date, to = a.end_date ?? addDaysIso(a.start_date, 27);
-  const [check, setCheck] = useState<ReturnType<typeof crewCheck> | null>(null);
-  useEffect(() => { if (a.status !== 'pending') return; fetchManpowerInputs(from, to).then((inp) => setCheck(crewCheck(inp, a, from, to))).catch(() => setCheck(null)); }, [a, from, to]);
+  const [check, setCheck] = useState<Check | null>(null); const [checkErr, setCheckErr] = useState<unknown>(null);
+  useEffect(() => {
+    if (a.status !== 'pending') return;
+    checkProposal(proposalOf({ kind: a.kind, employee: a.employee_id, start: a.start_date, end: a.end_date, payload: a.payload }, (a.payload as Record<string, string>).type)).then(setCheck).catch(setCheckErr);
+  }, [a]);
+  const hard = !!check && hasHardStop(check.findings);
   const details: [string, string][] = [
     ['Dates', range(a.start_date, a.end_date)],
     ...(p.reason ? [['Reason', p.reason] as [string, string]] : []), ...(p.task ? [['Task', `${p.task}${p.from_time ? ` · ${p.from_time}–${p.to_time}` : ''}`] as [string, string]] : []),
@@ -182,17 +169,15 @@ function ApprovalSheet({ item, person, isHead, onClose, onDone }: { item: Item; 
         <dl className="grid grid-cols-[6rem_1fr] gap-x-2 gap-y-1 text-sm">
           {details.map(([k, v]) => <Fragment key={k}><dt className="text-slate-500">{k}</dt><dd className="text-slate-800">{v}</dd></Fragment>)}
         </dl>
-        {a.status === 'pending' && (!check ? <Spinner label="Checking the crews…" /> : check.worse.length
-          ? <p className="flex items-start gap-1.5 rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-status-red ring-1 ring-red-200"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{check.worse.map((c) => `${c} Shift short ${check.after[c] - check.before[c]} more ${check.after[c] - check.before[c] === 1 ? 'day' : 'days'}`).join(' · ')} ({shortDate(from)} – {shortDate(to)}).</p>
-          : <p className="flex items-center gap-1.5 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200"><Check className="h-4 w-4 shrink-0" />No crew falls short because of it{check.better.length ? `; ${check.better.join(', ')} Shift better covered` : ''}.</p>)}
+        {a.status === 'pending' && <CheckPanel check={check} error={checkErr} />}
         {a.status === 'pending' && (
           <>
             <Field label={isHead ? 'Remarks (optional)' : 'Reason to withdraw (optional)'}><input className="input" value={note} onChange={(e) => setNote(e.target.value)} /></Field>
             {err != null && <ErrorBox error={err} />}
             {isHead ? (
               <div className="grid grid-cols-2 gap-2">
-                <Button variant="secondary" disabled={busy} onClick={() => run(() => decideApproval(a.id, false, note), `Not approved: ${a.summary}`)}>Not approve</Button>
-                <Button disabled={busy} onClick={() => run(() => decideApproval(a.id, true, note), `Approved: ${a.summary}`)}>Approve</Button>
+                <Button variant="secondary" disabled={busy} onClick={() => run(() => decideApproval(a.id, false, note, check), `Not approved: ${a.summary}`)}>Not approve</Button>
+                <Button disabled={busy || !check || hard} onClick={() => run(() => decideApproval(a.id, true, note, check), `Approved: ${a.summary}`)}>Approve</Button>
               </div>
             ) : <p className="text-xs text-slate-500">Waiting for the Section Head. Nothing changes in the plan until it is approved.</p>}
             <button type="button" disabled={busy} onClick={() => run(() => withdrawApproval(a.id, note), `Withdrawn: ${a.summary}`)} className="text-sm font-medium text-slate-600 underline">Withdraw the request</button>

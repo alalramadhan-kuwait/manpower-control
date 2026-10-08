@@ -17,6 +17,9 @@ import { EstimatedTag } from '@/ui/LeaveCodes';
 import { leaveImpact, mergedLeaves, type LeaveImpact, type MergedLeave } from './leaveTools';
 import { LeaveCodes } from '@/ui/LeaveCodes';
 import { nameFilter } from '@/ui/nameSearch';
+import { CheckPanel } from './CheckPanel';
+import { checkProposal, type Check as ScheduleCheck } from '@/data/validation';
+import { hasHardStop } from '@/core/validation';
 
 const ROLE_LABEL: Record<string, string> = { controller: 'Shift Controller', vr_controller: 'VR Controller', morning_controller: 'Morning Controller', panel_operator: 'Panel Operator', field_operator: 'Field Operator' };
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
@@ -188,9 +191,17 @@ export function ChangeRequestSheet({ req, name, isHead, onClose, onDone }: { req
   const records: MpAbsence[] = state ? state.inputs.absences.filter((a) => req.record_ids.includes(a.id ?? '') && a.inCurrentPlan !== false && (a.status === 'approved' || a.status === 'planned')) : [];
   const stale = !!state && open && records.length !== req.record_ids.length;
   const live = state && person && open && !stale ? leaveImpact(person, records, state.inputs, state.approvals, req.new_start, req.new_end, today) : null;
+  const [check, setCheck] = useState<ScheduleCheck | null>(null); const [checkErr, setCheckErr] = useState<unknown>(null);
+  const first = records[0];
+  useEffect(() => {
+    if (!open || !first) return;
+    checkProposal({ kind: 'reschedule', employeeId: req.employee_id, recordIds: req.record_ids, start: req.new_start, end: req.new_end, typeCode: first.typeCode, typeShort: first.typeShort ?? 'PV' })
+      .then(setCheck).catch(setCheckErr);
+  }, [open, first, req]);
+  const hard = !!check && hasHardStop(check.findings);
   async function decide(approve: boolean) {
     setBusy(approve ? 'yes' : 'no'); setErr(null);
-    try { await decideChangeRequest(req.id, approve, remarks.trim()); onDone(approve ? `${name}: leave moved to ${range(req.new_start, req.new_end)}. Oracle is back to Not submitted: submit the new request in EasyHR.` : `${name}: change not approved. The plan stays as it was.`); }
+    try { await decideChangeRequest(req.id, approve, remarks.trim(), check); onDone(approve ? `${name}: leave moved to ${range(req.new_start, req.new_end)}. Oracle is back to Not submitted: submit the new request in EasyHR.` : `${name}: change not approved. The plan stays as it was.`); }
     catch (e) { setErr(e); setBusy(null); }
   }
   async function withdraw() {
@@ -210,6 +221,7 @@ export function ChangeRequestSheet({ req, name, isHead, onClose, onDone }: { req
         {open && !state && !err && <Spinner />}
         {stale && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">This leave has changed since the request was made. Do not approve it: not approve it and ask for the change again.</p>}
         {live && <ImpactBox impact={live} label="Shortage check now" />}
+        {open && !stale && <CheckPanel check={check} error={checkErr} />}
         {req.impact && <ImpactBox impact={req.impact} label="When it was asked" />}
         {!open && <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm ring-1 ring-slate-200">
           {req.status === 'withdrawn' ? <>Withdrawn: {req.withdraw_reason}</> : <>Decision: <b className={req.status === 'approved' ? 'text-status-green' : 'text-status-red'}>{CHANGE_LABEL[req.status]}</b>{req.decision_remarks ? ` · ${req.decision_remarks}` : ''}</>}
@@ -220,7 +232,7 @@ export function ChangeRequestSheet({ req, name, isHead, onClose, onDone }: { req
             <Field label="Remarks (optional)"><input className="input" value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="e.g. Agreed, keep the Oracle request in the new dates" /></Field>
             <div className="flex gap-2">
               <Button variant="danger" className="flex-1" disabled={busy !== null} onClick={() => decide(false)}><X className="h-4 w-4" />{busy === 'no' ? 'Saving…' : 'Not approved'}</Button>
-              <Button className="flex-1" disabled={busy !== null || stale} onClick={() => decide(true)}><Check className="h-4 w-4" />{busy === 'yes' ? 'Saving…' : 'Approve'}</Button>
+              <Button className="flex-1" disabled={busy !== null || stale || !check || hard} onClick={() => decide(true)}><Check className="h-4 w-4" />{busy === 'yes' ? 'Saving…' : 'Approve'}</Button>
             </div>
           </>
         )}

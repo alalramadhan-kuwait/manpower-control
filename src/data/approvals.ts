@@ -5,6 +5,10 @@
 // for each (legacy_table + legacy_id, unique) in the same transaction, so the inbox and the counts read request_headers only.
 import { supabase } from './supabase';
 import { dataChanged } from './changes';
+import { checkProposal, checkRecord, type Check } from './validation';
+import { DAY_DUTY } from '@/core/manpower';
+import { hasHardStop, acceptable, type Proposal } from '@/core/validation';
+import type { Crew } from '@/core/roster';
 
 export type ApprovalKind = 'leave' | 'movement' | 'vr_placement' | 'task_release' | 'controller_cover';
 export type ApprovalStatus = 'pending' | 'approved' | 'not_approved' | 'withdrawn';
@@ -26,14 +30,39 @@ export interface SubmitResult { id: string; status: 'approved' | 'pending'; resu
 const plain = (error: { message: string }) => new Error(error.message);
 const notify = () => { dataChanged(); window.dispatchEvent(new Event('requests-changed')); };
 
+/** The change an approval asks for, as the validation engine sees it. */
+export function proposalOf(v: { kind: ApprovalKind; employee: string; start: string; end: string | null; payload: Record<string, unknown> }, typeShort?: string | null): Proposal {
+  const p = v.payload as Record<string, string | null | undefined>;
+  switch (v.kind) {
+    case 'leave': return { kind: 'absence', employeeId: v.employee, start: v.start, end: v.end ?? v.start, typeCode: p.type ?? null, typeShort: typeShort ?? p.type ?? 'Leave' };
+    case 'task_release': return { kind: 'release', employeeId: v.employee, start: v.start, end: v.end ?? v.start };
+    case 'movement': return { kind: 'move', employeeId: v.employee, start: v.start, end: v.end, crew: p.to === 'DAY' ? DAY_DUTY : (p.to as Crew), moveKind: p.kind === 'permanent' ? 'permanent' : 'temporary' };
+    case 'vr_placement': return { kind: 'move', employeeId: v.employee, start: v.start, end: v.end, crew: p.crew as Crew, moveKind: 'placement' };
+    case 'controller_cover': return { kind: 'cover', employeeId: v.employee, crew: p.crew_code as Crew, start: v.start, end: v.end ?? v.start, coverKind: p.kind === 'morning_rotation' ? 'morning_rotation' : 'shift_cover' };
+  }
+}
+const shortOf = async (code: unknown) => {
+  if (typeof code !== 'string') return null;
+  const { data } = await supabase.from('absence_types').select('short_code').eq('code', code).maybeSingle();
+  return (data as { short_code: string } | null)?.short_code ?? null;
+};
+
+/** Checks the change first: a hard stop is never sent. The check is kept with the request. */
 export async function submitApproval(v: { kind: ApprovalKind; employee: string; start: string; end: string | null; summary: string; payload: Record<string, unknown> }): Promise<SubmitResult> {
+  const check = await checkProposal(proposalOf(v, v.kind === 'leave' ? await shortOf(v.payload.type) : null));
+  if (hasHardStop(check.findings)) throw new Error(`Not sent, hard stop: ${check.findings.filter((f) => f.severity === 'hard_stop').map((f) => f.message).join(' ')}`);
   const { data, error } = await supabase.rpc('approval_submit', { p_kind: v.kind, p_employee: v.employee, p_start: v.start, p_end: v.end, p_summary: v.summary, p_payload: v.payload });
   if (error) throw plain(error);
+  const r = data as SubmitResult;
+  await supabase.rpc('request_header_record_check', { p_id: r.id, p_check: checkRecord(check) });
   notify();
-  return data as SubmitResult;
+  return r;
 }
-export async function decideApproval(id: string, approve: boolean, note: string): Promise<void> {
-  const { error } = await supabase.rpc('approval_decide', { p_id: id, p_approve: approve, p_note: note });
+/** Approve (with the check seen: its warnings and critical findings are accepted, a hard stop is refused) or not approve. */
+export async function decideApproval(id: string, approve: boolean, note: string, check?: Check | null): Promise<void> {
+  const { error } = check
+    ? await supabase.rpc('request_header_decide', { p_id: id, p_approve: approve, p_note: note, p_check: checkRecord(check), p_accepted: approve ? acceptable(check.findings).map(({ rule, severity, message }) => ({ rule, severity, message })) : [] })
+    : await supabase.rpc('approval_decide', { p_id: id, p_approve: approve, p_note: note });
   if (error) throw plain(error);
   notify();
 }
