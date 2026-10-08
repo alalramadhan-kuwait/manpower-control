@@ -84,3 +84,17 @@ describe('shutdown teams', () => {
     expect([n.prev?.id, n.next?.id]).toEqual(['aug', 'feb']);
   });
 });
+
+describe('team not complete', () => {
+  it('lists every place short of its need, with the days, and runs of dates', async () => {
+    const { teamGaps, dateRuns } = await import('..');
+    const t = { id: 'day', planId: 'p', name: 'Day', sort: 0, needs: { controller: 1, senior: 2, good: 2, new: 1 }, rampNeeds: { controller: 1, senior: 1, good: 1, new: 1 }, shiftCode: 'M' as const, hoursLabel: null };
+    const p2 = { ...plan, daysOn: 1, daysOff: 0 };
+    const members = [{ id: 'c1', planId: 'p', teamId: 'day', employeeId: 'c1', slot: 'controller' as const, offset: 0, start: p2.start, end: p2.end }];
+    const gaps = teamGaps(p2, [t], members, [], (_e, d) => d === '2026-11-10');
+    const ctl = gaps.find((g) => g.slot === 'controller')!;
+    expect(ctl.dates).toEqual(['2026-11-10']);
+    expect(gaps.find((g) => g.slot === 'senior')!.dates.length).toBe(30);
+    expect(dateRuns(['2026-11-01', '2026-11-02', '2026-11-03', '2026-11-07', '2026-11-30', '2026-12-01'])).toBe('1–3 Nov, 7 Nov, 30 Nov – 1 Dec');
+  });
+});

@@ -4,7 +4,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { COVER_GRADE } from '@/core/controllers';
 import { evaluateRange, personOn, SD_TEAM, type MpAbsence, type MpAssignment, type MpPerson } from '@/core/manpower';
 import { CREWS, addDaysIso, type Crew } from '@/core/roster';
-import { FO_LEVEL_LABEL, SD_PO_MAX_GRADE, SD_SLOTS, SD_SLOT_LABEL, areasOf, groupOf, dayOvertime, dayShort, dayState, isDutyDay, isRampDay, neighbours, memberHours, memberWorks, nextOffset, planDates, sdOperatorEligible, slotLabel, teamDay, cycleOf, type SdDay, type SdKind, type SdMember, type PhaseNeed, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
+import { dateRuns, teamGaps, FO_LEVEL_LABEL, SD_PO_MAX_GRADE, SD_SLOTS, SD_SLOT_LABEL, areasOf, groupOf, dayOvertime, dayShort, dayState, isDutyDay, isRampDay, neighbours, memberHours, memberWorks, nextOffset, planDates, sdOperatorEligible, slotLabel, teamDay, cycleOf, type SdDay, type SdKind, type SdMember, type PhaseNeed, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { fetchOperationPlan, schedulePeriod, type PeriodRow } from '@/data/modes';
 import { fetchDirectory } from '@/data/queries';
@@ -116,13 +116,16 @@ export default function SdPlanPage() {
     const hours = new Map(members.map((m) => [m.id, memberHours(plan, m, dutyCrew(m))]));
     // days of leave inside the member's shutdown days: the person's own duty days on a train shutdown (a rest day costs nothing),
     // every day of a total turnaround; counted whether or not the day is still marked working (balancing marks leave days off)
-    const leaveDays = (m: SdMember) => dates.filter((d) => d >= m.start && d <= m.end && leaveOn(m.employeeId, d) && (plan.kind === 'total' || isDutyDay(dutyCrew(m), d))).length;
     // leave already approved in Oracle needs a decision now; leave not yet approved is postponed and coordinated later
     const approvedOn = (emp: string, d: string) => inputs.absences.some((a) => a.employeeId === emp && a.oracle === 'approved' && (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && a.start <= d && d <= a.end);
+    const leaveDays = (m: SdMember) => dates.filter((d) => d >= m.start && d <= m.end && leaveOn(m.employeeId, d) && (plan.kind === 'total' || isDutyDay(dutyCrew(m), d))).length;
     const approvedLeaveDays = (m: SdMember) => dates.filter((d) => d >= m.start && d <= m.end && approvedOn(m.employeeId, d) && (plan.kind === 'total' || isDutyDay(dutyCrew(m), d))).length;
-    const teamDays = new Map(teams.map((t) => [t.id, dates.map((d) => ({ date: d, slots: teamDay(plan, t, members, d, leaveOn, data.phases) }))]));
+    // the team's days count leave already approved in Oracle as away; leave not yet approved is postponed
+    const teamDays = new Map(teams.map((t) => [t.id, dates.map((d) => ({ date: d, slots: teamDay(plan, t, members, d, approvedOn, data.phases) }))]));
     const overlaps = plan.kind === 'total' ? [] : suggestFollow(plan, teams, members, data.phases, dutyCrew, (m) => data.dir.get(m.employeeId)?.position_code === 'vr_controller');
-    return { people, leaveOn, homeCrew, dutyCrew, dates, crewImpact, hours, leaveDays, approvedLeaveDays, teamDays, overlaps };
+    // places short on some day (approved leave counts as away; leave not yet approved is postponed)
+    const gaps = teamGaps(plan, teams, members, data.phases, approvedOn);
+    return { people, leaveOn, homeCrew, dutyCrew, dates, crewImpact, hours, leaveDays, approvedLeaveDays, teamDays, overlaps, gaps };
   }, [data]);
 
   const yearTaken = useCallback((e: string, y: number) => data?.otTaken.get(`${e}:${y}`)?.hours ?? 0, [data]);
@@ -197,6 +200,17 @@ export default function SdPlanPage() {
       </div>
       {notice && <p className="mb-2 flex items-center gap-1 text-sm text-status-green"><Check className="h-4 w-4" />{notice}</p>}
       {moveError && <p role="alert" className="mb-2 flex items-center gap-1 text-sm text-status-red"><AlertTriangle className="h-4 w-4 shrink-0" />{moveError}</p>}
+      {view.gaps.length > 0 && (
+        <div role="alert" className="mb-3 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-900 ring-2 ring-red-400">
+          <p className="flex items-center gap-1.5 font-bold"><AlertTriangle className="h-4 w-4 shrink-0" />Team not complete · {new Set(view.gaps.flatMap((g) => g.dates)).size} {new Set(view.gaps.flatMap((g) => g.dates)).size === 1 ? 'day' : 'days'} short</p>
+          <p className="text-xs">The shutdown cannot work with fewer people than each team needs. Add people (from another crew where the place has people of one crew only), or give some a &quot;follow X shift&quot; instruction.</p>
+          <ul className="mt-1.5 space-y-1 text-xs">
+            {view.gaps.map((g) => (
+              <li key={`${g.teamId}:${g.slot}`}><b>{g.team} · {g.label}</b>: short {g.dates.length} {g.dates.length === 1 ? 'day' : 'days'}{g.emptyDates.length ? `, nobody on ${g.emptyDates.length}` : ''} · <span className="text-red-800">{dateRuns(g.dates)}</span></li>
+            ))}
+          </ul>
+        </div>
+      )}
       {approvedLeave.length > 0 && (
         <div className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-300">
           <p className="font-semibold">Approved leave inside the shutdown · {approvedLeave.length} {approvedLeave.length === 1 ? 'person' : 'people'}</p>

@@ -77,3 +77,11 @@ describe('notification center', () => {
     expect(buildNotices(base({ controllerLeave, isSectionHead: false })).find((x) => x.id.startsWith('ctl2-'))!.level).toBe('watch');
   });
 });
+
+describe('shutdown team not complete', () => {
+  it('is an action with the days short and the places, linking to the plan', () => {
+    const n = buildNotices({ ...base(), shutdowns: [{ id: 'sp1', title: 'Train-2 SD', start: '2026-11-01', end: '2026-11-30', shortDays: 12, gaps: [{ team: 'Day', label: 'Senior FO', days: 12 }] }] });
+    expect(n.find((x) => x.id === 'sd-gap-sp1')).toMatchObject({ level: 'action', area: 'shortage', title: 'Train-2 SD · team not complete', to: '/shutdown/sp1' });
+    expect(n.find((x) => x.id === 'sd-gap-sp1')!.detail).toContain('12 days short');
+  });
+});

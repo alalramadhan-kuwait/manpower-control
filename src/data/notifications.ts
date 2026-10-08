@@ -1,6 +1,7 @@
 // Notification Center data: gathers the next weeks' manpower, cover needs, open requests and staff records
 // needing action, and builds the notices (src/core/notifications). Cached briefly so the header badge is cheap.
 import { actionsFor } from '@/core/actions';
+import { fetchIncompleteShutdowns } from './shutdown';
 import { coverageNeeds } from '@/core/controllers';
 import { evaluateRange } from '@/core/manpower';
 import { buildNotices, type Notice } from '@/core/notifications';
@@ -31,7 +32,8 @@ export async function loadNotices(isSectionHead: boolean, force = false): Promis
   pending = (async () => {
     const to = addDaysIso(today, NOTICE_HORIZON_DAYS);
     const y = Number(today.slice(0, 4));
-    const [inputs, reqs, changes, estimated, dir, ctl] = await Promise.all([fetchManpowerInputs(today, addDaysIso(to, 1)), fetchRequests(), fetchChangeRequests(), fetchEstimatedLeaves(), fetchDirectory(), fetchControllerLeave(`${y}-01-01`, `${y + 1}-12-31`)]);
+    const [inputs, reqs, changes, estimated, dir, ctl, sds] = await Promise.all([fetchManpowerInputs(today, addDaysIso(to, 1)), fetchRequests(), fetchChangeRequests(), fetchEstimatedLeaves(), fetchDirectory(), fetchControllerLeave(`${y}-01-01`, `${y + 1}-12-31`),
+      fetchIncompleteShutdowns(today).catch(() => [])]);
     const open = openIssues(checkControllerLeave(ctl.people, ctl.absences, ctl.approvals, [y, y + 1]), today);
     const who = (id: string) => ctl.people.find((p) => p.id === id)?.name ?? 'Controller';
     const names = new Map(dir.map((r) => [r.id, r.display_name]));
@@ -44,6 +46,8 @@ export async function loadNotices(isSectionHead: boolean, force = false): Promis
       estimated: estimated.filter((e) => e.end_date >= today).map((e) => ({ id: e.id, employeeId: e.employee_id, employeeName: names.get(e.employee_id) ?? 'Employee', start: e.start_date, end: e.end_date })),
       needsAction: dir.filter((r) => r.is_active && r.in_unit12_scope && actionsFor(r).length > 0).length,
       absences: inputs.absences, people: inputs.people, plan: inputs.plan, isSectionHead,
+      shutdowns: sds.map(({ plan, gaps }) => ({ id: plan.id, title: plan.title, start: plan.start, end: plan.end, shortDays: new Set(gaps.flatMap((g) => g.dates)).size,
+        gaps: gaps.map((g) => ({ team: g.team, label: g.label, days: g.dates.length })) })),
       controllerLeave: {
         overlaps: open.overlaps.map((o) => ({ a: who(o.a.employeeId), b: who(o.b.employeeId), start: o.start, end: o.end, days: o.days })),
         extras: open.extras.map((x) => ({ name: who(x.period.employeeId), nth: x.nth, year: x.year, start: x.period.start, end: x.period.end }))

@@ -3,7 +3,7 @@ import { supabase } from './supabase';
 import { dataChanged } from './changes';
 import type { Crew } from '@/core/roster';
 import { cancelMovement, fetchMovements, recordMovement } from './movements';
-import { memberHoursOn, memberWorks, type FoLevel, type SdDay, type SdKind, type SdMember, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
+import { memberHoursOn, memberWorks, teamGaps, type TeamGap, type FoLevel, type SdDay, type SdKind, type SdMember, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
 
 export interface Signature { title: string; name: string }
 interface PlanRow { signatures: Signature[]; kind: SdKind; areas: string[] | null; sections: string[] | null; id: string; event_id: string | null; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; max_overtime_year?: number | null; status: string }
@@ -292,4 +292,24 @@ export async function setOvertimeTaken(employeeId: string, year: number, hours: 
   const { error } = await supabase.rpc('overtime_year_set', { p_employee: employeeId, p_year: year, p_hours: hours, p_as_of: asOf, p_note: null });
   if (error) throw new Error(error.message);
   dataChanged();
+}
+
+/** Upcoming shutdowns (not finished, active) whose teams are short on some day: leave already approved in Oracle counts
+ *  as away, leave not yet approved is postponed. */
+export async function fetchIncompleteShutdowns(today: string): Promise<{ plan: SdPlan; gaps: TeamGap[] }[]> {
+  const plans = (await fetchSdPlans()).filter((p) => p.end >= today);
+  const out: { plan: SdPlan; gaps: TeamGap[] }[] = [];
+  for (const p of plans) {
+    const sd = await fetchSdPlan(p.id);
+    const ids = [...new Set(sd.members.map((m) => m.employeeId))];
+    const { data, error } = ids.length
+      ? await supabase.from('leave_records').select('employee_id,start_date,end_date').in('employee_id', ids).eq('in_current_plan', true).eq('oracle_status', 'approved')
+          .in('status', ['approved', 'planned']).lte('start_date', sd.plan.end).gte('end_date', sd.plan.start)
+      : { data: [], error: null };
+    if (error) throw error;
+    const leave = data as { employee_id: string; start_date: string; end_date: string }[];
+    const gaps = teamGaps(sd.plan, sd.teams, sd.members, sd.phases, (e, d) => leave.some((l) => l.employee_id === e && l.start_date <= d && d <= l.end_date));
+    if (gaps.length) out.push({ plan: sd.plan, gaps });
+  }
+  return out;
 }

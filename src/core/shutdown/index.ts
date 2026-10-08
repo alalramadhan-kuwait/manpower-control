@@ -151,3 +151,39 @@ export function neighbours(plans: SdPlan[], plan: SdPlan): { prev: SdPlan | null
   const next = others.filter((p) => p.start > plan.end).sort((a, b) => a.start.localeCompare(b.start))[0] ?? null;
   return { prev, next };
 }
+
+/** A place of a team that is short on some days: the team cannot work with fewer people than it needs. */
+export interface TeamGap { teamId: string; team: string; slot: string; label: string; dates: string[]; emptyDates: string[]; missing: number }
+/**
+ * Every place of every team short of its need on some day (`away`: people not there that day, e.g. leave already
+ * approved). New FO counts too: the team works only complete. Sorted by the number of days short.
+ */
+export function teamGaps(p: SdPlan, teams: SdTeam[], members: SdMember[], phases: SdPhase[] = [], away: (employeeId: string, date: string) => boolean = () => false): TeamGap[] {
+  const out: TeamGap[] = [];
+  for (const t of teams) {
+    const by = new Map<string, TeamGap>();
+    for (const date of planDates(p)) {
+      for (const [k, x] of Object.entries(teamDay(p, t, members, date, away, phases))) {
+        if (x.need <= x.have) continue;
+        const g = by.get(k) ?? { teamId: t.id, team: t.name, slot: k, label: slotLabel(k), dates: [], emptyDates: [], missing: 0 };
+        g.dates.push(date); if (x.have === 0) g.emptyDates.push(date); g.missing += x.need - x.have;
+        by.set(k, g);
+      }
+    }
+    out.push(...by.values());
+  }
+  return out.sort((a, b) => b.dates.length - a.dates.length);
+}
+
+/** "1–4 Nov, 7 Nov, 9–12 Nov": dates grouped into runs. */
+export function dateRuns(dates: string[]): string {
+  const M = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const f = (d: string) => `${Number(d.slice(8))} ${M[Number(d.slice(5, 7)) - 1]}`;
+  const sorted = [...new Set(dates)].sort(); const runs: string[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    let j = i; while (j + 1 < sorted.length && addDaysIso(sorted[j], 1) === sorted[j + 1]) j++;
+    runs.push(i === j ? f(sorted[i]) : sorted[i].slice(5, 7) === sorted[j].slice(5, 7) ? `${Number(sorted[i].slice(8))}–${f(sorted[j])}` : `${f(sorted[i])} – ${f(sorted[j])}`);
+    i = j;
+  }
+  return runs.join(', ');
+}

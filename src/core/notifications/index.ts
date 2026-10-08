@@ -47,6 +47,8 @@ export interface NoticeInput {
   leaveDays?: number;
   /** Leave starting within this many days and not approved in Oracle HR is flagged. */
   oracleDays?: number;
+  /** Upcoming shutdowns whose teams are short on some day: they cannot work incomplete. */
+  shutdowns?: { id: string; title: string; start: string; end: string; gaps: { team: string; label: string; days: number }[]; shortDays: number }[];
   /** Controller leave rule breaks not yet approved (src/core/controllers/leaveRules openIssues, with names). */
   controllerLeave?: { overlaps: { a: string; b: string; start: string; end: string; days: number }[]; extras: { name: string; nth: number; year: number; start: string; end: string }[] };
 }
@@ -60,6 +62,11 @@ const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
 export function buildNotices(i: NoticeInput): Notice[] {
   const out: Notice[] = [];
+  for (const sd of i.shutdowns ?? []) {
+    out.push({ id: `sd-gap-${sd.id}`, level: 'action', area: 'shortage', title: `${sd.title} · team not complete`,
+      detail: `${plural(sd.shortDays, 'day')} short (${span(sd.start, sd.end)}) · ${sd.gaps.slice(0, 3).map((g) => `${g.team} ${g.label} ${g.days} d`).join(', ')}${sd.gaps.length > 3 ? '…' : ''}`,
+      date: sd.start, to: `/shutdown/${sd.id}` });
+  }
   const names = new Map(i.people.map((p) => [p.id, p.name]));
 
   // 1. confirmed shortages and incomplete data, as periods per crew

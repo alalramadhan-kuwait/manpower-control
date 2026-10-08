@@ -5,7 +5,7 @@ import { yearSegment } from '@/core/calendar';
 import { FO_LEVEL_LABEL, sdOperatorEligible, type SdKind, type SdMember, type SdPlan } from '@/core/shutdown';
 import { fetchCalendarInfo } from '@/data/calendar';
 import { fetchDirectory } from '@/data/queries';
-import { createSdPlan, fetchAllSdMembers, fetchSdPlans, updateSdPlan } from '@/data/shutdown';
+import { createSdPlan, fetchAllSdMembers, fetchIncompleteShutdowns, fetchSdPlans, updateSdPlan } from '@/data/shutdown';
 import type { EmployeeDirectoryRow } from '@/data/types';
 import { BottomSheet, Button, Card, ErrorBox, Field, PageHeader, Spinner, cx, fmtDate } from '@/ui/components';
 import { CrewBadge, isCrew } from '@/ui/crew';
@@ -20,6 +20,8 @@ export default function ShutdownListPage() {
   const [editing, setEditing] = useState<SdPlan | null>(null);
   const [people, setPeople] = useState<Map<string, number>>(new Map());
   const [members, setMembers] = useState<SdMember[]>([]);
+  // upcoming shutdowns whose teams are short on some day (they cannot work incomplete)
+  const [short, setShort] = useState<Map<string, number>>(new Map());
   const [params, setParams] = useSearchParams();
   const view = params.get('view') === 'people' ? 'people' : params.get('view') === 'timeline' ? 'timeline' : 'plans';
   const [notice, setNotice] = useState<string | null>(null);
@@ -31,6 +33,7 @@ export default function ShutdownListPage() {
       for (const m of ms) n.set(m.planId, (n.get(m.planId) ?? 0) + 1);
       setPeople(n);
     }).catch(setError);
+    fetchIncompleteShutdowns(today).then((x) => setShort(new Map(x.map(({ plan, gaps }) => [plan.id, new Set(gaps.flatMap((g) => g.dates)).size])))).catch(() => setShort(new Map()));
   };
   useEffect(load, []);
   // still to come or running first (soonest first); the finished ones after, the latest first, greyed
@@ -51,6 +54,7 @@ export default function ShutdownListPage() {
             <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
               <span className={cx('font-medium', finished ? 'text-slate-600' : 'text-slate-900')}>{p.title}</span>
               <span className={cx('rounded-full px-1.5 text-[10px] font-semibold', finished ? 'bg-slate-200 text-slate-600' : p.start <= today ? 'bg-green-100 text-green-800' : 'bg-brand-50 text-brand-700')}>{w.state}</span>
+              {!finished && (short.get(p.id) ?? 0) > 0 && <span className="rounded-full bg-status-red px-1.5 text-[10px] font-semibold text-white">Not complete · {short.get(p.id)} {short.get(p.id) === 1 ? 'day' : 'days'} short</span>}
             </span>
             <span className="block text-xs text-slate-700">{w.range} · {w.length} days</span>
             <span className="block text-xs text-slate-500">{p.kind === 'total' ? 'Total · ' : ''}{p.daysOff ? `${p.daysOn} on, ${p.daysOff} off` : 'every day'} · {p.shiftHours} h · <span className={cx(n === 0 && !finished && 'font-medium text-amber-700')}>{n === 0 ? 'no one added yet' : `${n} ${n === 1 ? 'person' : 'people'}`}</span></span>
