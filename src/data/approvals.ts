@@ -51,10 +51,22 @@ const shortOf = async (code: unknown) => {
 export async function submitApproval(v: { kind: ApprovalKind; employee: string; start: string; end: string | null; summary: string; payload: Record<string, unknown> }): Promise<SubmitResult> {
   const check = await checkProposal(proposalOf(v, v.kind === 'leave' ? await shortOf(v.payload.type) : null));
   if (hasHardStop(check.findings)) throw new Error(`Not sent, hard stop: ${check.findings.filter((f) => f.severity === 'hard_stop').map((f) => f.message).join(' ')}`);
-  const { data, error } = await supabase.rpc('approval_submit', { p_kind: v.kind, p_employee: v.employee, p_start: v.start, p_end: v.end, p_summary: v.summary, p_payload: v.payload });
-  if (error) throw plain(error);
-  const r = data as SubmitResult;
-  await supabase.rpc('request_header_record_check', { p_id: r.id, p_check: checkRecord(check) });
+  let r: SubmitResult;
+  if (v.kind === 'leave') {
+    // leave goes in with its check: an accepted overlap (critical) lets the other leave give up those days
+    const type = String(v.payload.type ?? '');
+    const { data, error } = await supabase.rpc('request_header_submit', { p_type: type === 'annual_leave_unscheduled' ? 'unscheduled_pv' : 'absence', p_employee: v.employee,
+      p_plan_year: Number(v.start.slice(0, 4)), p_summary: v.summary, p_remarks: (v.payload.note as string | undefined) ?? null,
+      p_detail: { absence_type_code: type, start_date: v.start, end_date: v.end ?? v.start }, p_check: checkRecord(check), p_workflow: 'approval' });
+    if (error) throw plain(error);
+    const d = data as { id: string; status: string; result?: string };
+    r = { id: d.id, status: d.status === 'submitted' ? 'pending' : 'approved', result: d.result };
+  } else {
+    const { data, error } = await supabase.rpc('approval_submit', { p_kind: v.kind, p_employee: v.employee, p_start: v.start, p_end: v.end, p_summary: v.summary, p_payload: v.payload });
+    if (error) throw plain(error);
+    r = data as SubmitResult;
+    await supabase.rpc('request_header_record_check', { p_id: r.id, p_check: checkRecord(check) });
+  }
   notify();
   return r;
 }

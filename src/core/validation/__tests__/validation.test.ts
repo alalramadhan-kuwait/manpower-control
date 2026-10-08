@@ -44,9 +44,9 @@ describe('a temporary move', () => {
 
 describe('leave', () => {
   const pv: MpAbsence = { id: 'l1', employeeId: 'p1', start: '2026-11-15', end: '2026-11-20', status: 'approved', typeCode: 'annual_leave_planned', typeShort: 'PV', inCurrentPlan: true };
-  it('on top of other leave is a hard stop', () => {
+  it('on top of other leave is critical (sick leave during PV may be approved)', () => {
     const v = validateProposal(base(person('A'), [pv]), { kind: 'absence', employeeId: 'p1', start: '2026-11-18', end: '2026-11-22', typeCode: 'sick_leave', typeShort: 'SL' }, DEFAULT_RULES);
-    expect(v.findings.map((f) => f.rule)).toContain('leave_overlap');
+    expect(v.findings.find((f) => f.rule === 'leave_overlap')?.severity).toBe('critical');
   });
   it('a reschedule does not clash with the leave it replaces; the timeline marks the changed days', () => {
     const v = validateProposal(base(person('A'), [pv]), { kind: 'reschedule', employeeId: 'p1', recordIds: ['l1'], start: '2026-11-23', end: '2026-11-28', typeCode: 'annual_leave_planned', typeShort: 'PV' }, DEFAULT_RULES);

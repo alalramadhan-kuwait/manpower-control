@@ -21,7 +21,7 @@ export const DEFAULT_RULES: RuleConfig[] = [
   { code: 'max_consecutive_duty_days', severity: 'hard_stop', enabled: true, params: { max: 6 } },
   { code: 'rest_between_duties', severity: 'hard_stop', enabled: true, params: {} },
   { code: 'min_rest_hours', severity: 'warning', enabled: false, params: { hours: null } },
-  { code: 'leave_overlap', severity: 'hard_stop', enabled: true, params: {} },
+  { code: 'leave_overlap', severity: 'critical', enabled: true, params: {} },
   { code: 'assignment_overlap', severity: 'hard_stop', enabled: true, params: {} },
   { code: 'crew_minimum', severity: 'critical', enabled: true, params: {} },
   { code: 'shift_times', severity: 'info', enabled: true, params: { ...DEFAULT_SHIFT_TIMES } }
