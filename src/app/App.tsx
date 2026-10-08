@@ -100,7 +100,7 @@ export default function App() {
           <Route path="/review/fo-levels" element={<FoLevelsPage />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/leave-plan" element={<LeavePlanPage />} />
-          <Route path="/pv" element={<PvPage />} />
+          <Route path="/pv" element={<PvPage isHead={profile.role_code === 'section_head'} />} />
           <Route path="/oracle" element={<OracleHrPage />} />
           <Route path="/movements" element={<MovementsPage />} />
           <Route path="/release" element={<ReleasePage />} />

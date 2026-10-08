@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CREWS, addDaysIso, type Crew } from '@/core/roster';
 import { PV_RULES, blockReason, checkPv, cyclesOf, panelFill, runsOf, type PvContext, type PvCycle, type PvIssue, type PvPerson, type PvRole, type PvShift } from '@/core/pv';
-import { applyPvBlocks, fetchPv, type PvData } from '@/data/pv';
+import { applyPvBlocks, decidePvPlan, fetchPv, publishPvPlan, submitPvPlan, type PvData, type PvPlan } from '@/data/pv';
 import { BottomSheet, Button, Card, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { shortDate } from '@/ui/leave';
@@ -70,7 +70,7 @@ const shortName = (n: string) => { const w = n.split(' '); return w.length > 1 ?
 const overlaps = (a: { start: string; end: string }, b: { start: string; end: string }) => a.start <= b.end && b.start <= a.end;
 const rangeLabel = (c: PvCycle) => `${Number(c.start.slice(8))} ${MONTHS[Number(c.start.slice(5, 7)) - 1]} – ${Number(c.end.slice(8))} ${MONTHS[Number(c.end.slice(5, 7)) - 1]}`;
 
-export default function PvPage() {
+export default function PvPage({ isHead = false }: { isHead?: boolean }) {
   const [params, setParams] = useSearchParams();
   const year = Number(params.get('year')) || new Date().getFullYear() + 1;
   const span: Span = (SPANS.find((x) => x.key === params.get('span'))?.key) ?? 'q1';
@@ -84,8 +84,11 @@ export default function PvPage() {
   const [pending, setPending] = useState<{ p: PvPerson; index: number; reason: string } | null>(null);
   const [sheet, setSheet] = useState<PvPerson | null>(null);
   const planYears = usePlanYears();
-  // Only the Active Plan is written here; next year's PV waits for the PV draft (nothing saved, nothing in use)
+  // The Active Plan is written directly; next year's PV is written to its draft (not in use until published)
   const plan = planYears ? planContext(planYears, year) : null;
+  const pv = data?.pvPlan ?? null;
+  const inDraft = plan?.kind === 'draft' && pv?.status === 'draft';
+  const editable = !!plan?.writable || inDraft;
   const set = (k: string, v: string | null) => { const n = new URLSearchParams(params); if (v === null) n.delete(k); else n.set(k, v); setParams(n, { replace: true }); };
   const load = useCallback(() => fetchPv(year).then((d) => { setData(d); setLocal(new Map()); }).catch(setError), [year]);
   useEffect(() => { setData(null); load(); }, [load]);
@@ -97,18 +100,18 @@ export default function PvPage() {
   const issues = useMemo(() => (model ? checkPv({ ...ctx, shifts }) : [] as PvIssue[]), [model, ctx, shifts]);
 
   async function book(p: PvPerson, index: number) {
-    if (!model || !p.crew || !plan?.writable) return;
+    if (!model || !p.crew || !editable) return;
     const cycles = model.cycles[p.crew];
     const next = new Set(picks.get(p.id) ?? []); if (next.has(index)) next.delete(index); else next.add(index);
     setLocal((m) => new Map(m).set(p.id, next)); setSaveError(null); setBusy((n) => n + 1);
     try {
-      await applyPvBlocks({ employeeId: p.id, year, existing: model.existing.get(p.id) ?? [], blocks: runsOf(next).map(([a, b]) => ({ start: cycles[a].start, end: cycles[b].end })) });
+      await applyPvBlocks({ employeeId: p.id, year, draft: inDraft, existing: model.existing.get(p.id) ?? [], blocks: runsOf(next).map(([a, b]) => ({ start: cycles[a].start, end: cycles[b].end })) });
     } catch (e) { setSaveError(e instanceof Error ? e.message : 'Could not save.'); }
     finally { setBusy((n) => n - 1); }
   }
   /** A tap: booking a cycle that breaks a rule asks first; freeing one never does. */
   function tap(p: PvPerson, index: number) {
-    if (!plan?.writable) return;
+    if (!editable) return;
     const on = picks.get(p.id)?.has(index) ?? false;
     const reason = on ? null : blockReason(ctx, p.id, index);
     if (reason) setPending({ p, index, reason }); else void book(p, index);
@@ -132,12 +135,11 @@ export default function PvPage() {
         {plan && <PlanBadge context={plan} className="shrink-0" />}
         <StatusLine issues={issues} saving={busy > 0} saved={saved} ready={!!model} />
       </div>
-      {plan && !plan.writable && (
-        <p role="note" className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-300">
-          {plan.kind === 'draft'
-            ? <><b>{plan.label}</b> · view only for now. The {year} PV is planned in its own draft, which is not ready yet: nothing tapped here is saved, and the Active Plan is not changed.</>
-            : <><b>{plan.label}</b> · view only.</>}
-        </p>
+      {plan && plan.kind === 'draft' && (pv ? <DraftBar pv={pv} isHead={isHead} onChanged={load} /> : (
+        <p role="note" className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-300"><b>{plan.label}</b> · view only: there is no PV plan for {year} yet.</p>
+      ))}
+      {plan && !plan.writable && plan.kind !== 'draft' && (
+        <p role="note" className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-300"><b>{plan.label}</b> · view only.</p>
       )}
       {plan?.writable && <p className="mb-2 text-xs text-slate-600">Changes here change the <b>{plan.label}</b>: the plan in use.</p>}
       <div role="tablist" className="mb-2 grid grid-cols-5 gap-1 rounded-xl bg-slate-100 p-1 text-sm lg:max-w-2xl">
@@ -188,6 +190,69 @@ function StatusLine({ issues, saving, saved, ready }: { issues: PvIssue[]; savin
       {n > 0
         ? <span className="flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1.5 text-status-red ring-1 ring-red-200"><AlertTriangle className="h-3.5 w-3.5" />{n} {n === 1 ? 'break' : 'breaks'}</span>
         : <span className="flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1.5 text-green-800 ring-1 ring-green-200"><Check className="h-3.5 w-3.5" />Rules met</span>}
+    </div>
+  );
+}
+
+const STATUS_LABEL: Record<PvPlan['status'], string> = { draft: 'Draft', submitted: 'Waiting for the Section Head', approved: 'Approved · not published yet', published: 'Published' };
+const EVENT_LABEL: Record<PvPlan['events'][number]['action'], string> = { created: 'Draft started', submitted: 'Submitted', returned: 'Sent back', approved: 'Approved', published: 'Published into the live plan' };
+const when = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+/** Next year's PV plan: where it stands (Draft → Submitted → Approved → Published), what to do next, and its history. */
+function DraftBar({ pv, isHead, onChanged }: { pv: PvPlan; isHead: boolean; onChanged: () => void }) {
+  const [note, setNote] = useState('');
+  const [ask, setAsk] = useState<'submit' | 'return' | 'publish' | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [history, setHistory] = useState(false);
+  const returned = pv.status === 'draft' ? pv.events.find((e) => e.action === 'returned' && e.version === pv.version - 1) : undefined;
+  async function run(f: () => Promise<unknown>) {
+    setBusy(true); setErr(null);
+    try { await f(); setAsk(null); setNote(''); onChanged(); } catch (e) { setErr(e instanceof Error ? e.message : 'Could not save.'); } finally { setBusy(false); }
+  }
+  const tone = pv.status === 'published' ? 'bg-green-50 text-green-900 ring-green-300' : pv.status === 'approved' ? 'bg-sky-50 text-sky-900 ring-sky-300' : 'bg-amber-50 text-amber-900 ring-amber-300';
+  return (
+    <div className={cx('mb-2 space-y-2 rounded-xl px-3 py-2 text-sm ring-1', tone)}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <b>PV Plan · {pv.year}</b><span className="rounded-full bg-white/70 px-2 py-0.5 text-xs font-semibold ring-1 ring-current/20">{STATUS_LABEL[pv.status]} · v{pv.version}</span>
+        <button type="button" onClick={() => setHistory((h) => !h)} className="ml-auto text-xs font-medium underline">{history ? 'Hide history' : 'History'}</button>
+      </div>
+      <p className="text-xs">
+        {pv.status === 'published' ? <>In the live plan: it counts for manpower, the calendar and Oracle. Changes now go through requests (reschedule).</>
+          : pv.status === 'draft' ? <>Taps are saved to the draft only. Until it is published it does <b>not</b> reduce manpower, create alerts, show in the calendar or in Oracle HR.</>
+          : <>Locked while it is {pv.status === 'submitted' ? 'with the Section Head' : 'waiting to be published'}. Not in use yet.</>}
+      </p>
+      {returned && <p className="rounded-lg bg-white/70 px-2 py-1 text-xs"><b>Sent back:</b> {returned.note}</p>}
+      {pv.status === 'draft' && <Button className="min-h-9 w-full text-sm sm:w-auto" onClick={() => setAsk('submit')}>Submit for approval</Button>}
+      {pv.status === 'submitted' && (isHead
+        ? <div className="flex gap-2"><Button variant="secondary" className="min-h-9 flex-1 text-sm" onClick={() => setAsk('return')}>Send back</Button><Button className="min-h-9 flex-1 text-sm" disabled={busy} onClick={() => run(() => decidePvPlan(pv.year, true, ''))}><Check className="h-4 w-4" />{busy ? 'Saving…' : 'Approve'}</Button></div>
+        : <p className="text-xs font-medium">Waiting for the Section Head to approve or send it back.</p>)}
+      {pv.status === 'approved' && (isHead
+        ? <Button className="min-h-9 w-full text-sm sm:w-auto" onClick={() => setAsk('publish')}>Publish into the live plan</Button>
+        : <p className="text-xs font-medium">Approved. The Section Head publishes it into the live plan.</p>)}
+      {err && <p role="alert" className="text-xs text-status-red">{err}</p>}
+      {history && (
+        <ol className="space-y-0.5 border-t border-current/20 pt-1.5 text-xs">
+          {pv.events.map((e, i) => <li key={i}><b>{EVENT_LABEL[e.action]}</b> · v{e.version}{e.action !== 'created' ? ` · ${e.blocks} leave${e.blocks === 1 ? '' : 's'}` : ''} · {when(e.at)}{e.note ? ` · ${e.note}` : ''}</li>)}
+        </ol>
+      )}
+      <BottomSheet open={ask !== null} onClose={() => setAsk(null)} title={ask === 'submit' ? `Submit PV Plan · ${pv.year}` : ask === 'return' ? 'Send back to the draft' : `Publish PV Plan · ${pv.year}`}>
+        <div className="space-y-3">
+          {ask === 'publish'
+            ? <p className="text-sm text-slate-700">Every leave of the plan goes into the live plan for {pv.year}: it will count for manpower, show in the calendar and in Oracle HR. This is done once; later changes go through requests.</p>
+            : <>
+                <p className="text-sm text-slate-700">{ask === 'submit' ? 'The draft is locked and sent to the Section Head.' : `It goes back to the draft as v${pv.version + 1}, to be changed and submitted again.`}</p>
+                <textarea className="input min-h-20" value={note} onChange={(e) => setNote(e.target.value)} placeholder={ask === 'submit' ? 'Note (optional)' : 'What to change'} />
+              </>}
+          {err && <p role="alert" className="text-sm text-status-red">{err}</p>}
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="secondary" onClick={() => setAsk(null)}>Cancel</Button>
+            <Button disabled={busy || (ask === 'return' && !note.trim())} onClick={() => run(() => ask === 'submit' ? submitPvPlan(pv.year, note.trim()) : ask === 'return' ? decidePvPlan(pv.year, false, note.trim()) : publishPvPlan(pv.year))}>
+              {busy ? 'Saving…' : ask === 'submit' ? 'Submit' : ask === 'return' ? 'Send back' : 'Publish'}
+            </Button>
+          </div>
+        </div>
+      </BottomSheet>
     </div>
   );
 }
