@@ -7,7 +7,7 @@ import { personOn, type MpAbsence, type MpPerson } from '@/core/manpower';
 import { expectedRequest, isRestDay, oracleDays } from '@/core/oracle/expected';
 import { addDaysIso, isValidIsoDate } from '@/core/roster';
 import { fetchLeaveApprovals } from '@/data/controllers';
-import { createChangeRequest, decideChangeRequest, fetchRequesterNames, withdrawChangeRequest, type ChangeRequest, type ChangeStatus } from '@/data/changeRequests';
+import { createChangeRequest, decideChangeRequest, fetchChangeCounts, fetchRequesterNames, withdrawChangeRequest, type ChangeRequest, type ChangeStatus } from '@/data/changeRequests';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { BottomSheet, Button, Chip, ErrorBox, Field, Spinner, cx, type Tone } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
@@ -45,7 +45,7 @@ function ImpactBox({ impact, label }: { impact: LeaveImpact; label?: string }) {
 }
 
 /** Propose new dates for one leave, with the remark; the crews' cover is checked as the dates change. */
-export function ProposeSheet({ person, leave, inputs, approvals, today, onBack, onDone }: { person: MpPerson; leave: MergedLeave; inputs: ManpowerInputs; approvals: LeaveApproval[]; today: string; onBack: () => void; onDone: (m: string) => void }) {
+export function ProposeSheet({ person, leave, inputs, approvals, today, changes, onBack, onDone }: { person: MpPerson; leave: MergedLeave; inputs: ManpowerInputs; approvals: LeaveApproval[]; today: string; /** approved changes this year, counted on him */ changes?: number; onBack: () => void; onDone: (m: string) => void }) {
   const crewOn = (d: string) => { const q = personOn(person, d); return q.dayDuty ? null : q.crew; };
   const [start, setStart] = useState(leave.start); const [end, setEnd] = useState(leave.end);
   const [remark, setRemark] = useState('');
@@ -71,6 +71,7 @@ export function ProposeSheet({ person, leave, inputs, approvals, today, onBack, 
           <div className="font-medium text-slate-800">{person.name}</div>
           <div className="text-xs text-slate-600">Now: <b>{range(leave.start, leave.end)}</b>{now ? ` · ${now.days} days in Oracle · back ${weekday(now.backOn)} ${shortDate(now.backOn)}` : ''}</div>
           {leave.oracle && <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">Oracle now <OraclePill status={leave.oracle} /></div>}
+          {changes !== undefined && <div className="mt-1 text-xs font-medium text-amber-800">Counted on him: {changes === 0 ? 'no change approved this year, this would be the first' : `${changes} change${changes === 1 ? '' : 's'} approved this year, this would be no. ${changes + 1}`}</div>}
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="New first day"><input type="date" className="input" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value); }} /></Field>
@@ -178,14 +179,14 @@ export function NewRequestFlow({ inputs, estimated, approvals, today, onClose, o
 /** One change request: the dates, the remark, the shortage check now (and as it was when asked), and the decision. */
 export function ChangeRequestSheet({ req, name, isHead, onClose, onDone }: { req: ChangeRequest; name: string; isHead: boolean; onClose: () => void; onDone: (m: string) => void }) {
   const today = localToday();
-  const [state, setState] = useState<{ inputs: ManpowerInputs; approvals: LeaveApproval[]; by: string | null } | null>(null);
+  const [state, setState] = useState<{ inputs: ManpowerInputs; approvals: LeaveApproval[]; by: string | null; changes: number } | null>(null);
   const [remarks, setRemarks] = useState(''); const [reason, setReason] = useState(''); const [withdrawing, setWithdrawing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null); const [err, setErr] = useState<unknown>(null);
   const open = req.status === 'requested';
   useEffect(() => {
     const y = Number(today.slice(0, 4));
-    Promise.all([fetchManpowerInputs(`${y}-01-01`, `${y + 1}-12-31`), fetchLeaveApprovals(), fetchRequesterNames(req.requested_by ? [req.requested_by] : [])])
-      .then(([inputs, approvals, names]) => setState({ inputs, approvals, by: req.requested_by ? names.get(req.requested_by) ?? null : null })).catch(setErr);
+    Promise.all([fetchManpowerInputs(`${y}-01-01`, `${y + 1}-12-31`), fetchLeaveApprovals(), fetchRequesterNames(req.requested_by ? [req.requested_by] : []), fetchChangeCounts(y)])
+      .then(([inputs, approvals, names, counts]) => setState({ inputs, approvals, by: req.requested_by ? names.get(req.requested_by) ?? null : null, changes: counts.get(req.employee_id) ?? 0 })).catch(setErr);
   }, [req, today]);
   const person = state?.inputs.people.find((p) => p.id === req.employee_id) ?? null;
   const records: MpAbsence[] = state ? state.inputs.absences.filter((a) => req.record_ids.includes(a.id ?? '') && a.inCurrentPlan !== false && (a.status === 'approved' || a.status === 'planned')) : [];
@@ -217,6 +218,7 @@ export function ChangeRequestSheet({ req, name, isHead, onClose, onDone }: { req
           <div className="text-slate-600">Asked: <b className="text-slate-800">{range(req.new_start, req.new_end)}</b> · {daysIn(req.new_start, req.new_end)} days</div>
           <div className="mt-1 text-xs text-slate-500">Remark: {req.remark}</div>
           <div className="text-xs text-slate-500">Asked {new Date(req.requested_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}{state?.by ? ` by ${state.by}` : ''}</div>
+          {state && open && <div className="mt-1 text-xs font-medium text-amber-800">Counted on him: {state.changes === 0 ? 'no change approved this year, this would be the first' : `${state.changes} change${state.changes === 1 ? '' : 's'} approved this year, this would be no. ${state.changes + 1}`}</div>}
         </div>
         {open && !state && !err && <Spinner />}
         {stale && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">This leave has changed since the request was made. Do not approve it: not approve it and ask for the change again.</p>}

@@ -64,3 +64,13 @@ export async function withdrawChangeRequest(id: string, reason: string) {
   if (error) throw new Error(error.message);
   changed();
 }
+
+/** Approved leave changes per employee in a calendar year: each one is counted on the employee (the section cooperated with him). */
+export async function fetchChangeCounts(year: number): Promise<Map<string, number>> {
+  const { data, error } = await supabase.from('leave_change_requests').select('employee_id').eq('status', 'approved')
+    .gte('decided_at', `${year}-01-01`).lt('decided_at', `${year + 1}-01-01`);
+  if (error) throw error;
+  const out = new Map<string, number>();
+  for (const r of (data ?? []) as { employee_id: string }[]) out.set(r.employee_id, (out.get(r.employee_id) ?? 0) + 1);
+  return out;
+}

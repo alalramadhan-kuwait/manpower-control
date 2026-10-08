@@ -1,137 +1,173 @@
-import { Check } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+// Oracle HR check: the leaves starting in the coming weeks, each with what its Oracle request should say (first and last
+// working day, days, back on), next to the requests in Oracle. Matches → Approved, and the leave is done. Other dates →
+// a change request (the Coordinator files it, the Section Head decides, approved changes are counted on the employee).
+// Who has not submitted is their own choice: nothing chases them.
+import { CalendarClock, Check, RotateCcw } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { MONTH_NAMES } from '@/core/calendar';
-import { ORACLE_LABEL, ORACLE_STATUSES, daysUntil, oracleCounts, type OracleStatus } from '@/core/oracle';
-import { CREWS, type Crew } from '@/core/roster';
-import { fetchOracleLeaves, setOracleStatus, type OracleRow } from '@/data/leave';
-import { fetchDirectory } from '@/data/queries';
-import type { EmployeeDirectoryRow } from '@/data/types';
+import type { LeaveApproval } from '@/core/controllers/leaveRules';
+import { personOn, type MpPerson } from '@/core/manpower';
+import { daysUntil } from '@/core/oracle';
+import { expectedRequest } from '@/core/oracle/expected';
+import { addDaysIso, CREWS, type Crew } from '@/core/roster';
+import { fetchChangeCounts, fetchChangeRequests, type ChangeRequest } from '@/data/changeRequests';
+import { fetchLeaveApprovals } from '@/data/controllers';
+import { setOracleStatus } from '@/data/leave';
+import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { Card, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components';
 import { CrewBadge, isCrew } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
-import { ORACLE_DOT, ORACLE_PILL } from '@/ui/oracle';
-import { leaveToneShort } from '@/ui/leaveTypes';
+import { LeaveCodes } from '@/ui/LeaveCodes';
+import { ProposeSheet } from '@/features/requests/ChangeRequests';
+import { mergedLeaves, type MergedLeave } from '@/features/requests/leaveTools';
 
-const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}${a.slice(0, 4) !== b.slice(0, 4) ? ` ${b.slice(0, 4)}` : ''}`);
+/** Requests come about 21 days ahead: the list shows the leaves starting in the next five weeks. */
+const WINDOW_DAYS = 35;
+const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const day = (iso: string) => `${WD[new Date(`${iso}T00:00:00Z`).getUTCDay()]} ${shortDate(iso)}`;
+const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
+const daysIn = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000) + 1;
 
-/** Upcoming leave by Oracle HR status; select one or many and mark them submitted, approved or rejected. */
+type View = 'soon' | 'later' | 'approved';
+const VIEWS: { key: View; label: string }[] = [{ key: 'soon', label: 'Next 5 weeks' }, { key: 'later', label: 'Later' }, { key: 'approved', label: 'Approved' }];
+interface Item { person: MpPerson; leave: MergedLeave; approved: boolean }
+
 export default function OracleHrPage() {
   const today = localToday();
   const [params, setParams] = useSearchParams();
-  const s = params.get('s');
-  const tab: OracleStatus = ORACLE_STATUSES.includes(s as OracleStatus) ? (s as OracleStatus) : 'not_submitted';
+  const view: View = (['later', 'approved'] as const).find((v) => v === params.get('v')) ?? 'soon';
   const c = params.get('crew');
   const crew: Crew | null = isCrew(c) ? c : null;
-  const go = (t: OracleStatus, cr: Crew | null) => { const n = new URLSearchParams(); if (t !== 'not_submitted') n.set('s', t); if (cr) n.set('crew', cr); setParams(n, { replace: true }); setPicked(new Set()); };
+  const go = (v: View, cr: Crew | null) => { const n = new URLSearchParams(); if (v !== 'soon') n.set('v', v); if (cr) n.set('crew', cr); setParams(n, { replace: true }); };
 
-  const [rows, setRows] = useState<OracleRow[] | null>(null);
-  const [people, setPeople] = useState<Map<string, EmployeeDirectoryRow>>(new Map());
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [ref, setRef] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [data, setData] = useState<{ inputs: ManpowerInputs; approvals: LeaveApproval[]; open: ChangeRequest[]; counts: Map<string, number> } | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
-  const load = () => Promise.all([fetchOracleLeaves(today), fetchDirectory()])
-    .then(([lv, dir]) => { setPeople(new Map(dir.filter((r) => r.in_unit12_scope && r.is_active).map((r) => [r.id, r]))); setRows(lv); })
-    .catch(setError);
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [changing, setChanging] = useState<Item | null>(null);
+  const load = useCallback(() => {
+    const y = Number(today.slice(0, 4));
+    return Promise.all([fetchManpowerInputs(today, `${y + 1}-12-31`), fetchLeaveApprovals(), fetchChangeRequests(), fetchChangeCounts(y)])
+      .then(([inputs, approvals, reqs, counts]) => setData({ inputs, approvals, open: reqs.filter((r) => r.status === 'requested'), counts }))
+      .catch(setError);
+  }, [today]);
+  useEffect(() => { load(); }, [load]);
 
-  const mine = useMemo(() => (rows ?? []).filter((r) => people.has(r.employee_id) && (!crew || people.get(r.employee_id)!.crew_code === crew)), [rows, people, crew]);
-  const counts = useMemo(() => oracleCounts(mine.map((r) => ({ id: r.id, employeeId: r.employee_id, start: r.start_date, end: r.end_date, oracle: r.oracle_status })), today), [mine, today]);
-  const list = mine.filter((r) => r.oracle_status === tab);
-  const months = useMemo(() => {
-    const m = new Map<string, OracleRow[]>();
-    for (const r of list) { const k = (r.start_date < today ? today : r.start_date).slice(0, 7); m.set(k, [...(m.get(k) ?? []), r]); }
-    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, v.sort((x, y) => x.start_date.localeCompare(y.start_date))] as const);
-  }, [list, today]);
+  const crewOf = (p: MpPerson, d: string) => { const q = personOn(p, d); return q.dayDuty ? null : q.crew; };
+  const items = useMemo(() => {
+    if (!data) return [];
+    const out: Item[] = [];
+    for (const person of data.inputs.people) {
+      for (const leave of mergedLeaves(data.inputs.absences, person.id)) {
+        if (leave.start < today) continue;   // a request is made before the leave starts
+        out.push({ person, leave, approved: leave.records.every((r) => r.oracle === 'approved') });
+      }
+    }
+    return out.sort((a, b) => a.leave.start.localeCompare(b.leave.start) || a.person.name.localeCompare(b.person.name));
+  }, [data, today]);
+  const inCrew = (x: Item) => !crew || crewOf(x.person, x.leave.start) === crew;
+  const edge = addDaysIso(today, WINDOW_DAYS);
+  const groups: Record<View, Item[]> = {
+    soon: items.filter((x) => !x.approved && x.leave.start <= edge && inCrew(x)),
+    later: items.filter((x) => !x.approved && x.leave.start > edge && inCrew(x)),
+    approved: items.filter((x) => x.approved && inCrew(x)),
+  };
+  const list = groups[view];
 
-  const toggle = (ids: string[], on: boolean) => setPicked((p) => { const n = new Set(p); for (const id of ids) on ? n.add(id) : n.delete(id); return n; });
-  async function mark(status: OracleStatus) {
-    setBusy(true); setError(null); setDone(null);
+  async function mark(x: Item, approved: boolean) {
+    const key = x.leave.records[0].id!;
+    setBusy(key); setError(null); setDone(null);
     try {
-      const n = await setOracleStatus([...picked], status, picked.size === 1 ? ref : undefined);
-      setDone(`${n} marked ${ORACLE_LABEL[status]}`); setPicked(new Set()); setRef(''); await load();
-    } catch (e) { setError(e); } finally { setBusy(false); }
+      await setOracleStatus(x.leave.records.map((r) => r.id!), approved ? 'approved' : 'not_submitted');
+      setDone(approved ? `${x.person.name}: approved in Oracle` : `${x.person.name}: back in the list`);
+      await load();
+    } catch (e) { setError(e); } finally { setBusy(null); }
   }
 
   return (
-    <div className={cx(picked.size > 0 && 'pb-32')}>
+    <div>
       <PageHeader title="Oracle HR" info={<div className="space-y-2 text-sm text-slate-700">
-        <p>Where each upcoming leave stands in Oracle HR. Planned leave counts for manpower whatever its Oracle status.</p>
-        <p><b>Not submitted</b> → <b>Submitted</b> → <b>Approved</b>, or <b>Rejected</b> (then correct or cancel the leave in the Leave plan).</p>
-        <p>Tap leaves to select them, then mark them. New dates on a future leave set it back to Not submitted.</p>
+        <p>Open the requests in Oracle and compare each one with its leave here: the first and last working day, the days and the day back.</p>
+        <p><b>Same dates</b> → approve it in Oracle and tap <b>Approved in Oracle</b>: the leave is done.</p>
+        <p><b>Other dates</b> → the leave needs a change request first (the Coordinator sends it, the Section Head decides after the conflict check). An approved change is counted on the employee and the plan moves to the new dates.</p>
+        <p>Who has not submitted is their own choice: the leave just stays in the list.</p>
       </div>} />
 
-      {error ? <ErrorBox error={error} /> : !rows ? <Spinner /> : (
+      {error != null && <div className="mb-2"><ErrorBox error={error} /></div>}
+      {!data ? (error == null && <Spinner />) : (
         <>
-          <div className="mb-2 grid grid-cols-4 gap-1 text-center">
-            {ORACLE_STATUSES.map((k) => (
-              <button key={k} type="button" aria-pressed={tab === k} onClick={() => go(k, crew)}
-                className={cx('rounded-lg bg-white px-1 py-1 ring-1', tab === k ? 'ring-2 ring-brand-700' : 'ring-slate-200')}>
-                <div className="flex items-center justify-center gap-1 text-base font-semibold leading-tight tabular-nums text-slate-800"><span className={cx('h-2 w-2 rounded-full', ORACLE_DOT[k])} />{counts[k]}</div>
-                <div className="text-[10px] leading-tight text-slate-500">{ORACLE_LABEL[k]}</div>
+          <div className="mb-2 grid grid-cols-3 gap-1 text-center">
+            {VIEWS.map((v) => (
+              <button key={v.key} type="button" aria-pressed={view === v.key} onClick={() => go(v.key, crew)}
+                className={cx('rounded-lg bg-white px-1 py-1 ring-1', view === v.key ? 'ring-2 ring-brand-700' : 'ring-slate-200')}>
+                <div className="text-base font-semibold leading-tight tabular-nums text-slate-800">{groups[v.key].length}</div>
+                <div className="text-[10px] leading-tight text-slate-500">{v.label}</div>
               </button>
             ))}
           </div>
           <div className="mb-2 flex gap-1">
             {[null, ...CREWS].map((x) => (
-              <button key={x ?? 'all'} type="button" aria-pressed={crew === x} onClick={() => go(tab, x)}
+              <button key={x ?? 'all'} type="button" aria-pressed={crew === x} onClick={() => go(view, x)}
                 className={cx('rounded-full px-2.5 py-1 text-[11px] font-medium ring-1', crew === x ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-600 ring-slate-200')}>{x ?? 'All'}</button>
             ))}
           </div>
           {done && <p className="mb-2 flex items-center gap-1 text-sm text-status-green"><Check className="h-4 w-4" />{done}</p>}
 
-          {months.length === 0 ? <Card><p className="text-sm text-slate-500">{tab === 'not_submitted' || tab === 'rejected' ? 'None ✓' : 'None'}</p></Card> : months.map(([key, items]) => {
-            const all = items.every((r) => picked.has(r.id));
-            return (
-              <Card key={key} className="mb-2 py-1.5">
-                <div className="flex items-center justify-between pt-1">
-                  <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{MONTH_NAMES[Number(key.slice(5)) - 1]} {key.slice(0, 4)} · {items.length}</h2>
-                  <button type="button" className="text-xs font-medium text-brand-700" onClick={() => toggle(items.map((r) => r.id), !all)}>{all ? 'Clear' : 'Select all'}</button>
-                </div>
-                <div className="divide-y divide-slate-100">
-                  {items.map((r) => {
-                    const p = people.get(r.employee_id)!;
-                    const on = picked.has(r.id);
-                    const n = daysUntil(today, r.start_date);
-                    const urgent = tab !== 'approved' && n <= 14;
-                    return (
-                      <button key={r.id} type="button" aria-pressed={on} onClick={() => toggle([r.id], !on)} className={cx('flex w-full items-center gap-2.5 py-2 text-left', on && 'bg-brand-50/60')}>
-                        <span className={cx('flex h-5 w-5 shrink-0 items-center justify-center rounded-md ring-1', on ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white ring-slate-300')}>{on && <Check className="h-3.5 w-3.5" />}</span>
-                        <span className="min-w-0 flex-1">
-                          <span className="flex items-center gap-1.5"><span className="truncate text-sm font-medium text-slate-900">{p.display_name}</span>{isCrew(p.crew_code) && <CrewBadge crew={p.crew_code} size="sm" />}</span>
-                          <span className="block truncate text-xs text-slate-500">
-                            {r.absence_types?.short_code && <span className={`mr-1 rounded px-1 font-semibold ring-1 ${leaveToneShort(r.absence_types.short_code).chip}`}>{r.absence_types.short_code}</span>}
-                            {range(r.start_date, r.end_date)}{r.oracle_ref ? ` · #${r.oracle_ref}` : ''}
-                          </span>
-                        </span>
-                        <span className={cx('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums', urgent ? 'bg-status-red text-white' : n <= 30 && tab !== 'approved' ? 'bg-amber-100 text-amber-900' : 'text-slate-500')}>{n === 0 ? 'Now' : `${n}d`}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </Card>
-            );
-          })}
+          {list.length === 0 ? <Card><p className="text-sm text-slate-500">{view === 'approved' ? 'Nothing approved yet.' : 'No leave to check ✓'}</p></Card> : (
+            <Card className="divide-y divide-slate-100 py-0">
+              {list.map((x) => {
+                const { person, leave } = x;
+                const key = leave.records[0].id!;
+                const exp = expectedRequest(leave.start, leave.end, (d) => crewOf(person, d));
+                const cr = crewOf(person, leave.start);
+                const n = daysUntil(today, leave.start);
+                const pending = data.open.find((r) => r.employee_id === person.id && r.record_ids.some((id) => leave.records.some((l) => l.id === id)));
+                const count = data.counts.get(person.id) ?? 0;
+                return (
+                  <div key={key} className="py-2.5">
+                    <div className="flex items-center gap-2">
+                      {cr ? <CrewBadge crew={cr} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-600">Day</span>}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-slate-900">{person.name}</span>
+                        <span className="block truncate text-xs text-slate-500">#{person.employeeNumber}{count > 0 ? ` · ${count} change${count === 1 ? '' : 's'} this year` : ''}</span>
+                      </span>
+                      {!x.approved && <span className={cx('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums', n <= 21 ? 'bg-amber-100 text-amber-900' : 'text-slate-500')}>{n === 0 ? 'Today' : `in ${n}d`}</span>}
+                    </div>
+                    <div className="mt-1.5 grid grid-cols-2 gap-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs ring-1 ring-slate-200">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Plan</div>
+                        <div className="flex items-center gap-1 font-medium text-slate-800"><LeaveCodes codes={leave.codes} />{range(leave.start, leave.end)}</div>
+                        <div className="text-slate-500">{daysIn(leave.start, leave.end)} days with rest days</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">In Oracle it should say</div>
+                        {exp ? <>
+                          <div className="font-medium text-slate-800">{day(exp.start)} – {day(exp.end)}</div>
+                          <div className="text-slate-500">{exp.days} days · back {day(exp.backOn)}</div>
+                        </> : <div className="text-slate-500">Only rest days</div>}
+                      </div>
+                    </div>
+                    {pending && <p className="mt-1 flex items-center gap-1 text-xs font-medium text-brand-700"><CalendarClock className="h-3.5 w-3.5" />Change requested to {range(pending.new_start, pending.new_end)} · waiting for the Section Head</p>}
+                    <div className="mt-1.5 flex gap-1.5">
+                      {x.approved ? (
+                        <button type="button" disabled={busy !== null} onClick={() => mark(x, false)} className="flex min-h-9 items-center gap-1 rounded-lg px-2 text-xs font-medium text-slate-600 ring-1 ring-slate-300 disabled:opacity-50"><RotateCcw className="h-3.5 w-3.5" />{busy === key ? '…' : 'Undo'}</button>
+                      ) : <>
+                        <button type="button" disabled={busy !== null} onClick={() => mark(x, true)} className="flex min-h-9 flex-1 items-center justify-center gap-1 rounded-lg bg-status-green px-2 text-xs font-semibold text-white disabled:opacity-50"><Check className="h-4 w-4" />{busy === key ? 'Saving…' : 'Approved in Oracle'}</button>
+                        <button type="button" disabled={busy !== null || !!pending} onClick={() => setChanging(x)} className="flex min-h-9 flex-1 items-center justify-center gap-1 rounded-lg bg-white px-2 text-xs font-semibold text-brand-800 ring-1 ring-brand-300 disabled:opacity-50"><CalendarClock className="h-4 w-4" />Other dates</button>
+                      </>}
+                    </div>
+                  </div>
+                );
+              })}
+            </Card>
+          )}
         </>
       )}
 
-      {picked.size > 0 && (
-        <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] z-30 mx-auto max-w-5xl px-4 lg:max-w-7xl sm:bottom-4 sm:pl-48">
-          <div className="space-y-2 rounded-2xl bg-white p-3 shadow-lg ring-1 ring-slate-200">
-            <div className="flex items-center gap-2 text-sm">
-              <span className="flex-1 font-medium text-brand-800">{picked.size} selected</span>
-              {picked.size === 1 && <input className="input h-9 w-36 text-sm" value={ref} onChange={(e) => setRef(e.target.value)} placeholder="Oracle no." aria-label="Oracle request number (optional)" />}
-              <button type="button" className="text-xs font-medium text-slate-500" onClick={() => setPicked(new Set())}>Clear</button>
-            </div>
-            <div className="flex gap-1.5">
-              {ORACLE_STATUSES.filter((k) => k !== tab).map((k) => (
-                <button key={k} type="button" disabled={busy} onClick={() => mark(k)} className={cx('min-h-10 flex-1 rounded-xl px-1 text-xs font-semibold disabled:opacity-50', ORACLE_PILL[k])}>{busy ? '…' : ORACLE_LABEL[k]}</button>
-              ))}
-            </div>
-          </div>
-        </div>
+      {changing && data && (
+        <ProposeSheet person={changing.person} leave={changing.leave} inputs={data.inputs} approvals={data.approvals} today={today}
+          changes={data.counts.get(changing.person.id) ?? 0} onBack={() => setChanging(null)}
+          onDone={(m) => { setChanging(null); setDone(m); load(); }} />
       )}
     </div>
   );
