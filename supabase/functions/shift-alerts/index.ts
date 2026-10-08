@@ -450,7 +450,8 @@ var toPlan = (r) => ({
   rampDays: r.ramp_days,
   rampHours: Number(r.ramp_hours),
   normalHours: Number(r.normal_hours),
-  maxOvertime: Number(r.max_overtime)
+  maxOvertime: Number(r.max_overtime),
+  maxOvertimeYear: r.max_overtime_year == null ? 380 : Number(r.max_overtime_year)
 });
 var toMember = (r) => ({
   id: r.id,

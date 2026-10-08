@@ -1,7 +1,7 @@
 import { Minus, Plus, Shuffle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { Crew } from '@/core/roster';
-import { defaultMaxRun, spreadPlan, MAX_WEEK_HOURS } from '@/core/shutdown/spread';
+import { defaultMaxRun, spreadPlan, yearCap, MAX_WEEK_HOURS } from '@/core/shutdown/spread';
 import { slotLabel, type SdMember, type SdPhase, type SdPlan, type SdTeam } from '@/core/shutdown';
 import { setSdDaysMany } from '@/data/shutdown';
 import { BottomSheet, Button, ErrorBox, cx } from '@/ui/components';
@@ -16,17 +16,19 @@ const arrow = (a: number, b: number, unit = '') => (a === b ? <span className="t
  * its people every day and one person for the full shift, the others the normal hours, overtime shared evenly.
  * Total turnaround: stagger the days off inside each place so it keeps its people every day with the least overtime.
  */
-export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, conflicts, onClose, onDone }: {
+export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, conflicts, yearTaken, onClose, onDone }: {
   plan: SdPlan; teams: SdTeam[]; members: SdMember[]; phases: SdPhase[]; names: Map<string, string>;
   crewOf: (employeeId: string) => Crew | null;
   /** Team members who have leave inside the shutdown (a team member takes none): balanced as if they were all present. */
   conflicts: { employeeId: string; number: string; days: number }[];
+  /** Overtime already taken in a year (typed in), counted against the yearly cap. */
+  yearTaken?: (employeeId: string, year: number) => number;
   onClose: () => void; onDone: (msg: string) => void;
 }) {
   const [maxRun, setMaxRun] = useState(defaultMaxRun(plan));
   const [reach, setReach] = useState(false);
   // shutdown team members take no leave: the days are planned with everybody present, the leave to move is listed above
-  const results = useMemo(() => spreadPlan(plan, teams, members, phases, { crewOf, away: () => false, maxRun, reachLimit: reach }), [plan, teams, members, phases, crewOf, maxRun, reach]);
+  const results = useMemo(() => spreadPlan(plan, teams, members, phases, { crewOf, away: () => false, maxRun, reachLimit: reach, yearTaken }), [plan, teams, members, phases, crewOf, maxRun, reach, yearTaken]);
   const [off, setOff] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const id = (r: (typeof results)[number]) => `${r.group.teamId}:${r.group.key}`;
@@ -76,7 +78,7 @@ export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, c
         </>}
         {conflicts.length > 0 && (
           <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-300">
-            <p className="font-semibold">Leave inside the shutdown · {conflicts.length}</p>
+            <p className="font-semibold">Approved leave inside the shutdown · {conflicts.length}</p>
             <p>A team member takes no leave during the shutdown, so the days below are planned as if everyone is present. Move this leave first:</p>
             <ul className="mt-1 space-y-0.5">
               {conflicts.map((c) => <li key={c.employeeId} className="flex items-center justify-between gap-2"><span className="truncate">{names.get(c.employeeId) ?? 'Employee'} · {c.days} {c.days === 1 ? 'day' : 'days'}</span><Link to={`/requests?q=${encodeURIComponent(c.number)}`} className="shrink-0 font-semibold text-brand-700 underline">Move leave</Link></li>)}
@@ -100,13 +102,15 @@ export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, c
                             const emp = members.find((mm) => mm.id === x.id)?.employeeId ?? '';
                             const months = Object.entries(x.months).sort(([a], [b]) => a.localeCompare(b));
                             const worst = Math.max(0, ...months.map(([, h]) => h));
-                            const tone = worst > plan.maxOvertime ? 'text-status-red' : worst >= plan.maxOvertime - 4 ? 'text-status-green' : 'text-amber-700';
+                            const yearLines = Object.entries(x.years).filter(([, y]) => y.taken > 0);
+                            const yearOver = Object.values(x.years).some((y) => y.taken + y.planned > yearCap(plan));
+                            const tone = worst > plan.maxOvertime || yearOver ? 'text-status-red' : worst >= plan.maxOvertime - 4 ? 'text-status-green' : 'text-amber-700';
                             return (
                               <li key={x.id} className="flex items-center gap-1.5 text-xs">
                                 {x.crew ? <CrewBadge crew={x.crew} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-500">Day</span>}
                                 <span className="min-w-0 flex-1 truncate text-slate-800">{names.get(emp) ?? 'Employee'}</span>
                                 <span className="shrink-0 text-slate-500">{x.days} d · {x.full}×{plan.shiftHours} h + {x.short}×{Math.min(plan.normalHours, plan.shiftHours)} h</span>
-                                <span className={cx('shrink-0 text-right font-semibold tabular-nums', tone)}>{months.length > 1 ? months.map(([mo, h]) => `${MONTH_SHORT[Number(mo.slice(5)) - 1]} ${h}`).join(' · ') : `OT ${x.overtime}`}<span className="font-normal text-slate-400">/{plan.maxOvertime}</span></span>
+                                <span className={cx('shrink-0 text-right font-semibold tabular-nums', tone)}>{months.length > 1 ? months.map(([mo, h]) => `${MONTH_SHORT[Number(mo.slice(5)) - 1]} ${h}`).join(' · ') : `OT ${x.overtime}`}<span className="font-normal text-slate-400">/{plan.maxOvertime}</span>{yearLines.map(([y, v]) => <span key={y} className="block text-[10px] font-normal text-slate-500">{y}: {v.taken} + {v.planned} = {v.taken + v.planned}/{yearCap(plan)}</span>)}</span>
                               </li>
                             );
                           })}

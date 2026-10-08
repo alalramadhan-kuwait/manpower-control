@@ -29,7 +29,9 @@ export interface SdPlan {
   /** The first and the last `rampDays` days are reduced: fewer people needed, `rampHours` a shift. */
   rampDays: number; rampHours: number;
   /** Hours of a normal crew duty (overtime = shutdown hours − the normal hours the person would have worked). */
-  normalHours: number; maxOvertime: number;
+  normalHours: number;
+  /** Overtime cap per person per calendar month, and per calendar year (with the hours already taken that year). */
+  maxOvertime: number; maxOvertimeYear?: number;
 }
 export interface SdTeam { id: string; planId: string; name: string; sort: number; needs: Record<NeedSlot, number>; rampNeeds: Record<NeedSlot, number>; shiftCode: 'M' | 'N'; hoursLabel: string | null }
 export interface SdDay { works: boolean; hours: number | null }

@@ -6,13 +6,13 @@ import { cancelMovement, fetchMovements, recordMovement } from './movements';
 import { memberHoursOn, memberWorks, type FoLevel, type SdDay, type SdKind, type SdMember, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
 
 export interface Signature { title: string; name: string }
-interface PlanRow { signatures: Signature[]; kind: SdKind; areas: string[] | null; sections: string[] | null; id: string; event_id: string | null; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; status: string }
+interface PlanRow { signatures: Signature[]; kind: SdKind; areas: string[] | null; sections: string[] | null; id: string; event_id: string | null; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; max_overtime_year?: number | null; status: string }
 interface TeamRow { id: string; plan_id: string; name: string; sort: number; shift_code: 'M' | 'N'; shift_hours_label: string | null; controller_n: number; senior_n: number; good_n: number; new_n: number; ramp_controller_n: number; ramp_senior_n: number; ramp_good_n: number; ramp_new_n: number }
 interface MemberRow { id: string; plan_id: string; team_id: string; employee_id: string; slot: SdSlot; day_offset: number; start_date: string; end_date: string; area: string | null; note: string | null; follow_crew: Crew | null }
 interface PhaseRow { id: string; plan_id: string; start_date: string; end_date: string; needs: SdPhase['needs'] }
 
 const toPlan = (r: PlanRow): SdPlan => ({ id: r.id, eventId: r.event_id, title: r.title, kind: r.kind ?? 'train', areas: r.areas ?? [], sections: r.sections ?? [], start: r.start_date, end: r.end_date, daysOn: r.days_on, daysOff: r.days_off,
-  shiftHours: Number(r.shift_hours), rampDays: r.ramp_days, rampHours: Number(r.ramp_hours), normalHours: Number(r.normal_hours), maxOvertime: Number(r.max_overtime) });
+  shiftHours: Number(r.shift_hours), rampDays: r.ramp_days, rampHours: Number(r.ramp_hours), normalHours: Number(r.normal_hours), maxOvertime: Number(r.max_overtime), maxOvertimeYear: r.max_overtime_year == null ? 380 : Number(r.max_overtime_year) });
 const toTeam = (r: TeamRow): SdTeam => ({ id: r.id, planId: r.plan_id, name: r.name, sort: r.sort,
   needs: { controller: r.controller_n, senior: r.senior_n, good: r.good_n, new: r.new_n }, rampNeeds: { controller: r.ramp_controller_n, senior: r.ramp_senior_n, good: r.ramp_good_n, new: r.ramp_new_n },
   shiftCode: r.shift_code, hoursLabel: r.shift_hours_label });
@@ -92,7 +92,7 @@ export async function createSdPlan(v: { title: string; start: string; end: strin
   return id;
 }
 
-export async function updateSdPlan(id: string, v: Partial<{ signatures: Signature[]; kind: SdKind; areas: string[]; sections: string[]; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; status: 'active' | 'cancelled' }>) {
+export async function updateSdPlan(id: string, v: Partial<{ signatures: Signature[]; kind: SdKind; areas: string[]; sections: string[]; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; max_overtime_year: number; status: 'active' | 'cancelled' }>) {
   const { error } = await supabase.from('sd_plans').update(v).eq('id', id);
   if (error) throw error;
   dataChanged();
@@ -269,4 +269,27 @@ export async function fetchSdDuties(from: string, to: string): Promise<(employee
     }
     return null;
   };
+}
+
+/** Move a shutdown with everything on it (people's dates, phases, "follow X shift" instructions, calendar event). */
+export async function moveSdPlan(id: string, start: string, end: string): Promise<{ days: number; members: number; phases: number; instructions: number; leave: number }> {
+  const { data, error } = await supabase.rpc('sd_plan_move', { p_plan: id, p_start: start, p_end: end });
+  if (error) throw new Error(error.message);
+  dataChanged();
+  return data as { days: number; members: number; phases: number; instructions: number; leave: number };
+}
+
+/** Overtime each person already took in a calendar year (typed in), keyed `${employeeId}:${year}`. */
+export async function fetchOvertimeTaken(employeeIds: string[], years: number[]): Promise<Map<string, { hours: number; asOf: string }>> {
+  const out = new Map<string, { hours: number; asOf: string }>();
+  if (!employeeIds.length || !years.length) return out;
+  const { data, error } = await supabase.from('overtime_year_taken').select('employee_id,year,hours,as_of').in('employee_id', employeeIds).in('year', years);
+  if (error) throw error;
+  for (const r of data as { employee_id: string; year: number; hours: number; as_of: string }[]) out.set(`${r.employee_id}:${r.year}`, { hours: Number(r.hours), asOf: r.as_of });
+  return out;
+}
+export async function setOvertimeTaken(employeeId: string, year: number, hours: number, asOf: string) {
+  const { error } = await supabase.rpc('overtime_year_set', { p_employee: employeeId, p_year: year, p_hours: hours, p_as_of: asOf, p_note: null });
+  if (error) throw new Error(error.message);
+  dataChanged();
 }

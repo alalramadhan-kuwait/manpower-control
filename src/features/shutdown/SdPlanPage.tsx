@@ -8,13 +8,14 @@ import { FO_LEVEL_LABEL, SD_PO_MAX_GRADE, SD_SLOTS, SD_SLOT_LABEL, areasOf, grou
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { fetchOperationPlan, schedulePeriod, type PeriodRow } from '@/data/modes';
 import { fetchDirectory } from '@/data/queries';
-import { addSdMember, clearSdDays, fetchAllSdMembers, fetchFollowMovements, fetchSdPlan, fetchSdPlans, fetchSickTotals, removeSdMember, renameSdArea, saveSdPhases, setSdDays, updateSdMember, updateSdPlan, updateSdTeam, type Signature } from '@/data/shutdown';
+import { addSdMember, clearSdDays, fetchAllSdMembers, fetchFollowMovements, fetchOvertimeTaken, fetchSdPlan, fetchSdPlans, fetchSickTotals, moveSdPlan, removeSdMember, renameSdArea, saveSdPhases, setOvertimeTaken, setSdDays, updateSdMember, updateSdPlan, updateSdTeam, type Signature } from '@/data/shutdown';
 import type { EmployeeDirectoryRow } from '@/data/types';
 import { BottomSheet, Button, Card, ErrorBox, Field, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { shortDate } from '@/ui/leave';
 import { PersonHistory } from './PersonHistory';
 import { SpreadDaysSheet } from './SpreadDays';
+import { yearCap } from '@/core/shutdown/spread';
 import { MoveLeaveSheet } from './MoveLeave';
 import { FollowInstruction, FollowSheet } from './FollowCrew';
 import { suggestFollow } from '@/core/shutdown/overlap';
@@ -30,6 +31,8 @@ type Data = {
   sick: Map<string, Record<number, number>>;
   /** Total turnaround: operating-mode periods over its dates (the crews should be in 'Total shutdown'). */
   periods: PeriodRow[];
+  /** Overtime each member already took in the shutdown's year(s), typed in: `${employeeId}:${year}`. */
+  otTaken: Map<string, { hours: number; asOf: string }>;
 };
 const TOTAL_MODE = 'total_shutdown';
 /** Most people a team needs on any day: train, its full-day needs; total turnaround, its biggest phase. */
@@ -54,6 +57,7 @@ export default function SdPlanPage() {
   const [editTeam, setEditTeam] = useState<SdTeam | null>(null);
   const [editPhases, setEditPhases] = useState(false);
   const [spreading, setSpreading] = useState(false);
+  const [yearOt, setYearOt] = useState(false);
   const [moving, setMoving] = useState(false);
   // the instructions are a page of their own (?view=instructions), so Back returns to the plan
   const [search, setSearch] = useSearchParams();
@@ -68,9 +72,11 @@ export default function SdPlanPage() {
       const y = Number(sd.plan.start.slice(0, 4));
       const [inputs, dir, plans, all, sick, ops] = await Promise.all([fetchManpowerInputs(addDaysIso(sd.plan.start, -1), addDaysIso(sd.plan.end, 1)), fetchDirectory(), fetchSdPlans(), fetchAllSdMembers(), fetchSickTotals([y, y - 1]),
         sd.plan.kind === 'total' ? fetchOperationPlan(sd.plan.start, sd.plan.end) : null]);
+      const years = [...new Set([Number(sd.plan.start.slice(0, 4)), Number(sd.plan.end.slice(0, 4))])];
+      const otTaken = await fetchOvertimeTaken([...new Set(sd.members.map((m) => m.employeeId))], years).catch(() => new Map<string, { hours: number; asOf: string }>());
       const n = neighbours(plans, sd.plan);
       const ids = (p: SdPlan | null) => (p ? { plan: p, ids: new Set(all.filter((m) => m.planId === p.id).map((m) => m.employeeId)) } : null);
-      setData({ ...sd, inputs, dir: new Map(dir.map((r) => [r.id, r])), prev: ids(n.prev), next: ids(n.next), sick, periods: ops?.periods ?? [] });
+      setData({ ...sd, inputs, dir: new Map(dir.map((r) => [r.id, r])), prev: ids(n.prev), next: ids(n.next), sick, periods: ops?.periods ?? [], otTaken });
     } catch (e) { setError(e); }
   }, [id]);
   useEffect(() => { load(); }, [load]);
@@ -91,7 +97,9 @@ export default function SdPlanPage() {
       done(`${r?.display_name ?? 'Member'} moved to the ${team.name} ${total ? 'shift' : 'team'}${total ? (area ? ` · ${area}` : '') : ` · ${SD_SLOT_LABEL[slot]}`}.`);
     } catch (e) { setMoveError(e instanceof Error ? e.message : 'Could not move.'); }
   }
-  const done = (m: string) => { setAdding(null); setMember(null); setEditPattern(false); setEditTeam(null); setEditPhases(false); setSpreading(false); setMoving(false); setFollowing(false); setNotice(m); load(); };
+  const done = (m: string) => { setAdding(null); setMember(null); setEditPattern(false); setEditTeam(null); setEditPhases(false); setSpreading(false); setYearOt(false); setMoving(false); setFollowing(false); setNotice(m); load(); };
+  // the shutdown moved: its days and hours are rebuilt for the new dates (the crews' duty days are not the same)
+  const moved = (m: string) => { setEditPattern(false); setNotice(m); load().then(() => setSpreading(true)); };
 
   const view = useMemo(() => {
     if (!data) return null;
@@ -109,11 +117,15 @@ export default function SdPlanPage() {
     // days of leave inside the member's shutdown days: the person's own duty days on a train shutdown (a rest day costs nothing),
     // every day of a total turnaround; counted whether or not the day is still marked working (balancing marks leave days off)
     const leaveDays = (m: SdMember) => dates.filter((d) => d >= m.start && d <= m.end && leaveOn(m.employeeId, d) && (plan.kind === 'total' || isDutyDay(dutyCrew(m), d))).length;
+    // leave already approved in Oracle needs a decision now; leave not yet approved is postponed and coordinated later
+    const approvedOn = (emp: string, d: string) => inputs.absences.some((a) => a.employeeId === emp && a.oracle === 'approved' && (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && a.start <= d && d <= a.end);
+    const approvedLeaveDays = (m: SdMember) => dates.filter((d) => d >= m.start && d <= m.end && approvedOn(m.employeeId, d) && (plan.kind === 'total' || isDutyDay(dutyCrew(m), d))).length;
     const teamDays = new Map(teams.map((t) => [t.id, dates.map((d) => ({ date: d, slots: teamDay(plan, t, members, d, leaveOn, data.phases) }))]));
     const overlaps = plan.kind === 'total' ? [] : suggestFollow(plan, teams, members, data.phases, dutyCrew, (m) => data.dir.get(m.employeeId)?.position_code === 'vr_controller');
-    return { people, leaveOn, homeCrew, dutyCrew, dates, crewImpact, hours, leaveDays, teamDays, overlaps };
+    return { people, leaveOn, homeCrew, dutyCrew, dates, crewImpact, hours, leaveDays, approvedLeaveDays, teamDays, overlaps };
   }, [data]);
 
+  const yearTaken = useCallback((e: string, y: number) => data?.otTaken.get(`${e}:${y}`)?.hours ?? 0, [data]);
   if (error) return <ErrorBox error={error} />;
   if (!data || !view) return <Spinner />;
   const { plan, teams, members, dir } = data;
@@ -121,7 +133,8 @@ export default function SdPlanPage() {
   const needTotal = teams.reduce((n, t) => n + Object.values(teamNeed(plan, t, data.phases)).reduce((k, x) => k + x, 0), 0);
   const gapDays = teams.reduce((n, t) => n + view.teamDays.get(t.id)!.filter((d) => dayState(d.slots) === 'critical').length, 0);
   // a shutdown team member takes no leave: who still has some inside the shutdown
-  const leaveConflicts = members.map((m) => ({ employeeId: m.employeeId, number: data.dir.get(m.employeeId)?.employee_number ?? '', days: view.leaveDays(m) })).filter((c) => c.days > 0);
+  const leaveConflicts = members.map((m) => ({ employeeId: m.employeeId, number: data.dir.get(m.employeeId)?.employee_number ?? '', days: view.leaveDays(m), approved: view.approvedLeaveDays(m) })).filter((c) => c.days > 0);
+  const approvedLeave = leaveConflicts.filter((c) => c.approved > 0), pendingLeave = leaveConflicts.filter((c) => c.approved === 0);
   const overCap = members.filter((m) => view.hours.get(m.id)!.some((h) => h.over)).length;
   const crewShort = total ? 0 : view.crewImpact.reduce((n, c) => n + c.short, 0);
 
@@ -175,6 +188,7 @@ export default function SdPlanPage() {
           <ActionButton onClick={() => setSpreading(true)} icon={<Shuffle className="h-4 w-4" />} title={total ? 'Spread days off' : 'Set days & hours'} hint={total ? 'Choose each person\'s days off' : 'Which days each person works, and 8 h or 12 h'} />
           {<ActionButton onClick={() => setFollowing(true)} warn={view.overlaps.length > 0} icon={<Shuffle className="h-4 w-4" />} title={view.overlaps.length ? `Shift instructions · ${view.overlaps.reduce((n, g) => n + g.changes.length, 0)}` : 'Shift instructions'} hint={view.overlaps.length ? 'See everyone\'s instructions. Some people clash and should follow another shift' : 'See everyone\'s instructions: when to join and rejoin'} />}
         </div>
+        <ActionButton onClick={() => setYearOt(true)} icon={<Pencil className="h-4 w-4" />} title="Overtime taken this year" hint={`Hours each person already took this year: the shutdown keeps everyone within ${yearCap(plan)} h a year`} />
         <div className="grid grid-cols-3 gap-2">
           <Link to={`/shutdown/${plan.id}/schedule`} className="flex min-h-12 flex-col items-center justify-center rounded-lg bg-white px-1 text-center ring-1 ring-slate-300"><span className="flex items-center gap-1 text-xs font-semibold text-brand-700"><FileText className="h-3.5 w-3.5" />Duty schedule</span><span className="text-[10px] leading-tight text-slate-500">Who works which day</span></Link>
           <Link to={`/shutdown/${plan.id}/overtime`} className="flex min-h-12 flex-col items-center justify-center rounded-lg bg-white px-1 text-center ring-1 ring-slate-300"><span className="flex items-center gap-1 text-xs font-semibold text-brand-700"><FileText className="h-3.5 w-3.5" />Summary</span><span className="text-[10px] leading-tight text-slate-500">Overtime for approval</span></Link>
@@ -183,13 +197,22 @@ export default function SdPlanPage() {
       </div>
       {notice && <p className="mb-2 flex items-center gap-1 text-sm text-status-green"><Check className="h-4 w-4" />{notice}</p>}
       {moveError && <p role="alert" className="mb-2 flex items-center gap-1 text-sm text-status-red"><AlertTriangle className="h-4 w-4 shrink-0" />{moveError}</p>}
-      {leaveConflicts.length > 0 && (
+      {approvedLeave.length > 0 && (
         <div className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-300">
-          <p className="font-semibold">Leave inside the shutdown · {leaveConflicts.length} {leaveConflicts.length === 1 ? 'person' : 'people'}</p>
-          <p>A team member takes no leave during the shutdown. Move the leave, or take the person off the team.</p>
+          <p className="font-semibold">Approved leave inside the shutdown · {approvedLeave.length} {approvedLeave.length === 1 ? 'person' : 'people'}</p>
+          <p>Already approved in Oracle: decide now. Move the leave (Oracle then needs the new dates), or take the person off the team.</p>
           <Button className="my-1.5 min-h-9 w-full px-3 text-xs" onClick={() => setMoving(true)}>Propose new dates for all</Button>
           <ul className="mt-1 space-y-0.5">
-            {leaveConflicts.map((c) => <li key={c.employeeId} className="flex items-center justify-between gap-2"><span className="truncate">{data.dir.get(c.employeeId)?.display_name ?? 'Employee'} · {c.days} {c.days === 1 ? 'day' : 'days'}</span><Link to={`/requests?q=${encodeURIComponent(c.number)}`} className="shrink-0 font-semibold text-brand-700 underline">Move leave</Link></li>)}
+            {approvedLeave.map((c) => <li key={c.employeeId} className="flex items-center justify-between gap-2"><span className="truncate">{data.dir.get(c.employeeId)?.display_name ?? 'Employee'} · {c.days} {c.days === 1 ? 'day' : 'days'}</span><Link to={`/requests?q=${encodeURIComponent(c.number)}`} className="shrink-0 font-semibold text-brand-700 underline">Move leave</Link></li>)}
+          </ul>
+        </div>
+      )}
+      {pendingLeave.length > 0 && (
+        <div className="mb-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700 ring-1 ring-slate-200">
+          <p className="font-semibold">Leave not yet approved · {pendingLeave.length} {pendingLeave.length === 1 ? 'person' : 'people'} · postponed, coordinated later</p>
+          <p>Not approved in Oracle yet: it is postponed and new dates are agreed later. The team is planned with them present.</p>
+          <ul className="mt-1 space-y-0.5">
+            {pendingLeave.map((c) => <li key={c.employeeId} className="truncate">{data.dir.get(c.employeeId)?.display_name ?? 'Employee'} · {c.days} {c.days === 1 ? 'day' : 'days'}</li>)}
           </ul>
         </div>
       )}
@@ -224,8 +247,9 @@ export default function SdPlanPage() {
       {adding && <AddSheet plan={plan} team={adding.team} slot={adding.slot} area={adding.area} data={data} view={view} onClose={() => setAdding(null)} onDone={done} />}
       {member && <MemberSheet plan={plan} m={member} data={data} view={view} onClose={() => setMember(null)} onDone={done} />}
       {moving && <MoveLeaveSheet plan={plan} members={members} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} inputs={data.inputs} onClose={() => setMoving(false)} onDone={done} />}
-      {spreading && <SpreadDaysSheet plan={plan} teams={teams} members={members} phases={data.phases} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} crewOf={(e) => { const mm = members.find((x) => x.employeeId === e); return mm ? view.dutyCrew(mm) : view.homeCrew(e, plan.start); }} conflicts={leaveConflicts} onClose={() => setSpreading(false)} onDone={done} />}
-      {editPattern && <PatternSheet plan={plan} hasPeople={members.length > 0} onClose={() => setEditPattern(false)} onDone={done} />}
+      {spreading && <SpreadDaysSheet plan={plan} teams={teams} members={members} phases={data.phases} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} crewOf={(e) => { const mm = members.find((x) => x.employeeId === e); return mm ? view.dutyCrew(mm) : view.homeCrew(e, plan.start); }} conflicts={approvedLeave} yearTaken={yearTaken} onClose={() => setSpreading(false)} onDone={done} />}
+      {yearOt && <YearOvertimeSheet plan={plan} members={members} dir={dir} taken={data.otTaken} onClose={() => setYearOt(false)} onDone={done} />}
+      {editPattern && <PatternSheet plan={plan} hasPeople={members.length > 0} onClose={() => setEditPattern(false)} onDone={done} onMoved={moved} />}
       {editPhases && <PhasesSheet plan={plan} teams={teams} phases={data.phases} onClose={() => setEditPhases(false)} onDone={done} />}
       {editTeam && <NeedsSheet t={editTeam} onClose={() => setEditTeam(null)} onDone={done} />}
     </div>
@@ -551,11 +575,26 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
   );
 }
 
-function PatternSheet({ plan, hasPeople, onClose, onDone }: { plan: SdPlan; hasPeople: boolean; onClose: () => void; onDone: (m: string) => void }) {
-  const [v, setV] = useState({ title: plan.title, kind: plan.kind as SdKind, start_date: plan.start, end_date: plan.end, days_on: plan.daysOn, days_off: plan.daysOff, shift_hours: plan.shiftHours, ramp_days: plan.rampDays, ramp_hours: plan.rampHours, normal_hours: plan.normalHours, max_overtime: plan.maxOvertime });
+function PatternSheet({ plan, hasPeople, onClose, onDone, onMoved }: { plan: SdPlan; hasPeople: boolean; onClose: () => void; onDone: (m: string) => void; onMoved: (m: string) => void }) {
+  const [v, setV] = useState({ title: plan.title, kind: plan.kind as SdKind, start_date: plan.start, end_date: plan.end, days_on: plan.daysOn, days_off: plan.daysOff, shift_hours: plan.shiftHours, ramp_days: plan.rampDays, ramp_hours: plan.rampHours, normal_hours: plan.normalHours, max_overtime: plan.maxOvertime, max_overtime_year: yearCap(plan) });
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const num = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement>) => setV((x) => ({ ...x, [k]: Number(e.target.value) }));
-  async function save() { setBusy(true); setErr(null); try { await updateSdPlan(plan.id, { ...v, title: v.title.trim() || plan.title }); onDone('Pattern saved.'); } catch (e) { setErr(e); } finally { setBusy(false); } }
+  const datesChanged = v.start_date !== plan.start || v.end_date !== plan.end;
+  const shift = Math.round((Date.parse(v.start_date) - Date.parse(plan.start)) / 864e5);
+  async function save() {
+    setBusy(true); setErr(null);
+    try {
+      if (datesChanged && hasPeople) {
+        // a shutdown with people moves with everything on it, then its days and hours are rebuilt
+        const r = await moveSdPlan(plan.id, v.start_date, v.end_date);
+        const { start_date: _s, end_date: _e, ...rest } = v;
+        await updateSdPlan(plan.id, { ...rest, title: v.title.trim() || plan.title });
+        onMoved(`Shutdown moved to ${range(v.start_date, v.end_date)}: ${r.members} ${r.members === 1 ? 'person' : 'people'}${r.instructions ? `, ${r.instructions} shift instruction${r.instructions === 1 ? '' : 's'}` : ''}${r.phases ? `, ${r.phases} phase${r.phases === 1 ? '' : 's'}` : ''} moved with it.${r.leave ? ` ${r.leave} ${r.leave === 1 ? 'has' : 'have'} leave inside the new dates.` : ''} Check the new days and hours below and apply.`);
+        return;
+      }
+      await updateSdPlan(plan.id, { ...v, title: v.title.trim() || plan.title }); onDone('Pattern saved.');
+    } catch (e) { setErr(e); } finally { setBusy(false); }
+  }
   return (
     <BottomSheet open onClose={onClose} title="Shutdown pattern">
       <div className="space-y-3">
@@ -571,8 +610,8 @@ function PatternSheet({ plan, hasPeople, onClose, onDone }: { plan: SdPlan; hasP
           ))}
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="First day"><input type="date" className="input disabled:bg-slate-100 disabled:text-slate-500" disabled={hasPeople} value={v.start_date} onChange={(e) => setV((x) => ({ ...x, start_date: e.target.value }))} /></Field>
-          <Field label="Last day"><input type="date" className="input disabled:bg-slate-100 disabled:text-slate-500" disabled={hasPeople} value={v.end_date} onChange={(e) => setV((x) => ({ ...x, end_date: e.target.value }))} /></Field>
+          <Field label="First day"><input type="date" className="input" value={v.start_date} onChange={(e) => setV((x) => ({ ...x, start_date: e.target.value }))} /></Field>
+          <Field label="Last day"><input type="date" className="input" value={v.end_date} onChange={(e) => setV((x) => ({ ...x, end_date: e.target.value }))} /></Field>
           <Field label="Days on"><input className="input" inputMode="numeric" value={v.days_on} onChange={num('days_on')} /></Field>
           <Field label="Days off"><input className="input" inputMode="numeric" value={v.days_off} onChange={num('days_off')} /></Field>
           <Field label="Shift hours"><input className="input" inputMode="numeric" value={v.shift_hours} onChange={num('shift_hours')} /></Field>
@@ -580,10 +619,49 @@ function PatternSheet({ plan, hasPeople, onClose, onDone }: { plan: SdPlan; hasP
           <Field label="Reduced days (each end)"><input className="input" inputMode="numeric" value={v.ramp_days} onChange={num('ramp_days')} /></Field>
           <Field label="Reduced-day hours"><input className="input" inputMode="numeric" value={v.ramp_hours} onChange={num('ramp_hours')} /></Field>
           <Field label="Max overtime / month (h)"><input className="input" inputMode="numeric" value={v.max_overtime} onChange={num('max_overtime')} /></Field>
+          <Field label="Max overtime / year (h)"><input className="input" inputMode="numeric" value={v.max_overtime_year} onChange={num('max_overtime_year')} /></Field>
         </div>
-        {hasPeople && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">The dates are locked: people are placed on this shutdown, and their days, hours and shift instructions follow the dates. Moving the whole shutdown with its people comes with the shutdown package.</p>}
+        {hasPeople && datesChanged && <p className="rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-900 ring-1 ring-brand-100"><b>Moving the shutdown</b>{shift ? ` ${Math.abs(shift)} ${Math.abs(shift) === 1 ? 'day' : 'days'} ${shift > 0 ? 'later' : 'earlier'}` : ''}{v.end_date !== plan.end ? `, ending ${range(v.end_date, v.end_date)}` : ''}: its people, their &quot;follow X shift&quot; instructions, the phases and the calendar event move with it, then the days and hours are rebuilt for the new dates for you to check and apply.</p>}
         {err != null && <ErrorBox error={err} />}
-        <Button className="w-full" disabled={busy} onClick={save}>Save</Button>
+        <Button className="w-full" disabled={busy} onClick={save}>{hasPeople && datesChanged ? 'Move the shutdown' : 'Save'}</Button>
+      </div>
+    </BottomSheet>
+  );
+}
+
+/** The overtime each team member already took this year, typed in: the shutdown keeps everyone within the yearly cap. */
+function YearOvertimeSheet({ plan, members, dir, taken, onClose, onDone }: { plan: SdPlan; members: SdMember[]; dir: Map<string, EmployeeDirectoryRow>; taken: Map<string, { hours: number; asOf: string }>; onClose: () => void; onDone: (m: string) => void }) {
+  const year = Number(plan.start.slice(0, 4));
+  const today = new Date().toISOString().slice(0, 10);
+  const people = [...new Set(members.map((m) => m.employeeId))].map((e) => ({ id: e, row: dir.get(e) })).sort((a, b) => (a.row?.display_name ?? '').localeCompare(b.row?.display_name ?? ''));
+  const [v, setV] = useState<Record<string, string>>(() => Object.fromEntries(people.map((p) => [p.id, String(taken.get(`${p.id}:${year}`)?.hours ?? '')])));
+  const [asOf, setAsOf] = useState(today);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const changed = people.filter((p) => v[p.id] !== '' && Number(v[p.id]) !== (taken.get(`${p.id}:${year}`)?.hours ?? -1));
+  async function save() {
+    setBusy(true); setErr(null);
+    try { for (const p of changed) await setOvertimeTaken(p.id, year, Number(v[p.id]), asOf); onDone(`Overtime taken in ${year} saved for ${changed.length} ${changed.length === 1 ? 'person' : 'people'}.`); }
+    catch (e) { setErr(e); setBusy(false); }
+  }
+  return (
+    <BottomSheet open onClose={onClose} title={`Overtime taken in ${year}`}>
+      <div className="space-y-3">
+        <p className="text-xs text-slate-600">Hours each person already took in {year} outside this shutdown. With this shutdown&apos;s overtime nobody goes above {yearCap(plan)} h in the year (and {plan.maxOvertime} h in a month).</p>
+        <Field label="As of"><input type="date" className="input" value={asOf} onChange={(e) => setAsOf(e.target.value)} /></Field>
+        <ul className="divide-y divide-slate-100">
+          {people.map((p) => {
+            const h = Number(v[p.id] || 0), left = yearCap(plan) - h;
+            return (
+              <li key={p.id} className="flex items-center gap-2 py-1.5">
+                <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{p.row?.display_name ?? 'Employee'} <span className="text-xs text-slate-500">#{p.row?.employee_number}</span></span>
+                <span className={cx('w-20 shrink-0 text-right text-xs tabular-nums', left < 0 ? 'font-semibold text-status-red' : left < 40 ? 'text-amber-700' : 'text-slate-500')}>{v[p.id] === '' ? '' : `${left} h left`}</span>
+                <input className="input h-9 shrink-0 text-right" style={{ width: '5.5rem' }} inputMode="numeric" aria-label={`Overtime taken by ${p.row?.display_name ?? 'employee'}`} value={v[p.id]} onChange={(e) => setV((x) => ({ ...x, [p.id]: e.target.value.replace(/[^0-9.]/g, '') }))} placeholder="h" />
+              </li>
+            );
+          })}
+        </ul>
+        {err != null && <ErrorBox error={err} />}
+        <Button className="w-full" disabled={busy || changed.length === 0} onClick={save}>Save {changed.length || ''}</Button>
       </div>
     </BottomSheet>
   );

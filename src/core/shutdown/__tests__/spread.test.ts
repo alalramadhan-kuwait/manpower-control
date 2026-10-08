@@ -27,6 +27,17 @@ describe('follow your own crew (train shutdown)', () => {
     }
     expect(r.after.over).toBe(0);
   });
+  it('the yearly cap counts the overtime already taken: 350 h taken leaves 30 h for the shutdown', () => {
+    const list = [m('c1', 'controller'), m('c2', 'controller')];
+    const r = spreadGroup(plan, grp(list, 'controller'), list, ctxOf({ c1: 'A', c2: 'C' }, { yearTaken: (id) => (id === 'c1' ? 350 : 0) }));
+    const [a, b] = r.train!.people;
+    expect(a.years['2026']).toMatchObject({ taken: 350 });
+    const free = spreadGroup(plan, grp(list, 'controller'), list, ctxOf({ c1: 'A', c2: 'C' })).train!.people[0];
+    expect(a.overtime).toBeLessThan(free.overtime);          // no top-up for him, and the even share goes to the other first
+    expect(b.overtime).toBeGreaterThan(a.overtime);
+    // the days he is the only Controller on duty still need him on the full shift: coverage first, and he shows as over the year
+    expect(r.after.over).toBe(a.overtime + 350 > 380 ? 1 : 0);
+  });
   it('days without a Controller on the full 12 h are listed by date', () => {
     const list = [m('c1', 'controller'), m('c2', 'controller')];
     const r = spreadGroup(plan, grp(list, 'controller'), list, ctxOf({ c1: 'A', c2: 'A' }));

@@ -56,7 +56,9 @@ export const DEFAULT_FULL_RUN_NIGHT = 3;
 export const MAX_WEEK_HOURS = 72;
 export interface PersonLine { id: string; crew: Crew | null; days: number; full: number; short: number; overtime: number; weekHours: number;
   /** Overtime per calendar month (YYYY-MM), against the plan's monthly cap. */
-  months: Record<string, number> }
+  months: Record<string, number>;
+  /** Per calendar year: overtime already taken (typed in) and planned on this shutdown, against the yearly cap. */
+  years: Record<string, { taken: number; planned: number }> }
 export interface TrainInfo {
   people: PersonLine[];
   /** Crews the slot has nobody from, when it needs more people or a better mix. */
@@ -74,6 +76,8 @@ export interface SpreadContext {
   /** Top the overtime up to the limit even when that needs as many full shifts in a row as the crew's own block of duty days (6). */
   reachLimit?: boolean;
   crewOf: (employeeId: string) => Crew | null;
+  /** Overtime the person already took in the calendar year outside this shutdown (typed in); counted against the yearly cap. */
+  yearTaken?: (employeeId: string, year: number) => number;
   away: (employeeId: string, date: string) => boolean;
   /** Most days in a row a person works without a day off. */
   maxRun: number;
@@ -95,6 +99,9 @@ export function spreadGroups(p: SdPlan, t: SdTeam, members: SdMember[], phases: 
 }
 
 const month = (d: string) => d.slice(0, 7);
+const yearOf = (d: string) => Number(d.slice(0, 4));
+/** The yearly overtime cap of a plan (380 h unless set). */
+export const yearCap = (p: SdPlan) => p.maxOvertimeYear ?? 380;
 /** Overtime of one person working `date`, on the plan's hours for that day (no hours of their own). */
 const workOt = (p: SdPlan, crew: Crew | null, date: string) => Math.max(0, hoursOn(p, date) - (isDutyDay(crew, date) ? p.normalHours : 0));
 
@@ -116,9 +123,12 @@ function stats(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadContex
       total.set(m.id, (total.get(m.id) ?? 0) + ot);
     }
   }
+  const perYear = new Map<string, Map<number, number>>();
+  for (const [id, pm] of perMonth) { const py = new Map<number, number>(); for (const [mo, h] of pm) py.set(Number(mo.slice(0, 4)), (py.get(Number(mo.slice(0, 4))) ?? 0) + h); perYear.set(id, py); }
+  const yearOver = (m: SdMember) => [...(perYear.get(m.id) ?? new Map<number, number>())].some(([y, h]) => h + (ctx.yearTaken?.(m.employeeId, y) ?? 0) > yearCap(p));
   const worsts = members.map((m) => Math.max(0, ...(perMonth.get(m.id)?.values() ?? [])));
   const totals = members.map((m) => total.get(m.id) ?? 0);
-  return { short, gapDays, noFullDays, overtime, worst: Math.max(0, ...worsts), over: worsts.filter((w) => w > p.maxOvertime).length, balance: members.length > 1 ? Math.max(...totals) - Math.min(...totals) : 0, gapDates, noFullDates };
+  return { short, gapDays, noFullDays, overtime, worst: Math.max(0, ...worsts), over: members.filter((m, i) => worsts[i] > p.maxOvertime || yearOver(m)).length, balance: members.length > 1 ? Math.max(...totals) - Math.min(...totals) : 0, gapDates, noFullDates };
 }
 
 /**
@@ -146,7 +156,10 @@ function followCrew(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadC
       if (fullOf[k] < 0) {
         const ok = on.filter((i) => run[i] < limit);
         const pool = ok.length ? ok : on;
-        const pick = pool.slice().sort((a, b) => counts[a] - counts[b] || run[a] - run[b] || a - b)[0];
+        // whoever still has room in the yearly cap first (a full shift is 4 h of overtime on a duty day), then the fewest full shifts
+        const y = Number(dates[k].slice(0, 4));
+        const full = (i: number) => (counts[i] + 1) * (p.shiftHours - short) + (ctx.yearTaken?.(members[i].employeeId, y) ?? 0) > yearCap(p) ? 1 : 0;
+        const pick = pool.slice().sort((a, b) => full(a) - full(b) || counts[a] - counts[b] || run[a] - run[b] || a - b)[0];
         fullOf[k] = pick; counts[pick]++;
       }
       for (let i = 0; i < m; i++) run[i] = i === fullOf[k] ? run[i] + 1 : 0;
@@ -162,6 +175,9 @@ function followCrew(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadC
   const otDay = (i: number, k: number) => (present[i][k] ? Math.max(0, (rampK[k] ? hoursOn(p, dates[k]) : fullNow[i][k] ? p.shiftHours : short) - (isDutyDay(crews[i], dates[k]) ? p.normalHours : 0)) : 0);
   const otMonth = members.map((_, i) => months.map((_m, q) => dates.reduce((t, _d, k) => t + (mk[k] === q ? otDay(i, k) : 0), 0)));
   const otTotal = (i: number) => otMonth[i].reduce((a, b) => a + b, 0);
+  // yearly cap: what is left of it after the overtime already taken that year (typed in), less what this shutdown plans
+  const years = [...new Set(months.map((mo) => Number(mo.slice(0, 4))))];
+  const yearLeft = (i: number, y: number) => yearCap(p) - (ctx.yearTaken?.(members[i].employeeId, y) ?? 0) - months.reduce((t, mo, q) => t + (Number(mo.slice(0, 4)) === y ? otMonth[i][q] : 0), 0);
   const topRun = ctx.reachLimit ? Math.max(limit, 6) : limit;
   const runAround = (i: number, k: number) => { let a = 0, b = 0; while (k - a - 1 >= 0 && fullNow[i][k - a - 1]) a++; while (k + b + 1 < n && fullNow[i][k + b + 1]) b++; return a + b + 1; };
   const gain = p.shiftHours - short;   // a full shift instead of the short one, on a duty day
@@ -173,7 +189,7 @@ function followCrew(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadC
       let bestK = -1, bestRoom = -Infinity, bestRun = Infinity;
       for (let k = 0; k < n; k++) {
         if (!present[i][k] || rampK[k] || fullNow[i][k] || need[k] <= 0) continue;
-        const room = p.maxOvertime - otMonth[i][mk[k]] - gain;
+        const room = Math.min(p.maxOvertime - otMonth[i][mk[k]], yearLeft(i, yearOf(dates[k]))) - gain;
         if (room < 0) continue;
         const run = runAround(i, k);
         if (run > topRun) continue;
@@ -197,7 +213,9 @@ function followCrew(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadC
       const o = Math.max(0, h - (isDutyDay(crews[i], d) ? p.normalHours : 0)); ot += o; byMonth[month(d)] = (byMonth[month(d)] ?? 0) + o;
     });
     let week = 0; for (let k = 0; k < n; k++) { let t = 0; for (let j = k; j < Math.min(n, k + 7); j++) t += hs[j]; week = Math.max(week, t); }
-    return { id: x.id, crew: crews[i], days: dWorked, full, short: dWorked - full, overtime: ot, weekHours: week, months: byMonth };
+    const byYear: PersonLine['years'] = {};
+    for (const y of years) byYear[y] = { taken: ctx.yearTaken?.(x.employeeId, y) ?? 0, planned: Object.entries(byMonth).reduce((t, [mo, h]) => t + (Number(mo.slice(0, 4)) === y ? h : 0), 0) };
+    return { id: x.id, crew: crews[i], days: dWorked, full, short: dWorked - full, overtime: ot, weekHours: week, months: byMonth, years: byYear };
   });
   const maxNeed = Math.max(0, ...need);
   const wanted = g.key === 'new' ? 0 : Math.min(CREWS.length, maxNeed + 1);
@@ -224,6 +242,7 @@ export function spreadGroup(p: SdPlan, g: SpreadGroup, all: SdMember[], ctx: Spr
   const days = new Map<string, Record<string, boolean>>(members.map((m) => [m.id, {}]));
   const run = new Map<string, number>(); const worked = new Map<string, boolean>();
   const ot = new Map<string, number>(); // overtime so far in the month being worked
+  const ytot = new Map<string, number>(); // overtime so far in each year on this shutdown
   let cur = '';
   for (const date of planDates(p)) {
     if (month(date) !== cur) { cur = month(date); ot.clear(); }
@@ -232,7 +251,8 @@ export function spreadGroup(p: SdPlan, g: SpreadGroup, all: SdMember[], ctx: Spr
     const cost = (m: SdMember) => workOt(p, ctx.crewOf(m.employeeId), date);
     const score = (m: SdMember) => {
       const c = cost(m); const so = ot.get(m.id) ?? 0;
-      return c + 0.6 * so + (so + c > p.maxOvertime ? 100 : 0) - (worked.get(m.id) ? 1.5 : 0);
+      const yl = yearCap(p) - (ctx.yearTaken?.(m.employeeId, yearOf(date)) ?? 0) - (ytot.get(`${m.id}:${yearOf(date)}`) ?? 0);
+      return c + 0.6 * so + (so + c > p.maxOvertime ? 100 : 0) + (c > yl ? 100 : 0) - (worked.get(m.id) ? 1.5 : 0);
     };
     // the run limit is firm: someone at the end of their run rests, and the day is left short if nobody else can work
     const fresh = free.filter((m) => (run.get(m.id) ?? 0) < ctx.maxRun).sort((a, b) => score(a) - score(b));
@@ -242,7 +262,7 @@ export function spreadGroup(p: SdPlan, g: SpreadGroup, all: SdMember[], ctx: Spr
       const w = pick.has(m.id);
       days.get(m.id)![date] = w;
       run.set(m.id, w ? (run.get(m.id) ?? 0) + 1 : 0); worked.set(m.id, w);
-      if (w) ot.set(m.id, (ot.get(m.id) ?? 0) + cost(m));
+      if (w) { ot.set(m.id, (ot.get(m.id) ?? 0) + cost(m)); ytot.set(`${m.id}:${yearOf(date)}`, (ytot.get(`${m.id}:${yearOf(date)}`) ?? 0) + cost(m)); }
     }
   }
   // polish two starting points, the day-by-day result and the plan as it stands (when it keeps the run limit), and keep the better
@@ -278,7 +298,10 @@ function improve(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadCont
   const cnt = dates.map((_, k) => w.reduce((c, row) => c + (row[k] ? 1 : 0), 0));
   const mot = members.map((_, i) => months.map((_, q) => dates.reduce((t, _d, k) => t + (w[i][k] && mi[k] === q ? cost[i][k] : 0), 0)));
   const cov = (k: number) => W_SHORT * Math.max(0, need[k] - cnt[k]);
-  const mterm = (i: number, q: number) => W_FAIR * mot[i][q] ** 2 + W_CAP * Math.max(0, mot[i][q] - p.maxOvertime);
+  // the yearly cap: overtime already taken plus this shutdown's in the same year (spread over that year's months)
+  const yearOfQ = months.map((mo) => Number(mo.slice(0, 4)));
+  const yearOver = (i: number, q: number) => Math.max(0, (ctx.yearTaken?.(members[i].employeeId, yearOfQ[q]) ?? 0) + months.reduce((t, _mo, r) => t + (yearOfQ[r] === yearOfQ[q] ? mot[i][r] : 0), 0) - yearCap(p));
+  const mterm = (i: number, q: number) => W_FAIR * mot[i][q] ** 2 + W_CAP * Math.max(0, mot[i][q] - p.maxOvertime) + W_CAP * yearOver(i, q);
   const set = (i: number, k: number, v: boolean): number => {
     if (w[i][k] === v) return 0;
     const before = cov(k) + mterm(i, mi[k]) + (w[i][k] ? cost[i][k] : 0);
