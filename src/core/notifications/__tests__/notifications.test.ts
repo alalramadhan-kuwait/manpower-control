@@ -42,7 +42,7 @@ describe('notification center', () => {
   });
   it('a reschedule request is the Section Head\'s to decide and says when the crew would be short', () => {
     const changes = [{ id: 'c1', employeeName: 'Person X', oldStart: '2026-10-02', oldEnd: '2026-10-08', newStart: '2026-10-09', newEnd: '2026-10-15', short: 2, clash: 0 }];
-    expect(buildNotices(base({ changes })).find((x) => x.id === 'chg-c1')).toMatchObject({ level: 'action', title: 'Reschedule request to decide', to: '/requests?view=forms' });
+    expect(buildNotices(base({ changes })).find((x) => x.id === 'chg-c1')).toMatchObject({ level: 'action', title: 'Reschedule request to decide', to: '/requests?view=approvals' });
     expect(buildNotices(base({ changes })).find((x) => x.id === 'chg-c1')?.detail).toContain('crew short 2d');
     expect(buildNotices(base({ changes, isSectionHead: false })).find((x) => x.id === 'chg-c1')).toMatchObject({ level: 'watch' });
   });
@@ -79,5 +79,13 @@ describe('shutdown team not complete', () => {
     const n = buildNotices({ ...base(), shutdowns: [{ id: 'sp1', title: 'Train-2 SD', start: '2026-11-01', end: '2026-11-30', shortDays: 12, gaps: [{ team: 'Day', label: 'Senior FO', days: 12 }] }] });
     expect(n.find((x) => x.id === 'sd-gap-sp1')).toMatchObject({ level: 'action', area: 'shortage', title: 'Train-2 SD · team not complete', to: '/shutdown/sp1' });
     expect(n.find((x) => x.id === 'sd-gap-sp1')!.detail).toContain('12 days short');
+  });
+});
+
+describe('recorded with a notice', () => {
+  const recorded = [{ id: 'r1', employeeName: 'Person 1', label: 'Sick Leave 12 Oct', start: '2026-10-12', end: '2026-10-12' }];
+  it('the Section Head is told; the Coordinator is not', () => {
+    expect(buildNotices(base({ recorded })).find((x) => x.id === 'rec-r1')).toMatchObject({ level: 'info', title: 'Recorded by the Coordinator' });
+    expect(buildNotices(base({ recorded, isSectionHead: false })).find((x) => x.id === 'rec-r1')).toBeUndefined();
   });
 });

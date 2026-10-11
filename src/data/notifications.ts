@@ -14,6 +14,7 @@ import { fetchDirectory } from './queries';
 import { fetchChangeRequests, isChangeOpen } from './changeRequests';
 import { fetchEstimatedLeaves } from './leave';
 import { fetchRequests, isOpen } from './requests';
+import { fetchRecordedNotices } from './entry';
 
 export const NOTICE_HORIZON_DAYS = 60;
 const TTL = 3 * 60 * 1000;
@@ -32,8 +33,8 @@ export async function loadNotices(isSectionHead: boolean, force = false): Promis
   pending = (async () => {
     const to = addDaysIso(today, NOTICE_HORIZON_DAYS);
     const y = Number(today.slice(0, 4));
-    const [inputs, reqs, changes, estimated, dir, ctl, sds] = await Promise.all([fetchManpowerInputs(today, addDaysIso(to, 1)), fetchRequests(), fetchChangeRequests(), fetchEstimatedLeaves(), fetchDirectory(), fetchControllerLeave(`${y}-01-01`, `${y + 1}-12-31`),
-      fetchIncompleteShutdowns(today).catch(() => [])]);
+    const [inputs, reqs, changes, estimated, dir, ctl, sds, recorded] = await Promise.all([fetchManpowerInputs(today, addDaysIso(to, 1)), fetchRequests(), fetchChangeRequests(), fetchEstimatedLeaves(), fetchDirectory(), fetchControllerLeave(`${y}-01-01`, `${y + 1}-12-31`),
+      fetchIncompleteShutdowns(today).catch(() => []), isSectionHead ? fetchRecordedNotices(addDaysIso(today, -7)).catch(() => []) : Promise.resolve([])]);
     const open = openIssues(checkControllerLeave(ctl.people, ctl.absences, ctl.approvals, [y, y + 1]), today);
     const who = (id: string) => ctl.people.find((p) => p.id === id)?.name ?? 'Controller';
     const names = new Map(dir.map((r) => [r.id, r.display_name]));
@@ -48,6 +49,7 @@ export async function loadNotices(isSectionHead: boolean, force = false): Promis
       absences: inputs.absences, people: inputs.people, plan: inputs.plan, isSectionHead,
       shutdowns: sds.map(({ plan, gaps }) => ({ id: plan.id, title: plan.title, start: plan.start, end: plan.end, shortDays: new Set(gaps.flatMap((g) => g.dates)).size,
         gaps: gaps.map((g) => ({ team: g.team, label: g.label, days: g.dates.length })) })),
+      recorded: recorded.map((r) => ({ ...r, employeeName: names.get(r.employeeId) ?? 'Employee' })),
       controllerLeave: {
         overlaps: open.overlaps.map((o) => ({ a: who(o.a.employeeId), b: who(o.b.employeeId), start: o.start, end: o.end, days: o.days })),
         extras: open.extras.map((x) => ({ name: who(x.period.employeeId), nth: x.nth, year: x.year, start: x.period.start, end: x.period.end }))

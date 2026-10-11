@@ -47,6 +47,8 @@ export interface NoticeInput {
   /** Upcoming shutdowns whose teams are short on some day: they cannot work incomplete. */
   shutdowns?: { id: string; title: string; start: string; end: string; gaps: { team: string; label: string; days: number }[]; shortDays: number }[];
   /** Controller leave rule breaks not yet approved (src/core/controllers/leaveRules openIssues, with names). */
+  /** Leave the Coordinator recorded with a notice to the Section Head (sick, injury, escort…), in the last days. */
+  recorded?: { id: string; employeeName: string; label: string; start: string; end: string }[];
   controllerLeave?: { overlaps: { a: string; b: string; start: string; end: string; days: number }[]; extras: { name: string; nth: number; year: number; start: string; end: string }[] };
 }
 
@@ -94,7 +96,12 @@ export function buildNotices(i: NoticeInput): Notice[] {
   // 3a. requests to move a leave: the Section Head decides
   for (const c of i.changes ?? []) {
     out.push({ id: `chg-${c.id}`, level: i.isSectionHead ? 'action' : 'watch', area: 'request', title: i.isSectionHead ? 'Reschedule request to decide' : 'Reschedule waiting for the Section Head',
-      detail: `${c.employeeName} · ${span(c.oldStart, c.oldEnd)} → ${span(c.newStart, c.newEnd)}${c.short > 0 ? ` · crew short ${c.short}d` : ''}${c.clash > 0 ? ' · 2 Controllers off' : ''}`, date: c.newStart, to: '/requests?view=forms' });
+      detail: `${c.employeeName} · ${span(c.oldStart, c.oldEnd)} → ${span(c.newStart, c.newEnd)}${c.short > 0 ? ` · crew short ${c.short}d` : ''}${c.clash > 0 ? ' · 2 Controllers off' : ''}`, date: c.newStart, to: '/requests?view=approvals' });
+  }
+
+  // 3a1. recorded with a notice (no approval): the Section Head is told
+  if (i.isSectionHead) for (const r of i.recorded ?? []) {
+    out.push({ id: `rec-${r.id}`, level: 'info', area: 'request', title: 'Recorded by the Coordinator', detail: `${r.employeeName} · ${r.label} ${span(r.start, r.end)}`, date: r.start, to: '/requests?view=approvals' });
   }
 
   // 3a2. leave with estimated dates: to confirm at the final notice; an action once it is about to start or has started

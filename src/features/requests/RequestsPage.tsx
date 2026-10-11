@@ -6,6 +6,7 @@ import { Button, PageHeader, cx } from '@/ui/components';
 import { LeaveWorklist } from './LeaveWorklist';
 import { ShiftChanges } from './ShiftChanges';
 import { Approvals } from './Approvals';
+import { EntryPage } from './EntryPage';
 import { countPendingApprovals } from '@/data/approvals';
 
 /**
@@ -14,7 +15,10 @@ import { countPendingApprovals } from '@/data/approvals';
  */
 export default function RequestsPage({ profile }: { profile: UserProfile }) {
   const [params, setParams] = useSearchParams();
-  const view = params.get('view') === 'shift' ? 'shift' : params.get('view') === 'leave' || (!params.get('view') && params.get('q')) ? 'leave' : 'approvals';
+  const isHead = profile.role_code === 'section_head';
+  const v = params.get('view');
+  // the Coordinator starts on Entry, the Section Head on Approvals
+  const view = v === 'shift' ? 'shift' : v === 'leave' || (!v && params.get('q')) ? 'leave' : v === 'entry' || (!v && !isHead) ? 'entry' : 'approvals';
   const [adding, setAdding] = useState(false);
   // open requests (forms and reschedule requests) wait in the Forms tab: say so on the tab and on the Leave tab
   const [open, setOpen] = useState(0);
@@ -27,6 +31,7 @@ export default function RequestsPage({ profile }: { profile: UserProfile }) {
   return (
     <div>
       <PageHeader title="Requests" info={<div className="space-y-2 text-sm text-slate-700">
+        <p><b>Entry:</b> pick the shift and the person, then the type (PV reschedule, unscheduled PV, personal PC, absence, shift change) and the dates. Each crew&apos;s effect shows at once, position by position, with the check. The button follows the type: Record, Record with a notice to the Section Head, or Send for approval; a hard stop cannot be sent. Your recent entries are listed below, and one still waiting can be withdrawn.</p>
         <p><b>Leave · 14 days:</b> every leave running now or starting in the next 14 days, with what the Oracle HR (EasyHR) request should say: rest days left out, days counted without Fridays, and the day back.</p>
         <p>Approve (✓) / Reject (✕) records your Oracle decision; approved leave stays listed (faded), to review or edit. Tap a leave to type the EasyHR dates: a match is approved as is; other dates show their effect first and update the plan. A rejected leave stays flagged until it is cancelled or rescheduled.</p>
         <p><b>New:</b> search the employee, then add a leave by hand or make a request. A reschedule request needs the leave, the new dates and a remark; the crews' cover is checked in red first. The Section Head decides it in Forms.</p>
@@ -34,21 +39,21 @@ export default function RequestsPage({ profile }: { profile: UserProfile }) {
         <p><b>Approvals:</b> everything that waits for the Section Head, by type: leave request forms (the MAB paper form, with the overtime review), reschedule requests, and the Manpower Coordinator&apos;s changes: unplanned or sick leave added by hand, shift moves, VR placements, task releases and Controller covers. Each shows the crews&apos; check before the decision; nothing changes in the plan until it is approved. The Section Head&apos;s own changes apply at once and are listed under Decided.</p>
       </div>} action={view === 'leave'
         ? <Button className="min-h-10 shrink-0 px-3" onClick={() => setAdding(true)}><Plus className="h-4 w-4" /> New</Button>
-        : view === 'shift' ? undefined : <Link to="/requests/new"><Button className="min-h-10 shrink-0 px-3"><Plus className="h-4 w-4" /> Leave form</Button></Link>} />
-      <div className="mb-3 grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 text-sm lg:max-w-xl">
-        {(['approvals', 'leave', 'shift'] as const).map((t) => (
-          <button key={t} type="button" onClick={() => setParams(t === 'approvals' ? {} : { view: t }, { replace: true })}
+        : view === 'shift' || view === 'entry' ? undefined : <Link to="/requests/new"><Button className="min-h-10 shrink-0 px-3"><Plus className="h-4 w-4" /> Leave form</Button></Link>} />
+      <div className="mb-3 grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1 text-sm lg:max-w-xl">
+        {(['entry', 'approvals', 'leave', 'shift'] as const).map((t) => (
+          <button key={t} type="button" onClick={() => setParams({ view: t }, { replace: true })}
             className={cx('min-h-9 rounded-lg font-medium', view === t ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>
-            {t === 'approvals' ? <>Approvals{open > 0 && <span className="ml-1.5 rounded-full bg-brand-700 px-1.5 text-[11px] font-bold text-white">{open}</span>}</> : t === 'leave' ? 'Leave · 14 d' : 'Shift changes'}
+            {t === 'entry' ? 'Entry' : t === 'approvals' ? <>Approvals{open > 0 && <span className="ml-1.5 rounded-full bg-brand-700 px-1.5 text-[11px] font-bold text-white">{open}</span>}</> : t === 'leave' ? 'Leave · 14 d' : 'Shift changes'}
           </button>
         ))}
       </div>
       {view !== 'approvals' && open > 0 && (
-        <button type="button" onClick={() => setParams({}, { replace: true })} className="mb-3 flex w-full items-center justify-between gap-2 rounded-xl bg-amber-50 px-3 py-2 text-left text-sm text-amber-900 ring-1 ring-amber-300">
+        <button type="button" onClick={() => setParams({ view: 'approvals' }, { replace: true })} className="mb-3 flex w-full items-center justify-between gap-2 rounded-xl bg-amber-50 px-3 py-2 text-left text-sm text-amber-900 ring-1 ring-amber-300">
           <span><b>{open} {open === 1 ? 'request is' : 'requests are'} waiting</b> {profile.role_code === 'section_head' ? 'for your decision' : 'for the Section Head'} in Approvals</span><ChevronRight className="h-4 w-4 shrink-0" />
         </button>
       )}
-      {view === 'leave' ? <LeaveWorklist adding={adding} onAdded={() => setAdding(false)} isHead={profile.role_code === 'section_head'} /> : view === 'shift' ? <ShiftChanges /> : <Approvals isHead={profile.role_code === 'section_head'} />}
+      {view === 'entry' ? <EntryPage profile={profile} /> : view === 'leave' ? <LeaveWorklist adding={adding} onAdded={() => setAdding(false)} isHead={profile.role_code === 'section_head'} /> : view === 'shift' ? <ShiftChanges /> : <Approvals isHead={profile.role_code === 'section_head'} />}
     </div>
   );
 }
