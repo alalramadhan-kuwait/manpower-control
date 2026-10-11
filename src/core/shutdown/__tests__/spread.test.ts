@@ -157,3 +157,15 @@ describe('overlaps: follow another crew\'s rota', () => {
     for (const order of ['c1', 'vr']) { const r = asked(order); expect(r).toHaveLength(1); expect(r[0].changes.map((c) => c.memberId)).toEqual(['vr']); }
   });
 });
+
+describe('shift instructions: days with nobody first, and taking an instruction away', () => {
+  it('two Seniors resting together (one follows the other\'s crew): suggests removing the instruction, even when the days short stay the same', () => {
+    const list = [{ ...m('s1', 'senior'), followCrew: 'A' as Crew }, m('s2', 'senior')];
+    const crews: Record<string, Crew> = { s1: 'A', s2: 'A' };   // s1 is crew C following A; s2 is crew A
+    const r = suggestFollow(plan, [team], list, [], (x) => crews[x.employeeId], () => false, (x) => (x.employeeId === 's1' ? 'C' : 'A'));
+    const g = r.find((x) => x.key === 'senior')!;
+    expect(g.after.gapDays).toBe(0);
+    expect(g.before.gapDays).toBeGreaterThan(0);
+    expect(g.changes).toEqual([{ memberId: 's1', employeeId: 's1', from: 'A', to: 'C', remove: true }]);
+  });
+});

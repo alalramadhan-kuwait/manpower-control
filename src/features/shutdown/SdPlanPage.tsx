@@ -142,7 +142,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
     const approvedLeaveDays = (m: SdMember) => dates.filter((d) => d >= m.start && d <= m.end && approvedOn(m.employeeId, d) && (plan.kind === 'total' || isDutyDay(dutyCrew(m), d))).length;
     // the team's days count leave already approved in Oracle as away; leave not yet approved is postponed
     const teamDays = new Map(teams.map((t) => [t.id, dates.map((d) => ({ date: d, slots: teamDay(plan, t, members, d, approvedOn, data.phases) }))]));
-    const overlaps = plan.kind === 'total' ? [] : suggestFollow(plan, teams, members, data.phases, dutyCrew, (m) => data.dir.get(m.employeeId)?.position_code === 'vr_controller');
+    const overlaps = plan.kind === 'total' ? [] : suggestFollow(plan, teams, members, data.phases, dutyCrew, (m) => data.dir.get(m.employeeId)?.position_code === 'vr_controller', (m) => homeCrew(m.employeeId, plan.start));
     // places short on some day (approved leave counts as away; leave not yet approved is postponed)
     const gaps = teamGaps(plan, teams, members, data.phases, approvedOn);
     return { people, leaveOn, homeCrew, dutyCrew, dates, crewImpact, hours, leaveDays, approvedLeaveDays, teamDays, overlaps, gaps };
@@ -223,6 +223,18 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
       </div>
       {notice && <p className="mb-2 flex items-center gap-1 text-sm text-status-green"><Check className="h-4 w-4" />{notice}</p>}
       {moveError && <p role="alert" className="mb-2 flex items-center gap-1 text-sm text-status-red"><AlertTriangle className="h-4 w-4 shrink-0" />{moveError}</p>}
+      {!data.v2 && !total && (() => {
+        // an old plan whose places need every person every day: nobody in them can rest, so it always looks short
+        const tight = teams.flatMap((t) => (['controller', 'senior', 'good', 'new'] as const).filter((sl) => t.needs[sl] > 0 && (sl === 'new' || t.needs[sl] >= 2) && members.filter((m) => m.teamId === t.id && m.slot === sl).length <= t.needs[sl] + (sl === 'new' ? 1 : 0)).map((sl) => `${t.name} ${SD_SLOT_LABEL[sl]} (${t.needs[sl]} a day)`));
+        if (!tight.length) return null;
+        return (
+          <div className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-300">
+            <p className="font-semibold">This plan counts the old rule: {tight.join(', ')}</p>
+            <p>With only these people nobody in the place can rest, so those days always show short. The new rule needs one Controller, one Senior FO and one Good FO on duty (the second person is relief), and the New FO place never makes a day short.</p>
+            <Button className="mt-1.5 min-h-9 w-full px-3 text-xs" onClick={async () => { try { for (const t of teams) await updateSdTeam(t.id, { controller_n: 1, senior_n: 1, good_n: 1, new_n: 0, ramp_controller_n: 1, ramp_senior_n: 1, ramp_good_n: 1, ramp_new_n: 0 }); done('Team needs set to the new rule: 1 Controller, 1 Senior FO, 1 Good FO a day; New FO a training place.'); } catch (e) { setMoveError(e instanceof Error ? e.message : 'Could not save.'); } }}>Use the new rule: 1 · 1 · 1 · New 0</Button>
+          </div>
+        );
+      })()}
       {data.v2 && <ReadinessPanel plan={plan} names={new Map([...data.dir].map(([k, r]) => [k, r.display_name]))} check={check} approval={approval} isHead={isHead} error={checkErr} onApproved={done} />}
       {!data.v2 && view.gaps.length > 0 && (
         <div role="alert" className="mb-3 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-900 ring-2 ring-red-400">

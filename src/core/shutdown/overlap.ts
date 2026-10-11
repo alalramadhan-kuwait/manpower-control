@@ -6,7 +6,8 @@ import { CREWS } from '../roster';
 import { isDutyDay, planDates, type SdMember, type SdPhase, type SdPlan, type SdTeam } from './index';
 import { spreadGroups } from './spread';
 
-export interface FollowChange { memberId: string; employeeId: string; from: Crew; to: Crew }
+/** `remove`: the change is taking an existing instruction away (back to his own crew), not a new one. */
+export interface FollowChange { memberId: string; employeeId: string; from: Crew; to: Crew; remove?: boolean }
 export interface FollowGroup {
   teamId: string; key: string;
   /** Person-days missing against the need / days nobody is there, now and with the changes. */
@@ -15,6 +16,8 @@ export interface FollowGroup {
 }
 
 const MOVABLE_MAX = 7;
+/** a before b, comparing item by item. */
+const lexLess = (a: number[], b: number[]) => { for (let k = 0; k < a.length; k++) if (a[k] !== b[k]) return a[k] < b[k]; return false; };
 
 /**
  * For each level (slot) of each team with people of the same crew: which of them should follow another crew's rota.
@@ -23,7 +26,7 @@ const MOVABLE_MAX = 7;
  * people `preferred` to move (a VR Controller, who has no crew of his own and is placed where needed, rather than a crew
  * member), then a crew the team has the fewest of. Only groups the changes improve are returned.
  */
-export function suggestFollow(p: SdPlan, teams: SdTeam[], members: SdMember[], phases: SdPhase[], crewOf: (m: SdMember) => Crew | null, preferred: (m: SdMember) => boolean = () => false): FollowGroup[] {
+export function suggestFollow(p: SdPlan, teams: SdTeam[], members: SdMember[], phases: SdPhase[], crewOf: (m: SdMember) => Crew | null, preferred: (m: SdMember) => boolean = () => false, homeOf: (m: SdMember) => Crew | null = () => null): FollowGroup[] {
   if (p.kind === 'total') return [];
   const dates = planDates(p);
   const crew = new Map<string, Crew | null>(members.map((m) => [m.id, crewOf(m)]));
@@ -47,24 +50,28 @@ export function suggestFollow(p: SdPlan, teams: SdTeam[], members: SdMember[], p
       };
       const current = list.map((m) => crew.get(m.id) ?? null);
       const before = score(current);
-      if (before.short === 0) continue;
+      if (before.short === 0 && before.gapDays === 0) continue;
       // which people can change: only the ones of a crew shared with somebody else of the level (the others keep theirs), at most MOVABLE_MAX
       const shared = list.map((_m, i) => (current[i] && current.filter((c) => c === current[i]).length > 1 ? i : -1)).filter((i) => i >= 0).slice(0, MOVABLE_MAX);
       if (!shared.length) continue;
       // crews the team has, to prefer the ones with the fewest
       const teamLoad = (c: Crew) => members.filter((m) => m.teamId === t.id && crew.get(m.id) === c).length;
-      type Cand = { assign: (Crew | null)[]; s: { short: number; gapDays: number }; changes: number; other: number; pairs: number; load: number };
+      // days with nobody at all come first, then days short; then the fewest new instructions (taking one away is preferred)
+      type Cand = { assign: (Crew | null)[]; s: { short: number; gapDays: number }; fresh: number; changes: number; other: number; pairs: number; load: number };
       const pick: { best: Cand | null } = { best: null };
       const rec = (j: number, assign: (Crew | null)[]) => {
         if (j === shared.length) {
           const s = score(assign);
           const changes = shared.filter((i) => assign[i] !== current[i]).length;
+          const fresh = shared.filter((i) => assign[i] !== current[i] && assign[i] !== homeOf(list[i])).length;
           const other = shared.filter((i) => assign[i] !== current[i] && !preferred(list[i])).length;
           const pairs = CREWS.reduce((n, c) => { const k = assign.filter((x) => x === c).length; return n + (k > 1 ? k * (k - 1) / 2 : 0); }, 0);
           const load = shared.reduce((n, i) => n + (assign[i] !== current[i] ? teamLoad(assign[i]!) : 0), 0);
           const best = pick.best;
-          const better = !best || s.short < best.s.short || (s.short === best.s.short && (s.gapDays < best.s.gapDays || (s.gapDays === best.s.gapDays && (changes < best.changes || (changes === best.changes && (other < best.other || (other === best.other && (pairs < best.pairs || (pairs === best.pairs && load < best.load)))))))));
-          if (better) pick.best = { assign: assign.slice(), s, changes, other, pairs, load };
+          const key = [s.gapDays, s.short, fresh, changes, other, pairs, load];
+          const bk = best ? [best.s.gapDays, best.s.short, best.fresh, best.changes, best.other, best.pairs, best.load] : null;
+          const better = !bk || lexLess(key, bk);
+          if (better) pick.best = { assign: assign.slice(), s, fresh, changes, other, pairs, load };
           return;
         }
         const i = shared[j];
@@ -73,8 +80,8 @@ export function suggestFollow(p: SdPlan, teams: SdTeam[], members: SdMember[], p
       };
       rec(0, current.slice());
       const b = pick.best;
-      if (!b || b.changes === 0 || b.s.short >= before.short) continue;
-      const changes = shared.filter((i) => b.assign[i] !== current[i]).map((i) => ({ memberId: list[i].id, employeeId: list[i].employeeId, from: current[i]!, to: b.assign[i]! }));
+      if (!b || b.changes === 0 || !(b.s.gapDays < before.gapDays || (b.s.gapDays === before.gapDays && b.s.short < before.short))) continue;
+      const changes = shared.filter((i) => b.assign[i] !== current[i]).map((i) => ({ memberId: list[i].id, employeeId: list[i].employeeId, from: current[i]!, to: b.assign[i]!, remove: b.assign[i] === homeOf(list[i]) }));
       for (const c of changes) crew.set(c.memberId, c.to);
       out.push({ teamId: t.id, key: g.key, before, after: b.s, changes });
     }

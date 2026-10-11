@@ -55,7 +55,7 @@ export function FollowSheet({ asPage, plan, teams, members, groups, names, isVr,
     for (const c of chosen) {
       const m = members.find((x) => x.id === c.memberId); if (!m) continue;
       try {
-        await setFollow({ member: m, title: plan.title, to: c.to, from: hasBefore ? from : null, previous: previous?.get(c.employeeId) ?? null, vr: isVr(c.employeeId) });
+        await setFollow({ member: m, title: plan.title, to: c.remove ? null : c.to, from: hasBefore ? from : null, previous: previous?.get(c.employeeId) ?? null, vr: isVr(c.employeeId) });
         await clearSdDays(m.id);   // the days set by hand followed the old crew
         ok++;
       } catch (e) { failed.push(`${names.get(c.employeeId) ?? 'Employee'}: ${e instanceof Error ? e.message : 'failed'}`); }
@@ -80,6 +80,7 @@ export function FollowSheet({ asPage, plan, teams, members, groups, names, isVr,
                       <span className="block truncate text-sm font-medium text-slate-900">{names.get(c.employeeId) ?? 'Employee'}{isVr(c.employeeId) && <span className="ml-1 text-[10px] font-semibold text-slate-400">VR</span>}</span>
                       <span className="block text-[11px] text-slate-500">{teamName(c.g.teamId)} · {slotLabel(c.g.key)} · days nobody there {c.g.before.gapDays} → {c.g.after.gapDays} · short {c.g.before.short} → {c.g.after.short}</span>
                     </span>
+                    {c.remove && <span className="shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-900">Remove instruction · back to own {c.to}</span>}
                     <span className="flex shrink-0 items-center gap-1 text-xs font-semibold"><CrewBadge crew={c.from} size="sm" /><ArrowRight className="h-3.5 w-3.5 text-slate-400" /><CrewBadge crew={c.to} size="sm" /></span>
                   </label>
                 </li>
