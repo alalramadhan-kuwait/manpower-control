@@ -78,3 +78,12 @@ describe('splitLeave (profile)', () => {
     expect(splitLeave('2026-10-15', recs, 'A').current).toBeNull();
   });
 });
+
+describe('onLeaveOn: Oracle status of the leave', () => {
+  const span = (start: string, end: string, oracle: LeaveSpan['oracle']): LeaveSpan => ({ employeeId: 'e', start, end, status: 'approved', inCurrentPlan: true, typeLabel: 'PV', typeShort: 'PV', oracle });
+  it('carries the status, the least advanced one of back-to-back records', () => {
+    expect(onLeaveOn('2026-10-10', [span('2026-10-08', '2026-10-21', 'rejected')]).get('e')!.oracle).toBe('rejected');
+    expect(onLeaveOn('2026-10-10', [span('2026-10-08', '2026-10-15', 'approved'), span('2026-10-16', '2026-10-21', 'not_submitted')]).get('e')!.oracle).toBe('not_submitted');
+    expect(onLeaveOn('2026-10-10', [span('2026-10-08', '2026-10-21', null)]).get('e')!.oracle).toBeNull();
+  });
+});

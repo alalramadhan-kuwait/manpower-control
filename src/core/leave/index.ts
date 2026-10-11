@@ -1,7 +1,8 @@
 // Who is on leave on a given day, and when they are back, for the leave markers and the Day Overview.
 import { addDaysIso, isWorkingDay, type Crew } from '../roster';
+import type { OracleStatus } from '../oracle';
 
-export interface LeaveSpan { employeeId: string; start: string; end: string; status: string; inCurrentPlan: boolean; typeLabel: string | null; typeShort?: string | null }
+export interface LeaveSpan { employeeId: string; start: string; end: string; status: string; inCurrentPlan: boolean; typeLabel: string | null; typeShort?: string | null; oracle?: OracleStatus | null }
 export interface OnLeave {
   start: string;
   /** Last day of the unbroken absence run. */
@@ -10,7 +11,10 @@ export interface OnLeave {
   returnOn: string;
   typeLabel: string | null;
   typeShort: string | null;
+  /** Where the leave stands in Oracle HR: the least advanced of the run's records (rejected, then not submitted, submitted, approved). */
+  oracle: OracleStatus | null;
 }
+const ORACLE_RANK: OracleStatus[] = ['rejected', 'not_submitted', 'submitted', 'approved'];
 
 /** Leave that counts: approved or planned and part of the current plan (the same rule the manpower engine uses). */
 const counts = (l: LeaveSpan) => (l.status === 'approved' || l.status === 'planned') && l.inCurrentPlan;
@@ -45,7 +49,9 @@ export function onLeaveOn(date: string, leaves: LeaveSpan[], crewOf: (employeeId
       }
     }
     const absentOn = (d: string) => list.some((l) => l.start <= d && d <= l.end);
-    out.set(emp, { start, until, returnOn: firstDayBack(until, crewOf(emp), absentOn), typeLabel: now.typeLabel, typeShort: now.typeShort ?? null });
+    const run = list.filter((l) => l.start <= until && l.end >= start && l.oracle);
+    const oracle = run.length ? run.map((l) => l.oracle!).sort((a, b) => ORACLE_RANK.indexOf(a) - ORACLE_RANK.indexOf(b))[0] : null;
+    out.set(emp, { start, until, returnOn: firstDayBack(until, crewOf(emp), absentOn), typeLabel: now.typeLabel, typeShort: now.typeShort ?? null, oracle });
   }
   return out;
 }

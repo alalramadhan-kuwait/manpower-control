@@ -5,6 +5,8 @@ import { Link, useLocation } from 'react-router-dom';
 import { crewMarks, type DayMark } from '@/core/calendar';
 import type { Notice } from '@/core/notifications';
 import { addDaysIso } from '@/core/roster';
+import type { OracleStatus } from '@/core/oracle';
+import { OracleDot } from '@/ui/oracle';
 import { Card, Spinner, cx } from '@/ui/components';
 import { shortDate } from '@/ui/leave';
 import { useSideData, type SideData } from './useSideData';
@@ -93,8 +95,10 @@ function Strip({ d }: { d: SideData }) {
 
 function LeaveNow({ d }: { d: SideData }) {
   const on = d.absences.filter((a) => a.start <= d.today && d.today <= a.end);
-  const byPerson = new Map<string, { id: string; start: string; end: string }>();
-  for (const a of on) { const cur = byPerson.get(a.employeeId); if (!cur || a.end > cur.end) byPerson.set(a.employeeId, { id: a.employeeId, start: cur && cur.start < a.start ? cur.start : a.start, end: a.end }); }
+  const byPerson = new Map<string, { id: string; start: string; end: string; oracle: OracleStatus | undefined }>();
+  const rank: OracleStatus[] = ['rejected', 'not_submitted', 'submitted', 'approved'];
+  const worst = (a?: OracleStatus, b?: OracleStatus) => (!a ? b : !b ? a : rank.indexOf(a) < rank.indexOf(b) ? a : b);
+  for (const a of on) { const cur = byPerson.get(a.employeeId); byPerson.set(a.employeeId, { id: a.employeeId, start: cur && cur.start < a.start ? cur.start : a.start, end: cur && cur.end > a.end ? cur.end : a.end, oracle: worst(cur?.oracle, a.oracle) }); }
   const back = addDaysIso(d.today, 7);
   const soon = [...byPerson.values()].filter((l) => l.end <= back).sort((a, b) => a.end.localeCompare(b.end));
   const rest = [...byPerson.values()].filter((l) => l.end > back).length;
@@ -107,7 +111,7 @@ function LeaveNow({ d }: { d: SideData }) {
           <ul className="divide-y divide-slate-100">
             {soon.slice(0, 6).map((l) => (
               <li key={l.id}><Link to={`/employees/${l.id}`} className="flex items-center justify-between gap-2 py-1">
-                <span className="truncate text-xs text-slate-800">{d.names.get(l.id) ?? 'Employee'}</span><span className="shrink-0 text-[11px] text-slate-500">till {shortDate(l.end)}</span></Link></li>
+                <span className="flex min-w-0 items-center gap-1.5"><OracleDot status={l.oracle} /><span className="truncate text-xs text-slate-800">{d.names.get(l.id) ?? 'Employee'}</span></span><span className="shrink-0 text-[11px] text-slate-500">till {shortDate(l.end)}</span></Link></li>
             ))}
           </ul>
           {rest > 0 && <p className="mt-1 text-[11px] text-slate-500">and {rest} more, back after that</p>}

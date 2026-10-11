@@ -13,6 +13,8 @@ import { CREW_IDENTITY, CrewBadge, DayDutyBadge, crewEdge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { bySeniority } from '@/ui/positions';
 import { onLeaveOn, type OnLeave } from '@/core/leave';
+import { ORACLE_LABEL } from '@/core/oracle';
+import { OracleDot } from '@/ui/oracle';
 import { coverageNeeds, type CoverageNeed } from '@/core/controllers';
 import { CREWS } from '@/core/roster';
 
@@ -72,7 +74,7 @@ export default function DayOverviewPage() {
   const leave = useMemo(() => {
     if (!inputs) return new Map<string, OnLeave>();
     const crewOf = new Map(inputs.people.map((p) => [p.id, p.crew]));
-    return onLeaveOn(date, inputs.absences.map((a) => ({ employeeId: a.employeeId, start: a.start, end: a.end, status: a.status, inCurrentPlan: a.inCurrentPlan !== false, typeLabel: a.typeLabel ?? null, typeShort: a.typeShort ?? null })), (id) => crewOf.get(id) ?? null);
+    return onLeaveOn(date, inputs.absences.map((a) => ({ employeeId: a.employeeId, start: a.start, end: a.end, status: a.status, inCurrentPlan: a.inCurrentPlan !== false, typeLabel: a.typeLabel ?? null, typeShort: a.typeShort ?? null, oracle: a.oracle ?? null })), (id) => crewOf.get(id) ?? null);
   }, [date, inputs]);
   // Controller cover planning around this date (VR suggestion / "Additional Controller required")
   const needs = useMemo(() => (inputs ? coverageNeeds(addDaysIso(date, -40), addDaysIso(date, 40), inputs.people, inputs.absencesAll, inputs.assignments, inputs.rules) : []), [date, inputs]);
@@ -262,7 +264,7 @@ function AbsentRow({ person, absence, leave }: { person: MpPerson; absence: MpAb
   return (
     <li>
       <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center justify-between gap-2 py-1 text-left">
-        <span className="min-w-0 truncate text-sm font-medium text-slate-900">{person.name}</span>
+        <span className="flex min-w-0 items-center gap-1.5"><OracleDot status={leave?.oracle ?? absence.oracle} /><span className="truncate text-sm font-medium text-slate-900">{person.name}</span></span>
         <span className="flex shrink-0 items-center gap-1 text-[11px] text-slate-500">
           <Tag>{leave?.typeShort ?? absence.typeShort ?? 'Leave'}</Tag>{leave && <>back {shortDate(leave.returnOn)}</>}
         </span>
@@ -271,6 +273,7 @@ function AbsentRow({ person, absence, leave }: { person: MpPerson; absence: MpAb
         <div className="mb-1 rounded-md bg-white px-2 py-1 text-xs text-slate-600 ring-1 ring-slate-200">
           {absence.typeLabel ?? 'Leave'} · {fmtDate(start)} – {fmtDate(until)}
           {leave && <> · back to work {fmtDate(leave.returnOn)}</>}
+          {(leave?.oracle ?? absence.oracle) && <> · Oracle: {ORACLE_LABEL[(leave?.oracle ?? absence.oracle)!]}</>}
           <Link to={`/employees/${person.id}`} className="ml-2 font-medium text-brand-700">Profile</Link>
         </div>
       )}

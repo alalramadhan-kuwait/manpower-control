@@ -54,7 +54,7 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
   const leaveOnDate = useCallback((date: string) => {
     if (!inputs) return new Map<string, OnLeave>();
     const crewOf = new Map(inputs.people.map((p) => [p.id, p.crew]));
-    return onLeaveOn(date, inputs.absences.map((a) => ({ employeeId: a.employeeId, start: a.start, end: a.end, status: a.status, inCurrentPlan: a.inCurrentPlan !== false, typeLabel: a.typeLabel ?? null, typeShort: a.typeShort ?? null })), (id) => crewOf.get(id) ?? null);
+    return onLeaveOn(date, inputs.absences.map((a) => ({ employeeId: a.employeeId, start: a.start, end: a.end, status: a.status, inCurrentPlan: a.inCurrentPlan !== false, typeLabel: a.typeLabel ?? null, typeShort: a.typeShort ?? null, oracle: a.oracle ?? null })), (id) => crewOf.get(id) ?? null);
   }, [inputs]);
   const morningToday = useMemo(() => (inputs ? evaluateDay(today, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments).dayStaff.find((s) => s.morningPost) ?? null : null), [inputs, today]);
 
