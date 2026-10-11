@@ -6,7 +6,9 @@
 // Every sheet opens with the KNPC letterhead (logo, title, the refinery and unit, the issue date, the flame's three colours).
 import type { Workbook, Worksheet, Cell } from 'exceljs';
 import { addDaysIso, type Crew } from '@/core/roster';
-import { dayOvertime, isDutyDay, memberHoursOn, memberWorks } from '@/core/shutdown';
+import { isDutyDay, memberHoursOn, memberWorks } from '@/core/shutdown';
+import { isV2, limitsOf } from '@/core/shutdown/v2';
+import { rowOvertime } from './docOt';
 import type { Doc, Row } from './SdDocuments';
 
 const DAYS_PER_BLOCK = 14;
@@ -128,20 +130,25 @@ function dayGrid(ws: Worksheet, doc: Doc, brand: Brand, title: string, cellOf: (
 
 function otSheet(ws: Worksheet, doc: Doc, brand: Brand) {
   const { plan, dates, months } = doc;
-  const otOf = (x: Row, d: string) => dayOvertime(plan, x.m, x.crew, d);
+  // the plan's own calculation (v2: the effective roster of each date, a night across month-end split by the hours)
+  const otOf = (x: Row, d: string) => rowOvertime(doc, x).day(d);
   const onTeam = (x: Row, d: string) => d >= x.m.start && d <= x.m.end;
-  const monthTotal = (x: Row, ym: string) => dates.filter((d) => d.startsWith(ym) && onTeam(x, d)).reduce((n, d) => n + otOf(x, d), 0);
+  const monthTotal = (x: Row, ym: string) => rowOvertime(doc, x).month(ym);
+  const v2 = isV2(plan); const L = limitsOf(plan);
+  const monthFill = (t: number) => (v2 ? (t > L.monthHard ? 'FFFF7C80' : t > L.monthWarn ? 'FFFFE699' : 'FFC6EFCE') : t > plan.maxOvertime ? 'FFFF7C80' : t >= plan.maxOvertime - 8 ? 'FFFFE699' : 'FFC6EFCE');
   const end = dayGrid(ws, doc, brand, `ARDS UNIT-12 ${doc.name} SHUTDOWN OVERTIME HOURS`, (x, d) => {
     if (!onTeam(x, d)) return { v: null, fill: FILL.not };
     const works = memberWorks(plan, x.m, d);
     const h = otOf(x, d);
     return works ? { v: h, red: h >= plan.shiftHours } : { v: 0, fill: FILL.off };
   }, {
-    head: [`TOTAL OT HRS ${dmy(dates[0])} - ${dmy(dates[dates.length - 1])}`, ...months.map((ym) => `${monthLabel(ym)} OT (max ${plan.maxOvertime})`)],
-    of: (x) => [{ v: dates.filter((d) => onTeam(x, d)).reduce((n, d) => n + otOf(x, d), 0), fill: 'FFFFFF00' }, ...months.map((ym) => { const t = monthTotal(x, ym); return { v: t, fill: t > plan.maxOvertime ? 'FFFF7C80' : t >= plan.maxOvertime - 8 ? 'FFFFE699' : 'FFC6EFCE' }; })]
+    head: [`TOTAL OT HRS ${dmy(dates[0])} - ${dmy(dates[dates.length - 1])}`, ...months.map((ym) => (v2 ? `${monthLabel(ym)} OT (warn ${L.monthWarn} / limit ${L.monthHard})` : `${monthLabel(ym)} OT (max ${plan.maxOvertime})`))],
+    of: (x) => [{ v: rowOvertime(doc, x).total, fill: 'FFFFFF00' }, ...months.map((ym) => { const t = monthTotal(x, ym); return { v: t, fill: monthFill(t) }; })]
   });
   const note = ws.getCell(end, 2);
-  note.value = `Overtime = hours worked on the shutdown less the ${plan.normalHours} h of a normal duty day of his crew; a day worked on his rest day counts in full (red). Yellow = off. Black = not on the team. Month columns: green = within the limit, amber = within 8 h of it, red = over ${plan.maxOvertime} h.`;
+  note.value = v2
+    ? `Overtime = hours worked on the shutdown less the ${plan.normalHours} h of a normal duty day on the roster in force that day (with any shift transfer); a day worked on a rest day counts in full (red). A night across month-end is split between the months by the hours worked in each. Yellow = off. Black = not on the team. Month columns (this plan only): green within ${L.monthWarn} h, amber above ${L.monthWarn} h, red above the ${L.monthHard} h limit.`
+    : `Overtime = hours worked on the shutdown less the ${plan.normalHours} h of a normal duty day of his crew; a day worked on his rest day counts in full (red). Yellow = off. Black = not on the team. Month columns: green = within the limit, amber = within 8 h of it, red = over ${plan.maxOvertime} h.`;
   ws.mergeCells(end, 2, end, 4 + DAYS_PER_BLOCK); note.alignment = { wrapText: true, vertical: 'top' }; note.font = { name: 'Calibri', size: 9, italic: true }; ws.getRow(end).height = 38;
 }
 
@@ -185,15 +192,15 @@ function summarySheet(ws: Worksheet, doc: Doc, brand: Brand) {
         const fill = x.group === 'Controller' ? FILL.ctl : undefined;
         const put = (col: number, v: string | number | null, o: Parameters<typeof style>[1] = {}) => { const c = ws.getCell(r, col); c.value = v; style(c, { fill, ...o }); };
         put(1, i + 1); put(2, x.r?.display_name ?? '', { align: 'left' }); put(3, x.r ? Number(x.r.employee_number) || x.r.employee_number : '');
-        let month = 0, all = 0;
+        const ro = rowOvertime(doc, x);
+        const month = ro.month(ym), all = ro.total;
         days.forEach((d, k) => {
-          const h = dayOvertime(plan, x.m, x.crew, d); month += h;
+          const h = ro.day(d);
           const off = !memberWorks(plan, x.m, d) && d >= x.m.start && d <= x.m.end;
           put(4 + k, d >= x.m.start && d <= x.m.end ? h : null, { fill: off ? FILL.off : d < x.m.start || d > x.m.end ? FILL.not : fill, red: h >= plan.shiftHours });
         });
-        for (const d of dates) all += dayOvertime(plan, x.m, x.crew, d);
         for (let k = days.length; k < widest; k++) put(4 + k, null, { fill: 'FFFFFFFF' });
-        put(4 + widest, month, { bold: true, fill: month > plan.maxOvertime ? 'FFFF7C80' : FILL.sum });
+        put(4 + widest, month, { bold: true, fill: month > (isV2(plan) ? limitsOf(plan).monthHard : plan.maxOvertime) ? 'FFFF7C80' : FILL.sum });
         put(5 + widest, all, { bold: true });
         r++;
       });

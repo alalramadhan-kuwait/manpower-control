@@ -34,7 +34,8 @@ export function suggestFollow(p: SdPlan, teams: SdTeam[], members: SdMember[], p
       const list = members.filter((m) => g.memberIds.includes(m.id));
       const movable = list.filter((m) => crew.get(m.id));
       if (movable.length < 2) continue;
-      const need = dates.map(g.need);
+      // v2: a place needs one qualified person on duty at every moment (the others are relief)
+      const need = dates.map((d) => ((p.rulesVersion ?? 1) >= 2 ? Math.min(1, g.need(d)) : g.need(d)));
       const score = (assign: (Crew | null)[]) => {
         let short = 0, gapDays = 0;
         dates.forEach((d, k) => {

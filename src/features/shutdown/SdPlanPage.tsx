@@ -19,6 +19,10 @@ import { yearCap } from '@/core/shutdown/spread';
 import { MoveLeaveSheet } from './MoveLeave';
 import { FollowInstruction, FollowSheet } from './FollowCrew';
 import { suggestFollow } from '@/core/shutdown/overlap';
+import { adjacent, eligibility, isV2, sickState, type Eligibility, type OtEntry, type PlanCheck, type PlanRef, type SdException, type SickEntry } from '@/core/shutdown/v2';
+import { fetchApproval, fetchExceptions, fetchOtEntries, fetchSickEntries, personInfo, runPlanCheck, type ApprovalState } from '@/data/sdCheck';
+import { EligibilityBadge, ExceptionsBox, FiguresSheet, ReadinessPanel } from './SdV2';
+import { localToday } from '@/ui/leave';
 
 const CONTROLLER_ROLES = ['controller', 'vr_controller', 'morning_controller'];
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
@@ -33,6 +37,9 @@ type Data = {
   periods: PeriodRow[];
   /** Overtime each member already took in the shutdown's year(s), typed in: `${employeeId}:${year}`. */
   otTaken: Map<string, { hours: number; asOf: string }>;
+  /** Rules v2 only: figures typed in from Oracle / HR, the Section Head's exceptions, every plan with its people. */
+  v2: { ot: Map<string, OtEntry>; sick: Map<string, SickEntry>; exceptions: (SdException & { id: string })[]; plans: PlanRef[] } | null;
+  isHead: boolean;
 };
 const TOTAL_MODE = 'total_shutdown';
 /** Most people a team needs on any day: train, its full-day needs; total turnaround, its biggest phase. */
@@ -47,7 +54,7 @@ function teamNeed(p: SdPlan, t: SdTeam, phases: SdPhase[]): Record<string, numbe
 const isPo = (r: EmployeeDirectoryRow | undefined) => r?.position_code === 'panel_operator';
 
 /** Shutdown team planner: fill each team's slots, see the days each team is short, what the crews keep, and the overtime. */
-export default function SdPlanPage() {
+export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
   const { id } = useParams();
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -66,6 +73,10 @@ export default function SdPlanPage() {
   const [moveError, setMoveError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [figures, setFigures] = useState(false);
+  const [check, setCheck] = useState<PlanCheck | null>(null);
+  const [approval, setApproval] = useState<ApprovalState | null>(null);
+  const [checkErr, setCheckErr] = useState<unknown>(null);
   const load = useCallback(async () => {
     try {
       const sd = await fetchSdPlan(id!);
@@ -76,9 +87,18 @@ export default function SdPlanPage() {
       const otTaken = await fetchOvertimeTaken([...new Set(sd.members.map((m) => m.employeeId))], years).catch(() => new Map<string, { hours: number; asOf: string }>());
       const n = neighbours(plans, sd.plan);
       const ids = (p: SdPlan | null) => (p ? { plan: p, ids: new Set(all.filter((m) => m.planId === p.id).map((m) => m.employeeId)) } : null);
-      setData({ ...sd, inputs, dir: new Map(dir.map((r) => [r.id, r])), prev: ids(n.prev), next: ids(n.next), sick, periods: ops?.periods ?? [], otTaken });
+      let v2: Data['v2'] = null;
+      if (isV2(sd.plan)) {
+        const emp = [...new Set(sd.members.map((m) => m.employeeId))];
+        const [ot, sk, ex] = await Promise.all([fetchOtEntries(emp), fetchSickEntries(emp), fetchExceptions(sd.plan.id)]);
+        v2 = { ot, sick: sk, exceptions: ex, plans: plans.map((p) => ({ plan: p, employeeIds: new Set(all.filter((m) => m.planId === p.id).map((m) => m.employeeId)) })) };
+        // the plan check runs on the database's data, exactly as the server runs it before approving
+        setCheck(null); setCheckErr(null);
+        Promise.all([runPlanCheck(sd.plan.id, localToday()), fetchApproval(sd.plan.id)]).then(([c, a]) => { setCheck(c); setApproval(a); }).catch(setCheckErr);
+      }
+      setData({ ...sd, inputs, dir: new Map(dir.map((r) => [r.id, r])), prev: ids(n.prev), next: ids(n.next), sick, periods: ops?.periods ?? [], otTaken, v2, isHead });
     } catch (e) { setError(e); }
-  }, [id]);
+  }, [id, isHead]);
   useEffect(() => { load(); }, [load]);
   /** Drag and drop: a name dropped on another place of a team (or the other team): same person, new team / level / area. */
   async function moveMember(memberId: string, team: SdTeam, slot: SdSlot, area?: string) {
@@ -97,7 +117,7 @@ export default function SdPlanPage() {
       done(`${r?.display_name ?? 'Member'} moved to the ${team.name} ${total ? 'shift' : 'team'}${total ? (area ? ` · ${area}` : '') : ` · ${SD_SLOT_LABEL[slot]}`}.`);
     } catch (e) { setMoveError(e instanceof Error ? e.message : 'Could not move.'); }
   }
-  const done = (m: string) => { setAdding(null); setMember(null); setEditPattern(false); setEditTeam(null); setEditPhases(false); setSpreading(false); setYearOt(false); setMoving(false); setFollowing(false); setNotice(m); load(); };
+  const done = (m: string) => { setAdding(null); setMember(null); setEditPattern(false); setEditTeam(null); setEditPhases(false); setSpreading(false); setYearOt(false); setFigures(false); setMoving(false); setFollowing(false); setNotice(m); load(); };
   // the shutdown moved: its days and hours are rebuilt for the new dates (the crews' duty days are not the same)
   const moved = (m: string) => { setEditPattern(false); setNotice(m); load().then(() => setSpreading(true)); };
 
@@ -128,7 +148,8 @@ export default function SdPlanPage() {
     return { people, leaveOn, homeCrew, dutyCrew, dates, crewImpact, hours, leaveDays, approvedLeaveDays, teamDays, overlaps, gaps };
   }, [data]);
 
-  const yearTaken = useCallback((e: string, y: number) => data?.otTaken.get(`${e}:${y}`)?.hours ?? 0, [data]);
+  // v2: the year to date from the Oracle figures; before v2: the hours typed per year
+  const yearTaken = useCallback((e: string, y: number) => { if (data?.v2) { const o = data.v2.ot.get(e); return o && o.asOf.startsWith(String(y)) ? o.ytd : 0; } return data?.otTaken.get(`${e}:${y}`)?.hours ?? 0; }, [data]);
   if (error) return <ErrorBox error={error} />;
   if (!data || !view) return <Spinner />;
   const { plan, teams, members, dir } = data;
@@ -138,7 +159,7 @@ export default function SdPlanPage() {
   // a shutdown team member takes no leave: who still has some inside the shutdown
   const leaveConflicts = members.map((m) => ({ employeeId: m.employeeId, number: data.dir.get(m.employeeId)?.employee_number ?? '', days: view.leaveDays(m), approved: view.approvedLeaveDays(m) })).filter((c) => c.days > 0);
   const approvedLeave = leaveConflicts.filter((c) => c.approved > 0), pendingLeave = leaveConflicts.filter((c) => c.approved === 0);
-  const overCap = members.filter((m) => view.hours.get(m.id)!.some((h) => h.over)).length;
+  const overCap = data.v2 ? (check?.overtime.filter((o) => [...o.months, ...o.years].some((x) => x.state === 'over')).length ?? 0) : members.filter((m) => view.hours.get(m.id)!.some((h) => h.over)).length;
   const crewShort = total ? 0 : view.crewImpact.reduce((n, c) => n + c.short, 0);
 
   async function generate() {
@@ -180,7 +201,7 @@ export default function SdPlanPage() {
           <h1 className="text-xl font-semibold text-brand-800">{plan.title}</h1>
           <div className="text-sm font-medium text-slate-700">{range(plan.start, plan.end)} {plan.end.slice(0, 4)}</div>
           <button type="button" onClick={() => setEditPattern(true)} className="mt-1 flex flex-wrap items-center gap-1 text-left">
-            {[total ? 'Total turnaround' : 'Train shutdown', plan.daysOff ? `${plan.daysOn} on / ${plan.daysOff} off` : 'Every day', `${plan.shiftHours} h`, plan.rampDays ? `First & last ${plan.rampDays} days ${plan.rampHours} h` : '', `OT ≤ ${plan.maxOvertime} h`].filter(Boolean).map((c) => <span key={c} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">{c}</span>)}
+            {[total ? 'Total turnaround' : 'Train shutdown', plan.daysOff ? `${plan.daysOn} on / ${plan.daysOff} off` : 'Every day', `${plan.shiftHours} h`, plan.rampDays ? `First & last ${plan.rampDays} days ${plan.rampHours} h${data.v2 ? ' · reduced' : ''}` : '', data.v2 ? `OT ${plan.maxOvertime}/${plan.maxOvertimeHard ?? 80} h a month · ${plan.maxOvertimeYear ?? 380}/${plan.maxOvertimeYearHard ?? 440} h a year` : `OT ≤ ${plan.maxOvertime} h`, data.v2 ? 'Rules v2' : ''].filter(Boolean).map((c) => <span key={c} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">{c}</span>)}
             <span className="flex items-center gap-0.5 text-[11px] font-medium text-brand-700"><Pencil className="h-3 w-3" />Edit</span>
           </button>
         </div>
@@ -191,7 +212,9 @@ export default function SdPlanPage() {
           <ActionButton onClick={() => setSpreading(true)} icon={<Shuffle className="h-4 w-4" />} title={total ? 'Spread days off' : 'Set days & hours'} hint={total ? 'Choose each person\'s days off' : 'Which days each person works, and 8 h or 12 h'} />
           {<ActionButton onClick={() => setFollowing(true)} warn={view.overlaps.length > 0} icon={<Shuffle className="h-4 w-4" />} title={view.overlaps.length ? `Shift instructions · ${view.overlaps.reduce((n, g) => n + g.changes.length, 0)}` : 'Shift instructions'} hint={view.overlaps.length ? 'See everyone\'s instructions. Some people clash and should follow another shift' : 'See everyone\'s instructions: when to join and rejoin'} />}
         </div>
-        <ActionButton onClick={() => setYearOt(true)} icon={<Pencil className="h-4 w-4" />} title="Overtime taken this year" hint={`Hours each person already took this year: the shutdown keeps everyone within ${yearCap(plan)} h a year`} />
+        {data.v2
+          ? <ActionButton onClick={() => setFigures(true)} warn={!!check && check.issues.some((i) => i.level === 'verify')} icon={<Pencil className="h-4 w-4" />} title="Oracle & HR figures" hint="Overtime taken (Oracle report) and sick leave in the last 12 months, per person" />
+          : <ActionButton onClick={() => setYearOt(true)} icon={<Pencil className="h-4 w-4" />} title="Overtime taken this year" hint={`Hours each person already took this year: the shutdown keeps everyone within ${yearCap(plan)} h a year`} />}
         <div className="grid grid-cols-3 gap-2">
           <Link to={`/shutdown/${plan.id}/schedule`} className="flex min-h-12 flex-col items-center justify-center rounded-lg bg-white px-1 text-center ring-1 ring-slate-300"><span className="flex items-center gap-1 text-xs font-semibold text-brand-700"><FileText className="h-3.5 w-3.5" />Duty schedule</span><span className="text-[10px] leading-tight text-slate-500">Who works which day</span></Link>
           <Link to={`/shutdown/${plan.id}/overtime`} className="flex min-h-12 flex-col items-center justify-center rounded-lg bg-white px-1 text-center ring-1 ring-slate-300"><span className="flex items-center gap-1 text-xs font-semibold text-brand-700"><FileText className="h-3.5 w-3.5" />Summary</span><span className="text-[10px] leading-tight text-slate-500">Overtime for approval</span></Link>
@@ -200,7 +223,8 @@ export default function SdPlanPage() {
       </div>
       {notice && <p className="mb-2 flex items-center gap-1 text-sm text-status-green"><Check className="h-4 w-4" />{notice}</p>}
       {moveError && <p role="alert" className="mb-2 flex items-center gap-1 text-sm text-status-red"><AlertTriangle className="h-4 w-4 shrink-0" />{moveError}</p>}
-      {view.gaps.length > 0 && (
+      {data.v2 && <ReadinessPanel plan={plan} names={new Map([...data.dir].map(([k, r]) => [k, r.display_name]))} check={check} approval={approval} isHead={isHead} error={checkErr} onApproved={done} />}
+      {!data.v2 && view.gaps.length > 0 && (
         <div role="alert" className="mb-3 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-900 ring-2 ring-red-400">
           <p className="flex items-center gap-1.5 font-bold"><AlertTriangle className="h-4 w-4 shrink-0" />Team not complete · {new Set(view.gaps.flatMap((g) => g.dates)).size} {new Set(view.gaps.flatMap((g) => g.dates)).size === 1 ? 'day' : 'days'} short</p>
           <p className="text-xs">The shutdown cannot work with fewer people than each team needs. Add people (from another crew where the place has people of one crew only), or give some a &quot;follow X shift&quot; instruction.</p>
@@ -235,7 +259,7 @@ export default function SdPlanPage() {
         {[{ n: `${members.length}/${needTotal}`, label: 'Placed', dot: members.length >= needTotal ? 'bg-status-green' : 'bg-status-amber' },
           { n: gapDays, label: 'Days a slot empty', dot: gapDays ? 'bg-status-red' : 'bg-status-green' },
           total ? { n: data.phases.length, label: 'Phases', dot: data.phases.length ? 'bg-status-green' : 'bg-status-amber' } : { n: crewShort, label: 'Crews short (days)', dot: crewShort ? 'bg-status-red' : 'bg-status-green' },
-          { n: overCap, label: `Over ${plan.maxOvertime} h OT`, dot: overCap ? 'bg-status-red' : 'bg-status-green' }].map((k) => (
+          { n: overCap, label: data.v2 ? `Over the OT limit` : `Over ${plan.maxOvertime} h OT`, dot: overCap ? 'bg-status-red' : 'bg-status-green' }].map((k) => (
           <div key={k.label} className="rounded-lg bg-white px-1 py-1 ring-1 ring-slate-200">
             <div className="flex items-center justify-center gap-1 text-base font-semibold leading-tight tabular-nums text-slate-800"><span className={cx('h-2 w-2 rounded-full', k.dot)} />{k.n}</div>
             <div className="text-[10px] leading-tight text-slate-500">{k.label}</div>
@@ -243,7 +267,7 @@ export default function SdPlanPage() {
         ))}
       </div>
 
-      {teams.map((t) => <TeamCard key={t.id} t={t} data={data} view={view} onMove={moveMember} onAdd={(slot, area) => setAdding({ team: t, slot, area })} onMember={setMember} onEdit={() => (total ? setEditPhases(true) : setEditTeam(t))} />)}
+      {teams.map((t) => <TeamCard key={t.id} t={t} data={data} view={view} check={check} onMove={moveMember} onAdd={(slot, area) => setAdding({ team: t, slot, area })} onMember={setMember} onEdit={() => (total ? setEditPhases(true) : setEditTeam(t))} />)}
 
       {total ? <UnitDownCard plan={plan} periods={data.periods} onDone={done} /> : <Card className="mb-3 py-1.5">
         <h2 className="pt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Crews without the team · {plan.title} minimums</h2>
@@ -262,6 +286,7 @@ export default function SdPlanPage() {
       {member && <MemberSheet plan={plan} m={member} data={data} view={view} onClose={() => setMember(null)} onDone={done} />}
       {moving && <MoveLeaveSheet plan={plan} members={members} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} inputs={data.inputs} onClose={() => setMoving(false)} onDone={done} />}
       {spreading && <SpreadDaysSheet plan={plan} teams={teams} members={members} phases={data.phases} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} crewOf={(e) => { const mm = members.find((x) => x.employeeId === e); return mm ? view.dutyCrew(mm) : view.homeCrew(e, plan.start); }} conflicts={approvedLeave} yearTaken={yearTaken} onClose={() => setSpreading(false)} onDone={done} />}
+      {figures && data.v2 && <FiguresSheet plan={plan} members={members} dir={dir} ot={data.v2.ot} sick={data.v2.sick} onClose={() => setFigures(false)} onDone={done} />}
       {yearOt && <YearOvertimeSheet plan={plan} members={members} dir={dir} taken={data.otTaken} onClose={() => setYearOt(false)} onDone={done} />}
       {editPattern && <PatternSheet plan={plan} hasPeople={members.length > 0} onClose={() => setEditPattern(false)} onDone={done} onMoved={moved} />}
       {editPhases && <PhasesSheet plan={plan} teams={teams} phases={data.phases} onClose={() => setEditPhases(false)} onDone={done} />}
@@ -284,7 +309,7 @@ interface View {
   teamDays: Map<string, { date: string; slots: ReturnType<typeof teamDay> }[]>;
 }
 
-function TeamCard({ t, data, view, onMove, onAdd, onMember, onEdit }: { t: SdTeam; data: Data; view: View; onMove: (memberId: string, team: SdTeam, slot: SdSlot, area?: string) => void; onAdd: (s: SdSlot, area?: string) => void; onMember: (m: SdMember) => void; onEdit: () => void }) {
+function TeamCard({ t, data, view, check, onMove, onAdd, onMember, onEdit }: { t: SdTeam; data: Data; view: View; check: PlanCheck | null; onMove: (memberId: string, team: SdTeam, slot: SdSlot, area?: string) => void; onAdd: (s: SdSlot, area?: string) => void; onMember: (m: SdMember) => void; onEdit: () => void }) {
   const [day, setDay] = useState<string | null>(null);
   const days = view.teamDays.get(t.id)!;
   const sel = day ? days.find((d) => d.date === day) : null;
@@ -314,21 +339,21 @@ function TeamCard({ t, data, view, onMove, onAdd, onMember, onEdit }: { t: SdTea
           const list = data.members.filter((m) => m.teamId === t.id && m.slot === s);
           // operators without a level take the open FO places (Senior first)
           const open = Math.max(0, t.needs[s] - list.length);
-          const filled = s === 'controller' ? 0 : Math.min(open, spare); spare -= filled;
+          const filled = s === 'controller' || data.v2 ? 0 : Math.min(open, spare); spare -= filled;
           const missing = open - filled;
           return (
             <DropZone key={s} className="py-1.5" onDropMember={(id) => onMove(id, t, s)}>
               <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500"><span>{SD_SLOT_LABEL[s]} · {list.length}{filled ? `+${filled} operator${filled > 1 ? 's' : ''}` : ''}/{t.needs[s]}</span>
                 <button type="button" onClick={() => onAdd(s)} className="flex items-center gap-0.5 text-brand-700"><Plus className="h-3.5 w-3.5" />Add</button></div>
-              {list.map((m) => <MemberRow key={m.id} m={m} data={data} view={view} onOpen={() => onMember(m)} />)}
+              {list.map((m) => <MemberRow key={m.id} m={m} data={data} view={view} check={check} onOpen={() => onMember(m)} />)}
               {Array.from({ length: missing }, (_, i) => <button key={i} type="button" onClick={() => onAdd(s)} className="mt-1 flex w-full items-center gap-1.5 rounded-lg border border-dashed border-red-300 px-2 py-1.5 text-left text-xs font-medium text-status-red"><Plus className="h-3.5 w-3.5" />{SD_SLOT_LABEL[s]} needed</button>)}
             </DropZone>
           );
         })}
         {data.members.some((m) => m.teamId === t.id && m.slot === 'member') && (
           <DropZone className="py-1.5" onDropMember={(id) => onMove(id, t, 'member')}>
-            <div className="text-[11px] font-semibold text-slate-500">{SD_SLOT_LABEL.member}s (no level) · fill the open FO places</div>
-            {data.members.filter((m) => m.teamId === t.id && m.slot === 'member').map((m) => <MemberRow key={m.id} m={m} data={data} view={view} onOpen={() => onMember(m)} />)}
+            <div className="text-[11px] font-semibold text-slate-500">{SD_SLOT_LABEL.member}s (no level) · {data.v2 ? 'never counted as a Senior or Good FO' : 'fill the open FO places'}</div>
+            {data.members.filter((m) => m.teamId === t.id && m.slot === 'member').map((m) => <MemberRow key={m.id} m={m} data={data} view={view} check={check} onOpen={() => onMember(m)} />)}
           </DropZone>
         )}
       </div>}
@@ -387,11 +412,22 @@ function DropZone({ onDropMember, className, children }: { onDropMember: (member
   );
 }
 
-function MemberRow({ m, data, view, onOpen }: { m: SdMember; data: Data; view: View; onOpen: () => void }) {
+/** v2: is this person eligible for the plan (two shutdowns in a row, sick leave)? */
+function v2Eligibility(data: Data, employeeId: string, isController: boolean, sick?: SickEntry | null): Eligibility {
+  const r = data.dir.get(employeeId);
+  const ex = data.v2!.exceptions;
+  const st = sickState(sick === undefined ? data.v2!.sick.get(employeeId) ?? null : sick, localToday(), ex.some((x) => x.employeeId === employeeId && x.kind === 'sick_leave'));
+  return eligibility(data.plan, r ? personInfo(r) : undefined, isController, adjacent(data.v2!.plans, data.plan), st, ex);
+}
+
+function MemberRow({ m, data, view, check, onOpen }: { m: SdMember; data: Data; view: View; check?: PlanCheck | null; onOpen: () => void }) {
   const r = data.dir.get(m.employeeId);
   const crew = view.homeCrew(m.employeeId, data.plan.start);
-  const ot = Math.max(0, ...view.hours.get(m.id)!.map((h) => h.overtime));
-  const over = view.hours.get(m.id)!.some((h) => h.over);
+  const v2ot = data.v2 ? check?.overtime.find((o) => o.employeeId === m.employeeId) : undefined;
+  const ot = data.v2 ? (v2ot ? Math.max(0, ...v2ot.months.map((x) => x.total)) : 0) : Math.max(0, ...view.hours.get(m.id)!.map((h) => h.overtime));
+  const over = data.v2 ? !!v2ot && [...v2ot.months, ...v2ot.years].some((x) => x.state === 'over') : view.hours.get(m.id)!.some((h) => h.over);
+  const warnOt = !!v2ot && [...v2ot.months, ...v2ot.years].some((x) => x.state === 'warn');
+  const elig = data.v2 ? v2Eligibility(data, m.employeeId, m.slot === 'controller') : null;
   const leave = view.leaveDays(m);
   // the member's first days off, e.g. "off 4, 8, 12…"
   const off = view.dates.filter((d) => d >= m.start && d <= m.end && !memberWorks(data.plan, m, d)).slice(0, 3).map((d) => Number(d.slice(8)));
@@ -404,9 +440,10 @@ function MemberRow({ m, data, view, onOpen }: { m: SdMember; data: Data; view: V
         <span className="block truncate text-sm font-medium text-slate-900">{r?.display_name ?? '—'}{isPo(r) ? <span className="ml-1 text-[10px] font-semibold text-slate-400">PO</span> : r?.fo_level && m.slot !== 'controller' ? <span className="ml-1 text-[10px] font-semibold text-slate-400">{FO_LEVEL_LABEL[r.fo_level]}</span> : null}</span>
         <span className="block truncate text-[11px] text-slate-500">#{r?.employee_number}{data.plan.kind === 'total' && m.slot === 'controller' && m.area ? ` · ${m.area}` : ''}{m.followCrew ? ` · follows ${m.followCrew}` : ''} · {off.length ? `off ${off.join(', ')}…` : 'every day'}{m.start !== data.plan.start || m.end !== data.plan.end ? ` · ${range(m.start, m.end)}` : ''}</span>
       </span>
-      {(data.prev?.ids.has(m.employeeId) || data.next?.ids.has(m.employeeId)) && <span className="shrink-0 rounded-full bg-status-red px-1.5 text-[10px] font-semibold text-white">2 SD in a row</span>}
+      {m.controllerRole && <span className="shrink-0 rounded-full bg-brand-50 px-1.5 text-[10px] font-semibold text-brand-800">{m.controllerRole === 'primary' ? 'Primary' : 'Assistant'}</span>}
+      {elig ? <EligibilityBadge e={elig} /> : (data.prev?.ids.has(m.employeeId) || data.next?.ids.has(m.employeeId)) && <span className="shrink-0 rounded-full bg-status-red px-1.5 text-[10px] font-semibold text-white">2 SD in a row</span>}
       {leave > 0 && <span className="shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-900">Leave {leave}d</span>}
-      <span className={cx('shrink-0 rounded-full px-1.5 text-[10px] font-semibold tabular-nums', over ? 'bg-status-red text-white' : 'bg-slate-100 text-slate-600')}>OT {ot} h</span>
+      <span className={cx('shrink-0 rounded-full px-1.5 text-[10px] font-semibold tabular-nums', over ? 'bg-status-red text-white' : warnOt ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-600')} title={data.v2 ? 'Highest month: this plan + taken + other shutdowns' : undefined}>OT {ot} h{v2ot && v2ot.entryState !== 'ok' ? '+?' : ''}</span>
     </button>
   );
 }
@@ -450,6 +487,12 @@ function AddSheet({ plan, team, slot, area, data, view, onClose, onDone }: { pla
     }).sort((a, b) => Number(b.match) - Number(a.match) || Number(a.level === 'below') - Number(b.level === 'below') || Number(!!a.back) - Number(!!b.back) || Number(a.twin.length > 0) - Number(b.twin.length > 0) || Number(!!a.leave) - Number(!!b.leave) || a.hit - b.hit
       || (a.sick ?? 0) - (b.sick ?? 0) || a.same - b.same || (b.p.grade ?? 0) - (a.p.grade ?? 0) || a.p.name.localeCompare(b.p.name));
   }, [data, view, plan, slot, year, total]); // eslint-disable-line react-hooks/exhaustive-deps
+  // v2: who may be picked (two shutdowns in a row, sick leave in 12 months); missing figures never stop picking
+  const [candSick, setCandSick] = useState<Map<string, SickEntry> | null>(null);
+  useEffect(() => { if (data.v2) fetchSickEntries(cands.map((c) => c.p.id)).then(setCandSick).catch(() => setCandSick(new Map())); }, [cands.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  const RANK = { ok: 0, warn: 1, verify: 2, needs_exception: 3, blocked: 4 } as const;
+  const eligOf = (id: string) => (data.v2 ? v2Eligibility(data, id, slot === 'controller', candSick?.get(id) ?? null) : null);
+  const listed = data.v2 ? cands.map((c, i) => ({ c, i, e: eligOf(c.p.id) })).sort((a, b) => RANK[a.e!.level] - RANK[b.e!.level] || a.i - b.i).map((x) => ({ ...x.c, elig: x.e })) : cands.map((c) => ({ ...c, elig: null as Eligibility | null }));
   const sickValues = cands.map((c) => c.sick).filter((x): x is number => x != null).sort((a, b) => a - b);
   const sickMedian = sickValues.length ? sickValues[Math.floor(sickValues.length / 2)] : null;
 
@@ -472,13 +515,14 @@ function AddSheet({ plan, team, slot, area, data, view, onClose, onDone }: { pla
         {unmarked && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">No Field Operator has a level yet. <Link to="/review/fo-levels" className="font-semibold underline">Mark Senior / Good / New</Link> to see the right people first.</p>}
         {err != null && <ErrorBox error={err} />}
         <div className="divide-y divide-slate-100">
-          {cands.map((c) => (
-            <button key={c.p.id} type="button" disabled={busy} onClick={() => pick(c.p)} className={cx('flex w-full items-center gap-2 py-2 text-left', !c.match && 'opacity-60')}>
+          {listed.map((c) => (
+            <button key={c.p.id} type="button" disabled={busy || c.elig?.level === 'blocked'} onClick={() => pick(c.p)} className={cx('flex w-full items-center gap-2 py-2 text-left disabled:opacity-50', !c.match && 'opacity-60')}>
               {c.crew ? <CrewBadge crew={c.crew} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-500">VR</span>}
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-slate-900">{c.p.name} <span className="text-[11px] font-normal text-slate-500">{c.p.employmentType === 'contractor' ? 'Contractor' : `G${c.p.grade ?? '—'}`}{c.p.role === 'panel_operator' ? ' · Panel Operator' : c.level ? ` · ${FO_LEVEL_LABEL[c.level]}` : slot !== 'controller' ? ' · no level' : ''}</span></span>
+                {c.elig && c.elig.reasons.length > 0 && <span className={cx('block text-[11px] font-semibold', c.elig.level === 'blocked' || c.elig.level === 'needs_exception' ? 'text-status-red' : c.elig.level === 'verify' ? 'text-sky-800' : 'text-amber-800')}>{c.elig.reasons.join(' ')}</span>}
                 <span className="flex flex-wrap gap-x-2 text-[11px] font-semibold">
-                  {c.back && <span className="inline-flex items-center gap-0.5 text-status-red"><AlertTriangle className="h-3 w-3" />Also on {c.back}</span>}
+                  {c.back && !c.elig && <span className="inline-flex items-center gap-0.5 text-status-red"><AlertTriangle className="h-3 w-3" />Also on {c.back}</span>}
                   {c.leave > 0 && <span className="inline-flex items-center gap-0.5 font-semibold text-status-red"><AlertTriangle className="h-3 w-3" />Leave {c.leave}d in the shutdown: move it first</span>}
                   {c.hit > 0 && <span className="inline-flex items-center gap-0.5 text-status-red"><AlertTriangle className="h-3 w-3" />{c.crew} short {c.hit}d without him</span>}
                   {c.twin.length > 0 ? <span className="inline-flex items-center gap-0.5 text-status-red"><AlertTriangle className="h-3 w-3" />Same crew as {c.twin.join(', ')}: they rest on the same days</span> : total && c.same > 0 && <span className="text-slate-500">{c.same} already from {c.crew}</span>}
@@ -487,6 +531,7 @@ function AddSheet({ plan, team, slot, area, data, view, onClose, onDone }: { pla
                   {c.sick != null && <span className={cx('font-medium', sickMedian != null && c.sick > sickMedian ? 'text-amber-700' : 'text-slate-500')}>Sick {c.sick}d {year}{c.sickPrev != null ? ` · ${c.sickPrev}d ${year - 1}` : ''}</span>}
                 </span>
               </span>
+              {c.elig && <EligibilityBadge e={c.elig} />}
               <Plus className="h-4 w-4 shrink-0 text-brand-700" />
             </button>
           ))}
@@ -537,6 +582,19 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
       <div className="space-y-3">
         <p className="text-sm text-slate-600">#{r?.employee_number} · {SD_SLOT_LABEL[m.slot]}{r?.crew_code ? ` · from ${r.crew_code} Shift` : ''}{team ? ` · ${team.name} team` : ''}</p>
         <PersonHistory employeeId={m.employeeId} crew={crew} skipPlanId={plan.id} />
+        {data.v2 && m.slot === 'controller' && (
+          <Field label="Controller role">
+            <div className="grid grid-cols-3 gap-1.5">
+              {([['primary', 'Primary'], ['assistant', 'Assistant'], [null, 'Not set']] as const).map(([v, label]) => (
+                <button key={label} type="button" disabled={busy} onClick={async () => { setBusy(true); setErr(null); try { await updateSdMember(m.id, { controller_role: v }); onDone(`${r?.display_name}: ${label} Controller.`); } catch (e) { setErr(e); setBusy(false); } }}
+                  className={cx('min-h-9 rounded-lg text-xs font-semibold ring-1', (m.controllerRole ?? null) === v ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>{label}</button>
+              ))}
+            </div>
+            <p className="mt-1 text-[11px] text-slate-500">Either may lead alone when the other is off; both may work the same day.</p>
+          </Field>
+        )}
+        {data.v2 && (() => { const e = v2Eligibility(data, m.employeeId, m.slot === 'controller'); return e.reasons.length ? <p className={cx('rounded-lg px-2.5 py-1.5 text-xs ring-1', e.level === 'blocked' || e.level === 'needs_exception' ? 'bg-red-50 text-red-900 ring-red-200' : 'bg-sky-50 text-sky-900 ring-sky-200')}>{e.reasons.join(' ')}</p> : null; })()}
+        {data.v2 && <ExceptionsBox planId={plan.id} employeeId={m.employeeId} isHead={data.isHead} list={data.v2.exceptions} isController={m.slot === 'controller' && CONTROLLER_ROLES.includes(r?.position_code ?? '')} onDone={onDone} />}
         {!total && home && <FollowInstruction plan={plan} m={m} home={home} name={r?.display_name ?? 'Employee'} vr={r?.position_code === 'vr_controller'} onDone={onDone} />}
         <Field label="Days (tap to switch working / off)">
           <div className="grid grid-cols-7 gap-1">
@@ -590,7 +648,8 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
 }
 
 function PatternSheet({ plan, hasPeople, onClose, onDone, onMoved }: { plan: SdPlan; hasPeople: boolean; onClose: () => void; onDone: (m: string) => void; onMoved: (m: string) => void }) {
-  const [v, setV] = useState({ title: plan.title, kind: plan.kind as SdKind, start_date: plan.start, end_date: plan.end, days_on: plan.daysOn, days_off: plan.daysOff, shift_hours: plan.shiftHours, ramp_days: plan.rampDays, ramp_hours: plan.rampHours, normal_hours: plan.normalHours, max_overtime: plan.maxOvertime, max_overtime_year: yearCap(plan) });
+  const [v, setV] = useState({ title: plan.title, kind: plan.kind as SdKind, start_date: plan.start, end_date: plan.end, days_on: plan.daysOn, days_off: plan.daysOff, shift_hours: plan.shiftHours, ramp_days: plan.rampDays, ramp_hours: plan.rampHours, normal_hours: plan.normalHours, max_overtime: plan.maxOvertime, max_overtime_year: yearCap(plan),
+    ...((plan.rulesVersion ?? 1) >= 2 ? { max_overtime_hard: plan.maxOvertimeHard ?? 80, max_overtime_year_hard: plan.maxOvertimeYearHard ?? 440 } : {}) });
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const num = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement>) => setV((x) => ({ ...x, [k]: Number(e.target.value) }));
   const datesChanged = v.start_date !== plan.start || v.end_date !== plan.end;
@@ -632,8 +691,12 @@ function PatternSheet({ plan, hasPeople, onClose, onDone, onMoved }: { plan: SdP
           <Field label="Normal duty hours"><input className="input" inputMode="numeric" value={v.normal_hours} onChange={num('normal_hours')} /></Field>
           <Field label="Reduced days (each end)"><input className="input" inputMode="numeric" value={v.ramp_days} onChange={num('ramp_days')} /></Field>
           <Field label="Reduced-day hours"><input className="input" inputMode="numeric" value={v.ramp_hours} onChange={num('ramp_hours')} /></Field>
-          <Field label="Max overtime / month (h)"><input className="input" inputMode="numeric" value={v.max_overtime} onChange={num('max_overtime')} /></Field>
-          <Field label="Max overtime / year (h)"><input className="input" inputMode="numeric" value={v.max_overtime_year} onChange={num('max_overtime_year')} /></Field>
+          <Field label={(plan.rulesVersion ?? 1) >= 2 ? 'OT warning / month (h)' : 'Max overtime / month (h)'}><input className="input" inputMode="numeric" value={v.max_overtime} onChange={num('max_overtime')} /></Field>
+          <Field label={(plan.rulesVersion ?? 1) >= 2 ? 'OT warning / year (h)' : 'Max overtime / year (h)'}><input className="input" inputMode="numeric" value={v.max_overtime_year} onChange={num('max_overtime_year')} /></Field>
+          {'max_overtime_hard' in v && <>
+            <Field label="OT limit / month (h)"><input className="input" inputMode="numeric" value={v.max_overtime_hard} onChange={num('max_overtime_hard' as keyof typeof v)} /></Field>
+            <Field label="OT limit / year (h)"><input className="input" inputMode="numeric" value={v.max_overtime_year_hard} onChange={num('max_overtime_year_hard' as keyof typeof v)} /></Field>
+          </>}
         </div>
         {hasPeople && datesChanged && <p className="rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-900 ring-1 ring-brand-100"><b>Moving the shutdown</b>{shift ? ` ${Math.abs(shift)} ${Math.abs(shift) === 1 ? 'day' : 'days'} ${shift > 0 ? 'later' : 'earlier'}` : ''}{v.end_date !== plan.end ? `, ending ${range(v.end_date, v.end_date)}` : ''}: its people, their &quot;follow X shift&quot; instructions, the phases and the calendar event move with it, then the days and hours are rebuilt for the new dates for you to check and apply.</p>}
         {err != null && <ErrorBox error={err} />}

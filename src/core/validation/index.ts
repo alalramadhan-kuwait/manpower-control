@@ -9,7 +9,7 @@ export type Severity = 'info' | 'warning' | 'critical' | 'hard_stop';
 export const SEVERITY_RANK: Record<Severity, number> = { info: 0, warning: 1, critical: 2, hard_stop: 3 };
 export const SEVERITY_LABEL: Record<Severity, string> = { info: 'Info', warning: 'Warning', critical: 'Critical', hard_stop: 'Hard stop' };
 
-export type RuleCode = 'max_consecutive_duty_days' | 'rest_between_duties' | 'min_rest_hours' | 'leave_overlap' | 'assignment_overlap' | 'crew_minimum' | 'shift_times';
+export type RuleCode = 'max_consecutive_duty_days' | 'rest_between_duties' | 'shift_type_change_rest' | 'min_rest_hours' | 'leave_overlap' | 'assignment_overlap' | 'crew_minimum' | 'shift_times';
 export interface RuleConfig { code: RuleCode; severity: Severity; enabled: boolean; params: Record<string, unknown> }
 
 /** Duty start times (Asia/Kuwait, UTC+3, no daylight saving) and lengths. */
@@ -20,6 +20,7 @@ export const DEFAULT_SHIFT_TIMES: ShiftTimes = { M: '07:00', A: '15:00', N: '23:
 export const DEFAULT_RULES: RuleConfig[] = [
   { code: 'max_consecutive_duty_days', severity: 'hard_stop', enabled: true, params: { max: 6 } },
   { code: 'rest_between_duties', severity: 'hard_stop', enabled: true, params: {} },
+  { code: 'shift_type_change_rest', severity: 'hard_stop', enabled: true, params: { hours: 24 } },
   { code: 'min_rest_hours', severity: 'warning', enabled: false, params: { hours: null } },
   { code: 'leave_overlap', severity: 'critical', enabled: true, params: {} },
   { code: 'assignment_overlap', severity: 'hard_stop', enabled: true, params: {} },
@@ -127,6 +128,9 @@ export interface Finding {
 const fmt = (d: string) => { const [, m, day] = d.split('-').map(Number); return `${day} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]}`; };
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
+/** Morning-type (M, day duty, shutdown Morning) or Night-type (N, shutdown Night) duty; Afternoon and the rest: null. */
+export const dutyType = (c: DutyCode): 'day' | 'night' | null => (c === 'M' || c === 'D' || c === 'SD-D' ? 'day' : c === 'N' || c === 'SD-N' ? 'night' : null);
+
 /** Consecutive duty days and rest between duties over `days` (one person, dates in order). */
 export function checkSchedule(days: DayLine[], rules: RuleConfig[]): Finding[] {
   const out: Finding[] = [];
@@ -146,6 +150,7 @@ export function checkSchedule(days: DayLine[], rules: RuleConfig[]): Finding[] {
     flush();
   }
   const rest = ruleOf(rules, 'rest_between_duties'), minRest = ruleOf(rules, 'min_rest_hours');
+  const change = ruleOf(rules, 'shift_type_change_rest'); const changeHours = Number(change.params.hours ?? 24);
   const minHours = minRest.enabled && minRest.params.hours != null ? Number(minRest.params.hours) : null;
   const worked = days.filter((d) => d.works && d.duty.start !== undefined && d.duty.end !== undefined);
   for (let i = 1; i < worked.length; i++) {
@@ -153,6 +158,8 @@ export function checkSchedule(days: DayLine[], rules: RuleConfig[]): Finding[] {
     const hours = round1((b.duty.start! - a.duty.end!) / H);
     const what = `${a.duty.code} on ${fmt(a.date)} ends ${hhmmOf(a.duty.end!)}${dayOf(a.duty.end!) !== a.date ? ` ${fmt(dayOf(a.duty.end!))}` : ''}; ${b.duty.code} on ${fmt(b.date)} starts ${hhmmOf(b.duty.start!)}`;
     if (rest.enabled && hours <= 0) out.push({ rule: rest.code, severity: 'hard_stop', date: b.date, hours, key: `rest:${b.date}`, message: `${hours < 0 ? 'Duties overlap' : 'No rest'}: ${what} (${hours} h).` });
+    else if (change.enabled && dutyType(a.duty.code) && dutyType(b.duty.code) && dutyType(a.duty.code) !== dutyType(b.duty.code) && hours < changeHours)
+      out.push({ rule: change.code, severity: change.severity, date: b.date, hours, key: `change:${b.date}`, message: `Morning ↔ Night change needs ${changeHours} h off: ${what} (${hours} h).` });
     else if (minHours !== null && hours < minHours) out.push({ rule: minRest.code, severity: minRest.severity, date: b.date, hours, key: `minrest:${b.date}`, message: `Rest ${hours} h, below ${minHours} h: ${what}.` });
   }
   return out;

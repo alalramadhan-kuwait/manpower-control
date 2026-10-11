@@ -81,7 +81,12 @@ export interface SpreadContext {
   away: (employeeId: string, date: string) => boolean;
   /** Most days in a row a person works without a day off. */
   maxRun: number;
+  /** Rules v2: no top-up to the cap (full shifts only where the coverage needs them), 6 days in a row the hard limit
+   *  (the 4 / 3 full shifts in a row are kept as a preference), reduced days on the full shift with one person per place. */
+  v2?: boolean;
 }
+/** v2: the hard limit of days in a row. */
+export const V2_MAX_RUN = 6;
 
 /** The groups of a team: level slots for a train shutdown; Controllers (per section) and operators per area for a total turnaround. Operators without a level are left as they are. */
 export function spreadGroups(p: SdPlan, t: SdTeam, members: SdMember[], phases: SdPhase[]): SpreadGroup[] {
@@ -115,7 +120,7 @@ function stats(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadContex
     if (need > 0) {
       short += Math.max(0, need - on.length);
       if (!optional && on.length === 0) { gapDays++; gapDates.push(date); }
-      if (!optional && !isRampDay(p, date) && !on.some((m) => hoursOf(m, date) >= p.shiftHours)) { noFullDays++; noFullDates.push(date); }
+      if (!optional && (ctx.v2 || !isRampDay(p, date)) && !on.some((m) => hoursOf(m, date) >= p.shiftHours)) { noFullDays++; noFullDates.push(date); }
     }
     for (const m of on) {
       const ot = Math.max(0, hoursOf(m, date) - (isDutyDay(ctx.crewOf(m.employeeId), date) ? p.normalHours : 0)); overtime += ot;
@@ -147,7 +152,7 @@ function followCrew(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadC
   const counts = new Array<number>(m).fill(0); const run = new Array<number>(m).fill(0);
   const fullOf = new Array<number>(n).fill(-1);
   // full-shift days: the days somebody is alone are forced
-  const fullDay = (k: number) => !isRampDay(p, dates[k]) && need[k] > 0;
+  const fullDay = (k: number) => (ctx.v2 || !isRampDay(p, dates[k])) && need[k] > 0;
   for (let k = 0; k < n; k++) if (fullDay(k)) { const on = present.map((row, i) => (row[k] ? i : -1)).filter((i) => i >= 0); if (on.length === 1) { fullOf[k] = on[0]; counts[on[0]]++; } }
   let runBreaks = 0;
   for (let k = 0; k < n; k++) {
@@ -155,7 +160,8 @@ function followCrew(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadC
     if (on.length > 0 && fullDay(k)) {
       if (fullOf[k] < 0) {
         const ok = on.filter((i) => run[i] < limit);
-        const pool = ok.length ? ok : on;
+        const ok6 = ctx.v2 ? on.filter((i) => run[i] < V2_MAX_RUN) : [];
+        const pool = ok.length ? ok : ok6.length ? ok6 : on;
         // whoever still has room in the yearly cap first (a full shift is 4 h of overtime on a duty day), then the fewest full shifts
         const y = Number(dates[k].slice(0, 4));
         const full = (i: number) => (counts[i] + 1) * (p.shiftHours - short) + (ctx.yearTaken?.(members[i].employeeId, y) ?? 0) > yearCap(p) ? 1 : 0;
@@ -163,7 +169,7 @@ function followCrew(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadC
         fullOf[k] = pick; counts[pick]++;
       }
       for (let i = 0; i < m; i++) run[i] = i === fullOf[k] ? run[i] + 1 : 0;
-      if (run[fullOf[k]] > limit) runBreaks++;
+      if (run[fullOf[k]] > (ctx.v2 ? V2_MAX_RUN : limit)) runBreaks++;
     } else for (let i = 0; i < m; i++) run[i] = 0;
   }
   // top the overtime up: turn 8 h days into full shifts, the person with the least overtime first, up to the plan's cap
@@ -181,7 +187,7 @@ function followCrew(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadC
   const topRun = ctx.reachLimit ? Math.max(limit, 6) : limit;
   const runAround = (i: number, k: number) => { let a = 0, b = 0; while (k - a - 1 >= 0 && fullNow[i][k - a - 1]) a++; while (k + b + 1 < n && fullNow[i][k + b + 1]) b++; return a + b + 1; };
   const gain = p.shiftHours - short;   // a full shift instead of the short one, on a duty day
-  for (let guard = 0; guard < 4000; guard++) {
+  for (let guard = 0; guard < (ctx.v2 ? 0 : 4000); guard++) {
     const order = members.map((_, i) => i).sort((a, b) => otTotal(a) - otTotal(b) || a - b);
     let done = false;
     for (const i of order) {
@@ -205,10 +211,11 @@ function followCrew(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadC
     let dWorked = 0, full = 0, ot = 0; const hs: number[] = []; const byMonth: Record<string, number> = {};
     dates.forEach((d, k) => {
       if (d < x.start || d > x.end) { hs.push(0); return; }
-      const works = present[i][k];
+      // v2 reduced days: one person per place on the full shift, the others off
+      const works = present[i][k] && !(ctx.v2 && rampK[k] && !fullNow[i][k]);
       days.get(x.id)![d] = works;
       if (!works) { hs.push(0); return; }
-      const h = isRampDay(p, d) ? hoursOn(p, d) : fullNow[i][k] ? p.shiftHours : short;
+      const h = ctx.v2 ? (fullNow[i][k] ? p.shiftHours : short) : isRampDay(p, d) ? hoursOn(p, d) : fullNow[i][k] ? p.shiftHours : short;
       hours.get(x.id)![d] = h; hs.push(h); dWorked++; if (h >= p.shiftHours) full++;
       const o = Math.max(0, h - (isDutyDay(crews[i], d) ? p.normalHours : 0)); ot += o; byMonth[month(d)] = (byMonth[month(d)] ?? 0) + o;
     });

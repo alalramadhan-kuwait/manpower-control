@@ -3,9 +3,10 @@
 import { ArrowLeft, Pencil, Plus, Printer, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { personOn } from '@/core/manpower';
+import { personOn, type MpPerson } from '@/core/manpower';
+import { rowOvertime } from './docOt';
 import { addDaysIso, type Crew } from '@/core/roster';
-import { areasOf, dayOvertime, isDutyDay, memberHoursOn, memberWorks, planDates, type SdMember, type SdPlan, type SdTeam } from '@/core/shutdown';
+import { areasOf, isDutyDay, memberHoursOn, memberWorks, planDates, type SdMember, type SdPlan, type SdTeam } from '@/core/shutdown';
 import { fetchManpowerInputs } from '@/data/manpower';
 import { fetchDirectory } from '@/data/queries';
 import { fetchSdPlan, updateSdPlan, type Signature } from '@/data/shutdown';
@@ -38,7 +39,7 @@ const unitLine = 'Mina Abdullah Refinery · ARDS Operations · Area 4 · Unit 12
 const periodOf = (p: SdPlan) => { const f = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }); return `${f(p.start)} – ${f(p.end)} ${p.end.slice(0, 4)}`; };
 
 /** A row: the member, the group it is printed under (Controller, an area, Operators) and its number within the team. */
-export interface Row { m: SdMember; team: SdTeam; r: EmployeeDirectoryRow | undefined; /** the crew whose duty days he keeps on the team (the one he follows, else his own) */ crew: Crew | null; /** the shift he is counted in: his own crew, the shutdown aside (a VR Controller on the team: the shift he follows) */ home: Crew | null; /** the crew he is in the day after the shutdown (a VR Controller: his placement then) */ after: Crew | null; vr: boolean; group: string; no: number }
+export interface Row { m: SdMember; team: SdTeam; r: EmployeeDirectoryRow | undefined; /** the crew whose duty days he keeps on the team (the one he follows, else his own) */ crew: Crew | null; /** the shift he is counted in: his own crew, the shutdown aside (a VR Controller on the team: the shift he follows) */ home: Crew | null; /** the crew he is in the day after the shutdown (a VR Controller: his placement then) */ after: Crew | null; vr: boolean; group: string; no: number; /** the person (role history and shift movements), for the roster of each date */ person?: MpPerson }
 export interface Doc { plan: SdPlan; teams: SdTeam[]; rows: Row[]; signatures: Signature[]; dates: string[]; months: string[]; name: string }
 
 /** Everything the shutdown documents (and the Excel file) are made of. */
@@ -55,7 +56,7 @@ export async function loadSdDoc(id: string): Promise<Doc> {
   const groupOf = (m: SdMember) => (m.slot === 'controller' ? 'Controller' : sd.plan.kind === 'total' ? (areas.includes(m.area ?? '') ? m.area ?? '' : areas[0]) || 'Operators' : 'Operators');
   const secRank = (m: SdMember) => (m.slot === 'controller' ? Math.max(0, sd.plan.sections.indexOf(m.area ?? '')) : 0);
   const groupRank = (g: string) => (g === 'Controller' ? -1 : Math.max(0, areas.indexOf(g)));
-  const sorted = sd.members.map((m) => ({ m, team: sd.teams.find((t) => t.id === m.teamId)!, r: byId.get(m.employeeId), crew: m.followCrew ?? crewOf(m.employeeId), home: byId.get(m.employeeId)?.position_code === 'vr_controller' && m.followCrew ? m.followCrew : crewOf(m.employeeId), after: crewAfter(m.employeeId), vr: byId.get(m.employeeId)?.position_code === 'vr_controller', group: groupOf(m), no: 0 }))
+  const sorted = sd.members.map((m) => ({ m, team: sd.teams.find((t) => t.id === m.teamId)!, r: byId.get(m.employeeId), crew: m.followCrew ?? crewOf(m.employeeId), home: byId.get(m.employeeId)?.position_code === 'vr_controller' && m.followCrew ? m.followCrew : crewOf(m.employeeId), after: crewAfter(m.employeeId), vr: byId.get(m.employeeId)?.position_code === 'vr_controller', group: groupOf(m), no: 0, person: people.get(m.employeeId) }))
     .filter((x) => x.team)
     .sort((a, b) => teamSort.get(a.m.teamId)! - teamSort.get(b.m.teamId)! || groupRank(a.group) - groupRank(b.group) || (a.m.order ?? 99) - (b.m.order ?? 99) || secRank(a.m) - secRank(b.m) || SLOT_ORDER[a.m.slot] - SLOT_ORDER[b.m.slot] || (a.r?.display_name ?? '').localeCompare(b.r?.display_name ?? ''));
   // numbered within the team: Controllers 1.., operators 1.. across the areas (as on the section's sheets)
@@ -160,14 +161,12 @@ export function SdOvertimePage() {
   const [editSigs, setEditSigs] = useState(false);
   const ot = useMemo(() => {
     if (!doc) return null;
-    const out = new Map<string, Map<string, number>>();
-    for (const x of doc.rows) out.set(x.m.id, new Map(doc.dates.map((d) => [d, dayOvertime(doc.plan, x.m, x.crew, d)])));
-    return out;
+    return new Map(doc.rows.map((x) => [x.m.id, rowOvertime(doc, x)]));
   }, [doc]);
   if (error) return <ErrorBox error={error} />;
   if (!doc || !ot) return <Spinner />;
   const { plan, teams, rows, dates, months } = doc;
-  const total = (id: string, month?: string) => [...ot.get(id)!].reduce((n, [d, h]) => n + (!month || d.startsWith(month) ? h : 0), 0);
+  const total = (id: string, month?: string) => (month ? ot.get(id)!.month(month) : ot.get(id)!.total);
   return (
     <Page back={`/shutdown/${plan.id}`} title={plan.title} actions={<Button variant="secondary" className="min-h-9 px-3 text-xs" onClick={() => setEditSigs(true)}><Pencil className="h-3.5 w-3.5" />Signatures</Button>}>
       {months.map((ym, mi) => (
@@ -189,7 +188,7 @@ export function SdOvertimePage() {
                   {list.map((x, i) => (
                     <tr key={x.m.id}>
                       <td className={td}>{i + 1}</td><td className={cx(td, 'whitespace-nowrap text-left')}>{x.r?.display_name}</td><td className={td}>{x.r?.employee_number}</td>
-                      {days.map((d) => { const off = !memberWorks(plan, x.m, d) && offInside(plan, x.m, dates, d); return <td key={d} className={cx(td, off && 'bg-yellow-300')}>{ot.get(x.m.id)!.get(d)}</td>; })}
+                      {days.map((d) => { const off = !memberWorks(plan, x.m, d) && offInside(plan, x.m, dates, d); return <td key={d} className={cx(td, off && 'bg-yellow-300')}>{ot.get(x.m.id)!.day(d)}</td>; })}
                       <td className={cx(td, 'font-semibold', total(x.m.id, ym) > plan.maxOvertime && 'text-red-700')}>{total(x.m.id, ym)}</td><td className={cx(td, 'font-semibold')}>{total(x.m.id)}</td>
                     </tr>
                   ))}

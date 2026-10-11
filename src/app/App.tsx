@@ -94,7 +94,7 @@ export default function App() {
           <Route path="/controllers/morning" element={<MorningPlanPage />} />
           <Route path="/controllers/board" element={<ControllersBoardPage profile={profile} />} />
           <Route path="/shutdown" element={<ShutdownListPage />} />
-          <Route path="/shutdown/:id" element={<SdPlanPage />} />
+          <Route path="/shutdown/:id" element={<SdPlanPage isHead={profile.role_code === 'section_head'} />} />
           <Route path="/shutdown/:id/schedule" element={<SdSchedulePage />} />
           <Route path="/shutdown/:id/overtime" element={<SdOvertimePage />} />
           <Route path="/review/fo-levels" element={<FoLevelsPage />} />

@@ -28,7 +28,8 @@ export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, c
   const [maxRun, setMaxRun] = useState(defaultMaxRun(plan));
   const [reach, setReach] = useState(false);
   // shutdown team members take no leave: the days are planned with everybody present, the leave to move is listed above
-  const results = useMemo(() => spreadPlan(plan, teams, members, phases, { crewOf, away: () => false, maxRun, reachLimit: reach, yearTaken }), [plan, teams, members, phases, crewOf, maxRun, reach, yearTaken]);
+  const v2 = (plan.rulesVersion ?? 1) >= 2;
+  const results = useMemo(() => spreadPlan(plan, teams, members, phases, { crewOf, away: () => false, maxRun, reachLimit: reach && !v2, yearTaken, v2 }), [plan, teams, members, phases, crewOf, maxRun, reach, yearTaken, v2]);
   const [off, setOff] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const id = (r: (typeof results)[number]) => `${r.group.teamId}:${r.group.key}`;
@@ -56,8 +57,8 @@ export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, c
       <div className="space-y-3">
         {train ? (
           <>
-          <p className="text-xs text-slate-600">Everyone works only the duty days of their own crew, so nobody works a rest day and nobody gets an extra day off. Every day each team has a Controller, a Senior and a Good FO on the full {plan.shiftHours} h; the others come for {Math.min(plan.normalHours, plan.shiftHours)} h. The full shifts are shared out evenly, then topped up so each person reaches {plan.maxOvertime} h of overtime in each calendar month where the fatigue limits allow, never above. New FO may stay empty.</p>
-          <label className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700 ring-1 ring-slate-200"><input type="checkbox" className="mt-0.5 h-4 w-4" checked={reach} onChange={(e) => setReach(e.target.checked)} /><span>Reach {plan.maxOvertime} h a month for everyone, even if it needs up to 6 full shifts in a row (the crew&apos;s whole block of duty days). Off keeps at most 4 by day and 3 by night.</span></label>
+          {v2 ? <p className="text-xs text-slate-600">Rules v2: everyone works the duty days of the crew he follows. Every day each team has a qualified Controller, Senior FO and Good FO on the full {plan.shiftHours} h (07:00–19:00 / 19:00–07:00); the others come for {Math.min(plan.normalHours, plan.shiftHours)} h. The full shifts are shared out evenly and only where the coverage needs them: no extra hours just to reach the {plan.maxOvertime} h warning. Reduced first and last days: one Controller, one Senior and one Good FO on {plan.shiftHours} h, the others off. Six days in a row at most. New FO is a training place.</p> : <p className="text-xs text-slate-600">Everyone works only the duty days of their own crew, so nobody works a rest day and nobody gets an extra day off. Every day each team has a Controller, a Senior and a Good FO on the full {plan.shiftHours} h; the others come for {Math.min(plan.normalHours, plan.shiftHours)} h. The full shifts are shared out evenly, then topped up so each person reaches {plan.maxOvertime} h of overtime in each calendar month where the fatigue limits allow, never above. New FO may stay empty.</p>}
+          {!v2 && <label className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700 ring-1 ring-slate-200"><input type="checkbox" className="mt-0.5 h-4 w-4" checked={reach} onChange={(e) => setReach(e.target.checked)} /><span>Reach {plan.maxOvertime} h a month for everyone, even if it needs up to 6 full shifts in a row (the crew&apos;s whole block of duty days). Off keeps at most 4 by day and 3 by night.</span></label>}
           {blocked.length > 0 && (
             <div className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-900 ring-1 ring-red-300">
               <p className="font-semibold">Not ready: {blocked.length} {blocked.length === 1 ? 'place has' : 'places have'} days without the full shift covered</p>

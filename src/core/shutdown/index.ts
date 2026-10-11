@@ -32,6 +32,10 @@ export interface SdPlan {
   normalHours: number;
   /** Overtime cap per person per calendar month, and per calendar year (with the hours already taken that year). */
   maxOvertime: number; maxOvertimeYear?: number;
+  /** Shutdown rules version (1 = the plans made before 11 Oct 2026, kept as they are; 2 = the approved v2 rules). */
+  rulesVersion?: number;
+  /** v2: hard overtime limits (the monthly / yearly figures above are then the warning thresholds). */
+  maxOvertimeHard?: number; maxOvertimeYearHard?: number;
 }
 export interface SdTeam { id: string; planId: string; name: string; sort: number; needs: Record<NeedSlot, number>; rampNeeds: Record<NeedSlot, number>; shiftCode: 'M' | 'N'; hoursLabel: string | null }
 export interface SdDay { works: boolean; hours: number | null }
@@ -45,6 +49,8 @@ export interface SdMember {
   order?: number | null;
   /** The member's own days (date → works / hours), overriding the pattern. */
   days?: Record<string, SdDay>;
+  /** v2 Controllers: Primary or Assistant (either may lead alone when the other is off). */
+  controllerRole?: 'primary' | 'assistant' | null;
 }
 
 /** Total turnaround: people needed per team, from a first to a last day (Controllers, and operators per area). */
@@ -107,7 +113,10 @@ export function teamDay(p: SdPlan, t: SdTeam, members: SdMember[], date: string,
     return out;
   }
   const needs = isRampDay(p, date) ? t.rampNeeds : t.needs;
-  for (const s of SD_SLOTS) out[s] = { need: needs[s], have: on((m) => m.slot === s) };
+  // v2: a Controller, a Senior and a Good FO on duty is the minimum (the rest is relief); the New FO place never makes a day short
+  const v2 = (p.rulesVersion ?? 1) >= 2;
+  for (const s of SD_SLOTS) out[s] = { need: v2 ? (s === 'new' ? 0 : Math.min(1, needs[s])) : needs[s], have: on((m) => m.slot === s) };
+  if (v2) return out;   // an operator without a level never fills a Senior or Good place
   // Operators without a level fill whatever Field Operator places are still open (Senior first)
   let spare = on((m) => m.slot === 'member');
   for (const s of ['senior', 'good', 'new'] as const) { const k = Math.min(spare, Math.max(0, out[s].need - out[s].have)); out[s].have += k; spare -= k; }

@@ -182,7 +182,7 @@ function evaluateDay(date, allPeople, absences, rulesSource = FULL_OPERATION, as
       if (counted && !ctrlCounted.includes(coverPerson)) ctrlCounted.push(coverPerson);
     }
     if (!cover && working && ctrlCounted.length < rules.controllerMin && (away.length > 0 || members.some((p) => p.role === "controller" && leaveOf(p) && qualifiesAsController(p)))) {
-      const candidates = todays.filter((a) => a.kind === "sd_team" && !autoUsed.has(a.employeeId)).map((a) => ({ a, p: byId.get(a.employeeId) ?? null })).filter((x) => !!x.p && x.p.grade != null && x.p.grade >= rules.controllerGrade && !leaveOf(x.p) && assignmentOf(x.p)?.kind === "sd_team").sort((x, y) => Number(x.a.works?.(date) ?? true) - Number(y.a.works?.(date) ?? true) || Number(y.p.crew === crew) - Number(x.p.crew === crew) || x.p.name.localeCompare(y.p.name));
+      const candidates = todays.filter((a) => a.kind === "sd_team" && !autoUsed.has(a.employeeId)).map((a) => ({ a, p: byId.get(a.employeeId) ?? null })).filter((x) => !!x.p && x.p.grade != null && x.p.grade >= rules.controllerGrade && !leaveOf(x.p) && assignmentOf(x.p)?.kind === "sd_team").filter((x) => !x.a.sdV2 || !(x.a.works?.(date) ?? true) && (state === "A" || state === (x.a.sdV2.night ? "N" : "M"))).sort((x, y) => Number(x.a.works?.(date) ?? true) - Number(y.a.works?.(date) ?? true) || Number(y.p.crew === crew) - Number(x.p.crew === crew) || x.p.name.localeCompare(y.p.name));
       const pick = candidates[0];
       if (pick) {
         autoUsed.add(pick.p.id);
@@ -424,6 +424,19 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 var serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}").default;
 var supabase = createClient(Deno.env.get("SUPABASE_URL"), serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
+// src/core/validation/index.ts
+var DEFAULT_SHIFT_TIMES = { M: "07:00", A: "15:00", N: "23:00", hours: 8, dayDutyStart: "07:00", dayDutyHours: 8 };
+var DEFAULT_RULES = [
+  { code: "max_consecutive_duty_days", severity: "hard_stop", enabled: true, params: { max: 6 } },
+  { code: "rest_between_duties", severity: "hard_stop", enabled: true, params: {} },
+  { code: "shift_type_change_rest", severity: "hard_stop", enabled: true, params: { hours: 24 } },
+  { code: "min_rest_hours", severity: "warning", enabled: false, params: { hours: null } },
+  { code: "leave_overlap", severity: "critical", enabled: true, params: {} },
+  { code: "assignment_overlap", severity: "hard_stop", enabled: true, params: {} },
+  { code: "crew_minimum", severity: "critical", enabled: true, params: {} },
+  { code: "shift_times", severity: "info", enabled: true, params: { ...DEFAULT_SHIFT_TIMES } }
+];
+
 // src/core/shutdown/index.ts
 var days = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
 var cycleOf = (p) => Math.max(1, p.daysOn + p.daysOff);
@@ -436,6 +449,9 @@ function memberWorks(p, m, date) {
 
 // src/data/shutdown.ts
 var toPlan = (r) => ({
+  rulesVersion: r.rules_version ?? 1,
+  maxOvertimeHard: r.max_overtime_hard == null ? void 0 : Number(r.max_overtime_hard),
+  maxOvertimeYearHard: r.max_overtime_year_hard == null ? void 0 : Number(r.max_overtime_year_hard),
   id: r.id,
   eventId: r.event_id,
   title: r.title,
@@ -464,6 +480,7 @@ var toMember = (r) => ({
   end: r.end_date,
   area: r.area,
   followCrew: r.follow_crew ?? null,
+  controllerRole: r.controller_role ?? null,
   order: Number(/^S\.No (\d+)/.exec(r.note ?? "")?.[1]) || null
 });
 async function fetchSdMembers(from, to) {
@@ -471,15 +488,18 @@ async function fetchSdMembers(from, to) {
   if (error) throw error;
   return data.map(toMember);
 }
-async function fetchSdWorks(members) {
+async function fetchSdWorkInfo(members) {
   const out = /* @__PURE__ */ new Map();
   if (!members.length) return out;
-  const [p, d] = await Promise.all([
+  const [p, d, t] = await Promise.all([
     supabase.from("sd_plans").select("*").in("id", [...new Set(members.map((m) => m.planId))]),
-    supabase.from("sd_days").select("member_id,work_date,works,hours").in("member_id", members.map((m) => m.id)).limit(1e4)
+    supabase.from("sd_days").select("member_id,work_date,works,hours").in("member_id", members.map((m) => m.id)).limit(1e4),
+    supabase.from("sd_teams").select("id,shift_code").in("id", [...new Set(members.map((m) => m.teamId))])
   ]);
   if (p.error) throw p.error;
   if (d.error) throw d.error;
+  if (t.error) throw t.error;
+  const night = new Set(t.data.filter((x) => x.shift_code === "N").map((x) => x.id));
   const plans = new Map(p.data.map((x) => [x.id, toPlan(x)]));
   const by = new Map(members.map((m) => [m.id, { ...m, days: {} }]));
   for (const r of d.data) {
@@ -488,7 +508,7 @@ async function fetchSdWorks(members) {
   }
   for (const m of by.values()) {
     const plan = plans.get(m.planId);
-    if (plan) out.set(m.id, (date) => memberWorks(plan, m, date));
+    if (plan) out.set(m.id, { works: (date) => memberWorks(plan, m, date), sdV2: (plan.rulesVersion ?? 1) >= 2 ? { night: night.has(m.teamId) } : void 0 });
   }
   return out;
 }
@@ -611,9 +631,9 @@ async function fetchManpowerInputs(from, to) {
   const roleOf = new Map(dir.data.map((r) => [r.id, r.position_code]));
   const sdAssignments = [];
   const isCtl = (id) => ["controller", "vr_controller", "morning_controller"].includes(roleOf.get(id) ?? "");
-  const sdWorks = await fetchSdWorks(sd.filter((m) => isCtl(m.employeeId)));
+  const sdWorks = await fetchSdWorkInfo(sd.filter((m) => isCtl(m.employeeId)));
   for (const m of sd) {
-    if (isCtl(m.employeeId)) sdAssignments.push({ id: `sd-${m.id}`, kind: "sd_team", employeeId: m.employeeId, crew: null, start: m.start, end: m.end, works: sdWorks.get(m.id) });
+    if (isCtl(m.employeeId)) sdAssignments.push({ id: `sd-${m.id}`, kind: "sd_team", employeeId: m.employeeId, crew: null, start: m.start, end: m.end, works: sdWorks.get(m.id)?.works, sdV2: sdWorks.get(m.id)?.sdV2 });
     else moves.set(m.employeeId, [...moves.get(m.employeeId) ?? [], { start: m.start, end: m.end, crew: SD_TEAM, kind: "sd" }]);
   }
   const leaveAbsences = lv.data.map(toMpAbsence);

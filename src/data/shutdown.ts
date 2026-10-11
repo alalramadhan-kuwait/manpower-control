@@ -3,20 +3,21 @@ import { supabase } from './supabase';
 import { dataChanged } from './changes';
 import type { Crew } from '@/core/roster';
 import { cancelMovement, fetchMovements, recordMovement } from './movements';
+import { V2_DEFAULTS } from '@/core/shutdown/v2';
 import { memberHoursOn, memberWorks, teamGaps, type TeamGap, type FoLevel, type SdDay, type SdKind, type SdMember, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
 
 export interface Signature { title: string; name: string }
-interface PlanRow { signatures: Signature[]; kind: SdKind; areas: string[] | null; sections: string[] | null; id: string; event_id: string | null; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; max_overtime_year?: number | null; status: string }
+interface PlanRow { signatures: Signature[]; kind: SdKind; areas: string[] | null; sections: string[] | null; id: string; event_id: string | null; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; max_overtime_year?: number | null; status: string; rules_version?: number | null; max_overtime_hard?: number | null; max_overtime_year_hard?: number | null }
 interface TeamRow { id: string; plan_id: string; name: string; sort: number; shift_code: 'M' | 'N'; shift_hours_label: string | null; controller_n: number; senior_n: number; good_n: number; new_n: number; ramp_controller_n: number; ramp_senior_n: number; ramp_good_n: number; ramp_new_n: number }
-interface MemberRow { id: string; plan_id: string; team_id: string; employee_id: string; slot: SdSlot; day_offset: number; start_date: string; end_date: string; area: string | null; note: string | null; follow_crew: Crew | null }
+interface MemberRow { id: string; plan_id: string; team_id: string; employee_id: string; slot: SdSlot; day_offset: number; start_date: string; end_date: string; area: string | null; note: string | null; follow_crew: Crew | null; controller_role?: 'primary' | 'assistant' | null }
 interface PhaseRow { id: string; plan_id: string; start_date: string; end_date: string; needs: SdPhase['needs'] }
 
-const toPlan = (r: PlanRow): SdPlan => ({ id: r.id, eventId: r.event_id, title: r.title, kind: r.kind ?? 'train', areas: r.areas ?? [], sections: r.sections ?? [], start: r.start_date, end: r.end_date, daysOn: r.days_on, daysOff: r.days_off,
+const toPlan = (r: PlanRow): SdPlan => ({ rulesVersion: r.rules_version ?? 1, maxOvertimeHard: r.max_overtime_hard == null ? undefined : Number(r.max_overtime_hard), maxOvertimeYearHard: r.max_overtime_year_hard == null ? undefined : Number(r.max_overtime_year_hard), id: r.id, eventId: r.event_id, title: r.title, kind: r.kind ?? 'train', areas: r.areas ?? [], sections: r.sections ?? [], start: r.start_date, end: r.end_date, daysOn: r.days_on, daysOff: r.days_off,
   shiftHours: Number(r.shift_hours), rampDays: r.ramp_days, rampHours: Number(r.ramp_hours), normalHours: Number(r.normal_hours), maxOvertime: Number(r.max_overtime), maxOvertimeYear: r.max_overtime_year == null ? 380 : Number(r.max_overtime_year) });
 const toTeam = (r: TeamRow): SdTeam => ({ id: r.id, planId: r.plan_id, name: r.name, sort: r.sort,
   needs: { controller: r.controller_n, senior: r.senior_n, good: r.good_n, new: r.new_n }, rampNeeds: { controller: r.ramp_controller_n, senior: r.ramp_senior_n, good: r.ramp_good_n, new: r.ramp_new_n },
   shiftCode: r.shift_code, hoursLabel: r.shift_hours_label });
-export const toMember = (r: MemberRow): SdMember => ({ id: r.id, planId: r.plan_id, teamId: r.team_id, employeeId: r.employee_id, slot: r.slot, offset: r.day_offset, start: r.start_date, end: r.end_date, area: r.area, followCrew: r.follow_crew ?? null,
+export const toMember = (r: MemberRow): SdMember => ({ id: r.id, planId: r.plan_id, teamId: r.team_id, employeeId: r.employee_id, slot: r.slot, offset: r.day_offset, start: r.start_date, end: r.end_date, area: r.area, followCrew: r.follow_crew ?? null, controllerRole: r.controller_role ?? null,
   order: Number(/^S\.No (\d+)/.exec(r.note ?? '')?.[1]) || null });
 const toPhase = (r: PhaseRow): SdPhase => ({ id: r.id, start: r.start_date, end: r.end_date, needs: r.needs ?? {} });
 
@@ -57,31 +58,43 @@ export async function fetchSdMembers(from: string, to: string): Promise<SdMember
 
 /** For shutdown-team members: on which dates each works the team shift (the plan's pattern and the member's own days). */
 export async function fetchSdWorks(members: SdMember[]): Promise<Map<string, (date: string) => boolean>> {
-  const out = new Map<string, (date: string) => boolean>();
+  return new Map([...(await fetchSdWorkInfo(members))].map(([k, v]) => [k, v.works]));
+}
+/** As fetchSdWorks, with whether the plan follows the v2 rules and the team works nights. */
+export async function fetchSdWorkInfo(members: SdMember[]): Promise<Map<string, { works: (date: string) => boolean; sdV2?: { night: boolean } }>> {
+  const out = new Map<string, { works: (date: string) => boolean; sdV2?: { night: boolean } }>();
   if (!members.length) return out;
-  const [p, d] = await Promise.all([
+  const [p, d, t] = await Promise.all([
     supabase.from('sd_plans').select('*').in('id', [...new Set(members.map((m) => m.planId))]),
-    supabase.from('sd_days').select('member_id,work_date,works,hours').in('member_id', members.map((m) => m.id)).limit(10000)
+    supabase.from('sd_days').select('member_id,work_date,works,hours').in('member_id', members.map((m) => m.id)).limit(10000),
+    supabase.from('sd_teams').select('id,shift_code').in('id', [...new Set(members.map((m) => m.teamId))])
   ]);
-  if (p.error) throw p.error; if (d.error) throw d.error;
+  if (p.error) throw p.error; if (d.error) throw d.error; if (t.error) throw t.error;
+  const night = new Set((t.data as { id: string; shift_code: string }[]).filter((x) => x.shift_code === 'N').map((x) => x.id));
   const plans = new Map((p.data as PlanRow[]).map((x) => [x.id, toPlan(x)]));
   const by = new Map(members.map((m) => [m.id, { ...m, days: {} as Record<string, SdDay> }]));
   for (const r of d.data as { member_id: string; work_date: string; works: boolean; hours: number | null }[]) { const m = by.get(r.member_id); if (m) m.days![r.work_date] = { works: r.works, hours: r.hours == null ? null : Number(r.hours) }; }
-  for (const m of by.values()) { const plan = plans.get(m.planId); if (plan) out.set(m.id, (date) => memberWorks(plan, m, date)); }
+  for (const m of by.values()) { const plan = plans.get(m.planId); if (plan) out.set(m.id, { works: (date) => memberWorks(plan, m, date), sdV2: (plan.rulesVersion ?? 1) >= 2 ? { night: night.has(m.teamId) } : undefined }); }
   return out;
 }
 
-/** A new plan with a Morning and a Night team. A total turnaround: everyone every day, two areas, one phase for all its days. */
+/** A new plan with a Morning and a Night team, under the v2 rules: reduced first and last two days (1 Controller, 1 Senior FO,
+ *  1 Good FO on 12 h), Primary + Assistant Controller, 2 Senior, 2 Good and 1 New FO otherwise; overtime 72 / 380 h warnings,
+ *  80 / 440 h limits. A total turnaround: everyone every day, two areas, one phase for all its days. */
 export async function createSdPlan(v: { title: string; start: string; end: string; eventId: string | null; kind?: SdKind }): Promise<string> {
   const total = v.kind === 'total';
   const areas = total ? ['TR-II', 'L.P & TR-I'] : [];
   const sections = total ? ['TR-I', 'TR-II', 'L.P'] : [];
-  const { data, error } = await supabase.from('sd_plans').insert({ title: v.title, start_date: v.start, end_date: v.end, event_id: v.eventId, kind: v.kind ?? 'train',
+  const v2 = { rules_version: 2, ramp_days: V2_DEFAULTS.reducedDays, ramp_hours: V2_DEFAULTS.reducedHours, shift_hours: V2_DEFAULTS.shiftHours, normal_hours: V2_DEFAULTS.normalHours,
+    max_overtime: V2_DEFAULTS.monthWarn, max_overtime_year: V2_DEFAULTS.yearWarn, max_overtime_hard: V2_DEFAULTS.monthHard, max_overtime_year_hard: V2_DEFAULTS.yearHard };
+  const { data, error } = await supabase.from('sd_plans').insert({ title: v.title, start_date: v.start, end_date: v.end, event_id: v.eventId, kind: v.kind ?? 'train', ...v2,
     ...(total ? { days_on: 1, days_off: 0, ramp_days: 0, areas, sections } : {}) }).select('id').single();
   if (error) throw error;
   const id = (data as { id: string }).id;
-  const t = await supabase.from('sd_teams').insert([{ plan_id: id, name: 'Morning', sort: 0, shift_code: 'M', shift_hours_label: '07:00 - 19:00' },
-    { plan_id: id, name: 'Night', sort: 1, shift_code: 'N', shift_hours_label: '19:00 - 07:00' }]).select('id');
+  const n = V2_DEFAULTS.teamNeeds, r = V2_DEFAULTS.reducedNeeds;
+  const needs = { controller_n: n.controller, senior_n: n.senior, good_n: n.good, new_n: n.new, ramp_controller_n: r.controller, ramp_senior_n: r.senior, ramp_good_n: r.good, ramp_new_n: r.new };
+  const t = await supabase.from('sd_teams').insert([{ plan_id: id, name: 'Morning', sort: 0, shift_code: 'M', shift_hours_label: '07:00 - 19:00', ...needs },
+    { plan_id: id, name: 'Night', sort: 1, shift_code: 'N', shift_hours_label: '19:00 - 07:00', ...needs }]).select('id');
   if (t.error) throw t.error;
   if (total) {
     const needs = Object.fromEntries((t.data as { id: string }[]).map((x) => [x.id, { controller: sections.length, sections: Object.fromEntries(sections.map((x) => [x, 1])), areas: Object.fromEntries(areas.map((a) => [a, 5])) }]));
@@ -92,7 +105,7 @@ export async function createSdPlan(v: { title: string; start: string; end: strin
   return id;
 }
 
-export async function updateSdPlan(id: string, v: Partial<{ signatures: Signature[]; kind: SdKind; areas: string[]; sections: string[]; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; max_overtime_year: number; status: 'active' | 'cancelled' }>) {
+export async function updateSdPlan(id: string, v: Partial<{ max_overtime_hard: number; max_overtime_year_hard: number; signatures: Signature[]; kind: SdKind; areas: string[]; sections: string[]; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; max_overtime_year: number; status: 'active' | 'cancelled' }>) {
   const { error } = await supabase.from('sd_plans').update(v).eq('id', id);
   if (error) throw error;
   dataChanged();
@@ -110,7 +123,7 @@ export async function addSdMember(v: { planId: string; teamId: string; employeeI
   dataChanged();
 }
 
-export async function updateSdMember(id: string, v: Partial<{ day_offset: number; start_date: string; end_date: string; team_id: string; slot: SdSlot; area: string | null; follow_crew: Crew | null }>) {
+export async function updateSdMember(id: string, v: Partial<{ day_offset: number; start_date: string; end_date: string; team_id: string; slot: SdSlot; area: string | null; follow_crew: Crew | null; controller_role: 'primary' | 'assistant' | null }>) {
   const { error } = await supabase.from('sd_members').update(v).eq('id', id);
   if (error) throw error;
   dataChanged();

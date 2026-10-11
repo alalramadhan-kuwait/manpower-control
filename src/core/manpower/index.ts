@@ -101,6 +101,9 @@ export interface MpAssignment {
   coversEmployeeId?: string | null;
   /** sd_team: does he work the team shift on this date? (undefined = not known: counted as working.) */
   works?: (date: string) => boolean;
+  /** sd_team of a rules-v2 plan: he covers a normal shift only on a day off the team, and only a shift of his team's kind
+   *  (Morning team: M or A; Night team: N or A), so the duties never overlap nor break the Morning ↔ Night rest. */
+  sdV2?: { night: boolean };
 }
 
 export interface MpAbsence {
@@ -365,6 +368,7 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
     if (!cover && working && ctrlCounted.length < rules.controllerMin && (away.length > 0 || members.some((p) => p.role === 'controller' && leaveOf(p) && qualifiesAsController(p)))) {
       const candidates = todays.filter((a) => a.kind === 'sd_team' && !autoUsed.has(a.employeeId)).map((a) => ({ a, p: byId.get(a.employeeId) ?? null }))
         .filter((x): x is { a: MpAssignment; p: MpPerson } => !!x.p && x.p.grade != null && x.p.grade >= rules.controllerGrade && !leaveOf(x.p) && assignmentOf(x.p)?.kind === 'sd_team')
+        .filter((x) => !x.a.sdV2 || (!(x.a.works?.(date) ?? true) && (state === 'A' || state === (x.a.sdV2.night ? 'N' : 'M'))))
         .sort((x, y) => Number(x.a.works?.(date) ?? true) - Number(y.a.works?.(date) ?? true) || Number(y.p.crew === crew) - Number(x.p.crew === crew) || x.p.name.localeCompare(y.p.name));
       const pick = candidates[0];
       if (pick) { autoUsed.add(pick.p.id); cover = { person: pick.p, assignment: pick.a, counted: true, absence: null }; ctrlCounted.push(pick.p); }

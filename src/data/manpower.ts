@@ -1,7 +1,7 @@
 // Data access for the manpower engine: maps Supabase rows to the engine's input types.
 import { supabase } from './supabase';
 import { SD_TEAM, type MpAbsence, type MpAssignment, type MpCrewMove, type MpPerson, type MpRolePeriod, type Role, type Rules } from '@/core/manpower';
-import { fetchSdMembers, fetchSdWorks } from './shutdown';
+import { fetchSdMembers, fetchSdWorkInfo } from './shutdown';
 import { releaseAbsence } from './releases';
 import { rulesByDate, type OperationPlan } from '@/core/modes';
 import { fetchOperationPlan } from './modes';
@@ -71,9 +71,9 @@ export async function fetchManpowerInputs(from: string, to: string): Promise<Man
   const sdAssignments: MpAssignment[] = [];
   const isCtl = (id: string) => ['controller', 'vr_controller', 'morning_controller'].includes(roleOf.get(id) ?? '');
   // when each team Controller works the team shift (the other days he is free to cover a normal shift)
-  const sdWorks = await fetchSdWorks(sd.filter((m) => isCtl(m.employeeId)));
+  const sdWorks = await fetchSdWorkInfo(sd.filter((m) => isCtl(m.employeeId)));
   for (const m of sd) {
-    if (isCtl(m.employeeId)) sdAssignments.push({ id: `sd-${m.id}`, kind: 'sd_team', employeeId: m.employeeId, crew: null, start: m.start, end: m.end, works: sdWorks.get(m.id) });
+    if (isCtl(m.employeeId)) sdAssignments.push({ id: `sd-${m.id}`, kind: 'sd_team', employeeId: m.employeeId, crew: null, start: m.start, end: m.end, works: sdWorks.get(m.id)?.works, sdV2: sdWorks.get(m.id)?.sdV2 });
     else moves.set(m.employeeId, [...(moves.get(m.employeeId) ?? []), { start: m.start, end: m.end, crew: SD_TEAM, kind: 'sd' }]);
   }
   const leaveAbsences = (lv.data as unknown as LeaveRow[]).map(toMpAbsence);
