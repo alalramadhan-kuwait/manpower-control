@@ -96,5 +96,5 @@ export async function fetchControllerLeave(from: string, to: string): Promise<{ 
     fetchLeaveApprovals()
   ]);
   if (lv.error) throw lv.error;
-  return { people, absences: (withOpenEnd(lv.data as { end_date: string | null }[]) as unknown as Parameters<typeof toMpAbsence>[0][]).map(toMpAbsence), approvals };
+  return { people, absences: (withOpenEnd(lv.data as { end_date: string | null }[]) as unknown as Parameters<typeof toMpAbsence>[0][]).map((l) => toMpAbsence(l)), approvals };
 }

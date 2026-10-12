@@ -1,3 +1,4 @@
+import { lapsedLeave } from '@/core/oracle';
 import { ArrowLeft, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -77,10 +78,10 @@ export default function EmployeeProfilePage({ profile, editId }: { profile: User
   const { emp } = data;
   const typeOf = (code: string | null) => data.absenceTypes.find((t) => t.code === code);
   const today = localToday();
-  const leaveSplit = splitLeave(today, data.leaves.map((l) => ({ employeeId: l.employee_id, start: l.start_date, end: l.end_date, status: l.status, inCurrentPlan: l.in_current_plan, typeLabel: typeOf(l.absence_type_code)?.label ?? null, typeShort: typeOf(l.absence_type_code)?.short_code ?? null, rec: l })), isCrew(emp.crew_code) ? emp.crew_code : null);
+  const leaveSplit = splitLeave(today, data.leaves.map((l) => ({ employeeId: l.employee_id, start: l.start_date, end: l.end_date, status: l.status, inCurrentPlan: l.in_current_plan && !lapsedLeave({ typeCode: l.absence_type_code, oracle: l.oracle_status, start: l.start_date }, today), typeLabel: typeOf(l.absence_type_code)?.label ?? null, typeShort: typeOf(l.absence_type_code)?.short_code ?? null, rec: l })), isCrew(emp.crew_code) ? emp.crew_code : null);
   const leaveNow = leaveSplit.current;
   const awaitingReview = data.leaves.filter((l) => l.status === 'unresolved' && l.in_current_plan);
-  const currentRecord = data.leaves.find((l) => l.in_current_plan && (l.status === 'approved' || l.status === 'planned') && l.start_date <= today && (l.end_date === null || today <= l.end_date)) ?? null;
+  const currentRecord = data.leaves.find((l) => l.in_current_plan && !lapsedLeave({ typeCode: l.absence_type_code, oracle: l.oracle_status, start: l.start_date }, today) && (l.status === 'approved' || l.status === 'planned') && l.start_date <= today && (l.end_date === null || today <= l.end_date)) ?? null;
   const originalLeaves = data.leaves.filter((l) => l.in_original_plan);
   const currentQual = (c: QualificationCode) => data.quals.find((q) => q.qualification === c && !q.effective_to);
   const shiftToday = isCrew(emp.crew_code) ? t(SHIFT_LABEL[stateOf(dutyFor(today, emp.crew_code))]) : null;

@@ -844,6 +844,10 @@ async function fetchOperationPlan(from, to) {
 // src/data/controllers.ts
 var toMpAssignment = (a) => ({ id: a.id, kind: a.kind, employeeId: a.employee_id, crew: a.crew_code, start: a.start_date, end: a.end_date, coversEmployeeId: a.covers_employee_id });
 
+// src/core/oracle/index.ts
+var kuwaitToday = (now = Date.now()) => new Date(now + 3 * 36e5).toISOString().slice(0, 10);
+var lapsedLeave = (a, today) => !!a.typeCode?.startsWith("annual_leave") && (a.oracle === "rejected" || a.oracle === "not_submitted" && a.start < today);
+
 // src/data/manpower.ts
 var ROLES = ["controller", "vr_controller", "morning_controller", "panel_operator", "field_operator"];
 function toMpPerson(r) {
@@ -862,7 +866,8 @@ function toMpPerson(r) {
     actingController: r.acting_controller_status
   };
 }
-function toMpAbsence(l) {
+function toMpAbsence(l, today = kuwaitToday()) {
+  const lapsed = lapsedLeave({ typeCode: l.absence_type_code, oracle: l.oracle_status, start: l.start_date }, today);
   return {
     id: l.id,
     employeeId: l.employee_id,
@@ -873,7 +878,7 @@ function toMpAbsence(l) {
     typeLabel: l.absence_types?.label ?? (l.status === "unresolved" ? "Unresolved absence" : null),
     typeShort: l.absence_types?.short_code ?? null,
     sourceRef: l.source_ref,
-    inCurrentPlan: l.in_current_plan,
+    inCurrentPlan: l.in_current_plan && !lapsed,
     oracle: l.oracle_status
   };
 }
@@ -905,7 +910,7 @@ async function fetchManpowerInputs(from, to) {
     if (isCtl(m.employeeId)) sdAssignments.push({ id: `sd-${m.id}`, kind: "sd_team", employeeId: m.employeeId, crew: null, start: m.start, end: m.end, works: sdWorks.get(m.id)?.works, sdV2: sdWorks.get(m.id)?.sdV2 });
     else moves.set(m.employeeId, [...moves.get(m.employeeId) ?? [], { start: m.start, end: m.end, crew: SD_TEAM, kind: "sd" }]);
   }
-  const leaveAbsences = withOpenEnd(lv.data).map(toMpAbsence);
+  const leaveAbsences = withOpenEnd(lv.data).map((l) => toMpAbsence(l));
   const people = dir.data.map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id) }));
   return { people, absences: leaveAbsences, absencesAll: [...leaveAbsences, ...tr.data.map(releaseAbsence)], assignments: [...ca.data.map(toMpAssignment), ...sdAssignments], plan: op.plan, rules: rulesByDate(op.plan) };
 }
@@ -1009,7 +1014,7 @@ var CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS"
 };
 var reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
-var kuwaitToday = () => new Date(Date.now() + 3 * 36e5).toISOString().slice(0, 10);
+var kuwaitToday2 = () => new Date(Date.now() + 3 * 36e5).toISOString().slice(0, 10);
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return reply(405, { error: "Use POST." });
@@ -1021,7 +1026,7 @@ Deno.serve(async (req) => {
     if (!me || !me.is_active || me.role_code !== "section_head") return reply(403, { error: "Only the Section Head approves a shutdown plan." });
     const body = await req.json().catch(() => ({}));
     if (!body.planId) return reply(400, { error: "Which plan?" });
-    const input = await loadPlanCheckInput(body.planId, kuwaitToday());
+    const input = await loadPlanCheckInput(body.planId, kuwaitToday2());
     if (!isV2(input.plan)) return reply(400, { error: "This plan follows the earlier rules: it has no approval step." });
     const check = checkPlan(input);
     if (check.status !== "ready") return reply(200, { approved: false, check, reason: check.status === "verify" ? "Some figures still need to be entered or verified." : "The plan is not operationally ready." });

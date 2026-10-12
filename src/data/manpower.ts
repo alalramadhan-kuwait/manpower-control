@@ -8,7 +8,7 @@ import { rulesByDate, type OperationPlan } from '@/core/modes';
 import { fetchOperationPlan } from './modes';
 import { toMpAssignment } from './controllers';
 import type { Crew } from '@/core/roster';
-import type { OracleStatus } from '@/core/oracle';
+import { kuwaitToday, lapsedLeave, type OracleStatus } from '@/core/oracle';
 import type { ControllerAssignment, EmployeeDirectoryRow } from './types';
 
 const ROLES: Role[] = ['controller', 'vr_controller', 'morning_controller', 'panel_operator', 'field_operator'];
@@ -27,10 +27,12 @@ export function toMpPerson(r: EmployeeDirectoryRow): MpPerson {
 
 interface LeaveRow { id: string; employee_id: string; start_date: string; end_date: string; status: string; absence_type_code: string | null; source_ref: string | null; in_current_plan: boolean; oracle_status?: OracleStatus; absence_types: { label: string; short_code: string | null } | null }
 
-export function toMpAbsence(l: LeaveRow): MpAbsence {
+/** A leave that is not going ahead (rejected in Oracle, or never submitted by its first day) does not count: see lapsedLeave. */
+export function toMpAbsence(l: LeaveRow, today = kuwaitToday()): MpAbsence {
+  const lapsed = lapsedLeave({ typeCode: l.absence_type_code, oracle: l.oracle_status, start: l.start_date }, today);
   return {
     id: l.id, employeeId: l.employee_id, start: l.start_date, end: l.end_date, status: l.status, typeCode: l.absence_type_code,
-    typeLabel: l.absence_types?.label ?? (l.status === 'unresolved' ? 'Unresolved absence' : null), typeShort: l.absence_types?.short_code ?? null, sourceRef: l.source_ref, inCurrentPlan: l.in_current_plan, oracle: l.oracle_status
+    typeLabel: l.absence_types?.label ?? (l.status === 'unresolved' ? 'Unresolved absence' : null), typeShort: l.absence_types?.short_code ?? null, sourceRef: l.source_ref, inCurrentPlan: l.in_current_plan && !lapsed, oracle: l.oracle_status
   };
 }
 
@@ -77,7 +79,7 @@ export async function fetchManpowerInputs(from: string, to: string): Promise<Man
     if (isCtl(m.employeeId)) sdAssignments.push({ id: `sd-${m.id}`, kind: 'sd_team', employeeId: m.employeeId, crew: null, start: m.start, end: m.end, works: sdWorks.get(m.id)?.works, sdV2: sdWorks.get(m.id)?.sdV2 });
     else moves.set(m.employeeId, [...(moves.get(m.employeeId) ?? []), { start: m.start, end: m.end, crew: SD_TEAM, kind: 'sd' }]);
   }
-  const leaveAbsences = (withOpenEnd(lv.data as { end_date: string | null }[]) as unknown as LeaveRow[]).map(toMpAbsence);
+  const leaveAbsences = (withOpenEnd(lv.data as { end_date: string | null }[]) as unknown as LeaveRow[]).map((l) => toMpAbsence(l));
   const people = (dir.data as EmployeeDirectoryRow[]).map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id) }));
   return { people, absences: leaveAbsences, absencesAll: [...leaveAbsences, ...(tr.data as { id: string; employee_id: string; start_date: string; end_date: string }[]).map(releaseAbsence)], assignments: [...(ca.data as ControllerAssignment[]).map(toMpAssignment), ...sdAssignments], plan: op.plan, rules: rulesByDate(op.plan) };
 }

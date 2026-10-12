@@ -1,9 +1,19 @@
 // Oracle HR tracking: where each leave stands in Oracle HR (not submitted → submitted → approved, or rejected).
-// Separate from the manpower plan: planned leave counts for manpower whatever its Oracle status.
+// Separate from the manpower plan: planned leave counts for manpower while it can still go ahead. A leave that Oracle
+// rejected, or that was never submitted to Oracle by the time it should have started, no longer counts (see lapsedLeave).
 
 export type OracleStatus = 'not_submitted' | 'submitted' | 'approved' | 'rejected';
 export const ORACLE_STATUSES: OracleStatus[] = ['not_submitted', 'submitted', 'approved', 'rejected'];
 export const ORACLE_LABEL: Record<OracleStatus, string> = { not_submitted: 'Not submitted', submitted: 'Submitted', approved: 'Approved', rejected: 'Rejected' };
+/** Today in Kuwait (UTC+3, no daylight saving). */
+export const kuwaitToday = (now = Date.now()) => new Date(now + 3 * 3600_000).toISOString().slice(0, 10);
+/**
+ * Annual leave (PV) that is not going ahead: rejected in Oracle, or still not submitted to Oracle after its first day.
+ * It stays on record (and in Leave & Oracle) but no longer takes the person off their crew. Submitted (waiting for
+ * approval) still counts; other absence types are not tracked in Oracle and always count.
+ */
+export const lapsedLeave = (a: { typeCode?: string | null; oracle?: OracleStatus | null; start: string }, today: string) =>
+  !!a.typeCode?.startsWith('annual_leave') && (a.oracle === 'rejected' || (a.oracle === 'not_submitted' && a.start < today));
 /** Pending approval: planned but not yet approved in Oracle (not submitted or waiting). */
 export const isPendingOracle = (s: OracleStatus | null | undefined) => s === 'not_submitted' || s === 'submitted';
 
