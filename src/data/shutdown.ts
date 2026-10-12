@@ -8,13 +8,13 @@ import { V2_DEFAULTS } from '@/core/shutdown/v2';
 import { memberHoursOn, memberWorks, teamGaps, type TeamGap, type FoLevel, type SdDay, type SdKind, type SdMember, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
 
 export interface Signature { title: string; name: string }
-interface PlanRow { signatures: Signature[]; kind: SdKind; areas: string[] | null; sections: string[] | null; id: string; event_id: string | null; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; max_overtime_year?: number | null; status: string; rules_version?: number | null; max_overtime_hard?: number | null; max_overtime_year_hard?: number | null }
+interface PlanRow { signatures: Signature[]; kind: SdKind; areas: string[] | null; sections: string[] | null; id: string; event_id: string | null; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; max_overtime_year?: number | null; status: string; rules_version?: number | null; max_overtime_hard?: number | null; max_overtime_year_hard?: number | null; cycle_until?: string | null }
 interface TeamRow { id: string; plan_id: string; name: string; sort: number; shift_code: 'M' | 'N'; shift_hours_label: string | null; controller_n: number; senior_n: number; good_n: number; new_n: number; ramp_controller_n: number; ramp_senior_n: number; ramp_good_n: number; ramp_new_n: number }
 interface MemberRow { id: string; plan_id: string; team_id: string; employee_id: string; slot: SdSlot; day_offset: number; start_date: string; end_date: string; area: string | null; note: string | null; follow_crew: Crew | null; controller_role?: 'primary' | 'assistant' | null }
 interface PhaseRow { id: string; plan_id: string; start_date: string; end_date: string; needs: SdPhase['needs'] }
 
 const toPlan = (r: PlanRow): SdPlan => ({ rulesVersion: r.rules_version ?? 1, maxOvertimeHard: r.max_overtime_hard == null ? undefined : Number(r.max_overtime_hard), maxOvertimeYearHard: r.max_overtime_year_hard == null ? undefined : Number(r.max_overtime_year_hard), id: r.id, eventId: r.event_id, title: r.title, kind: r.kind ?? 'train', areas: r.areas ?? [], sections: r.sections ?? [], start: r.start_date, end: r.end_date, daysOn: r.days_on, daysOff: r.days_off,
-  shiftHours: Number(r.shift_hours), rampDays: r.ramp_days, rampHours: Number(r.ramp_hours), normalHours: Number(r.normal_hours), maxOvertime: Number(r.max_overtime), maxOvertimeYear: r.max_overtime_year == null ? 380 : Number(r.max_overtime_year) });
+  shiftHours: Number(r.shift_hours), rampDays: r.ramp_days, rampHours: Number(r.ramp_hours), normalHours: Number(r.normal_hours), maxOvertime: Number(r.max_overtime), maxOvertimeYear: r.max_overtime_year == null ? 380 : Number(r.max_overtime_year), cycleUntil: r.cycle_until ?? null });
 const toTeam = (r: TeamRow): SdTeam => ({ id: r.id, planId: r.plan_id, name: r.name, sort: r.sort,
   needs: { controller: r.controller_n, senior: r.senior_n, good: r.good_n, new: r.new_n }, rampNeeds: { controller: r.ramp_controller_n, senior: r.ramp_senior_n, good: r.ramp_good_n, new: r.ramp_new_n },
   shiftCode: r.shift_code, hoursLabel: r.shift_hours_label });
@@ -106,7 +106,7 @@ export async function createSdPlan(v: { title: string; start: string; end: strin
   return id;
 }
 
-export async function updateSdPlan(id: string, v: Partial<{ max_overtime_hard: number; max_overtime_year_hard: number; signatures: Signature[]; kind: SdKind; areas: string[]; sections: string[]; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; max_overtime_year: number; status: 'active' | 'cancelled' }>) {
+export async function updateSdPlan(id: string, v: Partial<{ cycle_until: string | null; max_overtime_hard: number; max_overtime_year_hard: number; signatures: Signature[]; kind: SdKind; areas: string[]; sections: string[]; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; max_overtime_year: number; status: 'active' | 'cancelled' }>) {
   const { error } = await supabase.from('sd_plans').update(v).eq('id', id);
   if (error) throw error;
   dataChanged();

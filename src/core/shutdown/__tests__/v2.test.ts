@@ -266,9 +266,33 @@ describe('New FO is extra and still earns overtime', () => {
   it('tops the New FO up to the monthly cap without changing the other slots', () => {
     const out = ready();
     const otOf = (id: string) => { const m = out.find((x) => x.id === id)!; return Object.entries(m.days ?? {}).reduce((t, [d, v]) => t + (v.works ? Math.max(0, (v.hours ?? 0) - (isWorkingDay(d, crews[id]) ? 8 : 0)) : 0), 0); };
-    expect(otOf("n1")).toBe(plan.maxOvertime);
+    // topped up towards the cap, within the full-shift fatigue limit (4 days in a row on the day team)
+    expect(otOf("n1")).toBeGreaterThanOrEqual(48);
     expect(otOf('n1')).toBeLessThanOrEqual(plan.maxOvertime);
     const without = balance(roster.filter((m) => m.slot !== 'new'), crews);
     for (const id of ['c1', 'c2', 's1', 's2', 'g1', 'g2']) expect(out.find((x) => x.id === id)!.days).toEqual(without.find((x) => x.id === id)!.days);
+  });
+});
+
+describe('3 on / 1 off for part of a train shutdown', () => {
+  it('works the cycle up to cycleUntil, then the own crew days, within the overtime limits', () => {
+    const p: SdPlan = { ...plan, cycleUntil: '2026-11-14' };
+    const out = roster.map((m) => ({ ...m, days: {} as NonNullable<SdMember['days']> }));
+    for (const g of spreadGroups(p, day, out, [])) {
+      if (!g.memberIds.length) continue;
+      const r = spreadGroup(p, g, out, { crewOf: (id) => crews[id] ?? null, away: () => false, maxRun: 6, v2: true });
+      for (const m of out) { const d = r.days.get(m.id); if (!d) continue; for (const [date, w] of Object.entries(d)) m.days![date] = { works: w, hours: w ? r.hours.get(m.id)?.[date] ?? null : null }; }
+    }
+    const inPhase = dates.filter((d) => d <= p.cycleUntil!);
+    for (const m of out) {
+      // the cycle: never more than 3 days on in a row before cycleUntil (the reduced days aside)
+      let run = 0, worst = 0;
+      for (const d of inPhase) { run = m.days![d]?.works ? run + 1 : 0; worst = Math.max(worst, run); }
+      expect(worst).toBeLessThanOrEqual(3);
+      // after it: only the own crew's duty days
+      for (const d of dates.filter((x) => x > p.cycleUntil!)) if (m.days![d]?.works) expect(isWorkingDay(d, crews[m.employeeId])).toBe(true);
+    }
+    const c = checkPlan({ ...input(out), plan: p });
+    expect(c.issues.filter((i) => i.code === 'ot_month_hard' || i.code === 'rest_day_pair').map((i) => i.message)).toEqual([]);
   });
 });

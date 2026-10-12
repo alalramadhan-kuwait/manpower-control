@@ -201,7 +201,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
           <h1 className="text-xl font-semibold text-brand-800">{plan.title}</h1>
           <div className="text-sm font-medium text-slate-700">{range(plan.start, plan.end)} {plan.end.slice(0, 4)}</div>
           <button type="button" onClick={() => setEditPattern(true)} className="mt-1 flex flex-wrap items-center gap-1 text-left">
-            {[total ? 'Total turnaround' : 'Train shutdown', plan.daysOff ? `${plan.daysOn} on / ${plan.daysOff} off` : 'Every day', `${plan.shiftHours} h`, plan.rampDays ? `First & last ${plan.rampDays} days ${plan.rampHours} h${data.v2 ? ' · reduced' : ''}` : '', data.v2 ? `OT ${plan.maxOvertime}/${plan.maxOvertimeHard ?? 80} h a month · ${plan.maxOvertimeYear ?? 380}/${plan.maxOvertimeYearHard ?? 440} h a year` : `OT ≤ ${plan.maxOvertime} h`, data.v2 ? 'Rules v2' : ''].filter(Boolean).map((c) => <span key={c} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">{c}</span>)}
+            {[total ? 'Total turnaround' : 'Train shutdown', plan.daysOff ? (total ? `${plan.daysOn} on / ${plan.daysOff} off` : plan.cycleUntil ? `${plan.daysOn} on / ${plan.daysOff} off to ${range(plan.cycleUntil, plan.cycleUntil)}, then own crew` : 'Own crew days') : 'Every day', `${plan.shiftHours} h`, plan.rampDays ? `First & last ${plan.rampDays} days ${plan.rampHours} h${data.v2 ? ' · reduced' : ''}` : '', data.v2 ? `OT ${plan.maxOvertime}/${plan.maxOvertimeHard ?? 80} h a month · ${plan.maxOvertimeYear ?? 380}/${plan.maxOvertimeYearHard ?? 440} h a year` : `OT ≤ ${plan.maxOvertime} h`, data.v2 ? 'Rules v2' : ''].filter(Boolean).map((c) => <span key={c} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">{c}</span>)}
             <span className="flex items-center gap-0.5 text-[11px] font-medium text-brand-700"><Pencil className="h-3 w-3" />Edit</span>
           </button>
         </div>
@@ -660,24 +660,26 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
 }
 
 function PatternSheet({ plan, hasPeople, onClose, onDone, onMoved }: { plan: SdPlan; hasPeople: boolean; onClose: () => void; onDone: (m: string) => void; onMoved: (m: string) => void }) {
-  const [v, setV] = useState({ title: plan.title, kind: plan.kind as SdKind, start_date: plan.start, end_date: plan.end, days_on: plan.daysOn, days_off: plan.daysOff, shift_hours: plan.shiftHours, ramp_days: plan.rampDays, ramp_hours: plan.rampHours, normal_hours: plan.normalHours, max_overtime: plan.maxOvertime, max_overtime_year: yearCap(plan),
+  const [v, setV] = useState({ title: plan.title, kind: plan.kind as SdKind, start_date: plan.start, end_date: plan.end, days_on: plan.daysOn, days_off: plan.daysOff, shift_hours: plan.shiftHours, ramp_days: plan.rampDays, ramp_hours: plan.rampHours, normal_hours: plan.normalHours, max_overtime: plan.maxOvertime, max_overtime_year: yearCap(plan), cycle_until: plan.cycleUntil ?? '',
     ...((plan.rulesVersion ?? 1) >= 2 ? { max_overtime_hard: plan.maxOvertimeHard ?? 80, max_overtime_year_hard: plan.maxOvertimeYearHard ?? 440 } : {}) });
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const num = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement>) => setV((x) => ({ ...x, [k]: Number(e.target.value) }));
   const datesChanged = v.start_date !== plan.start || v.end_date !== plan.end;
   const shift = Math.round((Date.parse(v.start_date) - Date.parse(plan.start)) / 864e5);
+  // the cycle applies to a train shutdown with days off; kept only inside the shutdown
+  const cycleOf = (d: string) => (v.kind === 'train' && v.days_off > 0 && d && d >= v.start_date ? (d > v.end_date ? v.end_date : d) : null);
   async function save() {
     setBusy(true); setErr(null);
     try {
       if (datesChanged && hasPeople) {
         // a shutdown with people moves with everything on it, then its days and hours are rebuilt
         const r = await moveSdPlan(plan.id, v.start_date, v.end_date);
-        const { start_date: _s, end_date: _e, ...rest } = v;
-        await updateSdPlan(plan.id, { ...rest, title: v.title.trim() || plan.title });
+        const { start_date: _s, end_date: _e, cycle_until: cu, ...rest } = v;
+        await updateSdPlan(plan.id, { ...rest, cycle_until: cycleOf(cu ? addDaysIso(cu, shift) : ''), title: v.title.trim() || plan.title });
         onMoved(`Shutdown moved to ${range(v.start_date, v.end_date)}: ${r.members} ${r.members === 1 ? 'person' : 'people'}${r.instructions ? `, ${r.instructions} shift instruction${r.instructions === 1 ? '' : 's'}` : ''}${r.phases ? `, ${r.phases} phase${r.phases === 1 ? '' : 's'}` : ''} moved with it.${r.leave ? ` ${r.leave} ${r.leave === 1 ? 'has' : 'have'} leave inside the new dates.` : ''} Check the new days and hours below and apply.`);
         return;
       }
-      await updateSdPlan(plan.id, { ...v, title: v.title.trim() || plan.title }); onDone('Pattern saved.');
+      await updateSdPlan(plan.id, { ...v, cycle_until: cycleOf(v.cycle_until), title: v.title.trim() || plan.title }); onDone('Pattern saved.');
     } catch (e) { setErr(e); } finally { setBusy(false); }
   }
   return (
@@ -694,6 +696,17 @@ function PatternSheet({ plan, hasPeople, onClose, onDone, onMoved }: { plan: SdP
             <button key={q.l} type="button" onClick={() => setV((x) => ({ ...x, days_on: q.on, days_off: q.off }))} className={cx('rounded-full px-3 py-1 text-xs font-medium ring-1', v.days_on === q.on && v.days_off === q.off ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>{q.l}</button>
           ))}
         </div>
+        {v.kind === 'train' && v.days_off > 0 && (
+          <div className="rounded-lg bg-slate-50 p-2.5 ring-1 ring-slate-200">
+            <Field label={`${v.days_on} on / ${v.days_off} off until`}><input type="date" className="input" min={v.start_date} max={v.end_date} value={v.cycle_until} onChange={(e) => setV((x) => ({ ...x, cycle_until: e.target.value }))} /></Field>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {[{ l: 'First 2 weeks', d: addDaysIso(v.start_date, 13) }, { l: 'Whole shutdown', d: v.end_date }, { l: 'Own crew only', d: '' }].map((q) => (
+                <button key={q.l} type="button" onClick={() => setV((x) => ({ ...x, cycle_until: q.d }))} className={cx('rounded-full px-3 py-1 text-xs font-medium ring-1', v.cycle_until === q.d ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>{q.l}</button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-[11px] text-slate-500">Up to this date each person works {v.days_on} days, then {v.days_off} off (the day off on one of their own rest days where possible); after it, their own crew&apos;s duty days. Empty: own crew throughout.</p>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <Field label="First day"><input type="date" className="input" value={v.start_date} onChange={(e) => setV((x) => ({ ...x, start_date: e.target.value }))} /></Field>
           <Field label="Last day"><input type="date" className="input" value={v.end_date} onChange={(e) => setV((x) => ({ ...x, end_date: e.target.value }))} /></Field>

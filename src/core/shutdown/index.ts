@@ -36,6 +36,8 @@ export interface SdPlan {
   rulesVersion?: number;
   /** v2: hard overtime limits (the monthly / yearly figures above are then the warning thresholds). */
   maxOvertimeHard?: number; maxOvertimeYearHard?: number;
+  /** Train shutdown: the days-on / days-off cycle (e.g. 3 on / 1 off) up to and including this date, the own crew's duty days after it (null: own crew throughout). */
+  cycleUntil?: string | null;
 }
 export interface SdTeam { id: string; planId: string; name: string; sort: number; needs: Record<NeedSlot, number>; rampNeeds: Record<NeedSlot, number>; shiftCode: 'M' | 'N'; hoursLabel: string | null }
 export interface SdDay { works: boolean; hours: number | null }

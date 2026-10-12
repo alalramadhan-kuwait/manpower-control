@@ -137,6 +137,29 @@ function stats(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadContex
 }
 
 /**
+ * The plan's days-on / days-off cycle (e.g. 3 on / 1 off) up to `cycleUntil`, own crew's duty days after it. Each person
+ * gets the place in the cycle whose days off fall most often on their own rest days (so the fewest rest days are
+ * worked), the people of one place getting different places in the cycle where they can, so their days off differ.
+ * No run of days on is let past the hard limit where the cycle hands over to the crew's days (a day off is given).
+ */
+function cyclePhase(p: SdPlan, dates: string[], members: SdMember[], crews: (Crew | null)[], ctx: SpreadContext, present: boolean[][]) {
+  const until = p.cycleUntil;
+  if (!until || p.daysOff <= 0 || p.kind === 'total') return;
+  const cycle = p.daysOn + p.daysOff;
+  const inPhase = dates.map((d) => d <= until);
+  const isOffAt = (k: number, r: number) => (((k - r) % cycle) + cycle) % cycle >= p.daysOn;
+  const used = new Map<number, number>();
+  members.forEach((x, i) => {
+    const score = (r: number) => dates.reduce((n, d, k) => n + (inPhase[k] && isOffAt(k, r) && x.start <= d && d <= x.end ? (isDutyDay(crews[i], d) ? -1 : 2) : 0), 0);
+    const r = Array.from({ length: cycle }, (_, j) => j).sort((a, b) => (used.get(a) ?? 0) - (used.get(b) ?? 0) || score(b) - score(a) || a - b)[0];
+    used.set(r, (used.get(r) ?? 0) + 1);
+    dates.forEach((d, k) => { if (inPhase[k]) present[i][k] = x.start <= d && d <= x.end && !ctx.away(x.employeeId, d) && !isOffAt(k, r); });
+    let run = 0;
+    dates.forEach((_d, k) => { if (present[i][k] && run >= V2_MAX_RUN) present[i][k] = false; run = present[i][k] ? run + 1 : 0; });
+  });
+}
+
+/**
  * Train shutdown, "follow your own crew". Present = the person's own crew is on duty. Each non-reduced day one present
  * person works the full shift and the others the normal hours. The full shifts are planned over the month: the days
  * somebody is alone are theirs, and the others go to whoever has the fewest full shifts so far (counting the forced
@@ -147,12 +170,15 @@ function followCrew(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadC
   const limit = g.night ? ctx.fullRunNight ?? DEFAULT_FULL_RUN_NIGHT : ctx.fullRunDay ?? DEFAULT_FULL_RUN_DAY;
   const crews = members.map((x) => ctx.crewOf(x.employeeId));
   const present = members.map((x, i) => dates.map((d) => x.start <= d && d <= x.end && !ctx.away(x.employeeId, d) && isDutyDay(crews[i], d)));
+  cyclePhase(p, dates, members, crews, ctx, present);
   const need = dates.map(g.need);
   const short = Math.min(p.normalHours, p.shiftHours);
   const counts = new Array<number>(m).fill(0); const run = new Array<number>(m).fill(0);
   const fullOf = new Array<number>(n).fill(-1);
   // full-shift days: the days somebody is alone are forced
-  const fullDay = (k: number) => (ctx.v2 || !isRampDay(p, dates[k])) && need[k] > 0;
+  // the New FO place is extra (no cover counts on it): no full shift is forced on it, its people are topped up below
+  const extra = g.key === 'new';
+  const fullDay = (k: number) => !extra && (ctx.v2 || !isRampDay(p, dates[k])) && need[k] > 0;
   for (let k = 0; k < n; k++) if (fullDay(k)) { const on = present.map((row, i) => (row[k] ? i : -1)).filter((i) => i >= 0); if (on.length === 1) { fullOf[k] = on[0]; counts[on[0]]++; } }
   let runBreaks = 0;
   for (let k = 0; k < n; k++) {
@@ -187,9 +213,7 @@ function followCrew(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadC
   const topRun = ctx.reachLimit ? Math.max(limit, 6) : limit;
   const runAround = (i: number, k: number) => { let a = 0, b = 0; while (k - a - 1 >= 0 && fullNow[i][k - a - 1]) a++; while (k + b + 1 < n && fullNow[i][k + b + 1]) b++; return a + b + 1; };
   const gain = p.shiftHours - short;   // a full shift instead of the short one, on a duty day
-  // the New FO slot is extra (no cover counts on it), so its people are topped up to the cap on their own: the others'
-  // full shifts and overtime are not touched
-  const extra = g.key === 'new';
+  // the New FO place is topped up to the cap on its own: the others' full shifts and overtime are not touched
   for (let guard = 0; guard < (ctx.v2 && !extra ? 0 : 4000); guard++) {
     const order = members.map((_, i) => i).sort((a, b) => otTotal(a) - otTotal(b) || a - b);
     let done = false;
