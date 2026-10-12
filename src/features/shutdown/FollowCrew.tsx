@@ -16,8 +16,12 @@ import { loadSdDoc, type Doc } from './SdDocuments';
 import { personalInstruction, type FollowMove } from './sdExcel';
 
 type Previous = Map<string, { id: string; to: Crew; start: string; end: string | null }>;
-/** When the person starts on the new crew's shift: a full rota (8 days) before the team starts, never in the past. */
-const defaultFrom = (plan: SdPlan, today: string) => { const f = addDaysIso(plan.start, -8); return f < today ? today : f; };
+/**
+ * When the person starts on the new crew's shift: by default the day the team starts, so nothing changes before the
+ * shutdown (they keep their own crew until then; the plan check gives any rest days needed before joining). An earlier
+ * date can still be typed in, never in the past.
+ */
+const defaultFrom = (plan: SdPlan, today: string) => (plan.start < today ? today : plan.start);
 const dayBefore = (d: string) => addDaysIso(d, -1);
 
 /** Days each crew falls short between `from` and the day before `to` with the people moved to the given crews. */
