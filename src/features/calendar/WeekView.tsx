@@ -152,7 +152,7 @@ export function WeekView({ start, today, onWeek, onMonth }: { start: string; tod
 
           <Section title="Needs attention"><AttentionList items={view.attention} onOpen={setOpen} past={addDaysIso(start, 6) < today} /></Section>
 
-          <Section title={`On leave (${view.onLeave})`} action={<Link to="/oracle" className="flex items-center gap-1.5 text-[10px] text-slate-500">Oracle
+          <Section title={`On leave (${view.onLeave})`} action={<Link to="/requests?view=leave" className="flex items-center gap-1.5 text-[10px] text-slate-500">Oracle
             {(['approved', 'submitted', 'not_submitted', 'rejected'] as const).map((s) => <OracleDot key={s} status={s} />)}<ChevronRight className="h-3 w-3" /></Link>}>
             {view.groups.length === 0 ? <p className="py-2 text-sm text-slate-500">Nobody this week</p> : view.groups.map((g) => (
               <div key={g.crew ?? 'none'} className="py-1.5">

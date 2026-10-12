@@ -1,8 +1,9 @@
 // Leave change requests: the Manpower Coordinator asks to move a leave, the Section Head decides. Every write goes through a
 // database function (only the Section Head decides; approval moves the leave through leave_save and resets Oracle).
 import { supabase } from './supabase';
+import { gateDecide, headerOfLegacy } from './gate';
 import { dataChanged } from './changes';
-import { checkRecord, type Check } from './validation';
+import type { Check } from './validation';
 import { acceptable } from '@/core/validation';
 
 const changed = () => { dataChanged(); if (typeof window !== 'undefined') window.dispatchEvent(new Event('requests-changed')); };
@@ -46,16 +47,9 @@ export async function createChangeRequest(v: { records: string[]; start: string;
 
 /** Decide a reschedule. With the check seen, it goes through its request record (the check is kept with it). */
 export async function decideChangeRequest(id: string, approve: boolean, remarks: string, check?: Check | null) {
-  if (check) {
-    const { data: h, error: e } = await supabase.from('request_headers').select('id').eq('legacy_table', 'leave_change_requests').eq('legacy_id', id).single();
-    if (e) throw new Error(e.message);
-    const { error } = await supabase.rpc('request_header_decide', { p_id: (h as { id: string }).id, p_approve: approve, p_note: remarks, p_check: checkRecord(check),
-      p_accepted: approve ? acceptable(check.findings).map(({ rule, severity, message }) => ({ rule, severity, message })) : [] });
-    if (error) throw new Error(error.message);
-  } else {
-    const { error } = await supabase.rpc('change_request_decide', { p_id: id, p_approve: approve, p_remarks: remarks });
-    if (error) throw new Error(error.message);
-  }
+  // through its request record and the server check (approval is checked again on the server)
+  await gateDecide(await headerOfLegacy('leave_change_requests', id), approve, remarks,
+    approve && check ? acceptable(check.findings).map(({ rule, severity, message }) => ({ rule, severity, message })) : []);
   changed();
 }
 

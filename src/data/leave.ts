@@ -2,19 +2,13 @@
 // The database functions leave_save / leave_cancel do each change in one transaction, keep history and refuse
 // overlaps; their refusal messages are already plain sentences.
 import { supabase } from './supabase';
+import { openFrom, withOpenEnd } from './openEnd';
 import { dataChanged } from './changes';
 import type { OracleStatus } from '@/core/oracle';
 import type { AbsenceType, ControllerAssignment, EmployeeDirectoryRow, LeavePlanChange, LeaveRecord } from './types';
 
 const plain = (error: { message: string }) => new Error(error.message);
 
-/** Add leave (`record` null) or correct one current record. Returns the id of the record now in the plan. */
-export async function saveLeave(v: { record: string | null; employee: string | null; type: string; start: string; end: string; note: string }): Promise<string> {
-  const { data, error } = await supabase.rpc('leave_save', { p_record: v.record, p_employee: v.employee, p_type: v.type, p_start: v.start, p_end: v.end, p_note: v.note });
-  if (error) throw plain(error);
-  dataChanged();
-  return data as string;
-}
 
 /** Mark a current leave's dates as an estimate (until the final notice) or confirmed. */
 export async function setLeaveEstimated(record: string, estimated: boolean): Promise<void> {
@@ -27,17 +21,11 @@ export interface EstimatedLeave { id: string; employee_id: string; start_date: s
 /** Current leave whose dates are still an estimate. */
 export async function fetchEstimatedLeaves(): Promise<EstimatedLeave[]> {
   const { data, error } = await supabase.from('leave_records').select('id,employee_id,start_date,end_date,absence_type_code')
-    .eq('dates_estimated', true).eq('in_current_plan', true).in('status', ['approved', 'planned']).gte('end_date', '2000-01-01').order('start_date').limit(500);
+    .eq('dates_estimated', true).eq('in_current_plan', true).in('status', ['approved', 'planned']).or(openFrom('2000-01-01')).order('start_date').limit(500);
   if (error) throw error;
-  return data as EstimatedLeave[];
+  return withOpenEnd(data) as EstimatedLeave[];
 }
 
-/** Take one current record out of the plan (kept in history as cancelled). */
-export async function cancelLeave(record: string, reason: string): Promise<void> {
-  const { error } = await supabase.rpc('leave_cancel', { p_record: record, p_reason: reason });
-  if (error) throw plain(error);
-  dataChanged();
-}
 
 /** Mark one or many current leave records in Oracle HR (the ref is kept unless a new one is given). Returns how many changed. */
 export async function setOracleStatus(records: string[], status: OracleStatus, ref?: string): Promise<number> {
@@ -53,9 +41,9 @@ export interface OracleRow { id: string; employee_id: string; start_date: string
 export async function fetchOracleLeaves(from: string): Promise<OracleRow[]> {
   const { data, error } = await supabase.from('leave_records')
     .select('id,employee_id,start_date,end_date,absence_type_code,oracle_status,oracle_ref,oracle_updated_at,absence_types(label,short_code)')
-    .eq('in_current_plan', true).in('status', ['approved', 'planned']).gte('end_date', from).order('start_date').limit(5000);
+    .eq('in_current_plan', true).in('status', ['approved', 'planned']).or(openFrom(from)).order('start_date').limit(5000);
   if (error) throw error;
-  return data as unknown as OracleRow[];
+  return withOpenEnd(data as { end_date: string | null }[]) as unknown as OracleRow[];
 }
 
 export interface LeavePlanData {
@@ -72,7 +60,7 @@ export async function fetchLeavePlan(year: number): Promise<LeavePlanData> {
   const from = `${year}-01-01`, to = `${year}-12-31`;
   const [dir, lv, ch, ty, ca] = await Promise.all([
     supabase.from('employee_directory_v').select('*').eq('in_unit12_scope', true).eq('is_active', true),
-    supabase.from('leave_records').select('*').lte('start_date', to).gte('end_date', from).order('start_date').limit(5000),
+    supabase.from('leave_records').select('*').lte('start_date', to).or(openFrom(from)).order('start_date').limit(5000),
     supabase.from('leave_plan_changes').select('*').order('created_at', { ascending: false }).limit(5000),
     supabase.from('absence_types').select('*').order('sort_order'),
     supabase.from('controller_assignments').select('*').eq('status', 'active').eq('kind', 'shift_cover').lte('start_date', to).gte('end_date', from)
@@ -80,7 +68,7 @@ export async function fetchLeavePlan(year: number): Promise<LeavePlanData> {
   const err = [dir, lv, ch, ty, ca].find((r) => r.error)?.error;
   if (err) throw err;
   return {
-    people: dir.data as EmployeeDirectoryRow[], leaves: lv.data as LeaveRecord[], changes: ch.data as LeavePlanChange[],
+    people: dir.data as EmployeeDirectoryRow[], leaves: withOpenEnd(lv.data as LeaveRecord[]) as LeaveRecord[], changes: ch.data as LeavePlanChange[],
     types: ty.data as AbsenceType[], covers: ca.data as ControllerAssignment[]
   };
 }
@@ -89,5 +77,5 @@ export async function fetchLeavePlan(year: number): Promise<LeavePlanData> {
 export async function fetchLeaveVersions(rootId: string): Promise<LeaveRecord[]> {
   const { data, error } = await supabase.from('leave_records').select('*').eq('root_id', rootId).order('version_no').order('created_at').limit(50);
   if (error) throw error;
-  return data as LeaveRecord[];
+  return withOpenEnd(data as LeaveRecord[]) as LeaveRecord[];
 }

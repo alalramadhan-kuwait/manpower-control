@@ -44,7 +44,7 @@ export default function TakeChargeBulkPage({ profile }: { profile: UserProfile }
 
   return (
     <div className="pb-24">
-      <Link to="/review" className="mb-3 inline-flex items-center gap-1 text-sm text-brand-700"><ArrowLeft className="h-4 w-4" /> Data Quality Review</Link>
+      <Link to="/data-quality?tab=issues" className="mb-3 inline-flex items-center gap-1 text-sm text-brand-700"><ArrowLeft className="h-4 w-4" /> Data Quality Review</Link>
       <PageHeader title="Take-Charge" subtitle={`${field.length} Field · ${unconfirmed} to confirm`} info="Only Take-Charge = Yes counts toward the Field minimum. Set each person, then Save." />
       <Card className="mb-3">
         <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">Note for this confirmation (optional)</label>

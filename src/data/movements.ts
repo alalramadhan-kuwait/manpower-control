@@ -24,26 +24,14 @@ export async function fetchMovements(employeeId?: string): Promise<CrewMovement[
   return data as CrewMovement[];
 }
 
-export async function recordMovement(v: { employee: string; kind: 'temporary' | 'permanent'; to: Crew | 'DAY'; start: string; end: string | null; reason: string }): Promise<string> {
-  const { data, error } = await supabase.rpc('crew_move', { p_employee: v.employee, p_kind: v.kind, p_to_crew: v.to, p_start: v.start, p_end: v.end, p_reason: v.reason });
-  if (error) throw plain(error);
-  dataChanged();
-  return data as string;
-}
-/** Place a VR Controller in a crew from `start` until moved (ends the running placement the day before). */
-export async function placeVr(v: { employee: string; crew: Crew; start: string; reason: string }): Promise<string> {
-  const { data, error } = await supabase.rpc('vr_place', { p_employee: v.employee, p_crew: v.crew, p_start: v.start, p_reason: v.reason });
-  if (error) throw plain(error);
-  dataChanged();
-  return data as string;
-}
+/** End early or cancel an approved movement: the Section Head only (the database refuses anyone else). */
 export async function endMovement(id: string, end: string, note: string) {
-  const { error } = await supabase.rpc('crew_move_end', { p_id: id, p_end: end, p_note: note });
+  const { error } = await supabase.rpc('movement_amend', { p_id: id, p_kind: 'end', p_date: end, p_note: note });
   if (error) throw plain(error);
   dataChanged();
 }
 export async function cancelMovement(id: string, reason: string) {
-  const { error } = await supabase.rpc('crew_move_cancel', { p_id: id, p_reason: reason });
+  const { error } = await supabase.rpc('movement_amend', { p_id: id, p_kind: 'cancel', p_date: null, p_note: reason });
   if (error) throw plain(error);
   dataChanged();
 }

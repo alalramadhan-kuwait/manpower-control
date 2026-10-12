@@ -253,7 +253,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
           <p>Already approved in Oracle: decide now. Move the leave (Oracle then needs the new dates), or take the person off the team.</p>
           <Button className="my-1.5 min-h-9 w-full px-3 text-xs" onClick={() => setMoving(true)}>Propose new dates for all</Button>
           <ul className="mt-1 space-y-0.5">
-            {approvedLeave.map((c) => <li key={c.employeeId} className="flex items-center justify-between gap-2"><span className="truncate">{data.dir.get(c.employeeId)?.display_name ?? 'Employee'} · {c.days} {c.days === 1 ? 'day' : 'days'}</span><Link to={`/requests?q=${encodeURIComponent(c.number)}`} className="shrink-0 font-semibold text-brand-700 underline">Move leave</Link></li>)}
+            {approvedLeave.map((c) => <li key={c.employeeId} className="flex items-center justify-between gap-2"><span className="truncate">{data.dir.get(c.employeeId)?.display_name ?? 'Employee'} · {c.days} {c.days === 1 ? 'day' : 'days'}</span><Link to={`/requests?view=leave&q=${encodeURIComponent(c.number)}`} className="shrink-0 font-semibold text-brand-700 underline">Move leave</Link></li>)}
           </ul>
         </div>
       )}
@@ -524,7 +524,7 @@ function AddSheet({ plan, team, slot, area, data, view, onClose, onDone }: { pla
     <BottomSheet open onClose={onClose} title={total ? `${team.name} shift · ${slot === 'controller' ? `Controller${area ? ` ${area}` : ''}` : area || 'Operator'}` : `${team.name} team · ${SD_SLOT_LABEL[slot]}`}>
       <div className="space-y-2">
         <p className="text-[11px] text-slate-500">{slot !== 'controller' && <>Field Operators, and Panel Operators up to Grade {SD_PO_MAX_GRADE} or contractors. </>}Order: {total ? '' : 'right level · '}not on the shutdown {data.prev ? `before (${data.prev.plan.title})` : 'before'}{data.next ? ` or after (${data.next.plan.title})` : ''} · no leave · {total ? '' : 'crew keeps its minimum · '}fewer sick days.</p>
-        {unmarked && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">No Field Operator has a level yet. <Link to="/review/fo-levels" className="font-semibold underline">Mark Senior / Good / New</Link> to see the right people first.</p>}
+        {unmarked && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">No Field Operator has a level yet. <Link to="/data-quality?tab=fo-levels" className="font-semibold underline">Mark Senior / Good / New</Link> to see the right people first.</p>}
         {err != null && <ErrorBox error={err} />}
         <div className="divide-y divide-slate-100">
           {listed.map((c) => (
@@ -893,7 +893,7 @@ function UnitDownCard({ plan, periods, onDone }: { plan: SdPlan; periods: Period
         ? <p className="mt-1 text-sm text-green-800">Total shutdown mode is set for {range(plan.start, plan.end)}: the crews have no minimum while everyone is on the shifts here.</p>
         : <>
             <p className="mt-1 text-sm text-amber-900">The whole unit is down, but the Calendar still counts the crews' normal minimums on these dates{others.length ? ` (${others.map((x) => `${x.mode_code.replace(/_/g, ' ')} ${range(x.start_date, x.end_date)}`).join(', ')})` : ''}. Set the Total shutdown mode so they aren't flagged short.</p>
-            {others.length > 0 && <p className="mt-1 text-[11px] text-amber-900">Another mode covers some of these dates: change or cancel it on <Link to="/operation" className="font-semibold underline">Operation</Link> first.</p>}
+            {others.length > 0 && <p className="mt-1 text-[11px] text-amber-900">Another mode covers some of these dates: change or cancel it on <Link to="/shutdown?tab=modes" className="font-semibold underline">Operation</Link> first.</p>}
             {err != null && <ErrorBox error={err} />}
             <Button className="mt-2 w-full" disabled={busy || others.length > 0} onClick={set}>Set Total shutdown mode · {range(plan.start, plan.end)}</Button>
           </>}

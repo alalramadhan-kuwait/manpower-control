@@ -143,7 +143,7 @@ export default function ControllersBoardPage({ profile }: { profile: UserProfile
           <div className="mb-2 grid grid-cols-4 gap-1 text-center">
             {[{ n: view.tiles.cover, label: 'Cover needed', dot: 'bg-status-red', go: () => (view.firstRed ? setOpen(view.firstRed.date) : navigate('/controllers')) },
               { n: view.tiles.together, label: '2 on leave', dot: 'bg-status-red', go: () => rulesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
-              { n: view.tiles.morning, label: 'Morning gap', dot: 'bg-amber-500', go: () => navigate('/controllers/morning') },
+              { n: view.tiles.morning, label: 'Morning gap', dot: 'bg-amber-500', go: () => navigate('/controllers?tab=morning') },
               { n: view.tiles.vrFree, label: 'VR spare', dot: 'bg-status-green', go: () => navigate('/controllers') }].map((k) => (
               <button key={k.label} type="button" onClick={k.go} className="rounded-lg bg-white px-1 py-1 ring-1 ring-slate-200 active:bg-slate-50">
                 <div className="flex items-center justify-center gap-1 text-base font-semibold leading-tight tabular-nums text-slate-800"><span className={cx('h-2 w-2 rounded-full', k.dot)} />{k.n}</div>
@@ -164,7 +164,7 @@ export default function ControllersBoardPage({ profile }: { profile: UserProfile
                 <span className="truncate text-[11px]">{base.short.get(p.id)}</span>
                 {p.crew ? <CrewBadge crew={p.crew} size="sm" /> : <span className="rounded bg-slate-100 px-1 text-[9px] text-slate-500">VR</span>}
               </Link>), cell: (g: Col) => <PersonCell key={g.date} c={g.people[p.id]} wide={mode === 'week'} /> })),
-            { key: 'morning', label: <Link to="/controllers/morning" className="flex items-center gap-1 text-[11px] font-medium text-slate-800"><Sun className="h-3.5 w-3.5 text-amber-500" />Morning</Link>,
+            { key: 'morning', label: <Link to="/controllers?tab=morning" className="flex items-center gap-1 text-[11px] font-medium text-slate-800"><Sun className="h-3.5 w-3.5 text-amber-500" />Morning</Link>,
               cell: (g: Col) => <td key={g.date} className={cx('h-7 rounded', g.morning === 'held' ? 'bg-amber-100 text-amber-700' : g.morning === 'empty' ? 'bg-red-200' : '')}>{g.morning === 'held' ? <Sun className="mx-auto h-3 w-3" /> : ''}</td> }]} />
 
           <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 px-1 text-[10px] text-slate-500">
@@ -310,7 +310,7 @@ function DaySheet({ col, ctl, onClose }: { col: Col; ctl: MpPerson[]; onClose: (
                   <span className="w-7 text-xs font-semibold text-slate-700">{c.state}</span>
                   <CrewBadge crew={c.crew} size="sm" />
                   <span className={cx('min-w-0 flex-1 truncate text-sm', ok ? 'text-slate-800' : 'font-semibold text-status-red')}>{ok ? who ?? 'Controller in place' : `Cover needed${c.controller.onLeave.length ? ` · ${c.controller.onLeave.map((p) => p.name.split(' ')[0]).join(', ')} on leave` : ''}`}</span>
-                  {!ok && <Link to={`/controllers?assign=cover&crew=${c.crew}&from=${col.date}`} className="shrink-0 rounded-lg bg-brand-700 px-3 py-1.5 text-xs font-medium text-white">Assign</Link>}
+                  {!ok && <Link to={`/requests?view=entry&card=controller&kind=cover&crew=${c.crew}&from=${col.date}`} className="shrink-0 rounded-lg bg-brand-700 px-3 py-1.5 text-xs font-medium text-white">Assign</Link>}
                 </div>
               );
             })}
@@ -330,7 +330,7 @@ function DaySheet({ col, ctl, onClose }: { col: Col; ctl: MpPerson[]; onClose: (
         <div className="flex items-center gap-2 rounded-xl px-2.5 py-2 ring-1 ring-slate-200">
           <Sun className="h-4 w-4 text-amber-500" />
           <span className="flex-1 text-sm">{mp.holder ? <>Morning post: <b>{mp.holder.name}</b>{mp.status === 'on_leave' ? ' (on leave)' : ''}</> : isDayDutyWorkday(col.date) ? <span className="font-medium text-status-red">Morning post empty</span> : 'Morning post · weekend'}</span>
-          <Link to="/controllers/morning" className="text-xs font-medium text-brand-700">Plan ›</Link>
+          <Link to="/controllers?tab=morning" className="text-xs font-medium text-brand-700">Plan ›</Link>
         </div>
       </div>
     </BottomSheet>

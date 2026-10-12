@@ -19,7 +19,7 @@ export default function ImportBatchPage() {
   const staged: StagedRow[] = rows.map((r) => ({ seq: r.seq, sheet: r.sheet, row_ref: r.row_ref, entity_kind: r.entity_kind as StagedRow['entity_kind'], employee_number: r.employee_number, matched_employee_id: r.matched_employee_id, outcome: r.outcome as StagedRow['outcome'], needs_review: r.needs_review, raw: r.raw, payload: r.payload, diff: r.diff, message: r.message }));
   return (
     <div>
-      <Link to="/imports/history" className="mb-3 inline-flex items-center gap-1 text-sm text-brand-700"><ArrowLeft className="h-4 w-4" /> Import History</Link>
+      <Link to="/import?tab=history" className="mb-3 inline-flex items-center gap-1 text-sm text-brand-700"><ArrowLeft className="h-4 w-4" /> Import History</Link>
       <PageHeader title={b.file_name} subtitle={TYPE_LABEL[b.import_type]} action={<Chip tone={b.status === 'committed' ? 'green' : b.status === 'aborted' ? 'red' : 'amber'}>{b.status}</Chip>} />
       <Card className="mb-3">
         <Row label="Imported" value={new Date(b.created_at).toLocaleString('en-GB')} />

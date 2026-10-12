@@ -49,11 +49,13 @@ export interface NoticeInput {
   /** Controller leave rule breaks not yet approved (src/core/controllers/leaveRules openIssues, with names). */
   /** Leave the Coordinator recorded with a notice to the Section Head (sick, injury, escort…), in the last days. */
   recorded?: { id: string; employeeName: string; label: string; start: string; end: string }[];
+  /** Operational absences with no confirmed return: a review reminder once the review date is reached (never an end). */
+  openCases?: { rootId: string; employeeId: string; employeeName: string; label: string; start: string; nextReview: string | null; estimatedReturn: string | null }[];
   controllerLeave?: { overlaps: { a: string; b: string; start: string; end: string; days: number }[]; extras: { name: string; nth: number; year: number; start: string; end: string }[] };
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const d = (iso: string) => `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`;
+const d = (iso: string) => (iso >= '9999-01-01' ? 'return not confirmed' : `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`);
 const span = (a: string, b: string) => (a === b ? d(a) : `${d(a)} – ${d(b)}`);
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
 const when = (today: string, date: string) => { const n = daysBetween(today, date); return n <= 0 ? 'now' : n === 1 ? 'tomorrow' : `in ${n} days`; };
@@ -73,16 +75,16 @@ export function buildNotices(i: NoticeInput): Notice[] {
     if (p.kind === 'shortage') out.push({ id: `short-${p.crew}-${p.start}`, level: 'action', area: 'shortage', title: `${p.crew} Shift short · ${p.text}`,
       detail: `${span(p.start, p.end)} · ${plural(p.duties, 'duty')} · ${when(i.today, p.start)}`, date: p.start, to: `/?date=${p.start}` });
     else if (p.kind === 'data_incomplete') out.push({ id: `data-${p.crew}-${p.start}`, level: 'watch', area: 'data', title: `${p.crew} Shift · data to confirm`,
-      detail: span(p.start, p.end), date: p.start, to: '/review' });
+      detail: span(p.start, p.end), date: p.start, to: '/data-quality?tab=issues' });
   }
 
   // 2. Controller cover (crew Controller away, or the Morning post empty)
   for (const n of i.needs) {
     const vr = n.additional ? 'Extra Controller needed' : n.vr ? `Move VR ${n.vr.name}${n.vrFrom ? ` from ${n.vrFrom}` : ''}` : n.vrNote ?? '';
     if (n.kind === 'crew') out.push({ id: `cover-${n.crew}-${n.start}`, level: 'action', area: 'controller', title: `Cover needed · ${n.crew} Shift`,
-      detail: [`${span(n.start, n.end)} · ${n.who.join(', ')} · ${when(i.today, n.start)}`, vr].filter(Boolean).join(' · '), date: n.start, to: `/controllers?assign=cover&crew=${n.crew}&from=${n.start}` });
+      detail: [`${span(n.start, n.end)} · ${n.who.join(', ')} · ${when(i.today, n.start)}`, vr].filter(Boolean).join(' · '), date: n.start, to: `/requests?view=entry&card=controller&kind=cover&crew=${n.crew}&from=${n.start}` });
     else out.push({ id: `morning-${n.start}`, level: 'action', area: 'controller', title: 'Morning Controller post empty',
-      detail: span(n.start, n.end), date: n.start, to: `/controllers?assign=morning&from=${n.start}` });
+      detail: span(n.start, n.end), date: n.start, to: `/requests?view=entry&card=controller&kind=morning&from=${n.start}` });
   }
 
   // 3. open leave requests: to review (Coordinator or Section Head), then the Section Head's decision
@@ -104,6 +106,14 @@ export function buildNotices(i: NoticeInput): Notice[] {
     out.push({ id: `rec-${r.id}`, level: 'info', area: 'request', title: 'Recorded by the Coordinator', detail: `${r.employeeName} · ${r.label} ${span(r.start, r.end)}`, date: r.start, to: '/requests?view=approvals' });
   }
 
+  // 3a1b. open operational absences due for review: one reminder per case, updated in place (no daily repeats)
+  for (const c of i.openCases ?? []) {
+    if (!c.nextReview || c.nextReview > i.today) continue;
+    out.push({ id: `review-${c.rootId}`, level: 'watch', area: 'leave', title: `Review: ${c.employeeName} · ${c.label}`,
+      detail: `Unavailable since ${d(c.start)}, return not confirmed${c.estimatedReturn ? ` · estimated ${d(c.estimatedReturn)} (provisional)` : ''} · review due ${d(c.nextReview)}`,
+      date: c.nextReview, to: `/requests?view=entry&card=leave&emp=${c.employeeId}` });
+  }
+
   // 3a2. leave with estimated dates: to confirm at the final notice; an action once it is about to start or has started
   for (const e of i.estimated ?? []) {
     const soon = e.start <= addDaysIso(i.today, 7);
@@ -122,7 +132,7 @@ export function buildNotices(i: NoticeInput): Notice[] {
   for (const p of i.plan.periods.filter((x) => x.status === 'active' && x.end >= i.today && daysBetween(i.today, x.start) <= 14)) {
     const m = i.plan.modes.find((x) => x.code === p.modeCode);
     out.push({ id: `mode-${p.id}`, level: 'info', area: 'mode', title: `${m?.label ?? p.modeCode} ${p.start <= i.today ? 'now' : when(i.today, p.start)}`,
-      detail: `${span(p.start, p.end)}${m ? ` · Controller ${m.controllerMin} · Panel ${m.panelMin} · Field ${m.fieldMin}` : ''}${p.note ? ` · ${p.note}` : ''}`, date: p.start, to: '/operation' });
+      detail: `${span(p.start, p.end)}${m ? ` · Controller ${m.controllerMin} · Panel ${m.panelMin} · Field ${m.fieldMin}` : ''}${p.note ? ` · ${p.note}` : ''}`, date: p.start, to: '/shutdown?tab=modes' });
   }
 
   // 6. leave starting soon (counted leave only)
@@ -130,7 +140,7 @@ export function buildNotices(i: NoticeInput): Notice[] {
   const starting = i.absences.filter((a) => (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && a.start > i.today && daysBetween(i.today, a.start) <= soon && names.has(a.employeeId))
     .sort((a, b) => a.start.localeCompare(b.start));
   if (starting.length) out.push({ id: `leave-${i.today}`, level: 'info', area: 'leave', title: `${plural(starting.length, 'leave')} starting · next ${soon} days`,
-    detail: starting.slice(0, 6).map((a) => `${names.get(a.employeeId)} (${a.typeShort ?? 'Leave'}) ${d(a.start)}`).join(' · ') + (starting.length > 6 ? ` · and ${starting.length - 6} more` : ''), date: starting[0].start, to: '/leave-plan' });
+    detail: starting.slice(0, 6).map((a) => `${names.get(a.employeeId)} (${a.typeShort ?? 'Leave'}) ${d(a.start)}`).join(' · ') + (starting.length > 6 ? ` · and ${starting.length - 6} more` : ''), date: starting[0].start, to: '/leave-planning?tab=annual' });
 
   // 7. Oracle HR: no notice. Who has not submitted (or was rejected) is their own choice; the Oracle HR page lists the coming leaves to check.
 
@@ -140,12 +150,17 @@ export function buildNotices(i: NoticeInput): Notice[] {
   const ov = i.controllerLeave?.overlaps ?? [], ex = i.controllerLeave?.extras ?? [];
   const more = (n: number) => (n > 3 ? ` · +${n - 3} more` : '');
   if (ov.length) out.push({ id: `ctl2-${ov.map((o) => o.start).join()}`, level: lvl, area: 'controller', title: `2 Controllers on leave together · ${ov.length}×`,
-    detail: `${ov.slice(0, 3).map((o) => `${o.a.split(' ')[0]} + ${o.b.split(' ')[0]} ${span(o.start, o.end)}`).join(' · ')}${more(ov.length)} · ${ask}`, date: ov[0].start, to: `/controllers/board?month=${ov[0].start.slice(0, 7)}` });
+    detail: `${ov.slice(0, 3).map((o) => `${o.a.split(' ')[0]} + ${o.b.split(' ')[0]} ${span(o.start, o.end)}`).join(' · ')}${more(ov.length)} · ${ask}`, date: ov[0].start, to: `/controllers?tab=calendar&month=${ov[0].start.slice(0, 7)}` });
   if (ex.length) out.push({ id: `ctlx-${ex.map((x) => x.start).join()}`, level: lvl, area: 'controller', title: `Controller leave over 4 a year · ${ex.length}×`,
-    detail: `${ex.slice(0, 3).map((x) => `${x.name.split(' ')[0]} (leave ${x.nth}) ${d(x.start)}`).join(' · ')}${more(ex.length)} · ${ask}`, date: ex[0].start, to: `/controllers/board?month=${ex[0].start.slice(0, 7)}` });
+    detail: `${ex.slice(0, 3).map((x) => `${x.name.split(' ')[0]} (leave ${x.nth}) ${d(x.start)}`).join(' · ')}${more(ex.length)} · ${ask}`, date: ex[0].start, to: `/controllers?tab=calendar&month=${ex[0].start.slice(0, 7)}` });
 
   const rank: Record<NoticeLevel, number> = { action: 0, watch: 1, info: 2 };
   return out.sort((a, b) => rank[a.level] - rank[b.level] || (a.date ?? '9999').localeCompare(b.date ?? '9999') || a.title.localeCompare(b.title));
 }
 
 export const actionCount = (n: Notice[]) => n.filter((x) => x.level === 'action').length;
+
+/** The three levels shown and stored: a staffing gap is Critical, anything else that needs doing a Warning. */
+export type IssueLevel = 'critical' | 'warning' | 'info';
+export const issueLevel = (n: Pick<Notice, 'level' | 'area'>): IssueLevel => (n.level === 'action' && n.area === 'shortage' ? 'critical' : n.level === 'info' ? 'info' : 'warning');
+export const ISSUE_LABEL: Record<IssueLevel, string> = { critical: 'Critical', warning: 'Warning', info: 'Information' };

@@ -1,6 +1,9 @@
 import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Info, Star } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { t } from '@/i18n';
+import { loadNotices } from '@/data/notifications';
+import { issueLevel, type Notice } from '@/core/notifications';
 import { evaluateDay } from '@/core/manpower';
 import { minimumsText, periodOn } from '@/core/modes';
 import type { CrewDay, DayResult, Finding, MpAbsence, MpPerson, PositionResult, Status } from '@/core/manpower';
@@ -50,6 +53,7 @@ function StatusPill({ status, small }: { status: Status; small?: boolean }) {
 
 export default function DayOverviewPage() {
   const [params, setParams] = useSearchParams();
+  const moved = !!(useLocation().state as { moved?: boolean } | null)?.moved;
   const today = localToday();
   const tomorrow = addDaysIso(today, 1);
   const raw = params.get('date') ?? '';
@@ -86,10 +90,10 @@ export default function DayOverviewPage() {
       <div className="mb-3 flex items-center gap-2">
         <button aria-label="Previous day" onClick={() => setDate(addDaysIso(date, -1))} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-300 active:bg-slate-50"><ChevronLeft className="h-5 w-5" /></button>
         <div className="grid flex-1 grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
-          <button onClick={() => setDate(today)} className={cx('min-h-9 rounded-lg font-medium', date === today ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>Today</button>
-          <button onClick={() => setDate(tomorrow)} className={cx('min-h-9 rounded-lg font-medium', date === tomorrow ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>Tomorrow</button>
+          <button onClick={() => setDate(today)} className={cx('min-h-9 rounded-lg font-medium', date === today ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{t('Today')}</button>
+          <button onClick={() => setDate(tomorrow)} className={cx('min-h-9 rounded-lg font-medium', date === tomorrow ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{t('Tomorrow')}</button>
           <label className={cx('relative flex min-h-9 items-center justify-center rounded-lg font-medium', date !== today && date !== tomorrow ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>
-            Pick date
+            {t('Pick date')}
             <input type="date" aria-label="Pick a date" value={date} onChange={(e) => isValidIsoDate(e.target.value) && setDate(e.target.value)} className="absolute inset-0 opacity-0" />
           </label>
         </div>
@@ -109,7 +113,7 @@ export default function DayOverviewPage() {
           </div>
         )}
         {period && result && (
-          <Link to="/operation" className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-brand-700 px-2.5 py-1 text-[11px] font-semibold text-white">
+          <Link to="/shutdown?tab=modes" className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-brand-700 px-2.5 py-1 text-[11px] font-semibold text-white">
             <span className="truncate">{result.rules.modeLabel} · {shortDate(period.start)} – {shortDate(period.end)}{period.note ? ` · ${period.note}` : ''}</span>
           </Link>
         )}
@@ -117,15 +121,17 @@ export default function DayOverviewPage() {
 
       {error ? <ErrorBox error={error} /> : !result ? <Spinner /> : (
         <>
+          {moved && <p role="status" className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-700">{t('That page has moved. Everything is now under Today, Calendar, Requests, Employees and More.')}</p>}
           <OverallBanner result={result} />
+          <TodaySummary result={result} date={date} today={today} />
           {tcPending > 0 && (
-            <Link to="/review/take-charge" className="mb-3 flex items-start gap-2 rounded-xl bg-slate-50 p-3 text-xs text-slate-700 ring-1 ring-slate-300">
+            <Link to="/data-quality?tab=take-charge" className="mb-3 flex items-start gap-2 rounded-xl bg-slate-50 p-3 text-xs text-slate-700 ring-1 ring-slate-300">
               <Info className="mt-0.5 h-4 w-4 shrink-0" />
               <span><span className="font-semibold">{tcPending} Take-Charge to confirm</span> · Field not final <span className="font-semibold text-brand-700">›</span></span>
             </Link>
           )}
           <div className="space-y-3">
-            {result.crews.map((c) => <CrewCard key={c.crew} crew={c} leave={leave} date={date} need={needFor(c.crew)} />)}
+            {result.crews.map((c) => <div key={c.crew} id={`crew-${c.crew}`} className="scroll-mt-20"><CrewCard crew={c} leave={leave} date={date} need={needFor(c.crew)} /></div>)}
           </div>
           <DayStaffCard result={result} leave={leave} date={date} />
           <DayDutyCard result={result} leave={leave} />
@@ -162,7 +168,7 @@ function OverallBanner({ result }: { result: DayResult }) {
       )}
       {counts.morningCoverageRequired > 0 && (
         <div className={cx('mt-1.5 rounded-lg px-2 py-1.5 text-xs ring-1', CATEGORY.coverage_required.box)}>
-          <span className="font-semibold">Morning post empty</span> · <Link to={`/controllers?assign=morning&from=${result.date}`} className="font-semibold text-brand-700 underline">Assign</Link>
+          <span className="font-semibold">Morning post empty</span> · <Link to={`/requests?view=entry&card=controller&kind=morning&from=${result.date}`} className="font-semibold text-brand-700 underline">Assign</Link>
         </div>
       )}
     </div>
@@ -207,7 +213,7 @@ function notesFor(c: CrewDay, key: 'controller' | 'panel' | 'field', leave: Map<
     const whoIsOut = [...p.onLeave.map((x) => `${x.name}${leave.get(x.id) ? ` (${leaveShort(leave.get(x.id)!)})` : ''}`), ...p.away.map((w) => `${w.person.name} (${w.assignment.kind === 'morning_rotation' ? 'Morning rotation' : w.assignment.kind === 'sd_team' ? 'SD team' : `covering ${w.assignment.crew} Shift`})`)];
     if (p.cover?.counted) notes.push({ text: p.cover.assignment.kind === 'sd_team' ? `Cover: ${p.cover.person.name} (shutdown team Controller${p.cover.assignment.works?.(date) ?? true ? ', in addition to his team shift' : ', off the team today'})` : `Cover: ${p.cover.person.name} (${ROLE_SHORT[p.cover.person.role ?? ''] ?? 'Controller'}) · to ${shortDate(p.cover.assignment.end)}`, tone: 'good' });
     if (p.finding === 'coverage_required') {
-      notes.push({ text: `Cover needed · ${whoIsOut.join(', ')}${p.cover && !p.cover.counted ? ` · cover ${p.cover.person.name} on leave` : ''}`, tone: 'pending', to: `/controllers?assign=cover&crew=${c.crew}&from=${date}`, link: 'Assign' });
+      notes.push({ text: `Cover needed · ${whoIsOut.join(', ')}${p.cover && !p.cover.counted ? ` · cover ${p.cover.person.name} on leave` : ''}`, tone: 'pending', to: `/requests?view=entry&card=controller&kind=cover&crew=${c.crew}&from=${date}`, link: 'Assign' });
       if (need?.additional) notes.push({ text: 'Extra Controller needed', tone: 'red' });
       else if (need?.vr) notes.push({ text: need.vrNote ? `VR ${need.vr.name}: ${need.vrNote.replace(/^VR /, '').replace(/(\d{4}-\d{2}-\d{2})/g, (d) => shortDate(d))}` : `Move VR ${need.vr.name}${need.vrFrom ? ` from ${need.vrFrom}` : ''}`, tone: need.vrNote ? 'amber' : 'muted' });
     }
@@ -463,7 +469,7 @@ function DayStaffCard({ result, leave, date }: { result: DayResult; leave: Map<s
       {result.morningPost.status === 'coverage_required' && (
         <p className={cx('mt-2 rounded-lg p-2 text-[11px] ring-1', CATEGORY.coverage_required.box)}>
           <span className="font-semibold">Morning post empty</span> · Morning Controller on {result.morningPost.away?.crew} Shift{' '}
-          <Link to={`/controllers?assign=morning&from=${date}`} className="font-semibold text-brand-700 underline">Assign ›</Link>
+          <Link to={`/requests?view=entry&card=controller&kind=morning&from=${date}`} className="font-semibold text-brand-700 underline">Assign ›</Link>
         </p>
       )}
       {needing.length > 0 && (
@@ -473,5 +479,59 @@ function DayStaffCard({ result, leave, date }: { result: DayResult; leave: Map<s
         </p>
       )}
     </Card>
+  );
+}
+
+const POS: { key: 'controller' | 'panel' | 'field'; label: string; roles: string[] }[] = [
+  { key: 'controller', label: 'Controller', roles: ['controller', 'vr_controller', 'morning_controller'] },
+  { key: 'panel', label: 'Panel', roles: ['panel_operator'] },
+  { key: 'field', label: 'Field', roles: ['field_operator'] }
+];
+/**
+ * Today at a glance: every gap as "B Shift · Field: required 6, available 5" with why (who is away, or what is not
+ * confirmed); tap to open that crew. Controllers on duty, and the urgent (Critical) alerts. The full lists stay in
+ * their own places (Notifications, Requests → Leave & Oracle).
+ */
+function TodaySummary({ result, date, today }: { result: DayResult; date: string; today: string }) {
+  const [urgent, setUrgent] = useState<Notice[] | null>(null);
+  useEffect(() => {
+    if (date !== today) return;
+    let live = true;
+    loadNotices(false).then((n) => { if (live) setUrgent(n.filter((x) => issueLevel(x) === 'critical')); }).catch(() => { if (live) setUrgent([]); });
+    return () => { live = false; };
+  }, [date, today]);
+  const working = result.crews.filter((c) => c.working);
+  const gaps = working.flatMap((c) => POS.filter((p) => { const r = c[p.key]; return r.count < r.min || r.finding === 'shortage' || r.finding === 'coverage_required' || r.finding === 'data_incomplete'; }).map((p) => {
+    const r = c[p.key];
+    const away = c.absences.filter((a) => a.reducesManpower && p.roles.includes(a.person.role ?? '')).map((a) => `${a.person.name.split(' ')[0]} (${a.absence.typeShort ?? t('Leave')}${a.absence.end >= '9999' ? `, ${t('open')}` : ''})`);
+    const why = r.finding === 'data_incomplete' ? t('qualification not confirmed yet') : r.finding === 'coverage_required' ? t('Controller away, no cover recorded') : away.length ? `${t('away')}: ${away.join(', ')}` : t('not enough qualified people on the crew');
+    return { crew: c.crew, shift: c.shift, label: p.label, count: r.count, min: r.min, why, red: r.finding === 'shortage' };
+  }));
+  const ctlOk = working.filter((c) => c.controller.count >= c.controller.min).length;
+  return (
+    <section aria-label={t('Today at a glance')} className="mb-3 space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200"><div className="text-[11px] uppercase tracking-wide text-slate-500">{t('Controllers on duty')}</div><div className={cx('text-lg font-bold tabular-nums', ctlOk === working.length ? 'text-status-green' : 'text-status-red')}>{ctlOk} / {working.length} {t('crews')}</div></div>
+        <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200"><div className="text-[11px] uppercase tracking-wide text-slate-500">{t('Gaps')}</div><div className={cx('text-lg font-bold tabular-nums', gaps.some((g) => g.red) ? 'text-status-red' : gaps.length ? 'text-status-amber' : 'text-status-green')}>{gaps.length === 0 ? `0 ✓` : gaps.length}</div></div>
+      </div>
+      {gaps.length > 0 && (
+        <ul className="divide-y divide-slate-100 rounded-xl bg-white ring-1 ring-slate-200">
+          {gaps.map((g) => (
+            <li key={`${g.crew}${g.label}`}><a href={`#crew-${g.crew}`} className="flex min-h-12 items-start gap-2 px-3 py-2 text-sm">
+              <CrewBadge crew={g.crew} size="sm" />
+              <span className="min-w-0 flex-1"><span className={cx('block font-semibold', g.red ? 'text-status-red' : 'text-slate-800')}>{g.crew} {t('Shift')} · {t(g.label)}: {t('required')} {g.min}, {t('available')} {g.count}{g.red ? ' ✕' : ''}</span><span className="block text-xs text-slate-600">{g.shift} · {g.why}</span></span>
+              <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-slate-400 rtl:rotate-180" />
+            </a></li>
+          ))}
+        </ul>
+      )}
+      {urgent && urgent.length > 0 && (
+        <Link to="/notifications" className="flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-900 ring-1 ring-red-300">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span className="min-w-0 flex-1"><b>{urgent.length} {t('critical')}</b> · {urgent.slice(0, 2).map((n) => n.title).join(' · ')}{urgent.length > 2 ? ' …' : ''}</span>
+          <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 rtl:rotate-180" />
+        </Link>
+      )}
+    </section>
   );
 }

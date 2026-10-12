@@ -49,7 +49,7 @@ export default function DataQualityPage({ profile }: { profile: UserProfile }) {
       </Section>
 
       <Section title={`Take-Charge to confirm (${tc.length})`} help="Field Operators only count toward the minimum of 6 once Take-Charge = Yes.">
-        <Link to="/review/take-charge" className="mb-2 inline-flex min-h-10 items-center rounded-xl bg-brand-700 px-4 text-sm font-medium text-white">Confirm all Field Operators in one screen</Link>
+        <Link to="/data-quality?tab=take-charge" className="mb-2 inline-flex min-h-10 items-center rounded-xl bg-brand-700 px-4 text-sm font-medium text-white">Confirm all Field Operators in one screen</Link>
         {tc.length === 0 && <Ok />}
         <PeopleList people={tc} extra={() => <Chip tone="amber">Not yet confirmed</Chip>} />
       </Section>
@@ -72,7 +72,7 @@ export default function DataQualityPage({ profile }: { profile: UserProfile }) {
       <Section title={`Import rows to check (${data.pending.length})`} help="Unmatched, errored or review rows from imports. They stay here as the record of what the source said.">
         {data.pending.length === 0 && <Ok />}
         <ul className="divide-y divide-slate-100">
-          {data.pending.map((r) => <li key={r.id} className="py-2"><RowLine row={r} /><Link to={`/imports/${r.batch_id}`} className="text-[11px] text-brand-700">Open batch</Link></li>)}
+          {data.pending.map((r) => <li key={r.id} className="py-2"><RowLine row={r} /><Link to={`/import/${r.batch_id}`} className="text-[11px] text-brand-700">Open batch</Link></li>)}
         </ul>
       </Section>
 

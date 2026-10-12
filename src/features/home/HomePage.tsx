@@ -52,13 +52,13 @@ export default function HomePage() {
       </div>
       <h2 className="mb-2 mt-6 text-xs font-semibold uppercase tracking-wide text-slate-500">Data quality</h2>
       <div className="grid grid-cols-3 gap-3">
-        <Stat label="Take-Charge not confirmed" value={tcUnconfirmed} tone={tcUnconfirmed ? 'amber' : 'green'} to="/review" />
-        <Stat label="Unresolved absences" value={unresolved} tone={unresolved ? 'amber' : 'green'} to="/review" />
-        <Stat label="Employment type inferred" value={inferred} tone={inferred ? 'amber' : 'green'} to="/review" />
+        <Stat label="Take-Charge not confirmed" value={tcUnconfirmed} tone={tcUnconfirmed ? 'amber' : 'green'} to="/data-quality?tab=issues" />
+        <Stat label="Unresolved absences" value={unresolved} tone={unresolved ? 'amber' : 'green'} to="/data-quality?tab=issues" />
+        <Stat label="Employment type inferred" value={inferred} tone={inferred ? 'amber' : 'green'} to="/data-quality?tab=issues" />
       </div>
       <h2 className="mb-2 mt-6 text-xs font-semibold uppercase tracking-wide text-slate-500">Last import</h2>
       {last ? (
-        <Card to={`/imports/${last.id}`}>
+        <Card to={`/import/${last.id}`}>
           <div className="flex items-center justify-between gap-2"><span className="truncate font-medium text-slate-800">{last.file_name}</span><Chip tone={last.status === 'committed' ? 'green' : last.status === 'aborted' ? 'red' : 'amber'}>{last.status}</Chip></div>
           <div className="mt-1 text-xs text-slate-500">{fmtDate(last.created_at)} · {last.records_new} new · {last.records_changed} changed · {last.records_review} to review</div>
         </Card>

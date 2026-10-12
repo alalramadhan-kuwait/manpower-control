@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, ChevronDown, ChevronUp, RefreshCw, Sun } from 'lucide-react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { ChevronDown, ChevronUp, RefreshCw, Sun } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { t } from '@/i18n';
 import { checkCandidates, coverageNeeds, maxEndDate, shiftCoverMaxEnd, type CoverageNeed } from '@/core/controllers';
 import { evaluateDay, personOn, type MpAbsence, type MpAssignment, type MpPerson } from '@/core/manpower';
 import { onLeaveOn, type OnLeave } from '@/core/leave';
@@ -24,14 +25,11 @@ interface Draft { kind: Exclude<MpAssignment['kind'], 'sd_team'>; crew: Crew | n
 
 export default function ControllersPage({ profile }: { profile: UserProfile }) {
   const today = localToday();
-  const [params, setParams] = useSearchParams();
   const [inputs, setInputs] = useState<(ManpowerInputs) | null>(null);
   const [all, setAll] = useState<ControllerAssignment[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Draft | null>(null);
   const [placements, setPlacements] = useState<CrewMovement[]>([]);
-  const [placing, setPlacing] = useState<MpPerson | null>(null);
   const [ending, setEnding] = useState<ControllerAssignment | null>(null);
   const [cancelling, setCancelling] = useState<ControllerAssignment | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -58,22 +56,8 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
   }, [inputs]);
   const morningToday = useMemo(() => (inputs ? evaluateDay(today, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments).dayStaff.find((s) => s.morningPost) ?? null : null), [inputs, today]);
 
-  // Opened from Today's "Assign cover" link: ?assign=cover&crew=A&from=YYYY-MM-DD
-  useEffect(() => {
-    const kind = params.get('assign');
-    if (!inputs || (kind !== 'cover' && kind !== 'morning')) return;
-    const crew = params.get('crew') as Crew | null; const from = params.get('from') ?? today;
-    if ((kind === 'cover' && (!crew || !CREW_LIST.includes(crew))) || !isValidIsoDate(from)) return;
-    const found = coverageNeeds(addDaysIso(from, -40), addDaysIso(from, 60), inputs.people, inputs.absencesAll, inputs.assignments, inputs.rules)
-      .find((n) => (kind === 'morning' ? n.kind === 'morning' : n.crew === crew) && n.start <= from && from <= n.end);
-    // from the Morning rotation plan: a proposed period and person (?to=…&who=…)
-    const to = params.get('to'); const who = params.get('who');
-    if (kind === 'morning' && to && isValidIsoDate(to) && to >= from) setDraft({ kind: 'morning_rotation', crew: null, start: from, end: to > maxEndDate(from) ? maxEndDate(from) : to, coversId: null, suggestId: who });
-    else setDraft(fromNeed(found ? { ...found, start: found.start < from ? from : found.start } : { kind: kind === 'morning' ? 'morning' : 'crew', crew: kind === 'morning' ? null : crew, start: from, end: from, dutyDays: 1, who: [], absentIds: [], vr: null, additional: false, vrNote: null, vrFrom: null }, maxDays));
-    setParams({}, { replace: true });
-  }, [inputs, params, setParams, today, maxDays]);
-
-  const done = (msg: string) => { setDraft(null); setEnding(null); setCancelling(null); setNotice(msg); load(); };
+  const isHead = profile.role_code === 'section_head';
+  const done = (msg: string) => { setEnding(null); setCancelling(null); setNotice(msg); load(); };
   const current = (all ?? []).filter((a) => a.status === 'active' && a.end_date >= today).sort((a, b) => a.start_date.localeCompare(b.start_date));
   const history = (all ?? []).filter((a) => a.status === 'cancelled' || a.end_date < today);
 
@@ -81,9 +65,8 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
     <div>
       <PageHeader title="Controllers" info={<><p>Cover for a Shift Controller on leave, and the Morning Controller rotation.</p><p>Only Grade 15+ can cover. A Morning rotation is up to 2 months; a shift cover lasts the actual leave.</p><p>Grade 15+ Controllers only; nobody covers their own crew; one person cannot hold two overlapping assignments. Every change is kept in the audit history.</p><p>Needs are listed for the next 120 days with a free VR Controller suggested.</p></>} />
       <div className="mb-3 flex flex-wrap gap-2">
-        <Button onClick={() => { setNotice(null); setDraft({ kind: 'shift_cover', crew: null, start: today, end: today, coversId: null }); }}>Assign cover</Button>
-        <Button variant="secondary" onClick={() => { setNotice(null); setDraft({ kind: 'morning_rotation', crew: null, start: today, end: maxEndDate(today), coversId: null }); }}><Sun className="h-4 w-4" /> Morning rotation</Button>
-        <Link to="/controllers/board" className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-white px-4 text-sm font-medium text-brand-800 ring-1 ring-slate-300"><CalendarDays className="h-4 w-4" /> Calendar</Link>
+        <Link to="/requests?view=entry&card=controller&kind=cover" className="inline-flex min-h-11 items-center rounded-xl bg-brand-700 px-4 text-sm font-medium text-white">{t('Assign cover')}</Link>
+        <Link to="/requests?view=entry&card=controller&kind=morning" className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-white px-4 text-sm font-medium text-brand-800 ring-1 ring-slate-300"><Sun className="h-4 w-4" /> {t('Morning rotation')}</Link>
       </div>
       {notice && <div className="mb-3 rounded-xl bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{notice}</div>}
       {error != null && <div className="mb-3 space-y-2"><ErrorBox error={error} /><Button variant="secondary" onClick={load}><RefreshCw className="h-4 w-4" /> Try again</Button></div>}
@@ -108,7 +91,7 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
                           ? <div className="truncate text-xs text-status-amber">VR {n.vr.name}: {n.vrNote.replace(/^VR /, '').replace(/(\d{4}-\d{2}-\d{2})/g, (d) => shortDate(d))}</div>
                           : <div className="truncate text-xs text-status-green">Move VR {n.vr.name}{n.vrFrom ? ` from ${n.vrFrom}` : ''}</div>))}
                     </div>
-                    <Button variant="secondary" className="shrink-0" onClick={() => { setNotice(null); setDraft(fromNeed(n, maxDays)); }}>{n.kind === 'morning' ? 'Rotation' : 'Assign'}</Button>
+                    <Link to={n.kind === 'morning' ? `/requests?view=entry&card=controller&kind=morning&from=${n.start}` : `/requests?view=entry&card=controller&kind=cover&crew=${n.crew}&from=${n.start}`} className="inline-flex min-h-11 shrink-0 items-center rounded-xl bg-white px-4 text-sm font-medium text-brand-800 ring-1 ring-slate-300">{t(n.kind === 'morning' ? 'Rotation' : 'Assign')}</Link>
                   </li>
                 );
               })}
@@ -129,14 +112,14 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
                       <div className="truncate font-medium text-slate-800">{p.name}</div>
                       <div className="truncate text-xs text-slate-500">{now ? `In ${now} Shift${cur ? ` since ${shortDate(cur.start_date)}` : ''}` : <span className="font-semibold text-status-red">Not placed in a crew</span>}{next.length ? ` · ${next.map((m) => `→ ${m.to_crew} ${shortDate(m.start_date)}`).join(' · ')}` : ''}</div>
                     </div>
-                    <Button variant="secondary" className="shrink-0" onClick={() => { setNotice(null); setPlacing(p); }}>Move</Button>
+                    <Link to={`/requests?view=entry&card=controller&kind=vr&emp=${p.id}`} className="inline-flex min-h-11 shrink-0 items-center rounded-xl bg-white px-4 text-sm font-medium text-brand-800 ring-1 ring-slate-300">{t('Move')}</Link>
                   </li>
                 );
               })}
             </ul>
           </Section>
 
-          <Section title="Morning Controller" action={<Link to="/controllers/morning" className="text-xs font-medium text-brand-700">Plan ›</Link>}>
+          <Section title="Morning Controller" action={<Link to="/controllers?tab=morning" className="text-xs font-medium text-brand-700">Plan ›</Link>}>
             {morningToday ? (
               <div className="flex items-center justify-between gap-3 text-sm">
                 <span><span className="font-medium text-slate-800">{morningToday.person.name}</span> <span className="text-xs text-slate-500">holds the post today{morningToday.assignment?.kind === 'morning_rotation' ? ` (rotation until ${shortDate(morningToday.assignment.end)})` : ''}</span></span>
@@ -164,10 +147,10 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
                     <Chip tone={a.start_date <= today ? 'green' : 'neutral'} className="shrink-0 whitespace-nowrap">{a.start_date <= today ? 'Now' : `Starts ${shortDate(a.start_date)}`}</Chip>
                   </div>
                   <div className="text-xs text-slate-500">{range(a.start_date, a.end_date)} · {days(a.start_date, a.end_date)} days{a.covers_employee_id ? ` · for ${name(a.covers_employee_id)}` : ''}{a.note ? ` · ${a.note}` : ''}</div>
-                  <div className="mt-1 flex gap-2">
+                  {isHead && <div className="mt-1 flex gap-2">
                     {a.end_date > today && a.start_date < a.end_date && <Button variant="ghost" className="min-h-8 px-2 text-xs" onClick={() => setEnding(a)}>End early</Button>}
                     <Button variant="ghost" className="min-h-8 px-2 text-xs text-red-700 hover:bg-red-50" onClick={() => setCancelling(a)}>Cancel</Button>
-                  </div>
+                  </div>}
                 </li>
               ))}
             </ul>
@@ -192,8 +175,6 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
           </Card>
         </>
       )}
-      {draft && inputs && <AssignSheet initial={draft} maxDays={maxDays} people={inputs.people} absences={inputs.absences} assignments={inputs.assignments} onClose={() => setDraft(null)} onDone={done} />}
-      {placing && <PlaceSheet vr={placing} today={today} onClose={() => setPlacing(null)} onDone={(m) => { setPlacing(null); done(m); }} />}
       {editRules && <RulesSheet current={maxDays} onClose={() => setEditRules(false)} onDone={(m) => { setEditRules(false); setNotice(m); load(); }} />}
       {ending && <EndEarlySheet a={ending} today={today} name={name} onClose={() => setEnding(null)} onDone={done} />}
       {cancelling && <CancelSheet a={cancelling} name={name} onClose={() => setCancelling(null)} onDone={done} />}
@@ -421,4 +402,46 @@ function PlaceSheet({ vr, today, onClose, onDone }: { vr: MpPerson; today: strin
       </div>
     </BottomSheet>
   );
+}
+
+/**
+ * Requests → Entry → Controller assignment: a shift cover, a Morning rotation or a VR placement, with the candidate
+ * check (Grade 15+, free on those days, not their own crew). Opened from a cover need with ?kind=cover&crew=&from=,
+ * from the Morning plan with ?kind=morning&from=&to=&who=, or for one VR with ?kind=vr&emp=.
+ */
+export function ControllerAssign({ kind, crew, from, to, who, emp, onClose, onDone }: { kind: 'cover' | 'morning' | 'vr'; crew: string | null; from: string | null; to: string | null; who: string | null; emp: string | null; onClose: () => void; onDone: (m: string) => void }) {
+  const today = localToday();
+  const [inputs, setInputs] = useState<ManpowerInputs | null>(null);
+  const [maxDays, setMaxDays] = useState<number | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [vrPick, setVrPick] = useState<string | null>(emp);
+  useEffect(() => {
+    Promise.all([fetchManpowerInputs(addDaysIso(today, -60), addDaysIso(today, HORIZON + 70)), fetchShiftCoverMaxDays()])
+      .then(([i, m]) => { setInputs(i); setMaxDays(m); }).catch(setError);
+  }, [today]);
+  if (error) return <ErrorBox error={error} />;
+  if (!inputs) return <Spinner />;
+  if (kind === 'vr') {
+    const vrs = inputs.people.filter((p) => p.role === 'vr_controller').sort((a, b) => a.name.localeCompare(b.name));
+    const vr = vrs.find((p) => p.id === vrPick) ?? null;
+    return vr ? <PlaceSheet vr={vr} today={today} onClose={onClose} onDone={onDone} /> : (
+      <Card>
+        <div className="mb-2 text-sm font-medium text-slate-700">{t('Choose the VR Controller')}</div>
+        <ul className="divide-y divide-slate-100">{vrs.map((p) => { const c = personOn(p, today).crew; return (
+          <li key={p.id}><button type="button" onClick={() => setVrPick(p.id)} className="flex min-h-11 w-full items-center gap-2 py-2 text-start text-sm">{c ? <CrewBadge crew={c} size="sm" /> : <span className="h-6 w-6 rounded-full bg-red-100" />}<span className="font-medium">{p.name}</span></button></li>); })}</ul>
+      </Card>
+    );
+  }
+  const start = from && isValidIsoDate(from) ? from : today;
+  let draft: Draft;
+  if (kind === 'morning' && to && isValidIsoDate(to) && to >= start) draft = { kind: 'morning_rotation', crew: null, start, end: to > maxEndDate(start) ? maxEndDate(start) : to, coversId: null, suggestId: who };
+  else {
+    const c = CREW_LIST.includes(crew as Crew) ? (crew as Crew) : null;
+    const found = coverageNeeds(addDaysIso(start, -40), addDaysIso(start, 60), inputs.people, inputs.absencesAll, inputs.assignments, inputs.rules)
+      .find((n) => (kind === 'morning' ? n.kind === 'morning' : n.crew === c) && n.start <= start && start <= n.end);
+    draft = found ? fromNeed({ ...found, start: found.start < start ? start : found.start }, maxDays)
+      : kind === 'morning' ? { kind: 'morning_rotation', crew: null, start, end: maxEndDate(start), coversId: null }
+      : { kind: 'shift_cover', crew: c, start, end: start, coversId: null };
+  }
+  return <AssignSheet initial={draft} maxDays={maxDays} people={inputs.people} absences={inputs.absences} assignments={inputs.assignments} onClose={onClose} onDone={onDone} />;
 }

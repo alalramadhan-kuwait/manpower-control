@@ -14,13 +14,13 @@ export default function ImportHistoryPage() {
   if (error) return <ErrorBox error={error} />;
   return (
     <div>
-      <Link to="/imports" className="mb-3 inline-flex items-center gap-1 text-sm text-brand-700"><ArrowLeft className="h-4 w-4" /> Import Center</Link>
+      <Link to="/import" className="mb-3 inline-flex items-center gap-1 text-sm text-brand-700"><ArrowLeft className="h-4 w-4" /> Import Center</Link>
       <PageHeader title="Import history" info="Every upload, whether it was committed or not." />
       {!batches ? <Spinner /> : batches.length === 0 ? <EmptyState title="No imports yet" /> : (
         <ul className="space-y-2">
           {batches.map((b) => (
             <li key={b.id}>
-              <Card to={`/imports/${b.id}`}>
+              <Card to={`/import/${b.id}`}>
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate font-medium text-slate-800">{b.file_name}</span>
                   <Chip tone={b.status === 'committed' ? 'green' : b.status === 'aborted' ? 'red' : 'amber'}>{b.status}</Chip>

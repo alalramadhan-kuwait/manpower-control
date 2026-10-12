@@ -82,7 +82,7 @@ export default function ShutdownListPage() {
       </div>
       {view === 'timeline' && (error ? <ErrorBox error={error} /> : !plans ? <Spinner /> : <TimelineTab plans={plans} people={people} today={today} />)}
       {view === 'people' && (error ? <ErrorBox error={error} /> : !plans ? <Spinner /> : <PeopleTab plans={plans} members={members} />)}
-      {view === 'plans' && <p className="mb-2 text-xs text-slate-500">Field Operator levels: <Link to="/review/fo-levels" className="font-medium text-brand-700">Senior / Good / New ›</Link></p>}
+      {view === 'plans' && <p className="mb-2 text-xs text-slate-500">Field Operator levels: <Link to="/data-quality?tab=fo-levels" className="font-medium text-brand-700">Senior / Good / New ›</Link></p>}
       {notice && <p role="status" className="mb-2 text-sm text-status-green">{notice}</p>}
       {view === 'plans' && (error ? <ErrorBox error={error} /> : !plans ? <Spinner /> : plans.length === 0 ? <Card><p className="text-sm text-slate-500">No shutdown plan yet.</p></Card> : (
         <div className="space-y-4">

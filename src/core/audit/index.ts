@@ -4,7 +4,7 @@
 // Nothing here changes data; it only reads the before / after snapshots.
 import { ORACLE_LABEL, type OracleStatus } from '../oracle';
 
-export type AuditCategory = 'crews' | 'leave' | 'requests' | 'controllers' | 'shutdown' | 'modes' | 'qualifications' | 'staff' | 'logins' | 'other';
+export type AuditCategory = 'crews' | 'leave' | 'requests' | 'controllers' | 'shutdown' | 'modes' | 'qualifications' | 'staff' | 'notes' | 'oracle' | 'logins' | 'other';
 
 export const AUDIT_CATEGORIES: { key: AuditCategory; label: string; tables: string[] }[] = [
   { key: 'crews', label: 'Crews & roles', tables: ['employee_role_assignments', 'crew_movements', 'task_releases'] },
@@ -15,6 +15,8 @@ export const AUDIT_CATEGORIES: { key: AuditCategory; label: string; tables: stri
   { key: 'modes', label: 'Modes & calendar', tables: ['operating_modes', 'operation_periods', 'public_holidays', 'unit_events', 'shift_alert_settings'] },
   { key: 'qualifications', label: 'Qualifications', tables: ['employee_qualifications'] },
   { key: 'staff', label: 'Staff records', tables: ['employees'] },
+  { key: 'notes', label: 'Notes', tables: ['employee_notes'] },
+  { key: 'oracle', label: 'Oracle statistics', tables: ['oracle_stat_snapshots', 'oracle_stat_values'] },
   { key: 'logins', label: 'Logins', tables: ['user_accounts'] }
 ];
 
@@ -93,6 +95,18 @@ export function describe(row: AuditRow, lk: AuditLookups): AuditEntry {
   let details: string[] = [];
 
   switch (row.entity_table) {
+    case 'employee_notes': {
+      title = row.action === 'insert' ? `Note added on ${who(cur.employee_id)}` : next?.archived && !prev?.archived ? `Note archived on ${who(cur.employee_id)}` : `Note edited on ${who(cur.employee_id)}`;
+      details = row.action === 'update' && prev?.body !== next?.body ? [`Before: ${s(prev?.body) ?? ''}`, `After: ${s(next?.body) ?? ''}`] : [s(cur.body) ?? ''];
+      break;
+    }
+    case 'oracle_stat_snapshots':
+      title = `Oracle report imported: ${s(cur.source_report) ?? ''} (${s(cur.period_start) ?? ''} – ${s(cur.period_end) ?? ''}, taken ${s(cur.extracted_on) ?? ''})`;
+      break;
+    case 'oracle_stat_values':
+      title = row.action === 'insert' ? `Oracle figure: ${who(cur.employee_id)} · ${s(cur.code) ?? ''} ${String(cur.days ?? '')} days` : `Oracle figure superseded: ${who(cur.employee_id)} · ${s(cur.code) ?? ''}`;
+      if (row.action === 'update' && prev?.days !== next?.days) details = [`Days: ${String(prev?.days)} → ${String(next?.days)}`];
+      break;
     case 'employees': {
       const name = s(cur.display_name) ?? 'Staff member';
       if (row.action === 'insert') title = `Staff member added: ${name} (#${s(cur.employee_number) ?? '?'})`;

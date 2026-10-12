@@ -33,7 +33,7 @@ describe('notification center', () => {
     const cover = n.find((x) => x.area === 'controller')!;
     expect(cover).toMatchObject({ level: 'action', title: 'Cover needed · B Shift' });
     expect(cover.detail).toContain(`Move VR ${vr.name}`);
-    expect(cover.to).toBe(`/controllers?assign=cover&crew=B&from=${cover.date}`);
+    expect(cover.to).toBe(`/requests?view=entry&card=controller&kind=cover&crew=B&from=${cover.date}`);
   });
   it('requests: review is an action for everyone; the decision is an action only for the Section Head', () => {
     const requests = [{ id: 'r1', employeeName: 'Person X', typeLabel: 'Unscheduled', start: '2026-10-02', end: '2026-10-03', status: 'reviewed' as const, overtime: true }];
@@ -68,7 +68,7 @@ describe('notification center', () => {
   it('Controller leave rules: one grouped notice each; actions for the Section Head only', () => {
     const controllerLeave = { overlaps: [{ a: 'Jasem Sadeq', b: 'Muath Malallah', start: '2026-12-07', end: '2026-12-14', days: 8 }], extras: [{ name: 'Yaser Asiri', nth: 5, year: 2027, start: '2027-09-01', end: '2027-09-04' }] };
     const head = buildNotices(base({ controllerLeave }));
-    expect(head.find((x) => x.id.startsWith('ctl2-'))).toMatchObject({ level: 'action', title: '2 Controllers on leave together · 1×', detail: 'Jasem + Muath 7 Dec – 14 Dec · needs your approval', to: '/controllers/board?month=2026-12' });
+    expect(head.find((x) => x.id.startsWith('ctl2-'))).toMatchObject({ level: 'action', title: '2 Controllers on leave together · 1×', detail: 'Jasem + Muath 7 Dec – 14 Dec · needs your approval', to: '/controllers?tab=calendar&month=2026-12' });
     expect(head.find((x) => x.id.startsWith('ctlx-'))).toMatchObject({ level: 'action', title: 'Controller leave over 4 a year · 1×', detail: 'Yaser (leave 5) 1 Sep · needs your approval' });
     expect(buildNotices(base({ controllerLeave, isSectionHead: false })).find((x) => x.id.startsWith('ctl2-'))!.level).toBe('watch');
   });
@@ -87,5 +87,18 @@ describe('recorded with a notice', () => {
   it('the Section Head is told; the Coordinator is not', () => {
     expect(buildNotices(base({ recorded })).find((x) => x.id === 'rec-r1')).toMatchObject({ level: 'info', title: 'Recorded by the Coordinator' });
     expect(buildNotices(base({ recorded, isSectionHead: false })).find((x) => x.id === 'rec-r1')).toBeUndefined();
+  });
+});
+
+describe('open absence review and levels', () => {
+  const openCases = [{ rootId: 'r1', employeeId: 'p1', employeeName: 'P', label: 'Injury', start: '2026-09-01', nextReview: '2026-09-20', estimatedReturn: null }];
+  it('one review reminder per case once due, none before', () => {
+    expect(buildNotices(base({ openCases })).filter((x) => x.id === 'review-r1')).toHaveLength(1);
+    expect(buildNotices(base({ openCases: [{ ...openCases[0], nextReview: '2026-10-30' }] })).find((x) => x.id === 'review-r1')).toBeUndefined();
+  });
+  it('a staffing gap is Critical', async () => {
+    const { issueLevel } = await import('..');
+    expect(issueLevel({ level: 'action', area: 'shortage' })).toBe('critical');
+    expect(issueLevel({ level: 'watch', area: 'leave' })).toBe('warning');
   });
 });

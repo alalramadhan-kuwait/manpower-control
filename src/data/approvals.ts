@@ -5,9 +5,11 @@
 // for each (legacy_table + legacy_id, unique) in the same transaction, so the inbox and the counts read request_headers only.
 import { supabase } from './supabase';
 import { dataChanged } from './changes';
-import { checkProposal, checkRecord, type Check } from './validation';
+import type { Check } from './validation';
+import { gateDecide, gateSubmit, type SubmitInput } from './gate';
+import { addDaysIso } from '@/core/roster';
 import { DAY_DUTY } from '@/core/manpower';
-import { hasHardStop, acceptable, type Proposal } from '@/core/validation';
+import { acceptable, type Proposal } from '@/core/validation';
 import type { Crew } from '@/core/roster';
 
 export type ApprovalKind = 'leave' | 'movement' | 'vr_placement' | 'task_release' | 'controller_cover';
@@ -41,41 +43,43 @@ export function proposalOf(v: { kind: ApprovalKind; employee: string; start: str
     case 'controller_cover': return { kind: 'cover', employeeId: v.employee, crew: p.crew_code as Crew, start: v.start, end: v.end ?? v.start, coverKind: p.kind === 'morning_rotation' ? 'morning_rotation' : 'shift_cover' };
   }
 }
-const shortOf = async (code: unknown) => {
-  if (typeof code !== 'string') return null;
-  const { data } = await supabase.from('absence_types').select('short_code').eq('code', code).maybeSingle();
-  return (data as { short_code: string } | null)?.short_code ?? null;
-};
 
-/** Checks the change first: a hard stop is never sent. The check is kept with the request. */
+
+/** Every change goes through the server check (request-gate): a hard stop or a crew below its minimum is never sent. */
 export async function submitApproval(v: { kind: ApprovalKind; employee: string; start: string; end: string | null; summary: string; payload: Record<string, unknown> }): Promise<SubmitResult> {
-  const check = await checkProposal(proposalOf(v, v.kind === 'leave' ? await shortOf(v.payload.type) : null));
-  if (hasHardStop(check.findings)) throw new Error(`Not sent, hard stop: ${check.findings.filter((f) => f.severity === 'hard_stop').map((f) => f.message).join(' ')}`);
-  let r: SubmitResult;
-  if (v.kind === 'leave') {
-    // leave goes in with its check: an accepted overlap (critical) lets the other leave give up those days
-    const type = String(v.payload.type ?? '');
-    const { data, error } = await supabase.rpc('request_header_submit', { p_type: type === 'annual_leave_unscheduled' ? 'unscheduled_pv' : 'absence', p_employee: v.employee,
-      p_plan_year: Number(v.start.slice(0, 4)), p_summary: v.summary, p_remarks: (v.payload.note as string | undefined) ?? null,
-      p_detail: { absence_type_code: type, start_date: v.start, end_date: v.end ?? v.start }, p_check: checkRecord(check), p_workflow: 'approval' });
-    if (error) throw plain(error);
-    const d = data as { id: string; status: string; result?: string };
-    r = { id: d.id, status: d.status === 'submitted' ? 'pending' : 'approved', result: d.result };
-  } else {
-    const { data, error } = await supabase.rpc('approval_submit', { p_kind: v.kind, p_employee: v.employee, p_start: v.start, p_end: v.end, p_summary: v.summary, p_payload: v.payload });
-    if (error) throw plain(error);
-    r = data as SubmitResult;
-    await supabase.rpc('request_header_record_check', { p_id: r.id, p_check: checkRecord(check) });
+  const p = v.payload as Record<string, string | null | undefined>;
+  const plus1 = (d: string | null) => (d ? addDaysIso(d, 1) : null);
+  let input: SubmitInput;
+  switch (v.kind) {
+    case 'leave': {
+      const type = String(p.type ?? '');
+      input = { type: type === 'annual_leave_unscheduled' ? 'unscheduled_pv' : type === 'personal_qb' ? 'personal_pc' : 'absence', employeeId: v.employee, summary: v.summary, remarks: p.note ?? null,
+        detail: { absence_type_code: type, start_date: v.start, end_date: v.end ?? v.start, action: 'new' } };
+      break;
+    }
+    case 'movement':
+      input = { type: 'shift_change', employeeId: v.employee, summary: v.summary, remarks: p.reason ?? null,
+        detail: { kind: p.to === 'DAY' ? 'day_duty' : p.kind === 'permanent' ? 'permanent' : 'temporary', to_crew: p.to === 'DAY' ? null : p.to, start_date: v.start, return_date: plus1(v.end), reason: p.reason ?? null } };
+      break;
+    case 'vr_placement':
+      input = { type: 'vr_placement', employeeId: v.employee, summary: v.summary, remarks: p.reason ?? null, detail: { crew_code: p.crew, start_date: v.start, reason: p.reason ?? null } };
+      break;
+    case 'controller_cover':
+      input = { type: 'controller_cover', employeeId: v.employee, summary: v.summary, remarks: p.note ?? null,
+        detail: { crew_code: p.crew_code ?? null, cover_kind: p.kind ?? 'shift_cover', covers_employee_id: p.covers_employee_id ?? null, start_date: v.start, end_date: v.end ?? v.start, reason: p.note ?? null } };
+      break;
+    case 'task_release':
+      input = { type: 'task_release', employeeId: v.employee, summary: v.summary, remarks: p.task ?? null,
+        detail: { start_date: v.start, end_date: v.end ?? v.start, from_time: p.from_time ?? null, to_time: p.to_time ?? null, task: p.task ?? null } };
+      break;
   }
+  const r = await gateSubmit(input);
   notify();
-  return r;
+  return { id: r.id, status: r.status === 'submitted' ? 'pending' : 'approved', result: r.result ?? undefined };
 }
 /** Approve (with the check seen: its warnings and critical findings are accepted, a hard stop is refused) or not approve. */
 export async function decideApproval(id: string, approve: boolean, note: string, check?: Check | null): Promise<void> {
-  const { error } = check
-    ? await supabase.rpc('request_header_decide', { p_id: id, p_approve: approve, p_note: note, p_check: checkRecord(check), p_accepted: approve ? acceptable(check.findings).map(({ rule, severity, message }) => ({ rule, severity, message })) : [] })
-    : await supabase.rpc('approval_decide', { p_id: id, p_approve: approve, p_note: note });
-  if (error) throw plain(error);
+  await gateDecide(id, approve, note, approve && check ? acceptable(check.findings).map(({ rule, severity, message }) => ({ rule, severity, message })) : []);
   notify();
 }
 export async function withdrawApproval(id: string, reason: string): Promise<void> {
@@ -94,7 +98,7 @@ export function toApproval(h: Row): ApprovalRequest | null {
   const type = h.type as string;
   const l = one(h.request_leave), s = one(h.request_shift), a = one(h.request_assignment);
   let kind: ApprovalKind; let payload: Record<string, unknown>;
-  if (LEAVE_TYPES.has(type) && l) { kind = 'leave'; payload = { type: l.absence_type_code, note: h.remarks ?? null }; }
+  if (LEAVE_TYPES.has(type) && l) { kind = 'leave'; payload = { type: l.absence_type_code, note: h.remarks ?? null, action: l.action ?? 'new', target: l.target_record_id ?? null }; }
   else if (type === 'shift_change' && s) { kind = 'movement'; payload = { to: s.kind === 'day_duty' ? 'DAY' : s.to_crew, kind: s.kind === 'permanent' ? 'permanent' : 'temporary', reason: s.reason ?? null }; }
   else if (type === 'vr_placement' && a) { kind = 'vr_placement'; payload = { crew: a.crew_code, reason: a.reason ?? null }; }
   else if (type === 'task_release' && a) { kind = 'task_release'; payload = { from_time: hhmm(a.from_time), to_time: hhmm(a.to_time), task: a.task ?? null }; }

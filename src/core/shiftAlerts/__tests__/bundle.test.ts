@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 // The deployed edge functions are the app's own engine bundled: they must always match the source they are built from.
-for (const name of ['shift-alerts', 'sd-plan-approve']) {
+for (const name of ['shift-alerts', 'sd-plan-approve', 'request-gate']) {
   describe(`${name} edge function`, () => {
     it('index.ts is up to date (run npm run functions:build after changing src/core, src/data or main.ts)', async () => {
       const script = pathToFileURL(resolve(process.cwd(), 'scripts/build-shift-alerts.mjs')).href;

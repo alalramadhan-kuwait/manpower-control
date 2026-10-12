@@ -18,7 +18,13 @@ import { shortDate } from '@/ui/leave';
 import { nameFilter } from '@/ui/nameSearch';
 import { CHANGE_LABEL, ChangeRequestSheet } from './ChangeRequests';
 import { CheckPanel } from './CheckPanel';
-import { checkProposal, type Check } from '@/data/validation';
+import type { Check } from '@/data/validation';
+import { previewEntry } from '@/data/entry';
+import { ImpactList } from './EntryPage';
+import type { CrewImpact } from '@/core/entry';
+import { OPEN_CHECK_DAYS } from '@/core/requests/gate';
+import { addDaysIso } from '@/core/roster';
+import { t } from '@/i18n';
 import { hasHardStop } from '@/core/validation';
 import { STATUS_LABEL } from './shared';
 
@@ -146,10 +152,15 @@ function ApprovalSheet({ item, person, isHead, onClose, onDone }: { item: Item; 
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [check, setCheck] = useState<Check | null>(null); const [checkErr, setCheckErr] = useState<unknown>(null);
+  const [impact, setImpact] = useState<CrewImpact[] | null>(null);
+  const action = (p.action ?? 'new') as string;
   useEffect(() => {
     if (a.status !== 'pending') return;
-    checkProposal(proposalOf({ kind: a.kind, employee: a.employee_id, start: a.start_date, end: a.end_date, payload: a.payload }, (a.payload as Record<string, string>).type)).then(setCheck).catch(setCheckErr);
-  }, [a]);
+    // returning or cancelling only gives people back: nothing to check against the minimums
+    if (a.kind === 'leave' && (action === 'return' || action === 'cancel')) { setCheck({ findings: [], existing: [], worst: null, timeline: [], ranAt: new Date().toISOString(), proposal: null } as unknown as Check); return; }
+    const pr = proposalOf({ kind: a.kind, employee: a.employee_id, start: a.start_date, end: a.end_date ?? (a.kind === 'leave' ? addDaysIso(a.start_date, OPEN_CHECK_DAYS) : null), payload: a.payload }, (a.payload as Record<string, string>).type);
+    previewEntry(pr).then((x) => { setCheck(x.check); setImpact(x.impact); }).catch(setCheckErr);
+  }, [a, action]);
   const hard = !!check && hasHardStop(check.findings);
   const details: [string, string][] = [
     ['Dates', range(a.start_date, a.end_date)],
@@ -169,7 +180,10 @@ function ApprovalSheet({ item, person, isHead, onClose, onDone }: { item: Item; 
         <dl className="grid grid-cols-[6rem_1fr] gap-x-2 gap-y-1 text-sm">
           {details.map(([k, v]) => <Fragment key={k}><dt className="text-slate-500">{k}</dt><dd className="text-slate-800">{v}</dd></Fragment>)}
         </dl>
+        {a.kind === 'leave' && action !== 'new' && <Chip tone="blue">{t(action === 'extend' ? 'Extension' : action === 'return' ? 'Confirmed return' : 'Cancellation')}</Chip>}
+        {a.status === 'pending' && impact && <ImpactList impact={impact} />}
         {a.status === 'pending' && <CheckPanel check={check} error={checkErr} />}
+        {isHead && a.status === 'pending' && <p className="text-[11px] text-slate-500">{t('Approving checks it again on the server, with every change approved meanwhile: a crew below its minimum is refused.')}</p>}
         {a.status === 'pending' && (
           <>
             <Field label={isHead ? 'Remarks (optional)' : 'Reason to withdraw (optional)'}><input className="input" value={note} onChange={(e) => setNote(e.target.value)} /></Field>

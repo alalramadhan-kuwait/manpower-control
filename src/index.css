@@ -59,3 +59,6 @@ input[type="date"].input { min-width: 0; -webkit-appearance: none; appearance: n
 
 /* Printed documents (shutdown schedule, overtime sheet): white paper, no app chrome */
 @media print { html, body, #root { background: #fff !important; } }
+
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

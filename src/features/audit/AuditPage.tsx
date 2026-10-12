@@ -16,6 +16,8 @@ export default function AuditPage() {
   const [cat, setCat] = useState<AuditCategory | 'all'>('all');
   const [imports, setImports] = useState(false);
   const [q, setQ] = useState('');
+  const [until, setUntil] = useState('');
+  const [act, setAct] = useState<'all' | 'insert' | 'update' | 'delete'>('all');
   const [lk, setLk] = useState<AuditLookups | null>(null);
   const [rows, setRows] = useState<AuditRow[] | null>(null);
   const [more, setMore] = useState(false);
@@ -27,17 +29,17 @@ export default function AuditPage() {
   const load = useCallback(async (before?: string) => {
     setBusy(true); setError(null);
     try {
-      const page = await fetchAudit({ before, tables, employeeId, includeImports: imports });
+      const page = await fetchAudit({ before: before ?? (until ? `${until}T23:59:59.999+03:00` : undefined), tables, employeeId, includeImports: imports });
       setRows((r) => (before ? [...(r ?? []), ...page] : page)); setMore(page.length === AUDIT_PAGE);
     } catch (e) { setError(e); } finally { setBusy(false); }
-  }, [tables?.join(), employeeId, imports]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tables?.join(), employeeId, imports, until]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setRows(null); load(); }, [load]);
 
   const entries = useMemo(() => {
     if (!rows || !lk) return null;
     const needle = q.trim().toLowerCase();
-    return rows.map((r) => describe(r, lk)).filter((e) => !needle || [e.title, e.actor, ...e.details].some((t) => t.toLowerCase().includes(needle)));
-  }, [rows, lk, q]);
+    return rows.filter((r) => act === 'all' || r.action === act).map((r) => describe(r, lk)).filter((e) => !needle || [e.title, e.actor, ...e.details].some((t) => t.toLowerCase().includes(needle)));
+  }, [rows, lk, q, act]);
   const days = useMemo(() => {
     const out: { day: string; items: AuditEntry[] }[] = [];
     for (const e of entries ?? []) { const d = localDay(e.at); const last = out[out.length - 1]; if (last?.day === d) last.items.push(e); else out.push({ day: d, items: [e] }); }
@@ -65,7 +67,12 @@ export default function AuditPage() {
           <input className="input" style={{ paddingLeft: '2.25rem' }} placeholder="Search name or change" value={q} onChange={(e) => setQ(e.target.value)} inputMode="search" /></label>
         <label className="flex shrink-0 items-center gap-1.5 text-xs text-slate-600"><input type="checkbox" checked={imports} onChange={(e) => setImports(e.target.checked)} /> Imports</label>
       </div>
-      {!imports && <p className="-mt-1 mb-3 text-[11px] text-slate-500">Imports: see <Link to="/imports/history" className="font-medium text-brand-700">Import history</Link></p>}
+      <div className="mb-3 grid grid-cols-2 gap-2">
+        <label className="block"><span className="mb-0.5 block text-[11px] text-slate-500">On or before</span><input type="date" className="input" value={until} onChange={(e) => setUntil(e.target.value)} /></label>
+        <label className="block"><span className="mb-0.5 block text-[11px] text-slate-500">Action</span><select className="input" value={act} onChange={(e) => setAct(e.target.value as typeof act)}><option value="all">All</option><option value="insert">Added</option><option value="update">Changed</option><option value="delete">Removed</option></select></label>
+      </div>
+      <p className="-mt-1 mb-3 text-[11px] text-slate-500">Search finds a person, the author or the change; each entry shows before → after. The history cannot be edited or deleted.</p>
+      {!imports && <p className="-mt-1 mb-3 text-[11px] text-slate-500">Imports: see <Link to="/import?tab=history" className="font-medium text-brand-700">Import history</Link></p>}
       {error ? <ErrorBox error={error} /> : !entries ? <Spinner /> : entries.length === 0 ? (
         <Card className="text-sm text-slate-500"><History className="mb-1 h-5 w-5 text-slate-400" />Nothing recorded{q ? ' matches the search' : ''}.</Card>
       ) : (

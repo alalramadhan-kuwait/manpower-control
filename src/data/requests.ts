@@ -1,6 +1,7 @@
 // Leave requests (Stage F). Every write goes through a database function that checks the step is allowed
 // (open requests only; the decision is the Section Head's) and keeps the whole history on the request.
 import { supabase } from './supabase';
+import { gateDecide, headerOfLegacy } from './gate';
 import { dataChanged } from './changes';
 import type { RequestType } from '@/core/requests';
 
@@ -52,9 +53,9 @@ export async function reviewRequest(id: string, overtime: boolean, signedBy: str
   if (error) throw plain(error);
   dataChanged();
 }
+/** The Section Head's decision on a paper leave form: through its request record and the server check. */
 export async function decideRequest(id: string, approve: boolean, remarks: string) {
-  const { error } = await supabase.rpc('request_decide', { p_id: id, p_approve: approve, p_remarks: remarks });
-  if (error) throw plain(error);
+  await gateDecide(await headerOfLegacy('leave_requests', id), approve, remarks);
   dataChanged();
 }
 export async function withdrawRequest(id: string, reason: string) {

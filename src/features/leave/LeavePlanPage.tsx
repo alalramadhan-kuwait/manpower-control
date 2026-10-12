@@ -1,6 +1,7 @@
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Pencil, Plus, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { t } from '@/i18n';
 import { MONTH_NAMES, coverOfBlock, daysInYearRange, monthEnd, monthStart, monthWeeks, shiftMonth } from '@/core/calendar';
 import { firstDayBack } from '@/core/leave';
 import { isWorkingDay, type Crew } from '@/core/roster';
@@ -10,7 +11,7 @@ import { Button, Card, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components
 import { CREW_IDENTITY, CrewBadge, CrewTag, crewEdge, isCrew } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { byPositionAndService, positionGroup } from '@/ui/positions';
-import { LeaveSheet, SOURCE_LABEL, changeLabel, type LeaveTarget, type SheetPerson } from './LeaveSheet';
+import { SOURCE_LABEL, changeLabel, type SheetPerson } from './LeaveSheet';
 import { leaveToneShort } from '@/ui/leaveTypes';
 import { EstimatedTag } from '@/ui/LeaveCodes';
 import { nameFilter } from '@/ui/nameSearch';
@@ -43,8 +44,8 @@ export default function LeavePlanPage() {
   const [error, setError] = useState<unknown>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [sheet, setSheet] = useState<LeaveTarget | null>(null);
-  const [flash, setFlash] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const flash: string | null = null;
   const planYears = usePlanYears();
   const plan = planYears ? planContext(planYears, year) : null;
   const load = useCallback(() => { setError(null); fetchLeavePlan(year).then(setData).catch(setError); }, [year]);
@@ -87,12 +88,12 @@ export default function LeavePlanPage() {
     return data.types.filter((t) => used.has(t.code));
   }, [data, mode, month, year]);
   const thisMonth = today.slice(0, 4) === String(year) ? Number(today.slice(5, 7)) - 1 : -1;
-  const done = (m: string) => { setSheet(null); setFlash(m); load(); };
 
   return (
     <div>
       <PageHeader title="Leave plan" subtitle={plan && <PlanBadge context={plan} />} info="The current plan: monthly sheets, PV plan and leave entered by hand. Tap a person for dates and history."
-        action={<Button className="min-h-10 shrink-0 px-3" onClick={() => setSheet({ kind: 'add' })}><Plus className="h-4 w-4" /> Add</Button>} />
+        action={<Link to="/requests?view=entry&card=leave" className="inline-flex min-h-10 shrink-0 items-center gap-1 rounded-xl bg-brand-700 px-3 text-sm font-medium text-white"><Plus className="h-4 w-4" /> {t('New entry')}</Link>} />
+      <p className="mb-2 text-xs text-slate-500">{t('The published plan is changed only through Requests → Entry (new leave, PV reschedule, cancellation); every change keeps its approval and history.')}</p>
 
       <div className="mb-2 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
         {(['year', 'month'] as const).map((m) => (
@@ -154,7 +155,7 @@ export default function LeavePlanPage() {
                             : <MonthCells year={year} blocks={r.current} thisMonth={thisMonth} />}
                           <span className="w-6 shrink-0 text-right text-[11px] font-semibold tabular-nums text-slate-700">{r.days || '—'}</span>
                         </button>
-                        {open === r.p.id && data && <PersonDetail row={r} year={year} data={data} today={today} onEdit={(rec) => setSheet({ kind: 'edit', record: rec })} onAdd={() => setSheet({ kind: 'add', employeeId: r.p.id })} />}
+                        {open === r.p.id && data && <PersonDetail row={r} year={year} data={data} today={today} onEdit={(rec) => navigate(rec.absence_type_code?.startsWith('annual_leave_') && rec.absence_type_code !== 'annual_leave_unscheduled' ? `/requests?view=entry&card=pv&emp=${r.p.id}&leave=${rec.start_date}` : `/requests?view=entry&card=leave&emp=${r.p.id}`)} onAdd={() => navigate(`/requests?view=entry&card=leave&emp=${r.p.id}`)} />}
                       </li>
                     ))}
                   </ul>
@@ -170,7 +171,6 @@ export default function LeavePlanPage() {
             : <p className="px-1 text-xs text-slate-500">Leave days in each month · darker = more days · this month outlined · tap a name for the dates</p>}
         </div>
       )}
-      {sheet && view && data && <LeaveSheet target={sheet} people={view.sheetPeople} types={data.types} onClose={() => setSheet(null)} onDone={done} />}
     </div>
   );
 }
@@ -256,9 +256,9 @@ function PersonDetail({ row, year, data, today, onEdit, onAdd }: { row: Row; yea
                 <span className="block text-xs text-slate-500">{type(l.absence_type_code)?.label ?? 'Leave'} · {l.hand_corrected ? (l.source_kind === 'manual' ? SOURCE_LABEL.manual : 'Corrected by hand') : SOURCE_LABEL[l.source_kind]}</span>
                 {cover && (cover.covers.length > 0
                   ? <span className="block text-xs text-slate-600">Covered by {[...new Set(cover.covers.map((c) => name(c.employeeId)))].join(', ')}{cover.uncoveredDutyDays ? ` · ${cover.uncoveredDutyDays} duty day${cover.uncoveredDutyDays === 1 ? '' : 's'} without cover` : ''}</span>
-                  : !past && cover.uncoveredDutyDays > 0 && <span className="block text-xs text-slate-700">No cover recorded · {cover.uncoveredDutyDays} duty day{cover.uncoveredDutyDays === 1 ? '' : 's'}{<> · <Link to={`/controllers?assign=cover&crew=${crew}&from=${l.start_date}`} className="font-semibold text-brand-700 underline">Assign cover</Link></>}</span>)}
+                  : !past && cover.uncoveredDutyDays > 0 && <span className="block text-xs text-slate-700">No cover recorded · {cover.uncoveredDutyDays} duty day{cover.uncoveredDutyDays === 1 ? '' : 's'}{<> · <Link to={`/requests?view=entry&card=controller&kind=cover&crew=${crew}&from=${l.start_date}`} className="font-semibold text-brand-700 underline">Assign cover</Link></>}</span>)}
               </span>
-              <button type="button" aria-label="Correct or cancel" onClick={() => onEdit(l)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-brand-700 hover:bg-white"><Pencil className="h-4 w-4" /></button>
+               <button type="button" aria-label={t('Change through Entry')} onClick={() => onEdit(l)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-brand-700 hover:bg-white"><Pencil className="h-4 w-4" /></button>
             </li>
           );
         })}

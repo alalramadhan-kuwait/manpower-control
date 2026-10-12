@@ -53,6 +53,8 @@ export interface LeaveRecord {
   hand_corrected: boolean;
   /** The dates are an estimate until the final notice (Escort Leave). */
   dates_estimated: boolean;
+  /** Operational absence with no confirmed return: the app reads end_date as OPEN_END (see src/data/openEnd.ts). */
+  open_end?: boolean; estimated_return?: string | null; next_review?: string | null; return_confirmed_at?: string | null;
   /** Where the leave stands in Oracle HR; new dates on future leave reset it to not_submitted. */
   oracle_status: OracleStatus; oracle_ref: string | null; oracle_updated_at: string | null;
   /** The plan the leave belongs to (kept by every later version). */

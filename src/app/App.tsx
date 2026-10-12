@@ -1,34 +1,17 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useSession } from '@/features/auth/useSession';
 import LoginPage from '@/features/auth/LoginPage';
-import HomePage from '@/features/home/HomePage';
 import DayOverviewPage from '@/features/day/DayOverviewPage';
 import EmployeesPage from '@/features/employees/EmployeesPage';
 import EmployeeProfilePage from '@/features/employees/EmployeeProfilePage';
-import ImportCenterPage from '@/features/imports/ImportCenterPage';
-import ImportHistoryPage from '@/features/imports/ImportHistoryPage';
 import ImportBatchPage from '@/features/imports/ImportBatchPage';
-import DataQualityPage from '@/features/review/DataQualityPage';
-import TakeChargeBulkPage from '@/features/review/TakeChargeBulkPage';
 import MorePage from '@/features/more/MorePage';
-import UsersPage from '@/features/users/UsersPage';
 import CalendarPage from '@/features/calendar/CalendarPage';
-import OracleHrPage from '@/features/oracle/OracleHrPage';
-import MorningPlanPage from '@/features/controllers/MorningPlanPage';
-import ControllersBoardPage from '@/features/controllers/ControllersBoardPage';
-import ShutdownListPage from '@/features/shutdown/ShutdownListPage';
 import SdPlanPage from '@/features/shutdown/SdPlanPage';
-import FoLevelsPage from '@/features/shutdown/FoLevelsPage';
 import { SdOvertimePage, SdSchedulePage } from '@/features/shutdown/SdDocuments';
-import LeavePlanPage from '@/features/leave/LeavePlanPage';
-import PvPage from '@/features/pv/PvPage';
-import MovementsPage from '@/features/movements/MovementsPage';
-import ReleasePage from '@/features/release/ReleasePage';
-import ControllersPage from '@/features/controllers/ControllersPage';
 import RequestsPage from '@/features/requests/RequestsPage';
-import AuditPage from '@/features/audit/AuditPage';
-import OperationPage from '@/features/operation/OperationPage';
 import NotificationsPage from '@/features/notifications/NotificationsPage';
+import { AdminWorkspace, ControllersWorkspace, DataQualityWorkspace, ImportWorkspace, LeavePlanningWorkspace, ShutdownWorkspace } from '@/features/workspaces';
 import RequestPage from '@/features/requests/RequestPage';
 import { Shell } from './Shell';
 import { Button } from '@/ui/components';
@@ -80,36 +63,25 @@ export default function App() {
       <div className="sm:pl-44 lg:pl-0 print:pl-0">
         <Routes>
           <Route path="/" element={<DayOverviewPage />} />
-          <Route path="/summary" element={<HomePage />} />
+          <Route path="/calendar" element={<CalendarPage />} />
+          <Route path="/requests" element={<RequestsPage profile={profile} />} />
+          <Route path="/requests/:id" element={<RequestPage profile={profile} />} />
           <Route path="/employees" element={<EmployeesPage profile={profile} />} />
           <Route path="/employees/:id" element={<EmployeeProfilePage profile={profile} />} />
-          <Route path="/imports" element={<ImportCenterPage profile={profile} />} />
-          <Route path="/imports/history" element={<ImportHistoryPage />} />
-          <Route path="/imports/:batchId" element={<ImportBatchPage />} />
-          <Route path="/review" element={<DataQualityPage profile={profile} />} />
-          <Route path="/review/take-charge" element={<TakeChargeBulkPage profile={profile} />} />
           <Route path="/more" element={<MorePage profile={profile} />} />
-          <Route path="/users" element={<UsersPage profile={profile} />} />
-          <Route path="/controllers" element={<ControllersPage profile={profile} />} />
-          <Route path="/controllers/morning" element={<MorningPlanPage />} />
-          <Route path="/controllers/board" element={<ControllersBoardPage profile={profile} />} />
-          <Route path="/shutdown" element={<ShutdownListPage />} />
+          <Route path="/notifications" element={<NotificationsPage profile={profile} />} />
+          <Route path="/controllers" element={<ControllersWorkspace profile={profile} />} />
+          <Route path="/leave-planning" element={<LeavePlanningWorkspace profile={profile} />} />
+          <Route path="/shutdown" element={<ShutdownWorkspace profile={profile} />} />
           <Route path="/shutdown/:id" element={<SdPlanPage isHead={profile.role_code === 'section_head'} />} />
           <Route path="/shutdown/:id/schedule" element={<SdSchedulePage />} />
           <Route path="/shutdown/:id/overtime" element={<SdOvertimePage />} />
-          <Route path="/review/fo-levels" element={<FoLevelsPage />} />
-          <Route path="/calendar" element={<CalendarPage />} />
-          <Route path="/leave-plan" element={<LeavePlanPage />} />
-          <Route path="/pv" element={<PvPage isHead={profile.role_code === 'section_head'} />} />
-          <Route path="/oracle" element={<OracleHrPage />} />
-          <Route path="/movements" element={<MovementsPage />} />
-          <Route path="/release" element={<ReleasePage />} />
-          <Route path="/requests" element={<RequestsPage profile={profile} />} />
-          <Route path="/requests/:id" element={<RequestPage profile={profile} />} />
-          <Route path="/audit" element={<AuditPage />} />
-          <Route path="/operation" element={<OperationPage profile={profile} />} />
-          <Route path="/notifications" element={<NotificationsPage profile={profile} />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="/data-quality" element={<DataQualityWorkspace profile={profile} />} />
+          <Route path="/import" element={<ImportWorkspace profile={profile} />} />
+          <Route path="/import/:batchId" element={<ImportBatchPage />} />
+          <Route path="/admin" element={<AdminWorkspace profile={profile} />} />
+          {/* an old or mistyped address lands on Today with a short note (no old page is kept) */}
+          <Route path="*" element={<Navigate to="/" replace state={{ moved: true }} />} />
         </Routes>
       </div>
     </Shell>

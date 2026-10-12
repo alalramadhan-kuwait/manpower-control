@@ -1,6 +1,8 @@
 import { Info, Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { t } from '@/i18n';
+import { useInWorkspace } from './workspace';
 
 export function cx(...parts: (string | false | null | undefined)[]) { return parts.filter(Boolean).join(' '); }
 
@@ -18,7 +20,7 @@ export function Button({ children, variant = 'primary', className, ...rest }: Re
 export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <label className="block min-w-0">
-      <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t(label)}</span>
       {children}
       {hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
     </label>
@@ -44,10 +46,13 @@ export function Chip({ children, tone = 'neutral', className }: { children: Reac
 
 /** Page title with an optional short status line, an ⓘ button that holds the explanation, and an action. */
 export function PageHeader({ title, subtitle, info, action }: { title: string; subtitle?: ReactNode; info?: ReactNode; action?: ReactNode }) {
+  // inside a workspace the workspace holds the page title: this one becomes the section heading
+  const inner = useInWorkspace();
+  const Tag = inner ? 'h2' : 'h1';
   return (
     <div className="mb-3 flex items-start justify-between gap-3">
       <div className="min-w-0">
-        <h1 className="flex items-center gap-1.5 text-xl font-semibold text-brand-800">{title}{info && <InfoButton title={title}>{info}</InfoButton>}</h1>
+        <Tag className={cx('flex items-center gap-1.5 font-semibold text-brand-800', inner ? 'text-base' : 'text-xl')}>{t(title)}{info && <InfoButton title={t(title)}>{info}</InfoButton>}</Tag>
         {subtitle && <p className="mt-0.5 text-sm text-slate-600">{subtitle}</p>}
       </div>
       {action}
@@ -180,4 +185,4 @@ export function Row({ label, value }: { label: string; value: ReactNode }) {
 
 export const qualificationTone = (s: string | null | undefined): Tone => (s === 'yes' ? 'green' : s === 'no' ? 'red' : s === 'not_yet_confirmed' ? 'amber' : 'neutral');
 export const qualificationLabel = (s: string | null | undefined) => (s === 'yes' ? 'Yes' : s === 'no' ? 'No' : s === 'not_yet_confirmed' ? 'Not yet confirmed' : 'Not recorded');
-export const fmtDate = (d: string | null | undefined) => (d ? new Date(d + (d.length === 10 ? 'T00:00:00' : '')).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+export const fmtDate = (d: string | null | undefined) => (d && d >= '9999-01-01' ? 'Open (return not confirmed)' : d ? new Date(d + (d.length === 10 ? 'T00:00:00' : '')).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');

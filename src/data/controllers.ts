@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { openFrom, withOpenEnd } from './openEnd';
 import { dataChanged } from './changes';
 import type { MpAbsence, MpAssignment, MpPerson } from '@/core/manpower';
 import type { LeaveApproval } from '@/core/controllers/leaveRules';
@@ -33,13 +34,13 @@ export async function createAssignment(a: { kind: ControllerAssignment['kind']; 
 }
 
 export async function endAssignmentEarly(id: string, end_date: string, note: string | null) {
-  const { error } = await supabase.from('controller_assignments').update({ end_date, ...(note ? { note } : {}) }).eq('id', id);
+  const { error } = await supabase.rpc('assignment_amend', { p_id: id, p_kind: 'end', p_date: end_date, p_note: note });
   if (error) throw friendly(error);
   dataChanged();
 }
 
 export async function cancelAssignment(id: string, reason: string) {
-  const { error } = await supabase.from('controller_assignments').update({ status: 'cancelled', cancel_reason: reason }).eq('id', id);
+  const { error } = await supabase.rpc('assignment_amend', { p_id: id, p_kind: 'cancel', p_date: null, p_note: reason });
   if (error) throw friendly(error);
   dataChanged();
 }
@@ -90,10 +91,10 @@ export async function fetchControllerLeave(from: string, to: string): Promise<{ 
   const people = (dir as EmployeeDirectoryRow[]).map(toMpPerson);
   const [lv, approvals] = await Promise.all([
     people.length ? supabase.from('leave_records').select('id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,oracle_status,absence_types(label,short_code)')
-      .in('employee_id', people.map((p) => p.id)).eq('in_current_plan', true).in('status', ['approved', 'planned']).lte('start_date', to).gte('end_date', from)
+      .in('employee_id', people.map((p) => p.id)).eq('in_current_plan', true).in('status', ['approved', 'planned']).lte('start_date', to).or(openFrom(from))
       : Promise.resolve({ data: [], error: null }),
     fetchLeaveApprovals()
   ]);
   if (lv.error) throw lv.error;
-  return { people, absences: (lv.data as unknown as Parameters<typeof toMpAbsence>[0][]).map(toMpAbsence), approvals };
+  return { people, absences: (withOpenEnd(lv.data as { end_date: string | null }[]) as unknown as Parameters<typeof toMpAbsence>[0][]).map(toMpAbsence), approvals };
 }

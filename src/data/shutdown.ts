@@ -1,8 +1,9 @@
 // Shutdown teams (Stage K): plans, teams and members; the Field Operator level. Staff read and write; every change is audited.
 import { supabase } from './supabase';
+import { openFrom, withOpenEnd } from './openEnd';
 import { dataChanged } from './changes';
 import type { Crew } from '@/core/roster';
-import { cancelMovement, fetchMovements, recordMovement } from './movements';
+import { fetchMovements } from './movements';
 import { V2_DEFAULTS } from '@/core/shutdown/v2';
 import { memberHoursOn, memberWorks, teamGaps, type TeamGap, type FoLevel, type SdDay, type SdKind, type SdMember, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
 
@@ -183,7 +184,7 @@ export async function fetchPersonSickLeave(employeeId: string): Promise<{ start:
   const { data, error } = await supabase.from('leave_records').select('start_date,end_date,absence_type_code')
     .eq('employee_id', employeeId).in('absence_type_code', ['sick_leave', 'long_sick']).in('status', ['planned', 'approved']).eq('in_current_plan', true).order('start_date', { ascending: false });
   if (error) throw error;
-  return (data as { start_date: string; end_date: string; absence_type_code: string }[]).map((r) => ({ start: r.start_date, end: r.end_date, long: r.absence_type_code === 'long_sick' }));
+  return (withOpenEnd(data as { start_date: string; end_date: string | null; absence_type_code: string }[])).map((r) => ({ start: r.start_date, end: r.end_date, long: r.absence_type_code === 'long_sick' }));
 }
 
 /** Save a member's own days (works / off, hours) for the given dates. */
@@ -248,10 +249,10 @@ export async function fetchFollowMovements(employeeIds: string[]): Promise<Map<s
 export async function setFollow(v: { member: SdMember; title: string; to: Crew | null; from: string | null; previous?: { id: string } | null; vr?: boolean }) {
   const { member: m, to } = v;
   if (v.vr) { await updateSdMember(m.id, { follow_crew: to }); return; }
-  if (v.previous) await cancelMovement(v.previous.id, to ? 'Instruction changed' : 'Instruction removed');
+  if (v.previous) { const { error } = await supabase.rpc('sd_follow_cancel', { p_movement: v.previous.id, p_reason: to ? 'Instruction changed' : 'Instruction removed' }); if (error) throw new Error(error.message); }
   if (to && v.from) {
     const last = new Date(Date.parse(m.start) - 864e5).toISOString().slice(0, 10);
-    if (v.from <= last) await recordMovement({ employee: m.employeeId, kind: 'temporary', to, start: v.from, end: last, reason: `${FOLLOW_MARK} · ${v.title}: follow ${to} shift, take off, then join the team` });
+    if (v.from <= last) { const { error } = await supabase.rpc('sd_follow_move', { p_member: m.id, p_to: to, p_start: v.from, p_end: last, p_reason: `${FOLLOW_MARK} · ${v.title}: follow ${to} shift, take off, then join the team` }); if (error) throw new Error(error.message); }
   }
   await updateSdMember(m.id, { follow_crew: to });
 }
@@ -317,10 +318,10 @@ export async function fetchIncompleteShutdowns(today: string): Promise<{ plan: S
     const ids = [...new Set(sd.members.map((m) => m.employeeId))];
     const { data, error } = ids.length
       ? await supabase.from('leave_records').select('employee_id,start_date,end_date').in('employee_id', ids).eq('in_current_plan', true).eq('oracle_status', 'approved')
-          .in('status', ['approved', 'planned']).lte('start_date', sd.plan.end).gte('end_date', sd.plan.start)
+          .in('status', ['approved', 'planned']).lte('start_date', sd.plan.end).or(openFrom(sd.plan.start))
       : { data: [], error: null };
     if (error) throw error;
-    const leave = data as { employee_id: string; start_date: string; end_date: string }[];
+    const leave = withOpenEnd(data as { employee_id: string; start_date: string; end_date: string | null }[]);
     const gaps = teamGaps(sd.plan, sd.teams, sd.members, sd.phases, (e, d) => leave.some((l) => l.employee_id === e && l.start_date <= d && d <= l.end_date));
     if (gaps.length) out.push({ plan: sd.plan, gaps });
   }

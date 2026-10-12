@@ -7,7 +7,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export const FUNCTIONS = ['shift-alerts', 'sd-plan-approve'];
+export const FUNCTIONS = ['shift-alerts', 'sd-plan-approve', 'request-gate'];
 const dirOf = (name) => resolve(root, 'supabase/functions', name);
 const dir = dirOf('shift-alerts');
 export const OUT = resolve(dir, 'index.ts');

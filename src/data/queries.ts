@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { openFrom, withOpenEnd } from './openEnd';
 import type { OracleStatus } from '@/core/oracle';
 import type { LeaveSpan } from '@/core/leave';
 import { addDaysIso } from '@/core/roster';
@@ -16,10 +17,10 @@ export async function fetchLeaveSpans(date: string): Promise<LeaveSpan[]> {
   const { data, error } = await supabase.from('leave_records')
     .select('employee_id,start_date,end_date,status,in_current_plan,oracle_status,absence_types(label,short_code)')
     .eq('in_current_plan', true).in('status', ['approved', 'planned'])
-    .lte('start_date', addDaysIso(date, 120)).gte('end_date', addDaysIso(date, -120));
+    .lte('start_date', addDaysIso(date, 120)).or(openFrom(addDaysIso(date, -120)));
   if (error) throw error;
   type R = { employee_id: string; start_date: string; end_date: string; status: string; in_current_plan: boolean; oracle_status: OracleStatus | null; absence_types: { label: string; short_code: string | null } | null };
-  return ((data ?? []) as unknown as R[]).map((l) => ({ employeeId: l.employee_id, start: l.start_date, end: l.end_date, status: l.status, inCurrentPlan: l.in_current_plan, typeLabel: l.absence_types?.label ?? null, typeShort: l.absence_types?.short_code ?? null, oracle: l.oracle_status }));
+  return (withOpenEnd(data as { end_date: string | null }[]) as unknown as R[]).map((l) => ({ employeeId: l.employee_id, start: l.start_date, end: l.end_date, status: l.status, inCurrentPlan: l.in_current_plan, typeLabel: l.absence_types?.label ?? null, typeShort: l.absence_types?.short_code ?? null, oracle: l.oracle_status }));
 }
 
 export async function fetchReference() {
@@ -51,7 +52,7 @@ export async function fetchExistingForPlanning(year: number): Promise<{ employee
   }));
   const [lv, ra, mv] = await Promise.all([
     supabase.from('leave_records').select('id,employee_id,start_date,end_date,source_kind,status,absence_type_code,review_status,in_original_plan,in_current_plan,hand_corrected')
-      .gte('end_date', `${year - 1}-12-01`).lte('start_date', `${year + 1}-01-31`),
+      .or(openFrom(`${year - 1}-12-01`)).lte('start_date', `${year + 1}-01-31`),
     supabase.from('employee_role_assignments').select('employee_id,effective_from,effective_to,crews(code)').limit(5000),
     supabase.from('crew_movements').select('employee_id,start_date,end_date,to_crew').eq('status', 'active').in('kind', ['temporary', 'placement'])
   ]);
@@ -63,7 +64,7 @@ export async function fetchExistingForPlanning(year: number): Promise<{ employee
     e.crew_moves = (mv.data as { employee_id: string; start_date: string; end_date: string | null; to_crew: string }[])
       .filter((m) => m.employee_id === e.id).map((m) => ({ start: m.start_date, end: m.end_date, crew: m.to_crew }));
   }
-  return { employees, leaves: (lv.data ?? []) as ExistingLeave[] };
+  return { employees, leaves: withOpenEnd(lv.data as { end_date: string | null }[]) as unknown as ExistingLeave[] };
 }
 
 /** Stage a plan as a batch + rows, then commit it server-side in one transaction. */

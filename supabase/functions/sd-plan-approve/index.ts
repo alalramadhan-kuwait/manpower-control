@@ -584,6 +584,65 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 var serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}").default;
 var supabase = createClient(Deno.env.get("SUPABASE_URL"), serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
+// src/data/oracleStats.ts
+async function fetchStatCodes() {
+  const { data, error } = await supabase.from("oracle_absence_codes").select("*").order("code");
+  if (error) throw error;
+  return data.map((c) => ({ code: c.code, label: c.label, countsAsSick: c.counts_as_sick, appType: c.app_type_code, verified: c.verified, source: c.source, note: c.note }));
+}
+async function fetchStats(employeeIds) {
+  const [s, v] = await Promise.all([
+    supabase.from("oracle_stat_snapshots").select("*").order("extracted_on", { ascending: false }).limit(500),
+    employeeIds ? supabase.from("oracle_stat_values").select("*").in("employee_id", employeeIds).limit(2e4) : supabase.from("oracle_stat_values").select("*").limit(2e4)
+  ]);
+  if (s.error) throw s.error;
+  if (v.error) throw v.error;
+  return {
+    snapshots: s.data.map((r) => ({ id: r.id, source: r.source_report, periodStart: r.period_start, periodEnd: r.period_end, extractedOn: r.extracted_on, codes: r.codes, employees: r.employees, importedAt: r.imported_at })),
+    values: v.data.map((r) => ({ snapshotId: r.snapshot_id, employeeId: r.employee_id, code: r.code, days: Number(r.days), occurrences: r.occurrences, status: r.status }))
+  };
+}
+
+// src/core/oracleStats/index.ts
+var span = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 864e5);
+var isTwelveMonths = (s) => span(s.periodStart, s.periodEnd) >= 364;
+var FRESH_DAYS = 45;
+function valueIn(s, values, employeeId, code) {
+  if (!s.employees.includes(employeeId) || !s.codes.includes(code)) return null;
+  const v = values.find((x) => x.snapshotId === s.id && x.employeeId === employeeId && x.code === code && x.status === "active");
+  if (v) return v.days;
+  if (values.some((x) => x.snapshotId === s.id && x.employeeId === employeeId && x.code === code)) return null;
+  return 0;
+}
+function sickRolling(employeeId, asOf, snapshots, values, codes) {
+  const sickCodes = codes.filter((c) => c.countsAsSick && c.verified).map((c) => c.code);
+  const mine = snapshots.filter((s2) => s2.employees.includes(employeeId) && sickCodes.some((c) => s2.codes.includes(c))).sort((a, b) => b.extractedOn.localeCompare(a.extractedOn) || b.importedAt.localeCompare(a.importedAt));
+  if (!mine.length) return { state: "missing", days: null, snapshot: null, reason: "No Oracle sick-leave figure for this person.", byCode: {} };
+  const rolling = mine.filter(isTwelveMonths);
+  if (!rolling.length) {
+    const s2 = mine[0];
+    return { state: "verification_needed", days: null, snapshot: s2, byCode: {}, reason: `Only a ${span(s2.periodStart, s2.periodEnd) + 1}-day figure (${s2.periodStart} – ${s2.periodEnd}), not a rolling 12 months.` };
+  }
+  const s = rolling[0];
+  const missing = sickCodes.filter((c) => !s.codes.includes(c));
+  if (missing.length) return { state: "verification_needed", days: null, snapshot: s, byCode: {}, reason: `The report does not cover ${missing.join(", ")}.` };
+  const byCode = {};
+  for (const c of sickCodes) byCode[c] = valueIn(s, values, employeeId, c) ?? 0;
+  const days3 = Object.values(byCode).reduce((a, b) => a + b, 0);
+  if (s.periodEnd < addDaysIso(asOf, -FRESH_DAYS) || s.extractedOn < addDaysIso(asOf, -FRESH_DAYS))
+    return { state: "outdated", days: days3, snapshot: s, byCode, reason: `Report taken ${s.extractedOn}: more than ${FRESH_DAYS} days old.` };
+  return { state: "verified", days: days3, snapshot: s, byCode, reason: `Rolling 12 months ${s.periodStart} – ${s.periodEnd} (Oracle, taken ${s.extractedOn}).` };
+}
+
+// src/core/leave/index.ts
+var OPEN_END = "9999-12-31";
+
+// src/data/openEnd.ts
+var openFrom = (from) => `end_date.is.null,end_date.gte.${from}`;
+function withOpenEnd(rows) {
+  return (rows ?? []).map((r) => ({ ...r, end_date: r.end_date ?? OPEN_END, open_end: r.end_date == null }));
+}
+
 // src/data/shutdown.ts
 var toPlan = (r) => ({
   rulesVersion: r.rules_version ?? 1,
@@ -820,7 +879,7 @@ function toMpAbsence(l) {
 async function fetchManpowerInputs(from, to) {
   const [dir, lv, ca, ra, mv, op, sd, tr] = await Promise.all([
     supabase.from("employee_directory_v").select("*").eq("in_unit12_scope", true).eq("is_active", true),
-    supabase.from("leave_records").select("id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,oracle_status,absence_types(label,short_code)").eq("in_current_plan", true).in("status", ["approved", "planned", "unresolved"]).lte("start_date", to).gte("end_date", from),
+    supabase.from("leave_records").select("id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,oracle_status,absence_types(label,short_code)").eq("in_current_plan", true).in("status", ["approved", "planned", "unresolved"]).lte("start_date", to).or(openFrom(from)),
     supabase.from("controller_assignments").select("*").eq("status", "active").lte("start_date", to).gte("end_date", from),
     supabase.from("employee_role_assignments").select("employee_id,effective_from,effective_to,positions(code),crews(code)").limit(5e3),
     supabase.from("crew_movements").select("employee_id,start_date,end_date,to_crew,kind").eq("status", "active").in("kind", ["temporary", "placement"]).lte("start_date", to).or(`end_date.is.null,end_date.gte.${from}`),
@@ -845,7 +904,7 @@ async function fetchManpowerInputs(from, to) {
     if (isCtl(m.employeeId)) sdAssignments.push({ id: `sd-${m.id}`, kind: "sd_team", employeeId: m.employeeId, crew: null, start: m.start, end: m.end, works: sdWorks.get(m.id)?.works, sdV2: sdWorks.get(m.id)?.sdV2 });
     else moves.set(m.employeeId, [...moves.get(m.employeeId) ?? [], { start: m.start, end: m.end, crew: SD_TEAM, kind: "sd" }]);
   }
-  const leaveAbsences = lv.data.map(toMpAbsence);
+  const leaveAbsences = withOpenEnd(lv.data).map(toMpAbsence);
   const people = dir.data.map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id) }));
   return { people, absences: leaveAbsences, absencesAll: [...leaveAbsences, ...tr.data.map(releaseAbsence)], assignments: [...ca.data.map(toMpAssignment), ...sdAssignments], plan: op.plan, rules: rulesByDate(op.plan) };
 }
@@ -879,6 +938,14 @@ async function fetchSickEntries(ids) {
   const { data, error } = await supabase.from("sick_checks").select("employee_id,as_of,days,entered_at").in("employee_id", ids).order("entered_at", { ascending: false });
   if (error) throw error;
   for (const r of data) if (!out.has(r.employee_id)) out.set(r.employee_id, { asOf: r.as_of, days: r.days });
+  const [codes, stats] = await Promise.all([fetchStatCodes(), fetchStats(ids)]);
+  const today = new Date(Date.now() + 3 * 36e5).toISOString().slice(0, 10);
+  for (const id of ids) {
+    const r = sickRolling(id, today, stats.snapshots, stats.values, codes);
+    if (r.days === null || !r.snapshot) continue;
+    const prev = out.get(id);
+    if (!prev || prev.asOf < r.snapshot.extractedOn) out.set(id, { asOf: r.snapshot.extractedOn, days: r.days });
+  }
   return out;
 }
 async function fetchExceptions(planId) {

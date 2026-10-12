@@ -1,5 +1,6 @@
 // Data access for the manpower engine: maps Supabase rows to the engine's input types.
 import { supabase } from './supabase';
+import { openFrom, withOpenEnd } from './openEnd';
 import { SD_TEAM, type MpAbsence, type MpAssignment, type MpCrewMove, type MpPerson, type MpRolePeriod, type Role, type Rules } from '@/core/manpower';
 import { fetchSdMembers, fetchSdWorkInfo } from './shutdown';
 import { releaseAbsence } from './releases';
@@ -49,7 +50,7 @@ export async function fetchManpowerInputs(from: string, to: string): Promise<Man
     supabase.from('leave_records')
       .select('id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,oracle_status,absence_types(label,short_code)')
       .eq('in_current_plan', true).in('status', ['approved', 'planned', 'unresolved'])
-      .lte('start_date', to).gte('end_date', from),
+      .lte('start_date', to).or(openFrom(from)),
     supabase.from('controller_assignments').select('*').eq('status', 'active').lte('start_date', to).gte('end_date', from),
     supabase.from('employee_role_assignments').select('employee_id,effective_from,effective_to,positions(code),crews(code)').limit(5000),
     supabase.from('crew_movements').select('employee_id,start_date,end_date,to_crew,kind').eq('status', 'active').in('kind', ['temporary', 'placement']).lte('start_date', to).or(`end_date.is.null,end_date.gte.${from}`),
@@ -76,7 +77,7 @@ export async function fetchManpowerInputs(from: string, to: string): Promise<Man
     if (isCtl(m.employeeId)) sdAssignments.push({ id: `sd-${m.id}`, kind: 'sd_team', employeeId: m.employeeId, crew: null, start: m.start, end: m.end, works: sdWorks.get(m.id)?.works, sdV2: sdWorks.get(m.id)?.sdV2 });
     else moves.set(m.employeeId, [...(moves.get(m.employeeId) ?? []), { start: m.start, end: m.end, crew: SD_TEAM, kind: 'sd' }]);
   }
-  const leaveAbsences = (lv.data as unknown as LeaveRow[]).map(toMpAbsence);
+  const leaveAbsences = (withOpenEnd(lv.data as { end_date: string | null }[]) as unknown as LeaveRow[]).map(toMpAbsence);
   const people = (dir.data as EmployeeDirectoryRow[]).map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id) }));
   return { people, absences: leaveAbsences, absencesAll: [...leaveAbsences, ...(tr.data as { id: string; employee_id: string; start_date: string; end_date: string }[]).map(releaseAbsence)], assignments: [...(ca.data as ControllerAssignment[]).map(toMpAssignment), ...sdAssignments], plan: op.plan, rules: rulesByDate(op.plan) };
 }

@@ -56,7 +56,7 @@ export function ShiftChanges() {
         const [kind, text] = m.kind === 'placement' ? ['VR placement', `Placed in ${m.to_crew} Shift ${rng(m.start_date, m.end_date)}${m.end_date ? '' : ', until moved'}`]
           : m.kind === 'permanent' ? ['Permanent move', `Moves to ${m.to_crew} Shift from ${shortDate(m.start_date)}`]
           : day ? ['Day duty', `Day duty ${rng(m.start_date, m.end_date)}`] : ['Temporary cover', `Covers ${m.to_crew} Shift ${rng(m.start_date, m.end_date)}`];
-        out.push({ key: `mv-${m.id}`, group: m.kind === 'placement' ? 'vr' : 'moves', link: m.kind === 'placement' ? '/controllers' : '/movements', plan: null, planId: null, kind, text, on: m.start_date, name: r.display_name, number: r.employee_number,
+        out.push({ key: `mv-${m.id}`, group: m.kind === 'placement' ? 'vr' : 'moves', link: m.kind === 'placement' ? '/controllers' : '/requests?view=moves', plan: null, planId: null, kind, text, on: m.start_date, name: r.display_name, number: r.employee_number,
           crew: r.crew_code, vr: r.position_code === 'vr_controller', sort: `${m.start_date}-${r.display_name}`, searchable: [r.display_name, r.official_name, r.employee_number, r.arabic_name] });
       }
       setItems(out);

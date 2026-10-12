@@ -158,7 +158,7 @@ function GapRow({ r, view }: { r: ProposedRotation; view: View }) {
           : <span className="block text-xs text-status-amber">No one free for the whole period</span>}
         {sug?.warnings.map((w) => <span key={w} className="block truncate text-[11px] text-status-amber">{w}</span>)}
       </span>
-      <Link to={`/controllers?assign=morning&from=${r.start}&to=${r.end}${sug ? `&who=${sug.employeeId}` : ''}`} className="shrink-0 rounded-lg bg-brand-700 px-3 py-1.5 text-xs font-medium text-white">Assign</Link>
+      <Link to={`/requests?view=entry&card=controller&kind=morning&from=${r.start}&to=${r.end}${sug ? `&who=${sug.employeeId}` : ''}`} className="shrink-0 rounded-lg bg-brand-700 px-3 py-1.5 text-xs font-medium text-white">Assign</Link>
     </div>
   );
 }

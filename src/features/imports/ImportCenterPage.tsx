@@ -43,7 +43,7 @@ export default function ImportCenterPage({ profile }: { profile: UserProfile }) 
 
   return (
     <div>
-      <PageHeader title="Excel import" info="The workbook is an input. Nothing is written until you confirm the preview." action={<Link to="/imports/history" className="text-sm text-brand-700">History</Link>} />
+      <PageHeader title="Excel import" info="The workbook is an input. Nothing is written until you confirm the preview." action={<Link to="/import?tab=history" className="text-sm text-brand-700">History</Link>} />
       <ol className="mb-4 flex flex-wrap gap-1 text-[11px] text-slate-500">
         {STEPS.map((s, i) => <li key={s} className="rounded-full bg-slate-100 px-2 py-0.5">{i + 1}. {s}</li>)}
       </ol>
@@ -83,9 +83,9 @@ export default function ImportCenterPage({ profile }: { profile: UserProfile }) 
           </div>
           <div className="mt-4 flex gap-2">
             <Button variant="secondary" className="flex-1" onClick={() => setStep({ kind: 'idle' })}>Import another file</Button>
-            <Link to={`/imports/${step.batchId}`} className="flex-1"><Button className="w-full">Open batch</Button></Link>
+            <Link to={`/import/${step.batchId}`} className="flex-1"><Button className="w-full">Open batch</Button></Link>
           </div>
-          {(step.counts.review ?? 0) > 0 && <p className="mt-3 text-xs text-slate-600">Some rows need a decision. Open <Link className="text-brand-700 underline" to="/review">Data Quality Review</Link>.</p>}
+          {(step.counts.review ?? 0) > 0 && <p className="mt-3 text-xs text-slate-600">Some rows need a decision. Open <Link className="text-brand-700 underline" to="/data-quality?tab=issues">Data Quality Review</Link>.</p>}
         </Card>
       )}
     </div>

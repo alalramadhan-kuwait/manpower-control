@@ -1,4 +1,4 @@
-import { cancelLeave, fetchLeavePlan, saveLeave } from './leave';
+import { fetchLeavePlan } from './leave';
 import { dataChanged } from './changes';
 import { supabase } from './supabase';
 import { fetchAllSdMembers, fetchSdPlans, fetchSickTotals } from './shutdown';
@@ -60,8 +60,6 @@ export async function applyPvBlocks(v: { employeeId: string; year: number; draft
     if (error) throw plain(error);
     return;
   }
-  const key = (b: { start: string; end: string }) => `${b.start}|${b.end}`;
-  const want = new Set(v.blocks.map(key)), have = new Set(v.existing.map(key));
-  for (const e of v.existing) if (!want.has(key(e))) await cancelLeave(e.id, `PV ${v.year} plan changed`);
-  for (const b of v.blocks) if (!have.has(key(b))) await saveLeave({ record: null, employee: v.employeeId, type: 'annual_leave_planned', start: b.start, end: b.end, note: `PV ${v.year}` });
+  // a published plan is never edited here: each change is a PV reschedule (or new leave) in Requests → Entry
+  throw new Error(`The ${v.year} PV plan is published: change it through Requests → Entry (PV reschedule), so the approval and history are kept.`);
 }

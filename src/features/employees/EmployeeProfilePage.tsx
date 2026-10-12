@@ -9,8 +9,13 @@ import type { AbsenceType, AuditEntry, Crew, EmployeeDirectoryRow, LeaveRecord, 
 import { BottomSheet, Button, Card, Chip, ErrorBox, Field, Row, Spinner, fmtDate, qualificationLabel, qualificationTone, cx } from '@/ui/components';
 import { CrewBadge, CrewTag, isCrew, DayDutyBadge } from '@/ui/crew';
 import { OnLeaveChip, localToday, shortDate } from '@/ui/leave';
-import { splitLeave, type LeaveBlock, type LeaveSpan } from '@/core/leave';
-import { LeaveSheet, changeLabel, type LeaveTarget } from '@/features/leave/LeaveSheet';
+import { isOpenEnd, splitLeave, type LeaveBlock, type LeaveSpan } from '@/core/leave';
+import { changeLabel } from '@/features/leave/LeaveSheet';
+import { Notes } from './Notes';
+import { PersonStats } from './PersonStats';
+import { t } from '@/i18n';
+import { withOpenEnd } from '@/data/openEnd';
+import { SHIFT_LABEL, dutyFor, stateOf } from '@/core/roster';
 import { MovementSheet, type MoveTarget } from '@/features/movements/MovementSheet';
 import { fetchMovements, type CrewMovement } from '@/data/movements';
 import { fetchAuditLookups } from '@/data/audit';
@@ -32,12 +37,16 @@ interface Loaded {
   positions: Position[]; crews: Crew[]; absenceTypes: AbsenceType[];
 }
 
-export default function EmployeeProfilePage({ profile }: { profile: UserProfile }) {
-  const { id } = useParams();
+/** The person: compact on top (who, crew, leave now, notes), everything else on demand. Read only, except notes; with
+ *  `edit` (Data quality → Employee records) the master data, role and qualifications are corrected here. */
+export default function EmployeeProfilePage({ profile, editId }: { profile: UserProfile; editId?: string }) {
+  const params = useParams();
+  const id = editId ?? params.id;
+  const edit = !!editId;
+  const isHead = profile.role_code === 'section_head';
   const [data, setData] = useState<Loaded | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [sheet, setSheet] = useState<null | { kind: 'qual'; code: QualificationCode } | { kind: 'basics' } | { kind: 'role' }>(null);
-  const [leaveSheet, setLeaveSheet] = useState<LeaveTarget | null>(null);
   const [moveSheet, setMoveSheet] = useState<MoveTarget | null>(null);
   const [moves, setMoves] = useState<CrewMovement[]>([]);
   const [flash, setFlash] = useState<string | null>(null);
@@ -58,7 +67,7 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
       fetchReference()
     ]);
     const err = [e, q, r, l, c, p, s, a].find((x) => x.error)?.error; if (err) throw err;
-    setData({ emp: e.data as EmployeeDirectoryRow, quals: q.data as Qualification[], roles: r.data as RoleAssignment[], leaves: l.data as LeaveRecord[], changes: c.data as LeavePlanChange[], perf: p.data as Performance[], sick: s.data as SickTotal[], audit: a.data as AuditEntry[], ...ref });
+    setData({ emp: e.data as EmployeeDirectoryRow, quals: q.data as Qualification[], roles: r.data as RoleAssignment[], leaves: withOpenEnd(l.data as LeaveRecord[]) as LeaveRecord[], changes: c.data as LeavePlanChange[], perf: p.data as Performance[], sick: s.data as SickTotal[], audit: a.data as AuditEntry[], ...ref });
   }, [id]);
   useEffect(() => { load().catch(setError); }, [load]);
   useEffect(() => { if (id) fetchMovements(id).then(setMoves).catch(() => setMoves([])); }, [id, data]);
@@ -71,119 +80,132 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
   const leaveSplit = splitLeave(today, data.leaves.map((l) => ({ employeeId: l.employee_id, start: l.start_date, end: l.end_date, status: l.status, inCurrentPlan: l.in_current_plan, typeLabel: typeOf(l.absence_type_code)?.label ?? null, typeShort: typeOf(l.absence_type_code)?.short_code ?? null, rec: l })), isCrew(emp.crew_code) ? emp.crew_code : null);
   const leaveNow = leaveSplit.current;
   const awaitingReview = data.leaves.filter((l) => l.status === 'unresolved' && l.in_current_plan);
-  const currentRecord = data.leaves.find((l) => l.in_current_plan && (l.status === 'approved' || l.status === 'planned') && l.start_date <= today && today <= l.end_date) ?? null;
+  const currentRecord = data.leaves.find((l) => l.in_current_plan && (l.status === 'approved' || l.status === 'planned') && l.start_date <= today && (l.end_date === null || today <= l.end_date)) ?? null;
   const originalLeaves = data.leaves.filter((l) => l.in_original_plan);
   const currentQual = (c: QualificationCode) => data.quals.find((q) => q.qualification === c && !q.effective_to);
+  const shiftToday = isCrew(emp.crew_code) ? t(SHIFT_LABEL[stateOf(dutyFor(today, emp.crew_code))]) : null;
+  const statsCount = data.sick.length;
 
+  const entry = (card: string, extra = '') => `/requests?view=entry&card=${card}&emp=${emp.id}${extra}`;
+  const open = leaveSplit.current && isOpenEnd(leaveSplit.current.until);
   return (
-    <div>
-      <Link to="/employees" className="mb-3 inline-flex items-center gap-1 text-sm text-brand-700"><ArrowLeft className="h-4 w-4" /> Employees</Link>
+    <div className="lg:max-w-3xl">
+      {!edit && <Link to="/employees" className="mb-3 inline-flex min-h-10 items-center gap-1 text-sm text-brand-700"><ArrowLeft className="h-4 w-4 rtl:rotate-180" /> {t('Employees')}</Link>}
       <Card className="mb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-xl font-semibold text-brand-800">{emp.display_name}</h1>
             {emp.official_name !== emp.display_name && <div className="text-sm text-slate-600">{emp.official_name}</div>}
             {emp.arabic_name && <div dir="rtl" lang="ar" className="text-sm text-slate-600">{emp.arabic_name}</div>}
-            <div className="mt-1 text-sm text-slate-500">Employee No. <span className="font-mono font-medium text-slate-700">{emp.employee_number}</span></div>
+            <div className="mt-1 text-sm text-slate-500">{t('Employee No.')} <span className="font-mono font-medium text-slate-700">{emp.employee_number}</span></div>
           </div>
-          <Button variant="ghost" className="min-h-9 px-2" onClick={() => setSheet({ kind: 'basics' })} aria-label="Edit basics"><Pencil className="h-4 w-4" /></Button>
+          {edit && <Button variant="ghost" className="min-h-10 px-2" onClick={() => setSheet({ kind: 'basics' })} aria-label={t('Edit basics')}><Pencil className="h-4 w-4" /></Button>}
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          <Chip tone="blue">{emp.position_label ?? 'No role assigned'}</Chip>
+          <Chip tone="blue">{emp.position_label ?? t('No role assigned')}</Chip>
           {leaveNow && <OnLeaveChip leave={leaveNow} />}
-          {isCrew(emp.crew_code) && <span className="inline-flex items-center rounded-full bg-white py-0.5 pl-0.5 pr-2.5 text-xs font-semibold text-slate-800 ring-1 ring-slate-200"><CrewTag crew={emp.crew_code} /></span>}
-          <Chip tone={emp.employment_type_source === 'confirmed' ? 'neutral' : 'amber'}>{emp.employment_type === 'knpc' ? 'KNPC' : 'Contractor'}{emp.employment_type_source === 'inferred' ? ' (inferred)' : ''}</Chip>
-          {emp.grade && <Chip>Grade {emp.grade}</Chip>}
-          {(emp.position_code === 'field_operator' || emp.position_code === 'panel_operator') && emp.fo_level && <Link to="/review/fo-levels"><Chip tone={emp.fo_level === 'below' ? 'amber' : 'blue'}>{({ senior: 'Senior FO', good: 'Good FO', new: 'New FO', below: 'Below-average FO' } as const)[emp.fo_level]}</Chip></Link>}
-          {emp.position_code === 'panel_operator' && (emp.can_cover_field || (emp.grade ?? 0) >= 13) && <Chip tone="blue">Can cover Field</Chip>}
-          {!emp.is_active && <Chip tone="red">Inactive</Chip>}
+          {isCrew(emp.crew_code) && <span className="inline-flex items-center rounded-full bg-white py-0.5 pe-2.5 ps-0.5 text-xs font-semibold text-slate-800 ring-1 ring-slate-200"><CrewTag crew={emp.crew_code} /></span>}
+          {shiftToday && <Chip>{t('Today')}: {shiftToday}</Chip>}
+          <Chip tone={emp.employment_type_source === 'confirmed' ? 'neutral' : 'amber'}>{emp.employment_type === 'knpc' ? 'KNPC' : t('Contractor')}{emp.employment_type_source === 'inferred' ? ` (${t('inferred')})` : ''}</Chip>
+          {emp.grade && <Chip>{t('Grade')} {emp.grade}</Chip>}
+          {(emp.position_code === 'field_operator' || emp.position_code === 'panel_operator') && emp.fo_level && <Chip tone={emp.fo_level === 'below' ? 'amber' : 'blue'}>{t(({ senior: 'Senior FO', good: 'Good FO', new: 'New FO', below: 'Below-average FO' } as const)[emp.fo_level])}</Chip>}
+          {emp.position_code === 'panel_operator' && (emp.can_cover_field || (emp.grade ?? 0) >= 13) && <Chip tone="blue">{t('Can cover Field')}</Chip>}
+          {!emp.is_active && <Chip tone="red">{t('Inactive')}</Chip>}
         </div>
+        {!edit && <div className="mt-3 grid grid-cols-2 gap-2">
+          <Link to={entry('leave')} className="flex min-h-11 items-center justify-center rounded-xl bg-brand-700 px-3 text-sm font-medium text-white">{t('New entry for this person')}</Link>
+          <Link to={entry('shift')} className="flex min-h-11 items-center justify-center rounded-xl bg-white px-3 text-sm font-medium text-brand-800 ring-1 ring-slate-300">{t('Shift change / cover')}</Link>
+        </div>}
       </Card>
 
       {flash && <div role="status" className="mb-3 rounded-xl bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{flash}</div>}
       {leaveNow && (
-        <Section title="Current leave / absence" action={currentRecord && <Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => setLeaveSheet({ kind: 'edit', record: currentRecord })}>Correct</Button>}>
+        <Section title="Current leave / absence" action={<Link to={entry('leave')} className="flex min-h-9 items-center px-2 text-xs font-medium text-brand-700">{open ? t('Extend / confirm return') : t('Change')}</Link>}>
           <div className="flex items-center justify-between gap-3">
             <LeaveCode code={leaveNow.typeShort} />
-            <span className="text-lg font-semibold text-slate-900">Return {shortDate(leaveNow.returnOn)}</span>
+            <span className="text-lg font-semibold text-slate-900">{open ? t('Return not confirmed') : `${t('Return')} ${shortDate(leaveNow.returnOn)}`}</span>
           </div>
-          <div className="mt-1 text-xs text-slate-500">{leaveNow.typeLabel ?? 'Leave'} · {dateRange(leaveNow.start, leaveNow.until, today)} · {dayCount(leaveNow.start, leaveNow.until)}</div>
+          <div className="mt-1 text-xs text-slate-500">{leaveNow.typeLabel ?? t('Leave')} · {open ? `${t('since')} ${shortDate(leaveNow.start)} · ${t('unavailable until the return is confirmed')}` : `${dateRange(leaveNow.start, leaveNow.until, today)} · ${dayCount(leaveNow.start, leaveNow.until)}`}</div>
+          {currentRecord?.estimated_return && <div className="mt-1 text-xs text-slate-500">{t('Estimated return (provisional)')}: {shortDate(currentRecord.estimated_return)}</div>}
+          {currentRecord?.next_review && <div className="text-xs text-slate-500">{t('Next review')}: {shortDate(currentRecord.next_review)}</div>}
         </Section>
       )}
+      {!leaveNow && leaveSplit.upcoming[0] && (
+        <Section title="Next leave"><div className="text-sm"><LeaveCode code={leaveSplit.upcoming[0].record.typeShort} /> {dateRange(leaveSplit.upcoming[0].start, leaveSplit.upcoming[0].end, today)} · {t('Return')} {shortDate(leaveSplit.upcoming[0].returnOn)}</div></Section>
+      )}
 
-      <Section title={`Upcoming leave${leaveSplit.upcoming.length ? ` (${leaveSplit.upcoming.length})` : ''}`} action={<Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => setLeaveSheet({ kind: 'add', employeeId: emp.id })}>+ Add leave</Button>}>
-        {leaveSplit.upcoming.length === 0 && <p className="text-sm text-slate-500">None</p>}
-        <ul className="divide-y divide-slate-100">{leaveSplit.upcoming.map((b) => <BlockRow key={b.record.rec.id} b={b} today={today} showReturn onEdit={() => setLeaveSheet({ kind: 'edit', record: b.record.rec })} />)}</ul>
-      </Section>
+      <Section title="Notes"><Notes employeeId={emp.id} profile={profile} limit={3} /></Section>
+
+      <Collapsible title="Oracle statistics" count={statsCount}><PersonStats employeeId={emp.id} sick={data.sick} /></Collapsible>
+
+      <Collapsible title="Upcoming leave" count={leaveSplit.upcoming.length}>
+        {leaveSplit.upcoming.length === 0 && <p className="text-sm text-slate-500">{t('None')}</p>}
+        <ul className="divide-y divide-slate-100">{leaveSplit.upcoming.map((b) => <BlockRow key={b.record.rec.id} b={b} today={today} showReturn to={b.record.rec.absence_type_code?.startsWith('annual_leave_') && b.record.rec.absence_type_code !== 'annual_leave_unscheduled' ? entry('pv', `&leave=${b.start}`) : entry('leave')} />)}</ul>
+      </Collapsible>
 
       <Collapsible title="Past leave history" count={leaveSplit.past.length}>
-        {leaveSplit.past.length === 0 && <p className="text-sm text-slate-500">None</p>}
-        <ul className="divide-y divide-slate-100">{leaveSplit.past.map((b) => <BlockRow key={b.record.rec.id} b={b} today={today} onEdit={() => setLeaveSheet({ kind: 'edit', record: b.record.rec })} />)}</ul>
+        {leaveSplit.past.length === 0 && <p className="text-sm text-slate-500">{t('None')}</p>}
+        <ul className="divide-y divide-slate-100">{leaveSplit.past.map((b) => <BlockRow key={b.record.rec.id} b={b} today={today} />)}</ul>
       </Collapsible>
 
       {awaitingReview.length > 0 && (
-        <Section title={`Absences awaiting review (${awaitingReview.length})`}>
+        <Section title={`${t('Absences awaiting review')} (${awaitingReview.length})`}>
           <ul className="divide-y divide-slate-100">{awaitingReview.map((l) => <LeaveLine key={l.id} l={l} types={data.absenceTypes} />)}</ul>
         </Section>
       )}
 
-      <Section title="Qualifications" action={<span className="text-xs text-slate-500">Tap to edit</span>}>
+      <Collapsible title="Qualifications" count={data.quals.filter((q) => !q.effective_to).length} startOpen={edit}>
+        {edit && <p className="mb-1 text-xs text-slate-500">{t('Tap to edit')}</p>}
         {QUALS.filter((q) => q.code !== 'acting_controller' || emp.position_category === 'panel' || emp.position_category === 'controller' || currentQual('acting_controller')).map((q) => {
           const cur = currentQual(q.code);
           return (
-            <button key={q.code} type="button" onClick={() => setSheet({ kind: 'qual', code: q.code })} className="flex w-full items-center justify-between gap-3 py-2.5 text-left">
-              <span><span className="block text-sm font-medium text-slate-800">{q.label}</span><span className="block text-xs text-slate-500">{cur ? `${cur.source === 'manual' ? 'Set manually' : 'Imported evidence'} · ${fmtDate(cur.effective_from)}${cur.evidence ? ` · ${cur.evidence}` : ''}` : 'Not recorded'}</span></span>
+            <button key={q.code} type="button" disabled={!edit} onClick={() => setSheet({ kind: 'qual', code: q.code })} className="flex min-h-11 w-full items-center justify-between gap-3 py-2.5 text-start disabled:cursor-default">
+              <span><span className="block text-sm font-medium text-slate-800">{t(q.label)}</span><span className="block text-xs text-slate-500">{cur ? `${cur.source === 'manual' ? t('Set manually') : t('Imported evidence')} · ${fmtDate(cur.effective_from)}${cur.evidence ? ` · ${cur.evidence}` : ''}` : t('Not recorded')}</span></span>
               <Chip tone={qualificationTone(cur?.status)}>{qualificationLabel(cur?.status)}</Chip>
             </button>
           );
         })}
-      </Section>
+      </Collapsible>
 
-      <Section title="Operations" action={<Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => setSheet({ kind: 'role' })}>Correct role / crew</Button>}>
-        <Row label="Operational role" value={emp.position_label} />
-        <Row label="Permanent crew" value={isCrew(emp.crew_code) ? <CrewTag crew={emp.crew_code} /> : (emp.position_code === 'vr_controller' || emp.position_code === 'morning_controller' ? 'Not crew-bound' : null)} />
-        <Row label="Since" value={emp.role_effective_from ? `${fmtDate(emp.role_effective_from)}${emp.role_source === 'manual' ? ' · set manually' : ''}` : null} />
-        {emp.role_note ? <Row label="Note" value={emp.role_note} /> : null}
-        <Row label="Section" value={emp.section_name} />
-      </Section>
+      <Collapsible title="Operations" count={1} startOpen={edit}>
+        {edit && <div className="mb-1 text-end"><Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => setSheet({ kind: 'role' })}>{t('Correct role / crew')}</Button></div>}
+        <Row label={t('Operational role')} value={emp.position_label} />
+        <Row label={t('Permanent crew')} value={isCrew(emp.crew_code) ? <CrewTag crew={emp.crew_code} /> : (emp.position_code === 'vr_controller' || emp.position_code === 'morning_controller' ? t('Not crew-bound') : null)} />
+        <Row label={t('Since')} value={emp.role_effective_from ? `${fmtDate(emp.role_effective_from)}${emp.role_source === 'manual' ? ` · ${t('set manually')}` : ''}` : null} />
+        {emp.role_note ? <Row label={t('Note')} value={emp.role_note} /> : null}
+        <Row label={t('Section')} value={emp.section_name} />
+      </Collapsible>
 
-      <Section title="KNPC master data">
-        {emp.employment_type === 'contractor' && <p className="mb-2 text-xs text-slate-500">Contractor · no KNPC HR data</p>}
-        <Row label="Grade" value={emp.grade} />
-        <Row label="Master position" value={emp.master_position} />
-        <Row label="Cost center" value={emp.cost_center} />
-        <Row label="Join date" value={fmtDate(emp.join_date)} />
-        <Row label="Last promotion" value={fmtDate(emp.last_promotion_date)} />
-        <Row label="Position start" value={fmtDate(emp.position_start_date)} />
-        <Row label="Service years" value={emp.service_years} />
-        <Row label="Years in grade" value={emp.years_in_grade} />
-        <Row label="Education" value={emp.education} />
-      </Section>
-
-      <Section title="Performance and sick leave (as reported)">
-        {data.perf.length === 0 && data.sick.length === 0 && <p className="text-sm text-slate-500">Nothing imported yet.</p>}
-        {data.perf.map((p) => <Row key={p.id} label={`Performance ${p.year}`} value={<>{p.perf_level ?? '—'}{p.increment_pct != null ? ` · increment ${p.increment_pct}%` : ''}{p.warnings ? ' · warning on file' : ''}</>} />)}
-        {data.sick.map((s) => <Row key={s.id} label={`Sick leave ${s.year}`} value={`${s.days} days (as of ${fmtDate(s.reported_as_of)})`} />)}
-      </Section>
+      <Collapsible title="KNPC master data" count={1}>
+        {emp.employment_type === 'contractor' && <p className="mb-2 text-xs text-slate-500">{t('Contractor · no KNPC HR data')}</p>}
+        <Row label={t('Grade')} value={emp.grade} />
+        <Row label={t('Master position')} value={emp.master_position} />
+        <Row label={t('Cost center')} value={emp.cost_center} />
+        <Row label={t('Join date')} value={fmtDate(emp.join_date)} />
+        <Row label={t('Last promotion')} value={fmtDate(emp.last_promotion_date)} />
+        <Row label={t('Position start')} value={fmtDate(emp.position_start_date)} />
+        <Row label={t('Service years')} value={emp.service_years} />
+        <Row label={t('Years in grade')} value={emp.years_in_grade} />
+        <Row label={t('Education')} value={emp.education} />
+        {data.perf.map((p) => <Row key={p.id} label={`${t('Performance')} ${p.year}`} value={<>{p.perf_level ?? '—'}{p.increment_pct != null ? ` · ${t('increment')} ${p.increment_pct}%` : ''}{p.warnings ? ` · ${t('warning on file')}` : ''}</>} />)}
+        {!edit && <p className="mt-2 text-[11px] text-slate-500">{t('Master data is corrected in More → Data quality.')}</p>}
+      </Collapsible>
 
       {(emp.position_code === 'field_operator' || emp.position_code === 'panel_operator' || emp.position_code === 'controller' || emp.position_code === 'vr_controller') && (
-        <Section title="Shutdown history"><PersonHistory employeeId={emp.id} crew={isCrew(emp.crew_code) ? emp.crew_code : null} showSick={false} /></Section>
+        <Collapsible title="Shutdown history" count={1}><PersonHistory employeeId={emp.id} crew={isCrew(emp.crew_code) ? emp.crew_code : null} showSick={false} /></Collapsible>
       )}
 
       <Collapsible title="Original plan (PV Scheduled)" count={originalLeaves.length}>
-        <p className="mb-1 text-xs text-slate-500">As first approved · history only</p>
-        {originalLeaves.length === 0 && <p className="text-sm text-slate-500">None</p>}
+        <p className="mb-1 text-xs text-slate-500">{t('As first approved · history only')}</p>
         <ul className="divide-y divide-slate-100">{originalLeaves.map((l) => <LeaveLine key={l.id} l={l} types={data.absenceTypes} />)}</ul>
       </Collapsible>
 
       <Collapsible title="Leave versions (moved or corrected)" count={leaveChains(data.leaves).length}>
-        <p className="mb-1 text-xs text-slate-500">Dates are never edited: each change is a new version · oldest first</p>
-        {leaveChains(data.leaves).length === 0 && <p className="text-sm text-slate-500">None</p>}
+        <p className="mb-1 text-xs text-slate-500">{t('Dates are never edited: each change is a new version · oldest first')}</p>
         <ul className="divide-y divide-slate-100">{leaveChains(data.leaves).map((c) => <li key={c[0].root_id} className="py-2"><VersionList versions={c} /></li>)}</ul>
       </Collapsible>
 
       <Collapsible title="Leave change history" count={data.changes.length}>
-        {data.changes.length === 0 && <p className="text-sm text-slate-500">No changes recorded.</p>}
         <ul className="divide-y divide-slate-100 text-sm">
           {data.changes.map((c) => (
             <li key={c.id} className="py-2">
@@ -192,45 +214,43 @@ export default function EmployeeProfilePage({ profile }: { profile: UserProfile 
                 {c.from_start ? `${fmtDate(c.from_start)} → ${fmtDate(c.from_end)}` : ''}{c.from_start && c.to_start ? '  ⇒  ' : ''}{c.to_start ? `${fmtDate(c.to_start)} → ${fmtDate(c.to_end)}` : ''}
               </div>
               {c.note ? <div className="text-xs text-slate-500">{c.note}</div> : null}
-              {c.evidence ? <div className="text-xs text-slate-400">Evidence: {c.evidence}</div> : null}
+              {c.evidence ? <div className="text-xs text-slate-400">{t('Evidence')}: {c.evidence}</div> : null}
             </li>
           ))}
         </ul>
       </Collapsible>
 
-      <Section title="Shift movements" action={isCrew(emp.crew_code) ? <Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => setMoveSheet({ kind: 'new', employeeId: emp.id })}>+ New movement</Button> : undefined}>
-        {moves.length === 0 ? <p className="text-sm text-slate-500">None</p> : (
-          <ul className="divide-y divide-slate-100 text-sm">
-            {moves.map((m) => (
-              <li key={m.id} className="flex items-center justify-between gap-2 py-2">
-                <span className="min-w-0">
-                  <span className="flex items-center gap-1.5 font-medium text-slate-800">{m.from_crew && <CrewTag crew={m.from_crew} suffix="" />} → {m.to_crew === 'DAY' ? <span className="inline-flex items-center gap-1.5"><DayDutyBadge size="sm" />Day</span> : <CrewTag crew={m.to_crew} suffix="" />} <span className="font-normal text-slate-500">· {m.kind === 'permanent' ? 'permanent' : m.to_crew === 'DAY' ? 'day duty' : 'temporary cover'}{m.status === 'cancelled' ? ' · cancelled' : ''}</span></span>
-                  <span className="block text-xs text-slate-500">{fmtDate(m.start_date)} → {m.kind === 'permanent' ? 'onward' : m.end_date ? fmtDate(m.end_date) : 'until further notice'}{m.reason ? ` · ${m.reason}` : ''}</span>
-                </span>
-                {(m.kind === 'temporary' || m.kind === 'placement') && m.status === 'active' && <span className="flex shrink-0 gap-2 text-xs font-medium"><button type="button" className="text-brand-700" onClick={() => setMoveSheet({ kind: 'end', movement: m })}>End</button><button type="button" className="text-status-red" onClick={() => setMoveSheet({ kind: 'cancel', movement: m })}>Cancel</button></span>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
-
-      <Section title="Role history">
+      <Collapsible title="Shift movements" count={moves.length}>
         <ul className="divide-y divide-slate-100 text-sm">
-          {data.roles.map((r) => <li key={r.id} className="flex justify-between py-2"><span className="inline-flex flex-wrap items-center gap-1.5">{r.positions?.label ?? r.position_id}{isCrew(r.crews?.code) && <><span className="text-slate-400">·</span><CrewTag crew={r.crews?.code} /></>}</span><span className="text-slate-500">{fmtDate(r.effective_from)} → {r.effective_to ? fmtDate(r.effective_to) : 'current'}</span></li>)}
+          {moves.map((m) => (
+            <li key={m.id} className="flex items-center justify-between gap-2 py-2">
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 font-medium text-slate-800">{m.from_crew && <CrewTag crew={m.from_crew} suffix="" />} → {m.to_crew === 'DAY' ? <span className="inline-flex items-center gap-1.5"><DayDutyBadge size="sm" />{t('Day')}</span> : <CrewTag crew={m.to_crew} suffix="" />} <span className="font-normal text-slate-500">· {t(m.kind === 'permanent' ? 'permanent' : m.to_crew === 'DAY' ? 'day duty' : 'temporary cover')}{m.status === 'cancelled' ? ` · ${t('cancelled')}` : ''}</span></span>
+                <span className="block text-xs text-slate-500">{fmtDate(m.start_date)} → {m.kind === 'permanent' ? t('onward') : m.end_date ? fmtDate(m.end_date) : t('until further notice')}{m.reason ? ` · ${m.reason}` : ''}</span>
+              </span>
+              {isHead && (m.kind === 'temporary' || m.kind === 'placement') && m.status === 'active' && <span className="flex shrink-0 gap-2 text-xs font-medium"><button type="button" className="min-h-9 text-brand-700" onClick={() => setMoveSheet({ kind: 'end', movement: m })}>{t('End')}</button><button type="button" className="min-h-9 text-status-red" onClick={() => setMoveSheet({ kind: 'cancel', movement: m })}>{t('Cancel')}</button></span>}
+            </li>
+          ))}
         </ul>
-      </Section>
+      </Collapsible>
 
-      <Section title="Change history" action={<Link to={`/audit?employee=${emp.id}`} className="text-xs font-medium text-brand-700">See all</Link>}>
-        {data.audit.length === 0 ? <p className="text-sm text-slate-500">No changes recorded.</p> : !auditLk ? <p className="text-xs text-slate-500">Loading…</p> : (
+      <Collapsible title="Role history" count={data.roles.length}>
+        <ul className="divide-y divide-slate-100 text-sm">
+          {data.roles.map((r) => <li key={r.id} className="flex justify-between py-2"><span className="inline-flex flex-wrap items-center gap-1.5">{r.positions?.label ?? r.position_id}{isCrew(r.crews?.code) && <><span className="text-slate-400">·</span><CrewTag crew={r.crews?.code} /></>}</span><span className="text-slate-500">{fmtDate(r.effective_from)} → {r.effective_to ? fmtDate(r.effective_to) : t('current')}</span></li>)}
+        </ul>
+      </Collapsible>
+
+      <Collapsible title="Change history" count={data.audit.length}>
+        <div className="mb-1 text-end"><Link to={`/admin?tab=audit&employee=${emp.id}`} className="text-xs font-medium text-brand-700">{t('See all')}</Link></div>
+        {data.audit.length === 0 ? <p className="text-sm text-slate-500">{t('No changes recorded.')}</p> : !auditLk ? <p className="text-xs text-slate-500">…</p> : (
           <div className="-mx-3 divide-y divide-slate-100">{data.audit.map((a) => <AuditLine key={a.id} e={describe(a as unknown as AuditRow, auditLk)} showPerson={false} />)}</div>
         )}
-      </Section>
+      </Collapsible>
 
-      {sheet?.kind === 'qual' && <QualificationSheet emp={emp} code={sheet.code} current={currentQual(sheet.code)} actor={profile} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load().catch(setError); }} />}
-      {sheet?.kind === 'basics' && <BasicsSheet emp={emp} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load().catch(setError); }} />}
+      {edit && sheet?.kind === 'qual' && <QualificationSheet emp={emp} code={sheet.code} current={currentQual(sheet.code)} actor={profile} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load().catch(setError); }} />}
+      {edit && sheet?.kind === 'basics' && <BasicsSheet emp={emp} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load().catch(setError); }} />}
       {moveSheet && <MovementSheet target={moveSheet} people={[{ id: emp.id, name: emp.display_name, crew: isCrew(emp.crew_code) ? emp.crew_code : null }]} onClose={() => setMoveSheet(null)} onDone={(m) => { setMoveSheet(null); setFlash(m); load().catch(setError); }} />}
-      {leaveSheet && <LeaveSheet target={leaveSheet} people={[{ id: emp.id, name: emp.display_name, crew: isCrew(emp.crew_code) ? emp.crew_code : null }]} types={data.absenceTypes} onClose={() => setLeaveSheet(null)} onDone={(m) => { setLeaveSheet(null); setFlash(m); load().catch(setError); }} />}
-      {sheet?.kind === 'role' && <RoleSheet emp={emp} positions={data.positions} crews={data.crews} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load().catch(setError); }} />}
+      {edit && sheet?.kind === 'role' && <RoleSheet emp={emp} positions={data.positions} crews={data.crews} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load().catch(setError); }} />}
     </div>
   );
 }
@@ -257,30 +277,29 @@ function LeaveCode({ code }: { code: string | null | undefined }) {
 }
 
 type ProfileSpan = LeaveSpan & { rec: LeaveRecord };
-function BlockRow({ b, today, showReturn, onEdit }: { b: LeaveBlock<ProfileSpan>; today: string; showReturn?: boolean; onEdit: () => void }) {
-  return (
-    <li>
-      <button type="button" onClick={onEdit} className="flex w-full items-center justify-between gap-3 py-2 text-left text-sm active:bg-slate-50">
-        <div className="min-w-0">
-          <div className="font-medium text-slate-800"><LeaveCode code={b.record.typeShort} /> {dateRange(b.start, b.end, today)}{b.record.rec.dates_estimated && <> <EstimatedTag /></>}</div>
-          <div className="text-xs text-slate-500">{b.record.typeLabel ?? 'Leave'} · {dayCount(b.start, b.end)}{b.record.rec.hand_corrected ? ' · by hand' : ''}</div>
-        </div>
-        <span className="flex shrink-0 items-center gap-2">
-          {showReturn && <span className="text-xs font-medium text-slate-600">Return {shortDate(b.returnOn)}</span>}
-          <Pencil className="h-3.5 w-3.5 text-slate-400" />
+function BlockRow({ b, today, showReturn, to }: { b: LeaveBlock<ProfileSpan>; today: string; showReturn?: boolean; to?: string }) {
+  const inner = (
+      <span className="flex w-full items-center justify-between gap-3 py-2 text-start text-sm active:bg-slate-50">
+        <span className="min-w-0">
+          <span className="block font-medium text-slate-800"><LeaveCode code={b.record.typeShort} /> {dateRange(b.start, b.end, today)}{b.record.rec.dates_estimated && <> <EstimatedTag /></>}</span>
+          <span className="block text-xs text-slate-500">{b.record.typeLabel ?? t('Leave')} · {dayCount(b.start, b.end)}{b.record.rec.hand_corrected ? ` · ${t('by hand')}` : ''}</span>
         </span>
-      </button>
-    </li>
+        <span className="flex shrink-0 items-center gap-2">
+          {showReturn && <span className="text-xs font-medium text-slate-600">{t('Return')} {shortDate(b.returnOn)}</span>}
+          {to && <Pencil className="h-3.5 w-3.5 text-slate-400" />}
+        </span>
+      </span>
   );
+  return <li>{to ? <Link to={to} aria-label={t('Change through Entry')}>{inner}</Link> : inner}</li>;
 }
 
 /** A profile section that starts closed and shows how many records it holds. */
-function Collapsible({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
+function Collapsible({ title, count, children, startOpen = false }: { title: string; count: number; children: React.ReactNode; startOpen?: boolean }) {
+  const [open, setOpen] = useState(startOpen);
   return (
     <Card className="mb-3">
-      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full items-center justify-between text-left">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title} ({count})</h2>
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex min-h-9 w-full items-center justify-between text-start">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t(title)} ({count})</h2>
         {open ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
       </button>
       {open && <div className="mt-2">{children}</div>}
@@ -291,7 +310,7 @@ function Collapsible({ title, count, children }: { title: string; count: number;
 function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <Card className="mb-3">
-      <div className="mb-1 flex items-center justify-between"><h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h2>{action}</div>
+      <div className="mb-1 flex items-center justify-between"><h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t(title)}</h2>{action}</div>
       {children}
     </Card>
   );

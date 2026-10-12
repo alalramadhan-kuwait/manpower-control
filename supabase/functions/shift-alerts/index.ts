@@ -424,6 +424,15 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 var serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}").default;
 var supabase = createClient(Deno.env.get("SUPABASE_URL"), serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
+// src/core/leave/index.ts
+var OPEN_END = "9999-12-31";
+
+// src/data/openEnd.ts
+var openFrom = (from) => `end_date.is.null,end_date.gte.${from}`;
+function withOpenEnd(rows) {
+  return (rows ?? []).map((r) => ({ ...r, end_date: r.end_date ?? OPEN_END, open_end: r.end_date == null }));
+}
+
 // src/core/validation/index.ts
 var DEFAULT_SHIFT_TIMES = { M: "07:00", A: "15:00", N: "23:00", hours: 8, dayDutyStart: "07:00", dayDutyHours: 8 };
 var DEFAULT_RULES = [
@@ -611,7 +620,7 @@ function toMpAbsence(l) {
 async function fetchManpowerInputs(from, to) {
   const [dir, lv, ca, ra, mv, op, sd, tr] = await Promise.all([
     supabase.from("employee_directory_v").select("*").eq("in_unit12_scope", true).eq("is_active", true),
-    supabase.from("leave_records").select("id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,oracle_status,absence_types(label,short_code)").eq("in_current_plan", true).in("status", ["approved", "planned", "unresolved"]).lte("start_date", to).gte("end_date", from),
+    supabase.from("leave_records").select("id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,oracle_status,absence_types(label,short_code)").eq("in_current_plan", true).in("status", ["approved", "planned", "unresolved"]).lte("start_date", to).or(openFrom(from)),
     supabase.from("controller_assignments").select("*").eq("status", "active").lte("start_date", to).gte("end_date", from),
     supabase.from("employee_role_assignments").select("employee_id,effective_from,effective_to,positions(code),crews(code)").limit(5e3),
     supabase.from("crew_movements").select("employee_id,start_date,end_date,to_crew,kind").eq("status", "active").in("kind", ["temporary", "placement"]).lte("start_date", to).or(`end_date.is.null,end_date.gte.${from}`),
@@ -636,7 +645,7 @@ async function fetchManpowerInputs(from, to) {
     if (isCtl(m.employeeId)) sdAssignments.push({ id: `sd-${m.id}`, kind: "sd_team", employeeId: m.employeeId, crew: null, start: m.start, end: m.end, works: sdWorks.get(m.id)?.works, sdV2: sdWorks.get(m.id)?.sdV2 });
     else moves.set(m.employeeId, [...moves.get(m.employeeId) ?? [], { start: m.start, end: m.end, crew: SD_TEAM, kind: "sd" }]);
   }
-  const leaveAbsences = lv.data.map(toMpAbsence);
+  const leaveAbsences = withOpenEnd(lv.data).map(toMpAbsence);
   const people = dir.data.map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id) }));
   return { people, absences: leaveAbsences, absencesAll: [...leaveAbsences, ...tr.data.map(releaseAbsence)], assignments: [...ca.data.map(toMpAssignment), ...sdAssignments], plan: op.plan, rules: rulesByDate(op.plan) };
 }

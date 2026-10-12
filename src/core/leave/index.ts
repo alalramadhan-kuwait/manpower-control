@@ -2,6 +2,13 @@
 import { addDaysIso, isWorkingDay, type Crew } from '../roster';
 import type { OracleStatus } from '../oracle';
 
+/**
+ * An operational absence with no confirmed return (injury, surgery, long sick) is stored with no end date. In the app it
+ * runs to OPEN_END: the person stays unavailable on every date until the return is confirmed. Never shown as a date.
+ */
+export const OPEN_END = '9999-12-31';
+export const isOpenEnd = (d: string | null | undefined) => d == null || d >= '9999-01-01';
+
 export interface LeaveSpan { employeeId: string; start: string; end: string; status: string; inCurrentPlan: boolean; typeLabel: string | null; typeShort?: string | null; oracle?: OracleStatus | null }
 export interface OnLeave {
   start: string;
@@ -24,6 +31,7 @@ const counts = (l: LeaveSpan) => (l.status === 'approved' || l.status === 'plann
  * the crew's roster Off days (people return on their next duty day). Day staff return the next free day.
  */
 export function firstDayBack(lastDay: string, crew: Crew | null, absentOn: (date: string) => boolean): string {
+  if (isOpenEnd(lastDay)) return OPEN_END;
   let d = addDaysIso(lastDay, 1);
   for (let i = 0; i < 400 && (absentOn(d) || (crew !== null && !isWorkingDay(d, crew))); i++) d = addDaysIso(d, 1);
   return d;
@@ -44,7 +52,7 @@ export function onLeaveOn(date: string, leaves: LeaveSpan[], crewOf: (employeeId
     for (let grew = true; grew;) {
       grew = false;
       for (const l of list) {
-        if (l.start <= addDaysIso(until, 1) && l.end > until) { until = l.end; grew = true; }
+        if (!isOpenEnd(until) && l.start <= addDaysIso(until, 1) && l.end > until) { until = l.end; grew = true; }
         if (l.end >= addDaysIso(start, -1) && l.start < start) { start = l.start; grew = true; }
       }
     }
