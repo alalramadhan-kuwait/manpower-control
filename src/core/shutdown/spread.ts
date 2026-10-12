@@ -187,14 +187,17 @@ function followCrew(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadC
   const topRun = ctx.reachLimit ? Math.max(limit, 6) : limit;
   const runAround = (i: number, k: number) => { let a = 0, b = 0; while (k - a - 1 >= 0 && fullNow[i][k - a - 1]) a++; while (k + b + 1 < n && fullNow[i][k + b + 1]) b++; return a + b + 1; };
   const gain = p.shiftHours - short;   // a full shift instead of the short one, on a duty day
-  for (let guard = 0; guard < (ctx.v2 ? 0 : 4000); guard++) {
+  // the New FO slot is extra (no cover counts on it), so its people are topped up to the cap on their own: the others'
+  // full shifts and overtime are not touched
+  const extra = g.key === 'new';
+  for (let guard = 0; guard < (ctx.v2 && !extra ? 0 : 4000); guard++) {
     const order = members.map((_, i) => i).sort((a, b) => otTotal(a) - otTotal(b) || a - b);
     let done = false;
     for (const i of order) {
       // the month with the most room first, then the shortest run of full shifts
       let bestK = -1, bestRoom = -Infinity, bestRun = Infinity;
       for (let k = 0; k < n; k++) {
-        if (!present[i][k] || rampK[k] || fullNow[i][k] || need[k] <= 0) continue;
+        if (!present[i][k] || rampK[k] || fullNow[i][k] || (need[k] <= 0 && !extra)) continue;
         const room = Math.min(p.maxOvertime - otMonth[i][mk[k]], yearLeft(i, yearOf(dates[k]))) - gain;
         if (room < 0) continue;
         const run = runAround(i, k);

@@ -261,3 +261,14 @@ describe('G14 / G15 · balancing without extra overtime; the reduced days', () =
     expect(checkPlan(input(ready())).fingerprint).toBe(a);
   });
 });
+
+describe('New FO is extra and still earns overtime', () => {
+  it('tops the New FO up to the monthly cap without changing the other slots', () => {
+    const out = ready();
+    const otOf = (id: string) => { const m = out.find((x) => x.id === id)!; return Object.entries(m.days ?? {}).reduce((t, [d, v]) => t + (v.works ? Math.max(0, (v.hours ?? 0) - (isWorkingDay(d, crews[id]) ? 8 : 0)) : 0), 0); };
+    expect(otOf("n1")).toBe(plan.maxOvertime);
+    expect(otOf('n1')).toBeLessThanOrEqual(plan.maxOvertime);
+    const without = balance(roster.filter((m) => m.slot !== 'new'), crews);
+    for (const id of ['c1', 'c2', 's1', 's2', 'g1', 'g2']) expect(out.find((x) => x.id === id)!.days).toEqual(without.find((x) => x.id === id)!.days);
+  });
+});
