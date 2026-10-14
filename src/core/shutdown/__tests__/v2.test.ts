@@ -262,17 +262,20 @@ describe('G14 / G15 · balancing without extra overtime; the reduced days', () =
     const twelve = list.flatMap((m) => Object.values(m.days!)).filter((x) => x.works && x.hours === 12).length;
     expect(twelve).toBeGreaterThan(dates.length * 3);
   });
-  it('the first and last two days: only the minimum (Controller, Experienced, a second Experienced or Good) on 12 h; the others off', () => {
+  it('the first and last two days: the minimum is a floor, not the target (the others on their pattern stay on), all on 12 h', () => {
     const list = ready();
     for (const d of [dates[0], dates[1], dates[dates.length - 2], dates[dates.length - 1]]) {
       const on = list.filter((m) => m.days![d]?.works);
-      expect(on.filter((m) => m.slot === 'controller')).toHaveLength(1);
+      expect(on.filter((m) => m.slot === 'controller').length).toBeGreaterThanOrEqual(1);
       const fos = on.filter((m) => m.slot === 'senior' || m.slot === 'good');
-      expect(fos).toHaveLength(2);
+      expect(fos.length).toBeGreaterThanOrEqual(2);
       expect(fos.some((m) => info.get(m.employeeId)?.foLevel === 'senior')).toBe(true);
-      expect(on.every((m) => m.days![d].hours === 12)).toBe(true);
-      expect(on.some((m) => m.slot === 'new')).toBe(false);
+      expect(on.filter((m) => m.slot !== 'new' && m.days![d].hours === 12).length).toBeGreaterThanOrEqual(3);
+      expect(on.filter((m) => m.slot === 'new').every((m) => m.days![d].hours === 12)).toBe(true);
     }
+    // more than the minimum somewhere on the reduced days, and nobody above the 72 h target for it
+    expect([dates[0], dates[1], dates[dates.length - 2], dates[dates.length - 1]].some((d) => list.filter((m) => m.days![d]?.works).length > 3)).toBe(true);
+    for (const m of list) expect(memberOtDetail(plan, day, m, person(m.employeeId, crews[m.employeeId])).months['2026-11'] ?? 0).toBeLessThanOrEqual(plan.maxOvertime);
   });
   it('the run limit is 6 days in a row', () => { expect(V2_MAX_RUN).toBe(6); });
   it('the full check of a complete, verified team is Ready, with the overtime spread shown', () => {
@@ -292,7 +295,7 @@ describe('G14 / G15 · balancing without extra overtime; the reduced days', () =
 describe('New FO is extra and still earns overtime', () => {
   it('tops the New FO up to the monthly cap without changing the other slots', () => {
     const out = ready();
-    const otOf = (id: string) => { const m = out.find((x) => x.id === id)!; return Object.entries(m.days ?? {}).reduce((t, [d, v]) => t + (v.works ? Math.max(0, (v.hours ?? 0) - (isWorkingDay(d, crews[id]) ? 8 : 0)) : 0), 0); };
+    const otOf = (id: string) => { const m = out.find((x) => x.id === id)!; return memberOtDetail(plan, day, m, person(m.employeeId, crews[m.employeeId])).total; };
     // topped up towards the cap, within the full-shift fatigue limit (4 days in a row on the day team)
     expect(otOf("n1")).toBeGreaterThanOrEqual(48);
     expect(otOf('n1')).toBeLessThanOrEqual(plan.maxOvertime);

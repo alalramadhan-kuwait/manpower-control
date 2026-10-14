@@ -14,6 +14,10 @@
 //   4. 8-hour duties for qualified people only where the target needs it, and only on days the minimum is held by others;
 //   5. New Field Operators (training, never counted): always 12 hours; near the target they get extra days off instead;
 //   6. fair overtime inside the group.
+// The minimum is a safety floor, not the staffing target: everyone the pattern puts on duty works, and more qualified
+// people than the minimum is welcome. A day is taken away only to keep someone within the 72 h target or a rest rule,
+// never just to lower the team's overtime; and nobody is added beyond the pattern to raise the headcount. The 72–80 h
+// range is never planned for; it is only reported when coverage cannot be held otherwise.
 // Overtime is always the cycle engine's (./overtime): 48 regular hours per 8-day rota cycle, not per shift.
 //
 // When the place cannot be covered on a day (everybody on leave, or a 7th day in a row would be needed), the day is left
@@ -158,15 +162,14 @@ export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], c
   for (let k = 0; k < n; k++) if (!sat(k) && !gaps.includes(dates[k])) gaps.push(dates[k]);
   gaps.sort();
 
-  // 3. the hours: each day the minimum on the full shift (the others the normal hours for now, see 6); reduced days:
-  //    only the minimum, on the full shift, the others off. The full shifts go to whoever has the least overtime that
-  //    month so far; for the Field Operators one of them Experienced.
+  // 3. the hours: each day the minimum on the full shift (the others the normal hours for now, see 6). The full shifts
+  //    go to whoever has the least overtime that month so far; for the Field Operators one of them Experienced. The
+  //    minimum is a floor, not the target: the others on their pattern stay on duty (reduced days included), and only
+  //    the monthly target (4) or a rest rule takes a day away.
   const fullRun = (i: number, k: number) => { let a = 0; while (k - a - 1 >= 0 && drafts[i].hours[k - a - 1] >= full) a++; return a; };
   for (let k = 0; k < n; k++) {
     const on = members.map((_m, i) => i).filter((i) => drafts[i].works[k]);
     for (const i of on) drafts[i].hours[k] = short;
-    // reduced days: only the people the place needs, on the full shift; nobody else (the New FO place included)
-    if (ramp[k] && need[k] <= 0) { for (const i of on) { drafts[i].works[k] = false; drafts[i].hours[k] = 0; } continue; }
     if (need[k] <= 0 || !on.length) continue;
     const ym = dates[k].slice(0, 7);
     // as many on the full shift as the place's minimum (an 8-hour duty covers only 07:00–15:00 / 19:00–03:00)
@@ -174,7 +177,6 @@ export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], c
     const first = composite ? order.find((i) => exp[i]) : undefined;
     const picks = [...(first !== undefined ? [first] : []), ...order.filter((i) => i !== first)].slice(0, need[k]);
     for (const x of picks) drafts[x].hours[k] = full;
-    if (ramp[k]) for (const i of on) if (!picks.includes(i)) { drafts[i].works[k] = false; drafts[i].hours[k] = 0; }
   }
 
   // 4. monthly overtime: above the target, hand full shifts to someone of the place who has room; still above, give
