@@ -545,19 +545,6 @@ function transitions(person, m, sdDuty, absences, assignments, rules) {
   const returnOn = after.find((d) => !returnOff.includes(d)) ?? null;
   return { employeeId: m.employeeId, findings: hard(final), joinOff: joinOff.sort(), returnOff, returnOn };
 }
-function restDayPairs(p, m, person) {
-  const pairs = [], single = [];
-  const dates = planDates(p).filter((d) => d >= m.start && d <= m.end);
-  for (const d of dates) {
-    const crew = effectiveCrew(person, m, d);
-    if (isDutyDay(crew, d) || !memberWorks(p, m, d)) continue;
-    const prev = addDaysIso(d, -1), next = addDaysIso(d, 1);
-    const partner = !isDutyDay(effectiveCrew(person, m, prev), prev) ? prev : !isDutyDay(effectiveCrew(person, m, next), next) ? next : null;
-    if (partner && partner > d && memberWorks(p, m, partner)) pairs.push([d, partner]);
-    else if (!(partner && partner < d && memberWorks(p, m, partner))) single.push(d);
-  }
-  return { pairs, single };
-}
 var awayOn = (absences) => (employeeId, date) => absences.some((a) => a.employeeId === employeeId && a.oracle === "approved" && (a.status === "approved" || a.status === "planned") && a.inCurrentPlan !== false && a.start <= date && date <= a.end);
 function checkPlan(inp) {
   const { plan: p, teams, members, info } = inp;
@@ -616,8 +603,6 @@ function checkPlan(inp) {
     for (const f of tr.findings) issues.push({ level: "block", code: f.rule, date: f.date, employeeId: m.employeeId, message: `${name(m.employeeId)}: ${f.message}` });
     if (tr.joinOff.length) issues.push({ level: "info", code: "join_off", employeeId: m.employeeId, message: `${name(m.employeeId)}: off ${tr.joinOff.map(fmtDay).join(", ")} before joining (rest rules).` });
     if (tr.returnOff.length) issues.push({ level: "info", code: "return_off", employeeId: m.employeeId, message: `${name(m.employeeId)}: off ${tr.returnOff.map(fmtDay).join(", ")}, back with his crew ${tr.returnOn ? fmtDay(tr.returnOn) : ""}.` });
-    const rp = restDayPairs(p, m, person);
-    for (const pair of rp.pairs) if (!hasException(inp.exceptions, p.id, m.employeeId, "rest_day_pair")) issues.push({ level: "block", code: "rest_day_pair", employeeId: m.employeeId, date: pair[0], message: `${name(m.employeeId)}: works both rest days ${fmtDay(pair[0])} and ${fmtDay(pair[1])}; one stays off unless the Section Head approves.` });
     const t = teamOf.get(m.teamId);
     if (t && m.slot === "new") {
       const short = planDates(p).filter((d) => {

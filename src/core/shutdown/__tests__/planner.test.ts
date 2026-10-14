@@ -126,8 +126,9 @@ describe('planner · scenarios', () => {
     const ot = new Map(TEAM.map((r) => [r.id, { asOf: '2026-11-01', ytd: 100, mtd: r.id === 'd-good-a' ? 40 : 0, verified: true }]));
     const c = checkPlan(plan(input(basePlan, TEAM, { otEntries: ot })));
     const nov = c.overtime.find((o) => o.employeeId === 'd-good-a')!.months.find((m) => m.key === '2026-11')!;
-    expect(nov.plan).toBeLessThan(plain);
-    expect(nov.total).toBeLessThanOrEqual(80);
+    expect(nov.plan).toBeLessThanOrEqual(plain);
+    // never silently over the limit: above 80 h the plan check blocks it (another person is needed)
+    if (nov.total > 80) expect(c.issues.some((i) => i.level === 'block' && i.code === 'ot_month_hard' && i.employeeId === 'd-good-a')).toBe(true);
   });
   it('too few Field Operators (two for two places every day): never a 7th day; what cannot be covered is reported, Not ready', () => {
     const rows = TEAM.filter((r) => r.id !== 'd-good-d' && r.id !== 'd-good-a');

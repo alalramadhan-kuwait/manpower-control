@@ -192,8 +192,8 @@ describe('G9 · overtime against the effective roster, per 8-day cycle', () => {
   });
 });
 
-describe('G10 · one of two rest days', () => {
-  it('working one rest day is allowed; both of a pair is flagged unless approved', () => {
+describe('G10 · roster rest-day pairs (reported by restDayPairs, never a limit on the shutdown rotation)', () => {
+  it('finds the pairs; the plan check does not block them', () => {
     const rest = dates.filter((d) => !isWorkingDay(d, 'A'));
     const pairFirst = rest.find((d) => rest.includes(addDaysIso(d, 1)))!;
     const one = { ...member('x', 'senior'), days: Object.fromEntries(dates.map((d) => [d, { works: d === pairFirst || isWorkingDay(d, 'A'), hours: 12 }])) };

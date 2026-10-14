@@ -415,8 +415,7 @@ export function checkPlan(inp: PlanCheckInput): PlanCheck {
     for (const f of tr.findings) issues.push({ level: 'block', code: f.rule, date: f.date, employeeId: m.employeeId, message: `${name(m.employeeId)}: ${f.message}` });
     if (tr.joinOff.length) issues.push({ level: 'info', code: 'join_off', employeeId: m.employeeId, message: `${name(m.employeeId)}: off ${tr.joinOff.map(fmtDay).join(', ')} before joining (rest rules).` });
     if (tr.returnOff.length) issues.push({ level: 'info', code: 'return_off', employeeId: m.employeeId, message: `${name(m.employeeId)}: off ${tr.returnOff.map(fmtDay).join(', ')}, back with his crew ${tr.returnOn ? fmtDay(tr.returnOn) : ''}.` });
-    const rp = restDayPairs(p, m, person);
-    for (const pair of rp.pairs) if (!hasException(inp.exceptions, p.id, m.employeeId, 'rest_day_pair')) issues.push({ level: 'block', code: 'rest_day_pair', employeeId: m.employeeId, date: pair[0], message: `${name(m.employeeId)}: works both rest days ${fmtDay(pair[0])} and ${fmtDay(pair[1])}; one stays off unless the Section Head approves.` });
+    // the crew roster's rest-day pairs do not limit the independent shutdown rotation (rule of 14 Oct 2026)
     const t = teamOf.get(m.teamId);
     // New FOs (training) always work the full shift: a shorter day is given as a day off instead
     if (t && m.slot === 'new') { const short = planDates(p).filter((d) => { const x = memberDuty(p, t, m, d); return !!x && x.hours < p.shiftHours; });
