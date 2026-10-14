@@ -592,7 +592,7 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
   const trial: SdMember = { ...m, offset, start, end, days: own };
   const home = view.homeCrew(m.employeeId, plan.start);
   const crew = m.followCrew ?? home;
-  // v2: the cycle engine (48 regular hours per 8-day rota cycle), as the plan check counts it; before v2: day by day
+  // v2: the overtime engine (each day against the 8-day crew roster), as the plan check counts it; before v2: day by day
   const det = data.v2 && team ? memberOtDetail(plan, team, trial, view.people.get(m.employeeId), (d) => view.approvedOn(m.employeeId, d)) : null;
   const hours = det
     ? memberHours(plan, trial, crew).map((h) => { const o = det.months[h.month] ?? 0; return { ...h, overtime: o, over: o > plan.maxOvertime }; })
@@ -656,7 +656,7 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
             })}
           </div>
           <p className="mt-1 text-[11px] text-slate-500">{code} working · O off (yellow). {det
-            ? <>OT = hours above the regular {plan.normalHours * 6} h of each 8-day rota cycle of {crew ? `${crew} Shift` : 'day staff (40 h a week)'} (approved leave on duty days credited); it shows on the hours worked after the regular ones.{det.cycles.some((c) => c.short > 0) ? ` Short of the regular hours: ${det.cycles.filter((c) => c.short > 0).map((c) => `${c.short} h`).join(', ')}.` : ''}</>
+            ? <>OT per day against the roster of {crew ? `${crew} Shift` : 'day staff (Sunday–Thursday)'} (M M A A N N Off Off): on a roster duty day the hours above the normal {plan.normalHours} h (12 h = 4 h OT), on a roster off day every hour (12 h = 12 h OT). The shutdown pattern is not the basis; no offset for duty days not worked.</>
             : <>OT per day = hours less the normal {plan.normalHours} h on a {crew ? `${crew} Shift` : 'Sunday–Thursday'} duty day; a rest day counts in full.</>}</p>
         </Field>
         {total && areas.length > 0 && (

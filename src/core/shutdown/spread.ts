@@ -154,7 +154,7 @@ function stats(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadContex
       total.set(m.id, (total.get(m.id) ?? 0) + ot);
     }
   }
-  // v2: the overtime of each person with the cycle engine (48 regular hours per 8-day rota cycle), as the plan check counts it
+  // v2: the overtime of each person with the overtime engine (each day against the 8-day crew roster), as the plan check counts it
   if (ctx.v2) for (const m of members) {
     const dates = planDates(p);
     const w = dates.map((d) => works(m, d) && !ctx.away(m.employeeId, d));

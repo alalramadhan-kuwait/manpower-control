@@ -18,7 +18,7 @@
 // people than the minimum is welcome. A day is taken away only to keep someone within the 72 h target or a rest rule,
 // never just to lower the team's overtime; and nobody is added beyond the pattern to raise the headcount. The 72–80 h
 // range is never planned for; it is only reported when coverage cannot be held otherwise.
-// Overtime is always the cycle engine's (./overtime): 48 regular hours per 8-day rota cycle, not per shift.
+// Overtime is always the engine's (./overtime): each day against the person's 8-day crew roster (duty day 12 h = 4 h, off day 12 h = 12 h).
 //
 // When the place cannot be covered on a day (everybody on leave, or a 7th day in a row would be needed), the day is left
 // short and reported; the planner never breaks a hard rule to fill it.

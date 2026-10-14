@@ -86,7 +86,7 @@ export function effectiveCrew(person: MpPerson | undefined, m: SdMember | null, 
 }
 
 // ── Overtime ───────────────────────────────────────────────────────────────────────────────────────────────────────
-// One engine for every overtime figure of a v2 plan: regular hours per 8-day rota cycle (day staff: per week), see
+// One engine for every overtime figure of a v2 plan: each day against the 8-day crew roster (day staff: Sunday–Thursday), see
 // ./overtime. A 12-hour duty on a crew rest day is not overtime by itself; it is set against the cycle's regular hours.
 
 /**

@@ -179,20 +179,16 @@ describe('G9 · overtime against the effective roster, per 8-day cycle', () => {
     expect(r.total).toBeCloseTo(byCycles, 5);
     expect(Object.values(r.months).reduce((t, h) => t + h, 0)).toBeCloseTo(byCycles, 5);
   });
-  it('a 12 h duty on a crew rest day is set against the duty day off in the same cycle, not counted as 12 h', () => {
+  it('KNPC rule: each day against the roster; a 12 h rest day is 12 h overtime, a duty day not worked is not deducted', () => {
     const p = person('x', 'A', 'field_operator', 13, false);
-    // one complete A cycle inside the plan: M1 … Off2
     const m1 = dates.find((d) => dutyFor(d, 'A') === 'M1' && addDaysIso(d, 7) <= plan.end)!;
     const cyc = Array.from({ length: 8 }, (_, i) => addDaysIso(m1, i));
-    // 3 on / 1 off: works M1 M2 A1, off A2, works N1 N2 Off1 (a rest day), off Off2; 12 h, 12 h, 8 h, 12 h, 12 h, 8 h
+    // works M1 M2 A1, off A2 (a duty day), works N1 N2 Off1 (a rest day), off Off2: 12 h, 12 h, 8 h, 12 h, 12 h, 8 h
     const plan8: Record<string, { works: boolean; hours: number | null }> = Object.fromEntries(dates.map((d) => [d, { works: false, hours: null }]));
     [[0, 12], [1, 12], [2, 8], [4, 12], [5, 12], [6, 8]].forEach(([i, h]) => { plan8[cyc[i]] = { works: true, hours: h }; });
-    const m = { ...member('x', 'senior'), days: plan8 };
-    const r = memberOtDetail(plan, day, m, p);
-    const c = r.cycles.find((x) => x.from === m1)!;
-    expect(c).toMatchObject({ complete: true, dutyDays: 6, owed: 48, worked: 64, overtime: 16, short: 0 });
-    const perShift = 4 + 4 + 0 + 4 + 4 + 8;   // the old per-shift rule: 24 h
-    expect(perShift - c.overtime).toBe(8);
+    const r = memberOtDetail(plan, day, { ...member('x', 'senior'), days: plan8 }, p);
+    expect(r.duties.map((d) => d.ot)).toEqual(expect.arrayContaining([4, 4, 0, 4, 4, 8]));
+    expect(r.cycles.find((x) => x.from === m1)).toMatchObject({ worked: 64, overtime: 24 });   // 4 + 4 + 0 + 4 + 4 + 8, no deduction for A2
   });
 });
 

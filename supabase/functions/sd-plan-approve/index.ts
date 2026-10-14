@@ -281,24 +281,23 @@ function cycleOvertime(duties, basis) {
     x.credited = x.leaveDays * basis.normalHours;
     x.owed = x.regular - x.credited;
   }
-  const left = new Map([...cycles.values()].map((x) => [x.key, x.owed]));
   const out = [];
   const months = {};
   for (const d of [...duties].filter((x) => x.hours > 0 && x.date >= basis.from && x.date <= basis.to).sort((a, b) => a.start - b.start)) {
     const k = keyOf(d.date);
     const x = cycles.get(k);
-    const regular = Math.min(left.get(k), d.hours);
-    left.set(k, left.get(k) - regular);
+    const regular = isDutyDay(basis.crewOn(d.date), d.date) ? Math.min(basis.normalHours, d.hours) : 0;
     const ot = r2(d.hours - regular);
     x.worked += d.hours;
+    x.overtime += ot;
     const parts = ot > 0 ? byMonth(d.start + regular * H2, d.start + d.hours * H2) : [{ month: d.date.slice(0, 7), hours: 0 }];
     for (const p of parts) months[p.month] = r2((months[p.month] ?? 0) + p.hours);
     out.push({ date: d.date, hours: d.hours, regular: r2(regular), ot, parts, split: parts.length > 1, cycle: k });
   }
   for (const x of cycles.values()) {
     x.worked = r2(x.worked);
-    x.overtime = r2(Math.max(0, x.worked - x.owed));
-    x.short = r2(Math.max(0, x.owed - x.worked));
+    x.overtime = r2(x.overtime);
+    x.short = 0;
   }
   return { cycles: [...cycles.values()].sort((a, b) => a.from.localeCompare(b.from)), duties: out, months, total: r2(out.reduce((t, d) => t + d.ot, 0)) };
 }

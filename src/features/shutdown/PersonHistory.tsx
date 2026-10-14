@@ -39,7 +39,7 @@ export function PersonHistory({ employeeId, crew, skipPlanId, showSick = true }:
         {sds.length === 0 ? <p className="text-sm text-slate-500">None.</p> : sds.map(({ plan, team, member }) => {
           const h = memberHours(plan, member, member.followCrew ?? crew);
           const worked = h.reduce((n, x) => n + x.days, 0);
-          // rules v2: the cycle engine (48 regular hours per 8-day rota cycle); before v2: day by day, as those plans were made
+          // rules v2: the overtime engine (each day against the 8-day crew roster); before v2: day by day, as those plans were made
           const ot = (plan.rulesVersion ?? 1) >= 2 && team
             ? cycleOvertime(planDates(plan).flatMap((d) => { const x = memberDuty(plan, team, member, d); return x ? [{ date: d, start: x.start, hours: x.hours }] : []; }),
               { from: member.start > plan.start ? member.start : plan.start, to: member.end < plan.end ? member.end : plan.end, crewOn: () => member.followCrew ?? crew, normalHours: plan.normalHours }).total

@@ -38,7 +38,6 @@ describe('G16 · one overtime calculation everywhere', () => {
       expect(rowOvertime(doc, x).total).toBeCloseTo(o.plan, 2);
       for (const mo of o.months) expect(rowOvertime(doc, x).month(mo.key)).toBeCloseTo(mo.plan, 2);
     }
-    expect(check.overtime.some((o) => o.duties.some((d) => d.split))).toBe(true);   // a night across 31 Oct
   });
   it('the Excel OT sheet carries the same totals', async () => {
     const wb = await buildSdWorkbook(doc, new Map(), undefined, '1 Oct 2026');

@@ -1,6 +1,6 @@
 // One overtime calculation for the plan, its print pages and the Excel file. Plans before v2: each day against the
-// member's crew, months by the duty date (as before). Rules v2: the cycle engine of the plan check (48 regular hours per
-// 8-day rota cycle, day staff 40 h a week, approved leave credited; src/core/shutdown/overtime).
+// member's crew, months by the duty date (as before). Rules v2: the engine of the plan check (each day against the
+// 8-day crew roster: duty day 12 h = 4 h, off day 12 h = 12 h; src/core/shutdown/overtime).
 import { dayOvertime } from '@/core/shutdown';
 import { isV2, memberOvertime } from '@/core/shutdown/v2';
 import type { Doc, Row } from './SdDocuments';

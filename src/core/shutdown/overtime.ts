@@ -1,22 +1,14 @@
 // Shutdown overtime, one engine for the planner, the plan check, the server approval, the sheets and the Excel file
 // (rules v2). Pure functions.
 //
-// Regular hours are owed per duty cycle, not per day:
-//   - a crew member: the crew's 8-day rota cycle (Morning, Morning, Afternoon, Afternoon, Night, Night, Off, Off), 6 duty
-//     days × 8 h = 48 regular hours; the cycle starts on the crew's first Morning day (M1);
-//   - day staff (no crew): the week Sunday–Saturday, Sunday–Thursday × 8 h = 40 regular hours.
-// Overtime of a cycle = hours actually worked − the regular hours still owed in it, never below zero. Working a crew rest
-// day is therefore not overtime by itself: it is set against the duty day the person had off in the same cycle.
-//
-// Only the person's days on the shutdown team count (their window): a cycle cut by the start or the end of the
-// shutdown owes the regular hours of its duty days inside the window (a partial cycle); the days outside are their crew's
-// normal duties, with no overtime. Approved leave on a duty day is credited (the regular hours of that day are not owed).
-// Fewer hours than owed in a cycle: no overtime, and the hours short are reported.
-//
-// Month of the overtime: the hours worked in a cycle first fill the regular hours owed, in time order; the hours after
-// that are the overtime, counted in the calendar month (Kuwait time) in which they were worked. A cycle that crosses
-// month-end therefore gives each month exactly the overtime worked in it, nothing counted twice or lost; a night duty
-// across midnight is split by the hours on each side.
+// KNPC rule: each day actually worked is measured against the person's own effective 8-day crew roster (M M A A N N
+// Off Off; day staff: Sunday–Thursday), never against the shutdown's 3-on / 1-off assignment pattern:
+//   - a roster duty day:  overtime = hours worked − the normal 8 h (8 h → 0, 12 h → 4);
+//   - a roster OFF day:   every hour worked is overtime (8 h → 8, 12 h → 12).
+// There is no filling of a cycle's regular hours and no offset against roster duty days not worked.
+// On a duty day the regular hours are the first 8 of the duty, the overtime the hours after them; each overtime hour
+// counts in the calendar month (Kuwait time) in which it is worked, so a night duty across midnight at month-end is split
+// by the hours on each side. The cycles are kept for the person's sheet (duty days, hours worked, overtime per cycle).
 import { addDaysIso, dutyFor, type Crew } from '../roster';
 import { isDutyDay } from './index';
 
@@ -77,10 +69,9 @@ function byMonth(a: number, b: number): { month: string; hours: number }[] {
   return out;
 }
 
-/** The overtime of one person's duties on a shutdown, cycle by cycle (see the head of this file). */
+/** The overtime of one person's duties on a shutdown, day by day against the roster (see the head of this file). */
 export function cycleOvertime(duties: WorkedDuty[], basis: OtBasis): OtResult {
   const keyOf = (d: string) => { const c = basis.crewOn(d); return c ? `${c}:${cycleStart(c, d)}` : `day:${weekStart(d)}`; };
-  // the cycles touching the window, with their duty days and leave inside it
   const cycles = new Map<string, OtCycle>();
   for (let d = basis.from; d <= basis.to; d = addDaysIso(d, 1)) {
     const c = basis.crewOn(d); const k = keyOf(d);
@@ -94,19 +85,17 @@ export function cycleOvertime(duties: WorkedDuty[], basis: OtBasis): OtResult {
     if (isDutyDay(c, d)) { x.dutyDays++; if (basis.leaveOn?.(d)) x.leaveDays++; }
   }
   for (const x of cycles.values()) { x.complete = x.days === (x.crew ? 8 : 7); x.regular = x.dutyDays * basis.normalHours; x.credited = x.leaveDays * basis.normalHours; x.owed = x.regular - x.credited; }
-  // duties in time order: each fills what is still owed in its cycle, the rest of it is overtime
-  const left = new Map([...cycles.values()].map((x) => [x.key, x.owed]));
   const out: DutySplit[] = [];
   const months: Record<string, number> = {};
   for (const d of [...duties].filter((x) => x.hours > 0 && x.date >= basis.from && x.date <= basis.to).sort((a, b) => a.start - b.start)) {
     const k = keyOf(d.date); const x = cycles.get(k)!;
-    const regular = Math.min(left.get(k)!, d.hours); left.set(k, left.get(k)! - regular);
+    const regular = isDutyDay(basis.crewOn(d.date), d.date) ? Math.min(basis.normalHours, d.hours) : 0;
     const ot = r2(d.hours - regular);
-    x.worked += d.hours;
+    x.worked += d.hours; x.overtime += ot;
     const parts = ot > 0 ? byMonth(d.start + regular * H, d.start + d.hours * H) : [{ month: d.date.slice(0, 7), hours: 0 }];
     for (const p of parts) months[p.month] = r2((months[p.month] ?? 0) + p.hours);
     out.push({ date: d.date, hours: d.hours, regular: r2(regular), ot, parts, split: parts.length > 1, cycle: k });
   }
-  for (const x of cycles.values()) { x.worked = r2(x.worked); x.overtime = r2(Math.max(0, x.worked - x.owed)); x.short = r2(Math.max(0, x.owed - x.worked)); }
+  for (const x of cycles.values()) { x.worked = r2(x.worked); x.overtime = r2(x.overtime); x.short = 0; }
   return { cycles: [...cycles.values()].sort((a, b) => a.from.localeCompare(b.from)), duties: out, months, total: r2(out.reduce((t, d) => t + d.ot, 0)) };
 }
