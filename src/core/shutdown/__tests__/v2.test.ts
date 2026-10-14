@@ -1,7 +1,7 @@
 // Shutdown rules v2: the approved acceptance tests (G1–G15; G16, the Excel file, is in the shutdown feature tests).
 import { describe, expect, it } from 'vitest';
 import type { Crew } from '../../roster';
-import { addDaysIso, dutyFor, isWorkingDay } from '../../roster';
+import { addDaysIso, isWorkingDay } from '../../roster';
 import type { MpPerson } from '../../manpower';
 import { checkSchedule, DEFAULT_RULES, personDays, type DayLine } from '../../validation';
 import { planDates, type SdMember, type SdPlan, type SdTeam } from '..';
@@ -165,30 +165,15 @@ describe('G7 / G8 · overtime limits, months and the month-end split', () => {
   });
 });
 
-describe('G9 · overtime against the effective roster, per 8-day cycle', () => {
-  it('after a transfer A → B the cycles are B\'s; before it, A\'s; every complete cycle owes 48 h', () => {
+describe('G9 · shutdown overtime: 4 h per 12 h duty, the crew roster only for the transitions', () => {
+  it('every 12 h duty = 4 h, a crew transfer changes nothing; the months add up', () => {
     const p: MpPerson = { ...person('x', 'A', 'field_operator', 13, false), moves: [{ start: '2026-11-10', end: '2026-11-30', crew: 'B', kind: 'temporary' }] };
-    expect(effectiveCrew(p, null, '2026-11-09')).toBe('A');
     expect(effectiveCrew(p, null, '2026-11-12')).toBe('B');
     const m = { ...member('x', 'senior'), days: Object.fromEntries(dates.map((d) => [d, { works: true, hours: 12 }])) };
     const r = memberOtDetail(plan, day, m, p);
-    for (const c of r.cycles.filter((x) => x.complete)) { expect(c.owed).toBe(48); expect(c.worked).toBe(96); expect(c.overtime).toBe(48); }
-    expect(r.cycles.some((c) => c.crew === 'A') && r.cycles.some((c) => c.crew === 'B')).toBe(true);
-    // nothing counted twice: the overtime of the duties = the overtime of the cycles = what the months show
-    const byCycles = r.cycles.reduce((t, c) => t + c.overtime, 0);
-    expect(r.total).toBeCloseTo(byCycles, 5);
-    expect(Object.values(r.months).reduce((t, h) => t + h, 0)).toBeCloseTo(byCycles, 5);
-  });
-  it('KNPC rule: each day against the roster; a 12 h rest day is 12 h overtime, a duty day not worked is not deducted', () => {
-    const p = person('x', 'A', 'field_operator', 13, false);
-    const m1 = dates.find((d) => dutyFor(d, 'A') === 'M1' && addDaysIso(d, 7) <= plan.end)!;
-    const cyc = Array.from({ length: 8 }, (_, i) => addDaysIso(m1, i));
-    // works M1 M2 A1, off A2 (a duty day), works N1 N2 Off1 (a rest day), off Off2: 12 h, 12 h, 8 h, 12 h, 12 h, 8 h
-    const plan8: Record<string, { works: boolean; hours: number | null }> = Object.fromEntries(dates.map((d) => [d, { works: false, hours: null }]));
-    [[0, 12], [1, 12], [2, 8], [4, 12], [5, 12], [6, 8]].forEach(([i, h]) => { plan8[cyc[i]] = { works: true, hours: h }; });
-    const r = memberOtDetail(plan, day, { ...member('x', 'senior'), days: plan8 }, p);
-    expect(r.duties.map((d) => d.ot)).toEqual(expect.arrayContaining([4, 4, 0, 4, 4, 8]));
-    expect(r.cycles.find((x) => x.from === m1)).toMatchObject({ worked: 64, overtime: 24 });   // 4 + 4 + 0 + 4 + 4 + 8, no deduction for A2
+    expect(r.duties.every((d) => d.ot === 4)).toBe(true);
+    expect(r.total).toBe(4 * dates.length);
+    expect(Object.values(r.months).reduce((t, h) => t + h, 0)).toBeCloseTo(r.total, 5);
   });
 });
 

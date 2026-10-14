@@ -286,7 +286,7 @@ function cycleOvertime(duties, basis) {
   for (const d of [...duties].filter((x) => x.hours > 0 && x.date >= basis.from && x.date <= basis.to).sort((a, b) => a.start - b.start)) {
     const k = keyOf(d.date);
     const x = cycles.get(k);
-    const regular = isDutyDay(basis.crewOn(d.date), d.date) ? Math.min(basis.normalHours, d.hours) : 0;
+    const regular = Math.min(basis.normalHours, d.hours);
     const ot = r2(d.hours - regular);
     x.worked += d.hours;
     x.overtime += ot;

@@ -656,7 +656,7 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
             })}
           </div>
           <p className="mt-1 text-[11px] text-slate-500">{code} working · O off (yellow). {det
-            ? <>OT per day against the roster of {crew ? `${crew} Shift` : 'day staff (Sunday–Thursday)'} (M M A A N N Off Off): on a roster duty day the hours above the normal {plan.normalHours} h (12 h = 4 h OT), on a roster off day every hour (12 h = 12 h OT). The shutdown pattern is not the basis; no offset for duty days not worked.</>
+            ? <>Shutdown overtime code: every shutdown duty on its own, the first {plan.normalHours} h regular and the rest overtime ({plan.shiftHours} h duty = {plan.shiftHours - plan.normalHours} h OT), whatever the crew roster. The roster is checked only when joining and leaving the team.</>
             : <>OT per day = hours less the normal {plan.normalHours} h on a {crew ? `${crew} Shift` : 'Sunday–Thursday'} duty day; a rest day counts in full.</>}</p>
         </Field>
         {total && areas.length > 0 && (

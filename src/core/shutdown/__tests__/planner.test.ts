@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Crew } from '../../roster';
 import type { MpAbsence, MpPerson } from '../../manpower';
 import { DEFAULT_RULES } from '../../validation';
-import { isDutyDay, planDates, type SdMember, type SdPlan, type SdTeam } from '..';
+import { planDates, type SdMember, type SdPlan, type SdTeam } from '..';
 import { spreadGroups, spreadGroup } from '../spread';
 import { checkPlan, memberOtDetail, plannerContext, type PersonInfo, type PlanCheckInput } from '../v2';
 
@@ -72,15 +72,6 @@ describe('planner · the real Train-2 team, 20 Oct – 20 Nov, 3 on / 1 off', ()
     expect(hours.every((h) => h === 12 || h === 8)).toBe(true);
     expect(hours.filter((h) => h === 12).length).toBeGreaterThan(hours.filter((h) => h === 8).length);
     for (const m of inp.members.filter((x) => x.slot === 'new')) expect(Object.values(m.days ?? {}).filter((d) => d.works).every((d) => d.hours === 12)).toBe(true);
-  });
-  it('starting offsets: each person works no more 12 h roster-OFF duties than his best 3 on / 1 off offset allows (+1 for a documented shift)', () => {
-    const ctx = plannerContext(inp); const dates = planDates(basePlan);
-    for (const m of inp.members) {
-      const off = (d: string) => !isDutyDay(ctx.crewOn(m.employeeId, d), d);
-      const worked = dates.filter((d) => m.days?.[d]?.works && off(d)).length;
-      const best = Math.min(...[0, 1, 2, 3].map((r) => dates.filter((d, k) => (k - r + 4) % 4 !== 3 && off(d)).length));
-      expect(worked).toBeLessThanOrEqual(best + 1);
-    }
   });
   it('one overtime engine: the check, the per-member detail and the months all agree (nothing counted twice)', () => {
     const t = new Map(inp.teams.map((x) => [x.id, x]));

@@ -147,7 +147,7 @@ function otSheet(ws: Worksheet, doc: Doc, brand: Brand) {
   });
   const note = ws.getCell(end, 2);
   note.value = v2
-    ? `Overtime per day against the person's own 8-day crew roster (Morning, Morning, Afternoon, Afternoon, Night, Night, Off, Off; day staff Sunday–Thursday), not the shutdown pattern: roster duty day 8 h = 0, 12 h = ${plan.shiftHours - plan.normalHours} h; roster off day (red) every hour worked (12 h = 12 h, 8 h = 8 h). No offset for roster duty days not worked. Overtime hours fall in the month they are worked. Yellow = off. Black = not on the team. Month columns (this plan only): green within ${L.monthWarn} h, amber above ${L.monthWarn} h, red above the ${L.monthHard} h limit.`
+    ? `Overtime (shutdown code): each duty on its own, the first ${plan.normalHours} h regular and every hour after them overtime (${plan.shiftHours} h duty = ${plan.shiftHours - plan.normalHours} h), whatever the crew roster; overtime hours fall in the month they are worked. Yellow = off. Black = not on the team. Month columns (this plan only): green within ${L.monthWarn} h, amber above ${L.monthWarn} h, red above the ${L.monthHard} h limit.`
     : `Overtime = hours worked on the shutdown less the ${plan.normalHours} h of a normal duty day of his crew; a day worked on his rest day counts in full (red). Yellow = off. Black = not on the team. Month columns: green = within the limit, amber = within 8 h of it, red = over ${plan.maxOvertime} h.`;
   ws.mergeCells(end, 2, end, 4 + DAYS_PER_BLOCK); note.alignment = { wrapText: true, vertical: 'top' }; note.font = { name: 'Calibri', size: 9, italic: true }; ws.getRow(end).height = 38;
 }
@@ -161,7 +161,7 @@ function dutySheet(ws: Worksheet, doc: Doc, brand: Brand) {
     // red letter: working on his crew's rest day (full overtime); the hours beside the letter on a shorter day
     return { v: `${x.team.shiftCode}${h < plan.shiftHours ? h : ''}`, red: !isDutyDay(x.crew, d), fill: x.team.shiftCode === 'N' ? 'FFD9D9D9' : 'FFDDEBF7' };
   });
-  const legend = [`M / N = day / night shift of ${plan.shiftHours} h`, `M${plan.normalHours} / N${plan.normalHours} = a shorter day, the hours beside the letter`, 'O (yellow) = off', (plan.rulesVersion ?? 1) >= 2 ? 'Red letter = working on his crew\'s rest day (set against the cycle\'s regular hours)' : 'Red letter = working on his crew\'s rest day (full overtime)', 'Black = not on the team'];
+  const legend = [`M / N = day / night shift of ${plan.shiftHours} h`, `M${plan.normalHours} / N${plan.normalHours} = a shorter day, the hours beside the letter`, 'O (yellow) = off', (plan.rulesVersion ?? 1) >= 2 ? 'Red letter = on his crew\'s rest day (for information; the overtime is the same)' : 'Red letter = working on his crew\'s rest day (full overtime)', 'Black = not on the team'];
   legend.forEach((t, i) => { const c = ws.getCell(end + i, 2); c.value = t; ws.mergeCells(end + i, 2, end + i, 12); c.font = { name: 'Calibri', size: 9 }; c.alignment = { horizontal: 'left' }; });
 }
 

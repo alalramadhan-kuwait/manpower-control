@@ -10,8 +10,8 @@
 // then the preferences, in order:
 //   1. the plan's days on / days off (3 on / 1 off, the standard for every shutdown employee), the people of a group
 //      starting it at different offsets so their days off are spread; when days off clash and the minimum is short, the
-//      offsets are changed, not the pattern. The crew roster (M M A A N N Off Off) decides the overtime only (./overtime:
-//      a 12 h duty on a roster duty day 4 h, on a roster OFF day 12 h), never the shutdown days off;
+//      offsets are changed, not the pattern. The crew roster (M M A A N N Off Off) is checked only when joining and
+//      leaving the team (transitions); it never decides shutdown days or overtime (./overtime: 12 h duty = 4 h);
 //   2. 12-hour duties;
 //   3. each person at or below the monthly target (72 h after what they already took that month; months counted apart);
 //   4. 8-hour duties for qualified people only where the target needs it, and only on days the minimum is held by others;
@@ -92,13 +92,8 @@ export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], c
   const pairHits = (i: number, w: boolean[]) => pairs[i].filter(([a, b]) => w[a] && w[b]).length;
   const own = members.map((_m, i) => offsets.map((r) => {
     const w = presence(i, r);
-    // projected overtime of this offset (KNPC rule: 12 h on a roster OFF day, 4 h on a duty day): the tie-break between
-    // otherwise valid offsets; it never changes the 3 on / 1 off pattern or adds a day off
-    const otCost = w.reduce((t, x, k) => t + (x ? (duty[i][k] ? 4 : 12) : 0), 0);
-    // equal totals: the offset with the lower busiest month (more room under the 72 h monthly limit)
-    const peak = Math.max(0, ...Object.values(draftOvertime(p, g, members[i], crewOn[i], { works: w, hours: w.map((x) => (x ? full : 0)) }, dates, leave(i)).months)) / 100;
     const trans = ctx.transitionCost ? ctx.transitionCost(members[i], Object.fromEntries(dates.map((d, k) => [d, w[k]]))) : 0;
-    return { w, cost: pairHits(i, w) * 1e4 + trans + otCost + peak };   // rest findings (1000 each) > overtime > days off around joining
+    return { w, cost: pairHits(i, w) * 1e4 + trans };   // the crew roster counts only when joining and leaving the team
   }));
   const anyPhase = inPhase.some(Boolean);
   let best: number[] = members.map(() => 0);
@@ -248,7 +243,7 @@ export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], c
       if (!moved) {
         // a relief day off (the place stays covered by the full-shift holder), crew rest days first
         const k = dates.map((_d, x) => x).filter((x) => dates[x].startsWith(ym) && drafts[i].works[x] && !holds(i, x) && holdsMin(members.map((_m, y) => y).filter((y) => y !== i && holds(y, x)), x))
-          .sort((a, b) => Number(duty[i][a]) - Number(duty[i][b]) || b - a)[0];
+          .sort((a, b) => b - a)[0];
         if (k === undefined) break;
         drafts[i].works[k] = false; drafts[i].hours[k] = 0; notes.push(`${dates[k]}: relief day off to keep the overtime within ${p.maxOvertime} h`);
       }
@@ -287,7 +282,7 @@ export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], c
     for (let k = 0; k < n; k++) if (drafts[i].works[k]) drafts[i].hours[k] = full;
     for (const ym of months) for (let guard = 0; guard < n && monthOt(i, ym) > target(i, ym); guard++) {
       const k = dates.map((_d, x) => x).filter((x) => dates[x].startsWith(ym) && drafts[i].works[x])
-        .sort((a, b) => Number(drafts[i].works[a + 1] ?? false) - Number(drafts[i].works[b + 1] ?? false) || Number(duty[i][a]) - Number(duty[i][b]) || b - a)[0];
+        .sort((a, b) => Number(drafts[i].works[a + 1] ?? false) - Number(drafts[i].works[b + 1] ?? false) || b - a)[0];
       if (k === undefined) break;
       drafts[i].works[k] = false; drafts[i].hours[k] = 0; notes.push(`${dates[k]}: extra day off (New FO near the ${p.maxOvertime} h target, kept on 12 h)`);
     }
