@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { addDaysIso, dutyFor, type Crew } from '../../roster';
 import { kuwaitMs } from '../../validation';
 import { cycleOvertime, cycleStart, weekStart, type WorkedDuty } from '../overtime';
+import { personOvertime, type DutyOt } from '../v2';
+import type { SdPlan } from '..';
 
 const H = 3600_000;
 const duty = (date: string, hours: number, at = '07:00'): WorkedDuty => ({ date, start: kuwaitMs(date, at), hours });
@@ -77,7 +79,7 @@ describe('months: each calendar month counts the overtime worked in it', () => {
     // October's days fill the regular hours first; whatever is above 48 h falls where it was worked
     expect(r.months['2026-10'] ?? 0).toBe(Math.max(0, oct - 48));
   });
-  it('a night duty across midnight into a new month: its overtime split by the hours on each side', () => {
+  it('a cycle of 12 h nights (19:00–07:00): the hours after the 48 owed are overtime', () => {
     let s = m1From('A', '2026-10-20');
     const cyc = Array.from({ length: 8 }, (_, i) => addDaysIso(s, i));
     // the whole cycle worked as 12 h nights 19:00–07:00, owed 48: the last 48 hours are overtime
@@ -93,5 +95,37 @@ describe('months: each calendar month counts the overtime worked in it', () => {
     const total = Object.values(r.months).reduce((t, h) => t + h, 0);
     expect(total).toBeCloseTo(r.total, 5);
     expect(Object.keys(r.months).sort()).toEqual(['2026-10', '2026-11']);
+  });
+});
+
+describe('the calendar month of every hour of overtime (Kuwait time), month-end included', () => {
+  // Sat 31 Oct: a rest day for day staff, nothing owed in a window of that one day, so the whole duty is overtime
+  const night = () => cycleOvertime([duty('2026-10-31', 12, '19:00')], basis('2026-10-31', '2026-10-31', null));
+  const p = { id: 'p', start: '2026-10-20', end: '2026-11-20', maxOvertime: 72, maxOvertimeHard: 80, maxOvertimeYear: 380, maxOvertimeYearHard: 440, rulesVersion: 2 } as unknown as SdPlan;
+  const asDuties = (r: ReturnType<typeof night>): DutyOt[] => r.duties.map((d) => ({ ...d, crew: null, restDay: true }));
+  it('a night 31 Oct 19:00 – 1 Nov 07:00: 5 h in October, 7 h in November', () => {
+    const r = night();
+    expect(r.total).toBe(12);
+    expect(r.months).toEqual({ '2026-10': 5, '2026-11': 7 });
+    expect(r.duties[0]).toMatchObject({ split: true, parts: [{ month: '2026-10', hours: 5 }, { month: '2026-11', hours: 7 }] });
+  });
+  it('a day duty 31 Oct 07:00–19:00 stays in October; a night on 30 Oct stays in October', () => {
+    expect(cycleOvertime([duty('2026-10-31', 12)], basis('2026-10-31', '2026-10-31', null)).months).toEqual({ '2026-10': 12 });
+    expect(cycleOvertime([duty('2026-10-30', 12, '19:00')], basis('2026-10-30', '2026-10-30', null)).months).toEqual({ '2026-10': 12 });
+  });
+  it('the 72 / 80 h check adds the Oracle month-to-date only to its own month', () => {
+    const o = personOvertime(p, 'e', asDuties(night()), { asOf: '2026-10-15', ytd: 200, mtd: 70, verified: true }, []);
+    expect(o.months.find((m) => m.key === '2026-10')).toMatchObject({ plan: 5, prev: 70, total: 75, state: 'warn' });
+    expect(o.months.find((m) => m.key === '2026-11')).toMatchObject({ plan: 7, prev: 0, total: 7, state: 'ok' });
+  });
+  it('the October part alone can pass the 80 h limit; November is not charged for it', () => {
+    const o = personOvertime(p, 'e', asDuties(night()), { asOf: '2026-10-15', ytd: 200, mtd: 76, verified: true }, []);
+    expect(o.months.find((m) => m.key === '2026-10')?.state).toBe('over');
+    expect(o.months.find((m) => m.key === '2026-11')?.state).toBe('ok');
+  });
+  it('no Oracle figure: each month is unknown, never zero (the plan stays To Verify)', () => {
+    const o = personOvertime(p, 'e', asDuties(night()), null, []);
+    expect(o.months.map((m) => m.state)).toEqual(['unknown', 'unknown']);
+    expect(o.entryState).toBe('missing');
   });
 });
