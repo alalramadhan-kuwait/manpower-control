@@ -82,6 +82,18 @@ describe('planner · the real Train-2 team, 20 Oct – 20 Nov, 3 on / 1 off', ()
       expect(coverageGaps(inp.plan, inp.teams, without, inp.info, ctx.away).some((g) => g.date === d && g.teamId === m.teamId)).toBe(true);
     }
   });
+  it('roster alignment: no needless run of days off: every 3+ days off in a row holds the roster OFF pair or leave, and no one has more than one such run per 8 days', () => {
+    const ctx = plannerContext(inp); const dates = planDates(basePlan);
+    for (const m of inp.members) {
+      let a = -1; let runs = 0;
+      for (let k = 0; k <= dates.length; k++) {
+        const off = k < dates.length && !m.days?.[dates[k]]?.works;
+        if (off && a < 0) a = k;
+        if (!off && a >= 0) { const span = dates.slice(a, k); if (span.length >= 3 && a > 0 && k < dates.length) { runs++; expect(span.some((d) => !isDutyDay(ctx.crewOn(m.employeeId, d), d) || ctx.away(m.employeeId, d))).toBe(true); } a = -1; }
+      }
+      expect(runs).toBeLessThanOrEqual(Math.ceil(dates.length / 8));
+    }
+  });
   it('one overtime engine: the check, the per-member detail and the months all agree (nothing counted twice)', () => {
     const t = new Map(inp.teams.map((x) => [x.id, x]));
     for (const m of inp.members) {
