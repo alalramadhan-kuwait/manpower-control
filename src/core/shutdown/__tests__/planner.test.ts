@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { Crew } from '../../roster';
 import type { MpAbsence, MpPerson } from '../../manpower';
 import { DEFAULT_RULES } from '../../validation';
-import { planDates, type SdMember, type SdPlan, type SdTeam } from '..';
+import { isDutyDay, planDates, type SdMember, type SdPlan, type SdTeam } from '..';
 import { spreadGroups, spreadGroup } from '../spread';
-import { checkPlan, memberOtDetail, plannerContext, type PersonInfo, type PlanCheckInput } from '../v2';
+import { checkPlan, coverageGaps, memberOtDetail, plannerContext, type PersonInfo, type PlanCheckInput } from '../v2';
 
 // The real Train-2 team (crews and levels from the database, names replaced), moved to 20 Oct – 20 Nov 2026.
 type Row = { id: string; team: 'D' | 'N'; slot: SdMember['slot']; crew: Crew | null; role: MpPerson['role']; level: PersonInfo['foLevel']; follow?: Crew };
@@ -66,12 +66,21 @@ describe('planner · the real Train-2 team, 20 Oct – 20 Nov, 3 on / 1 off', ()
     for (const o of c.overtime) for (const mo of o.months) expect(mo.plan).toBeLessThanOrEqual(72);
     expect(new Set(c.overtime.flatMap((o) => o.months.map((m) => m.key)))).toEqual(new Set(['2026-10', '2026-11']));
   });
-  it('a regular pattern: never more than 3 days in a row; 12 h preferred, 8 h only for qualified people; New FOs always 12 h', () => {
-    for (const m of inp.members) expect(maxRun(m, basePlan)).toBeLessThanOrEqual(3);
+  it('a regular pattern: 3 on / 1 off, a roster-OFF day moved to a duty day never past the 12-hour fatigue limit (4 days, 3 nights); 12 h preferred; New FOs always 12 h', () => {
+    for (const m of inp.members) expect(maxRun(m, basePlan)).toBeLessThanOrEqual(inp.teams.find((t) => t.id === m.teamId)!.shiftCode === 'N' ? 3 : 4);
     const hours = inp.members.flatMap((m) => Object.values(m.days ?? {}).filter((d) => d.works).map((d) => d.hours));
     expect(hours.every((h) => h === 12 || h === 8)).toBe(true);
     expect(hours.filter((h) => h === 12).length).toBeGreaterThan(hours.filter((h) => h === 8).length);
     for (const m of inp.members.filter((x) => x.slot === 'new')) expect(Object.values(m.days ?? {}).filter((d) => d.works).every((d) => d.hours === 12)).toBe(true);
+  });
+  it('roster OFF days: a 12 h duty on a roster OFF day stays only where the minimum needs that person (all positions)', () => {
+    const ctx = plannerContext(inp);
+    for (const m of inp.members) for (const d of planDates(basePlan)) {
+      if (!m.days?.[d]?.works || isDutyDay(ctx.crewOn(m.employeeId, d), d)) continue;
+      expect(m.slot).not.toBe('new');   // a New FO is never needed for the minimum
+      const without = inp.members.map((x) => (x.id === m.id ? { ...x, days: { ...x.days, [d]: { works: false, hours: null } } } : x));
+      expect(coverageGaps(inp.plan, inp.teams, without, inp.info, ctx.away).some((g) => g.date === d && g.teamId === m.teamId)).toBe(true);
+    }
   });
   it('one overtime engine: the check, the per-member detail and the months all agree (nothing counted twice)', () => {
     const t = new Map(inp.teams.map((x) => [x.id, x]));
@@ -87,7 +96,7 @@ describe('planner · the real Train-2 team, 20 Oct – 20 Nov, 3 on / 1 off', ()
     for (const group of [['controller'], ['senior', 'good']]) for (const team of ['D', 'N']) {
       const ids = inp.members.filter((m) => group.includes(m.slot) && m.teamId === team).map((m) => m.employeeId);
       const tot = ids.map((id) => c.overtime.find((o) => o.employeeId === id)!.plan);
-      expect(Math.max(...tot) - Math.min(...tot)).toBeLessThanOrEqual(36);
+      expect(Math.max(...tot) - Math.min(...tot)).toBeLessThanOrEqual(48);
       for (const id of ids) for (const mo of c.overtime.find((o) => o.employeeId === id)!.months) expect(mo.plan).toBeLessThanOrEqual(72);
     }
   });

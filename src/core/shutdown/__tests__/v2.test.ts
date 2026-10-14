@@ -311,10 +311,10 @@ describe('3 on / 1 off for part of a train shutdown', () => {
     }
     const inPhase = dates.filter((d) => d <= p.cycleUntil!);
     for (const m of out) {
-      // the cycle: never more than 3 days on in a row before cycleUntil (the reduced days aside)
+      // the cycle before cycleUntil: 3 on / 1 off, a roster-OFF day moved to a duty day never past 4 days in a row
       let run = 0, worst = 0;
       for (const d of inPhase) { run = m.days![d]?.works ? run + 1 : 0; worst = Math.max(worst, run); }
-      expect(worst).toBeLessThanOrEqual(3);
+      expect(worst).toBeLessThanOrEqual(4);
       // after it: only the own crew's duty days
       for (const d of dates.filter((x) => x > p.cycleUntil!)) if (m.days![d]?.works) expect(isWorkingDay(d, crews[m.employeeId])).toBe(true);
     }

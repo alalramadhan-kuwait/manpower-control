@@ -242,6 +242,26 @@ export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], c
     }
   }
 
+  // 8. roster OFF days (12 h overtime each, against 4 h on a roster duty day), every group, New FOs included:
+  //    a. moved: the person works a nearby roster duty day he had off instead (same number of days, 8 h less overtime),
+  //       when the OFF day keeps the minimum without him and the duty day breaks no rest rule and no run longer than the
+  //       12-hour fatigue limit (4 days / 3 nights);
+  //    b. given back: an OFF-day duty the minimum does not need.
+  //    A roster-OFF duty stays only when the minimum needs it. Each change is noted.
+  const fullOn = (k: number, without: number) => members.map((_m, x) => x).filter((x) => x !== without && drafts[x].works[k] && drafts[x].hours[k] >= full);
+  const keepsMin = (i: number, k: number) => need[k] <= 0 || holdsMin(fullOn(k, i), k);
+  const runOk = (i: number, w: boolean[], k: number) => { const [a, b] = span(w, k); return b - a + 1 <= Math.min(MAX_RUN, fatigue) && pairHits(i, w) <= pairHits(i, drafts[i].works); };
+  for (let i = 0; i < N; i++) for (let k = 0; k < n; k++) {
+    if (!drafts[i].works[k] || duty[i][k] || !keepsMin(i, k)) continue;
+    const ym = dates[k].slice(0, 7);
+    const j = [1, -1, 2, -2, 3, -3].map((s) => k + s).find((x) => x >= 0 && x < n && avail[i][x] && duty[i][x] && !drafts[i].works[x] && dates[x].startsWith(ym)
+      && (() => { const w = [...drafts[i].works]; w[k] = false; w[x] = true; return runOk(i, w, x); })());
+    const h = drafts[i].hours[k];
+    drafts[i].works[k] = false; drafts[i].hours[k] = 0;
+    if (j !== undefined) { drafts[i].works[j] = true; drafts[i].hours[j] = h; notes.push(`${members[i].employeeId}: ${dates[k]} (roster OFF day) moved to ${dates[j]} (roster duty day): 12 h → 4 h overtime`); }
+    else notes.push(`${members[i].employeeId}: ${dates[k]} (roster OFF day) given back, the minimum is held without it: 12 h overtime saved`);
+  }
+
   // anything still above the hard limit is reported (the plan check blocks it)
   for (let i = 0; i < N; i++) for (const ym of months) if (monthOt(i, ym) > hard(i, ym)) notes.push(`${members[i].employeeId}: ${r2(monthOt(i, ym))} h in ${ym}, above the ${p.maxOvertimeHard ?? p.maxOvertime} h limit: add a person to the place`);
 
