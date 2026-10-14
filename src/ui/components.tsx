@@ -98,7 +98,11 @@ export function EmptyState({ title, body }: { title: string; body?: string }) {
 }
 
 export function ErrorBox({ error }: { error: unknown }) {
-  const msg = error instanceof Error ? error.message : String(error);
+  // database / API errors arrive as plain objects with a message (never show "[object Object]")
+  const o = error as { message?: unknown; details?: unknown; hint?: unknown } | null;
+  const msg = error instanceof Error ? error.message
+    : o && typeof o === 'object' && typeof o.message === 'string' ? [o.message, typeof o.details === 'string' ? o.details : '', typeof o.hint === 'string' ? o.hint : ''].filter(Boolean).join(' ')
+    : String(error);
   return <div role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{msg}</div>;
 }
 

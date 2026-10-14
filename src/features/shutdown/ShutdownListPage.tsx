@@ -5,7 +5,8 @@ import { yearSegment } from '@/core/calendar';
 import { FO_LEVEL_LABEL, sdOperatorEligible, type SdKind, type SdMember, type SdPlan } from '@/core/shutdown';
 import { fetchCalendarInfo } from '@/data/calendar';
 import { fetchDirectory } from '@/data/queries';
-import { createSdPlan, fetchAllSdMembers, fetchIncompleteShutdowns, fetchSdPlans, updateSdPlan } from '@/data/shutdown';
+import { createSdPlan, fetchAllSdMembers, fetchIncompleteShutdowns, fetchSdPlans, moveSdPlan, updateSdPlan } from '@/data/shutdown';
+import { addDaysIso } from '@/core/roster';
 import type { EmployeeDirectoryRow } from '@/data/types';
 import { BottomSheet, Button, Card, ErrorBox, Field, PageHeader, Spinner, cx, fmtDate } from '@/ui/components';
 import { CrewBadge, isCrew } from '@/ui/crew';
@@ -399,8 +400,20 @@ function EditPlanSheet({ plan, people, onClose, onDone }: { plan: SdPlan; people
   const [title, setTitle] = useState(plan.title); const [start, setStart] = useState(plan.start); const [end, setEnd] = useState(plan.end);
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  async function run(f: () => Promise<void>, msg: string) { setBusy(true); setErr(null); try { await f(); onDone(msg); } catch (e) { setErr(e); setBusy(false); } }
-  const save = () => run(() => updateSdPlan(plan.id, { title: title.trim(), start_date: start, end_date: end }), `${title.trim()} saved.`);
+  async function run(f: () => Promise<string | void>, msg: string) { setBusy(true); setErr(null); try { onDone((await f()) || msg); } catch (e) { setErr(e); setBusy(false); } }
+  const datesChanged = start !== plan.start || end !== plan.end;
+  const shift = Math.round((Date.parse(start) - Date.parse(plan.start)) / 864e5);
+  const total = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5) + 1;
+  // a shutdown with people moves with everything on it (people, instructions, phases, calendar event); its days are rebuilt
+  const save = () => run(async () => {
+    if (datesChanged && people > 0) {
+      const r = await moveSdPlan(plan.id, start, end);
+      const cu = plan.cycleUntil ? addDaysIso(plan.cycleUntil, shift) : null;
+      await updateSdPlan(plan.id, { title: title.trim(), cycle_until: cu && cu >= start ? (cu > end ? end : cu) : null });
+      return `${title.trim()} moved to ${shortDate(start)} – ${shortDate(end)} (${total(start, end)} days): ${r.members} ${r.members === 1 ? 'person' : 'people'}${r.instructions ? `, ${r.instructions} shift instruction${r.instructions === 1 ? '' : 's'}` : ''}${r.phases ? `, ${r.phases} phase${r.phases === 1 ? '' : 's'}` : ''} moved with it${r.leave ? `; ${r.leave} ${r.leave === 1 ? 'has' : 'have'} leave inside the new dates` : ''}. Open it to check the rebuilt days and hours, then apply.`;
+    }
+    await updateSdPlan(plan.id, { title: title.trim(), start_date: start, end_date: end });
+  }, `${title.trim()} saved${datesChanged ? `: ${shortDate(start)} – ${shortDate(end)}, ${total(start, end)} days` : ''}.`);
   const remove = () => run(() => updateSdPlan(plan.id, { status: 'cancelled' }), `${plan.title} deleted.`);
   return (
     <BottomSheet open onClose={onClose} title={plan.title}>
@@ -410,6 +423,8 @@ function EditPlanSheet({ plan, people, onClose, onDone }: { plan: SdPlan; people
           <Field label="First day"><input type="date" className="input" value={start} onChange={(e) => setStart(e.target.value)} /></Field>
           <Field label="Last day"><input type="date" className="input" value={end} onChange={(e) => setEnd(e.target.value)} /></Field>
         </div>
+        <p className="text-sm font-medium text-slate-800">{end >= start ? `${total(start, end)} days` : 'The last day is before the first day.'}{datesChanged && end >= start ? <span className="font-normal text-slate-500"> (was {total(plan.start, plan.end)}: {shortDate(plan.start)} – {shortDate(plan.end)})</span> : null}</p>
+        {datesChanged && people > 0 && <p className="rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-900 ring-1 ring-brand-100"><b>Moving the shutdown</b>{shift ? ` ${Math.abs(shift)} ${Math.abs(shift) === 1 ? 'day' : 'days'} ${shift > 0 ? 'later' : 'earlier'}` : ''}: its {people} {people === 1 ? 'person' : 'people'}, their &quot;follow X shift&quot; instructions, the phases and the calendar event move with it, then open the shutdown to check the rebuilt days and hours and apply.</p>}
         <p className="text-[11px] text-slate-500">The pattern, hours, teams and people are edited inside the shutdown. {people} {people === 1 ? 'person is' : 'people are'} on this one.</p>
         {err != null && <ErrorBox error={err} />}
         {confirm && (
