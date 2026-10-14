@@ -8,7 +8,10 @@
 //   - never more than 6 days in a row, never both days of a crew rest-day pair (one is allowed), approved leave kept,
 //     the rest before joining and after leaving the team as light as possible (ctx.transitionCost);
 // then the preferences, in order:
-//   1. the plan's days on / days off (3 on / 1 off), the people of a group starting it at different points;
+//   1. the plan's days on / days off (3 on / 1 off, the standard for every shutdown employee), the people of a group
+//      starting it at different offsets so their days off are spread; when days off clash and the minimum is short, the
+//      offsets are changed, not the pattern. The crew roster (M M A A N N Off Off) decides the overtime only (./overtime:
+//      a 12 h duty on a roster duty day 4 h, on a roster OFF day 12 h), never the shutdown days off;
 //   2. 12-hour duties;
 //   3. each person at or below the monthly target (72 h after what they already took that month; months counted apart);
 //   4. 8-hour duties for qualified people only where the target needs it, and only on days the minimum is held by others;
@@ -22,10 +25,10 @@
 //
 // When the place cannot be covered on a day (everybody on leave, or a 7th day in a row would be needed), the day is left
 // short and reported; the planner never breaks a hard rule to fill it.
-import { addDaysIso, dutyFor, type Crew } from '../roster';
+import { addDaysIso, type Crew } from '../roster';
 import { kuwaitMs } from '../validation';
 import { isDutyDay, isRampDay, planDates, type SdMember, type SdPlan } from './index';
-import { cycleOvertime, cycleStart, type OtResult } from './overtime';
+import { cycleOvertime, type OtResult } from './overtime';
 import type { PersonLine, SpreadContext, SpreadGroup, TrainInfo } from './spread';
 
 /** v2: the hard limit of days in a row. */
@@ -240,75 +243,6 @@ export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], c
       if (k === undefined) break;
       drafts[i].works[k] = false; drafts[i].hours[k] = 0; notes.push(`${dates[k]}: extra day off (New FO near the ${p.maxOvertime} h target, kept on 12 h)`);
     }
-  }
-
-  // 8. roster OFF days (12 h overtime each, against 4 h on a roster duty day), every group, New FOs included:
-  //    a. moved: the person works a nearby roster duty day he had off instead (same number of days, 8 h less overtime),
-  //       when the OFF day keeps the minimum without him and the duty day breaks no rest rule and no run longer than the
-  //       12-hour fatigue limit (4 days / 3 nights);
-  //    b. given back: an OFF-day duty the minimum does not need.
-  //    A roster-OFF duty stays only when the minimum needs it. Each change is noted.
-  const fullOn = (k: number, without: number) => members.map((_m, x) => x).filter((x) => x !== without && drafts[x].works[k] && drafts[x].hours[k] >= full);
-  const keepsMin = (i: number, k: number) => need[k] <= 0 || holdsMin(fullOn(k, i), k);
-  const runOk = (i: number, w: boolean[], k: number) => { const [a, b] = span(w, k); return b - a + 1 <= Math.min(MAX_RUN, fatigue) && pairHits(i, w) <= pairHits(i, drafts[i].works); };
-  for (let i = 0; i < N; i++) for (let k = 0; k < n; k++) {
-    if (!drafts[i].works[k] || duty[i][k] || !keepsMin(i, k)) continue;
-    const ym = dates[k].slice(0, 7);
-    const j = [1, -1, 2, -2, 3, -3].map((s) => k + s).find((x) => x >= 0 && x < n && avail[i][x] && duty[i][x] && !drafts[i].works[x] && dates[x].startsWith(ym)
-      && (() => { const w = [...drafts[i].works]; w[k] = false; w[x] = true; return runOk(i, w, x); })());
-    const h = drafts[i].hours[k];
-    drafts[i].works[k] = false; drafts[i].hours[k] = 0;
-    if (j !== undefined) { drafts[i].works[j] = true; drafts[i].hours[j] = h; notes.push(`${members[i].employeeId}: ${dates[k]} (roster OFF day) moved to ${dates[j]} (roster duty day): 12 h → 4 h overtime`); }
-    else notes.push(`${members[i].employeeId}: ${dates[k]} (roster OFF day) given back, the minimum is held without it: 12 h overtime saved`);
-  }
-
-  // 9. roster alignment: each person's days lined up with his own 8-day crew roster where the team allows it: the roster
-  //    OFF pair off (unless the minimum needs him), the six duty days worked as 3 on / 1 off / 2 on (or 2 / 1 / 3), so
-  //    no needless consecutive days off and no 12 h duty on a roster OFF day. Taken only when the whole plan still holds
-  //    the minimum every day, no run passes the fatigue limit, no rest-day pair is worse and the month stays within the
-  //    target; otherwise the person keeps his days. Leave days stay off. Day staff (no crew) keep theirs.
-  const dutyIdx: Record<string, number> = { M1: 0, M2: 1, A1: 2, A2: 3, N1: 4, N2: 5 };
-  const allHeld = () => dates.every((_d, k) => need[k] <= 0 || holdsMin(fullOn(k, -1), k));
-  const worstRun = (w: boolean[]) => { let r = 0, x = 0; for (const v of w) { r = v ? r + 1 : 0; x = Math.max(x, r); } return x; };
-  const score = (i: number, w: boolean[]) => {
-    let s = 0; let off = 0;
-    for (let k = 0; k <= n; k++) {
-      const isOff = k < n && avail[i][k] && !w[k];
-      if (k < n && w[k] && !duty[i][k]) s += 100;                         // a 12 h duty on a roster OFF day
-      if (isOff) off++; else { if (off >= 2 && dates.slice(k - off, k).some((_d, x) => duty[i][k - off + x])) s += 10 * (off - 1); off = 0; }   // days off in a row beyond the roster pair
-    }
-    return s - w.filter((x, k) => x && duty[i][k]).length;                 // then: more work on roster duty days
-  };
-  for (let i = 0; i < N; i++) {
-    const crewAt = (k: number) => crewOn[i](dates[k]);
-    if (dates.some((_d, k) => inRange[i][k] && !crewAt(k))) continue;
-    const cap = Math.min(MAX_RUN, fatigue);
-    // one roster cycle (M1 … Off2) at a time, in date order, so a cycle that cannot be aligned keeps its days
-    const cycleOf = dates.map((d, k) => (inRange[i][k] ? `${crewAt(k)}:${cycleStart(crewAt(k)!, d)}` : ''));
-    const changed: string[] = [];
-    for (const key of [...new Set(cycleOf.filter(Boolean))]) {
-      const ks = dates.map((_d, k) => k).filter((k) => cycleOf[k] === key);
-      const before = { works: [...drafts[i].works], hours: [...drafts[i].hours] };
-      let best: { w: boolean[]; s: number } = { w: before.works, s: score(i, before.works) };
-      for (const brk of [3, 2]) {
-        const w = [...before.works];
-        for (const k of ks) {
-          if (!avail[i][k]) { w[k] = false; continue; }
-          w[k] = !duty[i][k] ? before.works[k] && !keepsMin(i, k) : dutyIdx[dutyFor(dates[k], crewAt(k)!)] !== brk;
-        }
-        if (worstRun(w) > Math.max(cap, worstRun(before.works)) || pairHits(i, w) > pairHits(i, before.works)) continue;
-        drafts[i].works = w; drafts[i].hours = w.map((x, k) => (x ? (before.works[k] ? before.hours[k] || full : full) : 0));
-        const ok = allHeld() && months.every((ym) => monthOt(i, ym) <= target(i, ym));
-        drafts[i].works = before.works; drafts[i].hours = before.hours;
-        const sc = score(i, w);
-        if (ok && sc < best.s) best = { w, s: sc };
-      }
-      if (best.w !== before.works) {
-        drafts[i].works = best.w; drafts[i].hours = best.w.map((x, k) => (x ? (before.works[k] ? before.hours[k] || full : full) : 0));
-        changed.push(dates[ks[0]]);
-      }
-    }
-    if (changed.length) notes.push(`${members[i].employeeId}: lined up with his ${crewAt(0) ?? ''} roster (3 on / 1 off / 2 on, the roster OFF pair off) from ${changed.join(', ')}`);
   }
 
   // anything still above the hard limit is reported (the plan check blocks it)
