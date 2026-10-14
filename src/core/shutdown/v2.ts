@@ -513,7 +513,7 @@ export function plannerContext(inp: PlanCheckInput): { levelOf: (employeeId: str
         return d ? { code: t.shiftCode === 'N' ? 'SD-N' as const : 'SD-D' as const, start: teamStart(t), hours: d.hours } : inp.otherSdDuty?.(employeeId, date) ?? null;
       };
       const tr = transitions(person, temp, own, inp.absences, inp.assignments, inp.rules);
-      return tr.joinOff.length + tr.returnOff.length + 5 * tr.findings.length;
+      return tr.joinOff.length + tr.returnOff.length + 1000 * tr.findings.length;   // a rest finding always outweighs overtime
     },
     monthTaken: (e, ym) => {
       const entry = inp.otEntries.get(e) ?? null;

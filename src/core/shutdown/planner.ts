@@ -95,8 +95,10 @@ export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], c
     // projected overtime of this offset (KNPC rule: 12 h on a roster OFF day, 4 h on a duty day): the tie-break between
     // otherwise valid offsets; it never changes the 3 on / 1 off pattern or adds a day off
     const otCost = w.reduce((t, x, k) => t + (x ? (duty[i][k] ? 4 : 12) : 0), 0);
+    // equal totals: the offset with the lower busiest month (more room under the 72 h monthly limit)
+    const peak = Math.max(0, ...Object.values(draftOvertime(p, g, members[i], crewOn[i], { works: w, hours: w.map((x) => (x ? full : 0)) }, dates, leave(i)).months)) / 100;
     const trans = ctx.transitionCost ? ctx.transitionCost(members[i], Object.fromEntries(dates.map((d, k) => [d, w[k]]))) : 0;
-    return { w, cost: pairHits(i, w) * 1e4 + trans * 12 + otCost };
+    return { w, cost: pairHits(i, w) * 1e4 + trans + otCost + peak };   // rest findings (1000 each) > overtime > days off around joining
   }));
   const anyPhase = inPhase.some(Boolean);
   let best: number[] = members.map(() => 0);
@@ -183,6 +185,25 @@ export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], c
   //     within the target. The lowest overtime wins, then the earliest day. Noted; shorter duties only if none works.
   const monthsAll = [...new Set(dates.map((d) => d.slice(0, 7)))];
   const heldAll = () => dates.every((_d, k) => need[k] <= 0 || holdsMin(members.map((_m, x) => x).filter((x) => drafts[x].works[k] && drafts[x].hours[k] >= full), k));
+  /** Gives the full shift to people already at work where a day lost its full-shift holder (least overtime first, an
+   *  Experienced one first when he is what is missing); returns what it changed so it can be undone. */
+  const refill = () => {
+    const changed: [number, number, number][] = [];
+    for (let k = 0; k < n; k++) {
+      if (need[k] <= 0) continue;
+      const ym = dates[k].slice(0, 7);
+      const holders = () => members.map((_m, x) => x).filter((x) => drafts[x].works[k] && drafts[x].hours[k] >= full);
+      for (let guard = 0; guard < N && !holdsMin(holders(), k); guard++) {
+        const noExp = composite && !holders().some((x) => exp[x]);
+        const x = members.map((_m, y) => y).filter((y) => drafts[y].works[k] && drafts[y].hours[k] < full && qual[y] && (!noExp || exp[y]))
+          .sort((a, b) => monthOt(a, ym) - monthOt(b, ym))[0];
+        if (x === undefined) break;
+        changed.push([x, k, drafts[x].hours[k]]); drafts[x].hours[k] = full;
+      }
+    }
+    return changed;
+  };
+  const undo = (c: [number, number, number][]) => { for (const [x, k, h] of c.reverse()) drafts[x].hours[k] = h; };
   const longest = (w: boolean[]) => { let r = 0, x = 0; for (const v of w) { r = v ? r + 1 : 0; x = Math.max(x, r); } return x; };
   if (cycle > 1) for (let i = 0; i < N; i++) {
     // measured on full 12-hour duties (step 6 prefers them; shorter duties are the last resort)
@@ -197,13 +218,14 @@ export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], c
       const w = before.works.map((x, k) => (k < t || !inPhase[k] ? x : avail[i][k] && (k - t) % cycle !== 0));
       if (longest(w) > Math.min(MAX_RUN, Math.max(p.daysOn, longest(before.works)))) continue;
       drafts[i].works = w; drafts[i].hours = w.map((x) => (x ? full : 0));
-      const ok = heldAll() && monthsAll.every((ym) => monthOt(i, ym) <= target(i, ym));
+      const c = refill();
+      const ok = heldAll() && monthsAll.every((ym) => monthOt(i, ym) <= target(i, ym) && c.every(([x]) => monthOt(x, ym) <= target(x, ym)));
       const tot = monthsAll.reduce((a, ym) => a + monthOt(i, ym), 0);
-      drafts[i].works = before.works; drafts[i].hours = before.hours;
+      undo(c); drafts[i].works = before.works; drafts[i].hours = before.hours;
       if (ok && (!best || tot < best.ot)) best = { w, ot: tot, t };
     }
     if (best) {
-      drafts[i].works = best.w; drafts[i].hours = best.w.map((x) => (x ? full : 0));
+      drafts[i].works = best.w; drafts[i].hours = best.w.map((x) => (x ? full : 0)); refill();
       notes.push(`${members[i].employeeId}: one extra day off on ${dates[best.t]}, then 3 on / 1 off again: the ${p.maxOvertime} h monthly limit (not the crew roster)`);
     }
   }
