@@ -132,7 +132,8 @@ function stats(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadContex
     if (need > 0) {
       short += Math.max(0, need - on.length);
       if (!optional && on.length === 0) { gapDays++; gapDates.push(date); }
-      if (!optional && (ctx.v2 || !isRampDay(p, date)) && !on.some((m) => hoursOf(m, date) >= p.shiftHours)) { noFullDays++; noFullDates.push(date); }
+      // the minimum on duty must hold for all the shift's hours: that many on the full shift (an 8-hour duty leaves 4 hours open)
+      if (!optional && (ctx.v2 || !isRampDay(p, date)) && on.filter((m) => hoursOf(m, date) >= p.shiftHours).length < (ctx.v2 ? Math.min(1, need) : 1)) { noFullDays++; noFullDates.push(date); }
     }
     if (!ctx.v2) for (const m of on) {
       const ot = Math.max(0, hoursOf(m, date) - (isDutyDay(ctx.crewOf(m.employeeId), date) ? p.normalHours : 0)); overtime += ot;

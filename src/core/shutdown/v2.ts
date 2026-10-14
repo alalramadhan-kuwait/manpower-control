@@ -7,7 +7,7 @@
 import { addDaysIso, type Crew } from '../roster';
 import { personOn, type MpAbsence, type MpAssignment, type MpPerson } from '../manpower';
 import { checkSchedule, kuwaitMs, personDays, shiftTimesOf, type DayLine, type Finding, type RuleConfig, type SdDutyOf } from '../validation';
-import { isDutyDay, isRampDay, memberHoursOn, memberWorks, planDates, type FoLevel, type SdMember, type SdPlan, type SdTeam } from './index';
+import { areasOf, groupOf, hoursOn, isDutyDay, isRampDay, memberHoursOn, memberWorks, phaseOn, planDates, type FoLevel, type SdMember, type SdPhase, type SdPlan, type SdTeam } from './index';
 import { cycleOvertime, type OtBasis, type OtResult, type WorkedDuty } from './overtime';
 
 export const SD_RULES_V2 = 2;
@@ -208,22 +208,64 @@ export function eligibility(p: SdPlan, info: PersonInfo | undefined, isControlle
 export type CoverRole = 'controller' | 'senior' | 'good';
 export const COVER_ROLES: CoverRole[] = ['controller', 'senior', 'good'];
 export const COVER_LABEL: Record<CoverRole, string> = { controller: 'Controller', senior: 'Senior FO', good: 'Good FO' };
-export interface CoverGap { teamId: string; team: string; date: string; role: CoverRole; from: string; to: string; hours: number }
+/** A stretch of a team shift with fewer qualified people on duty than the place needs (`have` of `need`). */
+export interface CoverGap { teamId: string; team: string; date: string; role: string; label: string; from: string; to: string; hours: number; need: number; have: number }
+
+/** One place a team shift must keep staffed every moment: who counts for it and how many it needs on a date. */
+export interface CoverPlace { key: string; label: string; counts: (m: SdMember) => boolean; need: (date: string) => number }
+/**
+ * The places of a team and their minimum on duty at every moment. Train shutdown: a qualified Controller, Senior FO and
+ * Good FO (v2: one of each on duty is the minimum, the rest of the team is relief; reduced days: the reduced needs).
+ * Total turnaround: the Controllers (per section, when the plan has sections) and the operators of each area, as many
+ * as the phase of that date needs.
+ */
+export function coverPlaces(p: SdPlan, t: SdTeam, info: Map<string, PersonInfo>, phases: SdPhase[] = []): CoverPlace[] {
+  if (p.kind === 'total') {
+    const n = (d: string) => phaseOn(phases, d)?.needs[t.id];
+    const ctl = (m: SdMember) => m.slot === 'controller' && isControllerPerson(info.get(m.employeeId));
+    const out: CoverPlace[] = p.sections.length
+      ? p.sections.map((s) => ({ key: `ctl:${s}`, label: `Controller ${s}`, counts: (m: SdMember) => ctl(m) && groupOf(p.sections, m.area) === s, need: (d: string) => n(d)?.sections?.[s] ?? 0 }))
+      : [{ key: 'controller', label: 'Controller', counts: ctl, need: (d: string) => n(d)?.controller ?? 0 }];
+    const areas = areasOf(p);
+    for (const a of areas) out.push({ key: `area:${a}`, label: a ? `Operators ${a}` : 'Operators', counts: (m: SdMember) => m.slot !== 'controller' && groupOf(areas, m.area) === a, need: (d: string) => n(d)?.areas[a] ?? 0 });
+    return out;
+  }
+  const v2 = isV2(p);
+  return COVER_ROLES.map((role) => ({ key: role, label: COVER_LABEL[role], counts: (m: SdMember) => capabilities(m, info.get(m.employeeId))[role],
+    need: (d: string) => { const k = (isRampDay(p, d) ? t.rampNeeds : t.needs)[role]; return v2 ? Math.min(1, k) : k; } }));
+}
 
 /**
- * Each team shift (07:00–19:00, 19:00–07:00) must have a qualified Controller, Senior FO and Good FO on duty every
- * moment of its 12 hours: the uncovered stretches per role. An 8-hour duty covers only its own 8 hours.
+ * Coverage by the clock: every team shift (07:00–19:00, 19:00–07:00) must have, at every moment of its hours, at least
+ * as many qualified people on duty as each place needs. Duties are taken with their real start and end, so an 8-hour duty
+ * (07:00–15:00) counts only for its own 8 hours and the last 4 hours need somebody else on the full shift. Returns every
+ * stretch below the minimum, with how many were on duty.
  */
-export function coverageGaps(p: SdPlan, teams: SdTeam[], members: SdMember[], info: Map<string, PersonInfo>, away: (employeeId: string, date: string) => boolean): CoverGap[] {
+export function coverageGaps(p: SdPlan, teams: SdTeam[], members: SdMember[], info: Map<string, PersonInfo>, away: (employeeId: string, date: string) => boolean, phases: SdPhase[] = []): CoverGap[] {
   const out: CoverGap[] = [];
-  for (const t of teams) for (const date of planDates(p)) {
-    const ws = kuwaitMs(date, teamStart(t)), we = ws + p.shiftHours * H;
-    for (const role of COVER_ROLES) {
-      const spans = members.filter((m) => m.teamId === t.id && capabilities(m, info.get(m.employeeId))[role] && !away(m.employeeId, date))
-        .map((m) => memberDuty(p, t, m, date)).filter((d): d is NonNullable<typeof d> => !!d).map((d) => [Math.max(ws, d.start), Math.min(we, d.end)] as const).filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0]);
-      let at = ws;
-      for (const [a, b] of spans) { if (a > at) out.push({ teamId: t.id, team: t.name, date, role, from: hhmm(at), to: hhmm(a), hours: (a - at) / H }); at = Math.max(at, b); }
-      if (at < we) out.push({ teamId: t.id, team: t.name, date, role, from: hhmm(at), to: hhmm(we), hours: (we - at) / H });
+  for (const t of teams) {
+    const places = coverPlaces(p, t, info, phases);
+    for (const date of planDates(p)) {
+      // v2: the team shift is always the full 12 h (reduced days: fewer people, not fewer hours); before v2 a reduced
+      // day is a shorter shift (the plan's reduced-day hours)
+      const ws = kuwaitMs(date, teamStart(t)), we = ws + (isV2(p) ? p.shiftHours : hoursOn(p, date)) * H;
+      for (const pl of places) {
+        const need = pl.need(date);
+        if (need <= 0) continue;
+        const spans = members.filter((m) => m.teamId === t.id && pl.counts(m) && !away(m.employeeId, date))
+          .map((m) => memberDuty(p, t, m, date)).filter((d): d is NonNullable<typeof d> => !!d)
+          .map((d) => [Math.max(ws, d.start), Math.min(we, d.end)] as const).filter(([a, b]) => b > a);
+        // the moments where the number on duty changes, then the count in each stretch between them
+        const cuts = [...new Set([ws, we, ...spans.flatMap(([a, b]) => [a, b])])].sort((a, b) => a - b);
+        let open: { a: number; have: number } | null = null;
+        const close = (at: number) => { if (open) { out.push({ teamId: t.id, team: t.name, date, role: pl.key, label: pl.label, from: hhmm(open.a), to: hhmm(at), hours: (at - open.a) / H, need, have: open.have }); open = null; } };
+        for (let i = 0; i + 1 < cuts.length; i++) {
+          const a = cuts[i], b = cuts[i + 1];
+          const have = spans.filter(([x, y]) => x <= a && y >= b).length;
+          if (have < need) { if (open && open.have !== have) close(a); if (!open) open = { a, have }; } else close(a);
+          if (i + 2 === cuts.length) close(b);
+        }
+      }
     }
   }
   return out;
@@ -279,6 +321,8 @@ export interface PlanCheckInput {
   info: Map<string, PersonInfo>;
   /** Active shutdown plans with their members (for two-in-a-row) and the duties of the others (overtime counted once). */
   plans: PlanRef[]; otherDuties: OtherDuty[];
+  /** Total turnaround: the phases (people needed per area and section). */
+  phases?: SdPhase[];
   /** Other shutdown teams' duties for the rest check (this plan's own come from its members). */
   otherSdDuty?: SdDutyOf;
   otEntries: Map<string, OtEntry>; sickEntries: Map<string, SickEntry>; exceptions: SdException[];
@@ -320,12 +364,13 @@ export function checkPlan(inp: PlanCheckInput): PlanCheck {
   }
 
   // continuous 12-hour coverage
-  const gaps = coverageGaps(p, teams, members, info, away);
+  const gaps = coverageGaps(p, teams, members, info, away, inp.phases ?? []);
   const byGap = new Map<string, CoverGap[]>();
   for (const g of gaps) { const k = `${g.teamId}|${g.role}`; byGap.set(k, [...(byGap.get(k) ?? []), g]); }
   for (const list of byGap.values()) {
     const g = list[0];
-    issues.push({ level: 'block', code: 'coverage', teamId: g.teamId, date: g.date, message: `${g.team} team: ${COVER_LABEL[g.role]} not covered on ${list.length} shift${list.length === 1 ? '' : 's'}, first ${fmtDay(g.date)} ${g.from}–${g.to}.` });
+    const hrs = r2(list.reduce((t, x) => t + x.hours, 0));
+    issues.push({ level: 'block', code: 'coverage', teamId: g.teamId, date: g.date, message: `${g.team} team: ${g.label} below the minimum of ${g.need} for ${hrs} h on ${new Set(list.map((x) => x.date)).size} shift${new Set(list.map((x) => x.date)).size === 1 ? '' : 's'}, first ${fmtDay(g.date)} ${g.from}–${g.to} (${g.have} on duty).` });
   }
   // composition: Primary / Assistant Controller, New FO (a training place, never blocking)
   for (const t of teams) {

@@ -19,7 +19,7 @@ import { yearCap } from '@/core/shutdown/spread';
 import { MoveLeaveSheet } from './MoveLeave';
 import { FollowInstruction, FollowSheet } from './FollowCrew';
 import { suggestFollow } from '@/core/shutdown/overlap';
-import { adjacent, eligibility, isV2, memberOtDetail, plannerContext, sickState, type Eligibility, type OtEntry, type PlanCheck, type PlanRef, type SdException, type SickEntry } from '@/core/shutdown/v2';
+import { adjacent, coverageGaps, eligibility, isV2, memberOtDetail, plannerContext, sickState, type CoverGap, type Eligibility, type OtEntry, type PlanCheck, type PlanRef, type SdException, type SickEntry } from '@/core/shutdown/v2';
 import { fetchApproval, fetchExceptions, fetchOtEntries, fetchSickEntries, loadPlanCheckInput, personInfo, runPlanCheck, type ApprovalState } from '@/data/sdCheck';
 import { EligibilityBadge, ExceptionsBox, FiguresSheet, ReadinessPanel } from './SdV2';
 import { localToday } from '@/ui/leave';
@@ -153,7 +153,10 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
     const overlaps = plan.kind === 'total' ? [] : suggestFollow(plan, teams, members, data.phases, dutyCrew, (m) => data.dir.get(m.employeeId)?.position_code === 'vr_controller', (m) => homeCrew(m.employeeId, plan.start));
     // places short on some day (approved leave counts as away; leave not yet approved is postponed)
     const gaps = teamGaps(plan, teams, members, data.phases, approvedOn);
-    return { people, leaveOn, approvedOn, homeCrew, dutyCrew, dates, crewImpact, hours, leaveDays, approvedLeaveDays, teamDays, overlaps, gaps };
+    // plans on the earlier rules have no plan check: the minimum on duty is still checked hour by hour here (an 8-hour
+    // duty covers only its own 8 hours of the 12-hour shift)
+    const clockGaps = data.v2 ? [] : coverageGaps(plan, teams, members, new Map([...data.dir].map(([k, r]) => [k, personInfo(r)])), approvedOn, data.phases);
+    return { people, leaveOn, approvedOn, homeCrew, dutyCrew, dates, crewImpact, hours, leaveDays, approvedLeaveDays, teamDays, overlaps, gaps, clockGaps };
   }, [data]);
 
   // v2: the year to date from the Oracle figures; before v2: the hours typed per year
@@ -245,6 +248,16 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
         );
       })()}
       {data.v2 && <ReadinessPanel plan={plan} names={new Map([...data.dir].map(([k, r]) => [k, r.display_name]))} check={check} approval={approval} isHead={isHead} error={checkErr} onApproved={done} />}
+      {!data.v2 && view.clockGaps.length > 0 && (
+        <div role="alert" className="mb-3 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-900 ring-2 ring-red-400">
+          <p className="flex items-center gap-1.5 font-bold"><AlertTriangle className="h-4 w-4 shrink-0" />Below the minimum on duty · {view.clockGaps.length} {view.clockGaps.length === 1 ? 'stretch' : 'stretches'}, {Math.round(view.clockGaps.reduce((t, g) => t + g.hours, 0))} h</p>
+          <p className="text-xs">Checked hour by hour: an 8-hour duty covers only 07:00–15:00 (19:00–03:00), so the rest of the 12-hour shift needs somebody on the full shift. Move the plan to the current rules and plan the days and hours, or set a full shift on these days.</p>
+          <ul className="mt-1.5 space-y-0.5 text-xs">
+            {view.clockGaps.slice(0, 12).map((g, i) => <li key={i}><b>{g.team} · {g.label}</b> {shortDate(g.date)} {g.from}–{g.to}: {g.have} of {g.need} on duty</li>)}
+            {view.clockGaps.length > 12 && <li>and {view.clockGaps.length - 12} more</li>}
+          </ul>
+        </div>
+      )}
       {!data.v2 && view.gaps.length > 0 && (
         <div role="alert" className="mb-3 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-900 ring-2 ring-red-400">
           <p className="flex items-center gap-1.5 font-bold"><AlertTriangle className="h-4 w-4 shrink-0" />Team not complete · {new Set(view.gaps.flatMap((g) => g.dates)).size} {new Set(view.gaps.flatMap((g) => g.dates)).size === 1 ? 'day' : 'days'} short</p>
@@ -317,6 +330,8 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
 }
 
 interface View {
+  /** Plans before v2: stretches of the team shifts below the minimum on duty, hour by hour. */
+  clockGaps: CoverGap[];
   people: Map<string, MpPerson>;
   leaveOn: (employeeId: string, date: string) => boolean;
   /** Leave already approved in Oracle on a date (the person is off the team that day). */

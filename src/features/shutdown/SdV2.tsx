@@ -4,7 +4,7 @@
 import { AlertTriangle, BadgeCheck, Check, CircleDashed, Info, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import type { SdMember, SdPlan } from '@/core/shutdown';
-import { COVER_LABEL, SICK_LABEL, fmtDay, fmtMonth, limitsOf, sickState, type CoverGap, type Eligibility, type ExceptionKind, type IssueLevel, type OtEntry, type PersonOt, type PlanCheck, type SdException, type SickEntry } from '@/core/shutdown/v2';
+import { SICK_LABEL, fmtDay, fmtMonth, limitsOf, sickState, type CoverGap, type Eligibility, type ExceptionKind, type IssueLevel, type OtEntry, type PersonOt, type PlanCheck, type SdException, type SickEntry } from '@/core/shutdown/v2';
 import { grantException, requestApproval, revokeException, saveOtEntry, saveSickCheck, type ApprovalState } from '@/data/sdCheck';
 import type { EmployeeDirectoryRow } from '@/data/types';
 import { BottomSheet, Button, Card, ErrorBox, Field, cx } from '@/ui/components';
@@ -96,10 +96,10 @@ function CoverageList({ gaps }: { gaps: CoverGap[] }) {
   const shown = all ? gaps : gaps.slice(0, 8);
   return (
     <div className="mt-2 rounded-lg bg-red-50 px-2.5 py-2 text-xs text-red-900 ring-1 ring-red-300">
-      <p className="font-semibold">Not covered for the full 12 hours · {gaps.length} {gaps.length === 1 ? 'stretch' : 'stretches'}</p>
+      <p className="font-semibold">Below the minimum on duty · {gaps.length} {gaps.length === 1 ? 'stretch' : 'stretches'} (checked hour by hour)</p>
       <table className="mt-1 w-full text-left">
-        <thead className="text-[10px] uppercase text-red-700"><tr><th className="font-semibold">Team</th><th className="font-semibold">Date</th><th className="font-semibold">Role</th><th className="font-semibold">Uncovered</th></tr></thead>
-        <tbody>{shown.map((g, i) => <tr key={i}><td>{g.team}</td><td>{fmtDay(g.date)}</td><td>{COVER_LABEL[g.role]}</td><td className="tabular-nums">{g.from}–{g.to} ({g.hours} h)</td></tr>)}</tbody>
+        <thead className="text-[10px] uppercase text-red-700"><tr><th className="font-semibold">Team</th><th className="font-semibold">Date</th><th className="font-semibold">Role</th><th className="font-semibold">On duty</th><th className="font-semibold">When</th></tr></thead>
+        <tbody>{shown.map((g, i) => <tr key={i}><td>{g.team}</td><td>{fmtDay(g.date)}</td><td>{g.label}</td><td className="tabular-nums">{g.have} of {g.need}</td><td className="tabular-nums">{g.from}–{g.to} ({g.hours} h)</td></tr>)}</tbody>
       </table>
       {gaps.length > 8 && <button type="button" className="mt-1 font-semibold underline" onClick={() => setAll(!all)}>{all ? 'Show fewer' : `Show all ${gaps.length}`}</button>}
       <p className="mt-1 text-[11px]">Fix with the fewest changes: a &quot;follow X shift&quot; instruction (Shift instructions), the days &amp; hours, or a qualified person from another crew.</p>

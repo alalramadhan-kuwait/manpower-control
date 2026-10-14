@@ -206,6 +206,7 @@ function checkSchedule(days3, rules) {
 }
 
 // src/core/shutdown/index.ts
+var phaseOn = (phases, date) => phases.find((x) => x.start <= date && date <= x.end) ?? null;
 var days = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
 var cycleOf = (p) => Math.max(1, p.daysOn + p.daysOff);
 var isRampDay = (p, date) => date >= p.start && date <= p.end && (days(p.start, date) < p.rampDays || days(date, p.end) < p.rampDays);
@@ -223,6 +224,8 @@ function memberWorks(p, m, date) {
 }
 var memberHoursOn = (p, m, date) => memberWorks(p, m, date) ? m.days?.[date]?.hours ?? hoursOn(p, date) : 0;
 var isDutyDay = (crew, date) => crew ? isWorkingDay(date, crew) : (/* @__PURE__ */ new Date(`${date}T00:00:00Z`)).getUTCDay() <= 4;
+var groupOf = (names, own) => names.includes(own ?? "") ? own ?? "" : names[0] ?? "";
+var areasOf = (p) => p.areas.length ? p.areas : [""];
 
 // src/core/shutdown/overtime.ts
 var H2 = 36e5;
@@ -452,18 +455,54 @@ function eligibility(p, info, isController, around, sick, ex) {
 }
 var COVER_ROLES = ["controller", "senior", "good"];
 var COVER_LABEL = { controller: "Controller", senior: "Senior FO", good: "Good FO" };
-function coverageGaps(p, teams, members, info, away) {
+function coverPlaces(p, t, info, phases = []) {
+  if (p.kind === "total") {
+    const n = (d) => phaseOn(phases, d)?.needs[t.id];
+    const ctl = (m) => m.slot === "controller" && isControllerPerson(info.get(m.employeeId));
+    const out = p.sections.length ? p.sections.map((s) => ({ key: `ctl:${s}`, label: `Controller ${s}`, counts: (m) => ctl(m) && groupOf(p.sections, m.area) === s, need: (d) => n(d)?.sections?.[s] ?? 0 })) : [{ key: "controller", label: "Controller", counts: ctl, need: (d) => n(d)?.controller ?? 0 }];
+    const areas = areasOf(p);
+    for (const a of areas) out.push({ key: `area:${a}`, label: a ? `Operators ${a}` : "Operators", counts: (m) => m.slot !== "controller" && groupOf(areas, m.area) === a, need: (d) => n(d)?.areas[a] ?? 0 });
+    return out;
+  }
+  const v2 = isV2(p);
+  return COVER_ROLES.map((role) => ({
+    key: role,
+    label: COVER_LABEL[role],
+    counts: (m) => capabilities(m, info.get(m.employeeId))[role],
+    need: (d) => {
+      const k = (isRampDay(p, d) ? t.rampNeeds : t.needs)[role];
+      return v2 ? Math.min(1, k) : k;
+    }
+  }));
+}
+function coverageGaps(p, teams, members, info, away, phases = []) {
   const out = [];
-  for (const t of teams) for (const date of planDates(p)) {
-    const ws = kuwaitMs(date, teamStart(t)), we = ws + p.shiftHours * H3;
-    for (const role of COVER_ROLES) {
-      const spans = members.filter((m) => m.teamId === t.id && capabilities(m, info.get(m.employeeId))[role] && !away(m.employeeId, date)).map((m) => memberDuty(p, t, m, date)).filter((d) => !!d).map((d) => [Math.max(ws, d.start), Math.min(we, d.end)]).filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0]);
-      let at = ws;
-      for (const [a, b] of spans) {
-        if (a > at) out.push({ teamId: t.id, team: t.name, date, role, from: hhmm(at), to: hhmm(a), hours: (a - at) / H3 });
-        at = Math.max(at, b);
+  for (const t of teams) {
+    const places = coverPlaces(p, t, info, phases);
+    for (const date of planDates(p)) {
+      const ws = kuwaitMs(date, teamStart(t)), we = ws + (isV2(p) ? p.shiftHours : hoursOn(p, date)) * H3;
+      for (const pl of places) {
+        const need = pl.need(date);
+        if (need <= 0) continue;
+        const spans = members.filter((m) => m.teamId === t.id && pl.counts(m) && !away(m.employeeId, date)).map((m) => memberDuty(p, t, m, date)).filter((d) => !!d).map((d) => [Math.max(ws, d.start), Math.min(we, d.end)]).filter(([a, b]) => b > a);
+        const cuts = [.../* @__PURE__ */ new Set([ws, we, ...spans.flatMap(([a, b]) => [a, b])])].sort((a, b) => a - b);
+        let open = null;
+        const close = (at) => {
+          if (open) {
+            out.push({ teamId: t.id, team: t.name, date, role: pl.key, label: pl.label, from: hhmm(open.a), to: hhmm(at), hours: (at - open.a) / H3, need, have: open.have });
+            open = null;
+          }
+        };
+        for (let i = 0; i + 1 < cuts.length; i++) {
+          const a = cuts[i], b = cuts[i + 1];
+          const have = spans.filter(([x, y]) => x <= a && y >= b).length;
+          if (have < need) {
+            if (open && open.have !== have) close(a);
+            if (!open) open = { a, have };
+          } else close(a);
+          if (i + 2 === cuts.length) close(b);
+        }
       }
-      if (at < we) out.push({ teamId: t.id, team: t.name, date, role, from: hhmm(at), to: hhmm(we), hours: (we - at) / H3 });
     }
   }
   return out;
@@ -537,7 +576,7 @@ function checkPlan(inp) {
     if (m.slot === "senior" && !cap.senior || m.slot === "good" && !cap.good) issues.push({ level: "warn", code: "level", message: `${name(m.employeeId)}: in the ${m.slot === "senior" ? "Senior" : "Good"} FO place but marked ${i?.foLevel ?? "without a level"}: not counted for the 12-hour coverage.`, employeeId: m.employeeId });
     if (m.slot === "member") issues.push({ level: "info", code: "unclassified", message: `${name(m.employeeId)}: Operator without a level, not counted as a Senior or Good FO.`, employeeId: m.employeeId });
   }
-  const gaps = coverageGaps(p, teams, members, info, away);
+  const gaps = coverageGaps(p, teams, members, info, away, inp.phases ?? []);
   const byGap = /* @__PURE__ */ new Map();
   for (const g of gaps) {
     const k = `${g.teamId}|${g.role}`;
@@ -545,7 +584,8 @@ function checkPlan(inp) {
   }
   for (const list of byGap.values()) {
     const g = list[0];
-    issues.push({ level: "block", code: "coverage", teamId: g.teamId, date: g.date, message: `${g.team} team: ${COVER_LABEL[g.role]} not covered on ${list.length} shift${list.length === 1 ? "" : "s"}, first ${fmtDay(g.date)} ${g.from}–${g.to}.` });
+    const hrs = r22(list.reduce((t, x) => t + x.hours, 0));
+    issues.push({ level: "block", code: "coverage", teamId: g.teamId, date: g.date, message: `${g.team} team: ${g.label} below the minimum of ${g.need} for ${hrs} h on ${new Set(list.map((x) => x.date)).size} shift${new Set(list.map((x) => x.date)).size === 1 ? "" : "s"}, first ${fmtDay(g.date)} ${g.from}–${g.to} (${g.have} on duty).` });
   }
   for (const t of teams) {
     const ctl = members.filter((m) => m.teamId === t.id && m.slot === "controller");
@@ -1071,6 +1111,7 @@ async function loadPlanCheckInput(planId, today) {
     plan,
     teams,
     members,
+    phases: sd.phases,
     people: inputs.people,
     absences: inputs.absences,
     assignments: inputs.assignments,
