@@ -2,9 +2,10 @@ import { Minus, Plus, Shuffle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { Crew } from '@/core/roster';
 import { defaultMaxRun, spreadPlan, yearCap, MAX_WEEK_HOURS } from '@/core/shutdown/spread';
+import type { plannerContext } from '@/core/shutdown/v2';
 import { slotLabel, type SdMember, type SdPhase, type SdPlan, type SdTeam } from '@/core/shutdown';
 import { setSdDaysMany } from '@/data/shutdown';
-import { BottomSheet, Button, ErrorBox, cx } from '@/ui/components';
+import { BottomSheet, Button, ErrorBox, Spinner, cx } from '@/ui/components';
 import { Link } from 'react-router-dom';
 import { CrewBadge } from '@/ui/crew';
 
@@ -16,20 +17,32 @@ const arrow = (a: number, b: number, unit = '') => (a === b ? <span className="t
  * its people every day and one person for the full shift, the others the normal hours, overtime shared evenly.
  * Total turnaround: stagger the days off inside each place so it keeps its people every day with the least overtime.
  */
-export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, conflicts, yearTaken, onClose, onDone }: {
+export function SpreadDaysSheet(props: Parameters<typeof SpreadDaysBody>[0]) {
+  // rules v2: the planner reads the same data as the plan check (leave, rest around the shutdown, overtime already taken)
+  if ((props.plan.rulesVersion ?? 1) >= 2 && props.plan.kind !== 'total' && !props.planner) {
+    return <BottomSheet open onClose={props.onClose} title="Plan the days and hours"><div className="space-y-2 py-4 text-center text-sm text-slate-600"><Spinner />Reading leave, duties around the shutdown and overtime already taken…</div></BottomSheet>;
+  }
+  return <SpreadDaysBody {...props} />;
+}
+
+function SpreadDaysBody({ plan, teams, members, phases, names, crewOf, conflicts, yearTaken, planner, onClose, onDone }: {
   plan: SdPlan; teams: SdTeam[]; members: SdMember[]; phases: SdPhase[]; names: Map<string, string>;
   crewOf: (employeeId: string) => Crew | null;
   /** Team members who have leave inside the shutdown (a team member takes none): balanced as if they were all present. */
   conflicts: { employeeId: string; number: string; days: number }[];
   /** Overtime already taken in a year (typed in), counted against the yearly cap. */
   yearTaken?: (employeeId: string, year: number) => number;
+  /** Rules v2 (train shutdown): the plan check's data for the planner (see plannerContext). */
+  planner?: ReturnType<typeof plannerContext> | null;
   onClose: () => void; onDone: (msg: string) => void;
 }) {
   const [maxRun, setMaxRun] = useState(defaultMaxRun(plan));
   const [reach, setReach] = useState(false);
   // shutdown team members take no leave: the days are planned with everybody present, the leave to move is listed above
   const v2 = (plan.rulesVersion ?? 1) >= 2;
-  const results = useMemo(() => spreadPlan(plan, teams, members, phases, { crewOf, away: () => false, maxRun, reachLimit: reach && !v2, yearTaken, v2 }), [plan, teams, members, phases, crewOf, maxRun, reach, yearTaken, v2]);
+  const results = useMemo(() => spreadPlan(plan, teams, members, phases, v2 && planner && plan.kind !== 'total'
+    ? { crewOf: planner.crewOf, away: planner.away, maxRun: 6, yearTaken, v2, transitionCost: planner.transitionCost, monthTaken: planner.monthTaken, crewOn: planner.crewOn }
+    : { crewOf, away: () => false, maxRun, reachLimit: reach && !v2, yearTaken, v2 }), [plan, teams, members, phases, crewOf, maxRun, reach, yearTaken, v2, planner]);
   const [off, setOff] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const id = (r: (typeof results)[number]) => `${r.group.teamId}:${r.group.key}`;
@@ -39,8 +52,12 @@ export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, c
   // a train shutdown needs a Controller, a Senior and a Good FO on the full shift every day: a slot that would leave a
   // day without one is not applied (add a person from another crew first; working a rest day would make 7 duty days in a row)
   const gaps = (r: (typeof results)[number]) => (train && r.group.key !== 'new' ? [...new Set([...r.after.gapDates, ...r.after.noFullDates])].sort() : []);
-  const blocked = results.filter((r) => r.group.memberIds.length > 0 && gaps(r).length > 0);
-  const chosen = results.filter((r) => r.group.memberIds.length > 0 && !off.has(id(r)) && !worse(r) && gaps(r).length === 0);
+  // v2: the planner never breaks a hard rule to fill a day; a place it cannot cover is applied and shown as uncovered
+  // (the plan check blocks the approval until a person is added). Before v2 such a place was not applied.
+  const blocking = (r: (typeof results)[number]) => (v2 ? [] : gaps(r));
+  const blocked = results.filter((r) => r.group.memberIds.length > 0 && blocking(r).length > 0);
+  const uncovered = results.filter((r) => v2 && r.group.memberIds.length > 0 && gaps(r).length > 0);
+  const chosen = results.filter((r) => r.group.memberIds.length > 0 && !off.has(id(r)) && !worse(r) && blocking(r).length === 0);
   const people = new Set(chosen.flatMap((r) => r.group.memberIds)).size;
   const sum = (f: (r: (typeof results)[number]) => number) => chosen.reduce((n, r) => n + f(r), 0);
   const teamName = (tid: string) => teams.find((t) => t.id === tid)?.name ?? '';
@@ -53,12 +70,18 @@ export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, c
     } catch (e) { setErr(e); setBusy(false); }
   }
   return (
-    <BottomSheet open onClose={onClose} title={train ? 'Own-crew days and hours' : 'Spread the days off'}>
+    <BottomSheet open onClose={onClose} title={!train ? 'Spread the days off' : v2 ? 'Plan the days and hours' : 'Own-crew days and hours'}>
       <div className="space-y-3">
         {train ? (
           <>
-          {v2 ? <p className="text-xs text-slate-600">Rules v2: everyone works the duty days of the crew he follows. Every day each team has a qualified Controller, Senior FO and Good FO on the full {plan.shiftHours} h (07:00–19:00 / 19:00–07:00); the others come for {Math.min(plan.normalHours, plan.shiftHours)} h. The full shifts are shared out evenly and only where the coverage needs them: no extra hours just to reach the {plan.maxOvertime} h warning. Reduced first and last days: one Controller, one Senior and one Good FO on {plan.shiftHours} h, the others off. Six days in a row at most. New FO is a training place.</p> : <p className="text-xs text-slate-600">Everyone works only the duty days of their own crew, so nobody works a rest day and nobody gets an extra day off. Every day each team has a Controller, a Senior and a Good FO on the full {plan.shiftHours} h; the others come for {Math.min(plan.normalHours, plan.shiftHours)} h. The full shifts are shared out evenly, then topped up so each person reaches {plan.maxOvertime} h of overtime in each calendar month where the fatigue limits allow, never above. New FO may stay empty.</p>}
+          {v2 ? <p className="text-xs text-slate-600">{plan.daysOff > 0 && plan.cycleUntil ? <>Everyone works {plan.daysOn} days on, {plan.daysOff} off{plan.cycleUntil < plan.end ? <> up to {Number(plan.cycleUntil.slice(8))}/{Number(plan.cycleUntil.slice(5, 7))}, then the duty days of their crew</> : null}; the people of a place start at different points so it is never empty, with the day off on their own rest day where possible.</> : <>Everyone works the duty days of the crew he follows.</>} Every day each team has a qualified Controller, Senior FO and Good FO on the full {plan.shiftHours} h (07:00–19:00 / 19:00–07:00); the others come for {Math.min(plan.normalHours, plan.shiftHours)} h. The full shifts go to whoever has the least overtime that month; above {plan.maxOvertime} h a month a full shift is handed to someone with room, or a relief day is given. Overtime counts 48 regular hours per 8-day rota cycle (day staff: 40 h a week). Approved leave, the rest before joining and after leaving, 6 days in a row and the rest-day pairs are respected. Reduced first and last days: one per place on {plan.shiftHours} h, the others off. New FO is a training place.</p> : <p className="text-xs text-slate-600">Everyone works only the duty days of their own crew, so nobody works a rest day and nobody gets an extra day off. Every day each team has a Controller, a Senior and a Good FO on the full {plan.shiftHours} h; the others come for {Math.min(plan.normalHours, plan.shiftHours)} h. The full shifts are shared out evenly, then topped up so each person reaches {plan.maxOvertime} h of overtime in each calendar month where the fatigue limits allow, never above. New FO may stay empty.</p>}
           {!v2 && <label className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700 ring-1 ring-slate-200"><input type="checkbox" className="mt-0.5 h-4 w-4" checked={reach} onChange={(e) => setReach(e.target.checked)} /><span>Reach {plan.maxOvertime} h a month for everyone, even if it needs up to 6 full shifts in a row (the crew&apos;s whole block of duty days). Off keeps at most 4 by day and 3 by night.</span></label>}
+          {uncovered.length > 0 && (
+            <div className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-900 ring-1 ring-red-300">
+              <p className="font-semibold">Not covered: {uncovered.length} {uncovered.length === 1 ? 'place' : 'places'} still short on some days</p>
+              <p>No arrangement of these people covers them without breaking a hard rule (leave, a 7th day in a row, both rest days). They are applied as planned and the plan stays Not ready until a person is added (see each place).</p>
+            </div>
+          )}
           {blocked.length > 0 && (
             <div className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-900 ring-1 ring-red-300">
               <p className="font-semibold">Not ready: {blocked.length} {blocked.length === 1 ? 'place has' : 'places have'} days without the full shift covered</p>
@@ -80,7 +103,7 @@ export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, c
         {conflicts.length > 0 && (
           <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-300">
             <p className="font-semibold">Approved leave inside the shutdown · {conflicts.length}</p>
-            <p>A team member takes no leave during the shutdown, so the days below are planned as if everyone is present. Move this leave first:</p>
+            <p>{v2 ? 'A team member takes no leave during the shutdown. Leave approved in Oracle is respected (the person is off those days); move it if you can:' : 'A team member takes no leave during the shutdown, so the days below are planned as if everyone is present. Move this leave first:'}</p>
             <ul className="mt-1 space-y-0.5">
               {conflicts.map((c) => <li key={c.employeeId} className="flex items-center justify-between gap-2"><span className="truncate">{names.get(c.employeeId) ?? 'Employee'} · {c.days} {c.days === 1 ? 'day' : 'days'}</span><Link to={`/requests?view=leave&q=${encodeURIComponent(c.number)}`} className="shrink-0 font-semibold text-brand-700 underline">Move leave</Link></li>)}
             </ul>
@@ -117,7 +140,9 @@ export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, c
                           })}
                         </ul>
                         {r.group.key !== 'new' && (r.after.gapDays > 0 || r.after.short > 0 || r.after.noFullDays > 0) && <p className="text-xs font-semibold text-status-red">{[r.after.gapDays > 0 ? `${r.after.gapDays} ${r.after.gapDays === 1 ? 'day' : 'days'} with nobody` : '', r.after.gapDays === 0 && r.after.noFullDays > 0 ? `${r.after.noFullDays} days without a full-shift person` : '', r.after.short > 0 ? `${r.after.short} person-days short` : ''].filter(Boolean).join(' · ')}</p>}
-                        {gaps(r).length > 0 && <p className="text-xs font-semibold text-status-red">Not applied · no {slotLabel(r.group.key)} on the full {plan.shiftHours} h on {gaps(r).map((d) => `${Number(d.slice(8))}/${Number(d.slice(5, 7))}`).join(', ')}</p>}
+                        {(r.notes ?? []).length > 0 && <details className="text-[11px] text-slate-600"><summary className="cursor-pointer">{r.notes!.length} adjustment{r.notes!.length === 1 ? '' : 's'} made</summary><ul className="mt-0.5 list-disc pl-4">{r.notes!.map((x) => <li key={x}>{x.replace(/^(\d{4})-(\d{2})-(\d{2})/, (_a, _y, mo, d) => `${Number(d)}/${Number(mo)}`)}</li>)}</ul></details>}
+                        {v2 && gaps(r).length > 0 && <p className="text-xs font-semibold text-status-red">Not covered · no {slotLabel(r.group.key)} on the full {plan.shiftHours} h on {gaps(r).map((d) => `${Number(d.slice(8))}/${Number(d.slice(5, 7))}`).join(', ')}</p>}
+                        {!v2 && gaps(r).length > 0 && <p className="text-xs font-semibold text-status-red">Not applied · no {slotLabel(r.group.key)} on the full {plan.shiftHours} h on {gaps(r).map((d) => `${Number(d.slice(8))}/${Number(d.slice(5, 7))}`).join(', ')}</p>}
                         {r.train.sameCrew && <p className="text-xs text-amber-800">Two of them are from the same crew, so they rest on the same days.</p>}
                         {r.train.runBreaks > 0 && <p className="text-xs text-amber-800">Full shifts in a row go over the limit on {r.train.runBreaks} days: the crews are too close together.</p>}
                         {r.train.people.some((x) => x.weekHours > MAX_WEEK_HOURS) && <p className="text-xs text-amber-800">Someone works more than {MAX_WEEK_HOURS} h in a week.</p>}
@@ -135,7 +160,7 @@ export function SpreadDaysSheet({ plan, teams, members, phases, names, crewOf, c
                     )}
                     {worse(r) && <p className="text-xs text-amber-800">Kept as it is: more days would be short than now.</p>}
                   </div>
-                  {n > 0 && !worse(r) && gaps(r).length === 0 && <label className="flex shrink-0 items-center gap-1 text-xs text-slate-600"><input type="checkbox" checked={!off.has(id(r))} onChange={() => setOff((x) => { const y = new Set(x); if (y.has(id(r))) y.delete(id(r)); else y.add(id(r)); return y; })} />Apply</label>}
+                  {n > 0 && !worse(r) && blocking(r).length === 0 && <label className="flex shrink-0 items-center gap-1 text-xs text-slate-600"><input type="checkbox" checked={!off.has(id(r))} onChange={() => setOff((x) => { const y = new Set(x); if (y.has(id(r))) y.delete(id(r)); else y.add(id(r)); return y; })} />Apply</label>}
                 </div>
               </li>
             );

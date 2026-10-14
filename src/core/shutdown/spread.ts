@@ -8,6 +8,7 @@
 //     people every day, nobody works longer than a set run without a day off, and the overtime is as low and even as possible.
 import type { Crew } from '../roster';
 import { CREWS } from '../roster';
+import { planTrainGroup, draftOvertime } from './planner';
 import { SD_SLOTS, areasOf, groupOf, hoursOn, isDutyDay, isRampDay, memberHoursOn, memberWorks, phaseOn, planDates, type SdMember, type SdPhase, type SdPlan, type SdTeam } from './index';
 
 /** One place people are counted together: a level slot (train shutdown), or Controllers / a Controller section / an area (total turnaround). */
@@ -18,6 +19,8 @@ export interface SpreadGroup {
   night: boolean;
   /** People needed on a date. */
   need: (date: string) => number;
+  /** The team's shift start, e.g. '07:00' / '19:00' (the overtime engine needs the clock). */
+  start?: string;
 }
 export interface SpreadStats {
   /** Person-days missing against the need. */
@@ -47,6 +50,8 @@ export interface SpreadResult {
   train: TrainInfo | null;
   /** With the run limit, the least people that could cover every day (only when some days are still short). */
   minPeople: number | null;
+  /** v2 planner: what it changed to keep the rules (days off moved, relief days, limits it could not keep). */
+  notes?: string[];
 }
 /** The default monthly overtime cap of a new plan. The plan's own cap (max_overtime, per person per calendar month) is
  *  what a train shutdown tops the 8 h days up to, month by month, within the fatigue limits; above it is red. */
@@ -84,6 +89,12 @@ export interface SpreadContext {
   /** Rules v2: no top-up to the cap (full shifts only where the coverage needs them), 6 days in a row the hard limit
    *  (the 4 / 3 full shifts in a row are kept as a preference), reduced days on the full shift with one person per place. */
   v2?: boolean;
+  /** v2: how hard joining / leaving the team is with these days (own-crew days to take off, broken rest rules); lower is better. */
+  transitionCost?: (m: SdMember, days: Record<string, boolean>) => number;
+  /** v2: the rota the person keeps on a date (a VR's placement can change during the shutdown); default: crewOf. */
+  crewOn?: (employeeId: string, date: string) => Crew | null;
+  /** v2: overtime the person already has in a calendar month outside this plan (Oracle month to date, other shutdowns). */
+  monthTaken?: (employeeId: string, ym: string) => number;
 }
 /** v2: the hard limit of days in a row. */
 export const V2_MAX_RUN = 6;
@@ -92,7 +103,8 @@ export const V2_MAX_RUN = 6;
 export function spreadGroups(p: SdPlan, t: SdTeam, members: SdMember[], phases: SdPhase[]): SpreadGroup[] {
   const ids = (f: (m: SdMember) => boolean) => members.filter((m) => m.teamId === t.id && f(m)).map((m) => m.id);
   if (p.kind !== 'total') {
-    return SD_SLOTS.map((s) => ({ key: s, teamId: t.id, night: t.shiftCode === 'N', memberIds: ids((m) => m.slot === s), need: (d: string) => (isRampDay(p, d) ? t.rampNeeds[s] : t.needs[s]) }));
+    const start = (/(\d{1,2}):(\d{2})/.exec(t.hoursLabel ?? '')?.slice(1, 3).map((x, i) => (i === 0 ? x.padStart(2, '0') : x)).join(':')) ?? (t.shiftCode === 'N' ? '19:00' : '07:00');
+    return SD_SLOTS.map((s) => ({ key: s, teamId: t.id, night: t.shiftCode === 'N', start, memberIds: ids((m) => m.slot === s), need: (d: string) => (isRampDay(p, d) ? t.rampNeeds[s] : t.needs[s]) }));
   }
   const need = (f: (n: { controller: number; sections?: Record<string, number>; areas: Record<string, number> }) => number) => (d: string) => { const n = phaseOn(phases, d)?.needs[t.id]; return n ? f(n) : 0; };
   const out: SpreadGroup[] = [];
@@ -122,11 +134,18 @@ function stats(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadContex
       if (!optional && on.length === 0) { gapDays++; gapDates.push(date); }
       if (!optional && (ctx.v2 || !isRampDay(p, date)) && !on.some((m) => hoursOf(m, date) >= p.shiftHours)) { noFullDays++; noFullDates.push(date); }
     }
-    for (const m of on) {
+    if (!ctx.v2) for (const m of on) {
       const ot = Math.max(0, hoursOf(m, date) - (isDutyDay(ctx.crewOf(m.employeeId), date) ? p.normalHours : 0)); overtime += ot;
       const pm = perMonth.get(m.id) ?? new Map<string, number>(); pm.set(month(date), (pm.get(month(date)) ?? 0) + ot); perMonth.set(m.id, pm);
       total.set(m.id, (total.get(m.id) ?? 0) + ot);
     }
+  }
+  // v2: the overtime of each person with the cycle engine (48 regular hours per 8-day rota cycle), as the plan check counts it
+  if (ctx.v2) for (const m of members) {
+    const dates = planDates(p);
+    const w = dates.map((d) => works(m, d) && !ctx.away(m.employeeId, d));
+    const r = draftOvertime(p, g, m, ctx.crewOn ? (d) => ctx.crewOn!(m.employeeId, d) : ctx.crewOf(m.employeeId), { works: w, hours: dates.map((d, k) => (w[k] ? hoursOf(m, d) : 0)) }, dates, (d) => ctx.away(m.employeeId, d));
+    overtime += r.total; total.set(m.id, r.total); perMonth.set(m.id, new Map(Object.entries(r.months)));
   }
   const perYear = new Map<string, Map<number, number>>();
   for (const [id, pm] of perMonth) { const py = new Map<number, number>(); for (const [mo, h] of pm) py.set(Number(mo.slice(0, 4)), (py.get(Number(mo.slice(0, 4))) ?? 0) + h); perYear.set(id, py); }
@@ -267,6 +286,11 @@ function followCrew(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadC
 export function spreadGroup(p: SdPlan, g: SpreadGroup, all: SdMember[], ctx: SpreadContext): SpreadResult {
   const members = g.memberIds.map((id) => all.find((m) => m.id === id)).filter((m): m is SdMember => !!m);
   const beforeStats = () => stats(p, g, members, ctx, (m, date) => memberWorks(p, m, date), (m, date) => memberHoursOn(p, m, date));
+  if (p.kind !== 'total' && ctx.v2) {
+    const t = planTrainGroup(p, g, members, ctx);
+    const after = stats(p, g, members, ctx, (x, date) => t.days.get(x.id)?.[date] === true, (x, date) => t.hours.get(x.id)?.[date] ?? hoursOn(p, date));
+    return { group: g, before: beforeStats(), after, days: t.days, hours: t.hours, train: t.info, minPeople: t.gaps.length ? Math.max(2, members.length + 1) : null, notes: t.notes };
+  }
   if (p.kind !== 'total') {
     const t = followCrew(p, g, members, ctx);
     const after = stats(p, g, members, ctx, (x, date) => t.days.get(x.id)?.[date] === true, (x, date) => t.hours.get(x.id)?.[date] ?? hoursOn(p, date));

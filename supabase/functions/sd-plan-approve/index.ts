@@ -224,6 +224,82 @@ function memberWorks(p, m, date) {
 var memberHoursOn = (p, m, date) => memberWorks(p, m, date) ? m.days?.[date]?.hours ?? hoursOn(p, date) : 0;
 var isDutyDay = (crew, date) => crew ? isWorkingDay(date, crew) : (/* @__PURE__ */ new Date(`${date}T00:00:00Z`)).getUTCDay() <= 4;
 
+// src/core/shutdown/overtime.ts
+var H2 = 36e5;
+var KW = 3 * H2;
+var ym = (ms) => new Date(ms + KW).toISOString().slice(0, 7);
+var r2 = (n) => Math.round(n * 100) / 100;
+var nextMonthStart = (ms) => {
+  const d = new Date(ms + KW);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) - KW;
+};
+function cycleStart(crew, date) {
+  let d = date;
+  for (let i = 0; i < 8; i++) {
+    if (dutyFor(d, crew) === "M1") return d;
+    d = addDaysIso(d, -1);
+  }
+  return date;
+}
+var weekStart = (date) => addDaysIso(date, -(/* @__PURE__ */ new Date(`${date}T00:00:00Z`)).getUTCDay());
+function byMonth(a, b) {
+  const out = [];
+  for (let s = a; s < b; ) {
+    const e = Math.min(b, nextMonthStart(s));
+    out.push({ month: ym(s), hours: r2((e - s) / H2) });
+    s = e;
+  }
+  return out;
+}
+function cycleOvertime(duties, basis) {
+  const keyOf = (d) => {
+    const c = basis.crewOn(d);
+    return c ? `${c}:${cycleStart(c, d)}` : `day:${weekStart(d)}`;
+  };
+  const cycles = /* @__PURE__ */ new Map();
+  for (let d = basis.from; d <= basis.to; d = addDaysIso(d, 1)) {
+    const c = basis.crewOn(d);
+    const k = keyOf(d);
+    let x = cycles.get(k);
+    if (!x) {
+      const from = c ? cycleStart(c, d) : weekStart(d), to = addDaysIso(from, c ? 7 : 6);
+      x = { key: k, crew: c, from, to, complete: false, days: 0, dutyDays: 0, leaveDays: 0, regular: 0, credited: 0, owed: 0, worked: 0, overtime: 0, short: 0 };
+      cycles.set(k, x);
+    }
+    x.days++;
+    if (isDutyDay(c, d)) {
+      x.dutyDays++;
+      if (basis.leaveOn?.(d)) x.leaveDays++;
+    }
+  }
+  for (const x of cycles.values()) {
+    x.complete = x.days === (x.crew ? 8 : 7);
+    x.regular = x.dutyDays * basis.normalHours;
+    x.credited = x.leaveDays * basis.normalHours;
+    x.owed = x.regular - x.credited;
+  }
+  const left = new Map([...cycles.values()].map((x) => [x.key, x.owed]));
+  const out = [];
+  const months = {};
+  for (const d of [...duties].filter((x) => x.hours > 0 && x.date >= basis.from && x.date <= basis.to).sort((a, b) => a.start - b.start)) {
+    const k = keyOf(d.date);
+    const x = cycles.get(k);
+    const regular = Math.min(left.get(k), d.hours);
+    left.set(k, left.get(k) - regular);
+    const ot = r2(d.hours - regular);
+    x.worked += d.hours;
+    const parts = ot > 0 ? byMonth(d.start + regular * H2, d.start + d.hours * H2) : [{ month: d.date.slice(0, 7), hours: 0 }];
+    for (const p of parts) months[p.month] = r2((months[p.month] ?? 0) + p.hours);
+    out.push({ date: d.date, hours: d.hours, regular: r2(regular), ot, parts, split: parts.length > 1, cycle: k });
+  }
+  for (const x of cycles.values()) {
+    x.worked = r2(x.worked);
+    x.overtime = r2(Math.max(0, x.worked - x.owed));
+    x.short = r2(Math.max(0, x.owed - x.worked));
+  }
+  return { cycles: [...cycles.values()].sort((a, b) => a.from.localeCompare(b.from)), duties: out, months, total: r2(out.reduce((t, d) => t + d.ot, 0)) };
+}
+
 // src/core/shutdown/v2.ts
 var SD_RULES_V2 = 2;
 var isV2 = (p) => (p.rulesVersion ?? 1) >= SD_RULES_V2;
@@ -243,17 +319,17 @@ var SICK_RULES = { okMax: 21, warnMax: 35, freshDays: 45 };
 var CONTROLLER_GRADE = 15;
 var CONTROLLER_ROLES = ["controller", "vr_controller", "morning_controller"];
 var limitsOf = (p) => ({ monthWarn: p.maxOvertime, monthHard: p.maxOvertimeHard ?? V2_DEFAULTS.monthHard, yearWarn: p.maxOvertimeYear ?? V2_DEFAULTS.yearWarn, yearHard: p.maxOvertimeYearHard ?? V2_DEFAULTS.yearHard });
-var H2 = 36e5;
-var ym = (d) => d.slice(0, 7);
+var H3 = 36e5;
+var ym2 = (d) => d.slice(0, 7);
 var days2 = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
 var MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 var fmtDay = (d) => `${Number(d.slice(8))} ${MON[Number(d.slice(5, 7)) - 1]}`;
 var fmtMonth = (m) => `${MON[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
 var hhmm = (ms) => {
-  const d = new Date(ms + 3 * H2);
+  const d = new Date(ms + 3 * H3);
   return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
 };
-var r2 = (n) => Math.round(n * 100) / 100;
+var r22 = (n) => Math.round(n * 100) / 100;
 var isControllerPerson = (i) => !!i && CONTROLLER_ROLES.includes(i.position ?? "") && (i.grade ?? 0) >= CONTROLLER_GRADE;
 function capabilities(m, info) {
   const lvl = info?.foLevel ?? null;
@@ -272,34 +348,30 @@ function memberDuty(p, t, m, date) {
   const hours = memberHoursOn(p, m, date);
   if (!hours) return null;
   const start = kuwaitMs(date, teamStart(t));
-  return { start, end: start + hours * H2, hours };
+  return { start, end: start + hours * H3, hours };
 }
 function effectiveCrew(person, m, date) {
   if (m && m.followCrew && date >= m.start && date <= m.end) return m.followCrew;
   if (!person) return null;
   return personOn({ ...person, moves: person.moves?.filter((x) => x.kind !== "sd") }, date).crew;
 }
-var dutyOvertime = (p, crew, date, hours) => Math.max(0, hours - (isDutyDay(crew, date) ? p.normalHours : 0));
-function allocateOvertime(date, start, hours, ot) {
-  const next = addDaysIso(date, 1);
-  const midnight = kuwaitMs(next, "00:00");
-  const end = start + hours * H2;
-  if (ot <= 0 || end <= midnight || ym(next) === ym(date)) return { parts: [{ month: ym(date), hours: ot }], split: false };
-  const before = Math.max(0, Math.min(1, (midnight - start) / (hours * H2)));
-  const first = Math.round(ot * before * 100) / 100;
-  return { parts: [{ month: ym(date), hours: first }, { month: ym(next), hours: Math.round((ot - first) * 100) / 100 }], split: true };
+function memberOtBasis(p, m, person, leaveOn) {
+  return { from: m.start > p.start ? m.start : p.start, to: m.end < p.end ? m.end : p.end, crewOn: (d) => effectiveCrew(person, m, d), leaveOn, normalHours: p.normalHours };
 }
-function memberOvertime(p, t, m, person) {
-  const out = [];
+function memberOtDetail(p, t, m, person, leaveOn) {
+  const duties = [];
   for (const date of planDates(p)) {
     const d = memberDuty(p, t, m, date);
-    if (!d) continue;
-    const crew = effectiveCrew(person, m, date);
-    const ot = dutyOvertime(p, crew, date, d.hours);
-    const a = allocateOvertime(date, d.start, d.hours, ot);
-    out.push({ date, hours: d.hours, ot, crew, restDay: !isDutyDay(crew, date), parts: a.parts, split: a.split });
+    if (d) duties.push({ date, start: d.start, hours: d.hours });
   }
-  return out;
+  return cycleOvertime(duties, memberOtBasis(p, m, person, leaveOn));
+}
+function memberOvertime(p, t, m, person, leaveOn) {
+  const r = memberOtDetail(p, t, m, person, leaveOn);
+  return r.duties.map((d) => {
+    const crew = effectiveCrew(person, m, d.date);
+    return { date: d.date, hours: d.hours, regular: d.regular, ot: d.ot, crew, restDay: !isDutyDay(crew, d.date), parts: d.parts, split: d.split };
+  });
 }
 var stateOf2 = (total, warn, hard, known) => total > hard ? "over" : !known ? "unknown" : total > warn ? "warn" : "ok";
 function personOvertime(p, employeeId, duties, entry, others) {
@@ -308,22 +380,22 @@ function personOvertime(p, employeeId, duties, entry, others) {
   for (const d of duties) for (const x of d.parts) months.set(x.month, (months.get(x.month) ?? 0) + x.hours);
   const keys = [...months.keys()].sort();
   const otherOf = (f) => others.filter((o) => o.employeeId === employeeId && (!entry || o.date > entry.asOf)).reduce((t, o) => t + o.parts.filter((x) => f(x.month)).reduce((u, x) => u + x.hours, 0), 0);
-  const prevMonth = (k) => !entry ? null : k === ym(entry.asOf) ? entry.mtd : k > ym(entry.asOf) ? 0 : null;
+  const prevMonth = (k) => !entry ? null : k === ym2(entry.asOf) ? entry.mtd : k > ym2(entry.asOf) ? 0 : null;
   const prevYear = (y) => !entry ? null : y === entry.asOf.slice(0, 4) ? entry.ytd : y > entry.asOf.slice(0, 4) ? 0 : null;
   const known = !!entry;
   const mrows = keys.map((k) => {
-    const plan = r2(months.get(k)), prev = prevMonth(k), other = r2(otherOf((x) => x === k));
-    const total = r2(plan + (prev ?? 0) + other);
+    const plan = r22(months.get(k)), prev = prevMonth(k), other = r22(otherOf((x) => x === k));
+    const total = r22(plan + (prev ?? 0) + other);
     return { key: k, plan, prev, other, total, state: stateOf2(total, L.monthWarn, L.monthHard, known && prev !== null) };
   });
   const years = [...new Set(keys.map((k) => k.slice(0, 4)))];
   const yrows = years.map((y) => {
-    const plan = r2(keys.filter((k) => k.startsWith(y)).reduce((t, k) => t + months.get(k), 0)), prev = prevYear(y), other = r2(otherOf((x) => x.startsWith(y)));
-    const total = r2(plan + (prev ?? 0) + other);
+    const plan = r22(keys.filter((k) => k.startsWith(y)).reduce((t, k) => t + months.get(k), 0)), prev = prevYear(y), other = r22(otherOf((x) => x.startsWith(y)));
+    const total = r22(plan + (prev ?? 0) + other);
     return { key: y, plan, prev, other, total, state: stateOf2(total, L.yearWarn, L.yearHard, known && prev !== null) };
   });
   const entryState = !entry ? "missing" : entry.asOf > p.start ? "late" : !entry.verified ? "unverified" : "ok";
-  return { employeeId, duties, months: mrows, years: yrows, entry, entryState, plan: r2(duties.reduce((t, d) => t + d.ot, 0)) };
+  return { employeeId, duties, months: mrows, years: yrows, entry, entryState, plan: r22(duties.reduce((t, d) => t + d.ot, 0)) };
 }
 var hasException = (ex, planId, employeeId, kind) => ex.some((e) => e.planId === planId && e.employeeId === employeeId && e.kind === kind);
 function sickState(entry, refDate, excepted) {
@@ -383,15 +455,15 @@ var COVER_LABEL = { controller: "Controller", senior: "Senior FO", good: "Good F
 function coverageGaps(p, teams, members, info, away) {
   const out = [];
   for (const t of teams) for (const date of planDates(p)) {
-    const ws = kuwaitMs(date, teamStart(t)), we = ws + p.shiftHours * H2;
+    const ws = kuwaitMs(date, teamStart(t)), we = ws + p.shiftHours * H3;
     for (const role of COVER_ROLES) {
       const spans = members.filter((m) => m.teamId === t.id && capabilities(m, info.get(m.employeeId))[role] && !away(m.employeeId, date)).map((m) => memberDuty(p, t, m, date)).filter((d) => !!d).map((d) => [Math.max(ws, d.start), Math.min(we, d.end)]).filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0]);
       let at = ws;
       for (const [a, b] of spans) {
-        if (a > at) out.push({ teamId: t.id, team: t.name, date, role, from: hhmm(at), to: hhmm(a), hours: (a - at) / H2 });
+        if (a > at) out.push({ teamId: t.id, team: t.name, date, role, from: hhmm(at), to: hhmm(a), hours: (a - at) / H3 });
         at = Math.max(at, b);
       }
-      if (at < we) out.push({ teamId: t.id, team: t.name, date, role, from: hhmm(at), to: hhmm(we), hours: (we - at) / H2 });
+      if (at < we) out.push({ teamId: t.id, team: t.name, date, role, from: hhmm(at), to: hhmm(we), hours: (we - at) / H3 });
     }
   }
   return out;
@@ -517,10 +589,17 @@ function checkPlan(inp) {
   const L = limitsOf(p);
   const overtime = [];
   for (const id of [...new Set(members.map((m) => m.employeeId))]) {
+    const leave = (d) => away(id, d);
+    const details = members.filter((m) => m.employeeId === id).flatMap((m) => {
+      const t = teamOf.get(m.teamId);
+      return t ? [memberOtDetail(p, t, m, people.get(id), leave)] : [];
+    });
     const duties = members.filter((m) => m.employeeId === id).flatMap((m) => {
       const t = teamOf.get(m.teamId);
-      return t ? memberOvertime(p, t, m, people.get(id)) : [];
+      return t ? memberOvertime(p, t, m, people.get(id), leave) : [];
     });
+    const short = details.flatMap((r) => r.cycles).filter((c) => c.short > 0);
+    if (short.length) issues.push({ level: "info", code: "short_hours", employeeId: id, message: `${name(id)}: ${r22(short.reduce((t, c) => t + c.short, 0))} h below the regular hours (${short.map((c) => `${fmtDay(c.from < p.start ? p.start : c.from)}–${fmtDay(c.to > p.end ? p.end : c.to)}: ${c.short} h`).join(", ")}).` });
     const o = personOvertime(p, id, duties, inp.otEntries.get(id) ?? null, inp.otherDuties.filter((x) => x.employeeId === id));
     overtime.push(o);
     if (o.entryState === "missing") issues.push({ level: "verify", code: "ot_missing", employeeId: id, message: `${name(id)}: overtime already taken not entered yet (from the Oracle report).` });
@@ -528,17 +607,17 @@ function checkPlan(inp) {
     if (o.entryState === "late") issues.push({ level: "verify", code: "ot_late", employeeId: id, message: `${name(id)}: overtime entry is dated after the shutdown starts; enter it as of a date before ${fmtDay(p.start)}.` });
     for (const x of o.months) {
       if (x.state === "over") issues.push({ level: "block", code: "ot_month_hard", employeeId: id, message: `${name(id)}: ${x.total} h overtime in ${fmtMonth(x.key)}, over the ${L.monthHard} h limit.` });
-      else if (x.state === "warn") issues.push({ level: "warn", code: "ot_month_warn", employeeId: id, message: `${name(id)}: ${x.total} h overtime in ${fmtMonth(x.key)} (above ${L.monthWarn} h; ${r2(L.monthHard - x.total)} h left to the limit).` });
+      else if (x.state === "warn") issues.push({ level: "warn", code: "ot_month_warn", employeeId: id, message: `${name(id)}: ${x.total} h overtime in ${fmtMonth(x.key)} (above ${L.monthWarn} h; ${r22(L.monthHard - x.total)} h left to the limit).` });
     }
     for (const x of o.years) {
       if (x.state === "over") issues.push({ level: "block", code: "ot_year_hard", employeeId: id, message: `${name(id)}: ${x.total} h overtime in ${x.key}, over the ${L.yearHard} h limit.` });
-      else if (x.state === "warn") issues.push({ level: "warn", code: "ot_year_warn", employeeId: id, message: `${name(id)}: ${x.total} h overtime in ${x.key} (above ${L.yearWarn} h; ${r2(L.yearHard - x.total)} h left).` });
+      else if (x.state === "warn") issues.push({ level: "warn", code: "ot_year_warn", employeeId: id, message: `${name(id)}: ${x.total} h overtime in ${x.key} (above ${L.yearWarn} h; ${r22(L.yearHard - x.total)} h left).` });
     }
     const split = o.duties.filter((d) => d.split);
     if (split.length) issues.push({ level: "warn", code: "ot_month_split", employeeId: id, message: `${name(id)}: night duty ${split.map((d) => fmtDay(d.date)).join(", ")} crosses month-end; its overtime is split by the hours in each month. Check against payroll practice.` });
   }
   const totals = overtime.map((o) => o.plan);
-  const spread = { max: totals.length ? Math.max(...totals) : 0, min: totals.length ? Math.min(...totals) : 0, diff: totals.length ? r2(Math.max(...totals) - Math.min(...totals)) : 0 };
+  const spread = { max: totals.length ? Math.max(...totals) : 0, min: totals.length ? Math.min(...totals) : 0, diff: totals.length ? r22(Math.max(...totals) - Math.min(...totals)) : 0 };
   const status = issues.some((i) => i.level === "block") ? "not_ready" : issues.some((i) => i.level === "verify") ? "verify" : "ready";
   return { status, issues, gaps, overtime, transitions: trans, spread, fingerprint: fingerprint(inp), rulesVersion: p.rulesVersion ?? 1, checkedOn: inp.today };
 }

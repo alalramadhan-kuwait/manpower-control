@@ -88,8 +88,9 @@ export async function createSdPlan(v: { title: string; start: string; end: strin
   const sections = total ? ['TR-I', 'TR-II', 'L.P'] : [];
   const v2 = { rules_version: 2, ramp_days: V2_DEFAULTS.reducedDays, ramp_hours: V2_DEFAULTS.reducedHours, shift_hours: V2_DEFAULTS.shiftHours, normal_hours: V2_DEFAULTS.normalHours,
     max_overtime: V2_DEFAULTS.monthWarn, max_overtime_year: V2_DEFAULTS.yearWarn, max_overtime_hard: V2_DEFAULTS.monthHard, max_overtime_year_hard: V2_DEFAULTS.yearHard };
+  // a train shutdown works 3 on / 1 off for its whole length by default (the planner staggers the people of each place)
   const { data, error } = await supabase.from('sd_plans').insert({ title: v.title, start_date: v.start, end_date: v.end, event_id: v.eventId, kind: v.kind ?? 'train', ...v2,
-    ...(total ? { days_on: 1, days_off: 0, ramp_days: 0, areas, sections } : {}) }).select('id').single();
+    ...(total ? { days_on: 1, days_off: 0, ramp_days: 0, areas, sections } : { days_on: 3, days_off: 1, cycle_until: v.end }) }).select('id').single();
   if (error) throw error;
   const id = (data as { id: string }).id;
   const n = V2_DEFAULTS.teamNeeds, r = V2_DEFAULTS.reducedNeeds;
@@ -102,6 +103,45 @@ export async function createSdPlan(v: { title: string; start: string; end: strin
     const ph = await supabase.from('sd_phases').insert({ plan_id: id, start_date: v.start, end_date: v.end, needs });
     if (ph.error) throw ph.error;
   }
+  dataChanged();
+  return id;
+}
+
+/**
+ * A draft plan made under the rules before v2, moved onto the current rules: a new v2 plan with the same title, dates,
+ * kind, calendar event, pattern, teams (and their needs) and people (places, dates, follow-crew instructions, Primary /
+ * Assistant), the v2 overtime limits; the old plan is cancelled (kept in the audit history). Days set by hand are not
+ * copied: the planner rebuilds them. Refused for an approved plan.
+ */
+export async function copyPlanToCurrentRules(planId: string): Promise<string> {
+  const sd = await fetchSdPlan(planId);
+  const { data: st, error: e0 } = await supabase.from('sd_plans').select('approval_status,rules_version,days_on,days_off,cycle_until,signatures').eq('id', planId).single();
+  if (e0) throw e0;
+  const row = st as { approval_status: string; rules_version: number; days_on: number; days_off: number; cycle_until: string | null; signatures: Signature[] };
+  if (row.rules_version >= 2) throw new Error('This plan is already on the current rules.');
+  if (row.approval_status === 'approved') throw new Error('An approved plan is not changed.');
+  const p = sd.plan;
+  const train = p.kind !== 'total';
+  const ins = await supabase.from('sd_plans').insert({ title: p.title, start_date: p.start, end_date: p.end, event_id: p.eventId, kind: p.kind, areas: p.areas, sections: p.sections, signatures: row.signatures,
+    rules_version: 2, shift_hours: V2_DEFAULTS.shiftHours, normal_hours: V2_DEFAULTS.normalHours, ramp_days: p.rampDays, ramp_hours: V2_DEFAULTS.reducedHours,
+    max_overtime: V2_DEFAULTS.monthWarn, max_overtime_year: V2_DEFAULTS.yearWarn, max_overtime_hard: V2_DEFAULTS.monthHard, max_overtime_year_hard: V2_DEFAULTS.yearHard,
+    days_on: row.days_on, days_off: row.days_off, cycle_until: train && row.days_off > 0 ? row.cycle_until ?? p.end : null }).select('id').single();
+  if (ins.error) throw ins.error;
+  const id = (ins.data as { id: string }).id;
+  const teamIds = new Map<string, string>();
+  for (const t of sd.teams) {
+    const r = await supabase.from('sd_teams').insert({ plan_id: id, name: t.name, sort: t.sort, shift_code: t.shiftCode, shift_hours_label: t.hoursLabel,
+      controller_n: t.needs.controller, senior_n: t.needs.senior, good_n: t.needs.good, new_n: t.needs.new,
+      ramp_controller_n: t.rampNeeds.controller, ramp_senior_n: t.rampNeeds.senior, ramp_good_n: t.rampNeeds.good, ramp_new_n: t.rampNeeds.new }).select('id').single();
+    if (r.error) throw r.error;
+    teamIds.set(t.id, (r.data as { id: string }).id);
+  }
+  // the old plan steps aside first (one place per person on active shutdowns), then the people move across
+  const old = await supabase.from('sd_plans').update({ status: 'cancelled' }).eq('id', planId);
+  if (old.error) throw old.error;
+  const rows = sd.members.map((m) => ({ plan_id: id, team_id: teamIds.get(m.teamId)!, employee_id: m.employeeId, slot: m.slot, day_offset: m.offset, start_date: m.start, end_date: m.end, area: m.area ?? null, follow_crew: m.followCrew ?? null, controller_role: m.controllerRole ?? null }));
+  if (rows.length) { const r = await supabase.from('sd_members').insert(rows); if (r.error) throw r.error; }
+  if (sd.phases.length) { const r = await supabase.from('sd_phases').insert(sd.phases.map((x) => ({ plan_id: id, start_date: x.start, end_date: x.end, needs: Object.fromEntries(Object.entries(x.needs).map(([k, v]) => [teamIds.get(k) ?? k, v])) }))); if (r.error) throw r.error; }
   dataChanged();
   return id;
 }

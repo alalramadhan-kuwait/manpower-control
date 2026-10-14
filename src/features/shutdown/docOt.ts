@@ -1,6 +1,6 @@
 // One overtime calculation for the plan, its print pages and the Excel file. Plans before v2: each day against the
-// member's crew, months by the duty date (as before). Rules v2: each duty against the effective roster of that date,
-// and a night across month-end split between the months by the hours worked in each (src/core/shutdown/v2).
+// member's crew, months by the duty date (as before). Rules v2: the cycle engine of the plan check (48 regular hours per
+// 8-day rota cycle, day staff 40 h a week, approved leave credited; src/core/shutdown/overtime).
 import { dayOvertime } from '@/core/shutdown';
 import { isV2, memberOvertime } from '@/core/shutdown/v2';
 import type { Doc, Row } from './SdDocuments';
@@ -14,7 +14,7 @@ export function rowOvertime(doc: Doc, x: Row): RowOt {
   const onTeam = (d: string) => d >= x.m.start && d <= x.m.end;
   let out: RowOt;
   if (isV2(plan)) {
-    const duties = memberOvertime(plan, x.team, x.m, x.person);
+    const duties = memberOvertime(plan, x.team, x.m, x.person, doc.leaveOn ? (d) => doc.leaveOn!(x.m.employeeId, d) : undefined);
     const byDay = new Map(duties.map((d) => [d.date, d.ot]));
     const byMonth = new Map<string, number>();
     for (const d of duties) for (const p of d.parts) byMonth.set(p.month, Math.round(((byMonth.get(p.month) ?? 0) + p.hours) * 100) / 100);

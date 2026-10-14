@@ -638,6 +638,10 @@ function memberWorks(p, m, date) {
 }
 var memberHoursOn = (p, m, date) => memberWorks(p, m, date) ? m.days?.[date]?.hours ?? hoursOn(p, date) : 0;
 
+// src/core/shutdown/overtime.ts
+var H2 = 36e5;
+var KW = 3 * H2;
+
 // src/data/shutdown.ts
 var toPlan = (r) => ({
   rulesVersion: r.rules_version ?? 1,

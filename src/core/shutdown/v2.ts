@@ -8,6 +8,7 @@ import { addDaysIso, type Crew } from '../roster';
 import { personOn, type MpAbsence, type MpAssignment, type MpPerson } from '../manpower';
 import { checkSchedule, kuwaitMs, personDays, shiftTimesOf, type DayLine, type Finding, type RuleConfig, type SdDutyOf } from '../validation';
 import { isDutyDay, isRampDay, memberHoursOn, memberWorks, planDates, type FoLevel, type SdMember, type SdPlan, type SdTeam } from './index';
+import { cycleOvertime, type OtBasis, type OtResult, type WorkedDuty } from './overtime';
 
 export const SD_RULES_V2 = 2;
 export const isV2 = (p: Pick<SdPlan, 'rulesVersion'>) => (p.rulesVersion ?? 1) >= SD_RULES_V2;
@@ -73,13 +74,12 @@ export function effectiveCrew(person: MpPerson | undefined, m: SdMember | null, 
 }
 
 // ── Overtime ───────────────────────────────────────────────────────────────────────────────────────────────────────
-/** Overtime of one duty against the effective roster: hours worked less the normal duty of that day (a rest day: all of it). */
-export const dutyOvertime = (p: SdPlan, crew: Crew | null, date: string, hours: number) => Math.max(0, hours - (isDutyDay(crew, date) ? p.normalHours : 0));
+// One engine for every overtime figure of a v2 plan: regular hours per 8-day rota cycle (day staff: per week), see
+// ./overtime. A 12-hour duty on a crew rest day is not overtime by itself; it is set against the cycle's regular hours.
 
 /**
- * Splits one duty's overtime between calendar months (Kuwait time): a night duty crossing midnight into a new month gives
- * each month the share of the hours actually worked in it (e.g. 31 Oct 19:00 – 1 Nov 07:00: 5/12 to October, 7/12 to
- * November). The entitlement is worked out first, then allocated. `split` marks the duties to verify against payroll.
+ * Splits one duty's overtime between calendar months (Kuwait time) by the hours of the duty on each side of midnight.
+ * (Kept for reference and tests; the cycle engine allocates the overtime hours themselves, see ./overtime.)
  */
 export function allocateOvertime(date: string, start: number, hours: number, ot: number): { parts: { month: string; hours: number }[]; split: boolean } {
   const next = addDaysIso(date, 1);
@@ -91,21 +91,23 @@ export function allocateOvertime(date: string, start: number, hours: number, ot:
   return { parts: [{ month: ym(date), hours: first }, { month: ym(next), hours: Math.round((ot - first) * 100) / 100 }], split: true };
 }
 
-/** One duty with its overtime and how it is allocated to months. */
-export interface DutyOt { date: string; hours: number; ot: number; crew: Crew | null; restDay: boolean; parts: { month: string; hours: number }[]; split: boolean }
+/** One duty with its regular and overtime hours and how the overtime falls in calendar months. */
+export interface DutyOt { date: string; hours: number; regular: number; ot: number; crew: Crew | null; restDay: boolean; parts: { month: string; hours: number }[]; split: boolean }
 
+/** The cycle engine's input for one member: the days on the team, the rota kept on each, approved leave credited. */
+export function memberOtBasis(p: SdPlan, m: SdMember, person: MpPerson | undefined, leaveOn?: (date: string) => boolean): OtBasis {
+  return { from: m.start > p.start ? m.start : p.start, to: m.end < p.end ? m.end : p.end, crewOn: (d) => effectiveCrew(person, m, d), leaveOn, normalHours: p.normalHours };
+}
+/** The member's shutdown duties with their regular and overtime hours, and the cycles they fall in. */
+export function memberOtDetail(p: SdPlan, t: SdTeam, m: SdMember, person: MpPerson | undefined, leaveOn?: (date: string) => boolean): OtResult {
+  const duties: WorkedDuty[] = [];
+  for (const date of planDates(p)) { const d = memberDuty(p, t, m, date); if (d) duties.push({ date, start: d.start, hours: d.hours }); }
+  return cycleOvertime(duties, memberOtBasis(p, m, person, leaveOn));
+}
 /** Every shutdown duty of a member with its overtime (the plan's calculation; the sheets and the Excel file read the same). */
-export function memberOvertime(p: SdPlan, t: SdTeam, m: SdMember, person: MpPerson | undefined): DutyOt[] {
-  const out: DutyOt[] = [];
-  for (const date of planDates(p)) {
-    const d = memberDuty(p, t, m, date);
-    if (!d) continue;
-    const crew = effectiveCrew(person, m, date);
-    const ot = dutyOvertime(p, crew, date, d.hours);
-    const a = allocateOvertime(date, d.start, d.hours, ot);
-    out.push({ date, hours: d.hours, ot, crew, restDay: !isDutyDay(crew, date), parts: a.parts, split: a.split });
-  }
-  return out;
+export function memberOvertime(p: SdPlan, t: SdTeam, m: SdMember, person: MpPerson | undefined, leaveOn?: (date: string) => boolean): DutyOt[] {
+  const r = memberOtDetail(p, t, m, person, leaveOn);
+  return r.duties.map((d) => { const crew = effectiveCrew(person, m, d.date); return { date: d.date, hours: d.hours, regular: d.regular, ot: d.ot, crew, restDay: !isDutyDay(crew, d.date), parts: d.parts, split: d.split }; });
 }
 
 /** Overtime known from Oracle, typed in by the Manpower Coordinator: year to date and month to date, as of a date. */
@@ -362,7 +364,11 @@ export function checkPlan(inp: PlanCheckInput): PlanCheck {
   const L = limitsOf(p);
   const overtime: PersonOt[] = [];
   for (const id of [...new Set(members.map((m) => m.employeeId))]) {
-    const duties = members.filter((m) => m.employeeId === id).flatMap((m) => { const t = teamOf.get(m.teamId); return t ? memberOvertime(p, t, m, people.get(id)) : []; });
+    const leave = (d: string) => away(id, d);
+    const details = members.filter((m) => m.employeeId === id).flatMap((m) => { const t = teamOf.get(m.teamId); return t ? [memberOtDetail(p, t, m, people.get(id), leave)] : []; });
+    const duties = members.filter((m) => m.employeeId === id).flatMap((m) => { const t = teamOf.get(m.teamId); return t ? memberOvertime(p, t, m, people.get(id), leave) : []; });
+    const short = details.flatMap((r) => r.cycles).filter((c) => c.short > 0);
+    if (short.length) issues.push({ level: 'info', code: 'short_hours', employeeId: id, message: `${name(id)}: ${r2(short.reduce((t, c) => t + c.short, 0))} h below the regular hours (${short.map((c) => `${fmtDay(c.from < p.start ? p.start : c.from)}–${fmtDay(c.to > p.end ? p.end : c.to)}: ${c.short} h`).join(', ')}).` });
     const o = personOvertime(p, id, duties, inp.otEntries.get(id) ?? null, inp.otherDuties.filter((x) => x.employeeId === id));
     overtime.push(o);
     if (o.entryState === 'missing') issues.push({ level: 'verify', code: 'ot_missing', employeeId: id, message: `${name(id)}: overtime already taken not entered yet (from the Oracle report).` });
@@ -413,3 +419,40 @@ export function fingerprint(inp: Pick<PlanCheckInput, 'plan' | 'teams' | 'member
 
 /** Reduced days of a v2 plan: the first and last `rampDays` days (1 Controller, 1 Senior FO, 1 Good FO, 12 h). */
 export const isReducedDay = (p: SdPlan, date: string) => isRampDay(p, date);
+
+// ── The planner's view of the same data the check uses ────────────────────────────────────────────────────────────
+/**
+ * What the train-shutdown planner needs from the plan check's data, so the plan it proposes passes the same check:
+ * approved leave as away, the rota each member keeps, the cost of joining / leaving the team with given days (own-crew
+ * days to take off and broken rest rules, from `transitions`), and overtime already counted in each month (Oracle month
+ * to date and other shutdowns after it).
+ */
+export function plannerContext(inp: PlanCheckInput): { away: (employeeId: string, date: string) => boolean; crewOf: (employeeId: string) => Crew | null; crewOn: (employeeId: string, date: string) => Crew | null; transitionCost: (m: SdMember, days: Record<string, boolean>) => number; monthTaken: (employeeId: string, ym: string) => number } {
+  const p = inp.plan;
+  const people = new Map(inp.people.map((x) => [x.id, x]));
+  const teamOf = new Map(inp.teams.map((t) => [t.id, t]));
+  const byEmp = new Map(inp.members.map((m) => [m.employeeId, m]));
+  return {
+    away: awayOn(inp.absences),
+    crewOn: (e, d) => effectiveCrew(people.get(e), byEmp.get(e) ?? null, d),
+    crewOf: (e) => { const m = byEmp.get(e); return effectiveCrew(people.get(e), m ?? null, m ? (m.start > p.start ? m.start : p.start) : p.start); },
+    transitionCost: (m, days) => {
+      const person = people.get(m.employeeId); const t = teamOf.get(m.teamId);
+      if (!person || !t) return 0;
+      const temp: SdMember = { ...m, days: Object.fromEntries(Object.entries(days).map(([d, w]) => [d, { works: w, hours: w ? p.shiftHours : null }])) };
+      const own = (employeeId: string, date: string) => {
+        if (employeeId !== m.employeeId) return inp.otherSdDuty?.(employeeId, date) ?? null;
+        const d = memberDuty(p, t, temp, date);
+        return d ? { code: t.shiftCode === 'N' ? 'SD-N' as const : 'SD-D' as const, start: teamStart(t), hours: d.hours } : inp.otherSdDuty?.(employeeId, date) ?? null;
+      };
+      const tr = transitions(person, temp, own, inp.absences, inp.assignments, inp.rules);
+      return tr.joinOff.length + tr.returnOff.length + 5 * tr.findings.length;
+    },
+    monthTaken: (e, ym) => {
+      const entry = inp.otEntries.get(e) ?? null;
+      const prev = entry && entry.asOf.slice(0, 7) === ym ? entry.mtd : 0;
+      const other = inp.otherDuties.filter((o) => o.employeeId === e && (!entry || o.date > entry.asOf)).reduce((t, o) => t + o.parts.filter((x) => x.month === ym).reduce((u, x) => u + x.hours, 0), 0);
+      return prev + other;
+    },
+  };
+}

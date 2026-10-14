@@ -1,14 +1,14 @@
 // Shutdown rules v2: the approved acceptance tests (G1–G15; G16, the Excel file, is in the shutdown feature tests).
 import { describe, expect, it } from 'vitest';
 import type { Crew } from '../../roster';
-import { addDaysIso, isWorkingDay } from '../../roster';
+import { addDaysIso, dutyFor, isWorkingDay } from '../../roster';
 import type { MpPerson } from '../../manpower';
 import { checkSchedule, DEFAULT_RULES, personDays, type DayLine } from '../../validation';
 import { planDates, type SdMember, type SdPlan, type SdTeam } from '..';
 import { suggestFollow } from '../overlap';
 import { spreadGroups, spreadGroup, V2_MAX_RUN } from '../spread';
 import {
-  adjacent, allocateOvertime, checkPlan, coverageGaps, effectiveCrew, eligibility, memberOvertime, personOvertime, restDayPairs,
+  adjacent, allocateOvertime, checkPlan, coverageGaps, effectiveCrew, eligibility, memberOtDetail, memberOvertime, personOvertime, restDayPairs,
   sickState, transitions, type PersonInfo, type PlanCheckInput, type SdException,
 } from '../v2';
 
@@ -83,10 +83,11 @@ describe('G2 · sick leave in the rolling 12 months', () => {
 });
 
 describe('G3 · same crew allowed, with the fewest transfers to cover', () => {
-  it('two Senior FOs of crew A leave the shared rest days uncovered; one transfer fixes it', () => {
+  it('two Senior FOs of crew A share their rest days: the planner covers them (never both days of a pair); a transfer also fixes it', () => {
     const list = balance(roster, { ...crews, s2: 'A' });
     const gaps = coverageGaps(plan, [day], list, info, () => false).filter((g) => g.role === 'senior');
-    expect(gaps.length).toBeGreaterThan(0);
+    expect(gaps).toEqual([]);
+    for (const m of list.filter((x) => x.slot === 'senior')) expect(restDayPairs(plan, m, person(m.employeeId, 'A')).pairs).toEqual([]);
     const s = suggestFollow(plan, [day], roster, [], (m) => ({ ...crews, s2: 'A' } as Record<string, Crew>)[m.employeeId]);
     const change = s.find((g) => g.key === 'senior')!;
     expect(change.changes).toHaveLength(1);
@@ -128,7 +129,7 @@ describe('G6 · New FO is a training place', () => {
 });
 
 describe('G7 / G8 · overtime limits, months and the month-end split', () => {
-  const duty = (date: string, ot: number) => ({ date, hours: 12, ot, crew: 'A' as Crew, restDay: ot === 12, parts: [{ month: date.slice(0, 7), hours: ot }], split: false });
+  const duty = (date: string, ot: number) => ({ date, hours: 12, regular: 8, ot, crew: 'A' as Crew, restDay: ot === 12, parts: [{ month: date.slice(0, 7), hours: ot }], split: false });
   const entry = (mtd: number, ytd = 0) => ({ asOf: '2026-11-01', ytd, mtd, verified: true });
   it('73–80 h in a month warns, 81 h is blocked; 441 h in a year is blocked', () => {
     expect(personOvertime(plan, 'x', [duty('2026-11-05', 12)], entry(61), []).months[0].state).toBe('warn');   // 73
@@ -161,23 +162,34 @@ describe('G7 / G8 · overtime limits, months and the month-end split', () => {
   });
 });
 
-describe('G9 · overtime against the effective roster', () => {
-  it('after a transfer A → B the duty days are B\'s; before it, A\'s', () => {
+describe('G9 · overtime against the effective roster, per 8-day cycle', () => {
+  it('after a transfer A → B the cycles are B\'s; before it, A\'s; every complete cycle owes 48 h', () => {
     const p: MpPerson = { ...person('x', 'A', 'field_operator', 13, false), moves: [{ start: '2026-11-10', end: '2026-11-30', crew: 'B', kind: 'temporary' }] };
     expect(effectiveCrew(p, null, '2026-11-09')).toBe('A');
     expect(effectiveCrew(p, null, '2026-11-12')).toBe('B');
     const m = { ...member('x', 'senior'), days: Object.fromEntries(dates.map((d) => [d, { works: true, hours: 12 }])) };
-    const ot = memberOvertime(plan, day, m, p);
-    const on = (d: string) => ot.find((x) => x.date === d)!;
-    expect(on('2026-11-12').ot).toBe(isWorkingDay('2026-11-12', 'B') ? 4 : 12);
-    expect(on('2026-11-05').ot).toBe(isWorkingDay('2026-11-05', 'A') ? 4 : 12);
+    const r = memberOtDetail(plan, day, m, p);
+    for (const c of r.cycles.filter((x) => x.complete)) { expect(c.owed).toBe(48); expect(c.worked).toBe(96); expect(c.overtime).toBe(48); }
+    expect(r.cycles.some((c) => c.crew === 'A') && r.cycles.some((c) => c.crew === 'B')).toBe(true);
+    // nothing counted twice: the overtime of the duties = the overtime of the cycles = what the months show
+    const byCycles = r.cycles.reduce((t, c) => t + c.overtime, 0);
+    expect(r.total).toBeCloseTo(byCycles, 5);
+    expect(Object.values(r.months).reduce((t, h) => t + h, 0)).toBeCloseTo(byCycles, 5);
   });
-  it('rest day: 12 h worked is 12 h overtime, 8 h is 8 h; duty day: 12 → 4, 8 → 0', () => {
+  it('a 12 h duty on a crew rest day is set against the duty day off in the same cycle, not counted as 12 h', () => {
     const p = person('x', 'A', 'field_operator', 13, false);
-    const rest = dates.find((d) => !isWorkingDay(d, 'A'))!, duty = dates.find((d) => isWorkingDay(d, 'A'))!;
-    const m = (h: number) => ({ ...member('x', 'senior'), days: { [rest]: { works: true, hours: h }, [duty]: { works: true, hours: h } } });
-    const pick = (h: number, d: string) => memberOvertime(plan, day, { ...m(h), days: Object.fromEntries(dates.map((x) => [x, m(h).days[x] ?? { works: false, hours: null }])) }, p).find((x) => x.date === d)!.ot;
-    expect([pick(12, duty), pick(8, duty), pick(12, rest), pick(8, rest)]).toEqual([4, 0, 12, 8]);
+    // one complete A cycle inside the plan: M1 … Off2
+    const m1 = dates.find((d) => dutyFor(d, 'A') === 'M1' && addDaysIso(d, 7) <= plan.end)!;
+    const cyc = Array.from({ length: 8 }, (_, i) => addDaysIso(m1, i));
+    // 3 on / 1 off: works M1 M2 A1, off A2, works N1 N2 Off1 (a rest day), off Off2; 12 h, 12 h, 8 h, 12 h, 12 h, 8 h
+    const plan8: Record<string, { works: boolean; hours: number | null }> = Object.fromEntries(dates.map((d) => [d, { works: false, hours: null }]));
+    [[0, 12], [1, 12], [2, 8], [4, 12], [5, 12], [6, 8]].forEach(([i, h]) => { plan8[cyc[i]] = { works: true, hours: h }; });
+    const m = { ...member('x', 'senior'), days: plan8 };
+    const r = memberOtDetail(plan, day, m, p);
+    const c = r.cycles.find((x) => x.from === m1)!;
+    expect(c).toMatchObject({ complete: true, dutyDays: 6, owed: 48, worked: 64, overtime: 16, short: 0 });
+    const perShift = 4 + 4 + 0 + 4 + 4 + 8;   // the old per-shift rule: 24 h
+    expect(perShift - c.overtime).toBe(8);
   });
 });
 

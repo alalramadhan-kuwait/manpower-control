@@ -456,6 +456,10 @@ function memberWorks(p, m, date) {
   return (days(p.start, date) + m.offset) % cycleOf(p) < p.daysOn;
 }
 
+// src/core/shutdown/overtime.ts
+var H = 36e5;
+var KW = 3 * H;
+
 // src/data/shutdown.ts
 var toPlan = (r) => ({
   rulesVersion: r.rules_version ?? 1,

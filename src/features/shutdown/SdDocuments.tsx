@@ -1,3 +1,4 @@
+import { awayOn } from '@/core/shutdown/v2';
 // The two shutdown documents, laid out like the section's own sheets and printed landscape A4 (or saved as PDF):
 // the shift schedule shared with the team (M / N / O per day) and the overtime sheet for the manager's approval.
 import { ArrowLeft, Pencil, Plus, Printer, Trash2 } from 'lucide-react';
@@ -40,7 +41,9 @@ const periodOf = (p: SdPlan) => { const f = (d: string) => new Date(`${d}T00:00:
 
 /** A row: the member, the group it is printed under (Controller, an area, Operators) and its number within the team. */
 export interface Row { m: SdMember; team: SdTeam; r: EmployeeDirectoryRow | undefined; /** the crew whose duty days he keeps on the team (the one he follows, else his own) */ crew: Crew | null; /** the shift he is counted in: his own crew, the shutdown aside (a VR Controller on the team: the shift he follows) */ home: Crew | null; /** the crew he is in the day after the shutdown (a VR Controller: his placement then) */ after: Crew | null; vr: boolean; group: string; no: number; /** the person (role history and shift movements), for the roster of each date */ person?: MpPerson }
-export interface Doc { plan: SdPlan; teams: SdTeam[]; rows: Row[]; signatures: Signature[]; dates: string[]; months: string[]; name: string }
+export interface Doc { plan: SdPlan; teams: SdTeam[]; rows: Row[]; signatures: Signature[]; dates: string[]; months: string[]; name: string;
+  /** Leave already approved in Oracle on a date (credited in the overtime: the regular hours of that duty day are not owed). */
+  leaveOn?: (employeeId: string, date: string) => boolean }
 
 /** Everything the shutdown documents (and the Excel file) are made of. */
 export async function loadSdDoc(id: string): Promise<Doc> {
@@ -65,7 +68,7 @@ export async function loadSdDoc(id: string): Promise<Doc> {
   const months = [...new Set(dates.map((d) => d.slice(0, 7)))];
   const period = months.length > 1 ? `${MONTH(months[0])} - ${MONTH(months[months.length - 1])}` : MONTH(months[0]);
   const name = `${sd.plan.title.toUpperCase().replace(/\s*SD$/, '')} ${period}`;
-  return { plan: sd.plan, teams: sd.teams, rows, signatures: sd.signatures, dates, months, name };
+  return { plan: sd.plan, teams: sd.teams, rows, signatures: sd.signatures, dates, months, name, leaveOn: awayOn(inputs.absences) };
 }
 
 function useDoc(id: string) {
@@ -147,7 +150,7 @@ export function SdSchedulePage() {
         {doc.teams.map((t) => <span key={t.id}><b className={cx('mr-1 inline-block w-6 border border-slate-500 text-center', t.shiftCode === 'N' ? 'bg-slate-300' : 'bg-sky-100')}>{t.shiftCode}</b>{t.name} shift {plan.shiftHours} hrs {t.hoursLabel ?? ''}</span>)}
         {[...new Set(doc.teams.map((t) => t.shiftCode))].map((c) => <span key={`s${c}`}><b className={cx('mr-1 inline-block w-6 border border-slate-500 text-center', c === 'N' ? 'bg-slate-100' : 'bg-white')}>{c}<sub className="text-[8px] font-bold">{plan.normalHours}</sub></b>{c === 'N' ? 'Night' : 'Day'} shift {plan.normalHours} hrs: a shorter day, the small number is the hours</span>)}
         <span><b className="mr-1 inline-block w-5 border border-slate-500 bg-yellow-300 text-center">O</b>Off</span>
-        <span><b className="mr-1 inline-block w-5 border border-slate-500 text-center text-red-600">{doc.teams[0]?.shiftCode ?? 'M'}</b>On the person's crew rest day (full overtime)</span>
+        <span><b className="mr-1 inline-block w-5 border border-slate-500 text-center text-red-600">{doc.teams[0]?.shiftCode ?? 'M'}</b>{(plan.rulesVersion ?? 1) >= 2 ? "On the person's crew rest day (set against the cycle's regular hours)" : "On the person's crew rest day (full overtime)"}</span>
         <span><b className="mr-1 inline-block w-5 border border-slate-500 bg-slate-900 text-center">&nbsp;</b>Not on the team</span>
       </div>
     </Page>

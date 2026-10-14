@@ -1,6 +1,6 @@
 import { AlertTriangle, ArrowLeft, Check, Copy, FileSpreadsheet, FileText, Pencil, Plus, RotateCcw, Shuffle, Trash2, UserMinus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { COVER_GRADE } from '@/core/controllers';
 import { evaluateRange, personOn, SD_TEAM, type MpAbsence, type MpAssignment, type MpPerson } from '@/core/manpower';
 import { CREWS, addDaysIso, type Crew } from '@/core/roster';
@@ -8,7 +8,7 @@ import { dateRuns, teamGaps, FO_LEVEL_LABEL, SD_PO_MAX_GRADE, SD_SLOTS, SD_SLOT_
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { fetchOperationPlan, schedulePeriod, type PeriodRow } from '@/data/modes';
 import { fetchDirectory } from '@/data/queries';
-import { addSdMember, clearSdDays, fetchAllSdMembers, fetchFollowMovements, fetchOvertimeTaken, fetchSdPlan, fetchSdPlans, fetchSickTotals, moveSdPlan, removeSdMember, renameSdArea, saveSdPhases, setOvertimeTaken, setSdDays, updateSdMember, updateSdPlan, updateSdTeam, type Signature } from '@/data/shutdown';
+import { addSdMember, clearSdDays, copyPlanToCurrentRules, fetchAllSdMembers, fetchFollowMovements, fetchOvertimeTaken, fetchSdPlan, fetchSdPlans, fetchSickTotals, moveSdPlan, removeSdMember, renameSdArea, saveSdPhases, setOvertimeTaken, setSdDays, updateSdMember, updateSdPlan, updateSdTeam, type Signature } from '@/data/shutdown';
 import type { EmployeeDirectoryRow } from '@/data/types';
 import { BottomSheet, Button, Card, ErrorBox, Field, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
@@ -19,8 +19,8 @@ import { yearCap } from '@/core/shutdown/spread';
 import { MoveLeaveSheet } from './MoveLeave';
 import { FollowInstruction, FollowSheet } from './FollowCrew';
 import { suggestFollow } from '@/core/shutdown/overlap';
-import { adjacent, eligibility, isV2, sickState, type Eligibility, type OtEntry, type PlanCheck, type PlanRef, type SdException, type SickEntry } from '@/core/shutdown/v2';
-import { fetchApproval, fetchExceptions, fetchOtEntries, fetchSickEntries, personInfo, runPlanCheck, type ApprovalState } from '@/data/sdCheck';
+import { adjacent, eligibility, isV2, memberOtDetail, plannerContext, sickState, type Eligibility, type OtEntry, type PlanCheck, type PlanRef, type SdException, type SickEntry } from '@/core/shutdown/v2';
+import { fetchApproval, fetchExceptions, fetchOtEntries, fetchSickEntries, loadPlanCheckInput, personInfo, runPlanCheck, type ApprovalState } from '@/data/sdCheck';
 import { EligibilityBadge, ExceptionsBox, FiguresSheet, ReadinessPanel } from './SdV2';
 import { localToday } from '@/ui/leave';
 
@@ -77,6 +77,14 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
   const [check, setCheck] = useState<PlanCheck | null>(null);
   const [approval, setApproval] = useState<ApprovalState | null>(null);
   const [checkErr, setCheckErr] = useState<unknown>(null);
+  // rules v2: the planner works on the same data as the plan check (loaded when the planner is opened)
+  const [planner, setPlanner] = useState<ReturnType<typeof plannerContext> | null>(null);
+  useEffect(() => {
+    if (!spreading || !data?.v2 || data.plan.kind === 'total') { setPlanner(null); return; }
+    let live = true;
+    loadPlanCheckInput(data.plan.id, localToday()).then((inp) => { if (live) setPlanner(plannerContext(inp)); }).catch((e) => { if (live) { setSpreading(false); setError(e); } });
+    return () => { live = false; };
+  }, [spreading, data]);
   const load = useCallback(async () => {
     try {
       const sd = await fetchSdPlan(id!);
@@ -145,7 +153,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
     const overlaps = plan.kind === 'total' ? [] : suggestFollow(plan, teams, members, data.phases, dutyCrew, (m) => data.dir.get(m.employeeId)?.position_code === 'vr_controller', (m) => homeCrew(m.employeeId, plan.start));
     // places short on some day (approved leave counts as away; leave not yet approved is postponed)
     const gaps = teamGaps(plan, teams, members, data.phases, approvedOn);
-    return { people, leaveOn, homeCrew, dutyCrew, dates, crewImpact, hours, leaveDays, approvedLeaveDays, teamDays, overlaps, gaps };
+    return { people, leaveOn, approvedOn, homeCrew, dutyCrew, dates, crewImpact, hours, leaveDays, approvedLeaveDays, teamDays, overlaps, gaps };
   }, [data]);
 
   // v2: the year to date from the Oracle figures; before v2: the hours typed per year
@@ -207,6 +215,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
         </div>
         <Button variant="secondary" className="min-h-9 shrink-0 px-3 text-xs" onClick={copyList}><Copy className="h-3.5 w-3.5" />Copy list</Button>
       </div>
+      {!data.v2 && plan.end >= localToday() && <CurrentRulesBanner plan={plan} />}
       <div className="mb-2 space-y-2">
         <div className="grid grid-cols-2 gap-2">
           <ActionButton onClick={() => setSpreading(true)} icon={<Shuffle className="h-4 w-4" />} title={total ? 'Spread days off' : 'Set days & hours'} hint={total ? 'Choose each person\'s days off' : 'Which days each person works, and 8 h or 12 h'} />
@@ -297,7 +306,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
       {adding && <AddSheet plan={plan} team={adding.team} slot={adding.slot} area={adding.area} data={data} view={view} onClose={() => setAdding(null)} onDone={done} />}
       {member && <MemberSheet plan={plan} m={member} data={data} view={view} onClose={() => setMember(null)} onDone={done} />}
       {moving && <MoveLeaveSheet plan={plan} members={members} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} inputs={data.inputs} onClose={() => setMoving(false)} onDone={done} />}
-      {spreading && <SpreadDaysSheet plan={plan} teams={teams} members={members} phases={data.phases} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} crewOf={(e) => { const mm = members.find((x) => x.employeeId === e); return mm ? view.dutyCrew(mm) : view.homeCrew(e, plan.start); }} conflicts={approvedLeave} yearTaken={yearTaken} onClose={() => setSpreading(false)} onDone={done} />}
+      {spreading && <SpreadDaysSheet plan={plan} teams={teams} members={members} phases={data.phases} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} crewOf={(e) => { const mm = members.find((x) => x.employeeId === e); return mm ? view.dutyCrew(mm) : view.homeCrew(e, plan.start); }} conflicts={approvedLeave} yearTaken={yearTaken} planner={planner} onClose={() => setSpreading(false)} onDone={done} />}
       {figures && data.v2 && <FiguresSheet plan={plan} members={members} dir={dir} ot={data.v2.ot} sick={data.v2.sick} onClose={() => setFigures(false)} onDone={done} />}
       {yearOt && <YearOvertimeSheet plan={plan} members={members} dir={dir} taken={data.otTaken} onClose={() => setYearOt(false)} onDone={done} />}
       {editPattern && <PatternSheet plan={plan} hasPeople={members.length > 0} onClose={() => setEditPattern(false)} onDone={done} onMoved={moved} />}
@@ -310,6 +319,8 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
 interface View {
   people: Map<string, MpPerson>;
   leaveOn: (employeeId: string, date: string) => boolean;
+  /** Leave already approved in Oracle on a date (the person is off the team that day). */
+  approvedOn: (employeeId: string, date: string) => boolean;
   /** The person's own crew on a date, the shutdown team aside (VRs: their placement crew). */
   homeCrew: (employeeId: string, date: string) => Crew | null;
   /** The crew whose duty and rest days the member keeps on the team (the one they follow, else their own). */
@@ -566,7 +577,12 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
   const trial: SdMember = { ...m, offset, start, end, days: own };
   const home = view.homeCrew(m.employeeId, plan.start);
   const crew = m.followCrew ?? home;
-  const hours = memberHours(plan, trial, crew);
+  // v2: the cycle engine (48 regular hours per 8-day rota cycle), as the plan check counts it; before v2: day by day
+  const det = data.v2 && team ? memberOtDetail(plan, team, trial, view.people.get(m.employeeId), (d) => view.approvedOn(m.employeeId, d)) : null;
+  const hours = det
+    ? memberHours(plan, trial, crew).map((h) => { const o = det.months[h.month] ?? 0; return { ...h, overtime: o, over: o > plan.maxOvertime }; })
+    : memberHours(plan, trial, crew);
+  const dayOt = (d: string) => (det ? det.duties.find((x) => x.date === d)?.ot ?? 0 : dayOvertime(plan, trial, crew, d));
   const cycle = cycleOf(plan);
   const valid = start >= plan.start && end <= plan.end && end >= start;
   const changedDays = Object.entries(own).filter(([d, v]) => m.days?.[d]?.works !== v.works || m.days?.[d]?.hours !== v.hours);
@@ -613,7 +629,7 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
             {view.dates.map((d) => {
               const inRange = d >= start && d <= end;
               const works = memberWorks(plan, trial, d);
-              const ot = dayOvertime(plan, trial, crew, d);
+              const ot = dayOt(d);
               return (
                 <button key={d} type="button" disabled={!inRange} onClick={() => toggle(d)} title={`${wd(d)} ${shortDate(d)}`}
                   className={cx('flex flex-col items-center rounded-md py-0.5 text-[10px] leading-tight ring-1', !inRange ? 'bg-slate-50 text-slate-300 ring-slate-100' : works ? (code === 'N' ? 'bg-slate-300 text-slate-900 ring-slate-400' : 'bg-sky-50 text-slate-900 ring-sky-200') : 'bg-yellow-200 text-yellow-900 ring-yellow-300', own[d] && m.days?.[d]?.works !== own[d].works && 'outline outline-2 outline-brand-700')}>
@@ -624,7 +640,9 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
               );
             })}
           </div>
-          <p className="mt-1 text-[11px] text-slate-500">{code} working · O off (yellow). OT per day = hours less the normal {plan.normalHours} h on a {crew ? `${crew} Shift` : 'Sunday–Thursday'} duty day; a rest day counts in full.</p>
+          <p className="mt-1 text-[11px] text-slate-500">{code} working · O off (yellow). {det
+            ? <>OT = hours above the regular {plan.normalHours * 6} h of each 8-day rota cycle of {crew ? `${crew} Shift` : 'day staff (40 h a week)'} (approved leave on duty days credited); it shows on the hours worked after the regular ones.{det.cycles.some((c) => c.short > 0) ? ` Short of the regular hours: ${det.cycles.filter((c) => c.short > 0).map((c) => `${c.short} h`).join(', ')}.` : ''}</>
+            : <>OT per day = hours less the normal {plan.normalHours} h on a {crew ? `${crew} Shift` : 'Sunday–Thursday'} duty day; a rest day counts in full.</>}</p>
         </Field>
         {total && areas.length > 0 && (
           <Field label={m.slot === 'controller' ? 'Section' : 'Area'}>
@@ -911,5 +929,27 @@ function UnitDownCard({ plan, periods, onDone }: { plan: SdPlan; periods: Period
             <Button className="mt-2 w-full" disabled={busy || others.length > 0} onClick={set}>Set Total shutdown mode · {range(plan.start, plan.end)}</Button>
           </>}
     </Card>
+  );
+}
+
+/** A plan made under the rules before v2 (overtime per shift, own-crew days only): moved onto the current rules on request. */
+function CurrentRulesBanner({ plan }: { plan: SdPlan }) {
+  const nav = useNavigate();
+  const [ask, setAsk] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  async function go() {
+    setBusy(true); setErr(null);
+    try { const id = await copyPlanToCurrentRules(plan.id); nav(`/shutdown/${id}`); } catch (e) { setErr(e); setBusy(false); }
+  }
+  return (
+    <div className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-300">
+      <p><b>Older rules.</b> This plan was made before the current shutdown rules: its overtime is counted shift by shift and it has no continuous-coverage check or server approval. Move it onto the current rules to use the planner (3 on / 1 off, 48 regular hours per 8-day cycle, coverage, rest and overtime limits).</p>
+      {!ask ? <button type="button" className="mt-1 font-semibold text-brand-700 underline" onClick={() => setAsk(true)}>Move to the current rules…</button> : (
+        <div className="mt-2 space-y-2">
+          <p>A new plan is made with the same dates, teams and people (their places, dates and shift instructions); this one is cancelled and kept in the history. Days set by hand are rebuilt by the planner. Nothing is approved.</p>
+          {err != null && <ErrorBox error={err} />}
+          <div className="grid grid-cols-2 gap-2"><Button variant="secondary" disabled={busy} onClick={() => setAsk(false)}>Not now</Button><Button disabled={busy} onClick={go}>Move it</Button></div>
+        </div>
+      )}
+    </div>
   );
 }
