@@ -91,6 +91,8 @@ export interface SpreadContext {
   v2?: boolean;
   /** v2: how hard joining / leaving the team is with these days (own-crew days to take off, broken rest rules); lower is better. */
   transitionCost?: (m: SdMember, days: Record<string, boolean>) => number;
+  /** v2: the person's stored FO classification (Experienced = 'senior', Good, New), for who counts for the minimum. */
+  levelOf?: (employeeId: string) => 'senior' | 'good' | 'new' | 'below' | null;
   /** v2: the rota the person keeps on a date (a VR's placement can change during the shutdown); default: crewOf. */
   crewOn?: (employeeId: string, date: string) => Crew | null;
   /** v2: overtime the person already has in a calendar month outside this plan (Oracle month to date, other shutdowns). */
@@ -102,6 +104,17 @@ export const V2_MAX_RUN = 6;
 /** The groups of a team: level slots for a train shutdown; Controllers (per section) and operators per area for a total turnaround. Operators without a level are left as they are. */
 export function spreadGroups(p: SdPlan, t: SdTeam, members: SdMember[], phases: SdPhase[]): SpreadGroup[] {
   const ids = (f: (m: SdMember) => boolean) => members.filter((m) => m.teamId === t.id && f(m)).map((m) => m.id);
+  if (p.kind !== 'total' && (p.rulesVersion ?? 1) >= 2) {
+    // v2: the Controllers; the Field Operators of the Senior and Good places together (minimum 2 on duty, one of them
+    // Experienced: an Experienced can stand in for a Good); the New FOs (training, never needed)
+    const start = (/(\d{1,2}):(\d{2})/.exec(t.hoursLabel ?? '')?.slice(1, 3).map((x, i) => (i === 0 ? x.padStart(2, '0') : x)).join(':')) ?? (t.shiftCode === 'N' ? '19:00' : '07:00');
+    const base = { teamId: t.id, night: t.shiftCode === 'N', start };
+    return [
+      { ...base, key: 'controller', memberIds: ids((m) => m.slot === 'controller'), need: () => 1 },
+      { ...base, key: 'fo', memberIds: ids((m) => m.slot === 'senior' || m.slot === 'good'), need: () => 2 },
+      { ...base, key: 'new', memberIds: ids((m) => m.slot === 'new'), need: () => 0 },
+    ];
+  }
   if (p.kind !== 'total') {
     const start = (/(\d{1,2}):(\d{2})/.exec(t.hoursLabel ?? '')?.slice(1, 3).map((x, i) => (i === 0 ? x.padStart(2, '0') : x)).join(':')) ?? (t.shiftCode === 'N' ? '19:00' : '07:00');
     return SD_SLOTS.map((s) => ({ key: s, teamId: t.id, night: t.shiftCode === 'N', start, memberIds: ids((m) => m.slot === s), need: (d: string) => (isRampDay(p, d) ? t.rampNeeds[s] : t.needs[s]) }));
@@ -133,7 +146,7 @@ function stats(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadContex
       short += Math.max(0, need - on.length);
       if (!optional && on.length === 0) { gapDays++; gapDates.push(date); }
       // the minimum on duty must hold for all the shift's hours: that many on the full shift (an 8-hour duty leaves 4 hours open)
-      if (!optional && (ctx.v2 || !isRampDay(p, date)) && on.filter((m) => hoursOf(m, date) >= p.shiftHours).length < (ctx.v2 ? Math.min(1, need) : 1)) { noFullDays++; noFullDates.push(date); }
+      if (!optional && (ctx.v2 || !isRampDay(p, date)) && on.filter((m) => hoursOf(m, date) >= p.shiftHours).length < (ctx.v2 ? need : 1)) { noFullDays++; noFullDates.push(date); }
     }
     if (!ctx.v2) for (const m of on) {
       const ot = Math.max(0, hoursOf(m, date) - (isDutyDay(ctx.crewOf(m.employeeId), date) ? p.normalHours : 0)); overtime += ot;

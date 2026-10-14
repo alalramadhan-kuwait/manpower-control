@@ -47,7 +47,7 @@ function plan(inp: PlanCheckInput): PlanCheckInput {
   const out = inp.members.map((m) => ({ ...m, days: {} as NonNullable<SdMember['days']> }));
   for (const t of inp.teams) for (const g of spreadGroups(inp.plan, t, out.filter((m) => m.teamId === t.id), [])) {
     if (!g.memberIds.length) continue;
-    const r = spreadGroup(inp.plan, g, out, { crewOf: ctx.crewOf, away: ctx.away, maxRun: 6, v2: true, transitionCost: ctx.transitionCost, monthTaken: ctx.monthTaken, crewOn: ctx.crewOn });
+    const r = spreadGroup(inp.plan, g, out, { crewOf: ctx.crewOf, away: ctx.away, maxRun: 6, v2: true, transitionCost: ctx.transitionCost, monthTaken: ctx.monthTaken, crewOn: ctx.crewOn, levelOf: ctx.levelOf });
     for (const m of out) { const d = r.days.get(m.id); if (!d) continue; for (const [date, w] of Object.entries(d)) m.days![date] = { works: w, hours: w ? r.hours.get(m.id)?.[date] ?? null : null }; }
   }
   return { ...inp, members: out };
@@ -66,11 +66,12 @@ describe('planner · the real Train-2 team, 20 Oct – 20 Nov, 3 on / 1 off', ()
     for (const o of c.overtime) for (const mo of o.months) expect(mo.plan).toBeLessThanOrEqual(72);
     expect(new Set(c.overtime.flatMap((o) => o.months.map((m) => m.key)))).toEqual(new Set(['2026-10', '2026-11']));
   });
-  it('a regular pattern: never more than 3 days in a row, a 12 h and 8 h mix', () => {
+  it('a regular pattern: never more than 3 days in a row; 12 h preferred, 8 h only for qualified people; New FOs always 12 h', () => {
     for (const m of inp.members) expect(maxRun(m, basePlan)).toBeLessThanOrEqual(3);
     const hours = inp.members.flatMap((m) => Object.values(m.days ?? {}).filter((d) => d.works).map((d) => d.hours));
     expect(hours.every((h) => h === 12 || h === 8)).toBe(true);
-    expect(hours.filter((h) => h === 8).length).toBeGreaterThan(0);
+    expect(hours.filter((h) => h === 12).length).toBeGreaterThan(hours.filter((h) => h === 8).length);
+    for (const m of inp.members.filter((x) => x.slot === 'new')) expect(Object.values(m.days ?? {}).filter((d) => d.works).every((d) => d.hours === 12)).toBe(true);
   });
   it('one overtime engine: the check, the per-member detail and the months all agree (nothing counted twice)', () => {
     const t = new Map(inp.teams.map((x) => [x.id, x]));
@@ -82,11 +83,12 @@ describe('planner · the real Train-2 team, 20 Oct – 20 Nov, 3 on / 1 off', ()
       expect(d.cycles.reduce((s, x) => s + x.overtime, 0)).toBeCloseTo(d.total, 2);
     }
   });
-  it('overtime is fair inside each place (within one 12 h / 8 h swap or the month target)', () => {
-    for (const slot of ['controller', 'senior', 'good'] as const) for (const team of ['D', 'N']) {
-      const ids = inp.members.filter((m) => m.slot === slot && m.teamId === team).map((m) => m.employeeId);
+  it('overtime is fair inside each group (lowest priority after 12 h duties and the target): within three 12 h duties, every month within 72 h', () => {
+    for (const group of [['controller'], ['senior', 'good']]) for (const team of ['D', 'N']) {
+      const ids = inp.members.filter((m) => group.includes(m.slot) && m.teamId === team).map((m) => m.employeeId);
       const tot = ids.map((id) => c.overtime.find((o) => o.employeeId === id)!.plan);
-      expect(Math.max(...tot) - Math.min(...tot)).toBeLessThanOrEqual(16);
+      expect(Math.max(...tot) - Math.min(...tot)).toBeLessThanOrEqual(36);
+      for (const id of ids) for (const mo of c.overtime.find((o) => o.employeeId === id)!.months) expect(mo.plan).toBeLessThanOrEqual(72);
     }
   });
 });
@@ -127,12 +129,11 @@ describe('planner · scenarios', () => {
     expect(nov.plan).toBeLessThan(plain);
     expect(nov.total).toBeLessThanOrEqual(80);
   });
-  it('one person in a place: the cover is kept (never a 7th day), what cannot be covered is left visible', () => {
-    const rows = TEAM.filter((r) => r.id !== 'd-good-d');
+  it('too few Field Operators (two for two places every day): never a 7th day; what cannot be covered is reported, Not ready', () => {
+    const rows = TEAM.filter((r) => r.id !== 'd-good-d' && r.id !== 'd-good-a');
     const inp = plan(input(basePlan, rows));
     for (const m of inp.members) expect(maxRun(m, basePlan)).toBeLessThanOrEqual(6);
     const c = checkPlan(inp);
-    // a lone Good FO cannot hold every day: the check shows the gaps, nothing silently unsafe
     expect(c.gaps.some((g) => g.role === 'good' && g.teamId === 'D')).toBe(true);
     expect(c.status).toBe('not_ready');
   });
@@ -163,5 +164,53 @@ describe('planner · joining and leaving the team (rest rules against the crew d
     const without = checkPlan({ ...inp, members: out });
     const offs = (c: ReturnType<typeof checkPlan>) => c.transitions.reduce((t, x) => t + x.joinOff.length + x.returnOff.length + 5 * x.findings.length, 0);
     expect(offs(withCost)).toBeLessThanOrEqual(offs(without));
+  });
+});
+
+describe('planner · the final shutdown rules', () => {
+  it('Experienced replacing Good: a Day team with three Experienced and no Good is fully covered', () => {
+    const rows: Row[] = [...TEAM.filter((r) => !(r.team === 'D' && r.slot === 'good')),
+      { id: 'd-sen-b', team: 'D', slot: 'senior', crew: 'B', role: 'field_operator', level: 'senior' }];
+    const c = checkPlan(plan(input(basePlan, rows)));
+    expect(c.gaps.filter((g) => g.teamId === 'D')).toEqual([]);
+    expect(blocks(c)).toEqual([]);
+  });
+  it('New Field Operators: always 12 h, never counted, within the 72 h target by extra days off', () => {
+    const inp = plan(input(basePlan, TEAM));
+    const c = checkPlan(inp);
+    for (const m of inp.members.filter((x) => x.slot === 'new')) {
+      const worked = Object.values(m.days ?? {}).filter((d) => d.works);
+      expect(worked.every((d) => d.hours === 12)).toBe(true);
+      for (const mo of c.overtime.find((o) => o.employeeId === m.employeeId)!.months) expect(mo.plan).toBeLessThanOrEqual(72);
+    }
+    expect(c.issues.filter((i) => i.code === 'new_short')).toEqual([]);
+    // without the New FOs the minimum still holds: they never count
+    const without = { ...inp, members: inp.members.filter((m) => m.slot !== 'new') };
+    expect(checkPlan(without).gaps).toEqual([]);
+  });
+  it('a New FO on a shortened duty is refused by the check', () => {
+    const inp = plan(input(basePlan, TEAM));
+    const n = inp.members.find((m) => m.slot === 'new')!;
+    const d = Object.entries(n.days!).find(([, v]) => v.works)![0];
+    n.days![d] = { works: true, hours: 8 };
+    expect(checkPlan(inp).issues.some((i) => i.code === 'new_short' && i.level === 'block')).toBe(true);
+  });
+  it('only the selected team: the planner never uses anybody else, even when a place is short', () => {
+    const rows = TEAM.filter((r) => r.id !== 'd-good-d' && r.id !== 'd-good-a');
+    const base = input(basePlan, rows);
+    // an Experienced FO in the staff list but not on the team
+    const outsider: MpPerson = { id: 'outsider', employeeNumber: 'x', name: 'x', role: 'field_operator', crew: 'B', grade: 13, employmentType: 'knpc', takeCharge: null, panelQualified: null, actingController: null };
+    const inp = plan({ ...base, people: [...base.people, outsider], info: new Map([...base.info, ['outsider', { id: 'outsider', name: 'x', position: 'field_operator', grade: 13, foLevel: 'senior' }]]) });
+    expect(inp.members.map((m) => m.employeeId).sort()).toEqual(rows.map((r) => r.id).sort());
+    expect(checkPlan(inp).status).toBe('not_ready');
+  });
+  it('a qualified person on 8 h only where the rest of the minimum is on the full shift (no 4-hour gap)', () => {
+    const inp = plan(input(basePlan, TEAM));
+    const eight = inp.members.flatMap((m) => Object.entries(m.days ?? {}).filter(([, d]) => d.works && d.hours === 8).map(([d]) => ({ m, d })));
+    for (const { m, d } of eight) {
+      const fullFos = inp.members.filter((x) => x.teamId === m.teamId && x !== m && (m.slot === 'controller' ? x.slot === 'controller' : x.slot === 'senior' || x.slot === 'good') && x.days?.[d]?.works && x.days[d].hours === 12);
+      expect(fullFos.length).toBeGreaterThanOrEqual(m.slot === 'controller' ? 1 : 2);
+    }
+    expect(checkPlan(inp).gaps).toEqual([]);
   });
 });

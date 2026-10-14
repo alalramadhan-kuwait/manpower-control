@@ -387,7 +387,7 @@ function NewPlanSheet({ onClose }: { onClose: () => void }) {
         </div>
         <p className="text-xs text-slate-500">{kind === 'total'
           ? 'Starts with a Morning and a Night shift, each 2 Controllers and 5 operators in TR-II and 5 in L.P & TR-I, everyone every day, 12 h, overtime ≤ 80 h. Areas, phases and numbers are all editable.'
-          : 'Starts with a Morning and a Night team (Controller 1 · Senior 2 · Good 2 · New 1), 3 on / 1 off, 12 h, first and last 2 days 8 h, overtime ≤ 80 h. All editable.'}</p>
+          : 'Starts with a Day and a Night team, 3 on / 1 off for the whole shutdown, 12 h shifts. On duty every minute: 1 Controller, 1 Experienced FO and a second Experienced or Good FO (New FOs train, never counted); overtime target 72 h a month, limit 80 h. All editable.'}</p>
         {err != null && <ErrorBox error={err} />}
         <Button className="w-full" disabled={busy || !title.trim() || end < start} onClick={save}>Create</Button>
       </div>

@@ -1,15 +1,19 @@
-// The train-shutdown planner (rules v2): who works which day of a level place (Controller / Senior FO / Good FO / New FO)
-// and for how many hours. Pure functions; the app writes the result as the members' own days.
+// The train-shutdown planner (rules v2): who of the selected shutdown team works which day and for how many hours, one
+// group at a time: the Controllers, the Field Operators (Experienced and Good together), the New Field Operators.
+// Pure functions; the app writes the result as the members' own days. Only the group's own members are ever used.
 //
-// What it does, in this order of priority:
-//   1. Safety and hard rules: one qualified person of each place on the full shift (07:00–19:00 / 19:00–07:00) every
-//      day it is needed, never more than 6 days in a row, both days of a crew rest-day pair never worked (one is allowed),
-//      approved leave respected, the rest before joining and after leaving the team as light as possible (ctx.transitionCost).
-//   2. Monthly overtime: each person at or below the plan's monthly target (72 h, after what they already took that
-//      month) and never above the hard limit if any other arrangement covers the day; the months counted separately.
-//   3. A regular pattern: the plan's days on / days off (3 on / 1 off) up to `cycleUntil`, the own crew's duty days after
-//      it; the people of a place start the pattern at different points so somebody is always there.
-//   4. Fair overtime between the people of a place.
+// Hard rules first (the final shutdown rules, see SD_MINIMUM in ./v2):
+//   - every day, the group's minimum on the full 12-hour shift (07:00–19:00 / 19:00–07:00): Controllers 1; Field
+//     Operators 2 different people, at least one Experienced (Senior); an 8-hour duty never counts for the last 4 hours;
+//   - never more than 6 days in a row, never both days of a crew rest-day pair (one is allowed), approved leave kept,
+//     the rest before joining and after leaving the team as light as possible (ctx.transitionCost);
+// then the preferences, in order:
+//   1. the plan's days on / days off (3 on / 1 off), the people of a group starting it at different points;
+//   2. 12-hour duties;
+//   3. each person at or below the monthly target (72 h after what they already took that month; months counted apart);
+//   4. 8-hour duties for qualified people only where the target needs it, and only on days the minimum is held by others;
+//   5. New Field Operators (training, never counted): always 12 hours; near the target they get extra days off instead;
+//   6. fair overtime inside the group.
 // Overtime is always the cycle engine's (./overtime): 48 regular hours per 8-day rota cycle, not per shift.
 //
 // When the place cannot be covered on a day (everybody on leave, or a 7th day in a row would be needed), the day is left
@@ -47,6 +51,13 @@ export interface PlannedGroup { days: Map<string, Record<string, boolean>>; hour
 export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], ctx: SpreadContext): PlannedGroup {
   const dates = planDates(p); const n = dates.length; const N = members.length;
   const extra = g.key === 'new';
+  // who counts for the group's minimum, and who is Experienced (by the stored classification; see capabilities in ./v2)
+  const levelOf = (i: number) => ctx.levelOf?.(members[i].employeeId) ?? (members[i].slot === 'senior' ? 'senior' : members[i].slot === 'good' ? 'good' : null);
+  const qual = members.map((_m, i) => !extra && (g.key !== 'fo' || ['senior', 'good'].includes(levelOf(i) ?? '')));
+  const exp = members.map((_m, i) => g.key === 'fo' && levelOf(i) === 'senior');
+  const composite = g.key === 'fo';
+  /** Does this set of people (indices) hold the group's minimum on day k? */
+  const holdsMin = (set: number[], k: number) => set.filter((i) => qual[i]).length >= need[k] && (!composite || need[k] <= 0 || set.some((i) => exp[i]));
   const full = p.shiftHours, short = Math.min(p.normalHours, p.shiftHours);
   const fatigue = g.night ? ctx.fullRunNight ?? 3 : ctx.fullRunDay ?? 4;
   const crews = members.map((m) => ctx.crewOf(m.employeeId));
@@ -56,11 +67,11 @@ export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], c
   const inRange = members.map((m) => dates.map((d) => m.start <= d && d <= m.end));
   const avail = members.map((m, i) => dates.map((d, k) => inRange[i][k] && !ctx.away(m.employeeId, d)));
   const duty = crewOn.map((c) => dates.map((d) => isDutyDay(c(d), d)));
-  // the place's minimum on duty at every moment of the shift (v2: one qualified person, the others relief; see
-  // coverPlaces): that many people work the full shift, since an 8-hour duty leaves the last 4 hours uncovered.
-  // The New FO place is never needed.
-  const need = dates.map((d) => (extra ? 0 : Math.min(1, g.need(d))));
-  const onAt = (k: number) => drafts.filter((d) => d.works[k]).length;
+  // the group's minimum on duty at every moment of the shift: that many people work the full shift, since an 8-hour
+  // duty leaves the last 4 hours uncovered. The New FO group is never needed.
+  const need = dates.map((d) => (extra ? 0 : g.need(d)));
+  const present = (k: number, without = -1) => members.map((_m, i) => i).filter((i) => i !== without && drafts[i].works[k]);
+  const sat = (k: number, without = -1) => need[k] <= 0 || holdsMin(present(k, without), k);
   const ramp = dates.map((d) => isRampDay(p, d));
   const cycle = p.daysOn + p.daysOff;
   const inPhase = dates.map((d) => p.daysOff > 0 && !!p.cycleUntil && d <= p.cycleUntil);
@@ -89,7 +100,7 @@ export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], c
   if (anyPhase && N > 0) {
     const score = (assign: number[]) => {
       let s = 0;
-      for (let k = 0; k < n; k++) { if (need[k] <= 0) continue; const on = assign.reduce((t, r, i) => t + (own[i][r].w[k] ? 1 : 0), 0); if (on === 0) s += 1e6; else if (on === 1) s += 1; }
+      for (let k = 0; k < n; k++) { if (need[k] <= 0) continue; const on = assign.map((r, i) => (own[i][r].w[k] ? i : -1)).filter((i) => i >= 0); if (!holdsMin(on, k)) s += 1e6; else if (on.filter((i) => qual[i]).length === need[k]) s += 1; }
       return s + assign.reduce((t, r, i) => t + own[i][r].cost, 0) + new Set(assign).size * -5;
     };
     if (N <= 6) {
@@ -116,7 +127,7 @@ export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], c
       const [a, b] = span(w, k);
       if (b - a + 1 <= MAX_RUN) return pairHits(i, w) <= pairHits(i, drafts[i].works) ? w : null;
       // a day of the run (not k) whose cover does not depend on i, splitting the run into parts within the limit
-      const j = Array.from({ length: b - a + 1 }, (_, x) => a + x).filter((x) => x !== k && onAt(x) - (drafts[i].works[x] ? 1 : 0) >= need[x])
+      const j = Array.from({ length: b - a + 1 }, (_, x) => a + x).filter((x) => x !== k && sat(x, i))
         .filter((x) => x - a <= MAX_RUN && b - x <= MAX_RUN).sort((x, y) => Math.abs(y - k) - Math.abs(x - k))[0];
       if (j === undefined) return null;
       w[j] = false;
@@ -124,8 +135,10 @@ export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], c
     return null;
   };
   const gaps: string[] = [];
-  for (let k = 0; k < n; k++) for (let guard = 0; guard < N && need[k] > 0 && onAt(k) < need[k]; guard++) {
-    const opts = members.map((_m, i) => i).filter((i) => avail[i][k] && !drafts[i].works[k]).map((i) => ({ i, w: withDay(i, k) })).filter((x): x is { i: number; w: boolean[] } => !!x.w)
+  for (let k = 0; k < n; k++) for (let guard = 0; guard < N && !sat(k); guard++) {
+    // the minimum not held: bring in a qualified person who is free (an Experienced one when that is what is missing)
+    const noExp = composite && !present(k).some((i) => exp[i]);
+    const opts = members.map((_m, i) => i).filter((i) => avail[i][k] && !drafts[i].works[k] && qual[i] && (!noExp || exp[i])).map((i) => ({ i, w: withDay(i, k) })).filter((x): x is { i: number; w: boolean[] } => !!x.w)
       .sort((a, b) => monthOt(a.i, dates[k].slice(0, 7)) - monthOt(b.i, dates[k].slice(0, 7)) || a.i - b.i);
     if (opts.length) { drafts[opts[0].i].works = opts[0].w; notes.push(`${dates[k]}: day off moved to cover the place`); } else { gaps.push(dates[k]); break; }
   }
@@ -133,20 +146,21 @@ export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], c
   // one of the two is given off when someone else of the place holds it, or can be brought in for it
   for (let i = 0; i < N; i++) for (const [a, b] of pairs[i]) {
     if (!drafts[i].works[a] || !drafts[i].works[b]) continue;
-    const free = [a, b].find((x) => onAt(x) - 1 >= need[x]);
+    const free = [a, b].find((x) => sat(x, i));
     if (free !== undefined) { drafts[i].works[free] = false; notes.push(`${dates[free]}: one rest day of the pair given back`); continue; }
     let done = false;
     for (const x of [b, a]) for (let y = 0; y < N && !done; y++) {
-      if (y === i || !avail[y][x] || drafts[y].works[x]) continue;
+      if (y === i || !avail[y][x] || drafts[y].works[x] || !holdsMin([...present(x, i), y], x)) continue;
       const w = withDay(y, x); if (!w) continue;
       drafts[y].works = w; drafts[i].works[x] = false; done = true; notes.push(`${dates[x]}: one rest day of the pair given back, covered by another person`);
     }
   }
-  for (let k = 0; k < n; k++) if (need[k] > 0 && onAt(k) < need[k] && !gaps.includes(dates[k])) gaps.push(dates[k]);
+  for (let k = 0; k < n; k++) if (!sat(k) && !gaps.includes(dates[k])) gaps.push(dates[k]);
   gaps.sort();
 
-  // 3. the hours: each day one present person on the full shift, the others the normal hours; reduced days: the full
-  //    shift for one, the others off (v2). The full shift goes to whoever has the least overtime that month so far.
+  // 3. the hours: each day the minimum on the full shift (the others the normal hours for now, see 6); reduced days:
+  //    only the minimum, on the full shift, the others off. The full shifts go to whoever has the least overtime that
+  //    month so far; for the Field Operators one of them Experienced.
   const fullRun = (i: number, k: number) => { let a = 0; while (k - a - 1 >= 0 && drafts[i].hours[k - a - 1] >= full) a++; return a; };
   for (let k = 0; k < n; k++) {
     const on = members.map((_m, i) => i).filter((i) => drafts[i].works[k]);
@@ -156,7 +170,9 @@ export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], c
     if (need[k] <= 0 || !on.length) continue;
     const ym = dates[k].slice(0, 7);
     // as many on the full shift as the place's minimum (an 8-hour duty covers only 07:00–15:00 / 19:00–03:00)
-    const picks = on.slice().sort((a, b) => (fullRun(a, k) >= fatigue ? 1 : 0) - (fullRun(b, k) >= fatigue ? 1 : 0) || monthOt(a, ym) - monthOt(b, ym) || a - b).slice(0, need[k]);
+    const order = on.filter((i) => qual[i]).sort((a, b) => (fullRun(a, k) >= fatigue ? 1 : 0) - (fullRun(b, k) >= fatigue ? 1 : 0) || monthOt(a, ym) - monthOt(b, ym) || a - b);
+    const first = composite ? order.find((i) => exp[i]) : undefined;
+    const picks = [...(first !== undefined ? [first] : []), ...order.filter((i) => i !== first)].slice(0, need[k]);
     for (const x of picks) drafts[x].hours[k] = full;
     if (ramp[k]) for (const i of on) if (!picks.includes(i)) { drafts[i].works[k] = false; drafts[i].hours[k] = 0; }
   }
@@ -170,14 +186,15 @@ export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], c
       let moved = false;
       for (let k = 0; k < n && !moved; k++) {
         if (!dates[k].startsWith(ym) || !holds(i, k) || ramp[k]) continue;
-        const j = members.map((_m, x) => x).filter((x) => x !== i && drafts[x].works[k] && !holds(x, k) && fullRun(x, k) < fatigue)
+        const holders = members.map((_m, x) => x).filter((x) => holds(x, k));
+        const j = members.map((_m, x) => x).filter((x) => x !== i && qual[x] && drafts[x].works[k] && !holds(x, k) && fullRun(x, k) < fatigue && holdsMin([...holders.filter((y) => y !== i), x], k))
           .filter((x) => { drafts[x].hours[k] = full; const ok = monthOt(x, ym) <= target(x, ym); drafts[x].hours[k] = short; return ok; })
           .sort((a, b) => monthOt(a, ym) - monthOt(b, ym))[0];
         if (j !== undefined) { drafts[i].hours[k] = short; drafts[j].hours[k] = full; moved = true; }
       }
       if (!moved) {
         // a relief day off (the place stays covered by the full-shift holder), crew rest days first
-        const k = dates.map((_d, x) => x).filter((x) => dates[x].startsWith(ym) && drafts[i].works[x] && !holds(i, x) && members.filter((_m, y) => y !== i && holds(y, x)).length >= need[x])
+        const k = dates.map((_d, x) => x).filter((x) => dates[x].startsWith(ym) && drafts[i].works[x] && !holds(i, x) && holdsMin(members.map((_m, y) => y).filter((y) => y !== i && holds(y, x)), x))
           .sort((a, b) => Number(duty[i][a]) - Number(duty[i][b]) || b - a)[0];
         if (k === undefined) break;
         drafts[i].works[k] = false; drafts[i].hours[k] = 0; notes.push(`${dates[k]}: relief day off to keep the overtime within ${p.maxOvertime} h`);
@@ -192,19 +209,34 @@ export function planTrainGroup(p: SdPlan, g: SpreadGroup, members: SdMember[], c
       const order = members.map((_m, i) => i).sort((a, b) => total(b) - total(a));
       const hi = order[0], lo = order[order.length - 1];
       if (total(hi) - total(lo) <= full - short) break;
-      const k = dates.map((_d, x) => x).find((x) => !ramp[x] && holds(hi, x) && drafts[lo].works[x] && !holds(lo, x) && fullRun(lo, x) < fatigue
+      const k = dates.map((_d, x) => x).find((x) => !ramp[x] && holds(hi, x) && qual[lo] && drafts[lo].works[x] && !holds(lo, x) && fullRun(lo, x) < fatigue
+        && holdsMin([...members.map((_m, y) => y).filter((y) => y !== hi && holds(y, x)), lo], x)
         && (() => { drafts[lo].hours[x] = full; const ok = monthOt(lo, dates[x].slice(0, 7)) <= target(lo, dates[x].slice(0, 7)); drafts[lo].hours[x] = short; return ok; })());
       if (k === undefined) break;
       drafts[hi].hours[k] = short; drafts[lo].hours[k] = full;
     }
   }
 
-  // 6. New FO (extra, not needed for cover): topped up to the monthly target on the days present, within the fatigue limit
-  if (extra) for (let i = 0; i < N; i++) for (const ym of months) {
-    for (let k = 0; k < n; k++) {
-      if (!dates[k].startsWith(ym) || !drafts[i].works[k] || drafts[i].hours[k] >= full || ramp[k] || fullRun(i, k) >= fatigue) continue;
+  // 6. 12-hour duties are preferred: the others' 8-hour days become full shifts, the person with the least overtime
+  //    first, as long as the month stays within the target (and, as a preference, not past the run of full shifts)
+  if (!extra) for (let pass = 0; pass < 2; pass++) for (const ym of months) {
+    const order = members.map((_m, i) => i).sort((a, b) => monthOt(a, ym) - monthOt(b, ym));
+    for (const i of order) for (let k = 0; k < n; k++) {
+      if (!dates[k].startsWith(ym) || !drafts[i].works[k] || drafts[i].hours[k] >= full || (pass === 0 && fullRun(i, k) >= fatigue)) continue;
       drafts[i].hours[k] = full;
-      if (monthOt(i, ym) > target(i, ym) || (k + 1 < n && drafts[i].hours[k + 1] >= full && fullRun(i, k + 1) > fatigue)) drafts[i].hours[k] = short;
+      if (monthOt(i, ym) > target(i, ym)) drafts[i].hours[k] = short;
+    }
+  }
+
+  // 7. New Field Operators: always the full shift; above the monthly target, extra days off instead of shorter days
+  //    (the last day of a run first, crew rest days first, so the pattern stays readable)
+  if (extra) for (let i = 0; i < N; i++) {
+    for (let k = 0; k < n; k++) if (drafts[i].works[k]) drafts[i].hours[k] = full;
+    for (const ym of months) for (let guard = 0; guard < n && monthOt(i, ym) > target(i, ym); guard++) {
+      const k = dates.map((_d, x) => x).filter((x) => dates[x].startsWith(ym) && drafts[i].works[x])
+        .sort((a, b) => Number(drafts[i].works[a + 1] ?? false) - Number(drafts[i].works[b + 1] ?? false) || Number(duty[i][a]) - Number(duty[i][b]) || b - a)[0];
+      if (k === undefined) break;
+      drafts[i].works[k] = false; drafts[i].hours[k] = 0; notes.push(`${dates[k]}: extra day off (New FO near the ${p.maxOvertime} h target, kept on 12 h)`);
     }
   }
 

@@ -92,7 +92,7 @@ export const isDutyDay = (crew: Crew | null, date: string) => (crew ? isWorkingD
 export interface SlotDay { need: number; have: number }
 /** Keys of a team day: the level slots (train shutdown), or 'controller' and 'area:<name>' (total turnaround). */
 export type DaySlots = Record<string, SlotDay>;
-export const slotLabel = (key: string) => (key.startsWith('area:') ? key.slice(5) || 'Operators' : key.startsWith('ctl:') ? `Controller ${key.slice(4)}` : SD_SLOT_LABEL[key as SdSlot] ?? key);
+export const slotLabel = (key: string) => (key.startsWith('area:') ? key.slice(5) || 'Operators' : key.startsWith('ctl:') ? `Controller ${key.slice(4)}` : key === 'fo' ? 'Field Operators (Experienced & Good)' : SD_SLOT_LABEL[key as SdSlot] ?? key);
 /** The group a member counts in: its own area / section, or the first one when it has none (or one no longer on the plan). */
 export const groupOf = (names: string[], own: string | null | undefined) => (names.includes(own ?? '') ? own ?? '' : names[0] ?? '');
 /** Areas of a total turnaround ('' = one group when the plan has none). */
@@ -118,7 +118,9 @@ export function teamDay(p: SdPlan, t: SdTeam, members: SdMember[], date: string,
   // v2: a Controller, a Senior and a Good FO on duty is the minimum (the rest is relief); the New FO place never makes a day short
   const v2 = (p.rulesVersion ?? 1) >= 2;
   for (const s of SD_SLOTS) out[s] = { need: v2 ? (s === 'new' ? 0 : Math.min(1, needs[s])) : needs[s], have: on((m) => m.slot === s) };
-  if (v2) return out;   // an operator without a level never fills a Senior or Good place
+  // v2 (final rules): 1 Controller, 1 Experienced and a second Experienced or Good FO; an extra Experienced fills the Good
+  // place's count (the hour-by-hour check in ./v2 is the authority; this is the day's headcount view)
+  if (v2) { out.controller.need = 1; out.senior.need = 1; out.good.need = 1; out.good.have += Math.max(0, out.senior.have - 1); return out; }
   // Operators without a level fill whatever Field Operator places are still open (Senior first)
   let spare = on((m) => m.slot === 'member');
   for (const s of ['senior', 'good', 'new'] as const) { const k = Math.min(spare, Math.max(0, out[s].need - out[s].have)); out[s].have += k; spare -= k; }

@@ -40,13 +40,25 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 export interface PersonInfo { id: string; name: string; position: string | null; grade: number | null; foLevel: FoLevel | null }
 export const isControllerPerson = (i: PersonInfo | undefined) => !!i && CONTROLLER_ROLES.includes(i.position ?? '') && (i.grade ?? 0) >= CONTROLLER_GRADE;
 
-/** What a member counts for in the 12-hour coverage: only a qualified Controller, Senior FO or Good FO. An operator with no level never does. */
+/** The shutdown minimum on duty at every minute of each 12-hour team shift (final rules, Section Head 2026-10-14):
+ *  1 qualified Controller, 1 Experienced (Senior) Field Operator, and 2 different Field Operators who are Experienced or
+ *  Good (so 1 Experienced + 1 Good, or 2 Experienced). New Field Operators never count. */
+export const SD_MINIMUM = { controller: 1, experienced: 1, qualifiedFo: 2 } as const;
+/** An operator place whose people can count for the minimum (the New FO place is training; 'member' has no level). */
+const FO_SLOTS: SdMember['slot'][] = ['senior', 'good'];
+/**
+ * What a member counts for in the 12-hour coverage, by the classification stored in the system (the Section Head's FO
+ * level), never re-classified: a qualified Controller in a Controller place; an Experienced (Senior) FO and / or a
+ * qualified (Experienced or Good) FO in a Senior or Good FO place. Somebody placed in the New FO place counts for
+ * nothing whatever their level (the place is for training); an operator without a level never counts.
+ */
 export function capabilities(m: SdMember, info: PersonInfo | undefined): { controller: boolean; senior: boolean; good: boolean } {
   const lvl = info?.foLevel ?? null;
+  const fo = FO_SLOTS.includes(m.slot);
   return {
     controller: m.slot === 'controller' && isControllerPerson(info),
-    senior: m.slot === 'senior' && lvl === 'senior',
-    good: m.slot === 'good' && (lvl === 'good' || lvl === 'senior'),
+    senior: fo && lvl === 'senior',
+    good: fo && (lvl === 'good' || lvl === 'senior'),
   };
 }
 
@@ -230,9 +242,15 @@ export function coverPlaces(p: SdPlan, t: SdTeam, info: Map<string, PersonInfo>,
     for (const a of areas) out.push({ key: `area:${a}`, label: a ? `Operators ${a}` : 'Operators', counts: (m: SdMember) => m.slot !== 'controller' && groupOf(areas, m.area) === a, need: (d: string) => n(d)?.areas[a] ?? 0 });
     return out;
   }
-  const v2 = isV2(p);
-  return COVER_ROLES.map((role) => ({ key: role, label: COVER_LABEL[role], counts: (m: SdMember) => capabilities(m, info.get(m.employeeId))[role],
-    need: (d: string) => { const k = (isRampDay(p, d) ? t.rampNeeds : t.needs)[role]; return v2 ? Math.min(1, k) : k; } }));
+  // v2: the fixed shutdown minimum, every minute, reduced days included (they have fewer people, never fewer than this)
+  if (isV2(p)) return [
+    { key: 'controller', label: 'Controller', counts: (m: SdMember) => capabilities(m, info.get(m.employeeId)).controller, need: () => SD_MINIMUM.controller },
+    { key: 'senior', label: 'Experienced FO', counts: (m: SdMember) => capabilities(m, info.get(m.employeeId)).senior, need: () => SD_MINIMUM.experienced },
+    { key: 'good', label: 'Experienced or Good FO (2 people)', counts: (m: SdMember) => capabilities(m, info.get(m.employeeId)).good, need: () => SD_MINIMUM.qualifiedFo },
+  ];
+  // before v2: each level place as the team needs it (reduced days: the reduced needs)
+  return COVER_ROLES.map((role) => ({ key: role, label: COVER_LABEL[role], counts: (m: SdMember) => (role === 'controller' ? m.slot === 'controller' && isControllerPerson(info.get(m.employeeId)) : m.slot === role && (role === 'senior' ? info.get(m.employeeId)?.foLevel === 'senior' : ['good', 'senior'].includes(info.get(m.employeeId)?.foLevel ?? ''))),
+    need: (d: string) => (isRampDay(p, d) ? t.rampNeeds : t.needs)[role] }));
 }
 
 /**
@@ -359,7 +377,8 @@ export function checkPlan(inp: PlanCheckInput): PlanCheck {
     for (const r of e.reasons) issues.push({ level: lvl, code: 'eligibility', message: `${name(m.employeeId)}: ${r}`, employeeId: m.employeeId });
     if (m.slot === 'controller' && !isControllerPerson(i)) issues.push({ level: 'block', code: 'controller_grade', message: `${name(m.employeeId)}: a Controller place needs a Controller of Grade ${CONTROLLER_GRADE} or above.`, employeeId: m.employeeId });
     const cap = capabilities(m, i);
-    if ((m.slot === 'senior' && !cap.senior) || (m.slot === 'good' && !cap.good)) issues.push({ level: 'warn', code: 'level', message: `${name(m.employeeId)}: in the ${m.slot === 'senior' ? 'Senior' : 'Good'} FO place but marked ${i?.foLevel ?? 'without a level'}: not counted for the 12-hour coverage.`, employeeId: m.employeeId });
+    if ((m.slot === 'senior' && !cap.senior) || (m.slot === 'good' && !cap.good)) issues.push({ level: 'warn', code: 'level', message: `${name(m.employeeId)}: in the ${m.slot === 'senior' ? 'Senior' : 'Good'} FO place but classified ${i?.foLevel ?? 'without a level'}: ${cap.good ? 'counts as a Good FO only' : 'not counted for the minimum'}.`, employeeId: m.employeeId });
+    if (m.slot === 'new' && (i?.foLevel === 'good' || i?.foLevel === 'senior')) issues.push({ level: 'warn', code: 'new_place_level', message: `${name(m.employeeId)}: in the New FO place but classified ${i.foLevel === 'senior' ? 'Experienced' : 'Good'}: works as a trainee and does not count for the minimum. Move him to a ${i.foLevel === 'senior' ? 'Senior' : 'Good'} FO place if he should.`, employeeId: m.employeeId });
     if (m.slot === 'member') issues.push({ level: 'info', code: 'unclassified', message: `${name(m.employeeId)}: Operator without a level, not counted as a Senior or Good FO.`, employeeId: m.employeeId });
   }
 
@@ -398,8 +417,11 @@ export function checkPlan(inp: PlanCheckInput): PlanCheck {
     if (tr.returnOff.length) issues.push({ level: 'info', code: 'return_off', employeeId: m.employeeId, message: `${name(m.employeeId)}: off ${tr.returnOff.map(fmtDay).join(', ')}, back with his crew ${tr.returnOn ? fmtDay(tr.returnOn) : ''}.` });
     const rp = restDayPairs(p, m, person);
     for (const pair of rp.pairs) if (!hasException(inp.exceptions, p.id, m.employeeId, 'rest_day_pair')) issues.push({ level: 'block', code: 'rest_day_pair', employeeId: m.employeeId, date: pair[0], message: `${name(m.employeeId)}: works both rest days ${fmtDay(pair[0])} and ${fmtDay(pair[1])}; one stays off unless the Section Head approves.` });
-    // fatigue: long runs of 12-hour duties are reported (6 days in a row is the hard limit)
     const t = teamOf.get(m.teamId);
+    // New FOs (training) always work the full shift: a shorter day is given as a day off instead
+    if (t && m.slot === 'new') { const short = planDates(p).filter((d) => { const x = memberDuty(p, t, m, d); return !!x && x.hours < p.shiftHours; });
+      if (short.length) issues.push({ level: 'block', code: 'new_short', employeeId: m.employeeId, date: short[0], message: `${name(m.employeeId)}: New FO on a shortened duty on ${short.map(fmtDay).join(', ')}; a New FO works the full ${p.shiftHours} h or has the day off.` }); }
+    // fatigue: long runs of 12-hour duties are reported (6 days in a row is the hard limit)
     if (t) { let run = 0, worst = 0; for (const d of planDates(p)) { const x = memberDuty(p, t, m, d); run = x && x.hours >= p.shiftHours ? run + 1 : 0; worst = Math.max(worst, run); }
       const lim = t.shiftCode === 'N' ? 3 : 4;
       if (worst > lim) issues.push({ level: 'info', code: 'fatigue', employeeId: m.employeeId, message: `${name(m.employeeId)}: ${worst} 12-hour ${t.shiftCode === 'N' ? 'nights' : 'days'} in a row (fatigue risk above ${lim}).` }); }
@@ -472,13 +494,14 @@ export const isReducedDay = (p: SdPlan, date: string) => isRampDay(p, date);
  * days to take off and broken rest rules, from `transitions`), and overtime already counted in each month (Oracle month
  * to date and other shutdowns after it).
  */
-export function plannerContext(inp: PlanCheckInput): { away: (employeeId: string, date: string) => boolean; crewOf: (employeeId: string) => Crew | null; crewOn: (employeeId: string, date: string) => Crew | null; transitionCost: (m: SdMember, days: Record<string, boolean>) => number; monthTaken: (employeeId: string, ym: string) => number } {
+export function plannerContext(inp: PlanCheckInput): { levelOf: (employeeId: string) => FoLevel | null; away: (employeeId: string, date: string) => boolean; crewOf: (employeeId: string) => Crew | null; crewOn: (employeeId: string, date: string) => Crew | null; transitionCost: (m: SdMember, days: Record<string, boolean>) => number; monthTaken: (employeeId: string, ym: string) => number } {
   const p = inp.plan;
   const people = new Map(inp.people.map((x) => [x.id, x]));
   const teamOf = new Map(inp.teams.map((t) => [t.id, t]));
   const byEmp = new Map(inp.members.map((m) => [m.employeeId, m]));
   return {
     away: awayOn(inp.absences),
+    levelOf: (e) => inp.info.get(e)?.foLevel ?? null,
     crewOn: (e, d) => effectiveCrew(people.get(e), byEmp.get(e) ?? null, d),
     crewOf: (e) => { const m = byEmp.get(e); return effectiveCrew(people.get(e), m ?? null, m ? (m.start > p.start ? m.start : p.start) : p.start); },
     transitionCost: (m, days) => {

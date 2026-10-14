@@ -334,12 +334,15 @@ var hhmm = (ms) => {
 };
 var r22 = (n) => Math.round(n * 100) / 100;
 var isControllerPerson = (i) => !!i && CONTROLLER_ROLES.includes(i.position ?? "") && (i.grade ?? 0) >= CONTROLLER_GRADE;
+var SD_MINIMUM = { controller: 1, experienced: 1, qualifiedFo: 2 };
+var FO_SLOTS = ["senior", "good"];
 function capabilities(m, info) {
   const lvl = info?.foLevel ?? null;
+  const fo = FO_SLOTS.includes(m.slot);
   return {
     controller: m.slot === "controller" && isControllerPerson(info),
-    senior: m.slot === "senior" && lvl === "senior",
-    good: m.slot === "good" && (lvl === "good" || lvl === "senior")
+    senior: fo && lvl === "senior",
+    good: fo && (lvl === "good" || lvl === "senior")
   };
 }
 var teamStart = (t) => {
@@ -464,15 +467,16 @@ function coverPlaces(p, t, info, phases = []) {
     for (const a of areas) out.push({ key: `area:${a}`, label: a ? `Operators ${a}` : "Operators", counts: (m) => m.slot !== "controller" && groupOf(areas, m.area) === a, need: (d) => n(d)?.areas[a] ?? 0 });
     return out;
   }
-  const v2 = isV2(p);
+  if (isV2(p)) return [
+    { key: "controller", label: "Controller", counts: (m) => capabilities(m, info.get(m.employeeId)).controller, need: () => SD_MINIMUM.controller },
+    { key: "senior", label: "Experienced FO", counts: (m) => capabilities(m, info.get(m.employeeId)).senior, need: () => SD_MINIMUM.experienced },
+    { key: "good", label: "Experienced or Good FO (2 people)", counts: (m) => capabilities(m, info.get(m.employeeId)).good, need: () => SD_MINIMUM.qualifiedFo }
+  ];
   return COVER_ROLES.map((role) => ({
     key: role,
     label: COVER_LABEL[role],
-    counts: (m) => capabilities(m, info.get(m.employeeId))[role],
-    need: (d) => {
-      const k = (isRampDay(p, d) ? t.rampNeeds : t.needs)[role];
-      return v2 ? Math.min(1, k) : k;
-    }
+    counts: (m) => role === "controller" ? m.slot === "controller" && isControllerPerson(info.get(m.employeeId)) : m.slot === role && (role === "senior" ? info.get(m.employeeId)?.foLevel === "senior" : ["good", "senior"].includes(info.get(m.employeeId)?.foLevel ?? "")),
+    need: (d) => (isRampDay(p, d) ? t.rampNeeds : t.needs)[role]
   }));
 }
 function coverageGaps(p, teams, members, info, away, phases = []) {
@@ -573,7 +577,8 @@ function checkPlan(inp) {
     for (const r of e.reasons) issues.push({ level: lvl, code: "eligibility", message: `${name(m.employeeId)}: ${r}`, employeeId: m.employeeId });
     if (m.slot === "controller" && !isControllerPerson(i)) issues.push({ level: "block", code: "controller_grade", message: `${name(m.employeeId)}: a Controller place needs a Controller of Grade ${CONTROLLER_GRADE} or above.`, employeeId: m.employeeId });
     const cap = capabilities(m, i);
-    if (m.slot === "senior" && !cap.senior || m.slot === "good" && !cap.good) issues.push({ level: "warn", code: "level", message: `${name(m.employeeId)}: in the ${m.slot === "senior" ? "Senior" : "Good"} FO place but marked ${i?.foLevel ?? "without a level"}: not counted for the 12-hour coverage.`, employeeId: m.employeeId });
+    if (m.slot === "senior" && !cap.senior || m.slot === "good" && !cap.good) issues.push({ level: "warn", code: "level", message: `${name(m.employeeId)}: in the ${m.slot === "senior" ? "Senior" : "Good"} FO place but classified ${i?.foLevel ?? "without a level"}: ${cap.good ? "counts as a Good FO only" : "not counted for the minimum"}.`, employeeId: m.employeeId });
+    if (m.slot === "new" && (i?.foLevel === "good" || i?.foLevel === "senior")) issues.push({ level: "warn", code: "new_place_level", message: `${name(m.employeeId)}: in the New FO place but classified ${i.foLevel === "senior" ? "Experienced" : "Good"}: works as a trainee and does not count for the minimum. Move him to a ${i.foLevel === "senior" ? "Senior" : "Good"} FO place if he should.`, employeeId: m.employeeId });
     if (m.slot === "member") issues.push({ level: "info", code: "unclassified", message: `${name(m.employeeId)}: Operator without a level, not counted as a Senior or Good FO.`, employeeId: m.employeeId });
   }
   const gaps = coverageGaps(p, teams, members, info, away, inp.phases ?? []);
@@ -615,6 +620,13 @@ function checkPlan(inp) {
     const rp = restDayPairs(p, m, person);
     for (const pair of rp.pairs) if (!hasException(inp.exceptions, p.id, m.employeeId, "rest_day_pair")) issues.push({ level: "block", code: "rest_day_pair", employeeId: m.employeeId, date: pair[0], message: `${name(m.employeeId)}: works both rest days ${fmtDay(pair[0])} and ${fmtDay(pair[1])}; one stays off unless the Section Head approves.` });
     const t = teamOf.get(m.teamId);
+    if (t && m.slot === "new") {
+      const short = planDates(p).filter((d) => {
+        const x = memberDuty(p, t, m, d);
+        return !!x && x.hours < p.shiftHours;
+      });
+      if (short.length) issues.push({ level: "block", code: "new_short", employeeId: m.employeeId, date: short[0], message: `${name(m.employeeId)}: New FO on a shortened duty on ${short.map(fmtDay).join(", ")}; a New FO works the full ${p.shiftHours} h or has the day off.` });
+    }
     if (t) {
       let run = 0, worst = 0;
       for (const d of planDates(p)) {

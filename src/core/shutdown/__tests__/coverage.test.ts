@@ -14,33 +14,65 @@ const m = (id: string, team: string, slot: SdMember['slot'], hours: (d: string) 
   days: Object.fromEntries(dates.map((d) => { const h = hours(d); return [d, { works: h !== null, hours: h }]; })) });
 const info = (ids: [string, PersonInfo['foLevel'], string?][]) => new Map(ids.map(([id, lvl, pos]) => [id, { id, name: id, position: pos ?? 'field_operator', grade: pos ? 16 : 13, foLevel: lvl } as PersonInfo]));
 const nobodyAway = () => false;
-const I = info([['c', null, 'controller'], ['s', 'senior'], ['g1', 'good'], ['g2', 'good']]);
+const I = info([['c', null, 'controller'], ['e1', 'senior'], ['e2', 'senior'], ['g1', 'good'], ['g2', 'good'], ['n1', 'new'], ['n2', 'good']]);
+/** The minimum on the Day team, every day of the plan, for a set of people (all on 12 h unless said). */
+const day12 = (...ids: [string, SdMember['slot'], number?][]) => ids.map(([id, slot, h]) => m(id, 'D', slot, () => h ?? 12));
+const short = (team: SdMember[]) => coverageGaps(train, [day], team, I, nobodyAway);
 
-describe('coverage hour by hour · train shutdown (one qualified person of each place at every moment)', () => {
-  it('a 12 h duty covers the whole shift', () => {
-    const team = [m('c', 'D', 'controller', () => 12), m('s', 'D', 'senior', () => 12), m('g1', 'D', 'good', () => 12)];
-    expect(coverageGaps(train, [day], team, I, nobodyAway)).toEqual([]);
+describe('the final shutdown minimum, every minute of the 12-hour shift: 1 Controller, 1 Experienced, 2 different Experienced/Good FOs', () => {
+  it('valid: 1 Controller + 1 Experienced + 1 Good', () => {
+    expect(short(day12(['c', 'controller'], ['e1', 'senior'], ['g1', 'good']))).toEqual([]);
   });
-  it('8 h + 12 h in the same place: covered (the 12 h person holds 15:00–19:00)', () => {
-    const team = [m('c', 'D', 'controller', () => 12), m('s', 'D', 'senior', () => 12), m('g1', 'D', 'good', () => 8), m('g2', 'D', 'good', () => 12)];
-    expect(coverageGaps(train, [day], team, I, nobodyAway)).toEqual([]);
+  it('valid: 1 Controller + 2 Experienced (an Experienced replaces the Good), whatever places they sit in', () => {
+    expect(short(day12(['c', 'controller'], ['e1', 'senior'], ['e2', 'senior']))).toEqual([]);
+    expect(short(day12(['c', 'controller'], ['e1', 'senior'], ['e2', 'good']))).toEqual([]);
   });
-  it('only 8 h duties in a place: the last 4 hours are a gap (15:00–19:00), never Ready', () => {
-    const team = [m('c', 'D', 'controller', () => 12), m('s', 'D', 'senior', () => 12), m('g1', 'D', 'good', () => 8), m('g2', 'D', 'good', () => 8)];
-    const gaps = coverageGaps(train, [day], team, I, nobodyAway);
-    expect(gaps).toHaveLength(dates.length);
-    expect(gaps[0]).toMatchObject({ role: 'good', from: '15:00', to: '19:00', hours: 4, need: 1, have: 0 });
+  it('invalid: 1 Controller + 1 Experienced only (one Field Operator short)', () => {
+    const g = short(day12(['c', 'controller'], ['e1', 'senior']));
+    expect(g.every((x) => x.role === 'good' && x.need === 2 && x.have === 1)).toBe(true);
+    expect(g).toHaveLength(dates.length);
   });
-  it('a night 8 h duty leaves 03:00–07:00 uncovered', () => {
-    const team = [m('c', 'N', 'controller', () => 12), m('s', 'N', 'senior', () => 8), m('g1', 'N', 'good', () => 12)];
-    const gaps = coverageGaps(train, [night], team, I, nobodyAway);
-    expect(gaps.every((g) => g.role === 'senior' && g.from === '03:00' && g.to === '07:00' && g.hours === 4)).toBe(true);
-    expect(gaps).toHaveLength(dates.length);
+  it('invalid: 1 Controller + 1 Good + 1 New (no Experienced; the New FO never counts)', () => {
+    const g = short(day12(['c', 'controller'], ['g1', 'good'], ['n1', 'new']));
+    expect(new Set(g.map((x) => x.role))).toEqual(new Set(['senior', 'good']));
   });
-  it('a 12 h person on approved leave does not count; the 8 h person alone leaves the last 4 hours open', () => {
-    const team = [m('c', 'D', 'controller', () => 12), m('s', 'D', 'senior', () => 12), m('g1', 'D', 'good', () => 8), m('g2', 'D', 'good', () => 12)];
-    const gaps = coverageGaps(train, [day], team, I, (e, d) => e === 'g2' && d === '2026-11-02');
-    expect(gaps).toEqual([expect.objectContaining({ date: '2026-11-02', role: 'good', from: '15:00', to: '19:00', have: 0 })]);
+  it('invalid: 1 Controller + 2 Good (no Experienced)', () => {
+    const g = short(day12(['c', 'controller'], ['g1', 'good'], ['g2', 'good']));
+    expect(g.map((x) => x.role)).toEqual(dates.map(() => 'senior'));
+  });
+  it('invalid: no qualified Controller', () => {
+    const g = short(day12(['e1', 'senior'], ['g1', 'good']));
+    expect(g.every((x) => x.role === 'controller' && x.have === 0)).toBe(true);
+  });
+  it('the classification decides, never re-classified: a Good-level person placed in the New FO place does not count', () => {
+    const g = short(day12(['c', 'controller'], ['e1', 'senior'], ['n2', 'new']));
+    expect(g.every((x) => x.role === 'good' && x.have === 1)).toBe(true);
+  });
+});
+
+describe('coverage hour by hour · 8-hour duties', () => {
+  it('Experienced on 8 h with a Good and a second Experienced on 12 h: valid replacement, covered all 12 hours', () => {
+    expect(short(day12(['c', 'controller'], ['e1', 'senior', 8], ['e2', 'senior'], ['g1', 'good']))).toEqual([]);
+  });
+  it('the Good on 8 h with nobody else: 15:00–19:00 has 1 of 2 Field Operators, a 4-hour gap every day, never Ready', () => {
+    const g = short(day12(['c', 'controller'], ['e1', 'senior'], ['g1', 'good', 8]));
+    expect(g).toHaveLength(dates.length);
+    expect(g[0]).toMatchObject({ role: 'good', from: '15:00', to: '19:00', hours: 4, need: 2, have: 1 });
+  });
+  it('the only Experienced on 8 h: no Experienced 15:00–19:00 even with two Good on 12 h', () => {
+    const g = short(day12(['c', 'controller'], ['e1', 'senior', 8], ['g1', 'good'], ['g2', 'good']));
+    expect(g.every((x) => x.role === 'senior' && x.from === '15:00' && x.to === '19:00' && x.have === 0)).toBe(true);
+  });
+  it('a night 8 h duty leaves 03:00–07:00 short', () => {
+    const team = [m('c', 'N', 'controller', () => 12), m('e1', 'N', 'senior', () => 12), m('g1', 'N', 'good', () => 8)];
+    const g = coverageGaps(train, [night], team, I, nobodyAway);
+    expect(g.every((x) => x.role === 'good' && x.from === '03:00' && x.to === '07:00' && x.hours === 4 && x.have === 1)).toBe(true);
+    expect(g).toHaveLength(dates.length);
+  });
+  it('a 12 h person on approved leave does not count; the 8 h person alone leaves the last 4 hours short', () => {
+    const team = day12(['c', 'controller'], ['e1', 'senior'], ['g1', 'good', 8], ['g2', 'good']);
+    const g = coverageGaps(train, [day], team, I, (e, d) => e === 'g2' && d === '2026-11-02');
+    expect(g).toEqual([expect.objectContaining({ date: '2026-11-02', role: 'good', from: '15:00', to: '19:00', have: 1, need: 2 })]);
   });
 });
 
