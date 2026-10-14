@@ -129,3 +129,48 @@ describe('the calendar month of every hour of overtime (Kuwait time), month-end 
     expect(o.entryState).toBe('missing');
   });
 });
+
+describe('month-end on the effective crew cycle: real overtime, not the split of a 12-hour duty', () => {
+  const crewWith = (code: string) => { const c = (['A', 'B', 'C', 'D'] as Crew[]).find((x) => dutyFor('2026-10-31', x) === code); if (!c) throw new Error(`no crew on ${code} on 31 Oct`); return c; };
+  /** The 8 days of the crew's cycle containing 31 Oct, with a night (19:00) duty of `h(day)` hours on each day it returns. */
+  const run = (crew: Crew, h: (d: string, code: string) => number) => {
+    const s = cycleStart(crew, '2026-10-31'); const cyc = Array.from({ length: 8 }, (_, i) => addDaysIso(s, i));
+    const duties = cyc.map((d) => duty(d, h(d, dutyFor(d, crew)), '19:00')).filter((d) => d.hours > 0);
+    const r = cycleOvertime(duties, basis(cyc[0], cyc[7], crew));
+    return { r, last: r.duties.find((d) => d.date === '2026-10-31')! };
+  };
+  const isOff = (code: string) => code.startsWith('Off');
+
+  it('31 Oct a rostered duty day (N2), the 48 h owed already met: the overtime of that night is 5 h October + 7 h November', () => {
+    const { r, last } = run(crewWith('N2'), (_d, code) => (isOff(code) ? 0 : 12));     // 6 nights × 12 = 72, owed 48
+    expect(r.total).toBe(24);
+    expect(last).toMatchObject({ regular: 0, ot: 12, parts: [{ month: '2026-10', hours: 5 }, { month: '2026-11', hours: 7 }] });
+    expect(r.months).toEqual({ '2026-10': 17, '2026-11': 7 });                         // 30 Oct night 12 h + 5 h; 7 h
+  });
+  it('31 Oct a rostered duty day, 8 h of the owed hours still open: those 8 h are regular, only the last 4 h (Nov) are overtime', () => {
+    const { r, last } = run(crewWith('N2'), (d, code) => (isOff(code) ? 0 : d === '2026-10-31' ? 12 : 8)); // 5 × 8 + 12 = 52, owed 48
+    expect(last).toMatchObject({ regular: 8, ot: 4, parts: [{ month: '2026-11', hours: 4 }] });   // 19:00–03:00 regular, 03:00–07:00 OT
+    expect(r.months['2026-10'] ?? 0).toBe(0);
+    expect(r.total).toBe(4);
+  });
+  it('31 Oct a rostered OFF day (Off2), all duty days already worked: the whole night is overtime, 5 h October + 7 h November', () => {
+    const { r, last } = run(crewWith('Off2'), (d, code) => (d === '2026-10-31' ? 12 : isOff(code) ? 0 : 8)); // 48 regular + 12
+    expect(last).toMatchObject({ regular: 0, ot: 12, parts: [{ month: '2026-10', hours: 5 }, { month: '2026-11', hours: 7 }] });
+    expect(r.months).toEqual({ '2026-10': 5, '2026-11': 7 });
+    expect(r.total).toBe(12);
+  });
+  it('31 Oct a rostered OFF day, one duty day of the cycle not worked: the night first makes up the 8 h owed, overtime 4 h (Nov)', () => {
+    const crew = crewWith('Off2'); const skip = cycleStart(crew, '2026-10-31');        // M1 not worked
+    const { r, last } = run(crew, (d, code) => (d === '2026-10-31' ? 12 : isOff(code) || d === skip ? 0 : 8)); // 40 + 12, owed 48
+    expect(last).toMatchObject({ regular: 8, ot: 4, parts: [{ month: '2026-11', hours: 4 }] });
+    expect(r.total).toBe(4);
+    expect(r.cycles[0]).toMatchObject({ owed: 48, worked: 52, overtime: 4, short: 0 });
+  });
+  it('the sum over the months always equals the cycle overtime (nothing lost or counted twice)', () => {
+    for (const code of ['N2', 'Off2']) {
+      const { r } = run(crewWith(code), () => 12);
+      expect(Object.values(r.months).reduce((t, h) => t + h, 0)).toBe(r.total);
+      expect(r.total).toBe(r.cycles.reduce((t, c) => t + c.overtime, 0));
+    }
+  });
+});
