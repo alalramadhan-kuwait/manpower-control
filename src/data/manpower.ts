@@ -78,6 +78,11 @@ export async function fetchManpowerInputs(from: string, to: string): Promise<Man
   for (const m of sd) {
     if (isCtl(m.employeeId)) sdAssignments.push({ id: `sd-${m.id}`, kind: 'sd_team', employeeId: m.employeeId, crew: null, start: m.start, end: m.end, works: sdWorks.get(m.id)?.works, sdV2: sdWorks.get(m.id)?.sdV2 });
     else moves.set(m.employeeId, [...(moves.get(m.employeeId) ?? []), { start: m.start, end: m.end, crew: SD_TEAM, kind: 'sd' }]);
+    // recorded rest days around the team dates: off his crew (its minimum then needs the recorded cover)
+    for (const d of m.restDays ?? []) {
+      if (isCtl(m.employeeId)) sdAssignments.push({ id: `sd-rest-${m.id}-${d}`, kind: 'sd_team', employeeId: m.employeeId, crew: null, start: d, end: d, works: () => false, rest: true });
+      else moves.set(m.employeeId, [...(moves.get(m.employeeId) ?? []), { start: d, end: d, crew: SD_TEAM, kind: 'sd' }]);
+    }
   }
   const leaveAbsences = (withOpenEnd(lv.data as { end_date: string | null }[]) as unknown as LeaveRow[]).map((l) => toMpAbsence(l));
   const people = (dir.data as EmployeeDirectoryRow[]).map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id) }));

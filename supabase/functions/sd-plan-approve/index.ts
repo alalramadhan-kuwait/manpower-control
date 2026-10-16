@@ -30,6 +30,12 @@ function stateOf(duty) {
 function isOff(date, crew) {
   return stateOf(dutyFor(date, crew)) === "Off";
 }
+var CREWS = ["A", "B", "C", "D"];
+var SHIFT_LABEL = { M: "Morning", A: "Afternoon", N: "Night", Off: "Off" };
+function dutyLabel(duty) {
+  const s = stateOf(duty);
+  return s === "Off" ? `Off ${duty.slice(3)}` : `${SHIFT_LABEL[s]} ${duty}`;
+}
 function addDaysIso(iso, days3) {
   const d = /* @__PURE__ */ new Date(iso + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + days3);
@@ -75,6 +81,303 @@ var FULL_OPERATION = {
   panelBackupGrade: 13,
   controllerGreenAtMinimum: true
 };
+var PENDING_FINDINGS = ["data_incomplete", "coverage_required"];
+var rulesOn = (src, date) => typeof src === "function" ? src(date) : src;
+var SHIFT_ORDER = ["M", "A", "N", "Off"];
+var RANK = { green: 0, amber: 1, red: 2 };
+var worst = (list) => list.reduce((w, s) => RANK[s] > RANK[w] ? s : w, "green");
+function statusFor(count, min) {
+  return count > min ? "green" : count === min ? "amber" : "red";
+}
+var isUnknown = (q) => q !== "yes" && q !== "no";
+function finishPosition(base) {
+  const { requirementMet, potentialMet, coverage, greenAtMinimum, ...rest } = base;
+  const rate = (count) => greenAtMinimum && count >= base.min ? "green" : statusFor(count, base.min);
+  const status = !requirementMet ? "red" : rate(base.count);
+  let finding;
+  let provisionalStatus;
+  if (requirementMet) {
+    finding = base.count > base.min ? "above_minimum" : status === "green" ? "staffed" : "no_buffer";
+    provisionalStatus = status;
+  } else if (coverage) {
+    finding = "coverage_required";
+    provisionalStatus = rate(base.min);
+  } else if (potentialMet) {
+    finding = "data_incomplete";
+    provisionalStatus = rate(base.potential);
+  } else {
+    finding = "shortage";
+    provisionalStatus = "red";
+  }
+  return { ...rest, status, finding, final: !PENDING_FINDINGS.includes(finding), provisionalStatus };
+}
+var covers = (a, date) => a.start <= date && date <= a.end;
+var isLeave = (a) => (a.status === "approved" || a.status === "planned") && a.inCurrentPlan !== false;
+var isUnresolved = (a) => a.status === "unresolved" && a.inCurrentPlan !== false;
+var gradeText = (p) => p.grade == null ? "grade not recorded" : `Grade ${p.grade}`;
+function qualReason(label, s) {
+  return s === "no" ? `${label} = No` : s === "not_yet_confirmed" ? `${label} not yet confirmed` : `${label} not recorded`;
+}
+function evaluateDay(date, allPeople, absences, rulesSource = FULL_OPERATION, assignments = []) {
+  const rules = rulesOn(rulesSource, date);
+  const morningCrew2 = CREWS.find((c) => stateOf(dutyFor(date, c)) === "M") ?? null;
+  const dayDutyCrew = isDayDutyWorkday(date) ? morningCrew2 : null;
+  const people = allPeople.map((p) => personOn(p, date)).map((p) => p.dayDuty && dayDutyCrew ? { ...p, crew: dayDutyCrew } : p);
+  const todays = assignments.filter((a) => a.start <= date && date <= a.end);
+  const assignmentOf = (p) => todays.find((a) => a.employeeId === p.id && a.kind !== "sd_team") ?? todays.find((a) => a.employeeId === p.id) ?? null;
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const byEmp = /* @__PURE__ */ new Map();
+  for (const a of absences) if (covers(a, date)) {
+    const l = byEmp.get(a.employeeId) ?? [];
+    l.push(a);
+    byEmp.set(a.employeeId, l);
+  }
+  const leaveOf = (p) => (byEmp.get(p.id) ?? []).find(isLeave) ?? null;
+  const unresolvedOf = (p) => (byEmp.get(p.id) ?? []).find(isUnresolved) ?? null;
+  const autoUsed = /* @__PURE__ */ new Set();
+  const crews = CREWS.map((crew) => {
+    const duty = dutyFor(date, crew);
+    const state = stateOf(duty);
+    const working = state !== "Off";
+    const members = people.filter((p) => p.crew === crew && (p.role === "controller" || p.role === "vr_controller" || p.role === "panel_operator" || p.role === "field_operator"));
+    const absencesOnDay = [];
+    const unresolved = [];
+    const available = [];
+    const away = [];
+    for (const p of members) {
+      const leave = leaveOf(p);
+      const unres = unresolvedOf(p);
+      const own = assignmentOf(p);
+      const assigned = (p.role === "controller" || p.role === "vr_controller") && own && !(own.kind === "shift_cover" && own.crew === crew) ? own : null;
+      if (leave) absencesOnDay.push({ person: p, absence: leave, reducesManpower: working });
+      if (unres) unresolved.push({ person: p, absence: unres, reducesManpower: false });
+      if (assigned && working && !leave) {
+        away.push({ person: p, assignment: assigned });
+        continue;
+      }
+      if (!leave || !working) available.push(p);
+    }
+    const ctrlCounted = [];
+    const ctrlNot = [];
+    const ctrlIssues = [];
+    let acting = null;
+    const qualifiesAsController = (p) => p.grade != null && p.grade >= rules.controllerGrade || p.grade != null && p.grade >= rules.actingControllerGrade && p.actingController === "yes";
+    for (const p of available.filter((x) => x.role === "controller" || x.role === "vr_controller")) {
+      if (p.grade != null && p.grade >= rules.controllerGrade) ctrlCounted.push(p);
+      else if (p.grade != null && p.grade >= rules.actingControllerGrade && p.actingController === "yes") {
+        ctrlCounted.push(p);
+        acting ??= p;
+      } else ctrlNot.push({ person: p, pendingData: p.grade == null, reason: `${gradeText(p)}; Controller needs Grade ${rules.controllerGrade}+ or a recorded Grade-${rules.actingControllerGrade} Acting Controller qualification` });
+    }
+    const pool = { panel: available.filter((x) => x.role === "panel_operator"), field: available.filter((x) => x.role === "field_operator") };
+    const coverAssignment = todays.find((a) => a.kind === "shift_cover" && a.crew === crew) ?? null;
+    const coverPerson = coverAssignment ? byId.get(coverAssignment.employeeId) ?? null : null;
+    let cover = null;
+    if (coverAssignment && coverPerson) {
+      const absence = leaveOf(coverPerson);
+      const counted = working && !absence && coverPerson.grade != null && coverPerson.grade >= rules.controllerGrade;
+      cover = { person: coverPerson, assignment: coverAssignment, counted, absence };
+      if (counted && !ctrlCounted.includes(coverPerson)) ctrlCounted.push(coverPerson);
+    }
+    if (!cover && working && ctrlCounted.length < rules.controllerMin && (away.length > 0 || members.some((p) => p.role === "controller" && leaveOf(p) && qualifiesAsController(p)))) {
+      const offFirst = (a) => {
+        const on = a.works?.(date) ?? true;
+        return a.sdV2 ? Number(!on) : Number(on);
+      };
+      const candidates = todays.filter((a) => a.kind === "sd_team" && !autoUsed.has(a.employeeId)).map((a) => ({ a, p: byId.get(a.employeeId) ?? null })).filter((x) => !!x.p && !x.a.rest && x.p.grade != null && x.p.grade >= rules.controllerGrade && !leaveOf(x.p) && assignmentOf(x.p)?.kind === "sd_team").filter((x) => !x.a.sdV2 || state === "A" || state === (x.a.sdV2.night ? "N" : "M")).sort((x, y) => offFirst(x.a) - offFirst(y.a) || Number(y.p.crew === crew) - Number(x.p.crew === crew) || x.p.name.localeCompare(y.p.name));
+      const pick = candidates[0];
+      if (pick) {
+        autoUsed.add(pick.p.id);
+        cover = { person: pick.p, assignment: pick.a, counted: true, absence: null };
+        ctrlCounted.push(pick.p);
+      }
+    }
+    if (ctrlCounted.length < rules.controllerMin) {
+      const canAct = (p) => p.grade != null && p.grade >= rules.actingControllerGrade && p.grade < rules.controllerGrade && p.actingController === "yes";
+      const panelBuffer = pool.panel.filter((p) => p.panelQualified === "yes").length - rules.panelMin;
+      const fieldBuffer = pool.field.filter((p) => p.takeCharge === "yes").length - rules.fieldMin;
+      const order = fieldBuffer > panelBuffer ? ["field", "panel"] : ["panel", "field"];
+      for (const k of order) {
+        const c = pool[k].find(canAct);
+        if (c) {
+          acting = c;
+          ctrlCounted.push(c);
+          pool[k] = pool[k].filter((p) => p !== c);
+          break;
+        }
+      }
+    }
+    if (acting) ctrlIssues.push(`Acting Controller: ${acting.name} (Grade ${acting.grade})`);
+    if (cover?.counted) ctrlIssues.push(`Covered by ${cover.person.name}${cover.assignment.kind === "sd_team" ? ` (shutdown team Controller${cover.assignment.works?.(date) ?? true ? `, in addition to his team shift${state === "A" && cover.assignment.sdV2 ? cover.assignment.sdV2.night ? ", from 19:00" : ", to 19:00 then the Night team Controller" : ""}` : ", off the team today"})` : ""}`);
+    const ctrlOnLeave = working ? members.filter((p) => p.role === "controller" && leaveOf(p) && qualifiesAsController(p)) : [];
+    const ctrlCount = ctrlCounted.length;
+    const ctrlMet = ctrlCount >= rules.controllerMin;
+    const ctrlCoverage = !ctrlMet && (ctrlOnLeave.length > 0 || away.length > 0 || cover !== null && !cover.counted);
+    const ctrlPotentialMet = ctrlCount + ctrlNot.filter((n) => n.pendingData).length >= rules.controllerMin;
+    if (ctrlCoverage) {
+      const why = [...ctrlOnLeave.map((p) => `${p.name} (${leaveOf(p)?.typeLabel ?? "leave"})`), ...away.map((w) => `${w.person.name} (${w.assignment.kind === "morning_rotation" ? "Morning rotation" : w.assignment.kind === "sd_team" ? w.assignment.rest ? "rest day, shutdown team" : "shutdown team" : `covering ${w.assignment.crew} Shift`})`)];
+      ctrlIssues.push(`Controller coverage required: ${why.join(", ")}${cover && !cover.counted ? ` — recorded cover ${cover.person.name} is ${cover.absence ? "on leave" : "not Grade " + rules.controllerGrade + "+"}` : " — no cover recorded"}`);
+    } else if (!ctrlMet && ctrlPotentialMet) ctrlIssues.push("Controller grade not recorded");
+    else if (!ctrlMet) ctrlIssues.push(`Confirmed shortage: Controller ${ctrlCount} of ${rules.controllerMin} required`);
+    const controller = {
+      ...finishPosition({
+        key: "controller",
+        label: "Controller",
+        count: ctrlCount,
+        min: rules.controllerMin,
+        buffer: ctrlCount - rules.controllerMin,
+        potential: ctrlCount + ctrlNot.filter((n) => n.pendingData).length,
+        counted: ctrlCounted,
+        notCounted: ctrlNot,
+        issues: ctrlIssues,
+        requirementMet: ctrlMet,
+        potentialMet: ctrlPotentialMet,
+        coverage: ctrlCoverage,
+        greenAtMinimum: rules.controllerGreenAtMinimum
+      }),
+      acting,
+      onLeave: ctrlOnLeave,
+      away,
+      cover
+    };
+    const fromField = [];
+    {
+      const qualified = pool.panel.filter((p) => p.panelQualified === "yes").length;
+      let fieldSpare = pool.field.filter((p) => p.takeCharge === "yes").length - rules.fieldMin;
+      for (const c of pool.field.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade).sort((a, b) => (b.grade ?? 0) - (a.grade ?? 0) || a.name.localeCompare(b.name))) {
+        if (qualified + fromField.length >= rules.panelMin) break;
+        if (c.takeCharge === "yes") {
+          if (fieldSpare <= 0) continue;
+          fieldSpare--;
+        }
+        fromField.push(c);
+      }
+      pool.field = pool.field.filter((p) => !fromField.includes(p));
+    }
+    const panelCounted = [...pool.panel.filter((p) => p.panelQualified === "yes"), ...fromField];
+    const panelNot = pool.panel.filter((p) => p.panelQualified !== "yes").map((p) => ({ person: p, pendingData: isUnknown(p.panelQualified), reason: qualReason("Panel qualification", p.panelQualified) }));
+    const isG14 = (p) => p.grade != null && p.grade >= rules.panelGrade14;
+    const g14Unknown = (p) => p.grade == null && p.employmentType === "knpc";
+    const grade14 = panelCounted.filter(isG14).length;
+    const panelPotentialPeople = [...panelCounted, ...pool.panel.filter((p) => isUnknown(p.panelQualified))];
+    const potentialGrade14 = panelPotentialPeople.filter((p) => isG14(p) || g14Unknown(p)).length;
+    const panelMet = panelCounted.length >= rules.panelMin && grade14 >= rules.panelGrade14Min;
+    const panelPotentialMet = panelPotentialPeople.length >= rules.panelMin && potentialGrade14 >= rules.panelGrade14Min;
+    const panelIssues = [];
+    if (!panelMet) {
+      const what = [panelCounted.length < rules.panelMin ? `${panelCounted.length}/${rules.panelMin} qualified` : null, grade14 < rules.panelGrade14Min ? `no Grade ${rules.panelGrade14}+ Panel Operator` : null].filter(Boolean).join(", ");
+      const short = [panelCounted.length < rules.panelMin ? `${panelCounted.length} of ${rules.panelMin} required` : null, grade14 < rules.panelGrade14Min ? `no Grade ${rules.panelGrade14}+ Panel Operator available` : null].filter(Boolean).join(", ");
+      panelIssues.push(panelPotentialMet ? `Panel qualification data incomplete: ${what} confirmed` : `Confirmed shortage: Panel ${short}`);
+    }
+    const fieldTakeCharge = pool.field.filter((p) => p.takeCharge === "yes");
+    const backup = panelMet && panelCounted.length === rules.panelMin ? pool.field.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade && (!fieldTakeCharge.includes(p) || fieldTakeCharge.length - 1 >= rules.fieldMin)).sort((a, b) => (b.grade ?? 0) - (a.grade ?? 0) || a.name.localeCompare(b.name))[0] ?? null : null;
+    for (const p of fromField) panelIssues.push(`Filled from Field: ${p.name} (Grade ${p.grade})`);
+    if (backup) panelIssues.push(`Buffer: ${backup.name} (Field Operator, Grade ${backup.grade}) can take a Panel seat`);
+    const panel = {
+      ...finishPosition({
+        key: "panel",
+        label: "Panel",
+        count: panelCounted.length,
+        min: rules.panelMin,
+        buffer: panelCounted.length - rules.panelMin + (backup ? 1 : 0),
+        potential: panelPotentialPeople.length,
+        counted: panelCounted,
+        notCounted: panelNot,
+        issues: panelIssues,
+        requirementMet: panelMet,
+        potentialMet: panelPotentialMet,
+        greenAtMinimum: backup !== null
+      }),
+      grade14,
+      potentialGrade14,
+      backup,
+      fromField
+    };
+    const fieldCounted = pool.field.filter((p) => p.takeCharge === "yes");
+    const fieldNot = pool.field.filter((p) => p.takeCharge !== "yes").map((p) => ({ person: p, pendingData: isUnknown(p.takeCharge), reason: qualReason("Take-Charge", p.takeCharge) }));
+    const fieldUnknown = fieldNot.filter((n) => n.pendingData).length;
+    const fieldPotential = fieldCounted.length + fieldUnknown;
+    const fieldMet = fieldCounted.length >= rules.fieldMin;
+    const fieldPotentialMet = fieldPotential >= rules.fieldMin;
+    const fieldIssues = [];
+    if (!fieldMet) fieldIssues.push(fieldPotentialMet ? `Take-Charge data incomplete: ${fieldCounted.length}/${rules.fieldMin} confirmed, ${fieldUnknown} not yet confirmed (up to ${fieldPotential}/${rules.fieldMin} if confirmed)` : `Confirmed shortage: Field ${fieldCounted.length} of ${rules.fieldMin} required${fieldUnknown ? ` (at most ${fieldPotential} even if all unconfirmed are confirmed)` : ""}`);
+    const fieldBackup = fieldMet && fieldCounted.length === rules.fieldMin && panelMet && panelCounted.length > rules.panelMin ? panelCounted.filter((p) => (p.grade != null && p.grade >= rules.panelBackupGrade || p.fieldCover === true) && grade14 - (isG14(p) ? 1 : 0) >= rules.panelGrade14Min).sort((a, b) => (a.grade ?? 0) - (b.grade ?? 0) || a.name.localeCompare(b.name))[0] ?? null : null;
+    if (fieldBackup) fieldIssues.push(`Buffer: ${fieldBackup.name} (Panel Operator${fieldBackup.grade != null ? `, Grade ${fieldBackup.grade}` : ""}) can take a Field post`);
+    const field = { ...finishPosition({
+      key: "field",
+      label: "Field",
+      count: fieldCounted.length,
+      min: rules.fieldMin,
+      buffer: fieldCounted.length - rules.fieldMin + (fieldBackup ? 1 : 0),
+      potential: fieldPotential,
+      counted: fieldCounted,
+      notCounted: fieldNot,
+      issues: fieldIssues,
+      requirementMet: fieldMet,
+      potentialMet: fieldPotentialMet,
+      greenAtMinimum: fieldBackup !== null
+    }), backup: fieldBackup };
+    const positions = [controller, panel, field];
+    const status = working ? worst(positions.map((p) => p.status)) : null;
+    const confirmedShortage = working && positions.some((p) => p.finding === "shortage");
+    const pending = working ? [...new Set(positions.filter((p) => !p.final).map((p) => p.finding))] : [];
+    const provisionalStatus2 = working ? worst(positions.map((p) => p.provisionalStatus)) : null;
+    const finalStatus2 = !working ? null : confirmedShortage ? "red" : pending.length ? null : status;
+    return {
+      crew,
+      duty,
+      state,
+      shift: SHIFT_LABEL[state],
+      dutyLabel: dutyLabel(duty),
+      working,
+      status,
+      finalStatus: finalStatus2,
+      provisionalStatus: provisionalStatus2,
+      pending,
+      confirmedShortage,
+      noBuffer: finalStatus2 === "amber",
+      controller,
+      panel,
+      field,
+      absences: absencesOnDay,
+      unresolved,
+      members: members.length
+    };
+  }).sort((a, b) => SHIFT_ORDER.indexOf(a.state) - SHIFT_ORDER.indexOf(b.state));
+  const rotation = todays.find((a) => a.kind === "morning_rotation") ?? null;
+  const dayStaff = people.filter((p) => p.role === "vr_controller" || p.role === "morning_controller" || p.id === rotation?.employeeId).map((p) => ({
+    person: p,
+    absence: leaveOf(p),
+    unresolved: unresolvedOf(p),
+    assignment: assignmentOf(p),
+    morningPost: rotation ? p.id === rotation.employeeId : p.role === "morning_controller"
+  }));
+  const dayDuty = people.filter((p) => p.dayDuty).map((p) => ({ person: p, absence: leaveOf(p), unresolved: unresolvedOf(p), working: dayDutyCrew !== null, countedIn: dayDutyCrew }));
+  const regularMorning = people.find((p) => p.role === "morning_controller") ?? null;
+  let morningPost;
+  if (rotation) {
+    const holder = byId.get(rotation.employeeId) ?? null;
+    morningPost = { holder, status: holder && leaveOf(holder) ? "on_leave" : "held", viaRotation: true, away: null };
+  } else if (!regularMorning) morningPost = { holder: null, status: "vacant", viaRotation: false, away: null };
+  else {
+    const away = assignmentOf(regularMorning);
+    morningPost = away?.kind === "shift_cover" ? { holder: null, status: "coverage_required", viaRotation: false, away } : { holder: regularMorning, status: leaveOf(regularMorning) ? "on_leave" : "held", viaRotation: false, away: null };
+  }
+  const workingCrews = crews.filter((c) => c.working);
+  const overall = worst(workingCrews.map((c) => c.status));
+  const anyShortage = workingCrews.some((c) => c.confirmedShortage);
+  const anyPending = workingCrews.some((c) => c.pending.length > 0);
+  const finalStatus = anyShortage ? "red" : anyPending ? null : overall;
+  const provisionalStatus = worst(workingCrews.map((c) => c.provisionalStatus));
+  const counts = {
+    confirmedShortage: workingCrews.filter((c) => c.confirmedShortage).length,
+    coverageRequired: workingCrews.filter((c) => c.pending.includes("coverage_required")).length,
+    dataIncomplete: workingCrews.filter((c) => c.pending.includes("data_incomplete")).length,
+    unresolvedWarnings: crews.reduce((n, c) => n + c.unresolved.length, 0) + dayStaff.filter((s) => s.unresolved).length + dayDuty.filter((s) => s.unresolved).length,
+    morningCoverageRequired: morningPost.status === "coverage_required" ? 1 : 0
+  };
+  return { date, rules, crews, dayStaff, dayDuty, morningPost, overall, finalStatus, provisionalStatus, noBuffer: finalStatus === "amber", counts };
+}
 
 // src/core/validation/index.ts
 var DEFAULT_SHIFT_TIMES = { M: "07:00", A: "15:00", N: "23:00", hours: 8, dayDutyStart: "07:00", dayDutyHours: 8 };
@@ -132,7 +435,8 @@ function personDays(person, from, to, ctx) {
       if (sd) {
         const start = kuwaitMs(date, sd.start);
         duty = { code: sd.code, start, end: start + sd.hours * H, note: "Shutdown team" };
-      } else if (asg?.kind === "sd_team" && asg.works && !asg.works(date)) duty = { code: "OFF", note: "Shutdown team" };
+      } else if (asg?.kind === "sd_team" && asg.rest) duty = { code: "OFF", note: "Rest day (shutdown team)" };
+      else if (asg?.kind === "sd_team" && asg.works && !asg.works(date)) duty = { code: "OFF", note: "Shutdown team" };
       else if (asg?.kind === "sd_team" && !ctx.sdDuty) duty = { code: "SD-D", note: "Shutdown team (hours not known)" };
       else duty = { code: "OFF", note: "Shutdown team" };
       other.push("Shutdown team");
@@ -512,9 +816,9 @@ function coverageGaps(p, teams, members, info, away, phases = []) {
 }
 function transitions(person, m, sdDuty, absences, assignments, rules) {
   const from = addDaysIso(m.start, -14), to = addDaysIso(m.end, 14);
-  const lines = personDays(person, from, to, { absences, assignments, sdDuty, times: shiftTimesOf(rules) });
-  const hard = (ls) => checkSchedule(ls, rules).filter((f) => f.severity === "hard_stop");
   const offOn = (ls, dates) => ls.map((l) => dates.includes(l.date) ? { ...l, works: false, other: [...l.other, "Off (shutdown transition)"] } : l);
+  const lines = offOn(personDays(person, from, to, { absences, assignments, sdDuty, times: shiftTimesOf(rules) }), m.restDays ?? []);
+  const hard = (ls) => checkSchedule(ls, rules).filter((f) => f.severity === "hard_stop");
   const crewDays = (dates) => dates.filter((d) => {
     const l = lines.find((x) => x.date === d);
     return !!l && l.works && !l.other.includes("Shutdown team");
@@ -546,6 +850,27 @@ function transitions(person, m, sdDuty, absences, assignments, rules) {
   return { employeeId: m.employeeId, findings: hard(final), joinOff: joinOff.sort(), returnOff, returnOn };
 }
 var awayOn = (absences) => (employeeId, date) => absences.some((a) => a.employeeId === employeeId && a.oracle === "approved" && (a.status === "approved" || a.status === "planned") && a.inCurrentPlan !== false && a.start <= date && date <= a.end);
+function restDayShortage(inp, person, m, date) {
+  const crew = effectiveCrew(person, null, date);
+  if (!crew) return null;
+  const isCtl = ["controller", "vr_controller", "morning_controller"].includes(person.role ?? "");
+  const restId = `sd-rest-${m.id}-${date}`;
+  const assignments = isCtl && !inp.assignments.some((a) => a.id === restId) ? [...inp.assignments, { id: restId, kind: "sd_team", employeeId: person.id, crew: null, start: date, end: date, works: () => false, rest: true }] : inp.assignments;
+  const people = isCtl ? inp.people : inp.people.map((x) => x.id === person.id && !(x.moves ?? []).some((v) => v.crew === SD_TEAM && v.start <= date && (v.end === null || date <= v.end)) ? { ...x, moves: [...x.moves ?? [], { start: date, end: date, crew: SD_TEAM, kind: "sd" }] } : x);
+  const day = evaluateDay(date, people, inp.absences, inp.crewRules ?? FULL_OPERATION, assignments).crews.find((c) => c.crew === crew);
+  if (!day || !day.working) return null;
+  const pos = isCtl ? day.controller : person.role === "panel_operator" ? day.panel : day.field;
+  if (pos.count >= pos.min) return null;
+  const before = evaluateDay(date, inp.people, inp.absences, inp.crewRules ?? FULL_OPERATION, inp.assignments.filter((a) => a.id !== restId)).crews.find((c) => c.crew === crew);
+  const was = before ? isCtl ? before.controller : person.role === "panel_operator" ? before.panel : before.field : null;
+  if (!was || was.count < was.min) return null;
+  const head = `${crew} Shift ${pos.label} ${pos.count} of ${pos.min} that day.`;
+  if (!isCtl) return `${head} Record a cover for the shift before the rest day is given.`;
+  const result = evaluateDay(date, people, inp.absences, inp.crewRules ?? FULL_OPERATION, assignments);
+  const onTeam = new Set(assignments.filter((a) => a.kind === "sd_team" && a.start <= date && date <= a.end).map((a) => a.employeeId));
+  const spare = result.crews.flatMap((c) => !c.working || c.controller.count > c.controller.min ? c.controller.counted.filter((p) => p.crew === c.crew && (p.grade ?? 0) >= CONTROLLER_GRADE && !onTeam.has(p.id)).map((p) => `${p.name} (${p.role === "vr_controller" ? "VR, " : ""}${c.crew} Shift ${c.working ? "has a spare Controller" : "off"})`) : []);
+  return `${head} Record a cover in Controller Management${spare.length ? `: e.g. ${[...new Set(spare)].slice(0, 3).join("; ")} — check his rest` : ""}, or an Acting Controller from the crew.`;
+}
 function checkPlan(inp) {
   const { plan: p, teams, members, info } = inp;
   const issues = [];
@@ -601,8 +926,13 @@ function checkPlan(inp) {
     const tr = transitions(person, m, own, inp.absences, inp.assignments, inp.rules);
     trans.push(tr);
     for (const f of tr.findings) issues.push({ level: "block", code: f.rule, date: f.date, employeeId: m.employeeId, message: `${name(m.employeeId)}: ${f.message}` });
-    if (tr.joinOff.length) issues.push({ level: "info", code: "join_off", employeeId: m.employeeId, message: `${name(m.employeeId)}: off ${tr.joinOff.map(fmtDay).join(", ")} before joining (rest rules).` });
-    if (tr.returnOff.length) issues.push({ level: "info", code: "return_off", employeeId: m.employeeId, message: `${name(m.employeeId)}: off ${tr.returnOff.map(fmtDay).join(", ")}, back with his crew ${tr.returnOn ? fmtDay(tr.returnOn) : ""}.` });
+    const restCheck = (d, label, ok) => {
+      const short = restDayShortage(inp, person, m, d);
+      issues.push(short ? { level: "block", code: "rest_cover", employeeId: m.employeeId, date: d, message: `${name(m.employeeId)}: off ${fmtDay(d)} ${label} — ${short}` } : { level: "info", code: ok, employeeId: m.employeeId, date: d, message: `${name(m.employeeId)}: off ${fmtDay(d)} ${label}; his crew keeps its minimum.` });
+    };
+    for (const d of tr.joinOff) restCheck(d, "before joining (rest rules)", "join_off");
+    for (const d of tr.returnOff) restCheck(d, `before rejoining his crew${tr.returnOn ? ` on ${fmtDay(tr.returnOn)}` : ""} (rest rules)`, "return_off");
+    for (const d of m.restDays ?? []) restCheck(d, `(recorded rest day, ${d < m.start ? "before joining" : "after the shutdown"})`, "rest_day");
     const t = teamOf.get(m.teamId);
     if (t && m.slot === "new") {
       const short = planDates(p).filter((d) => {
@@ -612,14 +942,14 @@ function checkPlan(inp) {
       if (short.length) issues.push({ level: "block", code: "new_short", employeeId: m.employeeId, date: short[0], message: `${name(m.employeeId)}: New FO on a shortened duty on ${short.map(fmtDay).join(", ")}; a New FO works the full ${p.shiftHours} h or has the day off.` });
     }
     if (t) {
-      let run = 0, worst = 0;
+      let run = 0, worst2 = 0;
       for (const d of planDates(p)) {
         const x = memberDuty(p, t, m, d);
         run = x && x.hours >= p.shiftHours ? run + 1 : 0;
-        worst = Math.max(worst, run);
+        worst2 = Math.max(worst2, run);
       }
       const lim = t.shiftCode === "N" ? 3 : 4;
-      if (worst > lim) issues.push({ level: "info", code: "fatigue", employeeId: m.employeeId, message: `${name(m.employeeId)}: ${worst} 12-hour ${t.shiftCode === "N" ? "nights" : "days"} in a row (fatigue risk above ${lim}).` });
+      if (worst2 > lim) issues.push({ level: "info", code: "fatigue", employeeId: m.employeeId, message: `${name(m.employeeId)}: ${worst2} 12-hour ${t.shiftCode === "N" ? "nights" : "days"} in a row (fatigue risk above ${lim}).` });
     }
   }
   const L = limitsOf(p);
@@ -682,7 +1012,8 @@ function fingerprint(inp) {
       m.end,
       m.followCrew ?? null,
       m.offset,
-      Object.entries(m.days ?? {}).sort(([a], [b]) => a.localeCompare(b))
+      Object.entries(m.days ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+      ...m.restDays?.length ? [[...m.restDays].sort()] : []
     ]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
     levels: [...ids].sort().map((id) => [id, inp.info.get(id)?.foLevel ?? null, inp.info.get(id)?.grade ?? null, inp.info.get(id)?.position ?? null]),
     moves: [...ids].sort().map((id) => [id, (inp.people.find((x) => x.id === id)?.moves ?? []).filter((x) => x.kind !== "sd").map((x) => [x.start, x.end, x.crew, x.kind]).sort()]),
@@ -803,6 +1134,7 @@ var toMember = (r) => ({
   area: r.area,
   followCrew: r.follow_crew ?? null,
   controllerRole: r.controller_role ?? null,
+  restDays: r.rest_days ?? [],
   order: Number(/^S\.No (\d+)/.exec(r.note ?? "")?.[1]) || null
 });
 var toPhase = (r) => ({ id: r.id, start: r.start_date, end: r.end_date, needs: r.needs ?? {} });
@@ -834,9 +1166,9 @@ async function fetchSdPlan(id) {
   return { plan: toPlan(p.data), teams: t.data.map(toTeam), members, phases: ph.data.map(toPhase), signatures: p.data.signatures ?? [] };
 }
 async function fetchSdMembers(from, to) {
-  const { data, error } = await supabase.from("sd_members").select("*, sd_plans!inner(status)").eq("status", "active").eq("sd_plans.status", "active").lte("start_date", to).gte("end_date", from);
+  const { data, error } = await supabase.from("sd_members").select("*, sd_plans!inner(status)").eq("status", "active").eq("sd_plans.status", "active").lte("start_date", addDaysIso(to, 14)).gte("end_date", addDaysIso(from, -14));
   if (error) throw error;
-  return data.map(toMember);
+  return data.map(toMember).filter((m) => m.start <= to && m.end >= from || (m.restDays ?? []).some((d) => d >= from && d <= to));
 }
 async function fetchSdWorkInfo(members) {
   const out = /* @__PURE__ */ new Map();
@@ -1024,6 +1356,10 @@ async function fetchManpowerInputs(from, to) {
   for (const m of sd) {
     if (isCtl(m.employeeId)) sdAssignments.push({ id: `sd-${m.id}`, kind: "sd_team", employeeId: m.employeeId, crew: null, start: m.start, end: m.end, works: sdWorks.get(m.id)?.works, sdV2: sdWorks.get(m.id)?.sdV2 });
     else moves.set(m.employeeId, [...moves.get(m.employeeId) ?? [], { start: m.start, end: m.end, crew: SD_TEAM, kind: "sd" }]);
+    for (const d of m.restDays ?? []) {
+      if (isCtl(m.employeeId)) sdAssignments.push({ id: `sd-rest-${m.id}-${d}`, kind: "sd_team", employeeId: m.employeeId, crew: null, start: d, end: d, works: () => false, rest: true });
+      else moves.set(m.employeeId, [...moves.get(m.employeeId) ?? [], { start: d, end: d, crew: SD_TEAM, kind: "sd" }]);
+    }
   }
   const leaveAbsences = withOpenEnd(lv.data).map((l) => toMpAbsence(l));
   const people = dir.data.map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id) }));
@@ -1112,6 +1448,7 @@ async function loadPlanCheckInput(planId, today) {
     absences: inputs.absences,
     assignments: inputs.assignments,
     rules,
+    crewRules: inputs.rules,
     info: new Map(dir.map((r) => [r.id, personInfo(r)])),
     plans: plans.map((p) => ({ plan: p, employeeIds: new Set(all.filter((m) => m.planId === p.id).map((m) => m.employeeId)) })),
     otherDuties,

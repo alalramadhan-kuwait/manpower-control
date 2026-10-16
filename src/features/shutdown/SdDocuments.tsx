@@ -13,6 +13,7 @@ import { fetchDirectory } from '@/data/queries';
 import { fetchSdPlan, updateSdPlan, type Signature } from '@/data/shutdown';
 import type { EmployeeDirectoryRow } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Field, Spinner, cx } from '@/ui/components';
+import { shortDate } from '@/ui/leave';
 
 const SLOT_ORDER = { controller: 0, senior: 1, good: 2, new: 3, member: 4 } as const;
 const MONTH = (ym: string) => new Date(`${ym}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }).toUpperCase();
@@ -152,6 +153,7 @@ export function SdSchedulePage() {
         <span><b className="mr-1 inline-block w-5 border border-slate-500 bg-yellow-300 text-center">O</b>Off</span>
         <span><b className="mr-1 inline-block w-5 border border-slate-500 text-center text-red-600">{doc.teams[0]?.shiftCode ?? 'M'}</b>{(plan.rulesVersion ?? 1) >= 2 ? "On the person's crew rest day (set against the cycle's regular hours)" : "On the person's crew rest day (full overtime)"}</span>
         <span><b className="mr-1 inline-block w-5 border border-slate-500 bg-slate-900 text-center">&nbsp;</b>Not on the team</span>
+        {doc.rows.filter((x) => x.m.restDays?.length).map((x) => <span key={`rest-${x.m.id}`} className="basis-full">Rest day off his crew: {x.r?.display_name}{x.r?.employee_number ? ` (${x.r.employee_number})` : ''} {[...x.m.restDays!].sort().map(shortDate).join(', ')} ({x.m.restDays!.every((d) => d < x.m.start) ? 'before joining' : 'around the shutdown'}); his shift keeps its minimum</span>)}
       </div>
     </Page>
   );

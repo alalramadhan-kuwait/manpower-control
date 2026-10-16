@@ -96,9 +96,20 @@ describe('planner · the real Train-2 team, 20 Oct – 20 Nov, 3 on / 1 off', ()
 describe('planner · scenarios', () => {
   it('own-crew days after the first two weeks (cycleUntil)', () => {
     const p = { ...basePlan, cycleUntil: '2026-11-02' };
-    const c = checkPlan(plan(input(p, TEAM)));
-    expect(c.issues.filter((i) => i.level === 'block' && i.code !== 'coverage').map((i) => i.message)).toEqual([]);
+    const inp = plan(input(p, TEAM));
+    const c = checkPlan(inp);
+    // the A Controller needs 19 Oct off before joining, and he is A Shift's only Controller: it blocks until a cover is recorded
+    expect(c.issues.filter((i) => i.level === 'block' && i.code !== 'coverage').map((i) => `${i.code} ${i.employeeId} ${i.date}`)).toEqual(['rest_cover d-ctl-a 2026-10-19']);
     for (const o of c.overtime) for (const mo of o.months) expect(mo.total).toBeLessThanOrEqual(80);
+    // a VR Controller recorded on A Shift that day: the crew keeps its Controller, the rest day stands
+    const vr = { ...person({ id: 'vr', team: 'D', slot: 'controller', crew: null, role: 'vr_controller', level: null }, p), moves: [] };
+    const covered = checkPlan({ ...inp, people: [...inp.people, vr], assignments: [{ id: 'cv', kind: 'shift_cover', employeeId: 'vr', crew: 'A', start: '2026-10-19', end: '2026-10-19', coversEmployeeId: 'd-ctl-a' }] });
+    expect(covered.issues.filter((i) => i.level === 'block' && i.code !== 'coverage')).toEqual([]);
+    expect(covered.issues.some((i) => i.code === 'join_off' && i.employeeId === 'd-ctl-a')).toBe(true);
+    // recorded as his rest day: no longer worked out, still checked against his crew
+    const recorded = checkPlan({ ...inp, members: inp.members.map((m) => (m.id === 'd-ctl-a' ? { ...m, restDays: ['2026-10-19'] } : m)) });
+    expect(recorded.transitions.find((t) => t.employeeId === 'd-ctl-a')!.joinOff).toEqual([]);
+    expect(recorded.issues.filter((i) => i.level === 'block' && i.code !== 'coverage').map((i) => i.code)).toEqual(['rest_cover']);
   });
   it('approved leave during the shutdown: the person is off, the place is still covered, the leave is credited', () => {
     const leave: MpAbsence = { id: 'l', employeeId: 'd-sen-c1', start: '2026-11-13', end: '2026-11-16', status: 'approved', typeCode: 'annual_leave_planned', inCurrentPlan: true, oracle: 'approved' };

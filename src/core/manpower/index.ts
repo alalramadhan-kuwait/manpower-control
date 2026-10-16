@@ -104,6 +104,8 @@ export interface MpAssignment {
   /** sd_team of a rules-v2 plan: he covers a normal shift only on a day off the team, and only a shift of his team's kind
    *  (Morning team: M or A; Night team: N or A), so the duties never overlap nor break the Morning ↔ Night rest. */
   sdV2?: { night: boolean };
+  /** sd_team: a recorded rest day just before joining or after leaving the team (off his crew, not on the team). */
+  rest?: boolean;
 }
 
 export interface MpAbsence {
@@ -366,10 +368,15 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
     // automatically with a shutdown-team Controller who is free (no leave, no other assignment): one not working the team that
     // day first, then one who does both; his own crew's shift before another crew's.
     if (!cover && working && ctrlCounted.length < rules.controllerMin && (away.length > 0 || members.some((p) => p.role === 'controller' && leaveOf(p) && qualifiesAsController(p)))) {
+      // rules v2: one already on his team shift first (no extra duty, no overtime); earlier rules: one off the team first
+      const offFirst = (a: MpAssignment) => { const on = a.works?.(date) ?? true; return a.sdV2 ? Number(!on) : Number(on); };
       const candidates = todays.filter((a) => a.kind === 'sd_team' && !autoUsed.has(a.employeeId)).map((a) => ({ a, p: byId.get(a.employeeId) ?? null }))
-        .filter((x): x is { a: MpAssignment; p: MpPerson } => !!x.p && x.p.grade != null && x.p.grade >= rules.controllerGrade && !leaveOf(x.p) && assignmentOf(x.p)?.kind === 'sd_team')
-        .filter((x) => !x.a.sdV2 || (!(x.a.works?.(date) ?? true) && (state === 'A' || state === (x.a.sdV2.night ? 'N' : 'M'))))
-        .sort((x, y) => Number(x.a.works?.(date) ?? true) - Number(y.a.works?.(date) ?? true) || Number(y.p.crew === crew) - Number(x.p.crew === crew) || x.p.name.localeCompare(y.p.name));
+        .filter((x): x is { a: MpAssignment; p: MpPerson } => !!x.p && !x.a.rest && x.p.grade != null && x.p.grade >= rules.controllerGrade && !leaveOf(x.p) && assignmentOf(x.p)?.kind === 'sd_team')
+        // rules v2: the team's Controllers are on site round the clock during the shutdown (Day team 07–19, Night team 19–07):
+        // on his team shift he covers the normal shift of his team's kind (Day: M; Night: N) and the Afternoon shift (the Day
+        // team Controller to 19:00, the Night team Controller from 19:00); off the team, his team's kind or the Afternoon
+        .filter((x) => !x.a.sdV2 || state === 'A' || state === (x.a.sdV2.night ? 'N' : 'M'))
+        .sort((x, y) => offFirst(x.a) - offFirst(y.a) || Number(y.p.crew === crew) - Number(x.p.crew === crew) || x.p.name.localeCompare(y.p.name));
       const pick = candidates[0];
       if (pick) { autoUsed.add(pick.p.id); cover = { person: pick.p, assignment: pick.a, counted: true, absence: null }; ctrlCounted.push(pick.p); }
     }
@@ -386,14 +393,14 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
       }
     }
     if (acting) ctrlIssues.push(`Acting Controller: ${acting.name} (Grade ${acting.grade})`);
-    if (cover?.counted) ctrlIssues.push(`Covered by ${cover.person.name}${cover.assignment.kind === 'sd_team' ? ` (shutdown team Controller${cover.assignment.works?.(date) ?? true ? ', in addition to his team shift' : ', off the team today'})` : ''}`);
+    if (cover?.counted) ctrlIssues.push(`Covered by ${cover.person.name}${cover.assignment.kind === 'sd_team' ? ` (shutdown team Controller${cover.assignment.works?.(date) ?? true ? `, in addition to his team shift${state === 'A' && cover.assignment.sdV2 ? (cover.assignment.sdV2.night ? ', from 19:00' : ', to 19:00 then the Night team Controller') : ''}` : ', off the team today'})` : ''}`);
     const ctrlOnLeave = working ? members.filter((p) => p.role === 'controller' && leaveOf(p) && qualifiesAsController(p)) : [];
     const ctrlCount = ctrlCounted.length;
     const ctrlMet = ctrlCount >= rules.controllerMin;
     const ctrlCoverage = !ctrlMet && (ctrlOnLeave.length > 0 || away.length > 0 || (cover !== null && !cover.counted));
     const ctrlPotentialMet = ctrlCount + ctrlNot.filter((n) => n.pendingData).length >= rules.controllerMin;
     if (ctrlCoverage) {
-      const why = [...ctrlOnLeave.map((p) => `${p.name} (${leaveOf(p)?.typeLabel ?? 'leave'})`), ...away.map((w) => `${w.person.name} (${w.assignment.kind === 'morning_rotation' ? 'Morning rotation' : w.assignment.kind === 'sd_team' ? 'shutdown team' : `covering ${w.assignment.crew} Shift`})`)];
+      const why = [...ctrlOnLeave.map((p) => `${p.name} (${leaveOf(p)?.typeLabel ?? 'leave'})`), ...away.map((w) => `${w.person.name} (${w.assignment.kind === 'morning_rotation' ? 'Morning rotation' : w.assignment.kind === 'sd_team' ? (w.assignment.rest ? 'rest day, shutdown team' : 'shutdown team') : `covering ${w.assignment.crew} Shift`})`)];
       ctrlIssues.push(`Controller coverage required: ${why.join(', ')}${cover && !cover.counted ? ` — recorded cover ${cover.person.name} is ${cover.absence ? 'on leave' : 'not Grade ' + rules.controllerGrade + '+'}` : ' — no cover recorded'}`);
     }
     else if (!ctrlMet && ctrlPotentialMet) ctrlIssues.push('Controller grade not recorded');

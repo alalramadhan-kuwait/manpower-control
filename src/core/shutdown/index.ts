@@ -53,6 +53,9 @@ export interface SdMember {
   days?: Record<string, SdDay>;
   /** v2 Controllers: Primary or Assistant (either may lead alone when the other is off). */
   controllerRole?: 'primary' | 'assistant' | null;
+  /** Rest days off his own crew just before joining or after leaving the team (rest rules), as recorded on the plan. On these
+   *  days he is off his crew; the crew's minimum is checked and its cover recorded like any other absence. */
+  restDays?: string[];
 }
 
 /** Total turnaround: people needed per team, from a first to a last day (Controllers, and operators per area). */

@@ -191,7 +191,11 @@ function evaluateDay(date, allPeople, absences, rulesSource = FULL_OPERATION, as
       if (counted && !ctrlCounted.includes(coverPerson)) ctrlCounted.push(coverPerson);
     }
     if (!cover && working && ctrlCounted.length < rules.controllerMin && (away.length > 0 || members.some((p) => p.role === "controller" && leaveOf(p) && qualifiesAsController(p)))) {
-      const candidates = todays.filter((a) => a.kind === "sd_team" && !autoUsed.has(a.employeeId)).map((a) => ({ a, p: byId.get(a.employeeId) ?? null })).filter((x) => !!x.p && x.p.grade != null && x.p.grade >= rules.controllerGrade && !leaveOf(x.p) && assignmentOf(x.p)?.kind === "sd_team").filter((x) => !x.a.sdV2 || !(x.a.works?.(date) ?? true) && (state === "A" || state === (x.a.sdV2.night ? "N" : "M"))).sort((x, y) => Number(x.a.works?.(date) ?? true) - Number(y.a.works?.(date) ?? true) || Number(y.p.crew === crew) - Number(x.p.crew === crew) || x.p.name.localeCompare(y.p.name));
+      const offFirst = (a) => {
+        const on = a.works?.(date) ?? true;
+        return a.sdV2 ? Number(!on) : Number(on);
+      };
+      const candidates = todays.filter((a) => a.kind === "sd_team" && !autoUsed.has(a.employeeId)).map((a) => ({ a, p: byId.get(a.employeeId) ?? null })).filter((x) => !!x.p && !x.a.rest && x.p.grade != null && x.p.grade >= rules.controllerGrade && !leaveOf(x.p) && assignmentOf(x.p)?.kind === "sd_team").filter((x) => !x.a.sdV2 || state === "A" || state === (x.a.sdV2.night ? "N" : "M")).sort((x, y) => offFirst(x.a) - offFirst(y.a) || Number(y.p.crew === crew) - Number(x.p.crew === crew) || x.p.name.localeCompare(y.p.name));
       const pick = candidates[0];
       if (pick) {
         autoUsed.add(pick.p.id);
@@ -215,14 +219,14 @@ function evaluateDay(date, allPeople, absences, rulesSource = FULL_OPERATION, as
       }
     }
     if (acting) ctrlIssues.push(`Acting Controller: ${acting.name} (Grade ${acting.grade})`);
-    if (cover?.counted) ctrlIssues.push(`Covered by ${cover.person.name}${cover.assignment.kind === "sd_team" ? ` (shutdown team Controller${cover.assignment.works?.(date) ?? true ? ", in addition to his team shift" : ", off the team today"})` : ""}`);
+    if (cover?.counted) ctrlIssues.push(`Covered by ${cover.person.name}${cover.assignment.kind === "sd_team" ? ` (shutdown team Controller${cover.assignment.works?.(date) ?? true ? `, in addition to his team shift${state === "A" && cover.assignment.sdV2 ? cover.assignment.sdV2.night ? ", from 19:00" : ", to 19:00 then the Night team Controller" : ""}` : ", off the team today"})` : ""}`);
     const ctrlOnLeave = working ? members.filter((p) => p.role === "controller" && leaveOf(p) && qualifiesAsController(p)) : [];
     const ctrlCount = ctrlCounted.length;
     const ctrlMet = ctrlCount >= rules.controllerMin;
     const ctrlCoverage = !ctrlMet && (ctrlOnLeave.length > 0 || away.length > 0 || cover !== null && !cover.counted);
     const ctrlPotentialMet = ctrlCount + ctrlNot.filter((n) => n.pendingData).length >= rules.controllerMin;
     if (ctrlCoverage) {
-      const why = [...ctrlOnLeave.map((p) => `${p.name} (${leaveOf(p)?.typeLabel ?? "leave"})`), ...away.map((w) => `${w.person.name} (${w.assignment.kind === "morning_rotation" ? "Morning rotation" : w.assignment.kind === "sd_team" ? "shutdown team" : `covering ${w.assignment.crew} Shift`})`)];
+      const why = [...ctrlOnLeave.map((p) => `${p.name} (${leaveOf(p)?.typeLabel ?? "leave"})`), ...away.map((w) => `${w.person.name} (${w.assignment.kind === "morning_rotation" ? "Morning rotation" : w.assignment.kind === "sd_team" ? w.assignment.rest ? "rest day, shutdown team" : "shutdown team" : `covering ${w.assignment.crew} Shift`})`)];
       ctrlIssues.push(`Controller coverage required: ${why.join(", ")}${cover && !cover.counted ? ` — recorded cover ${cover.person.name} is ${cover.absence ? "on leave" : "not Grade " + rules.controllerGrade + "+"}` : " — no cover recorded"}`);
     } else if (!ctrlMet && ctrlPotentialMet) ctrlIssues.push("Controller grade not recorded");
     else if (!ctrlMet) ctrlIssues.push(`Confirmed shortage: Controller ${ctrlCount} of ${rules.controllerMin} required`);
@@ -453,7 +457,8 @@ function personDays(person, from, to, ctx) {
       if (sd) {
         const start = kuwaitMs(date, sd.start);
         duty = { code: sd.code, start, end: start + sd.hours * H, note: "Shutdown team" };
-      } else if (asg?.kind === "sd_team" && asg.works && !asg.works(date)) duty = { code: "OFF", note: "Shutdown team" };
+      } else if (asg?.kind === "sd_team" && asg.rest) duty = { code: "OFF", note: "Rest day (shutdown team)" };
+      else if (asg?.kind === "sd_team" && asg.works && !asg.works(date)) duty = { code: "OFF", note: "Shutdown team" };
       else if (asg?.kind === "sd_team" && !ctx.sdDuty) duty = { code: "SD-D", note: "Shutdown team (hours not known)" };
       else duty = { code: "OFF", note: "Shutdown team" };
       other.push("Shutdown team");
@@ -687,12 +692,13 @@ var toMember = (r) => ({
   area: r.area,
   followCrew: r.follow_crew ?? null,
   controllerRole: r.controller_role ?? null,
+  restDays: r.rest_days ?? [],
   order: Number(/^S\.No (\d+)/.exec(r.note ?? "")?.[1]) || null
 });
 async function fetchSdMembers(from, to) {
-  const { data, error } = await supabase.from("sd_members").select("*, sd_plans!inner(status)").eq("status", "active").eq("sd_plans.status", "active").lte("start_date", to).gte("end_date", from);
+  const { data, error } = await supabase.from("sd_members").select("*, sd_plans!inner(status)").eq("status", "active").eq("sd_plans.status", "active").lte("start_date", addDaysIso(to, 14)).gte("end_date", addDaysIso(from, -14));
   if (error) throw error;
-  return data.map(toMember);
+  return data.map(toMember).filter((m) => m.start <= to && m.end >= from || (m.restDays ?? []).some((d) => d >= from && d <= to));
 }
 async function fetchSdWorkInfo(members) {
   const out = /* @__PURE__ */ new Map();
@@ -875,6 +881,10 @@ async function fetchManpowerInputs(from, to) {
   for (const m of sd) {
     if (isCtl(m.employeeId)) sdAssignments.push({ id: `sd-${m.id}`, kind: "sd_team", employeeId: m.employeeId, crew: null, start: m.start, end: m.end, works: sdWorks.get(m.id)?.works, sdV2: sdWorks.get(m.id)?.sdV2 });
     else moves.set(m.employeeId, [...moves.get(m.employeeId) ?? [], { start: m.start, end: m.end, crew: SD_TEAM, kind: "sd" }]);
+    for (const d of m.restDays ?? []) {
+      if (isCtl(m.employeeId)) sdAssignments.push({ id: `sd-rest-${m.id}-${d}`, kind: "sd_team", employeeId: m.employeeId, crew: null, start: d, end: d, works: () => false, rest: true });
+      else moves.set(m.employeeId, [...moves.get(m.employeeId) ?? [], { start: d, end: d, crew: SD_TEAM, kind: "sd" }]);
+    }
   }
   const leaveAbsences = withOpenEnd(lv.data).map((l) => toMpAbsence(l));
   const people = dir.data.map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id) }));

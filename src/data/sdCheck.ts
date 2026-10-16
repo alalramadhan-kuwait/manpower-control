@@ -92,7 +92,7 @@ export async function loadPlanCheckInput(planId: string, today: string): Promise
     }
   }
   return {
-    plan, teams, members, phases: sd.phases, people: inputs.people, absences: inputs.absences, assignments: inputs.assignments, rules,
+    plan, teams, members, phases: sd.phases, people: inputs.people, absences: inputs.absences, assignments: inputs.assignments, rules, crewRules: inputs.rules,
     info: new Map(dir.map((r) => [r.id, personInfo(r)])),
     plans: plans.map((p) => ({ plan: p, employeeIds: new Set(all.filter((m) => m.planId === p.id).map((m) => m.employeeId)) })),
     otherDuties, otherSdDuty, otEntries, sickEntries, exceptions, today,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateDay, FULL_OPERATION, personOn, statusFor } from '..';
 import type { MpAbsence, MpAssignment, MpPerson } from '..';
-import type { Crew } from '../../roster';
+import { dutyFor, stateOf, type Crew } from '../../roster';
 
 // 23 Sep 2026: A = Morning M2, C = Afternoon A2, B = Night N2, D = Off 2.
 const DAY = '2026-09-23';
@@ -567,6 +567,33 @@ describe('shutdown-team Controller covers a normal shift (automatic)', () => {
     const m = person(null, 'vr_controller');
     const r = evaluateDay(DAY, [...w.all, m], [], FULL_OPERATION, [sd(w.b[0], true), sd(w.d[0], false), { id: 'c', kind: 'shift_cover', employeeId: m.id, crew: 'B', start: DAY, end: DAY }]);
     expect(crewResult(r, 'B').controller.cover?.person.id).toBe(m.id);
+  });
+  // rules v2 (14–16 Oct 2026): the team's Controllers are on site round the clock; the one already on his team shift
+  // covers (no extra duty, no overtime); a recorded rest day before joining is never a cover
+  const v2 = (who: MpPerson, works: boolean, night: boolean, rest = false): MpAssignment => ({ ...sd(who, works), sdV2: { night }, ...(rest ? { rest: true, works: () => false } : {}) });
+  const stateCrew = (st: 'M' | 'A' | 'N') => (['A', 'B', 'C', 'D'] as Crew[]).find((k) => stateOf(dutyFor(DAY, k)) === st)!;
+  it('v2: the Day team Controller on his team shift covers a Morning shift, before one off the team', () => {
+    const w = world(); const by = { A: w.a, B: w.b, C: w.c, D: w.d } as Record<Crew, MpPerson[]>;
+    const m = stateCrew('M'); const others = (['A', 'B', 'C', 'D'] as Crew[]).filter((k) => k !== m);
+    const r = evaluateDay(DAY, w.all, [], FULL_OPERATION, [v2(by[m][0], true, false), v2(by[others[0]][0], true, false), v2(by[others[1]][0], false, false)]);
+    const c = crewResult(r, m).controller;
+    expect(c.cover?.person.id).toBe(by[m][0].id);             // his own crew's shift, while on his team shift
+    expect(c.cover?.person.id).not.toBe(by[others[1]][0].id);  // never one called in on his day off the team
+    expect(c.issues.join(' ')).toContain('in addition to his team shift');
+  });
+  it('v2: the Afternoon shift is covered by the Day team Controller to 19:00, then the Night team', () => {
+    const w = world(); const by = { A: w.a, B: w.b, C: w.c, D: w.d } as Record<Crew, MpPerson[]>;
+    const a = stateCrew('A'); const o = (['A', 'B', 'C', 'D'] as Crew[]).find((k) => k !== a)!;
+    const r = evaluateDay(DAY, w.all, [], FULL_OPERATION, [v2(by[a][0], true, true), v2(by[o][0], true, false)]);
+    expect(crewResult(r, a).controller.issues.join(' ')).toMatch(/to 19:00 then the Night team Controller|from 19:00/);
+  });
+  it('v2: a Controller on his rest day before joining is off his crew and never its cover', () => {
+    const w = world(); const by = { A: w.a, B: w.b, C: w.c, D: w.d } as Record<Crew, MpPerson[]>;
+    const n = stateCrew('N');
+    const r = evaluateDay(DAY, w.all, [], FULL_OPERATION, [v2(by[n][0], false, true, true)]);
+    const c = crewResult(r, n).controller;
+    expect(c.finding).toBe('coverage_required');
+    expect(c.issues.join(' ')).toContain('rest day, shutdown team');
   });
 });
 

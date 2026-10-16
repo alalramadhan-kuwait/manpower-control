@@ -93,6 +93,7 @@ export function personDays(person: MpPerson, from: string, to: string, ctx: Sche
     } else if (asg?.kind === 'sd_team' || p.sdTeam) {
       const sd = ctx.sdDuty?.(person.id, date) ?? null;
       if (sd) { const start = kuwaitMs(date, sd.start); duty = { code: sd.code, start, end: start + sd.hours * H, note: 'Shutdown team' }; }
+      else if (asg?.kind === 'sd_team' && asg.rest) duty = { code: 'OFF', note: 'Rest day (shutdown team)' };
       else if (asg?.kind === 'sd_team' && asg.works && !asg.works(date)) duty = { code: 'OFF', note: 'Shutdown team' };
       else if (asg?.kind === 'sd_team' && !ctx.sdDuty) duty = { code: 'SD-D', note: 'Shutdown team (hours not known)' };
       else duty = { code: 'OFF', note: 'Shutdown team' };

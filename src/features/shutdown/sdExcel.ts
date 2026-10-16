@@ -152,6 +152,8 @@ function otSheet(ws: Worksheet, doc: Doc, brand: Brand) {
   ws.mergeCells(end, 2, end, 4 + DAYS_PER_BLOCK); note.alignment = { wrapText: true, vertical: 'top' }; note.font = { name: 'Calibri', size: 9, italic: true }; ws.getRow(end).height = 38;
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 function dutySheet(ws: Worksheet, doc: Doc, brand: Brand) {
   const { plan } = doc;
   const end = dayGrid(ws, doc, brand, `ARDS UNIT-12 ${doc.name} SHUTDOWN MANPOWER SCHEDULE`, (x, d) => {
@@ -161,7 +163,9 @@ function dutySheet(ws: Worksheet, doc: Doc, brand: Brand) {
     // red letter: working on his crew's rest day (full overtime); the hours beside the letter on a shorter day
     return { v: `${x.team.shiftCode}${h < plan.shiftHours ? h : ''}`, red: !isDutyDay(x.crew, d), fill: x.team.shiftCode === 'N' ? 'FFD9D9D9' : 'FFDDEBF7' };
   });
-  const legend = [`M / N = day / night shift of ${plan.shiftHours} h`, `M${plan.normalHours} / N${plan.normalHours} = a shorter day, the hours beside the letter`, 'O (yellow) = off', (plan.rulesVersion ?? 1) >= 2 ? 'Red letter = on his crew\'s rest day (for information; the overtime is the same)' : 'Red letter = working on his crew\'s rest day (full overtime)', 'Black = not on the team'];
+  const legend = [`M / N = day / night shift of ${plan.shiftHours} h`, `M${plan.normalHours} / N${plan.normalHours} = a shorter day, the hours beside the letter`, 'O (yellow) = off', (plan.rulesVersion ?? 1) >= 2 ? 'Red letter = on his crew\'s rest day (for information; the overtime is the same)' : 'Red letter = working on his crew\'s rest day (full overtime)', 'Black = not on the team',
+    // rest days off his crew around the team dates (recorded on the plan; the crew's cover is in Controller Management)
+    ...doc.rows.filter((x) => x.m.restDays?.length).map((x) => `Rest day off his crew: ${x.r?.display_name ?? 'Member'}${x.r?.employee_number ? ` (${x.r.employee_number})` : ''} ${[...x.m.restDays!].sort().map((d) => `${Number(d.slice(8))} ${MONTHS[Number(d.slice(5, 7)) - 1]}`).join(', ')} (${x.m.restDays!.every((d) => d < x.m.start) ? 'before joining' : 'around the shutdown'}); his shift keeps its minimum`)];
   legend.forEach((t, i) => { const c = ws.getCell(end + i, 2); c.value = t; ws.mergeCells(end + i, 2, end + i, 12); c.font = { name: 'Calibri', size: 9 }; c.alignment = { horizontal: 'left' }; });
 }
 

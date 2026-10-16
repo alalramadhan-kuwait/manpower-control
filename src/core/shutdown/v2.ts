@@ -5,7 +5,7 @@
 // rest checks (including joining and returning), overtime accounting, and the plan check that puts them together.
 // Priority: continuous qualified coverage → leave and roster feasibility → hard limits → fairness and New FO development.
 import { addDaysIso, type Crew } from '../roster';
-import { personOn, type MpAbsence, type MpAssignment, type MpPerson } from '../manpower';
+import { evaluateDay, personOn, FULL_OPERATION, SD_TEAM, type MpAbsence, type MpAssignment, type MpPerson, type RulesSource } from '../manpower';
 import { checkSchedule, kuwaitMs, personDays, shiftTimesOf, type DayLine, type Finding, type RuleConfig, type SdDutyOf } from '../validation';
 import { areasOf, groupOf, hoursOn, isDutyDay, isRampDay, memberHoursOn, memberWorks, phaseOn, planDates, type FoLevel, type SdMember, type SdPhase, type SdPlan, type SdTeam } from './index';
 import { cycleOvertime, type OtBasis, type OtResult, type WorkedDuty } from './overtime';
@@ -298,9 +298,10 @@ export interface TransitionResult { employeeId: string; findings: Finding[]; joi
  */
 export function transitions(person: MpPerson, m: SdMember, sdDuty: SdDutyOf, absences: MpAbsence[], assignments: MpAssignment[], rules: RuleConfig[]): TransitionResult {
   const from = addDaysIso(m.start, -14), to = addDaysIso(m.end, 14);
-  const lines = personDays(person, from, to, { absences, assignments, sdDuty, times: shiftTimesOf(rules) });
-  const hard = (ls: DayLine[]) => checkSchedule(ls, rules).filter((f) => f.severity === 'hard_stop');
   const offOn = (ls: DayLine[], dates: string[]) => ls.map((l) => (dates.includes(l.date) ? { ...l, works: false, other: [...l.other, 'Off (shutdown transition)'] } : l));
+  // rest days already recorded on the plan are off his crew; only further days still needed are worked out
+  const lines = offOn(personDays(person, from, to, { absences, assignments, sdDuty, times: shiftTimesOf(rules) }), m.restDays ?? []);
+  const hard = (ls: DayLine[]) => checkSchedule(ls, rules).filter((f) => f.severity === 'hard_stop');
   const crewDays = (dates: string[]) => dates.filter((d) => { const l = lines.find((x) => x.date === d); return !!l && l.works && !(l.other.includes('Shutdown team')); });
   const before = crewDays(Array.from({ length: 6 }, (_, i) => addDaysIso(m.start, -(i + 1))));        // nearest first
   const after = crewDays(Array.from({ length: 10 }, (_, i) => addDaysIso(m.end, i + 1)));
@@ -344,6 +345,8 @@ export interface PlanCheckInput {
   /** Other shutdown teams' duties for the rest check (this plan's own come from its members). */
   otherSdDuty?: SdDutyOf;
   otEntries: Map<string, OtEntry>; sickEntries: Map<string, SickEntry>; exceptions: SdException[];
+  /** The crews' manpower minimums by date (operating mode), for a member's rest days off his crew. */
+  crewRules?: RulesSource;
   /** The date of the check (Kuwait). */
   today: string;
 }
@@ -357,6 +360,38 @@ export interface PlanCheck {
 
 /** Leave that takes the person off the team on a date: leave already approved in Oracle (leave not yet approved is postponed). */
 export const awayOn = (absences: MpAbsence[]) => (employeeId: string, date: string) => absences.some((a) => a.employeeId === employeeId && a.oracle === 'approved' && (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && a.start <= date && date <= a.end);
+
+/**
+ * A member's recorded rest day off his crew: does his crew still meet its minimum for his position that day (with the
+ * covers recorded in Controller Management)? Returns what is short and who could cover it, or null when it is met.
+ */
+export function restDayShortage(inp: PlanCheckInput, person: MpPerson, m: SdMember, date: string): string | null {
+  const crew = effectiveCrew(person, null, date);
+  if (!crew) return null;
+  const isCtl = ['controller', 'vr_controller', 'morning_controller'].includes(person.role ?? '');
+  // the rest day takes him off his crew (as the data layer records it), whether or not the inputs carry it already
+  const restId = `sd-rest-${m.id}-${date}`;
+  const assignments = isCtl && !inp.assignments.some((a) => a.id === restId)
+    ? [...inp.assignments, { id: restId, kind: 'sd_team' as const, employeeId: person.id, crew: null, start: date, end: date, works: () => false, rest: true }] : inp.assignments;
+  const people = isCtl ? inp.people : inp.people.map((x) => (x.id === person.id && !(x.moves ?? []).some((v) => v.crew === SD_TEAM && v.start <= date && (v.end === null || date <= v.end))
+    ? { ...x, moves: [...(x.moves ?? []), { start: date, end: date, crew: SD_TEAM, kind: 'sd' as const }] } : x));
+  const day = evaluateDay(date, people, inp.absences, inp.crewRules ?? FULL_OPERATION, assignments).crews.find((c) => c.crew === crew);
+  if (!day || !day.working) return null;
+  const pos = isCtl ? day.controller : person.role === 'panel_operator' ? day.panel : day.field;
+  if (pos.count >= pos.min) return null;
+  // only a shortage the rest day itself causes (a crew already short without it is the crew's own manpower finding)
+  const before = evaluateDay(date, inp.people, inp.absences, inp.crewRules ?? FULL_OPERATION, inp.assignments.filter((a) => a.id !== restId)).crews.find((c) => c.crew === crew);
+  const was = before ? (isCtl ? before.controller : person.role === 'panel_operator' ? before.panel : before.field) : null;
+  if (!was || was.count < was.min) return null;
+  const head = `${crew} Shift ${pos.label} ${pos.count} of ${pos.min} that day.`;
+  if (!isCtl) return `${head} Record a cover for the shift before the rest day is given.`;
+  // who could cover: a Controller (Grade 15+) not on a shutdown team whose own crew keeps a spare Controller that day
+  const result = evaluateDay(date, people, inp.absences, inp.crewRules ?? FULL_OPERATION, assignments);
+  const onTeam = new Set(assignments.filter((a) => a.kind === 'sd_team' && a.start <= date && date <= a.end).map((a) => a.employeeId));
+  const spare = result.crews.flatMap((c) => (!c.working || c.controller.count > c.controller.min
+    ? c.controller.counted.filter((p) => p.crew === c.crew && (p.grade ?? 0) >= CONTROLLER_GRADE && !onTeam.has(p.id)).map((p) => `${p.name} (${p.role === 'vr_controller' ? 'VR, ' : ''}${c.crew} Shift ${c.working ? 'has a spare Controller' : 'off'})`) : []));
+  return `${head} Record a cover in Controller Management${spare.length ? `: e.g. ${[...new Set(spare)].slice(0, 3).join('; ')} — check his rest` : ''}, or an Acting Controller from the crew.`;
+}
 
 export function checkPlan(inp: PlanCheckInput): PlanCheck {
   const { plan: p, teams, members, info } = inp;
@@ -413,8 +448,16 @@ export function checkPlan(inp: PlanCheckInput): PlanCheck {
     const tr = transitions(person, m, own, inp.absences, inp.assignments, inp.rules);
     trans.push(tr);
     for (const f of tr.findings) issues.push({ level: 'block', code: f.rule, date: f.date, employeeId: m.employeeId, message: `${name(m.employeeId)}: ${f.message}` });
-    if (tr.joinOff.length) issues.push({ level: 'info', code: 'join_off', employeeId: m.employeeId, message: `${name(m.employeeId)}: off ${tr.joinOff.map(fmtDay).join(', ')} before joining (rest rules).` });
-    if (tr.returnOff.length) issues.push({ level: 'info', code: 'return_off', employeeId: m.employeeId, message: `${name(m.employeeId)}: off ${tr.returnOff.map(fmtDay).join(', ')}, back with his crew ${tr.returnOn ? fmtDay(tr.returnOn) : ''}.` });
+    // a rest day off his crew (worked out here, or recorded on the plan): his crew must keep its minimum that day, with a
+    // cover recorded in Controller Management when it does not; never left as a note
+    const restCheck = (d: string, label: string, ok: string) => {
+      const short = restDayShortage(inp, person, m, d);
+      issues.push(short ? { level: 'block', code: 'rest_cover', employeeId: m.employeeId, date: d, message: `${name(m.employeeId)}: off ${fmtDay(d)} ${label} — ${short}` }
+        : { level: 'info', code: ok, employeeId: m.employeeId, date: d, message: `${name(m.employeeId)}: off ${fmtDay(d)} ${label}; his crew keeps its minimum.` });
+    };
+    for (const d of tr.joinOff) restCheck(d, 'before joining (rest rules)', 'join_off');
+    for (const d of tr.returnOff) restCheck(d, `before rejoining his crew${tr.returnOn ? ` on ${fmtDay(tr.returnOn)}` : ''} (rest rules)`, 'return_off');
+    for (const d of m.restDays ?? []) restCheck(d, `(recorded rest day, ${d < m.start ? 'before joining' : 'after the shutdown'})`, 'rest_day');
     // the crew roster's rest-day pairs do not limit the independent shutdown rotation (rule of 14 Oct 2026)
     const t = teamOf.get(m.teamId);
     // New FOs (training) always work the full shift: a shorter day is given as a day off instead
@@ -472,7 +515,7 @@ export function fingerprint(inp: Pick<PlanCheckInput, 'plan' | 'teams' | 'member
     plan: [p.id, p.start, p.end, p.daysOn, p.daysOff, p.shiftHours, p.rampDays, p.rampHours, p.normalHours, p.maxOvertime, p.maxOvertimeHard, p.maxOvertimeYear, p.maxOvertimeYearHard, p.rulesVersion],
     teams: inp.teams.map((t) => [t.id, t.shiftCode, t.hoursLabel, t.needs, t.rampNeeds]).sort(),
     members: inp.members.map((m) => [m.id, m.employeeId, m.teamId, m.slot, m.controllerRole ?? null, m.start, m.end, m.followCrew ?? null, m.offset,
-      Object.entries(m.days ?? {}).sort(([a], [b]) => a.localeCompare(b))]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+      Object.entries(m.days ?? {}).sort(([a], [b]) => a.localeCompare(b)), ...(m.restDays?.length ? [[...m.restDays].sort()] : [])]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
     levels: [...ids].sort().map((id) => [id, inp.info.get(id)?.foLevel ?? null, inp.info.get(id)?.grade ?? null, inp.info.get(id)?.position ?? null]),
     moves: [...ids].sort().map((id) => [id, (inp.people.find((x) => x.id === id)?.moves ?? []).filter((x) => x.kind !== 'sd').map((x) => [x.start, x.end, x.crew, x.kind]).sort()]),
     leave: inp.absences.filter((a) => ids.has(a.employeeId) && a.end >= addDaysIso(p.start, -14) && a.start <= addDaysIso(p.end, 14)).map((a) => [a.id, a.employeeId, a.start, a.end, a.status, a.oracle ?? null, a.inCurrentPlan ?? true]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),

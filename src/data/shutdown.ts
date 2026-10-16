@@ -2,7 +2,7 @@
 import { supabase } from './supabase';
 import { openFrom, withOpenEnd } from './openEnd';
 import { dataChanged } from './changes';
-import type { Crew } from '@/core/roster';
+import { addDaysIso, type Crew } from '@/core/roster';
 import { fetchMovements } from './movements';
 import { V2_DEFAULTS } from '@/core/shutdown/v2';
 import { memberHoursOn, memberWorks, teamGaps, type TeamGap, type FoLevel, type SdDay, type SdKind, type SdMember, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
@@ -10,7 +10,7 @@ import { memberHoursOn, memberWorks, teamGaps, type TeamGap, type FoLevel, type 
 export interface Signature { title: string; name: string }
 interface PlanRow { signatures: Signature[]; kind: SdKind; areas: string[] | null; sections: string[] | null; id: string; event_id: string | null; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; max_overtime_year?: number | null; status: string; rules_version?: number | null; max_overtime_hard?: number | null; max_overtime_year_hard?: number | null; cycle_until?: string | null }
 interface TeamRow { id: string; plan_id: string; name: string; sort: number; shift_code: 'M' | 'N'; shift_hours_label: string | null; controller_n: number; senior_n: number; good_n: number; new_n: number; ramp_controller_n: number; ramp_senior_n: number; ramp_good_n: number; ramp_new_n: number }
-interface MemberRow { id: string; plan_id: string; team_id: string; employee_id: string; slot: SdSlot; day_offset: number; start_date: string; end_date: string; area: string | null; note: string | null; follow_crew: Crew | null; controller_role?: 'primary' | 'assistant' | null }
+interface MemberRow { id: string; plan_id: string; team_id: string; employee_id: string; slot: SdSlot; day_offset: number; start_date: string; end_date: string; area: string | null; note: string | null; follow_crew: Crew | null; controller_role?: 'primary' | 'assistant' | null; rest_days?: string[] | null }
 interface PhaseRow { id: string; plan_id: string; start_date: string; end_date: string; needs: SdPhase['needs'] }
 
 const toPlan = (r: PlanRow): SdPlan => ({ rulesVersion: r.rules_version ?? 1, maxOvertimeHard: r.max_overtime_hard == null ? undefined : Number(r.max_overtime_hard), maxOvertimeYearHard: r.max_overtime_year_hard == null ? undefined : Number(r.max_overtime_year_hard), id: r.id, eventId: r.event_id, title: r.title, kind: r.kind ?? 'train', areas: r.areas ?? [], sections: r.sections ?? [], start: r.start_date, end: r.end_date, daysOn: r.days_on, daysOff: r.days_off,
@@ -18,7 +18,7 @@ const toPlan = (r: PlanRow): SdPlan => ({ rulesVersion: r.rules_version ?? 1, ma
 const toTeam = (r: TeamRow): SdTeam => ({ id: r.id, planId: r.plan_id, name: r.name, sort: r.sort,
   needs: { controller: r.controller_n, senior: r.senior_n, good: r.good_n, new: r.new_n }, rampNeeds: { controller: r.ramp_controller_n, senior: r.ramp_senior_n, good: r.ramp_good_n, new: r.ramp_new_n },
   shiftCode: r.shift_code, hoursLabel: r.shift_hours_label });
-export const toMember = (r: MemberRow): SdMember => ({ id: r.id, planId: r.plan_id, teamId: r.team_id, employeeId: r.employee_id, slot: r.slot, offset: r.day_offset, start: r.start_date, end: r.end_date, area: r.area, followCrew: r.follow_crew ?? null, controllerRole: r.controller_role ?? null,
+export const toMember = (r: MemberRow): SdMember => ({ id: r.id, planId: r.plan_id, teamId: r.team_id, employeeId: r.employee_id, slot: r.slot, offset: r.day_offset, start: r.start_date, end: r.end_date, area: r.area, followCrew: r.follow_crew ?? null, controllerRole: r.controller_role ?? null, restDays: r.rest_days ?? [],
   order: Number(/^S\.No (\d+)/.exec(r.note ?? '')?.[1]) || null });
 const toPhase = (r: PhaseRow): SdPhase => ({ id: r.id, start: r.start_date, end: r.end_date, needs: r.needs ?? {} });
 
@@ -52,9 +52,10 @@ export async function fetchSdPlan(id: string): Promise<{ plan: SdPlan; teams: Sd
 
 /** Active shutdown team members overlapping [from, to] (plans not cancelled), for the manpower engine. */
 export async function fetchSdMembers(from: string, to: string): Promise<SdMember[]> {
-  const { data, error } = await supabase.from('sd_members').select('*, sd_plans!inner(status)').eq('status', 'active').eq('sd_plans.status', 'active').lte('start_date', to).gte('end_date', from);
+  const { data, error } = await supabase.from('sd_members').select('*, sd_plans!inner(status)').eq('status', 'active').eq('sd_plans.status', 'active').lte('start_date', addDaysIso(to, 14)).gte('end_date', addDaysIso(from, -14));
   if (error) throw error;
-  return (data as MemberRow[]).map(toMember);
+  // a member's recorded rest days lie just outside his team dates: kept when they or the team dates touch the range
+  return (data as MemberRow[]).map(toMember).filter((m) => (m.start <= to && m.end >= from) || (m.restDays ?? []).some((d) => d >= from && d <= to));
 }
 
 /** For shutdown-team members: on which dates each works the team shift (the plan's pattern and the member's own days). */
@@ -164,7 +165,7 @@ export async function addSdMember(v: { planId: string; teamId: string; employeeI
   dataChanged();
 }
 
-export async function updateSdMember(id: string, v: Partial<{ day_offset: number; start_date: string; end_date: string; team_id: string; slot: SdSlot; area: string | null; follow_crew: Crew | null; controller_role: 'primary' | 'assistant' | null }>) {
+export async function updateSdMember(id: string, v: Partial<{ day_offset: number; start_date: string; end_date: string; team_id: string; slot: SdSlot; area: string | null; follow_crew: Crew | null; controller_role: 'primary' | 'assistant' | null; rest_days: string[] }>) {
   const { error } = await supabase.from('sd_members').update(v).eq('id', id);
   if (error) throw error;
   dataChanged();
