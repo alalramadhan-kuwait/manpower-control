@@ -4,7 +4,8 @@
 import { AlertTriangle, BadgeCheck, Check, CircleDashed, Info, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import type { SdMember, SdPlan } from '@/core/shutdown';
-import { SICK_LABEL, fmtDay, fmtMonth, limitsOf, sickState, type CoverGap, type Eligibility, type ExceptionKind, type IssueLevel, type OtEntry, type PersonOt, type PlanCheck, type SdException, type SickEntry } from '@/core/shutdown/v2';
+import { SICK_LABEL, fmtDay, fmtMonth, limitsOf, sickState, type CoverFix, type CoverGap, type Eligibility, type ExceptionKind, type IssueLevel, type OtEntry, type PersonOt, type PlanCheck, type SdException, type SickEntry } from '@/core/shutdown/v2';
+import { createAssignment } from '@/data/controllers';
 import { grantException, requestApproval, revokeException, saveOtEntry, saveSickCheck, type ApprovalState } from '@/data/sdCheck';
 import type { EmployeeDirectoryRow } from '@/data/types';
 import { BottomSheet, Button, Card, ErrorBox, Field, cx } from '@/ui/components';
@@ -21,16 +22,36 @@ const statusTone = (s: PlanCheck['status']) => (s === 'ready' ? 'bg-green-600 te
 const OT_TONE = { ok: 'text-green-800', warn: 'text-amber-800 font-semibold', over: 'text-status-red font-bold', unknown: 'text-sky-800' } as const;
 
 /** One line per person for the same kind of finding (e.g. every pair of rest days he works), the rest as they are. */
-function grouped(list: PlanCheck['issues']): string[] {
-  const out: string[] = []; const seen = new Map<string, number>();
+function grouped(list: PlanCheck['issues']): { text: string; fix?: CoverFix }[] {
+  const out: { text: string; fix?: CoverFix }[] = []; const seen = new Map<string, number>();
   for (const i of list) {
-    if (i.code !== 'rest_day_pair' || !i.employeeId) { out.push(i.message); continue; }
+    if (i.code !== 'rest_day_pair' || !i.employeeId) { out.push({ text: i.message, fix: i.fix }); continue; }
     const k = `${i.code}|${i.employeeId}`; const at = seen.get(k);
     const days = /rest days (.+?);/.exec(i.message)?.[1] ?? '';
-    if (at === undefined) { seen.set(k, out.length); out.push(i.message); }
-    else out[at] = out[at].replace(/rest days (.+?);/, (_m, d) => `rest days ${d}, ${days};`);
+    if (at === undefined) { seen.set(k, out.length); out.push({ text: i.message }); }
+    else out[at] = { text: out[at].text.replace(/rest days (.+?);/, (_m, d) => `rest days ${d}, ${days};`) };
   }
   return out;
+}
+
+/** One tap records the cover the check proposes (Controller Management), then the plan is checked again. */
+function CoverButton({ fix, onDone }: { fix: CoverFix; onDone: (m: string) => void }) {
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const span = `${fmtDay(fix.start)}${fix.end > fix.start ? ` – ${fmtDay(fix.end)}` : ''}`;
+  async function record() {
+    setBusy(true); setErr(null);
+    try {
+      await createAssignment({ kind: 'shift_cover', employee_id: fix.employeeId, crew_code: fix.crew, covers_employee_id: fix.coversEmployeeId, start_date: fix.start, end_date: fix.end,
+        note: `Proposed by the shutdown plan check: covers ${fix.crew} Shift while its Controller rests before / after the shutdown team.` });
+      onDone(`Cover recorded: ${fix.name} on ${fix.crew} Shift ${span}.`);
+    } catch (e) { setErr(e); setBusy(false); }
+  }
+  return (
+    <span className="mt-1 block">
+      <Button variant="secondary" className="min-h-8 px-2.5 text-xs" disabled={busy} onClick={record}>Record cover: {fix.name} · {fix.crew} Shift {span}</Button>
+      {err ? <span className="mt-1 block"><ErrorBox error={err} /></span> : null}
+    </span>
+  );
 }
 
 /** The readiness of the plan and its approval. */
@@ -70,7 +91,7 @@ export function ReadinessPanel({ plan, names, check, approval, isHead, error, on
       </div>
       {open && counts(open) > 0 && (
         <ul className={cx('mt-2 space-y-1 rounded-lg px-2.5 py-2 text-xs ring-1', LEVEL[open].tone)}>
-          {grouped(check.issues.filter((i) => i.level === open)).map((m, k) => <li key={k} className="flex items-start gap-1.5">{LEVEL[open].icon}<span>{m}</span></li>)}
+          {grouped(check.issues.filter((i) => i.level === open)).map((m, k) => <li key={k} className="flex items-start gap-1.5">{LEVEL[open].icon}<span>{m.text}{m.fix && isHead ? <CoverButton fix={m.fix} onDone={onApproved} /> : null}</span></li>)}
         </ul>
       )}
       {check.gaps.length > 0 && <CoverageList gaps={check.gaps} />}

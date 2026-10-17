@@ -708,7 +708,7 @@ function PatternSheet({ plan, hasPeople, onClose, onDone, onMoved }: { plan: SdP
         // a shutdown with people moves with everything on it, then its days and hours are rebuilt
         const r = await moveSdPlan(plan.id, v.start_date, v.end_date);
         const { start_date: _s, end_date: _e, cycle_until: cu, ...rest } = v;
-        await updateSdPlan(plan.id, { ...rest, cycle_until: cycleOf(cu ? addDaysIso(cu, shift) : ''), title: v.title.trim() || plan.title });
+        await updateSdPlan(plan.id, { ...rest, cycle_until: cycleOf(cu ? (plan.cycleUntil && plan.cycleUntil >= plan.end ? v.end_date : addDaysIso(cu, shift)) : ''), title: v.title.trim() || plan.title });
         onMoved(`Shutdown moved to ${range(v.start_date, v.end_date)}: ${r.members} ${r.members === 1 ? 'person' : 'people'}${r.instructions ? `, ${r.instructions} shift instruction${r.instructions === 1 ? '' : 's'}` : ''}${r.phases ? `, ${r.phases} phase${r.phases === 1 ? '' : 's'}` : ''} moved with it.${r.leave ? ` ${r.leave} ${r.leave === 1 ? 'has' : 'have'} leave inside the new dates.` : ''} Check the new days and hours below and apply.`);
         return;
       }

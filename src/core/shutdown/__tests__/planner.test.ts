@@ -106,6 +106,13 @@ describe('planner · scenarios', () => {
     const covered = checkPlan({ ...inp, people: [...inp.people, vr], assignments: [{ id: 'cv', kind: 'shift_cover', employeeId: 'vr', crew: 'A', start: '2026-10-19', end: '2026-10-19', coversEmployeeId: 'd-ctl-a' }] });
     expect(covered.issues.filter((i) => i.level === 'block' && i.code !== 'coverage')).toEqual([]);
     expect(covered.issues.some((i) => i.code === 'join_off' && i.employeeId === 'd-ctl-a')).toBe(true);
+    // no cover recorded yet, a free VR Controller on the staff list: the check proposes him (one tap records it)
+    const proposed = checkPlan({ ...inp, people: [...inp.people, vr] }).issues.find((i) => i.code === 'rest_cover')!;
+    expect(proposed.fix).toMatchObject({ kind: 'cover', employeeId: 'vr', crew: 'A', start: '2026-10-19', coversEmployeeId: 'd-ctl-a' });
+    // the shutdown moved two days earlier and the days were not planned again: blocked until they are
+    const moved = { ...inp.plan, start: '2026-10-18', end: '2026-11-18' };
+    const stale = checkPlan({ ...inp, plan: moved, members: inp.members.map((m) => ({ ...m, start: moved.start, end: moved.end })) });
+    expect(stale.issues.filter((i) => i.code === 'days_stale').length).toBe(inp.members.length);
     // recorded as his rest day: no longer worked out, still checked against his crew
     const recorded = checkPlan({ ...inp, members: inp.members.map((m) => (m.id === 'd-ctl-a' ? { ...m, restDays: ['2026-10-19'] } : m)) });
     expect(recorded.transitions.find((t) => t.employeeId === 'd-ctl-a')!.joinOff).toEqual([]);

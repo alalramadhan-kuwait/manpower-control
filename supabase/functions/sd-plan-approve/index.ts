@@ -853,23 +853,63 @@ var awayOn = (absences) => (employeeId, date) => absences.some((a) => a.employee
 function restDayShortage(inp, person, m, date) {
   const crew = effectiveCrew(person, null, date);
   if (!crew) return null;
+  const rules = inp.crewRules ?? FULL_OPERATION;
   const isCtl = ["controller", "vr_controller", "morning_controller"].includes(person.role ?? "");
   const restId = `sd-rest-${m.id}-${date}`;
-  const assignments = isCtl && !inp.assignments.some((a) => a.id === restId) ? [...inp.assignments, { id: restId, kind: "sd_team", employeeId: person.id, crew: null, start: date, end: date, works: () => false, rest: true }] : inp.assignments;
+  const base = inp.assignments.filter((a) => a.id !== restId);
+  const assignments = isCtl ? [...base, { id: restId, kind: "sd_team", employeeId: person.id, crew: null, start: date, end: date, works: () => false, rest: true }] : base;
   const people = isCtl ? inp.people : inp.people.map((x) => x.id === person.id && !(x.moves ?? []).some((v) => v.crew === SD_TEAM && v.start <= date && (v.end === null || date <= v.end)) ? { ...x, moves: [...x.moves ?? [], { start: date, end: date, crew: SD_TEAM, kind: "sd" }] } : x);
-  const day = evaluateDay(date, people, inp.absences, inp.crewRules ?? FULL_OPERATION, assignments).crews.find((c) => c.crew === crew);
+  const posOf = (c) => isCtl ? c.controller : person.role === "panel_operator" ? c.panel : c.field;
+  const day = evaluateDay(date, people, inp.absences, rules, assignments).crews.find((c) => c.crew === crew);
   if (!day || !day.working) return null;
-  const pos = isCtl ? day.controller : person.role === "panel_operator" ? day.panel : day.field;
+  const pos = posOf(day);
   if (pos.count >= pos.min) return null;
-  const before = evaluateDay(date, inp.people, inp.absences, inp.crewRules ?? FULL_OPERATION, inp.assignments.filter((a) => a.id !== restId)).crews.find((c) => c.crew === crew);
-  const was = before ? isCtl ? before.controller : person.role === "panel_operator" ? before.panel : before.field : null;
-  if (!was || was.count < was.min) return null;
+  const before = evaluateDay(date, inp.people, inp.absences, rules, base).crews.find((c) => c.crew === crew);
+  if (!before || posOf(before).count < posOf(before).min) return null;
   const head = `${crew} Shift ${pos.label} ${pos.count} of ${pos.min} that day.`;
-  if (!isCtl) return `${head} Record a cover for the shift before the rest day is given.`;
-  const result = evaluateDay(date, people, inp.absences, inp.crewRules ?? FULL_OPERATION, assignments);
-  const onTeam = new Set(assignments.filter((a) => a.kind === "sd_team" && a.start <= date && date <= a.end).map((a) => a.employeeId));
-  const spare = result.crews.flatMap((c) => !c.working || c.controller.count > c.controller.min ? c.controller.counted.filter((p) => p.crew === c.crew && (p.grade ?? 0) >= CONTROLLER_GRADE && !onTeam.has(p.id)).map((p) => `${p.name} (${p.role === "vr_controller" ? "VR, " : ""}${c.crew} Shift ${c.working ? "has a spare Controller" : "off"})`) : []);
-  return `${head} Record a cover in Controller Management${spare.length ? `: e.g. ${[...new Set(spare)].slice(0, 3).join("; ")} — check his rest` : ""}, or an Acting Controller from the crew.`;
+  if (!isCtl) return { text: `${head} Record a cover for the shift before the rest day is given.` };
+  const fix = proposeCover(inp, people, assignments, person, crew, date);
+  return { text: fix ? `${head} Proposed cover: ${fix.name} on ${crew} Shift ${fmtDay(fix.start)}${fix.end > fix.start ? ` – ${fmtDay(fix.end)} (${fmtDay(fix.end)} is ${crew}'s rest day: his rest after the shift)` : ""}${fix.overtime ? " — on his own rest day (overtime)" : ", instead of his own shift (no overtime)"}; rest and his own crew checked.` : `${head} No Controller can cover it without breaking a rest rule or leaving his own crew short: record a cover or an Acting Controller from the crew in Controller Management.`, fix: fix ?? void 0 };
+}
+function proposeCover(inp, people, assignments, rester, crew, date) {
+  const rules = inp.crewRules ?? FULL_OPERATION;
+  const busy = (id, a, b) => inp.members.some((x) => x.employeeId === id) || assignments.some((x) => x.employeeId === id && (x.kind === "sd_team" ? x.start <= addDaysIso(b, 14) && addDaysIso(a, -14) <= x.end : x.start <= b && a <= x.end));
+  const onLeave = (id, a, b) => inp.absences.some((x) => x.employeeId === id && ["approved", "planned", "unresolved"].includes(x.status) && x.inCurrentPlan !== false && x.start <= b && a <= x.end);
+  const hardIn = (ls, a, b) => checkSchedule(ls, inp.rules).filter((f) => f.severity === "hard_stop" && f.date !== void 0 && f.date >= a && f.date <= b).length;
+  const out = [];
+  for (const c of people) {
+    if (c.id === rester.id || !["controller", "vr_controller"].includes(c.role ?? "") || (c.grade ?? 0) < CONTROLLER_GRADE) continue;
+    const next = addDaysIso(date, 1);
+    const ranges = [[date, date]];
+    if (stateOf(dutyFor(next, crew)) === "Off") ranges.push([date, next]);
+    for (const [a, b] of ranges) {
+      if (busy(c.id, a, b) || onLeave(c.id, a, b)) continue;
+      const cover = { id: `prop-${c.id}`, kind: "shift_cover", employeeId: c.id, crew, start: a, end: b, coversEmployeeId: rester.id };
+      const with2 = [...assignments, cover];
+      const target = evaluateDay(date, people, inp.absences, rules, with2).crews.find((x) => x.crew === crew);
+      if (!target || target.controller.count < target.controller.min) continue;
+      let ownOk = true, overtime = false;
+      for (let d = a; d <= b; d = addDaysIso(d, 1)) {
+        const own = personOn(c, d).crew;
+        if (own && own !== crew) {
+          const r = evaluateDay(d, people, inp.absences, rules, with2).crews.find((x) => x.crew === own);
+          if (r && r.working && r.controller.count < r.controller.min) ownOk = false;
+          if (d === date && r && !r.working) overtime = true;
+        } else if (d === date && !own) overtime = false;
+      }
+      if (!ownOk) continue;
+      const from = addDaysIso(a, -8), to = addDaysIso(b, 8);
+      const ctx = { absences: inp.absences, assignments: with2, sdDuty: inp.otherSdDuty, times: shiftTimesOf(inp.rules) };
+      const was = hardIn(personDays(c, from, to, { ...ctx, assignments }), addDaysIso(a, -1), addDaysIso(b, 3));
+      if (hardIn(personDays(c, from, to, ctx), addDaysIso(a, -1), addDaysIso(b, 3)) > was) continue;
+      out.push({ kind: "cover", employeeId: c.id, name: c.name, crew, start: a, end: b, coversEmployeeId: rester.id, overtime, rank: (overtime ? 10 : 0) + (c.role === "vr_controller" ? 0 : 1) + (b > a ? 0 : 0.5) });
+      break;
+    }
+  }
+  out.sort((x, y) => x.rank - y.rank || x.name.localeCompare(y.name));
+  if (!out.length) return null;
+  const { rank: _r, ...fix } = out[0];
+  return fix;
 }
 function checkPlan(inp) {
   const { plan: p, teams, members, info } = inp;
@@ -891,6 +931,20 @@ function checkPlan(inp) {
     if (m.slot === "senior" && !cap.senior || m.slot === "good" && !cap.good) issues.push({ level: "warn", code: "level", message: `${name(m.employeeId)}: in the ${m.slot === "senior" ? "Senior" : "Good"} FO place but classified ${i?.foLevel ?? "without a level"}: ${cap.good ? "counts as a Good FO only" : "not counted for the minimum"}.`, employeeId: m.employeeId });
     if (m.slot === "new" && (i?.foLevel === "good" || i?.foLevel === "senior")) issues.push({ level: "warn", code: "new_place_level", message: `${name(m.employeeId)}: in the New FO place but classified ${i.foLevel === "senior" ? "Experienced" : "Good"}: works as a trainee and does not count for the minimum. Move him to a ${i.foLevel === "senior" ? "Senior" : "Good"} FO place if he should.`, employeeId: m.employeeId });
     if (m.slot === "member") issues.push({ level: "info", code: "unclassified", message: `${name(m.employeeId)}: Operator without a level, not counted as a Senior or Good FO.`, employeeId: m.employeeId });
+  }
+  if (isV2(p) && p.kind !== "total") for (const m of members) {
+    const saved = Object.keys(m.days ?? {});
+    if (!saved.length) continue;
+    const dates = planDates(p).filter((d) => d >= m.start && d <= m.end);
+    const missing = dates.filter((d) => !m.days[d]);
+    const outside = saved.filter((d) => (d < m.start || d > m.end) && m.days[d].works).sort();
+    if (missing.length || outside.length) issues.push({
+      level: "block",
+      code: "days_stale",
+      employeeId: m.employeeId,
+      date: missing[0] ?? outside[0],
+      message: `${name(m.employeeId)}: the days were planned for other dates (${missing.length ? `${missing.length} day${missing.length === 1 ? "" : "s"} of ${fmtDay(m.start)} – ${fmtDay(m.end)} not planned` : ""}${missing.length && outside.length ? "; " : ""}${outside.length ? `${outside.length} duty day${outside.length === 1 ? "" : "s"} outside them` : ""}). Plan the days again (Set days & hours).`
+    });
   }
   const gaps = coverageGaps(p, teams, members, info, away, inp.phases ?? []);
   const byGap = /* @__PURE__ */ new Map();
@@ -928,7 +982,7 @@ function checkPlan(inp) {
     for (const f of tr.findings) issues.push({ level: "block", code: f.rule, date: f.date, employeeId: m.employeeId, message: `${name(m.employeeId)}: ${f.message}` });
     const restCheck = (d, label, ok) => {
       const short = restDayShortage(inp, person, m, d);
-      issues.push(short ? { level: "block", code: "rest_cover", employeeId: m.employeeId, date: d, message: `${name(m.employeeId)}: off ${fmtDay(d)} ${label} — ${short}` } : { level: "info", code: ok, employeeId: m.employeeId, date: d, message: `${name(m.employeeId)}: off ${fmtDay(d)} ${label}; his crew keeps its minimum.` });
+      issues.push(short ? { level: "block", code: "rest_cover", employeeId: m.employeeId, date: d, message: `${name(m.employeeId)}: off ${fmtDay(d)} ${label} — ${short.text}`, fix: short.fix } : { level: "info", code: ok, employeeId: m.employeeId, date: d, message: `${name(m.employeeId)}: off ${fmtDay(d)} ${label}; his crew keeps its minimum.` });
     };
     for (const d of tr.joinOff) restCheck(d, "before joining (rest rules)", "join_off");
     for (const d of tr.returnOff) restCheck(d, `before rejoining his crew${tr.returnOn ? ` on ${fmtDay(tr.returnOn)}` : ""} (rest rules)`, "return_off");

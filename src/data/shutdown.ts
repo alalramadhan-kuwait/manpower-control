@@ -245,6 +245,16 @@ export async function setSdDaysMany(rows: { memberId: string; date: string; work
   dataChanged();
 }
 
+/** The member's planned days outside his team dates (left over when the shutdown or the member moved) are removed. */
+export async function pruneSdDays(memberId: string, start: string, end: string) {
+  const { data, error } = await supabase.from('sd_days').select('work_date').eq('member_id', memberId);
+  if (error) throw error;
+  const outside = (data as { work_date: string }[]).map((r) => r.work_date).filter((d) => d < start || d > end);
+  if (!outside.length) return;
+  const del = await supabase.from('sd_days').delete().eq('member_id', memberId).in('work_date', outside);
+  if (del.error) throw del.error;
+}
+
 /** Back to the plan pattern: forget the member's own days. */
 export async function clearSdDays(memberId: string) {
   const { error } = await supabase.from('sd_days').delete().eq('member_id', memberId);

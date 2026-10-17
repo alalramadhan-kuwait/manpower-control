@@ -4,10 +4,10 @@
 // Kept apart on purpose: candidate eligibility, team composition, actual 12-hour coverage (by the clock), the duty and
 // rest checks (including joining and returning), overtime accounting, and the plan check that puts them together.
 // Priority: continuous qualified coverage → leave and roster feasibility → hard limits → fairness and New FO development.
-import { addDaysIso, type Crew } from '../roster';
+import { addDaysIso, dutyFor, stateOf as rosterState, type Crew } from '../roster';
 import { evaluateDay, personOn, FULL_OPERATION, SD_TEAM, type MpAbsence, type MpAssignment, type MpPerson, type RulesSource } from '../manpower';
 import { checkSchedule, kuwaitMs, personDays, shiftTimesOf, type DayLine, type Finding, type RuleConfig, type SdDutyOf } from '../validation';
-import { areasOf, groupOf, hoursOn, isDutyDay, isRampDay, memberHoursOn, memberWorks, phaseOn, planDates, type FoLevel, type SdMember, type SdPhase, type SdPlan, type SdTeam } from './index';
+import { areasOf, groupOf, hoursOn, isDutyDay, isRampDay, memberHoursOn, memberWorks, phaseOn, planDates, type FoLevel, type SdDay, type SdMember, type SdPhase, type SdPlan, type SdTeam } from './index';
 import { cycleOvertime, type OtBasis, type OtResult, type WorkedDuty } from './overtime';
 
 export const SD_RULES_V2 = 2;
@@ -333,7 +333,9 @@ export function restDayPairs(p: SdPlan, m: SdMember, person: MpPerson | undefine
 
 // ── The plan check ────────────────────────────────────────────────────────────────────────────────────────────────
 export type IssueLevel = 'block' | 'verify' | 'warn' | 'info';
-export interface Issue { level: IssueLevel; code: string; message: string; employeeId?: string; teamId?: string; date?: string }
+/** A Controller cover the check proposes for a crew left short (recorded in Controller Management with one tap). */
+export interface CoverFix { kind: 'cover'; employeeId: string; name: string; crew: Crew; start: string; end: string; coversEmployeeId: string; overtime: boolean }
+export interface Issue { level: IssueLevel; code: string; message: string; employeeId?: string; teamId?: string; date?: string; fix?: CoverFix }
 export interface PlanCheckInput {
   plan: SdPlan; teams: SdTeam[]; members: SdMember[];
   people: MpPerson[]; absences: MpAbsence[]; assignments: MpAssignment[]; rules: RuleConfig[];
@@ -365,32 +367,79 @@ export const awayOn = (absences: MpAbsence[]) => (employeeId: string, date: stri
  * A member's recorded rest day off his crew: does his crew still meet its minimum for his position that day (with the
  * covers recorded in Controller Management)? Returns what is short and who could cover it, or null when it is met.
  */
-export function restDayShortage(inp: PlanCheckInput, person: MpPerson, m: SdMember, date: string): string | null {
+export function restDayShortage(inp: PlanCheckInput, person: MpPerson, m: SdMember, date: string): { text: string; fix?: CoverFix } | null {
   const crew = effectiveCrew(person, null, date);
   if (!crew) return null;
+  const rules = inp.crewRules ?? FULL_OPERATION;
   const isCtl = ['controller', 'vr_controller', 'morning_controller'].includes(person.role ?? '');
   // the rest day takes him off his crew (as the data layer records it), whether or not the inputs carry it already
   const restId = `sd-rest-${m.id}-${date}`;
-  const assignments = isCtl && !inp.assignments.some((a) => a.id === restId)
-    ? [...inp.assignments, { id: restId, kind: 'sd_team' as const, employeeId: person.id, crew: null, start: date, end: date, works: () => false, rest: true }] : inp.assignments;
+  const base = inp.assignments.filter((a) => a.id !== restId);
+  const assignments = isCtl ? [...base, { id: restId, kind: 'sd_team' as const, employeeId: person.id, crew: null, start: date, end: date, works: () => false, rest: true }] : base;
   const people = isCtl ? inp.people : inp.people.map((x) => (x.id === person.id && !(x.moves ?? []).some((v) => v.crew === SD_TEAM && v.start <= date && (v.end === null || date <= v.end))
     ? { ...x, moves: [...(x.moves ?? []), { start: date, end: date, crew: SD_TEAM, kind: 'sd' as const }] } : x));
-  const day = evaluateDay(date, people, inp.absences, inp.crewRules ?? FULL_OPERATION, assignments).crews.find((c) => c.crew === crew);
+  const posOf = (c: ReturnType<typeof evaluateDay>['crews'][number]) => (isCtl ? c.controller : person.role === 'panel_operator' ? c.panel : c.field);
+  const day = evaluateDay(date, people, inp.absences, rules, assignments).crews.find((c) => c.crew === crew);
   if (!day || !day.working) return null;
-  const pos = isCtl ? day.controller : person.role === 'panel_operator' ? day.panel : day.field;
+  const pos = posOf(day);
   if (pos.count >= pos.min) return null;
   // only a shortage the rest day itself causes (a crew already short without it is the crew's own manpower finding)
-  const before = evaluateDay(date, inp.people, inp.absences, inp.crewRules ?? FULL_OPERATION, inp.assignments.filter((a) => a.id !== restId)).crews.find((c) => c.crew === crew);
-  const was = before ? (isCtl ? before.controller : person.role === 'panel_operator' ? before.panel : before.field) : null;
-  if (!was || was.count < was.min) return null;
+  const before = evaluateDay(date, inp.people, inp.absences, rules, base).crews.find((c) => c.crew === crew);
+  if (!before || posOf(before).count < posOf(before).min) return null;
   const head = `${crew} Shift ${pos.label} ${pos.count} of ${pos.min} that day.`;
-  if (!isCtl) return `${head} Record a cover for the shift before the rest day is given.`;
-  // who could cover: a Controller (Grade 15+) not on a shutdown team whose own crew keeps a spare Controller that day
-  const result = evaluateDay(date, people, inp.absences, inp.crewRules ?? FULL_OPERATION, assignments);
-  const onTeam = new Set(assignments.filter((a) => a.kind === 'sd_team' && a.start <= date && date <= a.end).map((a) => a.employeeId));
-  const spare = result.crews.flatMap((c) => (!c.working || c.controller.count > c.controller.min
-    ? c.controller.counted.filter((p) => p.crew === c.crew && (p.grade ?? 0) >= CONTROLLER_GRADE && !onTeam.has(p.id)).map((p) => `${p.name} (${p.role === 'vr_controller' ? 'VR, ' : ''}${c.crew} Shift ${c.working ? 'has a spare Controller' : 'off'})`) : []));
-  return `${head} Record a cover in Controller Management${spare.length ? `: e.g. ${[...new Set(spare)].slice(0, 3).join('; ')} — check his rest` : ''}, or an Acting Controller from the crew.`;
+  if (!isCtl) return { text: `${head} Record a cover for the shift before the rest day is given.` };
+  const fix = proposeCover(inp, people, assignments, person, crew, date);
+  return { text: fix ? `${head} Proposed cover: ${fix.name} on ${crew} Shift ${fmtDay(fix.start)}${fix.end > fix.start ? ` – ${fmtDay(fix.end)} (${fmtDay(fix.end)} is ${crew}'s rest day: his rest after the shift)` : ''}${fix.overtime ? ' — on his own rest day (overtime)' : ', instead of his own shift (no overtime)'}; rest and his own crew checked.`
+    : `${head} No Controller can cover it without breaking a rest rule or leaving his own crew short: record a cover or an Acting Controller from the crew in Controller Management.`, fix: fix ?? undefined };
+}
+
+/**
+ * A Controller (Grade 15+, not on a shutdown team, no leave, no other assignment) to cover `crew` on `date`: his own
+ * crew keeps its minimum, and no hard rest rule breaks for him (a night cover takes the next day too when it is the
+ * crew's rest day, his rest). Without overtime first (his own crew working that day: he moves, no extra duty), VR first.
+ */
+function proposeCover(inp: PlanCheckInput, people: MpPerson[], assignments: MpAssignment[], rester: MpPerson, crew: Crew, date: string): CoverFix | null {
+  const rules = inp.crewRules ?? FULL_OPERATION;
+  // nobody on this shutdown, nor on a team within two weeks (his own joining or return rest would change)
+  const busy = (id: string, a: string, b: string) => inp.members.some((x) => x.employeeId === id)
+    || assignments.some((x) => x.employeeId === id && (x.kind === 'sd_team' ? x.start <= addDaysIso(b, 14) && addDaysIso(a, -14) <= x.end : x.start <= b && a <= x.end));
+  const onLeave = (id: string, a: string, b: string) => inp.absences.some((x) => x.employeeId === id && ['approved', 'planned', 'unresolved'].includes(x.status) && x.inCurrentPlan !== false && x.start <= b && a <= x.end);
+  const hardIn = (ls: DayLine[], a: string, b: string) => checkSchedule(ls, inp.rules).filter((f) => f.severity === 'hard_stop' && f.date !== undefined && f.date >= a && f.date <= b).length;
+  const out: (CoverFix & { rank: number })[] = [];
+  for (const c of people) {
+    if (c.id === rester.id || !['controller', 'vr_controller'].includes(c.role ?? '') || (c.grade ?? 0) < CONTROLLER_GRADE) continue;
+    const next = addDaysIso(date, 1);
+    const ranges: [string, string][] = [[date, date]];
+    if (rosterState(dutyFor(next, crew)) === 'Off') ranges.push([date, next]);
+    for (const [a, b] of ranges) {
+      if (busy(c.id, a, b) || onLeave(c.id, a, b)) continue;
+      const cover: MpAssignment = { id: `prop-${c.id}`, kind: 'shift_cover', employeeId: c.id, crew, start: a, end: b, coversEmployeeId: rester.id };
+      const with2 = [...assignments, cover];
+      const target = evaluateDay(date, people, inp.absences, rules, with2).crews.find((x) => x.crew === crew);
+      if (!target || target.controller.count < target.controller.min) continue;
+      // his own crew (or placement) keeps its Controller on every day of the cover
+      let ownOk = true, overtime = false;
+      for (let d = a; d <= b; d = addDaysIso(d, 1)) {
+        const own = personOn(c, d).crew;
+        if (own && own !== crew) {
+          const r = evaluateDay(d, people, inp.absences, rules, with2).crews.find((x) => x.crew === own);
+          if (r && r.working && r.controller.count < r.controller.min) ownOk = false;
+          if (d === date && r && !r.working) overtime = true;
+        } else if (d === date && !own) overtime = false;
+      }
+      if (!ownOk) continue;
+      const from = addDaysIso(a, -8), to = addDaysIso(b, 8);
+      const ctx = { absences: inp.absences, assignments: with2, sdDuty: inp.otherSdDuty, times: shiftTimesOf(inp.rules) };
+      const was = hardIn(personDays(c, from, to, { ...ctx, assignments }), addDaysIso(a, -1), addDaysIso(b, 3));
+      if (hardIn(personDays(c, from, to, ctx), addDaysIso(a, -1), addDaysIso(b, 3)) > was) continue;
+      out.push({ kind: 'cover', employeeId: c.id, name: c.name, crew, start: a, end: b, coversEmployeeId: rester.id, overtime, rank: (overtime ? 10 : 0) + (c.role === 'vr_controller' ? 0 : 1) + (b > a ? 0 : 0.5) });
+      break;
+    }
+  }
+  out.sort((x, y) => x.rank - y.rank || x.name.localeCompare(y.name));
+  if (!out.length) return null;
+  const { rank: _r, ...fix } = out[0];
+  return fix;
 }
 
 export function checkPlan(inp: PlanCheckInput): PlanCheck {
@@ -415,6 +464,18 @@ export function checkPlan(inp: PlanCheckInput): PlanCheck {
     if ((m.slot === 'senior' && !cap.senior) || (m.slot === 'good' && !cap.good)) issues.push({ level: 'warn', code: 'level', message: `${name(m.employeeId)}: in the ${m.slot === 'senior' ? 'Senior' : 'Good'} FO place but classified ${i?.foLevel ?? 'without a level'}: ${cap.good ? 'counts as a Good FO only' : 'not counted for the minimum'}.`, employeeId: m.employeeId });
     if (m.slot === 'new' && (i?.foLevel === 'good' || i?.foLevel === 'senior')) issues.push({ level: 'warn', code: 'new_place_level', message: `${name(m.employeeId)}: in the New FO place but classified ${i.foLevel === 'senior' ? 'Experienced' : 'Good'}: works as a trainee and does not count for the minimum. Move him to a ${i.foLevel === 'senior' ? 'Senior' : 'Good'} FO place if he should.`, employeeId: m.employeeId });
     if (m.slot === 'member') issues.push({ level: 'info', code: 'unclassified', message: `${name(m.employeeId)}: Operator without a level, not counted as a Senior or Good FO.`, employeeId: m.employeeId });
+  }
+
+  // the planned days must match the team dates (the shutdown or a member moved): a date without a planned day would fall
+  // back to the bare pattern, a planned day outside the dates is left over from the old dates
+  if (isV2(p) && p.kind !== 'total') for (const m of members) {
+    const saved = Object.keys(m.days ?? {});
+    if (!saved.length) continue;
+    const dates = planDates(p).filter((d) => d >= m.start && d <= m.end);
+    const missing = dates.filter((d) => !m.days![d]);
+    const outside = saved.filter((d) => (d < m.start || d > m.end) && m.days![d].works).sort();
+    if (missing.length || outside.length) issues.push({ level: 'block', code: 'days_stale', employeeId: m.employeeId, date: missing[0] ?? outside[0],
+      message: `${name(m.employeeId)}: the days were planned for other dates (${missing.length ? `${missing.length} day${missing.length === 1 ? '' : 's'} of ${fmtDay(m.start)} – ${fmtDay(m.end)} not planned` : ''}${missing.length && outside.length ? '; ' : ''}${outside.length ? `${outside.length} duty day${outside.length === 1 ? '' : 's'} outside them` : ''}). Plan the days again (Set days & hours).` });
   }
 
   // continuous 12-hour coverage
@@ -452,7 +513,7 @@ export function checkPlan(inp: PlanCheckInput): PlanCheck {
     // cover recorded in Controller Management when it does not; never left as a note
     const restCheck = (d: string, label: string, ok: string) => {
       const short = restDayShortage(inp, person, m, d);
-      issues.push(short ? { level: 'block', code: 'rest_cover', employeeId: m.employeeId, date: d, message: `${name(m.employeeId)}: off ${fmtDay(d)} ${label} — ${short}` }
+      issues.push(short ? { level: 'block', code: 'rest_cover', employeeId: m.employeeId, date: d, message: `${name(m.employeeId)}: off ${fmtDay(d)} ${label} — ${short.text}`, fix: short.fix }
         : { level: 'info', code: ok, employeeId: m.employeeId, date: d, message: `${name(m.employeeId)}: off ${fmtDay(d)} ${label}; his crew keeps its minimum.` });
     };
     for (const d of tr.joinOff) restCheck(d, 'before joining (rest rules)', 'join_off');
@@ -536,7 +597,7 @@ export const isReducedDay = (p: SdPlan, date: string) => isRampDay(p, date);
  * days to take off and broken rest rules, from `transitions`), and overtime already counted in each month (Oracle month
  * to date and other shutdowns after it).
  */
-export function plannerContext(inp: PlanCheckInput): { levelOf: (employeeId: string) => FoLevel | null; away: (employeeId: string, date: string) => boolean; crewOf: (employeeId: string) => Crew | null; crewOn: (employeeId: string, date: string) => Crew | null; transitionCost: (m: SdMember, days: Record<string, boolean>) => number; monthTaken: (employeeId: string, ym: string) => number } {
+export function plannerContext(inp: PlanCheckInput): { levelOf: (employeeId: string) => FoLevel | null; away: (employeeId: string, date: string) => boolean; crewOf: (employeeId: string) => Crew | null; crewOn: (employeeId: string, date: string) => Crew | null; transitionCost: (m: SdMember, days: Record<string, boolean>) => number; monthTaken: (employeeId: string, ym: string) => number; restDaysFor: (m: SdMember, days: Record<string, SdDay>) => string[] } {
   const p = inp.plan;
   const people = new Map(inp.people.map((x) => [x.id, x]));
   const teamOf = new Map(inp.teams.map((t) => [t.id, t]));
@@ -557,6 +618,24 @@ export function plannerContext(inp: PlanCheckInput): { levelOf: (employeeId: str
       };
       const tr = transitions(person, temp, own, inp.absences, inp.assignments, inp.rules);
       return tr.joinOff.length + tr.returnOff.length + 1000 * tr.findings.length;   // a rest finding always outweighs overtime
+    },
+    // the rest days off his crew that the planned days need (worked out afresh: earlier recorded ones may be for old dates)
+    restDaysFor: (m, days) => {
+      const person = people.get(m.employeeId); const t = teamOf.get(m.teamId);
+      if (!person || !t) return [];
+      const temp: SdMember = { ...m, days, restDays: [] };
+      const others = inp.members.filter((x) => x.employeeId === m.employeeId && x.id !== m.id);
+      const own = (employeeId: string, date: string) => {
+        if (employeeId !== m.employeeId) return inp.otherSdDuty?.(employeeId, date) ?? null;
+        const d = memberDuty(p, t, temp, date);
+        if (d) return { code: t.shiftCode === 'N' ? 'SD-N' as const : 'SD-D' as const, start: teamStart(t), hours: d.hours };
+        for (const o of others) { const ot = teamOf.get(o.teamId); const od = ot ? memberDuty(p, ot, o, date) : null; if (od) return { code: ot!.shiftCode === 'N' ? 'SD-N' as const : 'SD-D' as const, start: teamStart(ot!), hours: od.hours }; }
+        return inp.otherSdDuty?.(employeeId, date) ?? null;
+      };
+      // his recorded rest days are not in the inputs' assignments for this calculation
+      const assignments = inp.assignments.filter((a) => !(a.rest && a.employeeId === m.employeeId));
+      const tr = transitions(person, temp, own, inp.absences, assignments, inp.rules);
+      return [...tr.joinOff, ...tr.returnOff].sort();
     },
     monthTaken: (e, ym) => {
       const entry = inp.otEntries.get(e) ?? null;

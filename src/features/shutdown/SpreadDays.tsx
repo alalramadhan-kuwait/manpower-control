@@ -4,7 +4,7 @@ import type { Crew } from '@/core/roster';
 import { defaultMaxRun, spreadPlan, yearCap, MAX_WEEK_HOURS } from '@/core/shutdown/spread';
 import type { plannerContext } from '@/core/shutdown/v2';
 import { slotLabel, type SdMember, type SdPhase, type SdPlan, type SdTeam } from '@/core/shutdown';
-import { setSdDaysMany } from '@/data/shutdown';
+import { pruneSdDays, setSdDaysMany, updateSdMember } from '@/data/shutdown';
 import { BottomSheet, Button, ErrorBox, Spinner, cx } from '@/ui/components';
 import { Link } from 'react-router-dom';
 import { CrewBadge } from '@/ui/crew';
@@ -66,7 +66,20 @@ function SpreadDaysBody({ plan, teams, members, phases, names, crewOf, conflicts
     try {
       const rows = chosen.flatMap((r) => [...r.days].flatMap(([memberId, days]) => Object.entries(days).map(([date, works]) => ({ memberId, date, works, hours: r.hours.get(memberId)?.[date] ?? null }))));
       await setSdDaysMany(rows);
-      onDone(`${train ? 'Days and hours balanced' : 'Days off spread'} for ${people} ${people === 1 ? 'person' : 'people'}: overtime ${sum((r) => r.before.overtime)} h → ${sum((r) => r.after.overtime)} h.`);
+      // left-over days from earlier dates go, and the rest days off the crew the new days need are recorded (rules v2):
+      // the plan check then verifies each crew keeps its minimum on them and proposes the cover
+      const planned = new Set(chosen.flatMap((r) => [...r.days.keys()]));
+      let rest = 0;
+      for (const m of members.filter((x) => planned.has(x.id))) {
+        await pruneSdDays(m.id, m.start, m.end);
+        if (!v2 || !planner || !train) continue;
+        const r = chosen.find((g) => g.days.has(m.id))!;
+        const days = Object.fromEntries(Object.entries(r.days.get(m.id)!).map(([d, w]) => [d, { works: w, hours: w ? r.hours.get(m.id)?.[d] ?? null : null }]));
+        const need = planner.restDaysFor(m, days);
+        if (need.join(',') !== [...(m.restDays ?? [])].sort().join(',')) await updateSdMember(m.id, { rest_days: need });
+        rest += need.length;
+      }
+      onDone(`${train ? 'Days and hours balanced' : 'Days off spread'} for ${people} ${people === 1 ? 'person' : 'people'}: overtime ${sum((r) => r.before.overtime)} h → ${sum((r) => r.after.overtime)} h.${rest ? ` ${rest} rest day${rest === 1 ? '' : 's'} off the crew recorded around the shutdown: see the plan check for each crew's cover.` : ''}`);
     } catch (e) { setErr(e); setBusy(false); }
   }
   return (
