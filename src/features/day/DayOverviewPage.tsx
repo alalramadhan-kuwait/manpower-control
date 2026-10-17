@@ -21,6 +21,7 @@ import { OracleDot } from '@/ui/oracle';
 import { coverageNeeds, type CoverageNeed } from '@/core/controllers';
 import { CREWS } from '@/core/roster';
 import { ShutdownToday } from './ShutdownToday';
+import { useLiveRefresh } from '@/data/live';
 
 const weekday = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long' });
 
@@ -70,6 +71,15 @@ export default function DayOverviewPage() {
     setError(null);
     fetchManpowerInputs(from, to).then((r) => setInputs({ ...r, from, to })).catch(setError);
   }, [date, inputs]);
+
+  // a change made elsewhere shows without leaving the page: the same window is read again, quietly
+  const [tick, setTick] = useState(0);
+  useLiveRefresh(() => setTick((n) => n + 1));
+  useEffect(() => {
+    if (!tick || !inputs) return;
+    const { from, to } = inputs;
+    fetchManpowerInputs(from, to).then((r) => setInputs({ ...r, from, to })).catch(() => {});
+  }, [tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const result = useMemo(() => (inputs ? evaluateDay(date, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments) : null), [date, inputs]);
   const period = useMemo(() => (inputs ? periodOn(date, inputs.plan) : null), [date, inputs]);
@@ -125,7 +135,7 @@ export default function DayOverviewPage() {
           {moved && <p role="status" className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-700">{t('That page has moved. Everything is now under Today, Calendar, Requests, Employees and More.')}</p>}
           <OverallBanner result={result} />
           <TodaySummary result={result} date={date} today={today} />
-          {inputs && <ShutdownToday date={date} people={inputs.people} leave={leave} />}
+          {inputs && <ShutdownToday date={date} people={inputs.people} leave={leave} tick={tick} />}
           {tcPending > 0 && (
             <Link to="/data-quality?tab=take-charge" className="mb-3 flex items-start gap-2 rounded-xl bg-slate-50 p-3 text-xs text-slate-700 ring-1 ring-slate-300">
               <Info className="mt-0.5 h-4 w-4 shrink-0" />

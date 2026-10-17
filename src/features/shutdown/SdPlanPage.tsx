@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, Check, Copy, FileSpreadsheet, FileText, Pencil, Plus, RotateCcw, Shuffle, Trash2, UserMinus } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronUp, Copy, FileSpreadsheet, FileText, Pencil, Plus, RotateCcw, Shuffle, Trash2, UserMinus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { COVER_GRADE } from '@/core/controllers';
@@ -23,6 +23,8 @@ import { adjacent, coverageGaps, eligibility, isV2, memberOtDetail, plannerConte
 import { fetchApproval, fetchExceptions, fetchOtEntries, fetchSickEntries, loadPlanCheckInput, personInfo, runPlanCheck, type ApprovalState } from '@/data/sdCheck';
 import { EligibilityBadge, ExceptionsBox, FiguresSheet, ReadinessPanel } from './SdV2';
 import { localToday } from '@/ui/leave';
+import { useLiveRefresh } from '@/data/live';
+import { NextSteps, planSteps } from './SdSteps';
 
 const CONTROLLER_ROLES = ['controller', 'vr_controller', 'morning_controller'];
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
@@ -77,6 +79,10 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
   const [check, setCheck] = useState<PlanCheck | null>(null);
   const [approval, setApproval] = useState<ApprovalState | null>(null);
   const [checkErr, setCheckErr] = useState<unknown>(null);
+  const [checking, setChecking] = useState(false);
+  const [reloading, setReloading] = useState(false);
+  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
+  const [tools, setTools] = useState(false);
   // rules v2: the planner works on the same data as the plan check (loaded when the planner is opened)
   const [planner, setPlanner] = useState<ReturnType<typeof plannerContext> | null>(null);
   useEffect(() => {
@@ -101,13 +107,19 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
         const [ot, sk, ex] = await Promise.all([fetchOtEntries(emp), fetchSickEntries(emp), fetchExceptions(sd.plan.id)]);
         v2 = { ot, sick: sk, exceptions: ex, plans: plans.map((p) => ({ plan: p, employeeIds: new Set(all.filter((m) => m.planId === p.id).map((m) => m.employeeId)) })) };
         // the plan check runs on the database's data, exactly as the server runs it before approving
-        setCheck(null); setCheckErr(null);
-        Promise.all([runPlanCheck(sd.plan.id, localToday()), fetchApproval(sd.plan.id)]).then(([c, a]) => { setCheck(c); setApproval(a); }).catch(setCheckErr);
+        // the last result stays on screen while the plan is checked again (no blank page after each change)
+        setChecking(true); setCheckErr(null);
+        Promise.all([runPlanCheck(sd.plan.id, localToday()), fetchApproval(sd.plan.id)]).then(([c, a]) => { setCheck(c); setApproval(a); }).catch(setCheckErr).finally(() => setChecking(false));
       }
       setData({ ...sd, inputs, dir: new Map(dir.map((r) => [r.id, r])), prev: ids(n.prev), next: ids(n.next), sick, periods: ops?.periods ?? [], otTaken, v2, isHead });
-    } catch (e) { setError(e); }
+      setLoadedAt(new Date());
+    } catch (e) { setError(e); } finally { setReloading(false); }
   }, [id, isHead]);
   useEffect(() => { load(); }, [load]);
+  // a change made elsewhere (another phone, the server) shows without leaving the page; not while a sheet is open
+  const sheetOpen = !!(adding || member || editPattern || editTeam || editPhases || spreading || yearOt || moving || figures);
+  useLiveRefresh(() => { setReloading(true); load(); }, !sheetOpen);
+  const refresh = () => { setReloading(true); load(); };
   /** Drag and drop: a name dropped on another place of a team (or the other team): same person, new team / level / area. */
   async function moveMember(memberId: string, team: SdTeam, slot: SdSlot, area?: string) {
     if (!data) return;
@@ -184,6 +196,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
     finally { setGenerating(false); }
   }
 
+  const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   function copyList() {
     const lines = [`${plan.title} · ${range(plan.start, plan.end)} ${plan.end.slice(0, 4)}`, `${plan.daysOff ? `${plan.daysOn} on / ${plan.daysOff} off` : 'Every day'} · ${plan.shiftHours} h${plan.rampDays ? ` (first and last ${plan.rampDays} days ${plan.rampHours} h)` : ''}`];
     for (const t of teams) {
@@ -212,13 +225,37 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
           <h1 className="text-xl font-semibold text-brand-800">{plan.title}</h1>
           <div className="text-sm font-medium text-slate-700">{range(plan.start, plan.end)} {plan.end.slice(0, 4)}</div>
           <button type="button" onClick={() => setEditPattern(true)} className="mt-1 flex flex-wrap items-center gap-1 text-left">
-            {[total ? 'Total turnaround' : 'Train shutdown', plan.daysOff ? (total ? `${plan.daysOn} on / ${plan.daysOff} off` : plan.cycleUntil ? `${plan.daysOn} on / ${plan.daysOff} off to ${range(plan.cycleUntil, plan.cycleUntil)}, then own crew` : 'Own crew days') : 'Every day', `${plan.shiftHours} h`, plan.rampDays ? `First & last ${plan.rampDays} days ${plan.rampHours} h${data.v2 ? ' · reduced' : ''}` : '', data.v2 ? `OT ${plan.maxOvertime}/${plan.maxOvertimeHard ?? 80} h a month · ${plan.maxOvertimeYear ?? 380}/${plan.maxOvertimeYearHard ?? 440} h a year` : `OT ≤ ${plan.maxOvertime} h`, data.v2 ? 'Rules v2' : ''].filter(Boolean).map((c) => <span key={c} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">{c}</span>)}
+            {data.v2 && !total
+              ? <span className="text-[11px] text-slate-600">{plan.daysOff ? `${plan.daysOn} on / ${plan.daysOff} off ${plan.cycleUntil && plan.cycleUntil < plan.end ? `to ${range(plan.cycleUntil, plan.cycleUntil)}, then own crew` : 'to the end'}` : 'Own crew days'} · {plan.shiftHours} h · OT {plan.maxOvertime}/{plan.maxOvertimeHard ?? 80} h a month</span>
+              : [total ? 'Total turnaround' : 'Train shutdown', plan.daysOff ? (total ? `${plan.daysOn} on / ${plan.daysOff} off` : plan.cycleUntil ? `${plan.daysOn} on / ${plan.daysOff} off to ${range(plan.cycleUntil, plan.cycleUntil)}, then own crew` : 'Own crew days') : 'Every day', `${plan.shiftHours} h`, plan.rampDays ? `First & last ${plan.rampDays} days ${plan.rampHours} h${data.v2 ? ' · reduced' : ''}` : '', data.v2 ? `OT ${plan.maxOvertime}/${plan.maxOvertimeHard ?? 80} h a month · ${plan.maxOvertimeYear ?? 380}/${plan.maxOvertimeYearHard ?? 440} h a year` : `OT ≤ ${plan.maxOvertime} h`, data.v2 ? 'Rules v2' : ''].filter(Boolean).map((c) => <span key={c} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">{c}</span>)}
             <span className="flex items-center gap-0.5 text-[11px] font-medium text-brand-700"><Pencil className="h-3 w-3" />Edit</span>
           </button>
         </div>
-        <Button variant="secondary" className="min-h-9 shrink-0 px-3 text-xs" onClick={copyList}><Copy className="h-3.5 w-3.5" />Copy list</Button>
+        {!data.v2 && <Button variant="secondary" className="min-h-9 shrink-0 px-3 text-xs" onClick={copyList}><Copy className="h-3.5 w-3.5" />Copy list</Button>}
       </div>
       {!data.v2 && plan.end >= localToday() && <CurrentRulesBanner plan={plan} />}
+      {data.v2 && !total ? (
+        <>
+          <NextSteps checking={checking || reloading} loadedAt={loadedAt} onRefresh={refresh} steps={planSteps({ members, needTotal, check, approval, isHead,
+            onTeam: () => scrollTo('sd-teams'), onDays: () => setSpreading(true), onFix: () => scrollTo('sd-readiness'), onFigures: () => setFigures(true), onApprove: () => scrollTo('sd-readiness') })} />
+          <div className="mb-3">
+            <button type="button" onClick={() => setTools((v) => !v)} aria-expanded={tools} className="flex w-full items-center justify-between rounded-lg bg-white px-3 py-2 text-sm font-medium text-slate-700 ring-1 ring-slate-200">
+              <span className="flex items-center gap-1.5"><FileText className="h-4 w-4 text-slate-500" />Documents & tools{view.overlaps.length ? <span className="rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-900">instructions {view.overlaps.reduce((n, g) => n + g.changes.length, 0)}</span> : null}</span>
+              {tools ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+            {tools && (
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <ToolButton onClick={() => setFollowing(true)} label="Shift instructions" hint="When each person joins and rejoins" />
+                <ToolButton onClick={copyList} label="Copy team list" hint="To paste in a message" />
+                <ToolButton to={`/shutdown/${plan.id}/schedule`} label="Working plan" hint="Who works which day (print)" />
+                <ToolButton to={`/shutdown/${plan.id}/overtime`} label="Overtime sheet" hint="For approval (print)" />
+                <ToolButton onClick={generate} disabled={generating} label={generating ? 'Creating…' : 'Excel file'} hint="All 4 sheets in one file" />
+                <ToolButton onClick={() => setEditPattern(true)} label="Plan settings" hint="Dates, 3 on / 1 off, hours, limits" />
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
       <div className="mb-2 space-y-2">
         <div className="grid grid-cols-2 gap-2">
           <ActionButton onClick={() => setSpreading(true)} icon={<Shuffle className="h-4 w-4" />} title={total ? 'Spread days off' : 'Set days & hours'} hint={total ? 'Choose each person\'s days off' : 'Which days each person works, and 8 h or 12 h'} />
@@ -233,6 +270,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
           <button type="button" disabled={generating} onClick={generate} className="flex min-h-12 flex-col items-center justify-center rounded-lg bg-brand-700 px-1 text-center text-white disabled:opacity-60"><span className="flex items-center gap-1 text-xs font-semibold"><FileSpreadsheet className="h-3.5 w-3.5" />{generating ? 'Preparing…' : 'Generate Excel'}</span><span className="text-[10px] leading-tight text-white/80">All 4 sheets in one file</span></button>
         </div>
       </div>
+      )}
       {notice && <p className="mb-2 flex items-center gap-1 text-sm text-status-green"><Check className="h-4 w-4" />{notice}</p>}
       {moveError && <p role="alert" className="mb-2 flex items-center gap-1 text-sm text-status-red"><AlertTriangle className="h-4 w-4 shrink-0" />{moveError}</p>}
       {!data.v2 && !total && (() => {
@@ -247,6 +285,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
           </div>
         );
       })()}
+      {data.v2 && <div id="sd-readiness" className="scroll-mt-20" />}
       {data.v2 && <ReadinessPanel plan={plan} names={new Map([...data.dir].map(([k, r]) => [k, r.display_name]))} check={check} approval={approval} isHead={isHead} error={checkErr} onApproved={done} />}
       {!data.v2 && view.clockGaps.length > 0 && (
         <div role="alert" className="mb-3 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-900 ring-2 ring-red-400">
@@ -289,7 +328,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
         </div>
       )}
 
-      <div className="mb-3 grid grid-cols-4 gap-1 text-center">
+      {(!data.v2 || gapDays > 0 || crewShort > 0 || overCap > 0 || members.length < needTotal) && <div className="mb-3 grid grid-cols-4 gap-1 text-center">
         {[{ n: `${members.length}/${needTotal}`, label: 'Placed', dot: members.length >= needTotal ? 'bg-status-green' : 'bg-status-amber' },
           { n: gapDays, label: 'Days a slot empty', dot: gapDays ? 'bg-status-red' : 'bg-status-green' },
           total ? { n: data.phases.length, label: 'Phases', dot: data.phases.length ? 'bg-status-green' : 'bg-status-amber' } : { n: crewShort, label: 'Crews short (days)', dot: crewShort ? 'bg-status-red' : 'bg-status-green' },
@@ -299,8 +338,9 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
             <div className="text-[10px] leading-tight text-slate-500">{k.label}</div>
           </div>
         ))}
-      </div>
+      </div>}
 
+      <div id="sd-teams" className="scroll-mt-20" />
       {teams.map((t) => <TeamCard key={t.id} t={t} data={data} view={view} check={check} onMove={moveMember} onAdd={(slot, area) => setAdding({ team: t, slot, area })} onMember={setMember} onEdit={() => (total ? setEditPhases(true) : setEditTeam(t))} />)}
 
       {total ? <UnitDownCard plan={plan} periods={data.periods} onDone={done} /> : <Card className="mb-3 py-1.5">
@@ -967,4 +1007,10 @@ function CurrentRulesBanner({ plan }: { plan: SdPlan }) {
       )}
     </div>
   );
+}
+
+function ToolButton({ label, hint, to, onClick, disabled }: { label: string; hint: string; to?: string; onClick?: () => void; disabled?: boolean }) {
+  const cls = 'flex min-h-12 flex-col items-start justify-center rounded-lg bg-white px-2.5 py-1.5 text-left ring-1 ring-slate-300 disabled:opacity-60';
+  const body = <><span className="text-xs font-semibold text-brand-700">{label}</span><span className="text-[10px] leading-tight text-slate-500">{hint}</span></>;
+  return to ? <Link to={to} className={cls}>{body}</Link> : <button type="button" onClick={onClick} disabled={disabled} className={cls}>{body}</button>;
 }

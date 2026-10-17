@@ -22,16 +22,41 @@ const statusTone = (s: PlanCheck['status']) => (s === 'ready' ? 'bg-green-600 te
 const OT_TONE = { ok: 'text-green-800', warn: 'text-amber-800 font-semibold', over: 'text-status-red font-bold', unknown: 'text-sky-800' } as const;
 
 /** One line per person for the same kind of finding (e.g. every pair of rest days he works), the rest as they are. */
-function grouped(list: PlanCheck['issues']): { text: string; fix?: CoverFix }[] {
-  const out: { text: string; fix?: CoverFix }[] = []; const seen = new Map<string, number>();
+type ExcFix = { employeeId: string; kind: ExceptionKind };
+/** The Section Head's exception that clears a blocking eligibility finding (two shutdowns in a row, sick leave over 35 days). */
+const exceptionFor = (i: PlanCheck['issues'][number]): ExcFix | undefined =>
+  i.code !== 'eligibility' || i.level !== 'block' || !i.employeeId ? undefined
+    : /two shutdowns in a row/.test(i.message) ? { employeeId: i.employeeId, kind: 'consecutive_shutdown' }
+    : /over 35/.test(i.message) ? { employeeId: i.employeeId, kind: 'sick_leave' } : undefined;
+function grouped(list: PlanCheck['issues']): { text: string; fix?: CoverFix; exc?: ExcFix }[] {
+  const out: { text: string; fix?: CoverFix; exc?: ExcFix }[] = []; const seen = new Map<string, number>();
   for (const i of list) {
-    if (i.code !== 'rest_day_pair' || !i.employeeId) { out.push({ text: i.message, fix: i.fix }); continue; }
+    if (i.code !== 'rest_day_pair' || !i.employeeId) { out.push({ text: i.message, fix: i.fix, exc: exceptionFor(i) }); continue; }
     const k = `${i.code}|${i.employeeId}`; const at = seen.get(k);
     const days = /rest days (.+?);/.exec(i.message)?.[1] ?? '';
     if (at === undefined) { seen.set(k, out.length); out.push({ text: i.message }); }
     else out[at] = { text: out[at].text.replace(/rest days (.+?);/, (_m, d) => `rest days ${d}, ${days};`) };
   }
   return out;
+}
+
+/** The Section Head grants the exception the finding asks for (recorded with the reason; revocable from the person). */
+function ExceptionButton({ planId, exc, finding, onDone }: { planId: string; exc: ExcFix; finding: string; onDone: (m: string) => void }) {
+  const [open, setOpen] = useState(false); const [reason, setReason] = useState(''); const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const label = exc.kind === 'consecutive_shutdown' ? 'Grant the exception: two shutdowns in a row' : 'Grant the exception: sick leave';
+  async function grant() {
+    setBusy(true); setErr(null);
+    try { await grantException({ planId, employeeId: exc.employeeId, kind: exc.kind, reason: reason.trim() || `Approved by the Section Head. ${finding}` }); onDone('Exception recorded.'); }
+    catch (e) { setErr(e); setBusy(false); }
+  }
+  if (!open) return <span className="mt-1 block"><Button variant="secondary" className="min-h-8 px-2.5 text-xs" onClick={() => setOpen(true)}>{label}</Button></span>;
+  return (
+    <span className="mt-1 block space-y-1">
+      <textarea className="input min-h-14 w-full text-xs" placeholder="Reason (optional)" value={reason} onChange={(e) => setReason(e.target.value)} />
+      <span className="flex gap-1.5"><Button className="min-h-8 px-2.5 text-xs" disabled={busy} onClick={grant}>Grant</Button><Button variant="secondary" className="min-h-8 px-2.5 text-xs" onClick={() => setOpen(false)}>Cancel</Button></span>
+      {err ? <ErrorBox error={err} /> : null}
+    </span>
+  );
 }
 
 /** One tap records the cover the check proposes (Controller Management), then the plan is checked again. */
@@ -91,7 +116,7 @@ export function ReadinessPanel({ plan, names, check, approval, isHead, error, on
       </div>
       {open && counts(open) > 0 && (
         <ul className={cx('mt-2 space-y-1 rounded-lg px-2.5 py-2 text-xs ring-1', LEVEL[open].tone)}>
-          {grouped(check.issues.filter((i) => i.level === open)).map((m, k) => <li key={k} className="flex items-start gap-1.5">{LEVEL[open].icon}<span>{m.text}{m.fix && isHead ? <CoverButton fix={m.fix} onDone={onApproved} /> : null}</span></li>)}
+          {grouped(check.issues.filter((i) => i.level === open)).map((m, k) => <li key={k} className="flex items-start gap-1.5">{LEVEL[open].icon}<span>{m.text}{m.fix && isHead ? <CoverButton fix={m.fix} onDone={onApproved} /> : null}{m.exc && isHead ? <ExceptionButton planId={plan.id} exc={m.exc} finding={m.text} onDone={onApproved} /> : null}</span></li>)}
         </ul>
       )}
       {check.gaps.length > 0 && <CoverageList gaps={check.gaps} />}

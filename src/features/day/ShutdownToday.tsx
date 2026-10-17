@@ -16,7 +16,7 @@ const SLOT_ORDER: Record<string, number> = { controller: 0, senior: 1, good: 2, 
 const hhmm = (ms: number) => { const d = new Date(ms + 3 * 3600_000); return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`; };
 
 /** The active shutdowns that cover the date, with their teams and members (loaded once, then reused while stepping days). */
-function useShutdownsOn(date: string) {
+function useShutdownsOn(date: string, tick: number) {
   const [all, setAll] = useState<Loaded[] | null>(null);
   useEffect(() => {
     let live = true;
@@ -26,12 +26,12 @@ function useShutdownsOn(date: string) {
       .catch(() => live && setAll([]));
     return () => { live = false; };
     // the plans are read once per page visit; a date far outside the window loads again
-  }, [date.slice(0, 7)]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [date.slice(0, 7), tick]); // eslint-disable-line react-hooks/exhaustive-deps
   return useMemo(() => (all ?? []).filter((x) => x.plan.start <= date && date <= x.plan.end), [all, date]);
 }
 
-export function ShutdownToday({ date, people, leave }: { date: string; people: MpPerson[]; leave: Map<string, OnLeave> }) {
-  const plans = useShutdownsOn(date);
+export function ShutdownToday({ date, people, leave, tick = 0 }: { date: string; people: MpPerson[]; leave: Map<string, OnLeave>; tick?: number }) {
+  const plans = useShutdownsOn(date, tick);
   if (!plans.length) return null;
   return <>{plans.map((x) => <PlanCard key={x.plan.id} x={x} date={date} people={people} leave={leave} />)}</>;
 }
