@@ -20,6 +20,7 @@ import { ORACLE_LABEL } from '@/core/oracle';
 import { OracleDot } from '@/ui/oracle';
 import { coverageNeeds, type CoverageNeed } from '@/core/controllers';
 import { CREWS } from '@/core/roster';
+import { ShutdownToday } from './ShutdownToday';
 
 const weekday = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long' });
 
@@ -124,6 +125,7 @@ export default function DayOverviewPage() {
           {moved && <p role="status" className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-700">{t('That page has moved. Everything is now under Today, Calendar, Requests, Employees and More.')}</p>}
           <OverallBanner result={result} />
           <TodaySummary result={result} date={date} today={today} />
+          {inputs && <ShutdownToday date={date} people={inputs.people} leave={leave} />}
           {tcPending > 0 && (
             <Link to="/data-quality?tab=take-charge" className="mb-3 flex items-start gap-2 rounded-xl bg-slate-50 p-3 text-xs text-slate-700 ring-1 ring-slate-300">
               <Info className="mt-0.5 h-4 w-4 shrink-0" />
