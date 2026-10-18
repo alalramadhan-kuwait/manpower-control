@@ -108,13 +108,17 @@ export function WorkingPlan({ planId, approved, onClose, onDone }: { planId: str
     }, 10);
   }
 
+  // a leave day is already a day off: the plan check, the minimum and the overtime all count it as off
+  const leaveMsg = (employeeId: string) => ({ tone: 'info' as const, title: 'Leave is already a day off',
+    text: `${name(employeeId)} is on approved leave that day. It counts as a day off everywhere (plan check, team minimum, overtime), so there is nothing to change. If the leave dates moved, change them in Requests.` });
+
   function paint(code: CellCode) {
     if (!sel || !inp) { setMsg({ tone: 'info', title: 'Choose the days first', text: 'Tap a day in a person’s row, then another day in the same row for the days between.' }); return; }
     const m = memberOf(sel.memberId);
     const run = dates.filter((d) => d >= sel.a && d <= sel.b);
     const leave = run.filter((d) => cellOf(inp, m, d, cur!.days, cur!.marks) === 'L');
     const edits = run.filter((d) => !leave.includes(d) && d >= m.start && d <= m.end).map((d) => ({ memberId: m.id, date: d, code }));
-    if (!edits.length) { setMsg({ tone: 'block', title: 'Leave stays Leave', text: `${name(m.employeeId)} is on approved leave on these days. Change the leave in Requests if its dates moved.` }); return; }
+    if (!edits.length) { setMsg(leaveMsg(m.employeeId)); return; }
     attempt(edits, `${name(m.employeeId)}: ${CODE_LABEL[code]}, ${run.length === 1 ? fmtDay(run[0]) : `${fmtDay(run[0])} – ${fmtDay(run[run.length - 1])}`}${leave.length ? ` (leave days kept: ${leave.length})` : ''}`);
   }
 
@@ -131,6 +135,7 @@ export function WorkingPlan({ planId, approved, onClose, onDone }: { planId: str
       return;
     }
     if (v === 'X') return;
+    if (v === 'L') { setSel(null); setMsg(leaveMsg(memberOf(memberId).employeeId)); return; }
     if (sel && sel.memberId === memberId && sel.a === sel.b && sel.a !== date) setSel({ memberId, a: sel.a < date ? sel.a : date, b: sel.a < date ? date : sel.a });
     else setSel({ memberId, a: date, b: date });
   }
@@ -305,7 +310,7 @@ export function WorkingPlan({ planId, approved, onClose, onDone }: { planId: str
               <span><b className="rounded bg-amber-300 px-1 text-amber-950">12</b> day 12 h</span><span><b className="rounded bg-amber-100 px-1 text-amber-900">8</b> day 8 h</span>
               <span><b className="rounded bg-blue-900 px-1 text-white">12</b> night 12 h</span><span><b className="rounded bg-blue-300 px-1 text-blue-950">8</b> night 8 h</span>
               <span><b className="rounded px-1 ring-1 ring-slate-300">–</b> off</span><span><b className="rounded bg-slate-200 px-1">U</b> unavailable (a day off)</span>
-              <span><b className="rounded bg-violet-300 px-1 text-violet-950">L</b> approved leave (from the leave records)</span><span><Lock className="inline h-3 w-3" /> set by hand</span>
+              <span><b className="rounded bg-violet-300 px-1 text-violet-950">L</b> approved leave (a day off; from the leave records)</span><span><Lock className="inline h-3 w-3" /> set by hand</span>
               <span>Team minimum: controllers and field operators on duty; <b className="text-red-800">!</b> = short (details on hover)</span>
             </p>
           </section>
