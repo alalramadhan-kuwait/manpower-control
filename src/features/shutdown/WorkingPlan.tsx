@@ -21,6 +21,11 @@ type Msg = { tone: 'info' | 'ok' | 'warn' | 'block'; title: string; text?: strin
 type Snap = { days: Days; marks: Marks; check: PlanCheck };
 
 const SLOT_ORDER: Record<string, number> = { controller: 0, senior: 1, good: 2, new: 3, member: 4 };
+/** The team minimum rows: controllers apart from the field operators (on duty, and short when the plan check says so). */
+const MIN_ROWS = [
+  { key: 'ctl', label: 'Controllers', counts: (slot: string) => slot === 'controller', gap: (role: string) => role === 'controller' },
+  { key: 'fo', label: 'Field operators', counts: (slot: string) => slot !== 'controller', gap: (role: string) => role !== 'controller' },
+];
 const SLOT_LABEL: Record<string, string> = { controller: 'Controller', senior: 'Experienced FO', good: 'Good FO', new: 'New FO', member: 'Operator' };
 const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const CODE_LABEL: Record<CellCode, string> = { W12: 'Work 12 h', W8: 'Work 8 h', O: 'Off', U: 'Unavailable' };
@@ -280,15 +285,17 @@ export function WorkingPlan({ planId, approved, onClose, onDone }: { planId: str
                           </tr>
                         );
                       }),
-                      <tr key={`c-${team.id}`} className="bg-slate-50">
-                        <th scope="row" className="sticky left-0 z-10 w-28 min-w-28 max-w-28 bg-slate-50 px-2 py-0.5 text-left text-[10px] font-semibold text-slate-600 lg:w-44 lg:min-w-44 lg:max-w-44">Team minimum</th>
-                        {dates.map((d) => {
-                          const gaps = check!.gaps.filter((g) => g.teamId === team.id && g.date === d);
-                          const on = members.filter((m) => { const v = cellOf(inp, m, d, cur.days, cur.marks); return v === 'W12' || v === 'W8'; }).length;
-                          return <td key={d} className="p-0.5"><span title={gaps.length ? gaps.map((g) => `${g.label}: ${g.have} of ${g.need} ${g.from}–${g.to}`).join('\n') : 'Minimum held'} className={cx('flex h-6 w-9 items-center justify-center rounded font-mono text-[10px] font-semibold', gaps.length ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800')}>{gaps.length ? `!${on}` : on}</span></td>;
-                        })}
-                        <td className="bg-slate-50 lg:sticky lg:right-0" />
-                      </tr>
+                      ...MIN_ROWS.map((r, i) => (
+                        <tr key={`c-${team.id}-${r.key}`} className="bg-slate-50">
+                          <th scope="row" className="sticky left-0 z-10 w-28 min-w-28 max-w-28 bg-slate-50 px-2 py-0.5 text-left text-[10px] font-semibold text-slate-600 lg:w-44 lg:min-w-44 lg:max-w-44">{i === 0 && <span className="block text-[9px] font-normal uppercase tracking-wide text-slate-500">Team minimum</span>}{r.label}</th>
+                          {dates.map((d) => {
+                            const gaps = check!.gaps.filter((g) => g.teamId === team.id && g.date === d && r.gap(g.role));
+                            const on = members.filter((m) => { if (!r.counts(m.slot)) return false; const v = cellOf(inp, m, d, cur.days, cur.marks); return v === 'W12' || v === 'W8'; }).length;
+                            return <td key={d} className="p-0.5"><span title={gaps.length ? gaps.map((g) => `${g.label}: ${g.have} of ${g.need} ${g.from}–${g.to}`).join('\n') : `${r.label}: minimum held`} className={cx('flex h-6 w-9 items-center justify-center rounded font-mono text-[10px] font-semibold', gaps.length ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800')}>{gaps.length ? `!${on}` : on}</span></td>;
+                          })}
+                          <td className="bg-slate-50 lg:sticky lg:right-0" />
+                        </tr>
+                      ))
                     ];
                   })}
                 </tbody>
@@ -299,7 +306,7 @@ export function WorkingPlan({ planId, approved, onClose, onDone }: { planId: str
               <span><b className="rounded bg-blue-900 px-1 text-white">12</b> night 12 h</span><span><b className="rounded bg-blue-300 px-1 text-blue-950">8</b> night 8 h</span>
               <span><b className="rounded px-1 ring-1 ring-slate-300">–</b> off</span><span><b className="rounded bg-slate-200 px-1">U</b> unavailable (a day off)</span>
               <span><b className="rounded bg-violet-300 px-1 text-violet-950">L</b> approved leave (from the leave records)</span><span><Lock className="inline h-3 w-3" /> set by hand</span>
-              <span>Team minimum: people on duty; <b className="text-red-800">!</b> = short (details on hover)</span>
+              <span>Team minimum: controllers and field operators on duty; <b className="text-red-800">!</b> = short (details on hover)</span>
             </p>
           </section>
           <aside aria-label="Check" className="flex min-w-0 flex-1 flex-col gap-2 lg:max-w-sm">
