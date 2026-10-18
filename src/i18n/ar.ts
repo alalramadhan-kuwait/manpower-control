@@ -5,6 +5,7 @@ export const AR: Record<string, string> = {
   'Workspaces': 'مساحات العمل', 'Manpower Control': 'التحكم بالقوى العاملة', 'Notifications': 'التنبيهات', 'Quick add': 'إضافة سريعة', 'Sign out': 'تسجيل الخروج', 'Signed in as': 'مسجل الدخول باسم', 'Language': 'اللغة',
   'Open alerts and resolved history': 'التنبيهات المفتوحة وسجل ما تم حله',
   'Controllers': 'المراقبون', 'Leave planning': 'تخطيط الإجازات', 'Shutdown planning': 'تخطيط التوقف', 'Data quality': 'جودة البيانات', 'Excel import': 'استيراد Excel', 'Administration': 'الإدارة',
+  'Leave owed': 'إجازة مستحقة', 'Cancelled': 'ملغاة', 'shutdown': 'الشت داون', 'Request open': 'طلب مفتوح', 'Give new dates': 'تحديد تواريخ جديدة', 'Confirm dates': 'تأكيد التواريخ',
   'Cover': 'التغطية', 'Morning rotation': 'مناوبة الصباح', 'Annual plan': 'الخطة السنوية', 'PV cycles': 'دورات الإجازة السنوية', 'Shutdown plans': 'خطط التوقف', 'Operating modes': 'أوضاع التشغيل',
   'Summary': 'الملخص', 'Issues': 'المسائل', 'Take-Charge': 'تولي المسؤولية', 'Employee records': 'سجلات الموظفين', 'Oracle statistics': 'إحصاءات أوراكل', 'FO levels': 'مستويات مشغلي الميدان',
   'Upload': 'رفع', 'History': 'السجل', 'Users & access': 'المستخدمون والصلاحيات', 'Audit history': 'سجل التدقيق',

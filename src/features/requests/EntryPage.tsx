@@ -27,7 +27,8 @@ import { nameFilter } from '@/ui/nameSearch';
 import { InWorkspace } from '@/ui/workspace';
 import { CheckPanel } from './CheckPanel';
 import { ProposeSheet } from './ChangeRequests';
-import { mergedLeaves } from './leaveTools';
+import { mergedLeaves, type MergedLeave } from './leaveTools';
+import { fetchOwedLeave, type OwedLeave } from '@/data/changeRequests';
 import { ControllerAssign } from '@/features/controllers/ControllersPage';
 import { MovementSheet } from '@/features/movements/MovementSheet';
 import ReleasePage from '@/features/release/ReleasePage';
@@ -36,7 +37,7 @@ type Group = Crew | 'VR';
 type Card = 'leave' | 'pv' | 'shift' | 'controller' | 'release';
 const CARDS: { k: Card; label: string; desc: string; icon: typeof Plane; person: boolean }[] = [
   { k: 'leave', label: 'Leave / Absence', desc: 'Planned leave, operational absence, extend, return', icon: Plane, person: true },
-  { k: 'pv', label: 'PV reschedule', desc: 'Move a published PV to other dates', icon: CalendarClock, person: true },
+  { k: 'pv', label: 'PV reschedule', desc: 'Move a PV to other dates, or give new dates to a cancelled one', icon: CalendarClock, person: true },
   { k: 'shift', label: 'Shift change / cover', desc: 'Temporary cover, permanent move, day duty', icon: ArrowLeftRight, person: true },
   { k: 'controller', label: 'Controller assignment', desc: 'Shift cover, Morning rotation, VR placement', icon: UserCheck, person: false },
   { k: 'release', label: 'Task release', desc: 'Release from duty for a task, crew checked first', icon: UserMinus, person: false }
@@ -128,7 +129,7 @@ export function EntryPage({ profile }: { profile: UserProfile }) {
           {active.person && !person && <PersonPicker people={data.inputs.people} today={today} onPick={(p) => setCard(active.k, p.id, Object.fromEntries([...params].filter(([k]) => !['view', 'card', 'emp'].includes(k))))} />}
           {active.person && person && <PersonCard person={person} data={data} today={today} onChange={() => setCard(active.k, null)} />}
           {card === 'leave' && person && <LeaveForm key={`${person.id}${resume.draft?.id ?? ''}${resume.replaces ?? ''}`} person={person} data={data} today={today} isHead={isHead} draft={resume.draft} prefill={resume.prefill} replaces={resume.replaces} onDone={done} onDraft={(m) => { setNotice(m); load(); }} />}
-          {card === 'pv' && person && <PvCard person={person} data={data} today={today} wanted={params.get('leave')} onDone={done} onClose={() => setCard(null, null)} />}
+          {card === 'pv' && person && <PvCard person={person} data={data} today={today} isHead={isHead} wanted={params.get('leave')} onDone={done} onClose={() => setCard(null, null)} />}
           {card === 'shift' && person && <MovementSheet target={{ kind: 'new', employeeId: person.id }} people={data.inputs.people.map((p) => ({ id: p.id, name: p.name, crew: personOn(p, today).crew }))} onClose={() => setCard(null, null)} onDone={done} />}
           {card === 'controller' && <ControllerAssign kind={(['cover', 'morning', 'vr'] as const).find((k) => k === params.get('kind')) ?? 'cover'} crew={params.get('crew')} from={params.get('from')} to={params.get('to')} who={params.get('who')} emp={personId} onClose={() => setCard(null, null)} onDone={done} />}
           {card === 'controller' && !params.get('kind') && (
@@ -137,7 +138,7 @@ export function EntryPage({ profile }: { profile: UserProfile }) {
             </div>
           )}
           {card === 'release' && <InWorkspace.Provider value><ReleasePage /></InWorkspace.Provider>}
-          {active.person && person && card !== 'leave' && (
+          {active.person && person && card !== 'leave' && card !== 'pv' && (
             <Button variant="secondary" className="w-full" onClick={() => saveDraft({ kind: card!, employeeId: person.id, title: `${t(active.label)} · ${person.name}`, payload: {} }).then(() => { setNotice(t('Draft saved. It changes nothing until you send it.')); load(); }).catch(setErr)}>
               <FileText className="h-4 w-4" />{t('Save draft')}
             </Button>
@@ -424,16 +425,40 @@ function LeaveForm({ person, data, today, isHead, draft, prefill, replaces, onDo
 }
 
 // ── PV reschedule ──────────────────────────────────────────────────────────────────────────────────────────────────
-function PvCard({ person, data, today, wanted, onDone, onClose }: { person: MpPerson; data: Data; today: string; wanted: string | null; onDone: (m: string) => void; onClose: () => void }) {
+function PvCard({ person, data, today, isHead, wanted, onDone, onClose }: { person: MpPerson; data: Data; today: string; isHead: boolean; wanted: string | null; onDone: (m: string) => void; onClose: () => void }) {
   const pv = new Set(data.types.filter((x) => x.mode === 'pv').map((x) => x.code));
   const leaves = mergedLeaves(data.inputs.absences, person.id).filter((l) => l.end >= today && l.records.some((r) => r.typeCode && pv.has(r.typeCode)));
-  const [open, setOpen] = useState(() => leaves.find((l) => l.start === wanted) ?? null);
-  if (open) return <ProposeSheet person={person} leave={open} inputs={data.inputs} approvals={data.approvals} today={today} onBack={() => (wanted ? onClose() : setOpen(null))} onDone={onDone} />;
-  return leaves.length ? (
-    <ul className="divide-y divide-slate-100 rounded-xl bg-white ring-1 ring-slate-200">
-      {leaves.map((l) => <li key={l.start}><button type="button" onClick={() => setOpen(l)} className="flex min-h-12 w-full items-center justify-between px-3 py-2.5 text-start text-sm"><span>{l.codes.join(' / ')} · <b>{range(l.start, l.end)}</b></span><span className="text-xs font-semibold text-brand-700">{t('Other dates')}</span></button></li>)}
-    </ul>
-  ) : <p className="text-sm text-slate-500">{t('No PV ahead to reschedule.')}</p>;
+  const [open, setOpen] = useState<(MergedLeave & { replan?: boolean }) | null>(() => leaves.find((l) => l.start === wanted) ?? null);
+  // planned PV cancelled (e.g. for a shutdown) and not given new dates yet
+  const [owed, setOwed] = useState<OwedLeave[]>([]);
+  useEffect(() => { fetchOwedLeave(person.id).then(setOwed).catch(() => setOwed([])); }, [person.id]);
+  if (open) return <ProposeSheet person={person} leave={open} inputs={data.inputs} approvals={data.approvals} today={today} isHead={isHead} onBack={() => (wanted ? onClose() : setOpen(null))} onDone={onDone} />;
+  const owe = (o: OwedLeave): MergedLeave & { replan: boolean } => ({ start: o.start, end: o.end, codes: ['PV'], oracle: undefined, estimated: false, replan: true,
+    records: [{ id: o.id, employeeId: o.employeeId, start: o.start, end: o.end, status: 'approved', typeCode: o.typeCode, typeShort: 'PV', inCurrentPlan: true }] });
+  return (
+    <div className="space-y-3">
+      {owed.length > 0 && (
+        <div className="rounded-xl bg-amber-50 ring-1 ring-amber-300">
+          <h3 className="px-3 pt-2 text-xs font-semibold uppercase tracking-wide text-amber-900">{t('Leave owed')} · {owed.length}</h3>
+          <ul className="divide-y divide-amber-200">
+            {owed.map((o) => (
+              <li key={o.id}>
+                <button type="button" disabled={o.open} onClick={() => setOpen(owe(o))} className="flex min-h-12 w-full items-center justify-between gap-2 px-3 py-2.5 text-start text-sm disabled:opacity-60">
+                  <span>PV · <b>{range(o.start, o.end)}</b> <span className="block text-[11px] text-amber-900">{t('Cancelled')}{o.note && /shutdown/i.test(o.note) ? ` · ${t('shutdown')}` : ''}</span></span>
+                  <span className="shrink-0 text-xs font-semibold text-brand-700">{o.open ? t('Request open') : t('Give new dates')}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {leaves.length ? (
+        <ul className="divide-y divide-slate-100 rounded-xl bg-white ring-1 ring-slate-200">
+          {leaves.map((l) => <li key={l.start}><button type="button" onClick={() => setOpen(l)} className="flex min-h-12 w-full items-center justify-between px-3 py-2.5 text-start text-sm"><span>{l.codes.join(' / ')} · <b>{range(l.start, l.end)}</b></span><span className="text-xs font-semibold text-brand-700">{t('Other dates')}</span></button></li>)}
+        </ul>
+      ) : <p className="text-sm text-slate-500">{t('No PV ahead to reschedule.')}</p>}
+    </div>
+  );
 }
 
 /** "B Shift · Field 7 → 6 ✅": the crews the change touches, each position before → after against the minimum. */

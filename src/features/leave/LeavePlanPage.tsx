@@ -5,7 +5,7 @@ import { t } from '@/i18n';
 import { MONTH_NAMES, coverOfBlock, daysInYearRange, monthEnd, monthStart, monthWeeks, shiftMonth } from '@/core/calendar';
 import { firstDayBack } from '@/core/leave';
 import { isWorkingDay, type Crew } from '@/core/roster';
-import { fetchLeavePlan, type LeavePlanData } from '@/data/leave';
+import { fetchLeavePlan, setLeaveEstimated, type LeavePlanData } from '@/data/leave';
 import type { EmployeeDirectoryRow, LeaveRecord } from '@/data/types';
 import { Button, Card, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components';
 import { CREW_IDENTITY, CrewBadge, CrewTag, crewEdge, isCrew } from '@/ui/crew';
@@ -227,6 +227,9 @@ interface Row { p: EmployeeDirectoryRow; all: LeaveRecord[]; current: LeaveRecor
 
 function PersonDetail({ row, year, data, today, onEdit, onAdd }: { row: Row; year: number; data: LeavePlanData; today: string; onEdit: (l: LeaveRecord) => void; onAdd: () => void }) {
   const [history, setHistory] = useState(false);
+  // dates kept as an estimate: confirmed here once they are known
+  const [confirmed, setConfirmed] = useState<Set<string>>(new Set());
+  const confirm = (id: string) => setLeaveEstimated(id, false).then(() => setConfirmed((c) => new Set(c).add(id))).catch(() => undefined);
   const { p, current } = row;
   const crew: Crew | null = isCrew(p.crew_code) ? p.crew_code : null;
   const type = (code: string | null) => data.types.find((t) => t.code === code);
@@ -252,7 +255,7 @@ function PersonDetail({ row, year, data, today, onEdit, onAdd }: { row: Row; yea
             <li key={l.id} className="flex items-start gap-2 py-2">
               <span className={`mt-0.5 inline-flex min-w-11 justify-center rounded-md px-1.5 py-0.5 text-xs font-bold ring-1 ${leaveToneShort(type(l.absence_type_code)?.short_code).chip}`}>{type(l.absence_type_code)?.short_code ?? '—'}</span>
               <span className="min-w-0 flex-1">
-                <span className={cx('block text-sm font-medium', past ? 'text-slate-500' : 'text-slate-800')}>{range(l.start_date, l.end_date)}{l.dates_estimated && <> <EstimatedTag /></>} <span className="font-normal text-slate-500">· {dayCount(l.start_date, l.end_date)} d{past ? '' : ` · back ${shortDate(back)}`}</span></span>
+                <span className={cx('block text-sm font-medium', past ? 'text-slate-500' : 'text-slate-800')}>{range(l.start_date, l.end_date)}{l.dates_estimated && !confirmed.has(l.id) && <> <EstimatedTag /> <button type="button" onClick={() => confirm(l.id)} className="text-[11px] font-semibold text-brand-700 underline">{t('Confirm dates')}</button></>} <span className="font-normal text-slate-500">· {dayCount(l.start_date, l.end_date)} d{past ? '' : ` · back ${shortDate(back)}`}</span></span>
                 <span className="block text-xs text-slate-500">{type(l.absence_type_code)?.label ?? 'Leave'} · {l.hand_corrected ? (l.source_kind === 'manual' ? SOURCE_LABEL.manual : 'Corrected by hand') : SOURCE_LABEL[l.source_kind]}</span>
                 {cover && (cover.covers.length > 0
                   ? <span className="block text-xs text-slate-600">Covered by {[...new Set(cover.covers.map((c) => name(c.employeeId)))].join(', ')}{cover.uncoveredDutyDays ? ` · ${cover.uncoveredDutyDays} duty day${cover.uncoveredDutyDays === 1 ? '' : 's'} without cover` : ''}</span>

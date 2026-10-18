@@ -1,6 +1,6 @@
 // Leave inside a shutdown: a team member takes none. Proposes new dates for each such leave (the same number of days, the
 // first window after the shutdown where the crew is not short, no clash with other leave) and sends them as reschedule
-// requests for the Section Head to approve in Requests › Forms.
+// requests for the Section Head to approve in Requests › Approvals.
 import { AlertTriangle, ArrowRight, Check } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -84,12 +84,12 @@ export function MoveLeaveSheet({ plan, members, names, inputs, onClose, onDone }
     }
     setBusy(false);
     const n = next.filter((p) => p.sent).length;
-    if (next.every((p) => p.sent || !p.newStart)) onDone(`${n} reschedule ${n === 1 ? 'request' : 'requests'} sent. Approve them in Requests › Forms.`);
+    if (next.every((p) => p.sent || !p.newStart)) onDone(`${n} reschedule ${n === 1 ? 'request' : 'requests'} sent. Approve them in Requests › Approvals.`);
   }
   return (
     <BottomSheet open onClose={onClose} title="Move the leave">
       <div className="space-y-3">
-        <p className="text-xs text-slate-600">For each leave that falls inside the shutdown: the same number of days, starting on the first day after the shutdown where the crew is not short and nothing else clashes. These are sent as reschedule requests; nothing moves until the Section Head approves them in Requests › Forms.</p>
+        <p className="text-xs text-slate-600">For each leave that falls inside the shutdown: the same number of days, starting on the first day after the shutdown where the crew is not short and nothing else clashes. These are sent as reschedule requests; nothing moves until the Section Head approves them in Requests › Approvals.</p>
         {!list && !err && <Spinner />}
         {list && list.length === 0 && <p className="text-sm text-slate-500">No leave falls inside the shutdown.</p>}
         <ul className="divide-y divide-slate-100">

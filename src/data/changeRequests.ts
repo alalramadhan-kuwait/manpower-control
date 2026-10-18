@@ -1,4 +1,5 @@
-// Leave change requests: the Manpower Coordinator asks to move a leave, the Section Head decides. Every write goes through a
+// Leave change requests: the Manpower Coordinator asks to move a leave (or to give new dates to a cancelled PV, the
+// leave owed), the Section Head decides, and may change the dates first. The Section Head's own change is approved at once. Every write goes through a
 // database function (only the Section Head decides; approval moves the leave through leave_save and resets Oracle).
 import { supabase } from './supabase';
 import { gateDecide, headerOfLegacy } from './gate';
@@ -14,6 +15,8 @@ export interface ChangeRequest {
   id: string; employee_id: string; record_ids: string[]; old_start: string; old_end: string; new_start: string; new_end: string;
   remark: string; impact: ChangeImpact | null; status: ChangeStatus; requested_by: string | null; requested_at: string;
   decision_remarks: string | null; decided_by: string | null; decided_at: string | null; withdraw_reason: string | null; result_record_id: string | null;
+  /** the new dates are an estimate (the new leave is marked so until confirmed) */ estimated: boolean;
+  /** new dates for a cancelled planned PV: approval adds a new leave */ replan: boolean;
 }
 export const isChangeOpen = (r: { status: ChangeStatus }) => r.status === 'requested';
 
@@ -38,8 +41,8 @@ export async function fetchRequesterNames(ids: string[]): Promise<Map<string, st
   return out;
 }
 
-export async function createChangeRequest(v: { records: string[]; start: string; end: string; remark: string; impact: ChangeImpact }): Promise<string> {
-  const { data, error } = await supabase.rpc('change_request_create', { p_records: v.records, p_start: v.start, p_end: v.end, p_remark: v.remark, p_impact: v.impact });
+export async function createChangeRequest(v: { records: string[]; start: string; end: string; remark: string; impact: ChangeImpact; estimated?: boolean }): Promise<string> {
+  const { data, error } = await supabase.rpc('change_request_create', { p_records: v.records, p_start: v.start, p_end: v.end, p_remark: v.remark, p_impact: v.impact, p_estimated: !!v.estimated });
   if (error) throw new Error(error.message);
   changed();
   return data as string;
@@ -51,6 +54,26 @@ export async function decideChangeRequest(id: string, approve: boolean, remarks:
   await gateDecide(await headerOfLegacy('leave_change_requests', id), approve, remarks,
     approve && check ? acceptable(check.findings).map(({ rule, severity, message }) => ({ rule, severity, message })) : []);
   changed();
+}
+
+/** Section Head: other dates for an open request, before deciding it. */
+export async function amendChangeRequest(id: string, start: string, end: string, estimated: boolean) {
+  const { error } = await supabase.rpc('change_request_amend', { p_id: id, p_start: start, p_end: end, p_estimated: estimated });
+  if (error) throw new Error(error.message);
+}
+
+/** A planned PV cancelled (e.g. for a shutdown) and not given new dates yet: the leave owed, per person. */
+export interface OwedLeave { id: string; employeeId: string; start: string; end: string; typeCode: string; note: string | null; open: boolean }
+export async function fetchOwedLeave(employeeId?: string): Promise<OwedLeave[]> {
+  const since = `${new Date().getFullYear() - 1}-01-01`;
+  let q = supabase.from('leave_records').select('id,employee_id,start_date,end_date,absence_type_code,note,absence_types!inner(entry_mode)')
+    .eq('status', 'cancelled').is('superseded_by', null).eq('absence_types.entry_mode', 'pv').gte('end_date', since).order('start_date');
+  if (employeeId) q = q.eq('employee_id', employeeId);
+  const [{ data, error }, open] = await Promise.all([q, supabase.from('leave_change_requests').select('record_ids').eq('status', 'requested').eq('replan', true)]);
+  if (error) throw error;
+  const asked = new Set(((open.data ?? []) as { record_ids: string[] }[]).map((r) => r.record_ids[0]));
+  return ((data ?? []) as { id: string; employee_id: string; start_date: string; end_date: string; absence_type_code: string; note: string | null }[])
+    .map((r) => ({ id: r.id, employeeId: r.employee_id, start: r.start_date, end: r.end_date, typeCode: r.absence_type_code, note: r.note, open: asked.has(r.id) }));
 }
 
 export async function withdrawChangeRequest(id: string, reason: string) {

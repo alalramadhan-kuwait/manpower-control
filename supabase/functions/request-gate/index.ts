@@ -581,9 +581,26 @@ function leaveOverlap(inp, pr, rules) {
 }
 function assignmentOverlap(inp, pr, rules) {
   const rule = ruleOf(rules, "assignment_overlap");
-  if (!rule.enabled || pr.kind !== "move" && pr.kind !== "cover") return [];
+  if (!rule.enabled) return [];
   const { start, end } = proposalSpan(pr);
   const person = inp.people.find((p) => p.id === pr.employeeId);
+  if (pr.kind === "absence" || pr.kind === "reschedule" || pr.kind === "release") {
+    const team = [
+      ...(person?.moves ?? []).filter((m) => m.crew === "SD").map((m) => ({ start: m.start, end: m.end ?? m.start })),
+      ...inp.assignments.filter((a2) => a2.employeeId === pr.employeeId && a2.kind === "sd_team" && !a2.rest)
+    ].filter((t) => t.start <= end && start <= t.end);
+    if (!team.length) return [];
+    const from = team.reduce((a2, t) => t.start < a2 ? t.start : a2, team[0].start), to = team.reduce((a2, t) => t.end > a2 ? t.end : a2, team[0].end);
+    const a = from > start ? from : start, b = to < end ? to : end;
+    return [{
+      rule: rule.code,
+      severity: "critical",
+      date: a,
+      key: `sdteam:${from}`,
+      message: `On a shutdown team ${fmt(from)} – ${fmt(to)}: this leave falls on ${a === b ? fmt(a) : `${fmt(a)} – ${fmt(b)}`} of it. A team member normally takes no leave during the shutdown.`
+    }];
+  }
+  if (pr.kind !== "move" && pr.kind !== "cover") return [];
   const moves = (person?.moves ?? []).filter((m) => (pr.kind === "move" && pr.moveKind === "placement" ? m.kind !== "placement" : true) && m.start <= end && (m.end === null || start <= m.end));
   const asg = inp.assignments.filter((a) => a.employeeId === pr.employeeId && a.start <= end && start <= a.end);
   return [

@@ -56,3 +56,18 @@ describe('leave', () => {
     expect(v.timeline.find((r) => r.date === '2026-11-17')?.changed).toBe(true); // no longer on PV
   });
 });
+
+describe('leave on a shutdown team', () => {
+  const member: MpPerson = { ...person('A'), moves: [{ start: '2026-10-18', end: '2026-11-16', crew: 'SD', kind: 'sd' }] };
+  const inp = { people: [member], absences: [] as MpAbsence[], assignments: [] };
+  it('a reschedule onto the team dates is flagged for the Section Head (critical, not a hard stop)', () => {
+    const v = validateProposal(inp, { kind: 'reschedule', employeeId: 'p1', recordIds: [], start: '2026-11-10', end: '2026-11-23', typeCode: 'annual_leave_planned', typeShort: 'PV' }, DEFAULT_RULES);
+    const f = v.findings.find((x) => x.key.startsWith('sdteam:'));
+    expect(f?.severity).toBe('critical');
+    expect(f?.message).toContain('10 Nov – 16 Nov');
+  });
+  it('after the shutdown nothing is flagged', () => {
+    const v = validateProposal(inp, { kind: 'reschedule', employeeId: 'p1', recordIds: [], start: '2026-11-17', end: '2026-11-30', typeCode: 'annual_leave_planned', typeShort: 'PV' }, DEFAULT_RULES);
+    expect(v.findings.some((x) => x.key.startsWith('sdteam:'))).toBe(false);
+  });
+});

@@ -1,5 +1,6 @@
-// Change requests (reschedule): the Manpower Coordinator picks the employee, the leave and the new dates with a remark,
-// sees at once whether the crews would be short (red), and sends it; the Section Head decides it in Requests › Forms.
+// Change requests (reschedule): pick the employee, the leave (or a cancelled PV, the leave owed) and the new dates with a
+// remark; the full check runs as the dates change. The Coordinator sends it and the Section Head decides it in Requests ›
+// Approvals, where he can change the dates first. The Section Head's own change is approved at once (same server check).
 import { AlertTriangle, Check, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { LeaveApproval } from '@/core/controllers/leaveRules';
@@ -16,6 +17,8 @@ import { leaveImpact, type LeaveImpact, type MergedLeave } from './leaveTools';
 import { CheckPanel } from './CheckPanel';
 import { checkProposal, type Check as ScheduleCheck } from '@/data/validation';
 import { hasHardStop } from '@/core/validation';
+import { gateVerdict } from '@/core/requests/gate';
+import { amendChangeRequest } from '@/data/changeRequests';
 
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
 const weekday = (iso: string) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(`${iso}T00:00:00Z`).getUTCDay()];
@@ -39,61 +42,107 @@ function ImpactBox({ impact, label }: { impact: LeaveImpact; label?: string }) {
   );
 }
 
-/** Propose new dates for one leave, with the remark; the crews' cover is checked as the dates change. */
-export function ProposeSheet({ person, leave, inputs, approvals, today, changes, onBack, onDone }: { person: MpPerson; leave: MergedLeave; inputs: ManpowerInputs; approvals: LeaveApproval[]; today: string; /** approved changes this year, counted on him */ changes?: number; onBack: () => void; onDone: (m: string) => void }) {
+/** The full check of new dates for a leave (the same check the server runs before approving), as the dates change. */
+function useDatesCheck(employeeId: string, recordIds: string[], typeCode: string | null | undefined, typeShort: string | null | undefined, start: string, end: string, on: boolean) {
+  const [check, setCheck] = useState<ScheduleCheck | null>(null); const [err, setErr] = useState<unknown>(null);
+  const key = `${recordIds.join()}|${start}|${end}`;
+  useEffect(() => {
+    setCheck(null); setErr(null);
+    if (!on) return;
+    let live = true;
+    const t = setTimeout(() => {
+      checkProposal({ kind: 'reschedule', employeeId, recordIds, start, end, typeCode: typeCode ?? 'annual_leave_planned', typeShort: typeShort ?? 'PV' })
+        .then((c) => live && setCheck(c)).catch((e) => live && setErr(e));
+    }, 400);
+    return () => { live = false; clearTimeout(t); };
+  }, [key, on]); // eslint-disable-line react-hooks/exhaustive-deps
+  const verdict = check ? gateVerdict(check.findings, false) : null;
+  return { check, err, verdict };
+}
+
+const EstimateSwitch = ({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) => (
+  <label className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
+    <input type="checkbox" className="mt-0.5" checked={value} onChange={(e) => onChange(e.target.checked)} />
+    <span><b>Dates not confirmed yet</b><span className="block text-xs text-slate-500">Kept as an estimate (shown with a mark, and on the notices) until you confirm it.</span></span>
+  </label>
+);
+
+/**
+ * New dates for one leave, with the remark; the crews and the person's schedule are checked as the dates change.
+ * `leave.replan`: a cancelled PV (the leave owed): approval adds it back with the new dates.
+ */
+export function ProposeSheet({ person, leave, inputs, approvals, today, changes, isHead = false, onBack, onDone }: { person: MpPerson; leave: MergedLeave & { replan?: boolean }; inputs: ManpowerInputs; approvals: LeaveApproval[]; today: string; /** approved changes this year, counted on him */ changes?: number; isHead?: boolean; onBack: () => void; onDone: (m: string) => void }) {
   const crewOn = (d: string) => { const q = personOn(person, d); return q.dayDuty ? null : q.crew; };
-  const [start, setStart] = useState(leave.start); const [end, setEnd] = useState(leave.end);
-  const [remark, setRemark] = useState('');
+  const replan = !!leave.replan;
+  const [start, setStart] = useState(replan ? '' : leave.start); const [end, setEnd] = useState(replan ? '' : leave.end);
+  const [remark, setRemark] = useState(''); const [estimated, setEstimated] = useState(leave.estimated);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const valid = isValidIsoDate(start) && isValidIsoDate(end) && end >= start;
-  const unchanged = start === leave.start && end === leave.end;
+  const unchanged = !replan && start === leave.start && end === leave.end;
   // the plan keeps the rest days after the last duty day (workbook convention)
   let planEnd = end; if (valid) for (let i = 0; i < 10 && isRestDay(addDaysIso(planEnd, 1), crewOn(addDaysIso(planEnd, 1))); i++) planEnd = addDaysIso(planEnd, 1);
   const exp = valid ? expectedRequest(start, planEnd, crewOn) : null;
-  const now = expectedRequest(leave.start, leave.end, crewOn);
-  const impact = useMemo(() => (valid && !unchanged ? leaveImpact(person, leave.records, inputs, approvals, start, planEnd, today) : null), [valid, unchanged, person, leave, inputs, approvals, start, planEnd, today]);
+  const now = replan ? null : expectedRequest(leave.start, leave.end, crewOn);
+  const days = oracleDays(leave.start, leave.end);
+  const first = leave.records[0];
+  const impactRecords = replan ? [] : leave.records;
+  const impact = useMemo(() => (valid && !unchanged ? leaveImpact(person, impactRecords.length ? impactRecords : [first], inputs, approvals, start, planEnd, today) : null), [valid, unchanged, person, leave, inputs, approvals, start, planEnd, today]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { check, err: checkErr, verdict } = useDatesCheck(person.id, leave.records.map((r) => r.id!), first?.typeCode, first?.typeShort, start, planEnd, valid && !unchanged);
+  const hard = !!check && hasHardStop(check.findings);
+  // the Section Head's own change is approved at once: only when the server would approve it
+  const headBlocked = isHead && !!verdict && !verdict.allowed;
   async function send() {
     setBusy(true); setErr(null);
     try {
-      await createChangeRequest({ records: leave.records.map((r) => r.id!), start, end: planEnd, remark: remark.trim(), impact: impact ?? { short: 0, dates: [], clash: [] } });
-      onDone(`${person.name}: request to move the leave to ${range(start, planEnd)} sent to the Section Head.`);
+      const id = await createChangeRequest({ records: leave.records.map((r) => r.id!), start, end: planEnd, remark: remark.trim(), impact: impact ?? { short: 0, dates: [], clash: [] }, estimated });
+      if (isHead) {
+        await decideChangeRequest(id, true, '', check);
+        onDone(`${person.name}: leave ${replan ? 'given new dates' : 'moved'}: ${range(start, planEnd)}${estimated ? ' (estimate)' : ''}. Oracle: submit the request in EasyHR.`);
+      } else onDone(`${person.name}: request for ${range(start, planEnd)} sent to the Section Head.`);
     } catch (e) { setErr(e); setBusy(false); }
   }
   return (
-    <BottomSheet open onClose={onBack} title="Request: reschedule">
+    <BottomSheet open onClose={onBack} title={replan ? 'Leave owed: new dates' : isHead ? 'Reschedule' : 'Request: reschedule'}>
       <div className="space-y-3">
         <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm ring-1 ring-slate-200">
           <div className="font-medium text-slate-800">{person.name}</div>
-          <div className="text-xs text-slate-600">Now: <b>{range(leave.start, leave.end)}</b>{now ? ` · ${now.days} days in Oracle · back ${weekday(now.backOn)} ${shortDate(now.backOn)}` : ''}</div>
-          {leave.oracle && <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">Oracle now <OraclePill status={leave.oracle} /></div>}
-          {changes !== undefined && <div className="mt-1 text-xs font-medium text-amber-800">Counted on him: {changes === 0 ? 'no change approved this year, this would be the first' : `${changes} change${changes === 1 ? '' : 's'} approved this year, this would be no. ${changes + 1}`}</div>}
+          {replan
+            ? <div className="text-xs text-slate-600">Cancelled: <b>{range(leave.start, leave.end)}</b> · {days} days in Oracle to give again</div>
+            : <div className="text-xs text-slate-600">Now: <b>{range(leave.start, leave.end)}</b>{now ? ` · ${now.days} days in Oracle · back ${weekday(now.backOn)} ${shortDate(now.backOn)}` : ''}</div>}
+          {leave.oracle && !replan && <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">Oracle now <OraclePill status={leave.oracle} /></div>}
+          {changes !== undefined && !replan && <div className="mt-1 text-xs font-medium text-amber-800">Counted on him: {changes === 0 ? 'no change approved this year, this would be the first' : `${changes} change${changes === 1 ? '' : 's'} approved this year, this would be no. ${changes + 1}`}</div>}
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="New first day"><input type="date" className="input" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value); }} /></Field>
+          <Field label="New first day"><input type="date" className="input" value={start} onChange={(e) => { setStart(e.target.value); if (!end || e.target.value > end) setEnd(e.target.value); }} /></Field>
           <Field label="New last day"><input type="date" className="input" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></Field>
         </div>
         {valid && !unchanged && <>
-          <p className="text-sm font-medium text-slate-800">New plan {range(start, planEnd)} · {oracleDays(start, end)} days in Oracle{exp ? ` · back ${weekday(exp.backOn)} ${shortDate(exp.backOn)}` : ''}</p>
+          <p className="text-sm font-medium text-slate-800">New plan {range(start, planEnd)} · {oracleDays(start, end)} days in Oracle{replan && oracleDays(start, end) !== days ? ` (owed ${days})` : ''}{exp ? ` · back ${weekday(exp.backOn)} ${shortDate(exp.backOn)}` : ''}</p>
           {impact && <ImpactBox impact={impact} />}
+          <CheckPanel check={check} error={checkErr} />
+          {verdict && !verdict.allowed && !hard && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-900 ring-1 ring-red-200">{isHead ? 'Cover the crew first (Shift change / cover), then save these dates.' : 'The crew must be covered before the Section Head can approve these dates. You can send it: say how in the remark.'}</p>}
         </>}
-        <Field label="Remark"><input className="input" value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="e.g. Employee asked to move it a week later" /></Field>
-        <p className="text-xs text-slate-500">Nothing changes in the plan until the Section Head approves. A crew shortage does not stop you sending it, but say why in the remark.</p>
+        <EstimateSwitch value={estimated} onChange={setEstimated} />
+        <Field label="Remark"><input className="input" value={remark} onChange={(e) => setRemark(e.target.value)} placeholder={replan ? 'e.g. Leave owed after the Train-2 shutdown' : 'e.g. Employee asked to move it a week later'} /></Field>
+        <p className="text-xs text-slate-500">{isHead ? 'Saved and approved at once, after the same check the server runs.' : 'Nothing changes in the plan until the Section Head approves.'}</p>
         {err != null && <ErrorBox error={err} />}
         <div className="flex gap-2">
           <Button variant="secondary" className="flex-1" onClick={onBack}>Back</Button>
-          <Button className="flex-1" disabled={busy || !valid || unchanged || !remark.trim()} onClick={send}>{busy ? 'Sending…' : 'Send request'}</Button>
+          <Button className="flex-1" disabled={busy || !valid || unchanged || !remark.trim() || !check || hard || headBlocked} onClick={send}>{busy ? 'Saving…' : isHead ? 'Save' : 'Send request'}</Button>
         </div>
       </div>
     </BottomSheet>
   );
 }
 
-/** One reschedule request: its dates, the crews' check, and the Section Head's decision (checked again on the server). */
+/** One reschedule request: its dates, the full check, and the Section Head's decision; he may change the dates first. */
 export function ChangeRequestSheet({ req, name, isHead, onClose, onDone }: { req: ChangeRequest; name: string; isHead: boolean; onClose: () => void; onDone: (m: string) => void }) {
   const today = localToday();
   const [state, setState] = useState<{ inputs: ManpowerInputs; approvals: LeaveApproval[]; by: string | null; changes: number } | null>(null);
   const [remarks, setRemarks] = useState(''); const [reason, setReason] = useState(''); const [withdrawing, setWithdrawing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null); const [err, setErr] = useState<unknown>(null);
+  const [start, setStart] = useState(req.new_start); const [end, setEnd] = useState(req.new_end); const [estimated, setEstimated] = useState(req.estimated);
+  const [editing, setEditing] = useState(false);
   const open = req.status === 'requested';
   useEffect(() => {
     const y = Number(today.slice(0, 4));
@@ -102,41 +151,53 @@ export function ChangeRequestSheet({ req, name, isHead, onClose, onDone }: { req
   }, [req, today]);
   const person = state?.inputs.people.find((p) => p.id === req.employee_id) ?? null;
   const records: MpAbsence[] = state ? state.inputs.absences.filter((a) => req.record_ids.includes(a.id ?? '') && a.inCurrentPlan !== false && (a.status === 'approved' || a.status === 'planned')) : [];
-  const stale = !!state && open && records.length !== req.record_ids.length;
-  const live = state && person && open && !stale ? leaveImpact(person, records, state.inputs, state.approvals, req.new_start, req.new_end, today) : null;
-  const [check, setCheck] = useState<ScheduleCheck | null>(null); const [checkErr, setCheckErr] = useState<unknown>(null);
+  const stale = !!state && open && !req.replan && records.length !== req.record_ids.length;
+  const valid = isValidIsoDate(start) && isValidIsoDate(end) && end >= start;
+  const changed = start !== req.new_start || end !== req.new_end || estimated !== req.estimated;
+  const owed: MpAbsence = { id: req.record_ids[0], employeeId: req.employee_id, start: req.old_start, end: req.old_end, status: 'approved', typeCode: 'annual_leave_planned', typeShort: 'PV', inCurrentPlan: true };
+  const live = state && person && open && !stale && valid ? leaveImpact(person, req.replan ? [owed] : records, state.inputs, state.approvals, start, end, today) : null;
   const first = records[0];
-  useEffect(() => {
-    if (!open || !first) return;
-    checkProposal({ kind: 'reschedule', employeeId: req.employee_id, recordIds: req.record_ids, start: req.new_start, end: req.new_end, typeCode: first.typeCode, typeShort: first.typeShort ?? 'PV' })
-      .then(setCheck).catch(setCheckErr);
-  }, [open, first, req]);
-  const hard = !!check && hasHardStop(check.findings);
+  const { check, err: checkErr, verdict } = useDatesCheck(req.employee_id, req.record_ids, first?.typeCode, first?.typeShort, start, end, open && !stale && valid && (req.replan || !!first));
+  const blocked = !!verdict && !verdict.allowed;
   async function decide(approve: boolean) {
     setBusy(approve ? 'yes' : 'no'); setErr(null);
-    try { await decideChangeRequest(req.id, approve, remarks.trim(), check); onDone(approve ? `${name}: leave moved to ${range(req.new_start, req.new_end)}. Oracle is back to Not submitted: submit the new request in EasyHR.` : `${name}: change not approved. The plan stays as it was.`); }
-    catch (e) { setErr(e); setBusy(null); }
+    try {
+      if (approve && changed) await amendChangeRequest(req.id, start, end, estimated);
+      await decideChangeRequest(req.id, approve, remarks.trim(), check);
+      onDone(approve ? `${name}: leave ${req.replan ? 'given new dates' : 'moved'}: ${range(start, end)}${estimated ? ' (estimate)' : ''}. Oracle is back to Not submitted: submit the new request in EasyHR.` : `${name}: change not approved. The plan stays as it was.`);
+    } catch (e) { setErr(e); setBusy(null); }
   }
   async function withdraw() {
     setBusy('withdraw'); setErr(null);
     try { await withdrawChangeRequest(req.id, reason.trim()); onDone(`${name}: request withdrawn.`); } catch (e) { setErr(e); setBusy(null); }
   }
   return (
-    <BottomSheet open onClose={onClose} title="Reschedule request">
+    <BottomSheet open onClose={onClose} title={req.replan ? 'Leave owed: new dates' : 'Reschedule request'}>
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2"><span className="text-sm font-medium text-slate-900">{name}</span><ChangeChip status={req.status} /></div>
         <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm ring-1 ring-slate-200">
-          <div className="text-slate-600">Now: <b className="text-slate-800">{range(req.old_start, req.old_end)}</b> · {daysIn(req.old_start, req.old_end)} days</div>
-          <div className="text-slate-600">Asked: <b className="text-slate-800">{range(req.new_start, req.new_end)}</b> · {daysIn(req.new_start, req.new_end)} days</div>
+          <div className="text-slate-600">{req.replan ? 'Cancelled' : 'Now'}: <b className="text-slate-800">{range(req.old_start, req.old_end)}</b> · {daysIn(req.old_start, req.old_end)} days</div>
+          <div className="text-slate-600">Asked: <b className="text-slate-800">{range(req.new_start, req.new_end)}</b> · {daysIn(req.new_start, req.new_end)} days{req.estimated ? ' · estimate' : ''}</div>
           <div className="mt-1 text-xs text-slate-500">Remark: {req.remark}</div>
           <div className="text-xs text-slate-500">Asked {new Date(req.requested_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}{state?.by ? ` by ${state.by}` : ''}</div>
-          {state && open && <div className="mt-1 text-xs font-medium text-amber-800">Counted on him: {state.changes === 0 ? 'no change approved this year, this would be the first' : `${state.changes} change${state.changes === 1 ? '' : 's'} approved this year, this would be no. ${state.changes + 1}`}</div>}
+          {state && open && !req.replan && <div className="mt-1 text-xs font-medium text-amber-800">Counted on him: {state.changes === 0 ? 'no change approved this year, this would be the first' : `${state.changes} change${state.changes === 1 ? '' : 's'} approved this year, this would be no. ${state.changes + 1}`}</div>}
         </div>
+        {open && isHead && !stale && (editing ? (
+          <div className="space-y-2 rounded-xl bg-brand-50 p-3 ring-1 ring-brand-200">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="First day"><input type="date" className="input" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value); }} /></Field>
+              <Field label="Last day"><input type="date" className="input" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></Field>
+            </div>
+            <EstimateSwitch value={estimated} onChange={setEstimated} />
+            {changed && <p className="text-xs font-medium text-brand-800">Approving records {range(start, end)} · {daysIn(start, end)} days{estimated ? ' (estimate)' : ''}.</p>}
+          </div>
+        ) : <button type="button" onClick={() => setEditing(true)} className="w-full rounded-lg py-2 text-center text-sm font-semibold text-brand-700 ring-1 ring-brand-300">Change the dates…</button>)}
         {open && !state && !err && <Spinner />}
         {stale && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">This leave has changed since the request was made. Do not approve it: not approve it and ask for the change again.</p>}
         {live && <ImpactBox impact={live} label="Shortage check now" />}
         {open && !stale && <CheckPanel check={check} error={checkErr} />}
-        {req.impact && <ImpactBox impact={req.impact} label="When it was asked" />}
+        {blocked && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-900 ring-1 ring-red-200">{verdict!.reason}</p>}
+        {req.impact && !changed && <ImpactBox impact={req.impact} label="When it was asked" />}
         {!open && <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm ring-1 ring-slate-200">
           {req.status === 'withdrawn' ? <>Withdrawn: {req.withdraw_reason}</> : <>Decision: <b className={req.status === 'approved' ? 'text-status-green' : 'text-status-red'}>{CHANGE_LABEL[req.status]}</b>{req.decision_remarks ? ` · ${req.decision_remarks}` : ''}</>}
         </div>}
@@ -146,7 +207,7 @@ export function ChangeRequestSheet({ req, name, isHead, onClose, onDone }: { req
             <Field label="Remarks (optional)"><input className="input" value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="e.g. Agreed, keep the Oracle request in the new dates" /></Field>
             <div className="flex gap-2">
               <Button variant="danger" className="flex-1" disabled={busy !== null} onClick={() => decide(false)}><X className="h-4 w-4" />{busy === 'no' ? 'Saving…' : 'Not approved'}</Button>
-              <Button className="flex-1" disabled={busy !== null || stale || !check || hard} onClick={() => decide(true)}><Check className="h-4 w-4" />{busy === 'yes' ? 'Saving…' : 'Approve'}</Button>
+              <Button className="flex-1" disabled={busy !== null || stale || !valid || !check || blocked} onClick={() => decide(true)}><Check className="h-4 w-4" />{busy === 'yes' ? 'Saving…' : changed ? 'Approve new dates' : 'Approve'}</Button>
             </div>
           </>
         )}

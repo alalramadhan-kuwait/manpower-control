@@ -221,9 +221,20 @@ export function leaveOverlap(inp: ProposalInputs, pr: Proposal, rules: RuleConfi
 /** Another move, cover or shutdown team of the same person on any of the dates. */
 export function assignmentOverlap(inp: ProposalInputs, pr: Proposal, rules: RuleConfig[]): Finding[] {
   const rule = ruleOf(rules, 'assignment_overlap');
-  if (!rule.enabled || (pr.kind !== 'move' && pr.kind !== 'cover')) return [];
+  if (!rule.enabled) return [];
   const { start, end } = proposalSpan(pr);
   const person = inp.people.find((p) => p.id === pr.employeeId);
+  // leave on the dates of a shutdown team the person works on: the Section Head decides (a team member normally takes none)
+  if (pr.kind === 'absence' || pr.kind === 'reschedule' || pr.kind === 'release') {
+    const team = [...(person?.moves ?? []).filter((m) => m.crew === 'SD').map((m) => ({ start: m.start, end: m.end ?? m.start })),
+      ...inp.assignments.filter((a) => a.employeeId === pr.employeeId && a.kind === 'sd_team' && !a.rest)].filter((t) => t.start <= end && start <= t.end);
+    if (!team.length) return [];
+    const from = team.reduce((a, t) => (t.start < a ? t.start : a), team[0].start), to = team.reduce((a, t) => (t.end > a ? t.end : a), team[0].end);
+    const a = from > start ? from : start, b = to < end ? to : end;
+    return [{ rule: rule.code, severity: 'critical', date: a, key: `sdteam:${from}`,
+      message: `On a shutdown team ${fmt(from)} – ${fmt(to)}: this leave falls on ${a === b ? fmt(a) : `${fmt(a)} – ${fmt(b)}`} of it. A team member normally takes no leave during the shutdown.` }];
+  }
+  if (pr.kind !== 'move' && pr.kind !== 'cover') return [];
   const moves = (person?.moves ?? []).filter((m) => (pr.kind === 'move' && pr.moveKind === 'placement' ? m.kind !== 'placement' : true) && m.start <= end && (m.end === null || start <= m.end));
   const asg = inp.assignments.filter((a) => a.employeeId === pr.employeeId && a.start <= end && start <= a.end);
   return [
