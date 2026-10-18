@@ -26,6 +26,7 @@ import { EligibilityBadge, ExceptionsBox, FiguresSheet, ReadinessPanel } from '.
 import { localToday } from '@/ui/leave';
 import { useLiveRefresh } from '@/data/live';
 import { NextSteps, planSteps } from './SdSteps';
+import { WorkingPlan } from './WorkingPlan';
 
 const CONTROLLER_ROLES = ['controller', 'vr_controller', 'morning_controller'];
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
@@ -64,6 +65,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
   const [editTeam, setEditTeam] = useState<SdTeam | null>(null);
   const [editPhases, setEditPhases] = useState(false);
   const [spreading, setSpreading] = useState(false);
+  const [grid, setGrid] = useState(false);
   const [yearOt, setYearOt] = useState(false);
   const [moving, setMoving] = useState(false);
   // the instructions are a page of their own (?view=instructions), so Back returns to the plan
@@ -114,7 +116,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
   }, [id, isHead]);
   useEffect(() => { load(); }, [load]);
   // a change made elsewhere (another phone, the server) shows without leaving the page; not while a sheet is open
-  const sheetOpen = !!(adding || member || editPattern || editTeam || editPhases || spreading || yearOt || moving || figures);
+  const sheetOpen = !!(adding || member || editPattern || editTeam || editPhases || spreading || grid || yearOt || moving || figures);
   useLiveRefresh(() => { setReloading(true); load(); }, !sheetOpen);
   const refresh = () => { setReloading(true); load(); };
   /** Drag and drop: a name dropped on another place of a team (or the other team): same person, new team / level / area. */
@@ -134,7 +136,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
       done(`${r?.display_name ?? 'Member'} moved to the ${team.name} ${total ? 'shift' : 'team'}${total ? (area ? ` · ${area}` : '') : ` · ${SD_SLOT_LABEL[slot]}`}.`);
     } catch (e) { setMoveError(e instanceof Error ? e.message : 'Could not move.'); }
   }
-  const done = (m: string) => { setAdding(null); setMember(null); setEditPattern(false); setEditTeam(null); setEditPhases(false); setSpreading(false); setYearOt(false); setFigures(false); setMoving(false); setFollowing(false); setNotice(m); load(); };
+  const done = (m: string) => { setAdding(null); setMember(null); setEditPattern(false); setEditTeam(null); setEditPhases(false); setSpreading(false); setGrid(false); setYearOt(false); setFigures(false); setMoving(false); setFollowing(false); setNotice(m); load(); };
   // the shutdown moved: its days and hours are rebuilt for the new dates (the crews' duty days are not the same)
   const moved = (m: string) => { setEditPattern(false); setNotice(m); load().then(() => setSpreading(true)); };
 
@@ -235,6 +237,12 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
         <>
           <NextSteps checking={checking || reloading} loadedAt={loadedAt} onRefresh={refresh} steps={planSteps({ members, needTotal, check, approval, isHead,
             onTeam: () => scrollTo('sd-teams'), onDays: () => setSpreading(true), onFix: () => scrollTo('sd-readiness'), onApprove: () => scrollTo('sd-readiness') })} />
+          {members.length > 0 && (
+            <button type="button" onClick={() => setGrid(true)} className="mb-3 flex w-full items-center justify-between gap-2 rounded-xl bg-brand-700 px-4 py-3 text-left text-white shadow-sm">
+              <span><span className="block text-sm font-semibold">Working plan · edit day by day</span><span className="block text-[11px] text-brand-100">Every person and day in one grid; each change checked like the approval</span></span>
+              <Shuffle className="h-5 w-5 shrink-0" />
+            </button>
+          )}
           <div className="mb-3">
             <button type="button" onClick={() => setTools((v) => !v)} aria-expanded={tools} className="flex w-full items-center justify-between rounded-lg bg-white px-3 py-2 text-sm font-medium text-slate-700 ring-1 ring-slate-200">
               <span className="flex items-center gap-1.5"><FileText className="h-4 w-4 text-slate-500" />Documents & tools{view.overlaps.length ? <span className="rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-900">instructions {view.overlaps.reduce((n, g) => n + g.changes.length, 0)}</span> : null}</span>
@@ -244,7 +252,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <ToolButton onClick={() => setFollowing(true)} label="Shift instructions" hint="When each person joins and rejoins" />
                 <ToolButton onClick={copyList} label="Copy team list" hint="To paste in a message" />
-                <ToolButton to={`/shutdown/${plan.id}/schedule`} label="Working plan" hint="Who works which day (print)" />
+                <ToolButton to={`/shutdown/${plan.id}/schedule`} label="Duty schedule" hint="Who works which day (print)" />
                 <ToolButton to={`/shutdown/${plan.id}/overtime`} label="Overtime sheet" hint="For approval (print)" />
                 <ToolButton onClick={generate} disabled={generating} label={generating ? 'Creating…' : 'Excel file'} hint="All 4 sheets in one file" />
                 <ToolButton onClick={() => setEditPattern(true)} label="Plan settings" hint="Dates, 3 on / 1 off, hours, limits" />
@@ -356,6 +364,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
       {adding && <AddSheet plan={plan} team={adding.team} slot={adding.slot} area={adding.area} data={data} view={view} onClose={() => setAdding(null)} onDone={done} />}
       {member && <MemberSheet plan={plan} m={member} data={data} view={view} onClose={() => setMember(null)} onDone={done} />}
       {moving && <MoveLeaveSheet plan={plan} members={members} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} inputs={data.inputs} onClose={() => setMoving(false)} onDone={done} />}
+      {grid && <WorkingPlan planId={plan.id} approved={approval?.status === 'approved'} onClose={() => setGrid(false)} onDone={done} />}
       {spreading && <SpreadDaysSheet plan={plan} teams={teams} members={members} phases={data.phases} names={new Map([...data.dir].map(([id, r]) => [id, r.display_name]))} crewOf={(e) => { const mm = members.find((x) => x.employeeId === e); return mm ? view.dutyCrew(mm) : view.homeCrew(e, plan.start); }} conflicts={approvedLeave} yearTaken={yearTaken} planner={planner} onClose={() => setSpreading(false)} onDone={done} />}
       {figures && data.v2 && <FiguresSheet plan={plan} members={members} dir={dir} ot={data.v2.ot} sick={data.v2.sick} onClose={() => setFigures(false)} onDone={done} />}
       {yearOt && <YearOvertimeSheet plan={plan} members={members} dir={dir} taken={data.otTaken} onClose={() => setYearOt(false)} onDone={done} />}
