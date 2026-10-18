@@ -749,14 +749,6 @@ function eligibility(p, info, isController, around, sick, ex) {
     reasons.push(`${sick.days} sick-leave days in 12 months (over 35): excluded unless the Section Head approves.`);
   }
   if (sick.state === "excepted") reasons.push(`${sick.days} sick-leave days: exception approved.`);
-  if (sick.state === "verify") {
-    raise("verify");
-    reasons.push("Sick leave: Verification needed.");
-  }
-  if (sick.state === "outdated") {
-    raise("verify");
-    reasons.push(`Sick leave: Data outdated — Update required (${sick.age} days old).`);
-  }
   return { ok: level !== "blocked" && level !== "needs_exception", level, reasons };
 }
 var COVER_ROLES = ["controller", "senior", "good"];
@@ -1121,9 +1113,6 @@ function checkPlan(inp) {
     if (short.length) issues.push({ level: "info", code: "short_hours", employeeId: id, message: `${name(id)}: ${r22(short.reduce((t, c) => t + c.short, 0))} h below the regular hours (${short.map((c) => `${fmtDay(c.from < p.start ? p.start : c.from)}–${fmtDay(c.to > p.end ? p.end : c.to)}: ${c.short} h`).join(", ")}).` });
     const o = personOvertime(p, id, duties, inp.otEntries.get(id) ?? null, inp.otherDuties.filter((x) => x.employeeId === id));
     overtime.push(o);
-    if (o.entryState === "missing") issues.push({ level: "verify", code: "ot_missing", employeeId: id, message: `${name(id)}: overtime already taken not entered yet (from the Oracle report).` });
-    if (o.entryState === "unverified") issues.push({ level: "verify", code: "ot_unverified", employeeId: id, message: `${name(id)}: overtime entered but not verified.` });
-    if (o.entryState === "late") issues.push({ level: "verify", code: "ot_late", employeeId: id, message: `${name(id)}: overtime entry is dated after the shutdown starts; enter it as of a date before ${fmtDay(p.start)}.` });
     for (const x of o.months) {
       if (x.state === "over") issues.push({ level: "block", code: "ot_month_hard", employeeId: id, message: `${name(id)}: ${x.total} h overtime in ${fmtMonth(x.key)}, over the ${L.monthHard} h limit.` });
       else if (x.state === "warn") issues.push({ level: "warn", code: "ot_month_warn", employeeId: id, message: `${name(id)}: ${x.total} h overtime in ${fmtMonth(x.key)} (above ${L.monthWarn} h; ${r22(L.monthHard - x.total)} h left to the limit).` });

@@ -234,7 +234,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
       {data.v2 && !total ? (
         <>
           <NextSteps checking={checking || reloading} loadedAt={loadedAt} onRefresh={refresh} steps={planSteps({ members, needTotal, check, approval, isHead,
-            onTeam: () => scrollTo('sd-teams'), onDays: () => setSpreading(true), onFix: () => scrollTo('sd-readiness'), onFigures: () => setFigures(true), onApprove: () => scrollTo('sd-readiness') })} />
+            onTeam: () => scrollTo('sd-teams'), onDays: () => setSpreading(true), onFix: () => scrollTo('sd-readiness'), onApprove: () => scrollTo('sd-readiness') })} />
           <div className="mb-3">
             <button type="button" onClick={() => setTools((v) => !v)} aria-expanded={tools} className="flex w-full items-center justify-between rounded-lg bg-white px-3 py-2 text-sm font-medium text-slate-700 ring-1 ring-slate-200">
               <span className="flex items-center gap-1.5"><FileText className="h-4 w-4 text-slate-500" />Documents & tools{view.overlaps.length ? <span className="rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-900">instructions {view.overlaps.reduce((n, g) => n + g.changes.length, 0)}</span> : null}</span>
@@ -258,9 +258,8 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
           <ActionButton onClick={() => setSpreading(true)} icon={<Shuffle className="h-4 w-4" />} title={total ? 'Spread days off' : 'Set days & hours'} hint={total ? 'Choose each person\'s days off' : 'Which days each person works, and 8 h or 12 h'} />
           {<ActionButton onClick={() => setFollowing(true)} warn={view.overlaps.length > 0} icon={<Shuffle className="h-4 w-4" />} title={view.overlaps.length ? `Shift instructions · ${view.overlaps.reduce((n, g) => n + g.changes.length, 0)}` : 'Shift instructions'} hint={view.overlaps.length ? 'See everyone\'s instructions. Some people clash and should follow another shift' : 'See everyone\'s instructions: when to join and rejoin'} />}
         </div>
-        {data.v2
-          ? <ActionButton onClick={() => setFigures(true)} warn={!!check && check.issues.some((i) => i.level === 'verify')} icon={<Pencil className="h-4 w-4" />} title="Oracle & HR figures" hint="Overtime taken (Oracle report) and sick leave in the last 12 months, per person" />
-          : <ActionButton onClick={() => setYearOt(true)} icon={<Pencil className="h-4 w-4" />} title="Overtime taken this year" hint={`Hours each person already took this year: the shutdown keeps everyone within ${yearCap(plan)} h a year`} />}
+        {/* v2: the Oracle overtime and HR sick-leave figures are checked outside the app */}
+        {!data.v2 && <ActionButton onClick={() => setYearOt(true)} icon={<Pencil className="h-4 w-4" />} title="Overtime taken this year" hint={`Hours each person already took this year: the shutdown keeps everyone within ${yearCap(plan)} h a year`} />}
         <div className="grid grid-cols-3 gap-2">
           <Link to={`/shutdown/${plan.id}/schedule`} className="flex min-h-12 flex-col items-center justify-center rounded-lg bg-white px-1 text-center ring-1 ring-slate-300"><span className="flex items-center gap-1 text-xs font-semibold text-brand-700"><FileText className="h-3.5 w-3.5" />Duty schedule</span><span className="text-[10px] leading-tight text-slate-500">Who works which day</span></Link>
           <Link to={`/shutdown/${plan.id}/overtime`} className="flex min-h-12 flex-col items-center justify-center rounded-lg bg-white px-1 text-center ring-1 ring-slate-300"><span className="flex items-center gap-1 text-xs font-semibold text-brand-700"><FileText className="h-3.5 w-3.5" />Summary</span><span className="text-[10px] leading-tight text-slate-500">Overtime for approval</span></Link>

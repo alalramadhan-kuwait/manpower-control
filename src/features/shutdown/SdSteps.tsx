@@ -10,20 +10,18 @@ export interface Step { key: string; title: string; detail: string; done: boolea
 
 export function planSteps(v: {
   members: SdMember[]; needTotal: number; check: PlanCheck | null; approval: ApprovalState | null; isHead: boolean;
-  onTeam: () => void; onDays: () => void; onFix: () => void; onFigures: () => void; onApprove: () => void;
+  onTeam: () => void; onDays: () => void; onFix: () => void; onApprove: () => void;
 }): Step[] {
   const { members, needTotal, check } = v;
   const issues = check?.issues ?? [];
   const stale = issues.filter((i) => i.code === 'days_stale').length;
   const unplanned = members.filter((m) => !Object.keys(m.days ?? {}).length).length;
   const blocking = issues.filter((i) => i.level === 'block' && i.code !== 'days_stale');
-  const verify = issues.filter((i) => i.level === 'verify');
   const approved = v.approval?.status === 'approved' && v.approval.fingerprint === check?.fingerprint;
   return [
     { key: 'team', title: 'Team', detail: members.length >= needTotal ? `${members.length} people placed` : `${members.length} of ${needTotal} placed`, done: members.length > 0 && members.length >= needTotal, action: { label: 'Add people', run: v.onTeam } },
     { key: 'days', title: 'Days & hours', detail: stale ? `Planned for other dates: ${stale} ${stale === 1 ? 'person' : 'people'}` : unplanned ? `${unplanned} not planned yet` : 'Planned for the shutdown dates', done: !stale && !unplanned && members.length > 0, action: { label: 'Set days & hours', run: v.onDays } },
     { key: 'fix', title: 'Problems that stop the plan', detail: check ? (blocking.length ? `${blocking.length} to solve` : 'None') : 'Checking…', done: !!check && !blocking.length, action: { label: `Solve ${blocking.length || ''}`.trim(), run: v.onFix } },
-    { key: 'figures', title: 'Oracle & HR figures', detail: check ? (verify.length ? `${verify.length} to enter or verify` : 'All entered') : 'Checking…', done: !!check && !verify.length, action: { label: 'Enter the figures', run: v.onFigures } },
     { key: 'approve', title: 'Approval', detail: approved ? 'Approved' : check?.status === 'ready' ? (v.isHead ? 'Ready: approve the plan' : 'Ready: waiting for the Section Head') : 'After the steps above', done: approved, locked: check?.status !== 'ready' || !v.isHead, action: { label: 'Approve', run: v.onApprove } },
   ];
 }

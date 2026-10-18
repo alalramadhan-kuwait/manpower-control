@@ -75,9 +75,9 @@ describe('G2 · sick leave in the rolling 12 months', () => {
     expect(sickState(null, '2026-10-20', false)).toMatchObject({ state: 'verify', days: null });
     expect(sickState({ asOf: '2026-08-01', days: 2 }, '2026-10-20', false).state).toBe('outdated');
   });
-  it('an unconfirmed figure blocks approval but not picking', () => {
-    const c = checkPlan(input(ready(), { sickEntries: new Map() }));
-    expect(c.status).toBe('verify');
+  it('a missing figure stops nothing: the Oracle / HR figures are checked outside the app', () => {
+    const c = checkPlan(input(ready(), { sickEntries: new Map(), otEntries: new Map() }));
+    expect(c.status).toBe('ready');
     expect(c.issues.filter((i) => i.level === 'block')).toEqual([]);
   });
 });
