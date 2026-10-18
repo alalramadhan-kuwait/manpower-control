@@ -5,7 +5,7 @@
 // around them. Nothing is stored until Save, which writes the days the exports and the approval read (an approved plan
 // goes back to Draft, as for any change of its days).
 import { ArrowLeftRight, Lock, Redo2, Save, Undo2, Unlock, Wand2, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { planDates, type SdMember } from '@/core/shutdown';
 import { spreadPlan } from '@/core/shutdown/spread';
 import { checkPlan, fmtDay, plannerContext, type Issue, type PlanCheck, type PlanCheckInput } from '@/core/shutdown/v2';
@@ -45,6 +45,8 @@ export function WorkingPlan({ planId, approved, onClose, onDone }: { planId: str
   const [sel, setSel] = useState<Sel>(null); const [mode, setMode] = useState<Mode>(null);
   const [msg, setMsg] = useState<Msg>({ tone: 'info', title: 'Choose the days to change', text: 'Tap a day, then another day in the same row for the days between. Every change is checked like the approval: the team minimum, days in a row and rest, the move to and from the crew rota, overtime (72 h target, 80 h limit), the home crew on rest days, and leave.' });
   const [busy, setBusy] = useState<string | null>(null); const [err, setErr] = useState<unknown>(null);
+  const today = localToday();
+  const scroller = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let live = true;
@@ -58,6 +60,14 @@ export function WorkingPlan({ planId, approved, onClose, onDone }: { planId: str
   }, [planId]);
 
   const dates = useMemo(() => (inp ? planDates(inp.plan) : []), [inp]);
+  // open on today's column (or the first day), the person column kept in view
+  const loaded = !!cur;
+  useEffect(() => {
+    const el = scroller.current; if (!loaded || !el) return;
+    const th = el.querySelector<HTMLElement>(`[data-date="${today}"]`);
+    const name = el.querySelector<HTMLElement>('thead th');
+    if (th) el.scrollLeft = Math.max(0, th.offsetLeft - (name?.offsetWidth ?? 0) - 4);
+  }, [loaded, today]);
   const name = useCallback((employeeId: string) => inp?.info.get(employeeId)?.name ?? 'Member', [inp]);
   const rows = useMemo(() => (inp ? [...inp.teams].sort((a, b) => a.sort - b.sort).map((t) => ({ team: t,
     members: inp.members.filter((m) => m.teamId === t.id).sort((a, b) => (SLOT_ORDER[a.slot] ?? 9) - (SLOT_ORDER[b.slot] ?? 9) || name(a.employeeId).localeCompare(name(b.employeeId))) })) : []), [inp, name]);
@@ -88,7 +98,7 @@ export function WorkingPlan({ planId, approved, onClose, onDone }: { planId: str
       setPast((p) => [...p.slice(-49), cur]); setFuture([]);
       setCur({ days: t.days, marks, check: t.check }); setSel(null); setMode(null);
       const warns = t.check.issues.filter((i) => i.level === 'warn' && edits.some((e) => i.employeeId === memberOf(e.memberId).employeeId)).length;
-      setMsg({ tone: warns ? 'warn' : 'ok', title: `Applied: ${label}`, text: warns ? `${warns} warning${warns === 1 ? '' : 's'} for this person (see below); nothing that stops the plan.` : 'Checked: nothing new that stops the plan. Hours, overtime and the team minimum are updated.' });
+      setMsg({ tone: warns ? 'warn' : 'ok', title: `Applied: ${label}`, text: warns ? `${warns} warning${warns === 1 ? '' : 's'} for this person (in the plan check); nothing that stops the plan.` : 'Checked: nothing new that stops the plan. Hours, overtime and the team minimum are updated.' });
       setBusy(null);
     }, 10);
   }
@@ -194,10 +204,11 @@ export function WorkingPlan({ planId, approved, onClose, onDone }: { planId: str
   const blocks = check?.issues.filter((i) => i.level === 'block') ?? [];
   const warns = check?.issues.filter((i) => i.level === 'warn') ?? [];
   const tone = { info: 'bg-white ring-slate-200', ok: 'bg-green-50 ring-green-200', warn: 'bg-amber-50 ring-amber-200', block: 'bg-red-50 ring-red-300' }[msg.tone];
-  const tool = 'flex min-h-10 items-center gap-1 rounded-lg px-3 text-[13px] font-semibold ring-1 disabled:opacity-40';
+  const tool = 'flex min-h-10 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2.5 text-[13px] font-semibold ring-1 disabled:opacity-40';
+  const wide = 'hidden lg:flex';
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Working plan" className="fixed inset-0 z-50 flex flex-col bg-slate-100">
+    <div role="dialog" aria-modal="true" aria-label="Working plan" className="fixed inset-0 z-50 flex flex-col bg-slate-100 pt-[env(safe-area-inset-top)]">
       <header className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2">
         <div className="min-w-0 flex-1">
           <h1 className="text-base font-semibold text-brand-800">Working plan{inp ? ` · ${inp.plan.title}` : ''}</h1>
@@ -210,28 +221,28 @@ export function WorkingPlan({ planId, approved, onClose, onDone }: { planId: str
       {!inp || !cur ? <div className="p-6"><Spinner label="Loading the plan and its check…" /></div> : (
         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 lg:flex-row">
           <section aria-label="Days" className="min-w-0 flex-[3] rounded-xl bg-white p-2 ring-1 ring-slate-200">
-            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <div className="mb-2 flex items-center gap-1.5 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0">
               <button type="button" className={cx(tool, 'bg-white text-slate-700 ring-slate-300')} disabled={!past.length} onClick={undo}><Undo2 className="h-4 w-4" />Undo</button>
               <button type="button" className={cx(tool, 'bg-white text-slate-700 ring-slate-300')} disabled={!future.length} onClick={redo}><Redo2 className="h-4 w-4" />Redo</button>
-              <span className="mx-1 h-6 w-px bg-slate-200" />
-              <button type="button" className={cx(tool, 'bg-amber-300 text-amber-950 ring-amber-400')} onClick={() => paint('W12')}>Work 12 h</button>
-              <button type="button" className={cx(tool, 'bg-amber-100 text-amber-900 ring-amber-300')} onClick={() => paint('W8')}>Work 8 h</button>
-              <button type="button" className={cx(tool, 'bg-white text-slate-700 ring-slate-300')} onClick={() => paint('O')}>Off</button>
-              <button type="button" className={cx(tool, 'bg-slate-200 text-slate-800 ring-slate-300')} onClick={() => paint('U')}>Unavailable</button>
-              <span className="mx-1 h-6 w-px bg-slate-200" />
+              <span className="mx-1 h-6 w-px shrink-0 bg-slate-200" />
+              <button type="button" className={cx(tool, wide, 'bg-amber-300 text-amber-950 ring-amber-400')} onClick={() => paint('W12')}>Work 12 h</button>
+              <button type="button" className={cx(tool, wide, 'bg-amber-100 text-amber-900 ring-amber-300')} onClick={() => paint('W8')}>Work 8 h</button>
+              <button type="button" className={cx(tool, wide, 'bg-white text-slate-700 ring-slate-300')} onClick={() => paint('O')}>Off</button>
+              <button type="button" className={cx(tool, wide, 'bg-slate-200 text-slate-800 ring-slate-300')} onClick={() => paint('U')}>Unavailable</button>
+              <span className="mx-1 h-6 w-px shrink-0 bg-slate-200" />
               <button type="button" className={cx(tool, mode === 'move' ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-brand-700 ring-brand-300')} onClick={() => (mode === 'move' ? setMode(null) : startMode('move'))}><ArrowLeftRight className="h-4 w-4" />Move day off</button>
               <button type="button" className={cx(tool, mode === 'swap' ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-brand-700 ring-brand-300')} onClick={() => (mode === 'swap' ? setMode(null) : startMode('swap'))}><ArrowLeftRight className="h-4 w-4" />Swap with…</button>
               <button type="button" className={cx(tool, 'bg-white text-slate-700 ring-slate-300')} disabled={!sel} onClick={unlock}><Unlock className="h-4 w-4" />Unlock</button>
-              <button type="button" className={cx(tool, 'bg-brand-50 text-brand-800 ring-brand-300')} disabled={busy !== null} onClick={regenerate}><Wand2 className="h-4 w-4" />{busy === 'plan' ? 'Planning…' : 'Plan the unlocked days'}</button>
+              <button type="button" className={cx(tool, 'bg-brand-50 text-brand-800 ring-brand-300')} disabled={busy !== null} onClick={regenerate}><Wand2 className="h-4 w-4" />{busy === 'plan' ? 'Planning…' : <><span className="lg:hidden">Plan unlocked</span><span className="hidden lg:inline">Plan the unlocked days</span></>}</button>
               {busy === 'check' && <span className="text-[11px] text-slate-500">Checking…</span>}
             </div>
-            <div className="overflow-auto rounded-lg ring-1 ring-slate-200">
+            <div ref={scroller} className="overflow-auto rounded-lg ring-1 ring-slate-200">
               <table className="border-separate border-spacing-0 text-[12px]">
                 <thead className="sticky top-0 z-20 bg-slate-50">
                   <tr>
-                    <th scope="col" className="sticky left-0 z-30 min-w-44 bg-slate-50 px-2 py-1 text-left font-semibold text-slate-600">Person</th>
-                    {dates.map((d) => { const w = new Date(`${d}T00:00:00Z`).getUTCDay(); return <th key={d} scope="col" className={cx('min-w-10 px-0.5 py-1 text-center font-semibold', w === 5 || w === 6 ? 'text-amber-800' : 'text-slate-700')}><span className="block text-[10px] font-normal text-slate-500">{WD[w]}</span>{Number(d.slice(8))}{d.slice(8) === '01' || d === dates[0] ? <span className="block text-[9px] font-normal text-slate-500">{fmtDay(d).split(' ')[1]}</span> : null}</th>; })}
-                    <th scope="col" className="sticky right-0 z-30 min-w-36 bg-slate-50 px-2 py-1 text-left font-semibold text-slate-600">Overtime · month</th>
+                    <th scope="col" className="sticky left-0 z-30 w-28 min-w-28 max-w-28 bg-slate-50 px-2 py-1 text-left font-semibold text-slate-600 lg:w-44 lg:min-w-44 lg:max-w-44">Person</th>
+                    {dates.map((d) => { const w = new Date(`${d}T00:00:00Z`).getUTCDay(); return <th key={d} scope="col" data-date={d} className={cx('min-w-10 px-0.5 py-1 text-center font-semibold', d === today ? 'bg-brand-100 text-brand-900' : w === 5 || w === 6 ? 'text-amber-800' : 'text-slate-700')}><span className="block text-[10px] font-normal text-slate-500">{WD[w]}</span>{Number(d.slice(8))}{d.slice(8) === '01' || d === dates[0] ? <span className="block text-[9px] font-normal text-slate-500">{fmtDay(d).split(' ')[1]}</span> : null}</th>; })}
+                    <th scope="col" className="min-w-36 bg-slate-50 px-2 py-1 text-left font-semibold text-slate-600 lg:sticky lg:right-0 lg:z-30">Overtime · month</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -243,9 +254,9 @@ export function WorkingPlan({ planId, approved, onClose, onDone }: { planId: str
                         const ot = check!.overtime.find((o) => o.employeeId === m.employeeId);
                         return (
                           <tr key={m.id} className={sel?.memberId === m.id ? 'bg-orange-50' : ''}>
-                            <th scope="row" className="sticky left-0 z-10 border-b border-slate-100 bg-white px-2 py-0.5 text-left font-medium">
+                            <th scope="row" className="sticky left-0 z-10 w-28 min-w-28 max-w-28 border-b border-slate-100 bg-white px-2 py-0.5 text-left font-medium shadow-[2px_0_0_rgba(15,23,42,0.06)] lg:w-44 lg:min-w-44 lg:max-w-44">
                               <span className="block truncate text-[12px] text-slate-900">{name(m.employeeId)}</span>
-                              <span className="block text-[10px] font-normal text-slate-500">{SLOT_LABEL[m.slot] ?? m.slot}</span>
+                              <span className="block truncate text-[10px] font-normal text-slate-500">{SLOT_LABEL[m.slot] ?? m.slot}</span>
                             </th>
                             {dates.map((d) => {
                               const v = cellOf(inp, m, d, cur.days, cur.marks);
@@ -261,7 +272,7 @@ export function WorkingPlan({ planId, approved, onClose, onDone }: { planId: str
                                 </td>
                               );
                             })}
-                            <td className="sticky right-0 z-10 border-b border-slate-100 bg-white px-2 py-0.5">
+                            <td className="border-b border-slate-100 bg-white px-2 py-0.5 lg:sticky lg:right-0 lg:z-10">
                               <span className="flex flex-wrap gap-1">
                                 {(ot?.months ?? []).map((mo) => <span key={mo.key} className={cx('rounded px-1 font-mono text-[11px] font-semibold', mo.state === 'over' ? 'bg-red-100 text-red-800' : mo.total > (inp.plan.maxOvertime ?? 72) ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-700')}>{fmtDay(`${mo.key}-01`).split(' ')[1]} {mo.total}</span>)}
                               </span>
@@ -270,13 +281,13 @@ export function WorkingPlan({ planId, approved, onClose, onDone }: { planId: str
                         );
                       }),
                       <tr key={`c-${team.id}`} className="bg-slate-50">
-                        <th scope="row" className="sticky left-0 z-10 bg-slate-50 px-2 py-0.5 text-left text-[10px] font-semibold text-slate-600">Team minimum</th>
+                        <th scope="row" className="sticky left-0 z-10 w-28 min-w-28 max-w-28 bg-slate-50 px-2 py-0.5 text-left text-[10px] font-semibold text-slate-600 lg:w-44 lg:min-w-44 lg:max-w-44">Team minimum</th>
                         {dates.map((d) => {
                           const gaps = check!.gaps.filter((g) => g.teamId === team.id && g.date === d);
                           const on = members.filter((m) => { const v = cellOf(inp, m, d, cur.days, cur.marks); return v === 'W12' || v === 'W8'; }).length;
                           return <td key={d} className="p-0.5"><span title={gaps.length ? gaps.map((g) => `${g.label}: ${g.have} of ${g.need} ${g.from}–${g.to}`).join('\n') : 'Minimum held'} className={cx('flex h-6 w-9 items-center justify-center rounded font-mono text-[10px] font-semibold', gaps.length ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800')}>{gaps.length ? `!${on}` : on}</span></td>;
                         })}
-                        <td className="sticky right-0 bg-slate-50" />
+                        <td className="bg-slate-50 lg:sticky lg:right-0" />
                       </tr>
                     ];
                   })}
@@ -292,7 +303,7 @@ export function WorkingPlan({ planId, approved, onClose, onDone }: { planId: str
             </p>
           </section>
           <aside aria-label="Check" className="flex min-w-0 flex-1 flex-col gap-2 lg:max-w-sm">
-            <div className={cx('rounded-xl p-3 ring-1', tone)}>
+            <div className={cx('hidden rounded-xl p-3 ring-1 lg:block', tone)}>
               <p className="text-sm font-semibold text-slate-900">{msg.title}</p>
               {msg.text && <p className="mt-0.5 text-xs text-slate-700">{msg.text}</p>}
               {msg.problems && <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-red-900">{msg.problems.slice(0, 5).map((p, i) => <li key={i}>{p.message}</li>)}</ul>}
@@ -309,6 +320,26 @@ export function WorkingPlan({ planId, approved, onClose, onDone }: { planId: str
             </div>
             <p className="px-1 text-[11px] text-slate-500">Day or night comes from the team. To work a person on the other shift, move him to that team on the plan. The exports (duty schedule, overtime sheet, Excel, shift instructions) read the saved days.</p>
           </aside>
+        </div>
+      )}
+      {inp && cur && (
+        <div className="border-t border-slate-200 bg-white px-3 pb-[calc(env(safe-area-inset-bottom)+8px)] pt-2 shadow-[0_-2px_8px_rgba(15,23,42,0.06)] lg:hidden">
+          <div className={cx('rounded-lg px-2.5 py-1.5 ring-1', tone)}>
+            <p className="text-[13px] font-semibold text-slate-900">{msg.title}</p>
+            {msg.problems?.length ? <p className="line-clamp-2 text-[11px] text-red-900">{msg.problems[0].message}</p> : msg.text ? <p className="line-clamp-2 text-[11px] text-slate-700">{msg.text}</p> : null}
+            {msg.options && msg.options.length > 0 && (
+              <div className="mt-1 flex gap-1.5 overflow-x-auto pb-0.5">
+                {msg.options.map((o, i) => <button key={i} type="button" onClick={() => attempt(o.edits, o.label)} className="min-h-9 shrink-0 whitespace-nowrap rounded-lg bg-white px-2.5 text-[12px] font-semibold text-brand-800 ring-1 ring-brand-300">{o.label}</button>)}
+              </div>
+            )}
+          </div>
+          <p className="mt-1.5 truncate text-[11px] text-slate-600">{sel ? `${name(memberOf(sel.memberId).employeeId)} · ${sel.a === sel.b ? fmtDay(sel.a) : `${fmtDay(sel.a)} – ${fmtDay(sel.b)}`}` : 'Tap a day, then another in the same row for a run of days'}</p>
+          <div className="mt-1 grid grid-cols-4 gap-1.5">
+            <button type="button" onClick={() => paint('W12')} className="min-h-11 rounded-lg bg-amber-300 text-[13px] font-semibold text-amber-950">12 h</button>
+            <button type="button" onClick={() => paint('W8')} className="min-h-11 rounded-lg bg-amber-100 text-[13px] font-semibold text-amber-900 ring-1 ring-amber-300">8 h</button>
+            <button type="button" onClick={() => paint('O')} className="min-h-11 rounded-lg bg-white text-[13px] font-semibold text-slate-700 ring-1 ring-slate-300">Off</button>
+            <button type="button" onClick={() => paint('U')} className="min-h-11 rounded-lg bg-slate-200 text-[13px] font-semibold text-slate-800">Unavail.</button>
+          </div>
         </div>
       )}
     </div>
