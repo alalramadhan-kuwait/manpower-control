@@ -5,7 +5,7 @@ import { t } from '@/i18n';
 import { loadNotices } from '@/data/notifications';
 import { issueLevel, type Notice } from '@/core/notifications';
 import { evaluateDay } from '@/core/manpower';
-import { minimumsText, periodOn } from '@/core/modes';
+import { minimumsText, periodOn, unitsOn } from '@/core/modes';
 import type { CrewDay, DayResult, Finding, MpAbsence, MpPerson, PositionResult, Status } from '@/core/manpower';
 import { addDaysIso, isValidIsoDate } from '@/core/roster';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
@@ -83,6 +83,8 @@ export default function DayOverviewPage() {
 
   const result = useMemo(() => (inputs ? evaluateDay(date, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments) : null), [date, inputs]);
   const period = useMemo(() => (inputs ? periodOn(date, inputs.plan) : null), [date, inputs]);
+  // unit sections down on the date (the minimums follow them unless a manual period overrides)
+  const unitsDown = useMemo(() => (inputs ? unitsOn(date, inputs.plan).filter((s) => s.down) : []), [date, inputs]);
   // holiday and unit events on this date (calendar information)
   const [info, setInfo] = useState<{ date: string; holidays: Holiday[]; events: UnitEvent[] } | null>(null);
   useEffect(() => { let live = true; fetchCalendarInfo(date, date).then((r) => live && setInfo({ date, ...r })).catch(() => live && setInfo(null)); return () => { live = false; }; }, [date]);
@@ -122,6 +124,11 @@ export default function DayOverviewPage() {
             {info.holidays.map((h) => <Link key={h.id} to={`/calendar?month=${date.slice(0, 7)}`} className="inline-flex items-center gap-1 rounded-full bg-pink-50 px-2.5 py-1 text-[11px] font-semibold text-pink-800 ring-1 ring-pink-300"><Star className="h-3 w-3 fill-pink-500 text-pink-600" />{h.name}{h.expected ? ' (expected)' : ''}</Link>)}
             {info.events.map((e) => { const Icon = EVENT_ICON[e.category]; return <Link key={e.id} to={`/calendar?month=${date.slice(0, 7)}`} className="inline-flex max-w-full items-center gap-1 rounded-full bg-teal-700 px-2.5 py-1 text-[11px] font-semibold text-white"><Icon className="h-3 w-3 shrink-0" /><span className="truncate">{e.unit ? `${e.unit} ` : ''}{e.title} · {e.start === e.end ? shortDate(e.start) : `${shortDate(e.start)} – ${shortDate(e.end)}`}</span></Link>; })}
           </div>
+        )}
+        {!period && result && unitsDown.length > 0 && (
+          <Link to="/shutdown?tab=modes" className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-status-red px-2.5 py-1 text-[11px] font-semibold text-white">
+            <span className="truncate">{unitsDown.map((s) => `${s.unit.label} down to ${shortDate(s.down!.end)}`).join(' · ')} · min P {result.rules.panelMin} · F {result.rules.fieldMin}</span>
+          </Link>
         )}
         {period && result && (
           <Link to="/shutdown?tab=modes" className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-brand-700 px-2.5 py-1 text-[11px] font-semibold text-white">

@@ -6,7 +6,8 @@ import { evaluateRange, personOn, SD_TEAM, type MpAbsence, type MpAssignment, ty
 import { CREWS, addDaysIso, type Crew } from '@/core/roster';
 import { dateRuns, teamGaps, FO_LEVEL_LABEL, SD_PO_MAX_GRADE, SD_SLOTS, SD_SLOT_LABEL, areasOf, groupOf, dayOvertime, dayShort, dayState, isDutyDay, isRampDay, neighbours, memberHours, memberWorks, nextOffset, planDates, sdOperatorEligible, slotLabel, teamDay, cycleOf, type SdDay, type SdKind, type SdMember, type PhaseNeed, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
-import { fetchOperationPlan, schedulePeriod, type PeriodRow } from '@/data/modes';
+import { markPlanUnitsDown } from '@/data/calendar';
+import { minimumsText, minimumsWithDown, periodOn, sectionsName, unitsOn, type OperationPlan } from '@/core/modes';
 import { fetchDirectory } from '@/data/queries';
 import { addSdMember, clearSdDays, copyPlanToCurrentRules, fetchAllSdMembers, fetchFollowMovements, fetchOvertimeTaken, fetchSdPlan, fetchSdPlans, fetchSickTotals, moveSdPlan, removeSdMember, renameSdArea, saveSdPhases, setOvertimeTaken, setSdDays, updateSdMember, updateSdPlan, updateSdTeam, type Signature } from '@/data/shutdown';
 import type { EmployeeDirectoryRow } from '@/data/types';
@@ -35,15 +36,12 @@ type Data = {
   prev: { plan: SdPlan; ids: Set<string> } | null; next: { plan: SdPlan; ids: Set<string> } | null;
   /** Sick-leave days per person per year (workbook totals). */
   sick: Map<string, Record<number, number>>;
-  /** Total turnaround: operating-mode periods over its dates (the crews should be in 'Total shutdown'). */
-  periods: PeriodRow[];
   /** Overtime each member already took in the shutdown's year(s), typed in: `${employeeId}:${year}`. */
   otTaken: Map<string, { hours: number; asOf: string }>;
   /** Rules v2 only: figures typed in from Oracle / HR, the Section Head's exceptions, every plan with its people. */
   v2: { ot: Map<string, OtEntry>; sick: Map<string, SickEntry>; exceptions: (SdException & { id: string })[]; plans: PlanRef[] } | null;
   isHead: boolean;
 };
-const TOTAL_MODE = 'total_shutdown';
 /** Most people a team needs on any day: train, its full-day needs; total turnaround, its biggest phase. */
 function teamNeed(p: SdPlan, t: SdTeam, phases: SdPhase[]): Record<string, number> {
   if (p.kind !== 'total') return Object.fromEntries(SD_SLOTS.map((s) => [s, t.needs[s]]));
@@ -95,8 +93,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
     try {
       const sd = await fetchSdPlan(id!);
       const y = Number(sd.plan.start.slice(0, 4));
-      const [inputs, dir, plans, all, sick, ops] = await Promise.all([fetchManpowerInputs(addDaysIso(sd.plan.start, -1), addDaysIso(sd.plan.end, 1)), fetchDirectory(), fetchSdPlans(), fetchAllSdMembers(), fetchSickTotals([y, y - 1]),
-        sd.plan.kind === 'total' ? fetchOperationPlan(sd.plan.start, sd.plan.end) : null]);
+      const [inputs, dir, plans, all, sick] = await Promise.all([fetchManpowerInputs(addDaysIso(sd.plan.start, -1), addDaysIso(sd.plan.end, 1)), fetchDirectory(), fetchSdPlans(), fetchAllSdMembers(), fetchSickTotals([y, y - 1])]);
       const years = [...new Set([Number(sd.plan.start.slice(0, 4)), Number(sd.plan.end.slice(0, 4))])];
       const otTaken = await fetchOvertimeTaken([...new Set(sd.members.map((m) => m.employeeId))], years).catch(() => new Map<string, { hours: number; asOf: string }>());
       const n = neighbours(plans, sd.plan);
@@ -111,7 +108,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
         setChecking(true); setCheckErr(null);
         Promise.all([runPlanCheck(sd.plan.id, localToday()), fetchApproval(sd.plan.id)]).then(([c, a]) => { setCheck(c); setApproval(a); }).catch(setCheckErr).finally(() => setChecking(false));
       }
-      setData({ ...sd, inputs, dir: new Map(dir.map((r) => [r.id, r])), prev: ids(n.prev), next: ids(n.next), sick, periods: ops?.periods ?? [], otTaken, v2, isHead });
+      setData({ ...sd, inputs, dir: new Map(dir.map((r) => [r.id, r])), prev: ids(n.prev), next: ids(n.next), sick, otTaken, v2, isHead });
       setLoadedAt(new Date());
     } catch (e) { setError(e); } finally { setReloading(false); }
   }, [id, isHead]);
@@ -343,7 +340,8 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
       <div id="sd-teams" className="scroll-mt-20" />
       {teams.map((t) => <TeamCard key={t.id} t={t} data={data} view={view} check={check} onMove={moveMember} onAdd={(slot, area) => setAdding({ team: t, slot, area })} onMember={setMember} onEdit={() => (total ? setEditPhases(true) : setEditTeam(t))} />)}
 
-      {total ? <UnitDownCard plan={plan} periods={data.periods} onDone={done} /> : <Card className="mb-3 py-1.5">
+      <UnitStatusCard key={`${plan.start}${plan.end}${data.inputs.plan.outages?.map((o) => o.id + o.start + o.end).join()}`} plan={plan} opPlan={data.inputs.plan} onDone={done} />
+      {!total && <Card className="mb-3 py-1.5">
         <h2 className="pt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Crews without the team · {plan.title} minimums</h2>
         <div className="mt-1 grid grid-cols-4 gap-1.5">
           {view.crewImpact.map((c) => (
@@ -961,28 +959,50 @@ function PhasesSheet({ plan, teams, phases, onClose, onDone }: { plan: SdPlan; t
   );
 }
 
-/** Total turnaround: the whole unit is down, so the crews' minimums don't apply — shown as the 'Total shutdown' mode. */
-function UnitDownCard({ plan, periods, onDone }: { plan: SdPlan; periods: PeriodRow[]; onDone: (m: string) => void }) {
+/**
+ * The unit sections the shutdown takes down, from its Calendar event: the crews' minimums on its dates follow them.
+ * Not marked (or on other dates): one tap marks them on the Calendar for the plan's dates.
+ */
+function UnitStatusCard({ plan, opPlan, onDone }: { plan: SdPlan; opPlan: OperationPlan; onDone: (m: string) => void }) {
+  const units = opPlan.units ?? [];
+  const guess = plan.kind === 'total' ? units.map((u) => u.code) : units.filter((u) => plan.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes(u.label.toLowerCase().replace(/[^a-z0-9]/g, ''))).map((u) => u.code);
+  const dates: string[] = []; for (let d = plan.start; d <= plan.end; d = addDaysIso(d, 1)) dates.push(d);
+  const downOn = (d: string) => unitsOn(d, opPlan).filter((s) => s.down).map((s) => s.unit.code);
+  const marked = [...new Set(dates.flatMap(downOn))];
+  const [codes, setCodes] = useState<string[]>(marked.length ? marked : guess);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  const covering = periods.filter((x) => x.status === 'active' && x.mode_code === TOTAL_MODE);
-  const full = covering.some((x) => x.start_date <= plan.start && x.end_date >= plan.end);
-  const others = periods.filter((x) => x.status === 'active' && x.mode_code !== TOTAL_MODE);
-  async function set() {
+  if (!units.length) return null;
+  const allDays = codes.length > 0 && dates.every((d) => codes.every((c) => downOn(d).includes(c)));
+  const exact = allDays && marked.length === codes.length;
+  const mins = minimumsWithDown(codes, units, opPlan.modes);
+  const name = sectionsName(codes, units);
+  const override = dates.some((d) => periodOn(d, opPlan));
+  async function mark() {
     setBusy(true); setErr(null);
-    try { await schedulePeriod({ modeCode: TOTAL_MODE, start: plan.start, end: plan.end, note: plan.title }); onDone(`Total shutdown mode set for ${range(plan.start, plan.end)}.`); }
+    try { await markPlanUnitsDown(plan, codes, name); onDone(`${name} down on the Calendar for ${range(plan.start, plan.end)}: crews' minimum ${minimumsText(mins)}.`); }
     catch (e) { setErr(e); } finally { setBusy(false); }
   }
   return (
-    <Card className={cx('mb-3 py-2', full ? 'bg-green-50 ring-green-200' : 'bg-amber-50 ring-amber-200')}>
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Crews · unit down</h2>
-      {full
-        ? <p className="mt-1 text-sm text-green-800">Total shutdown mode is set for {range(plan.start, plan.end)}: the crews have no minimum while everyone is on the shifts here.</p>
+    <Card className={cx('mb-3 py-2', exact ? '' : 'bg-amber-50 ring-amber-200')}>
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Unit status · crews' minimum</h2>
+        <Link to="/shutdown?tab=modes" className="text-[11px] font-medium text-brand-700">Unit status ›</Link>
+      </div>
+      {exact
+        ? <p className="mt-1 text-sm text-slate-800"><b>{name} down</b> {range(plan.start, plan.end)} · {mins.controllerMin === 0 ? 'unit down: the crews have no minimum' : `each crew needs ${minimumsText(mins)}`}</p>
         : <>
-            <p className="mt-1 text-sm text-amber-900">The whole unit is down, but the Calendar still counts the crews' normal minimums on these dates{others.length ? ` (${others.map((x) => `${x.mode_code.replace(/_/g, ' ')} ${range(x.start_date, x.end_date)}`).join(', ')})` : ''}. Set the Total shutdown mode so they aren't flagged short.</p>
-            {others.length > 0 && <p className="mt-1 text-[11px] text-amber-900">Another mode covers some of these dates: change or cancel it on <Link to="/shutdown?tab=modes" className="font-semibold underline">Operation</Link> first.</p>}
+            <p className="mt-1 text-sm text-amber-900">{marked.length ? `The Calendar shows ${sectionsName(marked, units)} down on only some of these dates.` : 'The Calendar shows no section down on these dates: the crews are held to the full minimums.'} Choose the sections this shutdown takes down:</p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {units.map((u) => (
+                <button key={u.code} type="button" aria-pressed={codes.includes(u.code)} onClick={() => setCodes(codes.includes(u.code) ? codes.filter((c) => c !== u.code) : [...codes, u.code])}
+                  className={cx('min-h-9 rounded-full px-3 text-sm font-medium ring-1', codes.includes(u.code) ? 'bg-status-red text-white ring-status-red' : 'bg-white text-slate-700 ring-slate-300')}>{u.label}</button>
+              ))}
+            </div>
+            {codes.length > 0 && <p className="mt-1 text-[11px] text-amber-900">Crews' minimum then: {minimumsText(mins)}{mins.controllerMin === 0 ? ' (unit down)' : ''}</p>}
             {err != null && <ErrorBox error={err} />}
-            <Button className="mt-2 w-full" disabled={busy || others.length > 0} onClick={set}>Set Total shutdown mode · {range(plan.start, plan.end)}</Button>
+            <Button className="mt-2 w-full" disabled={busy || !codes.length} onClick={mark}>{codes.length ? `Mark ${name} down · ${range(plan.start, plan.end)}` : 'Choose a section'}</Button>
           </>}
+      {override && <p className="mt-1 text-[11px] text-slate-500">A manual override period covers some of these dates: its minimums apply there.</p>}
     </Card>
   );
 }

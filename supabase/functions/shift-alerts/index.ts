@@ -550,11 +550,36 @@ var DEFAULT_MODE = {
   isActive: true,
   note: null
 };
+var UNIT_DOWN_CODE = "unit_down";
 var periodOn = (date, plan) => plan.periods.find((p) => p.status === "active" && p.start <= date && date <= p.end) ?? null;
-function modeOn(date, plan) {
+var unitsOn = (date, plan) => (plan.units ?? []).map((unit) => ({ unit, down: (plan.outages ?? []).find((o) => o.start <= date && date <= o.end && o.units.includes(unit.code)) ?? null }));
+function unitModeOn(date, plan) {
   const def = plan.modes.find((m) => m.isDefault) ?? DEFAULT_MODE;
+  const status = unitsOn(date, plan);
+  if (!status.length) return def;
+  const down = status.filter((s) => s.down);
+  if (!down.length) {
+    const panel2 = status.reduce((n, s) => n + s.unit.panelMin, 0);
+    return { ...def, panelMin: panel2, fieldMin: status.reduce((n, s) => n + s.unit.fieldMin, 0), panelGrade14Min: Math.min(def.panelGrade14Min, panel2) };
+  }
+  const running = status.filter((s) => !s.down);
+  const names = down.map((s) => s.unit.label).join(" + ");
+  if (!running.length || down.some((s) => s.unit.essential))
+    return { ...def, code: UNIT_DOWN_CODE, label: `Unit down (${running.length ? names : "all sections"})`, controllerMin: 0, panelMin: 0, panelGrade14Min: 0, fieldMin: 0, isDefault: false };
+  const panel = running.reduce((n, s) => n + s.unit.panelMin, 0);
+  return {
+    ...def,
+    code: `down:${down.map((s) => s.unit.code).join("+")}`,
+    label: `${names} down`,
+    isDefault: false,
+    panelMin: panel,
+    fieldMin: running.reduce((n, s) => n + s.unit.fieldMin, 0),
+    panelGrade14Min: Math.min(def.panelGrade14Min, panel)
+  };
+}
+function modeOn(date, plan) {
   const p = periodOn(date, plan);
-  return p && plan.modes.find((m) => m.code === p.modeCode) || def;
+  return p && plan.modes.find((m) => m.code === p.modeCode) || unitModeOn(date, plan);
 }
 var rulesFor = (m) => ({
   ...FULL_OPERATION,
@@ -569,10 +594,11 @@ function rulesByDate(plan) {
   const cache = /* @__PURE__ */ new Map();
   return (date) => {
     const m = modeOn(date, plan);
-    let r = cache.get(m.code);
+    const key = `${m.code}|${m.controllerMin}|${m.panelMin}|${m.panelGrade14Min}|${m.fieldMin}`;
+    let r = cache.get(key);
     if (!r) {
       r = rulesFor(m);
-      cache.set(m.code, r);
+      cache.set(key, r);
     }
     return r;
   };
@@ -580,15 +606,26 @@ function rulesByDate(plan) {
 
 // src/data/modes.ts
 var toMode = (r) => ({ code: r.code, label: r.label, controllerMin: r.controller_min, panelMin: r.panel_min, panelGrade14Min: r.panel_grade14_min, fieldMin: r.field_min, isDefault: r.is_default, isActive: r.is_active, note: r.note });
+var toUnit = (r) => ({ code: r.code, label: r.label, panelMin: r.panel_min, fieldMin: r.field_min, essential: r.essential });
+var toOutage = (r) => ({ id: r.id, units: r.unit_codes ?? [], start: r.start_date, end: r.end_date, title: r.title });
 var toPeriod = (r) => ({ id: r.id, modeCode: r.mode_code, start: r.start_date, end: r.end_date, note: r.note, status: r.status });
 async function fetchOperationPlan(from, to) {
   let pq = supabase.from("operation_periods").select("*").order("start_date");
   if (from && to) pq = pq.eq("status", "active").lte("start_date", to).gte("end_date", from);
-  const [m, p] = await Promise.all([supabase.from("operating_modes").select("*").order("sort_order").order("label"), pq]);
+  let oq = supabase.from("unit_events").select("id,unit_codes,start_date,end_date,title").eq("status", "active").neq("unit_codes", "{}").order("start_date");
+  if (from && to) oq = oq.lte("start_date", to).gte("end_date", from);
+  const [m, p, u, o] = await Promise.all([
+    supabase.from("operating_modes").select("*").order("sort_order").order("label"),
+    pq,
+    supabase.from("unit_sections").select("*").order("sort_order"),
+    oq
+  ]);
   if (m.error) throw m.error;
   if (p.error) throw p.error;
+  if (u.error) throw u.error;
+  if (o.error) throw o.error;
   const periods = p.data;
-  return { plan: { modes: m.data.map(toMode), periods: periods.map(toPeriod) }, periods };
+  return { plan: { modes: m.data.map(toMode), periods: periods.map(toPeriod), units: u.data.map(toUnit), outages: o.data.map(toOutage) }, periods };
 }
 
 // src/data/controllers.ts

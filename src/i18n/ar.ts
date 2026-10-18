@@ -8,7 +8,7 @@ export const AR: Record<string, string> = {
   'Cover': 'التغطية', 'Morning rotation': 'مناوبة الصباح', 'Annual plan': 'الخطة السنوية', 'PV cycles': 'دورات الإجازة السنوية', 'Shutdown plans': 'خطط التوقف', 'Operating modes': 'أوضاع التشغيل',
   'Summary': 'الملخص', 'Issues': 'المسائل', 'Take-Charge': 'تولي المسؤولية', 'Employee records': 'سجلات الموظفين', 'Oracle statistics': 'إحصاءات أوراكل', 'FO levels': 'مستويات مشغلي الميدان',
   'Upload': 'رفع', 'History': 'السجل', 'Users & access': 'المستخدمون والصلاحيات', 'Audit history': 'سجل التدقيق',
-  'Cover · Calendar · Morning rotation': 'التغطية · التقويم · مناوبة الصباح', 'Annual plan · PV cycles': 'الخطة السنوية · دورات الإجازة', 'Shutdown plans · Operating modes': 'خطط التوقف · أوضاع التشغيل',
+  'Cover · Calendar · Morning rotation': 'التغطية · التقويم · مناوبة الصباح', 'Annual plan · PV cycles': 'الخطة السنوية · دورات الإجازة', 'Shutdown plans · Unit status': 'خطط التوقف · حالة الوحدة', 'Unit status': 'حالة الوحدة',
   'Summary · Issues · Take-Charge · Records · Oracle statistics': 'الملخص · المسائل · تولي المسؤولية · السجلات · إحصاءات أوراكل', 'Upload · History': 'رفع · السجل', 'Users & access · Audit history': 'المستخدمون · سجل التدقيق',
   'That page has moved. Everything is now under Today, Calendar, Requests, Employees and More.': 'نُقلت هذه الصفحة. كل شيء الآن تحت اليوم والتقويم والطلبات والموظفين والمزيد.',
   // requests

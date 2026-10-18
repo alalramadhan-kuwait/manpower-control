@@ -38,7 +38,7 @@ export function LeavePlanningWorkspace({ profile }: { profile: UserProfile }) {
 export function ShutdownWorkspace({ profile }: { profile: UserProfile }) {
   return <Workspace title="Shutdown planning" tabs={[
     { key: 'plans', label: 'Shutdown plans', el: <ShutdownListPage /> },
-    { key: 'modes', label: 'Operating modes', el: <OperationPage profile={profile} /> }]} />;
+    { key: 'modes', label: 'Unit status', el: <OperationPage profile={profile} /> }]} />;
 }
 
 export function DataQualityWorkspace({ profile }: { profile: UserProfile }) {

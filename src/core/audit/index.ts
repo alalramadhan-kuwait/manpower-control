@@ -12,7 +12,7 @@ export const AUDIT_CATEGORIES: { key: AuditCategory; label: string; tables: stri
   { key: 'requests', label: 'Requests', tables: ['leave_requests', 'leave_change_requests'] },
   { key: 'controllers', label: 'Controllers', tables: ['controller_assignments', 'controller_rules', 'controller_leave_approvals'] },
   { key: 'shutdown', label: 'Shutdown teams', tables: ['sd_plans', 'sd_teams', 'sd_members', 'sd_days', 'sd_phases'] },
-  { key: 'modes', label: 'Modes & calendar', tables: ['operating_modes', 'operation_periods', 'public_holidays', 'unit_events', 'shift_alert_settings'] },
+  { key: 'modes', label: 'Modes & calendar', tables: ['operating_modes', 'operation_periods', 'unit_sections', 'public_holidays', 'unit_events', 'shift_alert_settings'] },
   { key: 'qualifications', label: 'Qualifications', tables: ['employee_qualifications'] },
   { key: 'staff', label: 'Staff records', tables: ['employees'] },
   { key: 'notes', label: 'Notes', tables: ['employee_notes'] },
@@ -265,6 +265,12 @@ export function describe(row: AuditRow, lk: AuditLookups): AuditEntry {
       if (row.action === 'insert' && s(cur.note)) details.push(String(cur.note));
       break;
     }
+    case 'unit_sections': {
+      const name = s(cur.label) ?? s(cur.code) ?? 'Unit section';
+      title = row.action === 'insert' ? `Unit section added: ${name}` : `Unit section changed: ${name}`;
+      details = row.action === 'insert' ? [`Panel ${w(cur.panel_min)} · Field ${w(cur.field_min)} per crew`] : changes(prev, next, [['panel_min', 'Panel per crew', w], ['field_min', 'Field per crew', w], ['label', 'Name', w]]);
+      break;
+    }
     case 'public_holidays': {
       const what = `${s(cur.name) ?? 'Holiday'}, ${range(cur.start_date, cur.end_date)}${cur.expected ? ' (expected)' : ''}`;
       title = row.action === 'insert' ? `Public holiday added: ${what}` : row.action === 'delete' ? `Public holiday removed: ${what}` : `Public holiday changed: ${what}`;
@@ -276,6 +282,8 @@ export function describe(row: AuditRow, lk: AuditLookups): AuditEntry {
       if (row.action === 'insert') title = `Unit event added: ${what}`;
       else if (next?.status === 'cancelled' && prev?.status !== 'cancelled') { title = `Unit event cancelled: ${what}`; if (s(next.cancel_reason)) details.push(`Reason: ${next.cancel_reason}`); }
       else { title = `Unit event changed: ${what}`; details = changes(prev, next, [['title', 'Title', w], ['unit', 'Unit', w], ['category', 'Type', w], ['start_date', 'First day', day], ['end_date', 'Last day', day]]); }
+      const downs = (v: Record<string, unknown> | null) => (Array.isArray(v?.unit_codes) ? (v!.unit_codes as string[]).join(', ') : '');
+      if (row.action === 'insert' ? downs(next) : downs(prev) !== downs(next)) details.push(`Sections down: ${downs(next) || 'none'}`);
       if (row.action === 'insert' && s(cur.note)) details.push(String(cur.note));
       break;
     }

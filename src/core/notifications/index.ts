@@ -4,7 +4,7 @@
 import { attentionPeriods } from '../calendar';
 import type { CoverageNeed } from '../controllers';
 import { personOn, type DayResult, type MpAbsence, type MpPerson } from '../manpower';
-import type { OperationPlan } from '../modes';
+import { modeOn, type OperationPlan } from '../modes';
 import { addDaysIso } from '../roster';
 
 /** action: someone has to do something (counts in the badge) · watch: check it · info: good to know. */
@@ -128,7 +128,14 @@ export function buildNotices(i: NoticeInput): Notice[] {
   if (i.needsAction > 0) out.push({ id: 'staff-action', level: 'watch', area: 'data', title: `${plural(i.needsAction, 'staff record')} to complete`,
     detail: 'Grade · Take-Charge · Panel · KNPC / contractor', date: null, to: '/employees?view=action' });
 
-  // 5. operating periods now or starting within 14 days
+  // 5a. unit sections down now or within 14 days (the minimums drop with them)
+  for (const o of (i.plan.outages ?? []).filter((x) => x.end >= i.today && daysBetween(i.today, x.start) <= 14)) {
+    const m = modeOn(o.start < i.today ? i.today : o.start, i.plan);
+    out.push({ id: `unit-${o.id}`, level: 'info', area: 'mode', title: `${m.label} ${o.start <= i.today ? 'now' : when(i.today, o.start)}`,
+      detail: `${span(o.start, o.end)} · Controller ${m.controllerMin} · Panel ${m.panelMin} · Field ${m.fieldMin} · ${o.title}`, date: o.start, to: '/shutdown?tab=modes' });
+  }
+
+  // 5b. manual override periods now or starting within 14 days
   for (const p of i.plan.periods.filter((x) => x.status === 'active' && x.end >= i.today && daysBetween(i.today, x.start) <= 14)) {
     const m = i.plan.modes.find((x) => x.code === p.modeCode);
     out.push({ id: `mode-${p.id}`, level: 'info', area: 'mode', title: `${m?.label ?? p.modeCode} ${p.start <= i.today ? 'now' : when(i.today, p.start)}`,

@@ -177,7 +177,7 @@ export function WeekView({ start, today, onWeek, onMonth }: { start: string; tod
           holiday={view.holidayOn(open)} bars={view.bars.filter((b) => b.start <= open && open <= b.end)} onClose={() => setOpen(null)}
           onAddEvent={() => { setSheet({ kind: 'event', event: null, date: open }); setOpen(null); }} onAddHoliday={() => { setSheet({ kind: 'holiday', holiday: null, date: open }); setOpen(null); }} />
       )}
-      {sheet?.kind === 'event' && info && <EventSheet event={sheet.event} date={sheet.date} units={info.units} onClose={() => setSheet(null)} onDone={() => { setSheet(null); loadInfo(); }} />}
+      {sheet?.kind === 'event' && info && <EventSheet event={sheet.event} date={sheet.date} units={info.units} sections={info.sections} onClose={() => setSheet(null)} onDone={() => { setSheet(null); loadInfo(); }} />}
       {sheet?.kind === 'holiday' && <HolidaySheet holiday={sheet.holiday} date={sheet.date} onClose={() => setSheet(null)} onDone={() => { setSheet(null); loadInfo(); }} />}
     </div>
   );
