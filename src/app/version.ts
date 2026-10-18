@@ -18,13 +18,17 @@ export const builtLabel = (iso: string) => (iso ? new Date(iso).toLocaleString('
 
 /**
  * Update for sure: drop the service workers and their caches, then load the app again under a new address so no cached
- * page or script is used. (The plain service-worker update can stay stuck on a phone; this cannot.)
+ * page or script is used, and the page itself is fetched past the browser's cache. (The plain service-worker update can
+ * stay stuck on a phone; this cannot.)
  */
 export async function hardUpdate(toVersion?: string): Promise<void> {
   try {
     const regs = (await navigator.serviceWorker?.getRegistrations?.()) ?? [];
     await Promise.all(regs.map((r) => r.unregister()));
     if (typeof caches !== 'undefined') await Promise.all((await caches.keys()).map((k) => caches.delete(k)));
+    // the host lets the browser keep the page for 10 minutes: fetch it fresh, or the old page loads again (and asks again)
+    const base = import.meta.env.BASE_URL;
+    await Promise.all([base, `${base}index.html`, `${base}sw.js`].map((p) => fetch(p, { cache: 'reload' }).catch(() => undefined)));
   } catch { /* reload anyway */ }
   const u = new URL(window.location.href);
   u.searchParams.set('v', toVersion ?? String(Date.now()));
