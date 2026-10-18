@@ -155,3 +155,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261016210048_sd_members_rest_days` | `sd_members.rest_days`: recorded rest days off the own crew before joining / after leaving a shutdown team; the plan check verifies the crew minimum on those days |
 | `20261017185948_train2_night_controller_rest_b_cover` | Train-2: Night Controller a0fa rests 17 Oct before joining (recorded rest day); VR Controller Al-Saegh covers B Shift 17 Oct (night), off 18 Oct, back with A 19 Oct. No overtime; shutdown days unchanged |
 | `20261017191102_live_refresh_bumps_train2_cycle_to_end` | `manpower_version` bumped by `sd_exceptions`, `overtime_entries`, `sick_checks` (live refresh); Train-2 3 on / 1 off to the end (16 Nov) |
+| `20261018013521_train2_transfer_rule_ali_nawaf_ashkanani` | Train-2, transfer rule 6/2 <-> 3/1: Ali Alajmi rest day 17 Oct; Nawaf Aldasem off 18 Oct (+6 h joining); Abdullah Ashkanani works 15 Nov (-10 h returning) |

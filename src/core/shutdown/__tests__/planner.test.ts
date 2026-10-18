@@ -52,7 +52,9 @@ function plan(inp: PlanCheckInput): PlanCheckInput {
   }
   return { ...inp, members: out };
 }
-const blocks = (c: ReturnType<typeof checkPlan>) => c.issues.filter((i) => i.level === 'block').map((i) => `${i.code}: ${i.message}`);
+// a rest day before joining that leaves the crew without its Controller asks for a crew cover (Controller Management): the
+// test teams have no other Controller on the crews, so that finding is checked on its own (cycleUntil case, transfer tests)
+const blocks = (c: ReturnType<typeof checkPlan>) => c.issues.filter((i) => i.level === 'block' && i.code !== 'rest_cover').map((i) => `${i.code}: ${i.message}`);
 const maxRun = (m: SdMember, p: SdPlan) => { let run = 0, worst = 0; for (const d of planDates(p)) { run = m.days?.[d]?.works ? run + 1 : 0; worst = Math.max(worst, run); } return worst; };
 
 describe('planner · the real Train-2 team, 20 Oct – 20 Nov, 3 on / 1 off', () => {
@@ -99,12 +101,13 @@ describe('planner · scenarios', () => {
     const inp = plan(input(p, TEAM));
     const c = checkPlan(inp);
     // the A Controller needs 19 Oct off before joining, and he is A Shift's only Controller: it blocks until a cover is recorded
-    expect(c.issues.filter((i) => i.level === 'block' && i.code !== 'coverage').map((i) => `${i.code} ${i.employeeId} ${i.date}`)).toEqual(['rest_cover d-ctl-a 2026-10-19']);
+    expect(c.issues.filter((i) => i.level === 'block' && i.code !== 'coverage' && i.employeeId === 'd-ctl-a').map((i) => `${i.code} ${i.employeeId} ${i.date}`)).toEqual(['rest_cover d-ctl-a 2026-10-19']);
+    expect(c.issues.filter((i) => i.level === 'block' && i.code !== 'coverage').every((i) => i.code === 'rest_cover')).toBe(true);
     for (const o of c.overtime) for (const mo of o.months) expect(mo.total).toBeLessThanOrEqual(80);
     // a VR Controller recorded on A Shift that day: the crew keeps its Controller, the rest day stands
     const vr = { ...person({ id: 'vr', team: 'D', slot: 'controller', crew: null, role: 'vr_controller', level: null }, p), moves: [] };
     const covered = checkPlan({ ...inp, people: [...inp.people, vr], assignments: [{ id: 'cv', kind: 'shift_cover', employeeId: 'vr', crew: 'A', start: '2026-10-19', end: '2026-10-19', coversEmployeeId: 'd-ctl-a' }] });
-    expect(covered.issues.filter((i) => i.level === 'block' && i.code !== 'coverage')).toEqual([]);
+    expect(covered.issues.filter((i) => i.level === 'block' && i.code !== 'coverage' && i.employeeId === 'd-ctl-a')).toEqual([]);
     expect(covered.issues.some((i) => i.code === 'join_off' && i.employeeId === 'd-ctl-a')).toBe(true);
     // no cover recorded yet, a free VR Controller on the staff list: the check proposes him (one tap records it)
     const proposed = checkPlan({ ...inp, people: [...inp.people, vr] }).issues.find((i) => i.code === 'rest_cover')!;
@@ -116,7 +119,7 @@ describe('planner · scenarios', () => {
     // recorded as his rest day: no longer worked out, still checked against his crew
     const recorded = checkPlan({ ...inp, members: inp.members.map((m) => (m.id === 'd-ctl-a' ? { ...m, restDays: ['2026-10-19'] } : m)) });
     expect(recorded.transitions.find((t) => t.employeeId === 'd-ctl-a')!.joinOff).toEqual([]);
-    expect(recorded.issues.filter((i) => i.level === 'block' && i.code !== 'coverage').map((i) => i.code)).toEqual(['rest_cover']);
+    expect(recorded.issues.filter((i) => i.level === 'block' && i.code !== 'coverage' && i.employeeId === 'd-ctl-a').map((i) => i.code)).toEqual(['rest_cover']);
   });
   it('approved leave during the shutdown: the person is off, the place is still covered, the leave is credited', () => {
     const leave: MpAbsence = { id: 'l', employeeId: 'd-sen-c1', start: '2026-11-13', end: '2026-11-16', status: 'approved', typeCode: 'annual_leave_planned', inCurrentPlan: true, oracle: 'approved' };
@@ -136,7 +139,7 @@ describe('planner · scenarios', () => {
     const c = checkPlan(inp);
     for (const m of inp.members) expect(maxRun(m, basePlan)).toBeLessThanOrEqual(6);
     expect(c.issues.filter((i) => i.code === 'rest_day_pair')).toEqual([]);
-    expect(c.issues.filter((i) => i.level === 'block' && i.code !== 'coverage')).toEqual([]);
+    expect(c.issues.filter((i) => i.level === 'block' && i.code !== 'coverage' && i.code !== 'rest_cover')).toEqual([]);
     if (c.gaps.length) { expect(c.status).toBe('not_ready'); expect(c.gaps.every((g) => g.role === 'senior' && g.teamId === 'D')).toBe(true); }
   });
   it('overtime already taken this month (Oracle month to date) lowers what the planner gives the person', () => {

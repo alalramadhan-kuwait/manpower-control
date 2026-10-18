@@ -814,6 +814,8 @@ function coverageGaps(p, teams, members, info, away, phases = []) {
   }
   return out;
 }
+var DUE_PER_DAY = 6;
+var REGULAR = 8;
 function transitions(person, m, sdDuty, absences, assignments, rules) {
   const from = addDaysIso(m.start, -14), to = addDaysIso(m.end, 14);
   const offOn = (ls, dates) => ls.map((l) => dates.includes(l.date) ? { ...l, works: false, other: [...l.other, "Off (shutdown transition)"] } : l);
@@ -825,7 +827,19 @@ function transitions(person, m, sdDuty, absences, assignments, rules) {
   });
   const before = crewDays(Array.from({ length: 6 }, (_, i) => addDaysIso(m.start, -(i + 1))));
   const after = crewDays(Array.from({ length: 10 }, (_, i) => addDaysIso(m.end, i + 1)));
-  const joinBad = (ls) => hard(ls).some((f) => f.date !== void 0 && f.date <= addDaysIso(m.start, 6));
+  const isSd = (l) => l.works && l.other.includes("Shutdown team");
+  const firstSd = lines.find((l) => l.date >= m.start && l.date <= m.end && isSd(l))?.date ?? m.start;
+  const lastSd = [...lines].reverse().find((l) => l.date >= m.start && l.date <= m.end && isSd(l))?.date ?? m.end;
+  const fullBlock = (ls) => {
+    const crewWorked = ls.filter((l) => l.date < firstSd && l.works && !isSd(l));
+    const last = crewWorked[crewWorked.length - 1]?.date;
+    if (!last) return null;
+    let run = 0;
+    for (let d = last; ls.find((l) => l.date === d)?.works && !isSd(ls.find((l) => l.date === d)); d = addDaysIso(d, -1)) run++;
+    const gap = Math.round((Date.parse(firstSd) - Date.parse(last)) / 864e5) - 1;
+    return run >= 6 && gap < 2 ? { rule: "full_block_rest", severity: "hard_stop", date: firstSd, key: `block:${last}`, message: `Completed the 6 days of his crew's block (to ${fmtDay(last)}): 2 days off are due before the 3 on / 1 off starts, ${gap === 1 ? "only 1 is" : "none is"} given.` } : null;
+  };
+  const joinBad = (ls) => !!fullBlock(ls) || hard(ls).some((f) => f.date !== void 0 && f.date <= addDaysIso(m.start, 6));
   const retBad = (ls) => hard(ls).some((f) => f.date !== void 0 && f.date >= addDaysIso(m.end, -6));
   let joinOff = [];
   for (let k = 0; k <= Math.min(3, before.length); k++) {
@@ -847,7 +861,67 @@ function transitions(person, m, sdDuty, absences, assignments, rules) {
   }
   const final = offOn(lines, [...joinOff, ...returnOff]);
   const returnOn = after.find((d) => !returnOff.includes(d)) ?? null;
-  return { employeeId: m.employeeId, findings: hard(final), joinOff: joinOff.sort(), returnOff, returnOn };
+  const block = fullBlock(final);
+  return {
+    employeeId: m.employeeId,
+    findings: [...block ? [block] : [], ...hard(final)],
+    joinOff: joinOff.sort(),
+    returnOff,
+    returnOn,
+    hours: transferHours(person, m, final, firstSd, lastSd, (ls) => hard(ls).length)
+  };
+}
+function transferHours(person, m, ls, firstSd, lastSd, hardCount) {
+  const isSd = (l) => l.works && l.other.includes("Shutdown team");
+  const hoursOf = (l) => l.duty.start !== void 0 && l.duty.end !== void 0 ? (l.duty.end - l.duty.start) / 36e5 : REGULAR;
+  const diff = (fromEx, toIn, xs = ls) => xs.filter((l) => l.date > fromEx && l.date <= toIn && !l.absence).reduce((t, l) => t + (l.works ? Math.min(REGULAR, hoursOf(l)) : 0) - DUE_PER_DAY, 0);
+  const crewBefore = effectiveCrew(person, null, addDaysIso(m.start, -1));
+  const out = { join: null, joinTo: null, back: null, backTo: null, fixes: [] };
+  const base = hardCount(ls);
+  const flip = (date, works) => {
+    const ref = ls.find((l) => isSd(l));
+    return ls.map((l) => {
+      if (l.date !== date) return l;
+      if (!works) return { ...l, works: false };
+      const shift = ref && ref.duty.start !== void 0 && ref.duty.end !== void 0 ? Date.parse(date) - Date.parse(ref.date) : 0;
+      return ref ? { ...l, works: true, duty: { ...ref.duty, start: ref.duty.start + shift, end: ref.duty.end + shift }, other: [...l.other.filter((o) => o !== "Shutdown team"), "Shutdown team"] } : l;
+    });
+  };
+  if (crewBefore) {
+    let start = addDaysIso(m.start, -1);
+    for (let i = 0; i < 8 && !(stateOf(dutyFor(start, crewBefore)) === "M" && stateOf(dutyFor(addDaysIso(start, -1), crewBefore)) !== "M"); i++) start = addDaysIso(start, -1);
+    const rest = ls.find((l) => l.date > firstSd && l.date <= m.end && !l.works && !l.absence)?.date ?? null;
+    if (rest) {
+      out.join = diff(addDaysIso(start, -1), rest);
+      out.joinTo = rest;
+      if (out.join >= 6) {
+        const x = flip(firstSd, false);
+        if (hardCount(x) <= base) out.fixes.push({ side: "join", fix: { kind: "sd_day", memberId: m.id, date: firstSd, works: false }, change: -8 });
+      } else if (out.join <= -6) {
+        const x = flip(rest, true);
+        if (hardCount(x) <= base) out.fixes.push({ side: "join", fix: { kind: "sd_day", memberId: m.id, date: rest, works: true }, change: 8 });
+      }
+    }
+  }
+  const lastRest = [...ls].reverse().find((l) => l.date >= m.start && l.date < lastSd && !l.works && !l.absence)?.date ?? null;
+  const afterLines = ls.filter((l) => l.date > m.end);
+  let pairEnd = null;
+  for (let i = 1; i < afterLines.length; i++) if (!afterLines[i].works && !afterLines[i - 1].works && !afterLines[i].absence && !afterLines[i - 1].absence && afterLines.slice(0, i - 1).some((l) => l.works)) {
+    pairEnd = afterLines[i].date;
+    break;
+  }
+  if (lastRest && pairEnd && !afterLines.some((l) => l.absence && l.date <= pairEnd)) {
+    out.back = diff(lastRest, pairEnd);
+    out.backTo = pairEnd;
+    if (out.back <= -6) {
+      const x = flip(lastRest, true);
+      if (hardCount(x) <= base) out.fixes.push({ side: "back", fix: { kind: "sd_day", memberId: m.id, date: lastRest, works: true }, change: 8 });
+    } else if (out.back >= 6) {
+      const next = afterLines.find((l) => l.works)?.date;
+      if (next) out.fixes.push({ side: "back", fix: { kind: "rest", memberId: m.id, date: next }, change: -8 });
+    }
+  }
+  return out;
 }
 var awayOn = (absences) => (employeeId, date) => absences.some((a) => a.employeeId === employeeId && a.oracle === "approved" && (a.status === "approved" || a.status === "planned") && a.inCurrentPlan !== false && a.start <= date && date <= a.end);
 function restDayShortage(inp, person, m, date) {
@@ -987,6 +1061,31 @@ function checkPlan(inp) {
     for (const d of tr.joinOff) restCheck(d, "before joining (rest rules)", "join_off");
     for (const d of tr.returnOff) restCheck(d, `before rejoining his crew${tr.returnOn ? ` on ${fmtDay(tr.returnOn)}` : ""} (rest rules)`, "return_off");
     for (const d of m.restDays ?? []) restCheck(d, `(recorded rest day, ${d < m.start ? "before joining" : "after the shutdown"})`, "rest_day");
+    for (const side of ["join", "back"]) {
+      const h = side === "join" ? tr.hours.join : tr.hours.back;
+      if (h === null || Math.abs(h) < 6) continue;
+      const to = side === "join" ? tr.hours.joinTo : tr.hours.backTo;
+      const f = tr.hours.fixes.find((x) => x.side === side);
+      let fix = f?.fix;
+      let note = "";
+      if (fix?.kind === "sd_day" && !fix.works) {
+        const changed = members.map((x) => x.id === m.id ? { ...x, days: { ...x.days ?? {}, [fix.date]: { works: false, hours: null } } } : x);
+        const before = coverageGaps(p, teams, members, info, away, inp.phases ?? []).length;
+        if (coverageGaps(p, teams, changed, info, away, inp.phases ?? []).length > before) {
+          note = ` Giving ${fmtDay(fix.date)} off would leave the team below its minimum: not offered.`;
+          fix = void 0;
+        }
+      }
+      const what = fix ? fix.kind === "rest" ? `one more day off before rejoining (${fmtDay(fix.date)})` : fix.works ? `work ${fmtDay(fix.date)} (his shutdown rest day)` : `${fmtDay(fix.date)} off (a shutdown duty)` : "";
+      issues.push({
+        level: "warn",
+        code: "transfer_hours",
+        employeeId: m.employeeId,
+        date: fix?.date ?? to ?? void 0,
+        fix,
+        message: `${name(m.employeeId)}: ${side === "join" ? "joining the shutdown" : "returning to his crew"}, ${h > 0 ? "+" : ""}${h} h against the hours due (48 h every 8 days, to ${to ? fmtDay(to) : ""}).${what ? ` Suggested: ${what}, ${h > 0 ? "" : "+"}${h + (f?.change ?? 0)} h after.` : ""}${note}`
+      });
+    }
     const t = teamOf.get(m.teamId);
     if (t && m.slot === "new") {
       const short = planDates(p).filter((d) => {

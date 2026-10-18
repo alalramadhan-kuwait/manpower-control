@@ -245,6 +245,14 @@ export async function setSdDaysMany(rows: { memberId: string; date: string; work
   dataChanged();
 }
 
+/** Adds a rest day off his crew to a shutdown member (rules v2 transfer). */
+export async function addSdRestDay(memberId: string, date: string) {
+  const { data, error } = await supabase.from('sd_members').select('rest_days').eq('id', memberId).single();
+  if (error) throw error;
+  const days = [...new Set([...((data as { rest_days: string[] | null }).rest_days ?? []), date])].sort();
+  await updateSdMember(memberId, { rest_days: days });
+}
+
 /** The member's planned days outside his team dates (left over when the shutdown or the member moved) are removed. */
 export async function pruneSdDays(memberId: string, start: string, end: string) {
   const { data, error } = await supabase.from('sd_days').select('work_date').eq('member_id', memberId);

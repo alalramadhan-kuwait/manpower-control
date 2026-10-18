@@ -290,7 +290,21 @@ export function coverageGaps(p: SdPlan, teams: SdTeam[], members: SdMember[], in
 }
 
 // ── Duty and rest checks, joining and returning ──────────────────────────────────────────────────────────────────
-export interface TransitionResult { employeeId: string; findings: Finding[]; joinOff: string[]; returnOff: string[]; returnOn: string | null }
+/** A one-day change the transfer between the crew rota (6 on / 2 off) and the shutdown cycle (3 on / 1 off) suggests. */
+export type TransferFix = { kind: 'sd_day'; memberId: string; date: string; works: boolean } | { kind: 'rest'; memberId: string; date: string };
+export interface TransferHours {
+  /** Regular hours worked less the hours due (6 h a day: 48 h every 8 days), carried from the start of the crew block
+   *  he leaves (M1) to his first shutdown rest day; leave and absence count neither way. null: no crew rota (day staff). */
+  join: number | null; joinTo: string | null;
+  /** The same from his last shutdown rest day to the end of his crew's first pair of rest days after rejoining. */
+  back: number | null; backTo: string | null;
+  fixes: { side: 'join' | 'back'; fix: TransferFix; change: number }[];
+}
+export interface TransitionResult { employeeId: string; findings: Finding[]; joinOff: string[]; returnOff: string[]; returnOn: string | null; hours: TransferHours }
+
+/** Hours due a day on either rota: 48 h every 8 days. */
+export const DUE_PER_DAY = 6;
+const REGULAR = 8;
 /**
  * The person's duties around the shutdown (his crew before, the team shift, his crew after) against the hard rules: no
  * 7th day in a row, no overlap or zero rest, 24 h off when changing between Morning and Night. When joining or returning
@@ -305,7 +319,18 @@ export function transitions(person: MpPerson, m: SdMember, sdDuty: SdDutyOf, abs
   const crewDays = (dates: string[]) => dates.filter((d) => { const l = lines.find((x) => x.date === d); return !!l && l.works && !(l.other.includes('Shutdown team')); });
   const before = crewDays(Array.from({ length: 6 }, (_, i) => addDaysIso(m.start, -(i + 1))));        // nearest first
   const after = crewDays(Array.from({ length: 10 }, (_, i) => addDaysIso(m.end, i + 1)));
-  const joinBad = (ls: DayLine[]) => hard(ls).some((f) => f.date !== undefined && f.date <= addDaysIso(m.start, 6));
+  const isSd = (l: DayLine) => l.works && l.other.includes('Shutdown team');
+  const firstSd = lines.find((l) => l.date >= m.start && l.date <= m.end && isSd(l))?.date ?? m.start;
+  const lastSd = [...lines].reverse().find((l) => l.date >= m.start && l.date <= m.end && isSd(l))?.date ?? m.end;
+  // a full 6-day block of his crew rota earns its 2 rest days before the 3 on / 1 off starts (rule of 18 Oct 2026)
+  const fullBlock = (ls: DayLine[]): Finding | null => {
+    const crewWorked = ls.filter((l) => l.date < firstSd && l.works && !isSd(l));
+    const last = crewWorked[crewWorked.length - 1]?.date; if (!last) return null;
+    let run = 0; for (let d = last; ls.find((l) => l.date === d)?.works && !isSd(ls.find((l) => l.date === d)!); d = addDaysIso(d, -1)) run++;
+    const gap = Math.round((Date.parse(firstSd) - Date.parse(last)) / 864e5) - 1;
+    return run >= 6 && gap < 2 ? { rule: 'full_block_rest' as Finding['rule'], severity: 'hard_stop', date: firstSd, key: `block:${last}`, message: `Completed the 6 days of his crew's block (to ${fmtDay(last)}): 2 days off are due before the 3 on / 1 off starts, ${gap === 1 ? 'only 1 is' : 'none is'} given.` } : null;
+  };
+  const joinBad = (ls: DayLine[]) => !!fullBlock(ls) || hard(ls).some((f) => f.date !== undefined && f.date <= addDaysIso(m.start, 6));
   const retBad = (ls: DayLine[]) => hard(ls).some((f) => f.date !== undefined && f.date >= addDaysIso(m.end, -6));
   let joinOff: string[] = [];
   for (let k = 0; k <= Math.min(3, before.length); k++) { const off = before.slice(0, k); if (!joinBad(offOn(lines, off))) { joinOff = off; break; } if (k === Math.min(3, before.length)) joinOff = off; }
@@ -313,7 +338,51 @@ export function transitions(person: MpPerson, m: SdMember, sdDuty: SdDutyOf, abs
   for (let k = 0; k <= Math.min(6, after.length); k++) { const off = after.slice(0, k); if (!retBad(offOn(lines, [...joinOff, ...off]))) { returnOff = off; break; } if (k === Math.min(6, after.length)) returnOff = off; }
   const final = offOn(lines, [...joinOff, ...returnOff]);
   const returnOn = after.find((d) => !returnOff.includes(d)) ?? null;
-  return { employeeId: m.employeeId, findings: hard(final), joinOff: joinOff.sort(), returnOff, returnOn };
+  const block = fullBlock(final);
+  return { employeeId: m.employeeId, findings: [...(block ? [block] : []), ...hard(final)], joinOff: joinOff.sort(), returnOff, returnOn,
+    hours: transferHours(person, m, final, firstSd, lastSd, (ls) => hard(ls).length) };
+}
+
+/**
+ * Hours across the transfer between the crew rota and the shutdown cycle, so the change of system adds or takes no hours:
+ * regular hours worked (8 a duty; a 12 h shutdown duty is 8 regular + 4 overtime under its own code) less 6 h a day due.
+ * Joining: from the crew block's first day (M1) to the first shutdown rest day. Returning: from the last shutdown rest day
+ * to the end of the crew's first pair of rest days. A difference of 6 h or more is closer to nothing with one day changed
+ * (a day changed is 8 h): a shutdown duty given off, or a shutdown rest day worked; checked against the hard rules.
+ */
+function transferHours(person: MpPerson, m: SdMember, ls: DayLine[], firstSd: string, lastSd: string, hardCount: (ls: DayLine[]) => number): TransferHours {
+  const isSd = (l: DayLine) => l.works && l.other.includes('Shutdown team');
+  const hoursOf = (l: DayLine) => (l.duty.start !== undefined && l.duty.end !== undefined ? (l.duty.end - l.duty.start) / 3_600_000 : REGULAR);
+  const diff = (fromEx: string, toIn: string, xs = ls) => xs.filter((l) => l.date > fromEx && l.date <= toIn && !l.absence).reduce((t, l) => t + (l.works ? Math.min(REGULAR, hoursOf(l)) : 0) - DUE_PER_DAY, 0);
+  const crewBefore = effectiveCrew(person, null, addDaysIso(m.start, -1));
+  const out: TransferHours = { join: null, joinTo: null, back: null, backTo: null, fixes: [] };
+  const base = hardCount(ls);
+  const flip = (date: string, works: boolean) => { const ref = ls.find((l) => isSd(l)); return ls.map((l) => {
+    if (l.date !== date) return l;
+    if (!works) return { ...l, works: false };
+    const shift = ref && ref.duty.start !== undefined && ref.duty.end !== undefined ? Date.parse(date) - Date.parse(ref.date) : 0;
+    return ref ? { ...l, works: true, duty: { ...ref.duty, start: ref.duty.start! + shift, end: ref.duty.end! + shift }, other: [...l.other.filter((o) => o !== 'Shutdown team'), 'Shutdown team'] } : l;
+  }); };
+  if (crewBefore) {
+    let start = addDaysIso(m.start, -1);
+    for (let i = 0; i < 8 && !(rosterState(dutyFor(start, crewBefore)) === 'M' && rosterState(dutyFor(addDaysIso(start, -1), crewBefore)) !== 'M'); i++) start = addDaysIso(start, -1);
+    const rest = ls.find((l) => l.date > firstSd && l.date <= m.end && !l.works && !l.absence)?.date ?? null;
+    if (rest) {
+      out.join = diff(addDaysIso(start, -1), rest); out.joinTo = rest;
+      if (out.join >= 6) { const x = flip(firstSd, false); if (hardCount(x) <= base) out.fixes.push({ side: 'join', fix: { kind: 'sd_day', memberId: m.id, date: firstSd, works: false }, change: -8 }); }
+      else if (out.join <= -6) { const x = flip(rest, true); if (hardCount(x) <= base) out.fixes.push({ side: 'join', fix: { kind: 'sd_day', memberId: m.id, date: rest, works: true }, change: 8 }); }
+    }
+  }
+  const lastRest = [...ls].reverse().find((l) => l.date >= m.start && l.date < lastSd && !l.works && !l.absence)?.date ?? null;
+  const afterLines = ls.filter((l) => l.date > m.end);
+  let pairEnd: string | null = null;
+  for (let i = 1; i < afterLines.length; i++) if (!afterLines[i].works && !afterLines[i - 1].works && !afterLines[i].absence && !afterLines[i - 1].absence && afterLines.slice(0, i - 1).some((l) => l.works)) { pairEnd = afterLines[i].date; break; }
+  if (lastRest && pairEnd && !afterLines.some((l) => l.absence && l.date <= pairEnd!)) {
+    out.back = diff(lastRest, pairEnd); out.backTo = pairEnd;
+    if (out.back <= -6) { const x = flip(lastRest, true); if (hardCount(x) <= base) out.fixes.push({ side: 'back', fix: { kind: 'sd_day', memberId: m.id, date: lastRest, works: true }, change: 8 }); }
+    else if (out.back >= 6) { const next = afterLines.find((l) => l.works)?.date; if (next) out.fixes.push({ side: 'back', fix: { kind: 'rest', memberId: m.id, date: next }, change: -8 }); }
+  }
+  return out;
 }
 
 /** Working both days of one of his rota's pairs of rest days (one is allowed; the other stays off unless approved). */
@@ -335,7 +404,7 @@ export function restDayPairs(p: SdPlan, m: SdMember, person: MpPerson | undefine
 export type IssueLevel = 'block' | 'verify' | 'warn' | 'info';
 /** A Controller cover the check proposes for a crew left short (recorded in Controller Management with one tap). */
 export interface CoverFix { kind: 'cover'; employeeId: string; name: string; crew: Crew; start: string; end: string; coversEmployeeId: string; overtime: boolean }
-export interface Issue { level: IssueLevel; code: string; message: string; employeeId?: string; teamId?: string; date?: string; fix?: CoverFix }
+export interface Issue { level: IssueLevel; code: string; message: string; employeeId?: string; teamId?: string; date?: string; fix?: CoverFix | TransferFix }
 export interface PlanCheckInput {
   plan: SdPlan; teams: SdTeam[]; members: SdMember[];
   people: MpPerson[]; absences: MpAbsence[]; assignments: MpAssignment[]; rules: RuleConfig[];
@@ -519,6 +588,23 @@ export function checkPlan(inp: PlanCheckInput): PlanCheck {
     for (const d of tr.joinOff) restCheck(d, 'before joining (rest rules)', 'join_off');
     for (const d of tr.returnOff) restCheck(d, `before rejoining his crew${tr.returnOn ? ` on ${fmtDay(tr.returnOn)}` : ''} (rest rules)`, 'return_off');
     for (const d of m.restDays ?? []) restCheck(d, `(recorded rest day, ${d < m.start ? 'before joining' : 'after the shutdown'})`, 'rest_day');
+    // hours across the transfer (rota 6/2 <-> shutdown 3/1): a difference of 6 h or more is shown with the one-day change
+    // that brings it closest to nothing; a change that would leave a team below its minimum is shown, not offered
+    for (const side of ['join', 'back'] as const) {
+      const h = side === 'join' ? tr.hours.join : tr.hours.back;
+      if (h === null || Math.abs(h) < 6) continue;
+      const to = side === 'join' ? tr.hours.joinTo : tr.hours.backTo;
+      const f = tr.hours.fixes.find((x) => x.side === side);
+      let fix: TransferFix | undefined = f?.fix; let note = '';
+      if (fix?.kind === 'sd_day' && !fix.works) {
+        const changed = members.map((x) => (x.id === m.id ? { ...x, days: { ...(x.days ?? {}), [fix!.date]: { works: false, hours: null } } } : x));
+        const before = coverageGaps(p, teams, members, info, away, inp.phases ?? []).length;
+        if (coverageGaps(p, teams, changed, info, away, inp.phases ?? []).length > before) { note = ` Giving ${fmtDay(fix.date)} off would leave the team below its minimum: not offered.`; fix = undefined; }
+      }
+      const what = fix ? (fix.kind === 'rest' ? `one more day off before rejoining (${fmtDay(fix.date)})` : fix.works ? `work ${fmtDay(fix.date)} (his shutdown rest day)` : `${fmtDay(fix.date)} off (a shutdown duty)`) : '';
+      issues.push({ level: 'warn', code: 'transfer_hours', employeeId: m.employeeId, date: fix?.date ?? to ?? undefined, fix,
+        message: `${name(m.employeeId)}: ${side === 'join' ? 'joining the shutdown' : 'returning to his crew'}, ${h > 0 ? '+' : ''}${h} h against the hours due (48 h every 8 days, to ${to ? fmtDay(to) : ''}).${what ? ` Suggested: ${what}, ${h > 0 ? '' : '+'}${h + (f?.change ?? 0)} h after.` : ''}${note}` });
+    }
     // the crew roster's rest-day pairs do not limit the independent shutdown rotation (rule of 14 Oct 2026)
     const t = teamOf.get(m.teamId);
     // New FOs (training) always work the full shift: a shorter day is given as a day off instead

@@ -4,8 +4,9 @@
 import { AlertTriangle, BadgeCheck, Check, CircleDashed, Info, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import type { SdMember, SdPlan } from '@/core/shutdown';
-import { SICK_LABEL, fmtDay, fmtMonth, limitsOf, sickState, type CoverFix, type CoverGap, type Eligibility, type ExceptionKind, type IssueLevel, type OtEntry, type PersonOt, type PlanCheck, type SdException, type SickEntry } from '@/core/shutdown/v2';
+import { SICK_LABEL, fmtDay, fmtMonth, limitsOf, sickState, type CoverFix, type TransferFix, type CoverGap, type Eligibility, type ExceptionKind, type IssueLevel, type OtEntry, type PersonOt, type PlanCheck, type SdException, type SickEntry } from '@/core/shutdown/v2';
 import { createAssignment } from '@/data/controllers';
+import { addSdRestDay, setSdDays } from '@/data/shutdown';
 import { grantException, requestApproval, revokeException, saveOtEntry, saveSickCheck, type ApprovalState } from '@/data/sdCheck';
 import type { EmployeeDirectoryRow } from '@/data/types';
 import { BottomSheet, Button, Card, ErrorBox, Field, cx } from '@/ui/components';
@@ -28,8 +29,8 @@ const exceptionFor = (i: PlanCheck['issues'][number]): ExcFix | undefined =>
   i.code !== 'eligibility' || i.level !== 'block' || !i.employeeId ? undefined
     : /two shutdowns in a row/.test(i.message) ? { employeeId: i.employeeId, kind: 'consecutive_shutdown' }
     : /over 35/.test(i.message) ? { employeeId: i.employeeId, kind: 'sick_leave' } : undefined;
-function grouped(list: PlanCheck['issues']): { text: string; fix?: CoverFix; exc?: ExcFix }[] {
-  const out: { text: string; fix?: CoverFix; exc?: ExcFix }[] = []; const seen = new Map<string, number>();
+function grouped(list: PlanCheck['issues']): { text: string; fix?: CoverFix | TransferFix; exc?: ExcFix }[] {
+  const out: { text: string; fix?: CoverFix | TransferFix; exc?: ExcFix }[] = []; const seen = new Map<string, number>();
   for (const i of list) {
     if (i.code !== 'rest_day_pair' || !i.employeeId) { out.push({ text: i.message, fix: i.fix, exc: exceptionFor(i) }); continue; }
     const k = `${i.code}|${i.employeeId}`; const at = seen.get(k);
@@ -57,6 +58,21 @@ function ExceptionButton({ planId, exc, finding, onDone }: { planId: string; exc
       {err ? <ErrorBox error={err} /> : null}
     </span>
   );
+}
+
+/** One tap applies the one-day change the transfer between the rota and the shutdown cycle suggests. */
+function TransferButton({ plan, fix, onDone }: { plan: SdPlan; fix: TransferFix; onDone: (m: string) => void }) {
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const label = fix.kind === 'rest' ? `Give ${fmtDay(fix.date)} off before rejoining` : fix.works ? `Work ${fmtDay(fix.date)}` : `Give ${fmtDay(fix.date)} off`;
+  async function apply() {
+    setBusy(true); setErr(null);
+    try {
+      if (fix.kind === 'rest') await addSdRestDay(fix.memberId, fix.date);
+      else await setSdDays(fix.memberId, [{ date: fix.date, works: fix.works, hours: fix.works ? plan.shiftHours : null }]);
+      onDone(`${label}: done.`);
+    } catch (e) { setErr(e); setBusy(false); }
+  }
+  return <span className="mt-1 block"><Button variant="secondary" className="min-h-8 px-2.5 text-xs" disabled={busy} onClick={apply}>{label}</Button>{err ? <ErrorBox error={err} /> : null}</span>;
 }
 
 /** One tap records the cover the check proposes (Controller Management), then the plan is checked again. */
@@ -116,7 +132,7 @@ export function ReadinessPanel({ plan, names, check, approval, isHead, error, on
       </div>
       {open && counts(open) > 0 && (
         <ul className={cx('mt-2 space-y-1 rounded-lg px-2.5 py-2 text-xs ring-1', LEVEL[open].tone)}>
-          {grouped(check.issues.filter((i) => i.level === open)).map((m, k) => <li key={k} className="flex items-start gap-1.5">{LEVEL[open].icon}<span>{m.text}{m.fix && isHead ? <CoverButton fix={m.fix} onDone={onApproved} /> : null}{m.exc && isHead ? <ExceptionButton planId={plan.id} exc={m.exc} finding={m.text} onDone={onApproved} /> : null}</span></li>)}
+          {grouped(check.issues.filter((i) => i.level === open)).map((m, k) => <li key={k} className="flex items-start gap-1.5">{LEVEL[open].icon}<span>{m.text}{m.fix && isHead ? (m.fix.kind === 'cover' ? <CoverButton fix={m.fix} onDone={onApproved} /> : <TransferButton plan={plan} fix={m.fix} onDone={onApproved} />) : null}{m.exc && isHead ? <ExceptionButton planId={plan.id} exc={m.exc} finding={m.text} onDone={onApproved} /> : null}</span></li>)}
         </ul>
       )}
       {check.gaps.length > 0 && <CoverageList gaps={check.gaps} />}
