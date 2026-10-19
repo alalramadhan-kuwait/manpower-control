@@ -162,12 +162,13 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
     // the crew whose duty and rest days the member keeps on the team: the one he is told to follow, else his own
     const dutyCrew = (m: SdMember) => m.followCrew ?? homeCrew(m.employeeId, plan.start);
     const hours = new Map(members.map((m) => [m.id, memberHours(plan, m, dutyCrew(m))]));
-    // days of leave inside the member's shutdown days: the person's own duty days on a train shutdown (a rest day costs nothing),
-    // every day of a total turnaround; counted whether or not the day is still marked working (balancing marks leave days off)
     // leave already approved in Oracle needs a decision now; leave not yet approved is postponed and coordinated later
     const approvedOn = (emp: string, d: string) => inputs.absences.some((a) => a.employeeId === emp && a.oracle === 'approved' && (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && a.start <= d && d <= a.end);
-    const leaveDays = (m: SdMember) => dates.filter((d) => d >= m.start && d <= m.end && leaveOn(m.employeeId, d) && (plan.kind === 'total' || isDutyDay(dutyCrew(m), d))).length;
-    const approvedLeaveDays = (m: SdMember) => dates.filter((d) => d >= m.start && d <= m.end && approvedOn(m.employeeId, d) && (plan.kind === 'total' || isDutyDay(dutyCrew(m), d))).length;
+    // leave on a day he works the shutdown; a leave day the plan already gives him off is no clash (rules v2: the
+    // shutdown has its own days off, so the plan's day decides; before v2: his crew's duty day)
+    const clashOn = (m: SdMember, d: string) => (data.v2 ? memberWorks(plan, m, d) : plan.kind === 'total' || isDutyDay(dutyCrew(m), d));
+    const leaveDays = (m: SdMember) => dates.filter((d) => d >= m.start && d <= m.end && leaveOn(m.employeeId, d) && clashOn(m, d)).length;
+    const approvedLeaveDays = (m: SdMember) => dates.filter((d) => d >= m.start && d <= m.end && approvedOn(m.employeeId, d) && clashOn(m, d)).length;
     // the team's days count leave already approved in Oracle as away; leave not yet approved is postponed
     const teamDays = new Map(teams.map((t) => [t.id, dates.map((d) => ({ date: d, slots: teamDay(plan, t, members, d, approvedOn, data.phases) }))]));
     const overlaps = plan.kind === 'total' ? [] : suggestFollow(plan, teams, members, data.phases, dutyCrew, (m) => data.dir.get(m.employeeId)?.position_code === 'vr_controller', (m) => homeCrew(m.employeeId, plan.start));
