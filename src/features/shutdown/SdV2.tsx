@@ -63,11 +63,12 @@ function ExceptionButton({ planId, exc, finding, onDone }: { planId: string; exc
 /** One tap applies the one-day change the transfer between the rota and the shutdown cycle suggests. */
 function TransferButton({ plan, fix, onDone }: { plan: SdPlan; fix: TransferFix; onDone: (m: string) => void }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  const label = fix.kind === 'rest' ? `Give ${fmtDay(fix.date)} off before rejoining` : fix.works ? `Work ${fmtDay(fix.date)}` : `Give ${fmtDay(fix.date)} off`;
+  const label = fix.kind === 'rest' ? `Give ${fmtDay(fix.date)} off before rejoining` : fix.kind === 'sd_move' ? `Move day off ${fmtDay(fix.work)} → ${fmtDay(fix.off)}` : fix.works ? `Work ${fmtDay(fix.date)}` : `Give ${fmtDay(fix.date)} off`;
   async function apply() {
     setBusy(true); setErr(null);
     try {
       if (fix.kind === 'rest') await addSdRestDay(fix.memberId, fix.date);
+      else if (fix.kind === 'sd_move') await setSdDays(fix.memberId, [{ date: fix.work, works: true, hours: plan.shiftHours }, { date: fix.off, works: false, hours: null }]);
       else await setSdDays(fix.memberId, [{ date: fix.date, works: fix.works, hours: fix.works ? plan.shiftHours : null }]);
       onDone(`${label}: done.`);
     } catch (e) { setErr(e); setBusy(false); }

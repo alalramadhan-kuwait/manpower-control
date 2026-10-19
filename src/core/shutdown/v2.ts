@@ -290,7 +290,9 @@ export function coverageGaps(p: SdPlan, teams: SdTeam[], members: SdMember[], in
 
 // ── Duty and rest checks, joining and returning ──────────────────────────────────────────────────────────────────
 /** A one-day change the transfer between the crew rota (6 on / 2 off) and the shutdown cycle (3 on / 1 off) suggests. */
-export type TransferFix = { kind: 'sd_day'; memberId: string; date: string; works: boolean } | { kind: 'rest'; memberId: string; date: string };
+export type TransferFix = { kind: 'sd_day'; memberId: string; date: string; works: boolean } | { kind: 'rest'; memberId: string; date: string }
+  /** a day off moved: `work` becomes a duty, `off` a day off (both shutdown days) */
+  | { kind: 'sd_move'; memberId: string; work: string; off: string };
 export interface TransferHours {
   /** Regular hours worked less the hours due (6 h a day: 48 h every 8 days), carried from the start of the crew block
    *  he leaves (M1) to his first shutdown rest day; leave and absence count neither way. null: no crew rota (day staff). */
@@ -326,7 +328,6 @@ export function transitions(person: MpPerson, m: SdMember, sdDuty: SdDutyOf, abs
   const after = crewDays(Array.from({ length: 10 }, (_, i) => addDaysIso(m.end, i + 1)));
   const isSd = (l: DayLine) => l.works && l.other.includes('Shutdown team');
   const firstSd = lines.find((l) => l.date >= m.start && l.date <= m.end && isSd(l))?.date ?? m.start;
-  const lastSd = [...lines].reverse().find((l) => l.date >= m.start && l.date <= m.end && isSd(l))?.date ?? m.end;
   // a full 6-day block of his crew rota earns its 2 rest days before the 3 on / 1 off starts (rule of 18 Oct 2026)
   const fullBlock = (ls: DayLine[]): Finding | null => {
     const crewWorked = ls.filter((l) => l.date < firstSd && l.works && !isSd(l));
@@ -345,7 +346,7 @@ export function transitions(person: MpPerson, m: SdMember, sdDuty: SdDutyOf, abs
   const returnOn = after.find((d) => !returnOff.includes(d)) ?? null;
   const block = fullBlock(final);
   return { employeeId: m.employeeId, findings: [...(block ? [block] : []), ...hard(final)], joinOff: joinOff.sort(), returnOff, returnOn,
-    hours: transferHours(person, m, final, firstSd, lastSd, (ls) => hard(ls).length) };
+    hours: transferHours(person, m, final, firstSd, (ls) => hard(ls).length) };
 }
 
 /**
@@ -355,7 +356,7 @@ export function transitions(person: MpPerson, m: SdMember, sdDuty: SdDutyOf, abs
  * to the end of the crew's first pair of rest days. A difference of 6 h or more is closer to nothing with one day changed
  * (a day changed is 8 h): a shutdown duty given off, or a shutdown rest day worked; checked against the hard rules.
  */
-function transferHours(person: MpPerson, m: SdMember, ls: DayLine[], firstSd: string, lastSd: string, hardCount: (ls: DayLine[]) => number): TransferHours {
+function transferHours(person: MpPerson, m: SdMember, ls: DayLine[], firstSd: string, hardCount: (ls: DayLine[]) => number): TransferHours {
   const isSd = (l: DayLine) => l.works && l.other.includes('Shutdown team');
   const hoursOf = (l: DayLine) => (l.duty.start !== undefined && l.duty.end !== undefined ? (l.duty.end - l.duty.start) / 3_600_000 : REGULAR);
   const diff = (fromEx: string, toIn: string, xs = ls) => xs.filter((l) => l.date > fromEx && l.date <= toIn && !l.absence).reduce((t, l) => t + (l.works ? Math.min(REGULAR, hoursOf(l)) : 0) - DUE_PER_DAY, 0);
@@ -378,13 +379,39 @@ function transferHours(person: MpPerson, m: SdMember, ls: DayLine[], firstSd: st
       else if (out.join <= -6) { const x = flip(rest, true); if (hardCount(x) <= base) out.fixes.push({ side: 'join', fix: { kind: 'sd_day', memberId: m.id, date: rest, works: true }, change: 8 }); }
     }
   }
-  const lastRest = [...ls].reverse().find((l) => l.date >= m.start && l.date < lastSd && !l.works && !l.absence)?.date ?? null;
+  // returning: from his last shutdown rest day to the end of his crew's first pair of rest days
   const afterLines = ls.filter((l) => l.date > m.end);
   let pairEnd: string | null = null;
   for (let i = 1; i < afterLines.length; i++) if (!afterLines[i].works && !afterLines[i - 1].works && !afterLines[i].absence && !afterLines[i - 1].absence && afterLines.slice(0, i - 1).some((l) => l.works)) { pairEnd = afterLines[i].date; break; }
-  if (lastRest && pairEnd && !afterLines.some((l) => l.absence && l.date <= pairEnd!)) {
-    out.back = diff(lastRest, pairEnd); out.backTo = pairEnd;
-    if (out.back <= -6) { const x = flip(lastRest, true); if (hardCount(x) <= base) out.fixes.push({ side: 'back', fix: { kind: 'sd_day', memberId: m.id, date: lastRest, works: true }, change: 8 }); }
+  const backOf = (xs: DayLine[]) => {
+    const lastWorked = [...xs].reverse().find((l) => l.date >= m.start && l.date <= m.end && isSd(l))?.date ?? m.end;
+    const rest = [...xs].reverse().find((l) => l.date >= m.start && l.date < lastWorked && !l.works && !l.absence)?.date ?? null;
+    return rest && pairEnd ? { rest, h: diff(rest, pairEnd, xs) } : null;
+  };
+  const now = backOf(ls);
+  if (now && pairEnd && !afterLines.some((l) => l.absence && l.date <= pairEnd!)) {
+    out.back = now.h; out.backTo = pairEnd;
+    if (out.back <= -6) {
+      // the one change that brings it closest to nothing within the rules: his last rest day worked, a day off at the
+      // very end worked, or the last rest day moved one or two days earlier (a duty there given off)
+      const offIn = ls.filter((l) => l.date >= m.start && l.date <= m.end && !l.works && !l.absence).map((l) => l.date);
+      const sdOn = (d: string) => ls.some((l) => l.date === d && isSd(l));
+      const tries: { fix: TransferFix; lines: DayLine[] }[] = [
+        { fix: { kind: 'sd_day', memberId: m.id, date: now.rest, works: true }, lines: flip(now.rest, true) },
+        ...offIn.filter((d) => d > now.rest).map((d) => ({ fix: { kind: 'sd_day' as const, memberId: m.id, date: d, works: true }, lines: flip(d, true) })),
+        ...[1, 2].map((k) => addDaysIso(now.rest, -k)).filter(sdOn).map((d) => {
+          const moved = flip(now.rest, true).map((l) => (l.date === d ? { ...l, works: false } : l));
+          return { fix: { kind: 'sd_move' as const, memberId: m.id, work: now.rest, off: d }, lines: moved };
+        }),
+      ];
+      let best: { fix: TransferFix; h: number } | null = null;
+      for (const t of tries) {
+        if (hardCount(t.lines) > base) continue;
+        const b = backOf(t.lines); if (!b || Math.abs(b.h) >= Math.abs(out.back)) continue;
+        if (!best || Math.abs(b.h) < Math.abs(best.h)) best = { fix: t.fix, h: b.h };
+      }
+      if (best) out.fixes.push({ side: 'back', fix: best.fix, change: best.h - out.back });
+    }
     else if (out.back >= 6) { const next = afterLines.find((l) => l.works)?.date; if (next) out.fixes.push({ side: 'back', fix: { kind: 'rest', memberId: m.id, date: next }, change: -8 }); }
   }
   return out;
@@ -536,7 +563,10 @@ export function checkPlan(inp: PlanCheckInput): PlanCheck {
     if (m.slot === 'controller' && !isControllerPerson(i)) issues.push({ level: 'block', code: 'controller_grade', message: `${name(m.employeeId)}: a Controller place needs a Controller of Grade ${CONTROLLER_GRADE} or above.`, employeeId: m.employeeId });
     const cap = capabilities(m, i);
     if ((m.slot === 'senior' && !cap.senior) || (m.slot === 'good' && !cap.good)) issues.push({ level: 'warn', code: 'level', message: `${name(m.employeeId)}: in the ${m.slot === 'senior' ? 'Senior' : 'Good'} FO place but classified ${i?.foLevel ?? 'without a level'}: ${cap.good ? 'counts as a Good FO only' : 'not counted for the minimum'}.`, employeeId: m.employeeId });
-    if (m.slot === 'new' && (i?.foLevel === 'good' || i?.foLevel === 'senior')) issues.push({ level: 'warn', code: 'new_place_level', message: `${name(m.employeeId)}: in the New FO place but classified ${i.foLevel === 'senior' ? 'Experienced' : 'Good'}: works as a trainee and does not count for the minimum. Move him to a ${i.foLevel === 'senior' ? 'Senior' : 'Good'} FO place if he should.`, employeeId: m.employeeId });
+    // the level is his work on the running unit: on his first shutdown he is a New FO (a trainee) whatever it says
+    const firstShutdown = !inp.plans.some((x) => x.plan.id !== p.id && x.plan.start < p.start && x.employeeIds.has(m.employeeId));
+    if (m.slot === 'new' && (i?.foLevel === 'good' || i?.foLevel === 'senior') && firstShutdown) issues.push({ level: 'info', code: 'new_first', employeeId: m.employeeId, message: `${name(m.employeeId)}: his first shutdown, a New FO (trainee) here; ${i.foLevel === 'senior' ? 'Experienced' : 'Good'} on the running unit.` });
+    else if (m.slot === 'new' && (i?.foLevel === 'good' || i?.foLevel === 'senior')) issues.push({ level: 'warn', code: 'new_place_level', message: `${name(m.employeeId)}: in the New FO place but classified ${i.foLevel === 'senior' ? 'Experienced' : 'Good'}: works as a trainee and does not count for the minimum. Move him to a ${i.foLevel === 'senior' ? 'Senior' : 'Good'} FO place if he should.`, employeeId: m.employeeId });
     if (m.slot === 'member') issues.push({ level: 'info', code: 'unclassified', message: `${name(m.employeeId)}: Operator without a level, not counted as a Senior or Good FO.`, employeeId: m.employeeId });
   }
 
@@ -607,14 +637,16 @@ export function checkPlan(inp: PlanCheckInput): PlanCheck {
       const to = side === 'join' ? tr.hours.joinTo : tr.hours.backTo;
       const f = tr.hours.fixes.find((x) => x.side === side);
       let fix: TransferFix | undefined = f?.fix; let note = '';
-      if (fix?.kind === 'sd_day' && !fix.works) {
-        const changed = members.map((x) => (x.id === m.id ? { ...x, days: { ...(x.days ?? {}), [fix!.date]: { works: false, hours: null } } } : x));
+      if ((fix?.kind === 'sd_day' && !fix.works) || fix?.kind === 'sd_move') {
+        const mv = fix; const off = mv.kind === 'sd_move' ? mv.off : mv.date;
+        const changed = members.map((x) => (x.id === m.id ? { ...x, days: { ...(x.days ?? {}), [off]: { works: false, hours: null }, ...(mv.kind === 'sd_move' ? { [mv.work]: { works: true, hours: p.shiftHours } } : {}) } } : x));
         const before = coverageGaps(p, teams, members, info, away, inp.phases ?? []).length;
-        if (coverageGaps(p, teams, changed, info, away, inp.phases ?? []).length > before) { note = ` Giving ${fmtDay(fix.date)} off would leave the team below its minimum: not offered.`; fix = undefined; }
+        if (coverageGaps(p, teams, changed, info, away, inp.phases ?? []).length > before) { note = ` Giving ${fmtDay(off)} off would leave the team below its minimum: not offered.`; fix = undefined; }
       }
-      const what = fix ? (fix.kind === 'rest' ? `one more day off before rejoining (${fmtDay(fix.date)})` : fix.works ? `work ${fmtDay(fix.date)} (his shutdown rest day)` : `${fmtDay(fix.date)} off (a shutdown duty)`) : '';
-      issues.push({ level: 'warn', code: 'transfer_hours', employeeId: m.employeeId, date: fix?.date ?? to ?? undefined, fix,
-        message: `${name(m.employeeId)}: ${side === 'join' ? 'joining the shutdown' : 'returning to his crew'}, ${h > 0 ? '+' : ''}${h} h against the hours due (48 h every 8 days, to ${to ? fmtDay(to) : ''}).${what ? ` Suggested: ${what}, ${h > 0 ? '' : '+'}${h + (f?.change ?? 0)} h after.` : ''}${note}` });
+      const what = !fix ? '' : fix.kind === 'rest' ? `one more day off before rejoining (${fmtDay(fix.date)})` : fix.kind === 'sd_move' ? `move his day off ${fmtDay(fix.work)} → ${fmtDay(fix.off)}`
+        : fix.works ? `work ${fmtDay(fix.date)} (his shutdown day off)` : `${fmtDay(fix.date)} off (a shutdown duty)`;
+      issues.push({ level: 'warn', code: 'transfer_hours', employeeId: m.employeeId, date: (fix ? (fix.kind === 'sd_move' ? fix.off : fix.date) : undefined) ?? to ?? undefined, fix,
+        message: `${name(m.employeeId)}: ${side === 'join' ? 'joining the shutdown' : 'returning to his crew'}, ${h > 0 ? '+' : ''}${h} h against the hours due (48 h every 8 days, to ${to ? fmtDay(to) : ''}).${what ? ` Suggested: ${what}, ${h + (f?.change ?? 0) > 0 ? '+' : ''}${h + (f?.change ?? 0)} h after.` : ''}${note}` });
     }
     // the crew roster's rest-day pairs do not limit the independent shutdown rotation (rule of 14 Oct 2026)
     const t = teamOf.get(m.teamId);

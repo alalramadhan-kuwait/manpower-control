@@ -101,3 +101,18 @@ describe('a move to the other team during the shutdown (two places of one person
     expect(b.overtime.find((o) => o.employeeId === 'g1')?.months).toEqual(a.overtime.find((o) => o.employeeId === 'g1')?.months);
   });
 });
+
+describe('a Good FO in the New FO place', () => {
+  const list = ready().map((m) => (m.id === 'n1' ? m : m));
+  const goodInfo = new Map(info); goodInfo.set('n1', { ...goodInfo.get('n1')!, foLevel: 'good' });
+  const earlier = { ...plan, id: 'old', start: '2025-04-01', end: '2025-05-01' };
+  it('on his first shutdown is a trainee (no warning)', () => {
+    const c = checkPlan(input(list, { info: goodInfo }));
+    expect(c.issues.some((i) => i.code === 'new_place_level')).toBe(false);
+    expect(c.issues.some((i) => i.code === 'new_first' && i.level === 'info')).toBe(true);
+  });
+  it('after an earlier shutdown is asked to move to a Good place', () => {
+    const c = checkPlan(input(list, { info: goodInfo, plans: [{ plan: earlier, employeeIds: new Set(['n1']) }] }));
+    expect(c.issues.some((i) => i.code === 'new_place_level' && i.level === 'warn')).toBe(true);
+  });
+});
