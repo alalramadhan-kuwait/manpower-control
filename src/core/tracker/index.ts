@@ -40,6 +40,10 @@ export interface TrkPoint {
 }
 export interface TrkData { steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
 
+/** The main equipment groups; the rest (control valve shells, PSVs, check valves, RTJ & injection points, piping, OPR
+ *  list, PMRs …) is miscellaneous, shown after them. */
+export const MAIN_GROUPS = ['Reactors', 'Heaters', 'Exchangers', 'Vessels', 'Filters', 'Compressor', 'Pumps / LO'] as const;
+export const isMisc = (group: string) => !(MAIN_GROUPS as readonly string[]).includes(group);
 export const STAGES = ['Not handed over', 'Handed over', 'Opened / cleaning', 'Inspection', 'Repair', 'Box-up', 'Deblinded / returned'] as const;
 export const STAGE_SHORT = ['Not HO', 'HO', 'Cleaning', 'Inspection', 'Repair', 'Box-up', 'Returned'] as const;
 export const PENDING_REASONS = ['Stuck / seized bolts', 'Waiting material', 'Waiting manpower', 'Waiting scaffolding', 'Waiting permit / gas test', 'Waiting inspection (IAT)',

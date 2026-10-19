@@ -2,7 +2,7 @@
 // handover · M & I: the bar chart and the blinds it installs) with their planned and actual dates, and the late /
 // pending / IAT counts. Each card opens its detail; every line in it opens the step, item or page behind it.
 import { useMemo, useState } from 'react';
-import { FO_NAMES, attention, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, NEUT_LABEL,
+import { FO_NAMES, isMisc, attention, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, NEUT_LABEL,
   type Attention, type Banner, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import type { TrackerData } from '@/data/tracker';
 import { BottomSheet, cx } from '@/ui/components';
@@ -62,7 +62,8 @@ export function TodayTab({ steps, eqs, data, now, onOpen, onNav }: { steps: Map<
   const span = end - start;
   const day = Math.max(1, Math.floor((now - start) / DAY) + 1), days = Math.round(span / DAY);
   const pos = (t: number) => `${Math.min(100, Math.max(0, ((t - start) / span) * 100))}%`;
-  const behind = eqs.filter((e) => e.plan && e.plan.variance < 0 && e.eq.tracked).sort((a, b) => a.plan!.variance - b.plan!.variance || b.plan!.days - a.plan!.days);
+  // the main items first, the miscellaneous ones (CV shells, PSVs, check valves …) after them
+  const behind = eqs.filter((e) => e.plan && e.plan.variance < 0 && e.eq.tracked).sort((a, b) => Number(isMisc(a.eq.group)) - Number(isMisc(b.eq.group)) || a.plan!.variance - b.plan!.variance || b.plan!.days - a.plan!.days);
   const go = (n: Nav) => { setSheet(null); onNav(n); };
   const open = (a: { kind: 'step' | 'equipment'; ref: string }) => { setSheet(null); onOpen(a); };
   const opsBadge = !ops ? null : ops.finishedAt !== null && ops.finishDelayH !== null
@@ -188,7 +189,8 @@ function MiSheet({ data, steps, now, mi, behind, onOpen, onNav, onClose }: { dat
   const [all, setAll] = useState(false);
   const delay = mi.actualStart !== null && !Number.isNaN(mi.planned) ? mi.actualStart - mi.planned : 0;
   const shifted = useMemo(() => equipViews(data, now - delay, steps), [data, now, delay, steps]);
-  const groups = [...new Set(shifted.map((e) => e.eq.group))].map((g) => ({ g, b: banner(shifted.filter((e) => e.eq.group === g)) })).filter((x) => x.b.items > 0);
+  const groups = [...[...new Set(shifted.map((e) => e.eq.group))].filter((g) => !isMisc(g)).map((g) => ({ g, b: banner(shifted.filter((e) => e.eq.group === g)) })),
+    { g: 'Miscellaneous', b: banner(shifted.filter((e) => isMisc(e.eq.group))) }].filter((x) => x.b.items > 0);
   const pts = (data.points ?? []).filter((p) => p.kind === 'blind');
   const lines = data.activities.filter(equipBlind);
   const blindRow = (label: string, xs: TrkPoint[]) => [label, xs.filter(pointComplete).length, xs.length, xs.filter((p) => p.status === 'out').length] as const;

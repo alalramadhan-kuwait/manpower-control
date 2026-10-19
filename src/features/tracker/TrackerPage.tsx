@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
-import { FO_NAMES, NEUT_LABEL, REACTORS, STAGE_SHORT, hoursText, isolationOf, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
+import { FO_NAMES, NEUT_LABEL, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import { currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { Button, ErrorBox, Spinner, cx } from '@/ui/components';
@@ -189,13 +189,19 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
     return nx ? { text: `Next: ${nx.activity}${nx.start && Date.parse(nx.start) < now ? ' (due)' : ''}`, tone: 'muted' } : null;
   };
   const groups = [...new Set(eqs.map((e) => e.eq.group))];
-  const [g, setG] = useState('All');
+  const main = groups.filter((x) => !isMisc(x)), misc = groups.filter(isMisc);
+  const [g, setG] = useState('All'); const [showMisc, setShowMisc] = useState(false);
   const [onlyOps, setOnlyOps] = useState(true); const [lateFirst, setLateFirst] = useState(initialLateFirst);
   const shown = eqs.filter((e) => !onlyOps || e.eq.opsItem || e.stage > 0);
-  const list = shown.filter((e) => g === 'All' || e.eq.group === g);
+  const inChip = (e: EquipView) => (g === 'All' ? true : g === 'Misc' ? isMisc(e.eq.group) : e.eq.group === g);
+  const list = shown.filter(inChip);
   const RANK: Record<string, number> = { HO_LATE: 0, LATE: 1, PENDING: 2, IAT_OPEN: 3 };
   const sorted = lateFirst ? [...list].sort((a, b) => (RANK[a.flag] ?? 9) - (RANK[b.flag] ?? 9) || b.lateBy - a.lateBy) : list;
-  const sections: [string, EquipView[]][] = lateFirst || g !== 'All' ? [['', sorted]] : groups.map((x) => [x, sorted.filter((e) => e.eq.group === x)] as [string, EquipView[]]).filter(([, xs]) => xs.length);
+  const by = (xs: string[]) => xs.map((x) => [x, sorted.filter((e) => e.eq.group === x)] as [string, EquipView[]]).filter(([, ys]) => ys.length);
+  // All: the main groups, then miscellaneous folded · Misc: its groups · Late first: one list, main items first
+  const sections: [string, EquipView[]][] = lateFirst ? [['', [...sorted.filter((e) => !isMisc(e.eq.group)), ...sorted.filter((e) => isMisc(e.eq.group))]]]
+    : g === 'All' ? by(main) : g === 'Misc' ? by(misc) : [['', sorted]];
+  const miscRows = g === 'All' && !lateFirst ? by(misc) : [];
   const row = (e: EquipView) => { const l = lineOf(e); return (
     <button key={e.eq.tag} type="button" onClick={() => onOpen(e.eq.tag)} className={cx('grid w-full grid-cols-[6.5rem_1fr_auto] items-center gap-2 border-t border-slate-100 px-2.5 py-2 text-left first:border-t-0 active:bg-slate-50', !e.eq.tracked && 'opacity-50')}>
       <b className="truncate text-[13px] text-slate-900">{e.eq.critical && <span className="text-[#E02028]">★ </span>}{e.eq.tag}</b>
@@ -210,7 +216,7 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
     </button>); };
   return (
     <div className="space-y-2">
-      <div className="flex gap-1.5 overflow-x-auto pb-1">{['All', ...groups].map((x) => { const n = x === 'All' ? shown.length : shown.filter((e) => e.eq.group === x).length;
+      <div className="flex gap-1.5 overflow-x-auto pb-1">{['All', ...main, ...(misc.length ? ['Misc'] : [])].map((x) => { const n = x === 'All' ? shown.length : x === 'Misc' ? shown.filter((e) => isMisc(e.eq.group)).length : shown.filter((e) => e.eq.group === x).length;
         return <button key={x} type="button" onClick={() => setG(x)} className={cx('min-h-9 shrink-0 rounded-full px-3 text-xs font-semibold', g === x ? 'bg-[#0850A0] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{x}{n ? <span className="ml-1 opacity-60">{n}</span> : null}</button>; })}</div>
       <div className="flex items-center gap-2 text-xs text-slate-600">
         <label className="flex items-center gap-2"><input type="checkbox" checked={onlyOps} onChange={(e) => setOnlyOps(e.target.checked)} />Operations items only</label>
@@ -222,6 +228,10 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
           <div className="overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">{xs.map(row)}</div>
         </section>
       ))}
+      {miscRows.length > 0 && <section className="pt-1">
+        <button type="button" onClick={() => setShowMisc((x) => !x)} className="flex w-full justify-between rounded-xl bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-600"><span>{showMisc ? '▾' : '▸'} Miscellaneous</span><span>{miscRows.reduce((t, [, xs]) => t + xs.length, 0)} items</span></button>
+        {showMisc && miscRows.map(([name, xs]) => <div key={name}><h3 className="mb-1 mt-2 px-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">{name} · {xs.length}</h3><div className="overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">{xs.map(row)}</div></div>)}
+      </section>}
       {!list.length && <p className="py-4 text-center text-sm text-slate-500">No items here{onlyOps ? ' for operations' : ''}.</p>}
     </div>
   );
