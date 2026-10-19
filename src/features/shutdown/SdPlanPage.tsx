@@ -71,6 +71,14 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
   const [moving, setMoving] = useState(false);
   // the instructions are a page of their own (?view=instructions), so Back returns to the plan
   const [search, setSearch] = useSearchParams();
+  // back from a person's profile: the same person's sheet opens again
+  const backTo = search.get('member');
+  useEffect(() => {
+    if (!backTo || !data) return;
+    const m = data.members.find((x) => x.id === backTo);
+    if (m) setMember(m);
+    setSearch({}, { replace: true });
+  }, [backTo, data, setSearch]);
   const following = search.get('view') === 'instructions';
   const setFollowing = (on: boolean) => { if (on) setSearch({ view: 'instructions' }); else if (following) setSearch({}, { replace: true }); };
   const [moveError, setMoveError] = useState<string | null>(null);
@@ -704,7 +712,7 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm text-slate-600">#{r?.employee_number} · {SD_SLOT_LABEL[m.slot]}{r?.crew_code ? ` · from ${r.crew_code} Shift` : ''}{team ? ` · ${team.name} team` : ''}</p>
-          <Link to={`/employees/${m.employeeId}`} className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-sm font-semibold text-brand-700 ring-1 ring-brand-200">Profile · leave · notes<ChevronRight className="h-4 w-4" /></Link>
+          <Link to={`/employees/${m.employeeId}`} state={{ back: `/shutdown/${plan.id}?member=${m.id}`, backLabel: plan.title }} className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-sm font-semibold text-brand-700 ring-1 ring-brand-200">Profile · leave · notes<ChevronRight className="h-4 w-4" /></Link>
         </div>
         {m.slot !== 'controller' && (r?.position_code === 'field_operator' || r?.position_code === 'panel_operator') && (
           <Field label="Level">

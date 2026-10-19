@@ -1,7 +1,7 @@
 import { lapsedLeave } from '@/core/oracle';
 import { ArrowLeft, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { supabase } from '@/data/supabase';
 import { fetchReference } from '@/data/queries';
 import { displayNameFor } from '@/core/names';
@@ -52,6 +52,8 @@ export default function EmployeeProfilePage({ profile, editId }: { profile: User
   const [moveSheet, setMoveSheet] = useState<MoveTarget | null>(null);
   const [moves, setMoves] = useState<CrewMovement[]>([]);
   const [flash, setFlash] = useState<string | null>(null);
+  // opened from another page (a shutdown plan): the back link returns there
+  const from = useLocation().state as { back?: string; backLabel?: string } | null;
   const [auditLk, setAuditLk] = useState<AuditLookups | null>(null);
   useEffect(() => { fetchAuditLookups().then(setAuditLk).catch(() => setAuditLk(null)); }, []);
 
@@ -92,7 +94,7 @@ export default function EmployeeProfilePage({ profile, editId }: { profile: User
   const open = leaveSplit.current && isOpenEnd(leaveSplit.current.until);
   return (
     <div className="lg:max-w-3xl">
-      {!edit && <Link to="/employees" className="mb-3 inline-flex min-h-10 items-center gap-1 text-sm text-brand-700"><ArrowLeft className="h-4 w-4 rtl:rotate-180" /> {t('Employees')}</Link>}
+      {!edit && <Link to={from?.back ?? '/employees'} className="mb-3 inline-flex min-h-10 items-center gap-1 text-sm text-brand-700"><ArrowLeft className="h-4 w-4 rtl:rotate-180" /> {from?.backLabel ?? t('Employees')}</Link>}
       <Card className="mb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
