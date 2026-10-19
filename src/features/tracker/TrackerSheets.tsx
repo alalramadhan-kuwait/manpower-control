@@ -1,5 +1,5 @@
 // The two input sheets of the controllers: a guideline step (Start · Done · Pending) and an equipment item (stage,
-// blinds, IATs, pending). Big buttons, the time and the name are stamped by the database.
+// blinded = handed over, IATs, pending). Big buttons, the time and the name are stamped by the database.
 import { useState } from 'react';
 import { PENDING_REASONS, STAGES, kwDay, kwTime, stepTiming, type EquipView, type StepView, type TrkActivity } from '@/core/tracker';
 import { EquipActivities, StepTimes } from './Timing';
@@ -93,14 +93,11 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, onC
                 return <button key={s} type="button" disabled={busy || s === v.stage} onClick={() => run(() => setEquipment(e.id, { stage: s }), `${e.tag}: ${label}.`)}
                   className={cx('min-h-11 rounded-lg px-1 text-xs font-semibold ring-1 disabled:opacity-40', s === v.stage ? 'bg-[#0850A0] text-white ring-[#0850A0]' : next ? 'bg-[#D6E6F5] text-[#004080] ring-[#0850A0]' : 'bg-white text-slate-700 ring-slate-300')}>{s}. {label}</button>; })}
             </div>}
-            {e.hoStep && <p className="text-[11px] text-slate-500">Handed over automatically when {e.hoStep} is done{v.hoAt ? ` (${when(v.hoAt)})` : ''}.</p>}
+            <p className="text-[11px] text-slate-500">{v.hoAt ? <>Blinded &amp; handed over {when(v.hoAt)}{e.blindsOut ? <> · deblinded {when(e.blindsOut)}</> : null}. </> : null}
+              Blinded = handed over (stage 1){e.hoStep ? `, also when ${e.hoStep} is done` : ''} · deblinded = stage 6. The blind / deblind bar-chart lines follow the stage.</p>
           </div>
         </Field>
         <EquipActivities trackerId={trackerId} itemKey={e.barchartKey ?? e.tag} activities={activities} now={now} canEdit={canEdit} isHead={isHead} onDone={onDone} />
-        {canEdit && <div className="grid grid-cols-2 gap-2">
-          <Button variant="secondary" disabled={busy} onClick={() => run(() => setEquipment(e.id, { blinds_in_at: new Date().toISOString() }), `${e.tag}: blinds in.`)}>Blinds IN{e.blindsIn ? ` · ${when(e.blindsIn)}` : ''}</Button>
-          <Button variant="secondary" disabled={busy} onClick={() => run(() => setEquipment(e.id, { blinds_out_at: new Date().toISOString() }), `${e.tag}: blinds out.`)}>Blinds OUT{e.blindsOut ? ` · ${when(e.blindsOut)}` : ''}</Button>
-        </div>}
         <Field label={`IAT · ${iats.length} open`}>
           <div className="space-y-1.5">
             {iats.map((i) => <div key={i.id} className="flex items-center justify-between gap-2 rounded-lg bg-[#FFE699] px-2.5 py-1.5 text-sm"><span><b>{i.iatNo}</b> {i.jobText}{i.discipline ? ` · ${i.discipline}` : ''}</span>{canEdit && <Button variant="secondary" className="min-h-8 px-2 text-xs" disabled={busy} onClick={() => run(() => closeIat(i.id), `${i.iatNo} closed.`)}>Close IAT</Button>}</div>)}

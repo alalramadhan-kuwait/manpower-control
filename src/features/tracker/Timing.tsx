@@ -2,7 +2,7 @@
 // corrected), plan vs actual durations, and the record exported for future shutdowns.
 import { useState } from 'react';
 import { Download } from 'lucide-react';
-import { STAGES, kwDay, kwTime, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type StepTiming, type Timing as T, type TrkActivity, type TrkStep } from '@/core/tracker';
+import { STAGES, blindLink, kwDay, kwTime, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type StepTiming, type Timing as T, type TrkActivity, type TrkStep } from '@/core/tracker';
 import { addActivity, setActivity, setStep } from '@/data/tracker';
 import { Button, ErrorBox, Field, cx } from '@/ui/components';
 import { Tile } from './ui';
@@ -20,14 +20,14 @@ export function TimingChip({ t }: { t: T }) {
 
 /** One activity: Started / Finished stamp now; the times and a note can be corrected. */
 export function ActivityRow({ t, canEdit, isHead = false, onDone }: { t: T; canEdit: boolean; isHead?: boolean; onDone: (msg: string) => void }) {
-  const a = t.a;
+  const a = t.a; const link = blindLink(a);
   const [edit, setEdit] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [s, setS] = useState(local(a.actualStart)); const [f, setF] = useState(local(a.actualFinish)); const [note, setNote] = useState(a.actualNote ?? '');
   const [ps, setPs] = useState(local(a.start)); const [pf, setPf] = useState(local(a.finish));
   async function run(patch: Parameters<typeof setActivity>[1], msg: string) { setBusy(true); setErr(null); try { await setActivity(a.id, patch); onDone(msg); } catch (e) { setErr(e); setBusy(false); } }
   return (
     <div className={cx('rounded-xl bg-white p-2.5 ring-1 ring-slate-200', !a.tracked && 'opacity-50')}>
-      <div className="flex items-start gap-2">{a.tracked ? <TimingChip t={t} /> : <span className="inline-flex shrink-0 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">NOT REQUIRED</span>}<span className="min-w-0 flex-1 text-sm leading-snug text-slate-900">{a.activity}</span><span className="shrink-0 text-[10px] text-slate-400">{a.activityId}</span></div>
+      <div className="flex items-start gap-2">{a.tracked && link ? <span className="inline-flex shrink-0 rounded bg-[#D6E6F5] px-1.5 py-0.5 text-[10px] font-bold text-[#004080]">{t.state === 'FINISHED' ? '✓ ' : ''}= STAGE {link}</span> : a.tracked ? <TimingChip t={t} /> : <span className="inline-flex shrink-0 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">NOT REQUIRED</span>}<span className="min-w-0 flex-1 text-sm leading-snug text-slate-900">{a.activity}</span><span className="shrink-0 text-[10px] text-slate-400">{a.activityId}</span></div>
       <div className="mt-1 grid grid-cols-2 gap-x-2 text-[11px] text-slate-600">
         <span>Plan {when(a.start)} · {t.plannedH ?? '—'} h</span>
         <span>Actual {a.actualStart ? when(a.actualStart) : '—'}{t.actualH !== null ? ` · ${t.actualH} h` : ''}</span>
@@ -37,9 +37,10 @@ export function ActivityRow({ t, canEdit, isHead = false, onDone }: { t: T; canE
       {!a.tracked && isHead && <Button variant="ghost" className="mt-1 min-h-9 px-2 text-xs" disabled={busy} onClick={() => run({ tracked: true, disabled_reason: null }, `${a.key}: ${a.activityId} required again.`)}>↺ Required again</Button>}
       {canEdit && a.tracked && (
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {!a.actualStart && <Button className="min-h-9 px-3 text-xs" disabled={busy} onClick={() => run({ actual_start: new Date().toISOString() }, `${a.key}: ${a.activityId} started.`)}>▶ Started</Button>}
-          {a.actualStart && !a.actualFinish && <Button className="min-h-9 bg-[#08A048] px-3 text-xs hover:bg-green-700" disabled={busy} onClick={() => run({ actual_finish: new Date().toISOString() }, `${a.key}: ${a.activityId} finished.`)}>✓ Finished</Button>}
-          {isHead && !a.actualStart && <Button variant="secondary" className="min-h-9 px-3 text-xs" disabled={busy} onClick={() => run({ tracked: false, disabled_reason: 'not required' }, `${a.key}: ${a.activityId} not required.`)}>Not required</Button>}
+          {link && <span className="self-center text-[11px] text-slate-500">Done with the stage: {STAGES[link]}</span>}
+          {!link && !a.actualStart && <Button className="min-h-9 px-3 text-xs" disabled={busy} onClick={() => run({ actual_start: new Date().toISOString() }, `${a.key}: ${a.activityId} started.`)}>▶ Started</Button>}
+          {!link && a.actualStart && !a.actualFinish && <Button className="min-h-9 bg-[#08A048] px-3 text-xs hover:bg-green-700" disabled={busy} onClick={() => run({ actual_finish: new Date().toISOString() }, `${a.key}: ${a.activityId} finished.`)}>✓ Finished</Button>}
+          {isHead && !link && !a.actualStart && <Button variant="secondary" className="min-h-9 px-3 text-xs" disabled={busy} onClick={() => run({ tracked: false, disabled_reason: 'not required' }, `${a.key}: ${a.activityId} not required.`)}>Not required</Button>}
           <Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => setEdit((x) => !x)}>{edit ? 'Close' : isHead ? 'Edit times · bar chart' : 'Edit times · note'}</Button>
         </div>
       )}

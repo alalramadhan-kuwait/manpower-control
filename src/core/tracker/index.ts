@@ -4,7 +4,7 @@
 
 export type StepStatus = 'not_started' | 'in_progress' | 'done' | 'pending' | 'na';
 export type StepState = 'DONE' | 'NA' | 'PENDING' | 'IN_PROGRESS' | 'READY' | 'WAITING';
-export type Flag = 'CHECK_HO' | 'IAT_OPEN' | 'COMPLETE' | 'PENDING' | 'HO_LATE' | 'LATE' | 'NOT_HO' | 'IN_PROGRESS' | 'NONE';
+export type Flag = 'IAT_OPEN' | 'COMPLETE' | 'PENDING' | 'HO_LATE' | 'LATE' | 'NOT_HO' | 'IN_PROGRESS' | 'NONE';
 
 export interface TrkStep {
   id: string; stepId: string; fo: string; gate: number; gateName: string | null; shortName: string; text: string | null;
@@ -29,8 +29,8 @@ export interface TrkLog { kind: 'step' | 'equipment' | 'iat' | 'activity'; ref: 
 export interface TrkSettings { hoTarget?: string; end?: string; workOrder?: string; whatsapp?: string; opsStart?: string; miStart?: string; miEnd?: string }
 export interface TrkData { steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings }
 
-export const STAGES = ['Not handed over', 'Handed over', 'Opened / cleaning', 'Inspection', 'Repair', 'Box-up', 'Deblinded / returned'] as const;
-export const STAGE_SHORT = ['Not HO', 'HO', 'Cleaning', 'Inspection', 'Repair', 'Box-up', 'Returned'] as const;
+export const STAGES = ['Not handed over', 'Blinded / handed over', 'Opened / cleaning', 'Inspection', 'Repair', 'Box-up', 'Deblinded / returned'] as const;
+export const STAGE_SHORT = ['Not HO', 'Blinded', 'Cleaning', 'Inspection', 'Repair', 'Box-up', 'Returned'] as const;
 export const PENDING_REASONS = ['Stuck / seized bolts', 'Waiting material', 'Waiting manpower', 'Waiting scaffolding', 'Waiting permit / gas test', 'Waiting inspection (IAT)',
   'Line choked', 'Valve passing', 'Waiting blind / gasket', 'Waiting crane / equipment', 'Waiting previous step', 'Waiting N2 / steam / soda ash', 'Weather', 'Other'] as const;
 export const FO_NAMES: Record<string, string> = { FO1: 'Reactors', FO2: 'HP', FO3: 'LP + Heaters' };
@@ -60,8 +60,14 @@ export function stepViews(d: TrkData, now: number): Map<string, StepView> {
 export interface PlanVsActual { planned: number; variance: number; days: number }
 export interface EquipView {
   eq: TrkEquipment; stage: number; flag: Flag; reason: string | null; late: boolean; lateBy: number;
-  /** when the item was handed over: its HO step's time done (or the stage stamp) */
+  /** when the item was blinded = handed over: the blinds-in time (stamped by the stage, the HO step or the blind line) */
   hoAt: string | null; iatsOpen: TrkIat[]; plan: PlanVsActual | null;
+}
+
+/** A bar-chart line that is the item's blinding (stage 1, = handed over) or deblinding (stage 6, = returned): done
+ *  with the stage, not tapped on its own. */
+export function blindLink(a: Pick<TrkActivity, 'activity' | 'stage'>): 1 | 6 | null {
+  return /blind/i.test(a.activity) && (a.stage === 1 || a.stage === 6) ? a.stage : null;
 }
 
 export function planVsActual(acts: TrkActivity[], actual: number, now: number): PlanVsActual | null {
@@ -88,8 +94,8 @@ export function equipViews(d: TrkData, now: number, steps = stepViews(d, now)): 
     const ops = eq.opsItem && !!eq.fo && !!eq.hoStep;
     const plan = eq.barchartKey ? planVsActual(actsBy.get(eq.barchartKey) ?? [], stage, now) : null;
     let flag: Flag = 'NONE', reason: string | null = null, lateBy = 0;
-    if (eq.stage >= 1 && eq.hoStep && !hoDone) flag = 'CHECK_HO';
-    else if (stage >= 5 && iatsOpen.length) flag = 'IAT_OPEN';
+    // blinded = handed over: an item handed over on its own while its HO step (shared by several items) is open is fine
+    if (stage >= 5 && iatsOpen.length) flag = 'IAT_OPEN';
     else if (stage === 6) flag = 'COMPLETE';
     else if (eq.pendingReason) { flag = 'PENDING'; reason = eq.pendingReason; }
     else if (stage === 0 && ho?.state === 'PENDING') { flag = 'PENDING'; reason = `${ho.step.pendingReason ?? 'Pending'} (step)`; }
@@ -98,7 +104,7 @@ export function equipViews(d: TrkData, now: number, steps = stepViews(d, now)): 
     else if (ops && eq.tracked && stage < 6 && eq.plannedFinish && now > ms(eq.plannedFinish)) { flag = 'LATE'; lateBy = now - ms(eq.plannedFinish); }
     else if (ops && stage === 0) flag = 'NOT_HO';
     else if (stage >= 1 && stage <= 5) flag = 'IN_PROGRESS';
-    const hoAt = hoDone ? ho!.step.updatedAt : null;
+    const hoAt = eq.blindsIn ?? (hoDone ? ho!.step.doneAt ?? ho!.step.updatedAt : null);
     return { eq, stage, flag, reason, late: flag === 'HO_LATE' || flag === 'LATE', lateBy, hoAt, iatsOpen, plan };
   });
 }
@@ -117,14 +123,14 @@ export function banner(eqs: EquipView[]): Banner {
 }
 
 export interface Attention { kind: 'step' | 'equipment'; ref: string; label: string; detail: string; flag: Flag | 'STEP_LATE' | 'STEP_PENDING'; rank: number; at: number }
-const RANK: Record<string, number> = { CHECK_HO: 0, HO_LATE: 1, LATE: 2, STEP_LATE: 2, PENDING: 3, STEP_PENDING: 3, IAT_OPEN: 4 };
+const RANK: Record<string, number> = { HO_LATE: 1, LATE: 2, STEP_LATE: 2, PENDING: 3, STEP_PENDING: 3, IAT_OPEN: 4 };
 export const hoursText = (msec: number) => (msec >= DAY ? `${Math.round(msec / DAY * 10) / 10} d` : `${Math.max(1, Math.round(msec / H))} h`);
-/** The "needs me" list: CHECK HO STEP › HO LATE › LATE › PENDING › IAT OPEN (tracked items only), steps late or pending too. */
+/** The "needs me" list: HO LATE › LATE › PENDING › IAT OPEN (tracked items only), steps late or pending too. */
 export function attention(steps: Map<string, StepView>, eqs: EquipView[]): Attention[] {
   const out: Attention[] = [];
   for (const e of eqs) {
     if (!e.eq.tracked || !(e.flag in RANK)) continue;
-    const detail = e.flag === 'CHECK_HO' ? `stage set, ${e.eq.hoStep} not done` : e.flag === 'HO_LATE' || e.flag === 'LATE' ? hoursText(e.lateBy)
+    const detail = e.flag === 'HO_LATE' || e.flag === 'LATE' ? hoursText(e.lateBy)
       : e.flag === 'PENDING' ? e.reason ?? '' : e.flag === 'IAT_OPEN' ? e.iatsOpen.map((i) => i.iatNo).join(', ') : '';
     out.push({ kind: 'equipment', ref: e.eq.tag, label: e.eq.tag, detail, flag: e.flag, rank: RANK[e.flag], at: e.lateBy });
   }
@@ -198,7 +204,7 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
 
 const BANNER_ICON = { AHEAD: '🟢', BEHIND: '🔴', ON_PLAN: '🟡' } as const;
 export const bannerText = (b: Banner) => `${b.state === 'ON_PLAN' ? 'ON PLAN' : b.state}${b.state !== 'ON_PLAN' && b.days ? ` ${b.state === 'BEHIND' ? '−' : '+'}${b.days} d` : ''}`;
-const FLAG_TEXT: Record<string, string> = { CHECK_HO: 'CHECK HO STEP', HO_LATE: 'HO LATE', LATE: 'LATE', PENDING: 'Pending', IAT_OPEN: 'IAT open', STEP_LATE: 'LATE', STEP_PENDING: 'Pending' };
+const FLAG_TEXT: Record<string, string> = { HO_LATE: 'HO LATE', LATE: 'LATE', PENDING: 'Pending', IAT_OPEN: 'IAT open', STEP_LATE: 'LATE', STEP_PENDING: 'Pending' };
 export const flagText = (f: string) => FLAG_TEXT[f] ?? f;
 
 /** The WhatsApp message: short, the PDF carries the details. */
@@ -284,7 +290,7 @@ export function stepTimingCsv(ts: StepTiming[]): string {
 }
 
 // ── The two parts of the shutdown: operations (guideline steps) and M & I (bar chart) ──────────────────────────
-// Operations ends, and M & I starts, when the critical item(s) (R-12-205) are handed over: their handover step done.
+// Operations ends, and M & I starts, when the critical item(s) (R-12-205) are handed over: blinded = handed over (their handover step done, the stage tap or the blind line).
 export interface OpsProgress { state: Banner['state'] | 'NOT_STARTED' | 'DONE'; planPct: number; actualPct: number; day: number; days: number; offDays: number; start: number; end: number;
   /** when operations finished (the critical handover), and its difference from the plan in hours (+ late) */
   finishedAt: number | null; finishDelayH: number | null }
@@ -298,12 +304,13 @@ export interface MiPhase {
 }
 export interface Phases { ops: OpsProgress | null; mi: MiPhase }
 
-/** The critical handover: every tracked critical item's handover step done; the time is the last of them. */
+/** The critical handover: every tracked critical item blinded = handed over; the time is the last of them. */
 export function criticalHandover(d: TrkData, steps: Map<string, StepView>): { at: number | null; critical: MiPhase['critical'] } {
   const crit = d.equipment.filter((e) => e.critical && e.tracked);
-  const critical = crit.map((e) => ({ tag: e.tag, hoStep: e.hoStep, done: !!e.hoStep && steps.get(e.hoStep)?.state === 'DONE' }));
+  const stepDone = (e: TrkEquipment) => !!e.hoStep && steps.get(e.hoStep)?.state === 'DONE';
+  const critical = crit.map((e) => ({ tag: e.tag, hoStep: e.hoStep, done: e.stage >= 1 || stepDone(e) }));
   if (!critical.length || critical.some((c) => !c.done)) return { at: null, critical };
-  const times = crit.map((e) => { const st = steps.get(e.hoStep!)!.step; return ms(st.doneAt ?? st.updatedAt); }).filter((x) => !Number.isNaN(x));
+  const times = crit.map((e) => { const st = e.hoStep ? steps.get(e.hoStep)?.step : undefined; return ms(e.blindsIn ?? st?.doneAt ?? st?.updatedAt ?? null); }).filter((x) => !Number.isNaN(x));
   return { at: times.length ? Math.max(...times) : null, critical };
 }
 

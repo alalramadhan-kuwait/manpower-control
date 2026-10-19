@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attention, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { attention, blindLink, criticalHandover, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -42,9 +42,19 @@ describe('§10 test scenarios', () => {
     const d = seed(); step(d, 'S322').pendingReason = 'Stuck / seized bolts';
     for (const t of ['E-12-216A', 'E-12-216B']) expect([view(d, t).flag, view(d, t).reason]).toEqual(['PENDING', 'Stuck / seized bolts (step)']);
   });
-  it('3 · V-206 moved to box-up while S219 is open: CHECK HO STEP', () => {
-    const d = seed(); eq(d, 'V-12-206').stage = 5;
-    expect(view(d, 'V-12-206').flag).toBe('CHECK_HO');
+  it('3 · V-206 blinded and moved to box-up while S219 is open: in progress (blinded = handed over, no check flag)', () => {
+    const d = seed(); Object.assign(eq(d, 'V-12-206'), { stage: 5, blindsIn: '2026-10-20T09:00:00+03:00' });
+    const v = view(d, 'V-12-206');
+    expect([v.stage, v.flag, v.hoAt]).toEqual([5, 'IN_PROGRESS', '2026-10-20T09:00:00+03:00']);
+  });
+  it('3c · R-12-205 blinded (stage tap) without S110 done: the critical handover, M & I starts at the blinds-in time', () => {
+    const d = seed(); for (const e of d.equipment) e.critical = e.tag === 'R-12-205';
+    Object.assign(eq(d, 'R-12-205'), { stage: 1, blindsIn: '2026-10-20T10:00:00+03:00' }); step(d, 'S110').status = 'not_started';
+    const r = criticalHandover(d, stepViews(d, Date.parse('2026-10-20T12:00:00+03:00')));
+    expect([r.at, r.critical.map((c) => c.done)]).toEqual([Date.parse('2026-10-20T10:00:00+03:00'), [true]]);
+  });
+  it('3b · the blind and deblind bar-chart lines are the stage, a combined blind + open line is a work step', () => {
+    expect([blindLink({ activity: 'Blind', stage: 1 }), blindLink({ activity: 'Box-up & Deblind', stage: 6 }), blindLink({ activity: 'Blind, Remove elbow & Top trays', stage: 2 }), blindLink({ activity: 'Entry Permit', stage: 1 })]).toEqual([1, 6, null, null]);
   });
   it('4 · V-206 at box-up, S219 done, an open IAT: IAT OPEN; IAT closed: in progress', () => {
     const d = seed(); eq(d, 'V-12-206').stage = 5; step(d, 'S219').status = 'done';

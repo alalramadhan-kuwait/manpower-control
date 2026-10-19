@@ -170,3 +170,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261019105923_shutdown_progress_phase_dates` | Train-2 tracker settings: operations shutdown 16-Oct 07:00 → 20-Oct 07:00, M & I 20-Oct 07:00 → 7-Nov 07:00 (from the bar chart) |
 | `20261019121203_shutdown_progress_step_undo_times` | A step taken back from Done loses its done time (whatever it goes back to) |
 | `20261019121655_shutdown_progress_add_activity` | The Section Head adds a procedure activity to an item (not in the bar chart); tracked like the bar-chart ones |
+| `20261019124419_shutdown_progress_blind_is_handover` | Blinded = handed over (stage 1, blinds-in time), deblinded = returned (stage 6, blinds-out time): the HO step, the stage tap and the bar-chart blind / deblind line are kept in step by triggers. Data aligned, Remove blinds lines moved to stage 6 |

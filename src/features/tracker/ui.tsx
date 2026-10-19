@@ -12,7 +12,6 @@ export const STATE_STYLE: Record<StepState, { bg: string; text: string; label: s
   NA: { bg: 'bg-slate-100', text: 'text-slate-500', label: 'N/A' },
 };
 export const FLAG_STYLE: Record<Flag | 'STEP_LATE' | 'STEP_PENDING', { cls: string; label: string }> = {
-  CHECK_HO: { cls: 'bg-[#C55A11] text-white', label: 'CHECK HO STEP' },
   HO_LATE: { cls: 'bg-[#E06666] text-white', label: 'HO LATE' },
   LATE: { cls: 'bg-[#E06666] text-white', label: 'LATE' },
   STEP_LATE: { cls: 'bg-[#E06666] text-white', label: 'LATE' },
