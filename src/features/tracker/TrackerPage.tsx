@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
-import { FO_NAMES, REACTORS, STAGE_SHORT, miStart, opsProgress, attention, banner, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, totals, type Attention, type EquipView, type StepView } from '@/core/tracker';
+import { FO_NAMES, REACTORS, STAGE_SHORT, phases, attention, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, totals, type Attention, type EquipView, type StepView } from '@/core/tracker';
 import { currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { Button, ErrorBox, Spinner, cx } from '@/ui/components';
@@ -103,33 +103,38 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
 }
 
 const span = (msec: number) => { const d = Math.floor(msec / 864e5), h = Math.round((msec % 864e5) / 36e5); return d ? `${d} d ${h} h` : `${h} h`; };
-/** Two parts: the operations shutdown (guideline steps against the time gone) and M & I (the bar chart). */
-function PhaseBanners({ steps, b, settings, now }: { steps: Map<string, StepView>; b: ReturnType<typeof banner>; settings: TrackerData['settings']; now: number }) {
-  const ops = opsProgress(steps, settings, now); const mi = miStart(settings);
+/** Two parts: operations until R-12-205 (critical) is handed over, then M & I from that moment (its bar chart plan
+ *  measured from the actual start). */
+function PhaseBanners({ data, steps, now }: { data: TrackerData; steps: Map<string, StepView>; now: number }) {
+  const { ops, mi } = phases(data, now, steps);
+  const hh = (x: number | null) => (x === null ? '' : `${x > 0 ? '+' : x < 0 ? '−' : ''}${Math.abs(x)} h`);
   const opsBg = !ops ? '' : ops.state === 'NOT_STARTED' ? 'bg-slate-500' : ops.state === 'DONE' || ops.state === 'AHEAD' ? 'bg-[#08A048]' : ops.state === 'BEHIND' ? 'bg-[#E02028]' : 'bg-amber-500';
   const opsText = !ops ? '' : ops.state === 'NOT_STARTED' ? 'NOT STARTED' : ops.state === 'DONE' ? 'DONE' : ops.state === 'ON_PLAN' ? 'ON PLAN' : `${ops.state} ${ops.offDays > 0 ? '+' : '−'}${Math.abs(ops.offDays)} d`;
-  const miNotYet = !Number.isNaN(mi) && now < mi;
+  const crit = mi.critical.map((c) => `${c.tag} (${c.hoStep ?? 'HO'})`).join(', ') || 'the critical item';
+  const late = mi.actualStart === null && !Number.isNaN(mi.planned) && now > mi.planned;
   return (
     <div className="space-y-2">
       {ops && (
         <div className={cx('rounded-2xl px-4 py-3 text-white', opsBg)}>
-          <div className="text-[11px] font-bold uppercase tracking-wide opacity-90">Operations shutdown · day {ops.day} of {ops.days}</div>
+          <div className="text-[11px] font-bold uppercase tracking-wide opacity-90">Operations shutdown · {ops.state === 'DONE' ? `${ops.day} day${ops.day > 1 ? 's' : ''}` : `day ${ops.day} of ${ops.days}`}</div>
           <div className="text-2xl font-extrabold tracking-wide">● {opsText}</div>
-          <div className="text-sm font-medium opacity-90">Plan {ops.planPct}% · Actual {ops.actualPct}% (guideline steps)</div>
-          <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/30"><div className="h-full bg-white" style={{ width: `${ops.actualPct}%` }} /></div>
+          {ops.state === 'DONE' && ops.finishedAt !== null
+            ? <div className="text-sm font-medium opacity-90">Finished {kwDay(ops.finishedAt)} {kwTime(ops.finishedAt)} · {hh(ops.finishDelayH)} vs plan · R-12-205 handed over</div>
+            : <div className="text-sm font-medium opacity-90">Plan {ops.planPct}% · Actual {ops.actualPct}% (guideline steps) · ends at {crit} handover</div>}
+          {ops.state !== 'DONE' && <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/30"><div className="h-full bg-white" style={{ width: `${ops.actualPct}%` }} /></div>}
         </div>
       )}
-      {miNotYet ? (
-        <div className="rounded-2xl bg-[#004080] px-4 py-3 text-white">
-          <div className="text-[11px] font-bold uppercase tracking-wide opacity-90">M &amp; I (bar chart)</div>
-          <div className="text-xl font-extrabold">Starts {kwDay(mi)} {kwTime(mi)}</div>
-          <div className="text-sm opacity-90">in {span(mi - now)}{b.items ? '' : ' · import the bar chart (Admin)'}</div>
+      {mi.actualStart === null ? (
+        <div className={cx('rounded-2xl px-4 py-3 text-white', late ? 'bg-[#E02028]' : 'bg-[#004080]')}>
+          <div className="text-[11px] font-bold uppercase tracking-wide opacity-90">M &amp; I (bar chart) · starts at {crit} handover</div>
+          <div className="text-xl font-extrabold">{late ? `Start late ${span(now - mi.planned)}` : `Plan ${kwDay(mi.planned)} ${kwTime(mi.planned)}`}</div>
+          <div className="text-sm opacity-90">{late ? `planned ${kwDay(mi.planned)} ${kwTime(mi.planned)}` : `in ${span(mi.planned - now)}`}{data.activities.length ? '' : ' · import the bar chart (Admin)'}</div>
         </div>
-      ) : (
-        <div className={cx('rounded-2xl px-4 py-3 text-white', BANNER_BG[b.state])}>
-          <div className="text-[11px] font-bold uppercase tracking-wide opacity-90">M &amp; I (bar chart)</div>
-          <div className="text-2xl font-extrabold tracking-wide">● {bannerText(b)}</div>
-          <div className="text-sm font-medium opacity-90">Plan {b.planPct}% · Actual {b.actualPct}%{b.items ? ` · ${b.items} items` : ' · import the bar chart (Admin)'}</div>
+      ) : mi.banner && (
+        <div className={cx('rounded-2xl px-4 py-3 text-white', BANNER_BG[mi.banner.state])}>
+          <div className="text-[11px] font-bold uppercase tracking-wide opacity-90">M &amp; I (bar chart) · started {kwDay(mi.actualStart)} {kwTime(mi.actualStart)} ({hh(mi.delayH)})</div>
+          <div className="text-2xl font-extrabold tracking-wide">● {bannerText(mi.banner)}</div>
+          <div className="text-sm font-medium opacity-90">Plan {mi.banner.planPct}% · Actual {mi.banner.actualPct}%{mi.banner.items ? ` · ${mi.banner.items} items · from the actual start` : ' · import the bar chart (Admin)'}</div>
         </div>
       )}
     </div>
@@ -147,13 +152,13 @@ function AttentionRow({ a, onOpen }: { a: Attention; onOpen: () => void }) {
 }
 
 function TodayTab({ steps, eqs, data, now, onOpen, onTab }: { steps: Map<string, StepView>; eqs: EquipView[]; data: TrackerData; now: number; onOpen: (a: { kind: 'step' | 'equipment'; ref: string }) => void; onTab: (t: Tab) => void }) {
-  const b = banner(eqs); const tot = totals(steps, eqs, data.iats); const att = attention(steps, eqs);
+  const tot = totals(steps, eqs, data.iats); const att = attention(steps, eqs);
   const [allReady, setAllReady] = useState(false);
   const ready = [...steps.values()].filter((v) => v.state === 'READY');
   const critical = eqs.filter((e) => e.eq.critical && e.eq.tracked);
   return (
     <div className="space-y-3">
-      <PhaseBanners steps={steps} b={b} settings={data.settings} now={now} />
+      <PhaseBanners data={data} steps={steps} now={now} />
       <div className="grid grid-cols-3 gap-2">
         <Tile value={`${tot.stepsDone}/${tot.steps}`} label="steps" onClick={() => onTab('guideline')} />
         <Tile value={`${tot.hoDone}/${tot.ho}`} label="handed over" onClick={() => onTab('equipment')} />
@@ -300,9 +305,10 @@ function ReportTab({ data, now, canEdit, by, onSaved }: { data: TrackerData; now
         <header className="mb-2 border-b border-slate-200 pb-2">
           <img src={`${import.meta.env.BASE_URL}brand/knpc-logo.png`} alt="KNPC" className="mb-1 hidden h-10 print:block" />
           <h2 className="font-bold text-[#004080]">{test ? '[TEST] ' : ''}{r.title}</h2>
-          {r.ops && r.ops.state !== 'NOT_STARTED' && <p className="font-semibold text-slate-800">Operations day {r.ops.day}/{r.ops.days} · Plan {r.ops.planPct}% · Actual {r.ops.actualPct}%</p>}
-          {r.miStartsAt ? <p className="font-semibold text-[#004080]">M &amp; I starts {kwDay(r.miStartsAt)} {kwTime(r.miStartsAt)}</p>
-            : <p className={cx('font-semibold', r.banner.state === 'BEHIND' ? 'text-[#E02028]' : r.banner.state === 'AHEAD' ? 'text-[#08A048]' : 'text-amber-700')}>M &amp; I {bannerText(r.banner)} · Plan {r.banner.planPct}% · Actual {r.banner.actualPct}%</p>}
+          {r.ops && r.ops.state === 'DONE' && r.ops.finishedAt !== null ? <p className="font-semibold text-[#08A048]">Operations done {kwDay(r.ops.finishedAt)} {kwTime(r.ops.finishedAt)} (R-12-205 handed over)</p>
+            : r.ops && r.ops.state !== 'NOT_STARTED' && <p className="font-semibold text-slate-800">Operations day {r.ops.day}/{r.ops.days} · Plan {r.ops.planPct}% · Actual {r.ops.actualPct}%</p>}
+          {r.mi.actualStart === null ? <p className="font-semibold text-[#004080]">M &amp; I starts at R-12-205 handover (plan {kwDay(r.mi.planned)} {kwTime(r.mi.planned)})</p>
+            : r.mi.banner && <p className={cx('font-semibold', r.mi.banner.state === 'BEHIND' ? 'text-[#E02028]' : r.mi.banner.state === 'AHEAD' ? 'text-[#08A048]' : 'text-amber-700')}>M &amp; I {bannerText(r.mi.banner)} · Plan {r.mi.banner.planPct}% · Actual {r.mi.banner.actualPct}% · started {kwDay(r.mi.actualStart)} {kwTime(r.mi.actualStart)}</p>}
           <p className="text-xs text-slate-600">Steps {r.totals.stepsDone}/{r.totals.steps} · HO {r.totals.hoDone}/{r.totals.ho} · late {r.totals.late} · pending {r.totals.pending} · IAT open {r.totals.iatOpen}</p>
         </header>
         <h3 className="mt-2 font-semibold">Done this shift ({r.stepsDone.length})</h3>

@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attention, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, opsProgress, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { attention, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -157,18 +157,22 @@ describe('step timing', () => {
   });
 });
 
-describe('the two parts of the shutdown', () => {
+describe('the two parts of the shutdown: operations end, M & I starts, at the R-205 handover', () => {
   const settings = { hoTarget: '2026-10-20T07:00:00+03:00', opsStart: '2026-10-16T07:00:00+03:00', miStart: '2026-10-20T07:00:00+03:00' };
-  it('operations: day 3 of 4 on 18-Oct 19:00, plan by the time gone, actual by the steps done', () => {
+  it('before the handover: operations day 3 of 4 on 18-Oct 19:00 (time gone vs steps done), M & I waiting', () => {
     const d = { ...seed(), settings }; const now = at('2026-10-18 19:00');
-    const o = opsProgress(stepViews(d, now), settings, now)!;
-    expect([o.day, o.days, o.planPct, o.actualPct]).toEqual([3, 4, 63, 29]);
-    expect(o.state).toBe('BEHIND');
+    const { ops, mi } = phases(d, now);
+    expect([ops!.day, ops!.days, ops!.planPct, ops!.actualPct, ops!.state]).toEqual([3, 4, 63, 29, 'BEHIND']);
+    expect([mi.actualStart, mi.critical]).toEqual([null, [{ tag: 'R-12-205', hoStep: 'S110', done: false }]]);
+    expect(reportText(shiftReport(d, at('2026-10-19 10:00'), null))).toContain('M & I starts at R-12-205 handover (plan Tue 20 Oct 07:00)');
   });
-  it('M & I not started yet: the report says when it starts', () => {
-    const d = { ...seed(), settings };
-    const r = shiftReport(d, at('2026-10-19 10:00'), null);
-    expect(reportText(r)).toContain('M & I starts Tue 20 Oct 07:00');
-    expect(reportText(r)).toContain('Operations day 4/4');
+  it('S110 done 20-Oct 10:00: operations done (+3 h), M & I started then, its plan measured from that start', () => {
+    const d = { ...seed(), settings }; Object.assign(step(d, 'S110'), { status: 'done', doneAt: '2026-10-20T10:00:00+03:00' });
+    const now = at('2026-10-21 10:00');
+    const { ops, mi } = phases(d, now);
+    expect([ops!.state, ops!.finishDelayH]).toEqual(['DONE', 3]);
+    expect([mi.actualStart, mi.delayH]).toEqual([Date.parse('2026-10-20T10:00:00+03:00'), 3]);
+    expect(mi.banner).not.toBeNull();
+    expect(reportText(shiftReport(d, now, null))).toContain('Operations done Tue 20 Oct 10:00 (+3 h)');
   });
 });

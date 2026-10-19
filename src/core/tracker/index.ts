@@ -167,8 +167,8 @@ export interface ShiftReport {
   /** mechanical activities started / finished in the shift */
   activities: { ref: string; field: 'actual_start' | 'actual_finish'; at: string; by: string | null }[];
   attention: Attention[]; ready: StepView[]; notes: string; temps: Record<string, string>;
-  /** the operations part, and M & I's start while it has not started */
-  ops: OpsProgress | null; miStartsAt: number | null;
+  /** the operations part and M & I (started at the critical handover) */
+  ops: OpsProgress | null; mi: MiPhase;
 }
 export const REACTORS = ['R205', 'R201', 'R202', 'R203', 'R204'] as const;
 
@@ -190,7 +190,7 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
   return {
     title: `${title} · ${kwDay(sh.from)} · ${sh.shift === 'D' ? 'Day' : 'Night'}`,
     banner: banner(eqs), totals: totals(steps, eqs, d.iats), stepsDone, stageChanges, activities,
-    ops: opsProgress(steps, d.settings, now), miStartsAt: now < miStart(d.settings) ? miStart(d.settings) : null,
+    ...(() => { const ph = phases(d, now, steps); return { ops: ph.ops, mi: ph.mi }; })(),
     attention: attention(steps, eqs), ready: [...steps.values()].filter((v) => v.state === 'READY'),
     notes: log?.notes ?? '', temps: log?.temps ?? {},
   };
@@ -203,10 +203,13 @@ export const flagText = (f: string) => FLAG_TEXT[f] ?? f;
 
 /** The WhatsApp message: short, the PDF carries the details. */
 export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string } = {}): string {
-  const o = r.ops;
+  const o = r.ops, mi = r.mi;
+  const h = (x: number) => `${x > 0 ? '+' : ''}${x} h`;
   const lines = [`${opts.test ? '[TEST] ' : ''}${r.title}`,
-    ...(o && o.state !== 'NOT_STARTED' && o.state !== 'DONE' ? [`🛠 Operations day ${o.day}/${o.days}: Plan ${o.planPct}% · Actual ${o.actualPct}%`] : []),
-    r.miStartsAt ? `🔧 M & I starts ${kwDay(r.miStartsAt)} ${kwTime(r.miStartsAt)}` : `${BANNER_ICON[r.banner.state]} M & I ${bannerText(r.banner)}  (Plan ${r.banner.planPct}% · Actual ${r.banner.actualPct}%)`,
+    ...(o && o.state === 'DONE' && o.finishedAt !== null ? [`🛠 Operations done ${kwDay(o.finishedAt)} ${kwTime(o.finishedAt)} (${h(o.finishDelayH ?? 0)})`]
+      : o && o.state !== 'NOT_STARTED' ? [`🛠 Operations day ${o.day}/${o.days}: Plan ${o.planPct}% · Actual ${o.actualPct}%`] : []),
+    mi.actualStart === null ? `🔧 M & I starts at ${mi.critical.map((c) => c.tag).join(', ') || 'critical'} handover (plan ${kwDay(mi.planned)} ${kwTime(mi.planned)})`
+      : `${BANNER_ICON[mi.banner!.state]} M & I ${bannerText(mi.banner!)}  (Plan ${mi.banner!.planPct}% · Actual ${mi.banner!.actualPct}%) · started ${h(mi.delayH ?? 0)}`,
     `✅ Steps ${r.totals.stepsDone}/${r.totals.steps} · HO ${r.totals.hoDone}/${r.totals.ho}`];
   if (r.stepsDone.length) lines.push(`✔️ Done this shift: ${r.stepsDone.map((s) => s.stepId).join(', ')}`);
   if (r.stageChanges.length) lines.push(`🔧 Moved: ${r.stageChanges.map((c) => `${c.tag} → ${STAGE_SHORT[c.to]}`).join(', ')}`);
@@ -281,17 +284,53 @@ export function stepTimingCsv(ts: StepTiming[]): string {
 }
 
 // ── The two parts of the shutdown: operations (guideline steps) and M & I (bar chart) ──────────────────────────
-export interface OpsProgress { state: Banner['state'] | 'NOT_STARTED' | 'DONE'; planPct: number; actualPct: number; day: number; days: number; offDays: number; start: number; end: number }
-/** Operations shutdown: the guideline steps done against the time gone in its window (start → M & I start). */
-export function opsProgress(steps: Map<string, StepView>, s: TrkSettings, now: number): OpsProgress | null {
+// Operations ends, and M & I starts, when the critical item(s) (R-12-205) are handed over: their handover step done.
+export interface OpsProgress { state: Banner['state'] | 'NOT_STARTED' | 'DONE'; planPct: number; actualPct: number; day: number; days: number; offDays: number; start: number; end: number;
+  /** when operations finished (the critical handover), and its difference from the plan in hours (+ late) */
+  finishedAt: number | null; finishDelayH: number | null }
+export interface MiPhase {
+  /** the planned M & I start (bar chart) and the actual one (the critical handover) */
+  planned: number; actualStart: number | null; delayH: number | null;
+  /** the critical items and their handover steps that start it */
+  critical: { tag: string; hoStep: string | null; done: boolean }[];
+  /** plan vs actual from the actual start (the bar chart shifted by the start delay) */
+  banner: Banner | null;
+}
+export interface Phases { ops: OpsProgress | null; mi: MiPhase }
+
+/** The critical handover: every tracked critical item's handover step done; the time is the last of them. */
+export function criticalHandover(d: TrkData, steps: Map<string, StepView>): { at: number | null; critical: MiPhase['critical'] } {
+  const crit = d.equipment.filter((e) => e.critical && e.tracked);
+  const critical = crit.map((e) => ({ tag: e.tag, hoStep: e.hoStep, done: !!e.hoStep && steps.get(e.hoStep)?.state === 'DONE' }));
+  if (!critical.length || critical.some((c) => !c.done)) return { at: null, critical };
+  const times = crit.map((e) => { const st = steps.get(e.hoStep!)!.step; return ms(st.doneAt ?? st.updatedAt); }).filter((x) => !Number.isNaN(x));
+  return { at: times.length ? Math.max(...times) : null, critical };
+}
+
+export function opsProgress(steps: Map<string, StepView>, s: TrkSettings, now: number, finishedAt: number | null = null): OpsProgress | null {
   const start = ms(s.opsStart), end = ms(s.miStart ?? s.hoTarget);
   if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return null;
   const sv = [...steps.values()].filter((v) => v.state !== 'NA');
   const actual = sv.length ? sv.filter((v) => v.state === 'DONE').length / sv.length : 0;
-  const plan = Math.min(1, Math.max(0, (now - start) / (end - start)));
-  const days = Math.round((end - start) / DAY), day = Math.min(days, Math.max(1, Math.floor((now - start) / DAY) + 1));
-  const state = now < start ? 'NOT_STARTED' : actual >= 1 ? 'DONE' : actual >= plan + 0.05 ? 'AHEAD' : actual < plan - 0.05 ? 'BEHIND' : 'ON_PLAN';
-  return { state, planPct: Math.round(plan * 100), actualPct: Math.round(actual * 100), day, days, offDays: r1((actual - plan) * (end - start) / DAY), start, end };
+  const t = finishedAt ?? now;
+  const plan = Math.min(1, Math.max(0, (t - start) / (end - start)));
+  const day = Math.max(1, Math.floor((t - start) / DAY) + 1), days = Math.max(Math.round((end - start) / DAY), day);
+  const state = finishedAt !== null ? 'DONE' : now < start ? 'NOT_STARTED' : actual >= plan + 0.05 ? 'AHEAD' : actual < plan - 0.05 ? 'BEHIND' : 'ON_PLAN';
+  return { state, planPct: Math.round(plan * 100), actualPct: Math.round(actual * 100), day, days, offDays: r1((actual - plan) * (end - start) / DAY), start, end,
+    finishedAt, finishDelayH: finishedAt !== null ? r1((finishedAt - end) / H) : null };
 }
-/** M & I: before its start, when it starts; then the bar-chart banner. */
+/** The planned M & I start (bar chart). */
 export function miStart(s: TrkSettings): number { return ms(s.miStart ?? s.hoTarget); }
+
+/** Both parts at a moment: operations until the critical handover, M & I from it (its plan shifted by the start delay). */
+export function phases(d: TrkData, now: number, steps = stepViews(d, now)): Phases {
+  const ho = criticalHandover(d, steps);
+  const planned = miStart(d.settings);
+  const started = ho.at !== null && ho.at <= now ? ho.at : null;
+  const delay = started !== null && !Number.isNaN(planned) ? started - planned : 0;
+  return {
+    ops: opsProgress(steps, d.settings, now, started),
+    mi: { planned, actualStart: started, delayH: started !== null && !Number.isNaN(planned) ? r1(delay / H) : null, critical: ho.critical,
+      banner: started !== null ? banner(equipViews(d, now - delay, steps)) : null },
+  };
+}

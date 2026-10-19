@@ -1,7 +1,7 @@
 // On Today, during a tracked shutdown: one line of its progress (ahead / behind, what needs attention), tap to open.
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { attention, banner, bannerText, equipViews, miStart, opsProgress, stepViews } from '@/core/tracker';
+import { attention, bannerText, equipViews, phases, stepViews } from '@/core/tracker';
 import { currentTracker, fetchTrackerData, fetchTrackers } from '@/data/tracker';
 import { cx } from '@/ui/components';
 
@@ -16,12 +16,11 @@ export function TrackerTodayCard({ date }: { date: string }) {
       const t = currentTracker(list, date);
       if (!t || !t.eventStart || !t.eventEnd || date < t.eventStart || date > t.eventEnd) { if (live) setV(null); return; }
       const d = await fetchTrackerData(t.id); const now = Date.now();
-      const steps = stepViews(d, now); const eqs = equipViews(d, now, steps); const b = banner(eqs);
-      // before M & I starts, the operations part is the progress to show
-      const ops = now < miStart(d.settings) ? opsProgress(steps, d.settings, now) : null;
-      const opsState = ops && (ops.state === 'AHEAD' || ops.state === 'BEHIND' || ops.state === 'ON_PLAN') ? ops.state : ops ? 'ON_PLAN' : null;
-      const text = ops ? `Operations day ${ops.day}/${ops.days} · ${ops.actualPct}% of ${ops.planPct}%` : bannerText(b);
-      if (live) setV({ id: t.id, title: t.title, test: t.mode === 'test', state: opsState ?? b.state, text, att: attention(steps, eqs).length });
+      const steps = stepViews(d, now); const eqs = equipViews(d, now, steps); const { ops, mi } = phases(d, now, steps);
+      // operations until R-12-205 is handed over, then M & I
+      const state = mi.banner ? mi.banner.state : ops && (ops.state === 'AHEAD' || ops.state === 'BEHIND') ? ops.state : 'ON_PLAN';
+      const text = mi.banner ? `M & I ${bannerText(mi.banner)}` : ops ? `Operations day ${ops.day}/${ops.days} · ${ops.actualPct}% of ${ops.planPct}%` : 'Operations';
+      if (live) setV({ id: t.id, title: t.title, test: t.mode === 'test', state, text, att: attention(steps, eqs).length });
     })().catch(() => { if (live) setV(null); });
     return () => { live = false; };
   }, [date]);
