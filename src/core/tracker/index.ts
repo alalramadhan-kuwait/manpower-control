@@ -230,6 +230,8 @@ export interface ShiftReport {
   /** for the brief message: each reactor (stage, its neutralization), handovers, neutralization and blinds */
   reactors: { tag: string; critical: boolean; stage: number; neut: string | null; hoAt: string | null }[];
   results: ReturnType<typeof opsResults>; blinds: ReturnType<typeof miBlinds>;
+  /** the shift (date, day / night), the tracker title, the blinds / neutralizations completed in the shift */
+  shift: { date: string; shift: 'D' | 'N' }; name: string; pointsDone: { ref: string; kind: 'blind' | 'neut' }[]; blindLinesDone: number;
 }
 export const REACTORS = ['R205', 'R201', 'R202', 'R203', 'R204'] as const;
 
@@ -259,34 +261,61 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
       return { tag: e.eq.tag, critical: e.eq.critical, stage: e.stage, hoAt: e.hoAt, neut: !n ? null : pointComplete(n) ? 'neutralized' : n.status === 'open' ? null : NEUT_LABEL[n.status].toLowerCase() };
     }),
     results: opsResults(d, eqs), blinds: miBlinds(d),
+    shift: { date: sh.date, shift: sh.shift }, name: title,
+    pointsDone: lastBy(inShift.filter((l) => l.kind === 'point')).filter((l) => l.newValue === 'in' || l.newValue === 'done')
+      .map((l) => ({ ref: l.ref, kind: l.newValue === 'in' ? 'blind' as const : 'neut' as const })),
+    blindLinesDone: d.activities.filter((a) => equipBlind(a) && a.actualFinish && ms(a.actualFinish) >= sh.from && ms(a.actualFinish) < sh.to).length,
   };
 }
 
-const BANNER_ICON = { AHEAD: '🟢', BEHIND: '🔴', ON_PLAN: '🟡' } as const;
 export const bannerText = (b: Banner) => `${b.state === 'ON_PLAN' ? 'ON PLAN' : b.state}${b.state !== 'ON_PLAN' && b.days ? ` ${b.state === 'BEHIND' ? '−' : '+'}${b.days} d` : ''}`;
 const FLAG_TEXT: Record<string, string> = { HO_LATE: 'HO LATE', LATE: 'LATE', PENDING: 'Pending', IAT_OPEN: 'IAT open', STEP_LATE: 'LATE', STEP_PENDING: 'Pending' };
 export const flagText = (f: string) => FLAG_TEXT[f] ?? f;
 
-/** The WhatsApp message: a brief (the critical item and the reactors, handover, neutralization, blinds, M & I); the
- *  Report page and its PDF carry the details. */
+/** The WhatsApp message, the standard template of every shutdown (Train-1 / Train-2): a bold title between dividers,
+ *  then short sections (overall progress, reactors, blinds, temperatures, changes this shift, attention) with WhatsApp
+ *  formatting (*bold*), one item per line (no space-aligned columns: WhatsApp fonts are proportional). Delays and
+ *  pending items are put first and marked red; the Report page and its PDF keep the details. */
+const RULE = '━━━━━━━━━━━━━━━━━━';
 export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string } = {}): string {
   const mi = r.mi, res = r.results, b = r.blinds;
-  const pct = (x: [number, number]) => `${x[0]}/${x[1]}${x[1] ? ` (${Math.round((x[0] / x[1]) * 100)}%)` : ''}`;
-  const rx = (x: ShiftReport['reactors'][number]) => `${x.tag.replace('R-12-', 'R-')} ${STAGE_SHORT[x.stage]}${x.neut ? `, ${x.neut}` : ''}`;
-  const crit = r.reactors.filter((x) => x.critical);
-  const lines = [`${opts.test ? '[TEST] ' : ''}${r.title}`,
-    ...crit.map((x) => (x.stage >= 1 && x.hoAt ? `⭐ ${x.tag.replace('R-12-', 'R-')} handed over ${kwDay(x.hoAt)} ${kwTime(x.hoAt)}${x.stage > 1 ? ` · ${STAGE_SHORT[x.stage]}` : ''}${x.neut ? `, ${x.neut}` : ''}` : `⭐ ${rx(x)}`)),
-    ...(r.reactors.length ? [`⚗️ ${r.reactors.filter((x) => !x.critical).map(rx).join(' · ')}`] : []),
-    ...(res ? [`✅ Handed over ${pct(res.ho)} · Neutralized ${pct(res.neut)}`] : [`✅ Handed over ${r.totals.hoDone}/${r.totals.ho}`]),
-    `🔒 Blinds: Segregation ${b.segregation[0]}/${b.segregation[1]} · HP critical ${b.hp[0]}/${b.hp[1]} · Equipment ${b.equipment[0]}/${b.equipment[1]}`,
-    mi.actualStart === null ? `🔧 M & I starts at ${mi.critical.map((c) => c.tag).join(', ') || 'critical'} handover`
-      : mi.banner && mi.banner.items ? `${BANNER_ICON[mi.banner.state]} M & I ${bannerText(mi.banner)} (${mi.banner.actualPct}% of ${mi.banner.planPct}%)` : '🔧 M & I started'];
-  if (r.attention.length) lines.push(`⚠️ Attention: ${r.attention.length}`);
-  const temps = REACTORS.filter((k) => r.temps[k]).map((k) => `${k.slice(1)}:${r.temps[k]}`);
-  if (temps.length) lines.push(`🌡 Max bed °F ${temps.join(' ')}`);
-  if (r.notes.trim()) lines.push(`📝 ${r.notes.trim()}`);
-  if (opts.by) lines.push(`— ${opts.by}`);
-  return lines.join('\n');
+  const pct = (x: [number, number]) => `*${x[0]}/${x[1]}${x[1] ? ` (${Math.round((x[0] / x[1]) * 100)}%)` : ''}*`;
+  const unit = r.name.match(/U-?\s?(\d+)/i)?.[1], train = r.name.match(/TR(?:AIN)?-?\s?(\d+)/i)?.[1];
+  const title = unit || train ? `${unit ? `U-${unit}` : ''}${unit && train ? ' | ' : ''}${train ? `TRAIN-${train}` : ''} SHUTDOWN` : r.name.toUpperCase();
+  const date = new Date(`${r.shift.date}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const NEUT_ICON: Record<string, string> = { filling: '💧 Filling', soaking: '🔄 Soaking', draining: '🚿 Draining', neutralized: '🧪 Neutralized' };
+  const reactor = (x: ShiftReport['reactors'][number]) => {
+    const tag = `*${x.tag.replace('R-12-', 'R-')}*${x.critical ? ' ⭐' : ''}`;
+    const ho = x.stage >= 1 ? `HO${x.critical && x.hoAt ? ` ${kwTime(x.hoAt)}` : ''}` : '';
+    if (x.stage === 0) return `${tag} ⏳ *Not handed over*${x.neut ? ` | ${NEUT_ICON[x.neut] ?? x.neut}` : ''}`;
+    if (x.neut && x.neut !== 'neutralized') return `${tag} ${NEUT_ICON[x.neut] ?? x.neut} | ${ho}`;
+    return `${tag} ${x.stage === 1 ? '✅ Handed over' : `🔧 ${STAGES[x.stage]}`}${x.critical && x.hoAt ? ` | HO ${kwTime(x.hoAt)}` : ''}`;
+  };
+  const out: string[] = [RULE, `*${opts.test ? '[TEST] ' : ''}${title}*`, `📅 ${date} | ${r.shift.shift === 'D' ? '☀️ Day Shift' : '🌙 Night Shift'}`, RULE];
+  const section = (head: string, lines: string[]) => { if (lines.length) out.push('', `*${head}*`, ...lines, '', RULE); };
+  const misLine = mi.actualStart === null ? [`🔧 M&I starts at *${mi.critical.map((c) => c.tag.replace('R-12-', 'R-')).join(', ') || 'critical'}* handover`]
+    : mi.banner && mi.banner.items ? [`🔧 M&I Actual *${mi.banner.actualPct}%* | Planned *${mi.banner.planPct}%*`,
+      mi.banner.state === 'BEHIND' ? `🔴 *BEHIND${mi.banner.days ? ` ${mi.banner.days} d` : ''}*` : mi.banner.state === 'AHEAD' ? `🟢 *AHEAD${mi.banner.days ? ` ${mi.banner.days} d` : ''}*` : '🟢 *ON SCHEDULE*']
+    : ['🔧 M&I started'];
+  section('📊 OVERALL PROGRESS', [res ? `✅ Handover ${pct(res.ho)}` : `✅ Handover *${r.totals.hoDone}/${r.totals.ho}*`, ...(res ? [`🧪 Neutralized ${pct(res.neut)}`] : []), ...misLine]);
+  // delays and pending items come right after the overall progress, before the routine sections
+  const top = r.attention.slice(0, 3).map((x) => `${x.flag === 'PENDING' || x.flag === 'STEP_PENDING' ? '🟠' : x.flag === 'IAT_OPEN' ? '🟡' : '🔴'} *${x.label}* ${flagText(x.flag)}${x.detail ? ` – ${x.detail}` : ''}`);
+  section('⚠️ ATTENTION REQUIRED', r.attention.length ? [...top, ...(r.attention.length > 3 ? [`+${r.attention.length - 3} more in the app`] : [])] : []);
+  section('⚗️ REACTOR STATUS', [...r.reactors].sort((x, y) => Number(x.critical) - Number(y.critical) || x.tag.localeCompare(y.tag)).map(reactor));
+  section('🔒 BLIND INSTALLATION', b.segregation[1] + b.hp[1] + b.equipment[1] ? [`Segregation ${pct(b.segregation)}`, `HP Critical ${pct(b.hp)}`, `Equipment ${pct(b.equipment)}`] : []);
+  section('🌡 MAX BED TEMPERATURE', REACTORS.filter((k) => r.temps[k]).map((k) => `R-${k.slice(1)} *${r.temps[k]}°F*`));
+  const ho = r.stageChanges.filter((c) => c.from === 0 && c.to >= 1).map((c) => c.tag), moved = r.stageChanges.filter((c) => c.from >= 1 && c.to > c.from);
+  const neutDone = r.pointsDone.filter((p) => p.kind === 'neut').map((p) => p.ref), blindsIn = r.pointsDone.filter((p) => p.kind === 'blind').length + r.blindLinesDone;
+  section('🔄 CHANGES THIS SHIFT', [
+    ...(ho.length ? [`✅ Handed over: *${ho.join(', ')}*`] : []),
+    ...(neutDone.length ? [`🧪 Neutralized: *${neutDone.join(', ')}*`] : []),
+    ...(blindsIn ? [`🔒 Blinds installed: *${blindsIn}*`] : []),
+    ...(moved.length ? [`🔧 Moved on: *${moved.map((c) => `${c.tag} → ${STAGE_SHORT[c.to]}`).join(', ')}*`] : []),
+    ...(r.stepsDone.length ? [`✔️ Guideline steps done: *${r.stepsDone.length}*`] : []),
+  ]);
+  section('📝 NOTES', r.notes.trim() ? [r.notes.trim()] : []);
+  out.push(`*END OF SHIFT REPORT*${opts.by ? `\n— ${opts.by}` : ''}`, RULE);
+  return out.join('\n');
 }
 
 // ── Mechanical activity timing (plan vs actual, for future shutdowns) ───────────────────────────────────────────
