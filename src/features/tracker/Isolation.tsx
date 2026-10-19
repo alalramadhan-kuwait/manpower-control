@@ -22,6 +22,8 @@ function PointRow({ p, now, canEdit, onItem, onDone }: { p: TrkPoint; now: numbe
   const back = blind ? (p.status === 'out' ? 'in' : 'open') : NEUT_FLOW[Math.max(0, NEUT_FLOW.indexOf(p.status as typeof NEUT_FLOW[number]) - 1)];
   const next = blind ? undefined : NEXT[p.status];
   const items = p.items.join(', ');
+  // the name often starts with the ref (E-12-205 · E-12-205 neutralization), show it once
+  const name = p.name.startsWith(p.ref) ? p.name.slice(p.ref.length).trim() : p.name;
   const dot = pointComplete(p) ? 'green' : left !== null && left <= 0 ? 'amber' : p.status !== 'open' ? 'blue' : 'grey';
   const sub = blind
     ? (p.status === 'open' ? items || '—' : `✓ In ${when(p.inAt)}${p.outAt ? ` · out ${when(p.outAt)}` : ''}${p.updatedBy ? ` · ${p.updatedBy}` : ''}`)
@@ -33,7 +35,7 @@ function PointRow({ p, now, canEdit, onItem, onDone }: { p: TrkPoint; now: numbe
     : <span className="shrink-0 text-[11px] font-bold text-[#08A048]">Done</span>;
   return (
     <>
-      <CRow dot={dot} title={<>{p.ref} · {p.name}{p.remark ? <span className="font-normal text-slate-500"> · 📝</span> : null}</>} sub={sub} action={action}
+      <CRow dot={dot} title={<>{p.ref}{name ? ` · ${name}` : ''}{p.remark ? <span className="font-normal text-slate-500"> · 📝</span> : null}</>} sub={sub} action={action}
         onTitle={p.items.length === 1 ? () => onItem(p.items[0]) : undefined}
         menu={(close) => (
           <>
@@ -82,9 +84,13 @@ export function IsolationTab({ initialKind, activities = [], points, steps, now,
   const list = points.filter((p) => p.kind === kind && (kind === 'neut' || (p.grp ?? 'segregation') === grp) && (fo === 'All' || p.fo === fo) && (!focus || p.items.includes(focus))).sort((a, b) => a.sort - b.sort);
   const eqView = kind === 'blind' && grp === 'equipment';
   const open = list.filter((p) => !pointComplete(p)), closed = list.filter(pointComplete);
-  const stepName = (id: string | null) => (id ? `${id} · ${steps.find((s) => s.stepId === id)?.shortName ?? ''}` : kind === 'blind' ? 'Unit (no step)' : 'Items (bar chart)');
-  // group by step, in the order of the rows
-  const groups = (xs: TrkPoint[]) => { const m = new Map<string, TrkPoint[]>(); for (const p of xs) { const k = kind === 'neut' && !p.stepId ? '' : p.stepId ?? ''; m.set(k, [...(m.get(k) ?? []), p]); } return [...m.entries()]; };
+  const stepName = (id: string) => `${id} · ${steps.find((s) => s.stepId === id)?.shortName ?? ''}`;
+  // a step with one row is shown in a shared section (the row already names the step), a step with 2+ rows keeps its own header
+  const keyOf = (p: TrkPoint) => p.stepId ?? '';
+  const per = new Map<string, number>(); for (const p of list) per.set(keyOf(p), (per.get(keyOf(p)) ?? 0) + 1);
+  const secOf = (p: TrkPoint) => (!p.stepId ? (kind === 'neut' ? 'items' : 'loose') : (per.get(p.stepId) ?? 0) > 1 ? `step:${p.stepId}` : 'loose');
+  const secTitle = (k: string) => (k.startsWith('step:') ? stepName(k.slice(5)) : k === 'items' ? 'Items (soda ash)' : kind === 'neut' ? 'Loops' : GRP.find(([g]) => g === grp)?.[1] ?? 'Blinds');
+  const sections = (() => { const m = new Map<string, TrkPoint[]>(); for (const p of open) m.set(secOf(p), [...(m.get(secOf(p)) ?? []), p]); return [...m.entries()]; })();
   if (!points.length) return <p className="py-6 text-center text-sm text-slate-500">No blinds or neutralization set up for this shutdown.</p>;
   return (
     <div className="space-y-3">
@@ -103,12 +109,12 @@ export function IsolationTab({ initialKind, activities = [], points, steps, now,
         {['All', 'FO1', 'FO2', 'FO3'].map((x) => <button key={x} type="button" onClick={() => setFo(x)} className={cx('min-h-9 rounded-full px-3 text-xs font-semibold', fo === x ? 'bg-[#0850A0] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{x}</button>)}
         {focus && <button type="button" onClick={() => onFocus(null)} className="min-h-9 rounded-full bg-amber-100 px-3 text-xs font-semibold text-amber-900">{focus} ✕</button>}
       </div>
-      {groups(open).map(([k, xs]) => (
+      {sections.map(([k, xs]) => { const all = list.filter((p) => secOf(p) === k); return (
         <section key={k} className="space-y-1">
-          <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{stepName(k || null)} · {list.filter((p) => (p.stepId ?? '') === k && pointComplete(p)).length}/{list.filter((p) => (p.stepId ?? '') === k).length}</h3>
+          <h3 className="flex justify-between text-[11px] font-bold uppercase tracking-wide text-slate-500"><span className="truncate">{secTitle(k)}</span><span>{all.filter(pointComplete).length}/{all.length}</span></h3>
           <RowList>{xs.map((p) => <PointRow key={p.id} p={p} now={now} canEdit={canEdit} onItem={onItem} onDone={onDone} />)}</RowList>
         </section>
-      ))}
+      ); })}
       {!open.length && <p className="py-3 text-center text-sm text-[#08A048]">All {kind === 'blind' ? 'blinds are in' : 'neutralization is done'}{fo !== 'All' ? ` for ${fo}` : ''}.</p>}
       {closed.length > 0 && <button type="button" onClick={() => setShowDone((x) => !x)} className="text-sm font-semibold text-[#08A048]">{showDone ? '▾' : '▸'} ✓ {kind === 'blind' ? 'Blinded' : 'Neutralized'} ({closed.length})</button>}
       {showDone && <RowList>{closed.map((p) => <PointRow key={p.id} p={p} now={now} canEdit={canEdit} onItem={onItem} onDone={onDone} />)}</RowList>}
