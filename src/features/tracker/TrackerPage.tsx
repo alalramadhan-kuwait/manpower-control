@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
-import { FO_NAMES, REACTORS, STAGE_SHORT, isolationOf, opsResults, phases, attention, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, totals, type Attention, type EquipView, type StepView } from '@/core/tracker';
+import { FO_NAMES, NEUT_LABEL, REACTORS, STAGE_SHORT, hoursText, isolationOf, pointComplete, soakLeft, opsResults, phases, attention, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, totals, type Attention, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import { currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { Button, ErrorBox, Spinner, cx } from '@/ui/components';
@@ -12,7 +12,7 @@ import { EquipSheet, StepSheet } from './TrackerSheets';
 import { TrackerAdmin, clockKey } from './TrackerAdmin';
 import { TimingTab } from './Timing';
 import { IsolationTab } from './Isolation';
-import { FlagChip, PlanChip, StageBar, StateChip, Tile } from './ui';
+import { FLAG_STYLE, FlagChip, PlanChip, StageBar, StateChip, Tile } from './ui';
 
 type Tab = 'today' | 'isolation' | 'guideline' | 'equipment' | 'timing' | 'map' | 'report' | 'admin';
 const TABS: [Tab, string][] = [['today', 'Today'], ['isolation', 'Isolation'], ['equipment', 'Equipment'], ['guideline', 'Sequence'], ['timing', 'Timing'], ['map', 'Map'], ['report', 'Report']];
@@ -99,7 +99,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} now={now} onOpen={open} onTab={setTab} />}
       {tab === 'isolation' && <IsolationTab points={points} steps={data.steps} now={now} canEdit={canEdit} focus={focus} onFocus={setFocus} onItem={(tag) => setSheet({ kind: 'eq', tag })} onDone={done} />}
       {tab === 'guideline' && <SequenceTab steps={steps} auto={auto} onOpen={(id) => setSheet({ kind: 'step', id })} />}
-      {tab === 'equipment' && <EquipmentTab eqs={eqs} activities={data.activities} now={now} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
+      {tab === 'equipment' && <EquipmentTab eqs={eqs} activities={data.activities} points={points} now={now} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={done} />}
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {tab === 'report' && <ReportTab data={data} now={now} canEdit={canEdit} by={profile.display_name} onSaved={() => load()} />}
@@ -256,28 +256,59 @@ function SequenceTab({ steps, auto, onOpen }: { steps: Map<string, StepView>; au
   );
 }
 
-function EquipmentTab({ eqs, activities, now, onOpen }: { eqs: EquipView[]; activities: TrackerData['activities']; now: number; onOpen: (tag: string) => void }) {
-  // the work step running on each item (else the next one), shown on its card
-  const nowOf = (key: string) => { const xs = activities.filter((a) => a.tracked && a.key === key).sort((x, y) => (x.start ?? '9').localeCompare(y.start ?? '9'));
-    const run = xs.find((a) => a.actualStart && !a.actualFinish); if (run) return `Now: ${run.activity}`; const nx = xs.find((a) => !a.actualStart); return nx ? `Next: ${nx.activity}${nx.start && Date.parse(nx.start) < now ? ' (due)' : ''}` : null; };
+/** One thin row per item: tag, stage bar and the one thing to know (pending, the step running, the isolation, the next
+ *  step), the status and the plan difference. "All" groups the items under their group; "Late first" puts the late,
+ *  pending and IAT items on top. */
+function EquipmentTab({ eqs, activities, points, now, onOpen }: { eqs: EquipView[]; activities: TrackerData['activities']; points: TrkPoint[]; now: number; onOpen: (tag: string) => void }) {
+  const lineOf = (e: EquipView): { text: string; tone: 'run' | 'muted' | 'red' } | null => {
+    if (e.eq.pendingReason) return { text: `⏸ ${e.eq.pendingReason}`, tone: 'red' };
+    const key = e.eq.barchartKey ?? e.eq.tag;
+    const xs = activities.filter((a) => a.tracked && a.key === key).sort((x, y) => (x.start ?? '9').localeCompare(y.start ?? '9'));
+    const run = xs.filter((a) => a.actualStart && !a.actualFinish);
+    if (run.length) return { text: `▶ ${run.map((a) => a.activity).join(' · ')}`, tone: 'run' };
+    const iso = e.stage === 0 ? isolationOf(e.eq.tag, points) : null;
+    if (iso) {
+      const n = iso.neut.find((p) => !pointComplete(p)); const left = n ? soakLeft(n, now) : null;
+      return { text: [iso.blinds.length ? `🔒 Blinds ${iso.blindsIn}/${iso.blinds.length}` : '', n ? `🧪 ${n.status === 'open' ? 'Not neutralized' : NEUT_LABEL[n.status]}${left !== null && left > 0 ? ` ${hoursText(left)}` : ''}` : iso.neut.length ? '🧪 Neutralized' : ''].filter(Boolean).join(' · '), tone: 'muted' };
+    }
+    if (e.stage === 6) return { text: e.eq.blindsOut ? `Deblinded ${kwDay(e.eq.blindsOut)} ${kwTime(e.eq.blindsOut)}` : 'Returned', tone: 'muted' };
+    const nx = xs.find((a) => !a.actualStart);
+    return nx ? { text: `Next: ${nx.activity}${nx.start && Date.parse(nx.start) < now ? ' (due)' : ''}`, tone: 'muted' } : null;
+  };
   const groups = [...new Set(eqs.map((e) => e.eq.group))];
-  const [g, setG] = useState(groups[0] ?? '');
-  const [onlyOps, setOnlyOps] = useState(true);
-  const list = eqs.filter((e) => e.eq.group === g && (!onlyOps || e.eq.opsItem || e.stage > 0));
+  const [g, setG] = useState('All');
+  const [onlyOps, setOnlyOps] = useState(true); const [lateFirst, setLateFirst] = useState(false);
+  const shown = eqs.filter((e) => !onlyOps || e.eq.opsItem || e.stage > 0);
+  const list = shown.filter((e) => g === 'All' || e.eq.group === g);
+  const RANK: Record<string, number> = { HO_LATE: 0, LATE: 1, PENDING: 2, IAT_OPEN: 3 };
+  const sorted = lateFirst ? [...list].sort((a, b) => (RANK[a.flag] ?? 9) - (RANK[b.flag] ?? 9) || b.lateBy - a.lateBy) : list;
+  const sections: [string, EquipView[]][] = lateFirst || g !== 'All' ? [['', sorted]] : groups.map((x) => [x, sorted.filter((e) => e.eq.group === x)] as [string, EquipView[]]).filter(([, xs]) => xs.length);
+  const row = (e: EquipView) => { const l = lineOf(e); return (
+    <button key={e.eq.tag} type="button" onClick={() => onOpen(e.eq.tag)} className={cx('grid w-full grid-cols-[6.5rem_1fr_auto] items-center gap-2 border-t border-slate-100 px-2.5 py-2 text-left first:border-t-0 active:bg-slate-50', !e.eq.tracked && 'opacity-50')}>
+      <b className="truncate text-[13px] text-slate-900">{e.eq.critical && <span className="text-[#E02028]">★ </span>}{e.eq.tag}</b>
+      <span className="min-w-0">
+        <StageBar stage={e.stage} className="mb-1" />
+        {l && <span className={cx('block truncate text-[11.5px]', l.tone === 'run' ? 'text-[#004080]' : l.tone === 'red' ? 'text-red-800' : 'text-slate-600')}>{l.text}</span>}
+      </span>
+      <span className="flex flex-col items-end gap-0.5">
+        <span className={cx('whitespace-nowrap rounded px-1.5 py-0.5 text-[9.5px] font-bold', FLAG_STYLE[e.flag].cls)}>{FLAG_STYLE[e.flag].label}{e.late ? ` ${hoursText(e.lateBy)}` : ''}{e.iatsOpen.length && e.flag !== 'IAT_OPEN' ? ` · IAT ${e.iatsOpen.length}` : ''}</span>
+        {e.plan && e.stage < 6 && <PlanChip variance={e.plan.variance} days={e.plan.days} short />}
+      </span>
+    </button>); };
   return (
     <div className="space-y-2">
-      <div className="flex gap-1.5 overflow-x-auto pb-1">{groups.map((x) => <button key={x} type="button" onClick={() => setG(x)} className={cx('min-h-9 shrink-0 rounded-full px-3 text-xs font-semibold', g === x ? 'bg-[#0850A0] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{x}</button>)}</div>
-      <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={onlyOps} onChange={(e) => setOnlyOps(e.target.checked)} />Operations handover items only</label>
-      <div className="grid gap-2 sm:grid-cols-2">
-        {list.map((e) => (
-          <button key={e.eq.tag} type="button" onClick={() => onOpen(e.eq.tag)} className={cx('rounded-xl bg-white p-3 text-left ring-1 ring-slate-200 active:scale-[0.99]', !e.eq.tracked && 'opacity-50')}>
-            <div className="flex items-center justify-between gap-2"><b className="truncate text-sm text-slate-900">{e.eq.critical ? '★ ' : ''}{e.eq.tag}</b><FlagChip flag={e.flag} /></div>
-            <StageBar stage={e.stage} className="my-2" />
-            {nowOf(e.eq.barchartKey ?? e.eq.tag) && <div className="mb-1 truncate text-xs font-medium text-[#004080]">{nowOf(e.eq.barchartKey ?? e.eq.tag)}</div>}
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600"><span>{STAGE_SHORT[e.stage]}</span>{e.plan && <><span>· Plan: {STAGE_SHORT[e.plan.planned]}</span><PlanChip variance={e.plan.variance} days={e.plan.days} /></>}{e.iatsOpen.length > 0 && <span className="font-semibold text-amber-800">· IAT {e.iatsOpen.length}</span>}{!e.eq.tracked && <span>· off</span>}</div>
-          </button>
-        ))}
+      <div className="flex gap-1.5 overflow-x-auto pb-1">{['All', ...groups].map((x) => { const n = x === 'All' ? shown.length : shown.filter((e) => e.eq.group === x).length;
+        return <button key={x} type="button" onClick={() => setG(x)} className={cx('min-h-9 shrink-0 rounded-full px-3 text-xs font-semibold', g === x ? 'bg-[#0850A0] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{x}{n ? <span className="ml-1 opacity-60">{n}</span> : null}</button>; })}</div>
+      <div className="flex items-center gap-2 text-xs text-slate-600">
+        <label className="flex items-center gap-2"><input type="checkbox" checked={onlyOps} onChange={(e) => setOnlyOps(e.target.checked)} />Operations items only</label>
+        <span className="ml-auto flex rounded-lg bg-slate-200/70 p-0.5">{([[false, 'Group'], [true, 'Late first']] as const).map(([v, l]) => <button key={l} type="button" onClick={() => setLateFirst(v)} className={cx('rounded-md px-2 py-1 font-semibold', lateFirst === v ? 'bg-white text-[#004080] shadow-sm' : 'text-slate-600')}>{l}</button>)}</span>
       </div>
+      {sections.map(([name, xs]) => (
+        <section key={name || 'list'}>
+          {name && <h3 className="mb-1 mt-2 flex justify-between px-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-500"><span>{name}</span><span>{xs.length} · {xs.filter((e) => e.stage >= 1).length} HO</span></h3>}
+          <div className="overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">{xs.map(row)}</div>
+        </section>
+      ))}
       {!list.length && <p className="py-4 text-center text-sm text-slate-500">No items here{onlyOps ? ' for operations' : ''}.</p>}
     </div>
   );
