@@ -171,3 +171,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261019121203_shutdown_progress_step_undo_times` | A step taken back from Done loses its done time (whatever it goes back to) |
 | `20261019121655_shutdown_progress_add_activity` | The Section Head adds a procedure activity to an item (not in the bar chart); tracked like the bar-chart ones |
 | `20261019124419_shutdown_progress_blind_is_handover` | Blinded = handed over (stage 1, blinds-in time), deblinded = returned (stage 6, blinds-out time): the HO step, the stage tap and the bar-chart blind / deblind line are kept in step by triggers. Data aligned, Remove blinds lines moved to stage 6 |
+| `20261019130856_shutdown_progress_split_work_steps` | A bar-chart line with several jobs (Blind, remove elbow and top trays …) becomes one work step per job (plan time shared in order, own stage); the original stays off as split. Every import splits the same way |
