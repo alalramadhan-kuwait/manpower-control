@@ -26,3 +26,9 @@ export function rowOvertime(doc: Doc, x: Row): RowOt {
   cache.set(x, out);
   return out;
 }
+
+/** The place is on the team that month (a person moved to the other team during the shutdown shows in each team for its own months). */
+export const inMonth = (x: Row, ym: string) => x.m.start.slice(0, 7) <= ym && x.m.end.slice(0, 7) >= ym;
+
+/** The person's overtime over the whole shutdown, all his places together. */
+export const personTotal = (doc: Doc, x: Row) => Math.round(doc.rows.filter((y) => y.m.employeeId === x.m.employeeId).reduce((t, y) => t + rowOvertime(doc, y).total, 0) * 100) / 100;

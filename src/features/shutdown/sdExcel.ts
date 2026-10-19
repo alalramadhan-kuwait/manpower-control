@@ -8,7 +8,7 @@ import type { Workbook, Worksheet, Cell } from 'exceljs';
 import { addDaysIso, type Crew } from '@/core/roster';
 import { isDutyDay, memberHoursOn, memberWorks } from '@/core/shutdown';
 import { isV2, limitsOf } from '@/core/shutdown/v2';
-import { rowOvertime } from './docOt';
+import { inMonth, personTotal, rowOvertime } from './docOt';
 import type { Doc, Row } from './SdDocuments';
 
 const DAYS_PER_BLOCK = 14;
@@ -182,7 +182,7 @@ function summarySheet(ws: Worksheet, doc: Doc, brand: Brand) {
     if (mi > 0) ws.getRow(r - 1).addPageBreak();
     r = letterhead(ws, { ...brand, sub: `${brand.sub.split(' · ').slice(0, -1).join(' · ')} · ${monthLabel(ym)} ${ym.slice(0, 4)}` }, sheetTitle, lastCol, r, 4);
     teams.forEach((t) => {
-      const list = rows.filter((x) => x.team.id === t.id);
+      const list = rows.filter((x) => x.team.id === t.id && inMonth(x, ym));
       if (!list.length) return;
       const title = ws.getCell(r, 1); title.value = `${t.name.toUpperCase()} ${plan.kind === 'total' ? 'SHIFT' : 'GROUP'}${t.hoursLabel ? ` (${t.hoursLabel.replace(/(\d\d:\d\d)/g, '$1 HRS').replace(/\s*-\s*/, ' TO ')})` : ''} ${monthLabel(ym).toUpperCase()} ${ym.slice(0, 4)}`;
       ws.mergeCells(r, 1, r, lastCol); style(title, { bold: true, align: 'left', fill: KNPC.pale }); title.font = { ...title.font, color: { argb: KNPC.blue } };
@@ -197,7 +197,7 @@ function summarySheet(ws: Worksheet, doc: Doc, brand: Brand) {
         const put = (col: number, v: string | number | null, o: Parameters<typeof style>[1] = {}) => { const c = ws.getCell(r, col); c.value = v; style(c, { fill, ...o }); };
         put(1, i + 1); put(2, x.r?.display_name ?? '', { align: 'left' }); put(3, x.r ? Number(x.r.employee_number) || x.r.employee_number : '');
         const ro = rowOvertime(doc, x);
-        const month = ro.month(ym), all = ro.total;
+        const month = ro.month(ym), all = personTotal(doc, x);
         days.forEach((d, k) => {
           const h = ro.day(d);
           const off = !memberWorks(plan, x.m, d) && d >= x.m.start && d <= x.m.end;

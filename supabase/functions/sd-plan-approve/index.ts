@@ -808,6 +808,10 @@ function coverageGaps(p, teams, members, info, away, phases = []) {
 }
 var DUE_PER_DAY = 6;
 var REGULAR = 8;
+function adjacentParts(members, m) {
+  const part = (x) => x.id !== m.id && x.employeeId === m.employeeId;
+  return { fromPart: members.some((x) => part(x) && addDaysIso(x.end, 1) === m.start), toPart: members.some((x) => part(x) && addDaysIso(m.end, 1) === x.start) };
+}
 function transitions(person, m, sdDuty, absences, assignments, rules) {
   const from = addDaysIso(m.start, -14), to = addDaysIso(m.end, 14);
   const offOn = (ls, dates) => ls.map((l) => dates.includes(l.date) ? { ...l, works: false, other: [...l.other, "Off (shutdown transition)"] } : l);
@@ -1043,7 +1047,16 @@ function checkPlan(inp) {
       issues.push({ level: "verify", code: "person", message: `${name(m.employeeId)}: not found in the staff list.`, employeeId: m.employeeId });
       continue;
     }
-    const tr = transitions(person, m, own, inp.absences, inp.assignments, inp.rules);
+    const { fromPart, toPart } = adjacentParts(members, m);
+    const raw = transitions(person, m, own, inp.absences, inp.assignments, inp.rules);
+    const tr = {
+      ...raw,
+      joinOff: fromPart ? [] : raw.joinOff,
+      returnOff: toPart ? [] : raw.returnOff,
+      returnOn: toPart ? null : raw.returnOn,
+      hours: { ...raw.hours, join: fromPart ? null : raw.hours.join, back: toPart ? null : raw.hours.back },
+      findings: raw.findings.filter((f) => !issues.some((i) => i.employeeId === m.employeeId && i.code === f.rule && i.date === f.date))
+    };
     trans.push(tr);
     for (const f of tr.findings) issues.push({ level: "block", code: f.rule, date: f.date, employeeId: m.employeeId, message: `${name(m.employeeId)}: ${f.message}` });
     const restCheck = (d, label, ok) => {

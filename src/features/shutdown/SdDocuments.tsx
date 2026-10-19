@@ -5,7 +5,7 @@ import { ArrowLeft, Pencil, Plus, Printer, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { personOn, type MpPerson } from '@/core/manpower';
-import { rowOvertime } from './docOt';
+import { inMonth, personTotal, rowOvertime } from './docOt';
 import { addDaysIso, type Crew } from '@/core/roster';
 import { areasOf, isDutyDay, memberHoursOn, memberWorks, planDates, type SdMember, type SdPlan, type SdTeam } from '@/core/shutdown';
 import { fetchManpowerInputs } from '@/data/manpower';
@@ -178,7 +178,7 @@ export function SdOvertimePage() {
         <section key={ym} className={cx(mi > 0 && 'mt-8 border-t border-dashed border-slate-300 pt-4 print:mt-0 print:border-0 print:pt-0', mi < months.length - 1 && 'print:break-after-page')}>
           <Letterhead title={`KNPC-MAB - ARDS UNIT-12 ${doc.name} SHUTDOWN MANPOWER OVERTIME`} sub={`${unitLine} · ${MONTH(ym)}`} />
           {teams.map((t) => {
-            const list = rows.filter((x) => x.team.id === t.id);
+            const list = rows.filter((x) => x.team.id === t.id && inMonth(x, ym));
             const days = dates.filter((d) => d.startsWith(ym));
             if (!list.length) return null;
             return (
@@ -194,7 +194,7 @@ export function SdOvertimePage() {
                     <tr key={x.m.id}>
                       <td className={td}>{i + 1}</td><td className={cx(td, 'whitespace-nowrap text-left')}>{x.r?.display_name}</td><td className={td}>{x.r?.employee_number}</td>
                       {days.map((d) => { const off = !memberWorks(plan, x.m, d) && offInside(plan, x.m, dates, d); return <td key={d} className={cx(td, off && 'bg-yellow-300')}>{ot.get(x.m.id)!.day(d)}</td>; })}
-                      <td className={cx(td, 'font-semibold', total(x.m.id, ym) > plan.maxOvertime && 'text-red-700')}>{total(x.m.id, ym)}</td><td className={cx(td, 'font-semibold')}>{total(x.m.id)}</td>
+                      <td className={cx(td, 'font-semibold', total(x.m.id, ym) > plan.maxOvertime && 'text-red-700')}>{total(x.m.id, ym)}</td><td className={cx(td, 'font-semibold')}>{personTotal(doc, x)}</td>
                     </tr>
                   ))}
                 </tbody>

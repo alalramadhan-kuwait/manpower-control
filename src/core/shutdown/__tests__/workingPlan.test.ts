@@ -85,3 +85,19 @@ describe('working plan', () => {
     expect(e?.map((x) => x.code).sort()).toEqual(['O', cellOf(inp, inp.members.find((m) => m.id === 'g1')!, d, days, {})].sort());
   });
 });
+
+describe('a move to the other team during the shutdown (two places of one person, one after the other)', () => {
+  const whole = ready();
+  const g1 = whole.find((m) => m.id === 'g1')!;
+  const mid = dates[15];
+  const first: SdMember = { ...g1, end: dates[14], days: Object.fromEntries(Object.entries(g1.days ?? {}).filter(([d]) => d < mid)) };
+  const second: SdMember = { ...g1, id: 'g1b', start: mid, days: Object.fromEntries(Object.entries(g1.days ?? {}).filter(([d]) => d >= mid)) };
+  const split = [...whole.filter((m) => m.id !== 'g1'), first, second];
+  const about = (c: ReturnType<typeof checkPlan>) => c.issues.filter((i) => i.employeeId === 'g1').map((i) => `${i.level}|${i.code}|${i.date ?? ''}`).sort();
+  it('is checked like one place: no joining or returning between the two, nothing new that stops the plan', () => {
+    const a = checkPlan(input(whole)), b = checkPlan(input(split));
+    expect(about(b)).toEqual(about(a));
+    expect(newHardProblems(a, b)).toEqual([]);
+    expect(b.overtime.find((o) => o.employeeId === 'g1')?.months).toEqual(a.overtime.find((o) => o.employeeId === 'g1')?.months);
+  });
+});

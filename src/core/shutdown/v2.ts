@@ -304,6 +304,12 @@ export interface TransitionResult { employeeId: string; findings: Finding[]; joi
 /** Hours due a day on either rota: 48 h every 8 days. */
 export const DUE_PER_DAY = 6;
 const REGULAR = 8;
+/** The places of the same person right before and right after this one (a move to the other team during the shutdown). */
+export function adjacentParts(members: SdMember[], m: SdMember): { fromPart: boolean; toPart: boolean } {
+  const part = (x: SdMember) => x.id !== m.id && x.employeeId === m.employeeId;
+  return { fromPart: members.some((x) => part(x) && addDaysIso(x.end, 1) === m.start), toPart: members.some((x) => part(x) && addDaysIso(m.end, 1) === x.start) };
+}
+
 /**
  * The person's duties around the shutdown (his crew before, the team shift, his crew after) against the hard rules: no
  * 7th day in a row, no overlap or zero rest, 24 h off when changing between Morning and Night. When joining or returning
@@ -574,7 +580,13 @@ export function checkPlan(inp: PlanCheckInput): PlanCheck {
   for (const m of members) {
     const person = people.get(m.employeeId);
     if (!person) { issues.push({ level: 'verify', code: 'person', message: `${name(m.employeeId)}: not found in the staff list.`, employeeId: m.employeeId }); continue; }
-    const tr = transitions(person, m, own, inp.absences, inp.assignments, inp.rules);
+    // a move to the other team during the shutdown is two places of one person, one after the other: no joining
+    // between them, no return to his crew, and a broken rule between the two is reported once
+    const { fromPart, toPart } = adjacentParts(members, m);
+    const raw = transitions(person, m, own, inp.absences, inp.assignments, inp.rules);
+    const tr: TransitionResult = { ...raw, joinOff: fromPart ? [] : raw.joinOff, returnOff: toPart ? [] : raw.returnOff, returnOn: toPart ? null : raw.returnOn,
+      hours: { ...raw.hours, join: fromPart ? null : raw.hours.join, back: toPart ? null : raw.hours.back },
+      findings: raw.findings.filter((f) => !issues.some((i) => i.employeeId === m.employeeId && i.code === f.rule && i.date === f.date)) };
     trans.push(tr);
     for (const f of tr.findings) issues.push({ level: 'block', code: f.rule, date: f.date, employeeId: m.employeeId, message: `${name(m.employeeId)}: ${f.message}` });
     // a rest day off his crew (worked out here, or recorded on the plan): his crew must keep its minimum that day, with a
@@ -685,6 +697,14 @@ export function plannerContext(inp: PlanCheckInput): { levelOf: (employeeId: str
   const people = new Map(inp.people.map((x) => [x.id, x]));
   const teamOf = new Map(inp.teams.map((t) => [t.id, t]));
   const byEmp = new Map(inp.members.map((m) => [m.employeeId, m]));
+  // the duty of the same person's other place on the plan (a move to the other team during the shutdown)
+  const partDuty = (m: SdMember, date: string) => {
+    for (const o of inp.members.filter((x) => x.employeeId === m.employeeId && x.id !== m.id)) {
+      const ot = teamOf.get(o.teamId); const od = ot ? memberDuty(p, ot, o, date) : null;
+      if (od) return { code: ot!.shiftCode === 'N' ? 'SD-N' as const : 'SD-D' as const, start: teamStart(ot!), hours: od.hours };
+    }
+    return null;
+  };
   return {
     away: awayOn(inp.absences),
     levelOf: (e) => inp.info.get(e)?.foLevel ?? null,
@@ -697,28 +717,29 @@ export function plannerContext(inp: PlanCheckInput): { levelOf: (employeeId: str
       const own = (employeeId: string, date: string) => {
         if (employeeId !== m.employeeId) return inp.otherSdDuty?.(employeeId, date) ?? null;
         const d = memberDuty(p, t, temp, date);
-        return d ? { code: t.shiftCode === 'N' ? 'SD-N' as const : 'SD-D' as const, start: teamStart(t), hours: d.hours } : inp.otherSdDuty?.(employeeId, date) ?? null;
+        if (d) return { code: t.shiftCode === 'N' ? 'SD-N' as const : 'SD-D' as const, start: teamStart(t), hours: d.hours };
+        return partDuty(m, date) ?? inp.otherSdDuty?.(employeeId, date) ?? null;
       };
       const tr = transitions(person, temp, own, inp.absences, inp.assignments, inp.rules);
-      return tr.joinOff.length + tr.returnOff.length + 1000 * tr.findings.length;   // a rest finding always outweighs overtime
+      const { fromPart, toPart } = adjacentParts(inp.members, m);
+      return (fromPart ? 0 : tr.joinOff.length) + (toPart ? 0 : tr.returnOff.length) + 1000 * tr.findings.length;   // a rest finding always outweighs overtime
     },
     // the rest days off his crew that the planned days need (worked out afresh: earlier recorded ones may be for old dates)
     restDaysFor: (m, days) => {
       const person = people.get(m.employeeId); const t = teamOf.get(m.teamId);
       if (!person || !t) return [];
       const temp: SdMember = { ...m, days, restDays: [] };
-      const others = inp.members.filter((x) => x.employeeId === m.employeeId && x.id !== m.id);
       const own = (employeeId: string, date: string) => {
         if (employeeId !== m.employeeId) return inp.otherSdDuty?.(employeeId, date) ?? null;
         const d = memberDuty(p, t, temp, date);
         if (d) return { code: t.shiftCode === 'N' ? 'SD-N' as const : 'SD-D' as const, start: teamStart(t), hours: d.hours };
-        for (const o of others) { const ot = teamOf.get(o.teamId); const od = ot ? memberDuty(p, ot, o, date) : null; if (od) return { code: ot!.shiftCode === 'N' ? 'SD-N' as const : 'SD-D' as const, start: teamStart(ot!), hours: od.hours }; }
-        return inp.otherSdDuty?.(employeeId, date) ?? null;
+        return partDuty(m, date) ?? inp.otherSdDuty?.(employeeId, date) ?? null;
       };
       // his recorded rest days are not in the inputs' assignments for this calculation
       const assignments = inp.assignments.filter((a) => !(a.rest && a.employeeId === m.employeeId));
       const tr = transitions(person, temp, own, inp.absences, assignments, inp.rules);
-      return [...tr.joinOff, ...tr.returnOff].sort();
+      const { fromPart, toPart } = adjacentParts(inp.members, m);
+      return [...(fromPart ? [] : tr.joinOff), ...(toPart ? [] : tr.returnOff)].sort();
     },
     monthTaken: (e, ym) => {
       const entry = inp.otEntries.get(e) ?? null;

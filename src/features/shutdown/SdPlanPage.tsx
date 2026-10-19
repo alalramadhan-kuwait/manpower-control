@@ -9,7 +9,7 @@ import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { markPlanUnitsDown } from '@/data/calendar';
 import { minimumsText, minimumsWithDown, periodOn, sectionsName, unitsOn, type OperationPlan } from '@/core/modes';
 import { fetchDirectory } from '@/data/queries';
-import { addSdMember, clearSdDays, copyPlanToCurrentRules, fetchAllSdMembers, fetchFollowMovements, fetchOvertimeTaken, fetchSdPlan, fetchSdPlans, fetchSickTotals, moveSdPlan, removeSdMember, renameSdArea, saveSdPhases, setOvertimeTaken, setSdDays, updateSdMember, updateSdPlan, updateSdTeam, type Signature } from '@/data/shutdown';
+import { addSdMember, clearSdDays, copyPlanToCurrentRules, fetchAllSdMembers, fetchFollowMovements, fetchOvertimeTaken, fetchSdPlan, fetchSdPlans, fetchSickTotals, moveSdMemberTeam, moveSdPlan, removeSdMember, renameSdArea, saveSdPhases, setOvertimeTaken, setSdDays, updateSdMember, updateSdPlan, updateSdTeam, type Signature } from '@/data/shutdown';
 import type { EmployeeDirectoryRow } from '@/data/types';
 import { BottomSheet, Button, Card, ErrorBox, Field, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
@@ -625,6 +625,35 @@ function AddSheet({ plan, team, slot, area, data, view, onClose, onDone }: { pla
   );
 }
 
+/** A move to the other team during the shutdown: from a date, the person works with that team to the end of his place. */
+function MoveTeam({ m, teams, name, onDone }: { m: SdMember; teams: SdTeam[]; name: string; onDone: (msg: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const first = addDaysIso(m.start, 1);
+  const nextMonth = `${addDaysIso(`${m.start.slice(0, 7)}-28`, 7).slice(0, 7)}-01`;
+  const [from, setFrom] = useState(nextMonth > m.start && nextMonth <= m.end ? nextMonth : first);
+  const [teamId, setTeamId] = useState(teams[0]?.id ?? '');
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  if (m.end <= m.start || !teams.length) return null;
+  const to = teams.find((t) => t.id === teamId);
+  const ok = from > m.start && from <= m.end && !!to;
+  async function go() {
+    setBusy(true); setErr(null);
+    try { await moveSdMemberTeam(m.id, teamId, from); onDone(`${name}: ${to!.name} team from ${shortDate(from)}.`); } catch (e) { setErr(e); setBusy(false); }
+  }
+  if (!open) return <button type="button" className="text-xs font-semibold text-brand-700 underline" onClick={() => setOpen(true)}>Move to the other team from a date…</button>;
+  return (
+    <Field label="Move to the other team from a date">
+      <div className="space-y-2 rounded-lg bg-slate-50 p-2.5 ring-1 ring-slate-200">
+        {teams.length > 1 && <div className="flex flex-wrap gap-1.5">{teams.map((t) => <button key={t.id} type="button" onClick={() => setTeamId(t.id)} className={cx('rounded-full px-3 py-1 text-xs font-medium ring-1', teamId === t.id ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>{t.name}</button>)}</div>}
+        <input type="date" className="input" value={from} min={first} max={m.end} onChange={(e) => setFrom(e.target.value)} aria-label="From" />
+        <p className="text-[11px] text-slate-600">{ok ? `${name} stays on this team to ${shortDate(addDaysIso(from, -1))}, then works with the ${to!.name} team ${shortDate(from)} – ${shortDate(m.end)}; his planned days go with him. The plan check counts both as one shutdown (overtime, days in a row, rest when changing shift).` : `Choose a day from ${shortDate(first)} to ${shortDate(m.end)}.`}</p>
+        {err != null && <ErrorBox error={err} />}
+        <div className="flex gap-2"><Button variant="secondary" className="flex-1" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button><Button className="flex-1" disabled={busy || !ok} onClick={go}>Move</Button></div>
+      </div>
+    </Field>
+  );
+}
+
 function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m: SdMember; data: Data; view: View; onClose: () => void; onDone: (msg: string) => void }) {
   const r = data.dir.get(m.employeeId);
   const team = data.teams.find((t) => t.id === m.teamId);
@@ -722,6 +751,7 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
           <Field label="From"><input type="date" className="input" value={start} min={plan.start} max={plan.end} onChange={(e) => setStart(e.target.value)} /></Field>
           <Field label={total ? 'Until (released after)' : 'Until'}><input type="date" className="input" value={end} min={plan.start} max={plan.end} onChange={(e) => setEnd(e.target.value)} /></Field>
         </div>
+        {!total && data.teams.length > 1 && <MoveTeam m={m} teams={data.teams.filter((t) => t.id !== m.teamId)} name={r?.display_name ?? 'Employee'} onDone={onDone} />}
         <table className="w-full text-sm">
           <thead><tr className="text-left text-[11px] text-slate-500"><th className="font-medium">Month</th><th className="text-right font-medium">Days</th><th className="text-right font-medium">SD h</th><th className="text-right font-medium">OT h</th></tr></thead>
           <tbody>{hours.map((h) => <tr key={h.month}><td>{new Date(`${h.month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' })}</td><td className="text-right tabular-nums">{h.days}</td><td className="text-right tabular-nums">{h.sd}</td>

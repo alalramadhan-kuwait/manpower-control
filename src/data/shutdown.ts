@@ -161,12 +161,19 @@ export async function updateSdTeam(id: string, v: Partial<Record<'controller_n' 
 
 export async function addSdMember(v: { planId: string; teamId: string; employeeId: string; slot: SdSlot; offset: number; start: string; end: string; area?: string | null }) {
   const { error } = await supabase.from('sd_members').insert({ plan_id: v.planId, team_id: v.teamId, employee_id: v.employeeId, slot: v.slot, day_offset: v.offset, start_date: v.start, end_date: v.end, area: v.area ?? null });
-  if (error) throw new Error(error.message.includes('sd_members_one_place') ? 'Already on a team of this shutdown.' : error.message);
+  if (error) throw new Error(error.message.includes('sd_members_one_place') ? 'Already on a team of this shutdown on these dates.' : error.message);
   dataChanged();
 }
 
 export async function updateSdMember(id: string, v: Partial<{ day_offset: number; start_date: string; end_date: string; team_id: string; slot: SdSlot; area: string | null; follow_crew: Crew | null; controller_role: 'primary' | 'assistant' | null; rest_days: string[] }>) {
   const { error } = await supabase.from('sd_members').update(v).eq('id', id);
+  if (error) throw error;
+  dataChanged();
+}
+
+/** A move to another team during the shutdown: this place ends the day before, a place on that team starts that day. */
+export async function moveSdMemberTeam(id: string, teamId: string, from: string) {
+  const { error } = await supabase.rpc('sd_member_move_team', { p_member: id, p_team: teamId, p_from: from });
   if (error) throw error;
   dataChanged();
 }
