@@ -25,9 +25,18 @@ export interface TrkActivity {
   /** the mechanical activity as it went (kept for future shutdowns) */
   actualStart?: string | null; actualFinish?: string | null; actualNote?: string | null; updatedBy?: string | null; updatedAt?: string | null;
 }
-export interface TrkLog { kind: 'step' | 'equipment' | 'iat' | 'activity'; ref: string; field: string; oldValue: string | null; newValue: string | null; byName: string | null; at: string }
+export interface TrkLog { kind: 'step' | 'equipment' | 'iat' | 'activity' | 'point'; ref: string; field: string; oldValue: string | null; newValue: string | null; byName: string | null; at: string }
 export interface TrkSettings { hoTarget?: string; end?: string; workOrder?: string; whatsapp?: string; opsStart?: string; miStart?: string; miEnd?: string }
-export interface TrkData { steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings }
+/** A critical blind (segregation point) or a neutralization (loop or item), entered once on the Isolation page. */
+export type PointStatus = 'open' | 'in' | 'out' | 'filling' | 'soaking' | 'draining' | 'done';
+export interface TrkPoint {
+  id: string; kind: 'blind' | 'neut'; ref: string; name: string; detail: string | null; fo: string | null; stepId: string | null; items: string[];
+  /** a neutralization the item's handover waits for */
+  beforeHo: boolean; sort: number; status: PointStatus;
+  inAt: string | null; outAt: string | null; fillAt: string | null; soakAt: string | null; drainAt: string | null; doneAt: string | null;
+  soakH: number | null; remark: string | null; updatedBy: string | null; updatedAt: string | null;
+}
+export interface TrkData { steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
 
 export const STAGES = ['Not handed over', 'Blinded / handed over', 'Opened / cleaning', 'Inspection', 'Repair', 'Box-up', 'Deblinded / returned'] as const;
 export const STAGE_SHORT = ['Not HO', 'Blinded', 'Cleaning', 'Inspection', 'Repair', 'Box-up', 'Returned'] as const;
@@ -68,6 +77,27 @@ export interface EquipView {
  *  with the stage, not tapped on its own. */
 export function blindLink(a: Pick<TrkActivity, 'activity' | 'stage'>): 1 | 6 | null {
   return /blind/i.test(a.activity) && (a.stage === 1 || a.stage === 6) ? a.stage : null;
+}
+
+// ── Isolation & neutralization ─────────────────────────────────────────────────────────────────────────────────
+/** Blind in (or already out) · neutralization drained. */
+export const pointComplete = (p: Pick<TrkPoint, 'kind' | 'status'>) => (p.kind === 'blind' ? p.status === 'in' || p.status === 'out' : p.status === 'done');
+export const NEUT_FLOW = ['open', 'filling', 'soaking', 'draining', 'done'] as const;
+export const NEUT_LABEL: Record<string, string> = { open: 'Not started', filling: 'Filling', soaking: 'Soaking', draining: 'Draining', done: 'Neutralized' };
+/** The time left of the soak (ms, below 0 = overdue), when soaking with a soak time. */
+export function soakLeft(p: TrkPoint, now: number): number | null {
+  return p.kind === 'neut' && p.status === 'soaking' && p.soakH && p.soakAt ? Date.parse(p.soakAt) + p.soakH * H - now : null;
+}
+/** A bar-chart line moved by the item's neutralization (not tapped on its own). */
+export const neutLink = (a: Pick<TrkActivity, 'activity'>) => /neutrali|soda ash (filling|soaking|draining)/i.test(a.activity);
+export interface Isolation { blinds: TrkPoint[]; neut: TrkPoint[]; blindsIn: number; neutDone: number; ready: boolean }
+/** An item's blinds and neutralization: ready (handed over) when all blinds are in and the neutralization before handover is done. */
+export function isolationOf(tag: string, points: TrkPoint[] = []): Isolation | null {
+  const mine = points.filter((p) => p.items.includes(tag));
+  if (!mine.length) return null;
+  const blinds = mine.filter((p) => p.kind === 'blind'), neut = mine.filter((p) => p.kind === 'neut');
+  const gate = mine.filter((p) => p.kind === 'blind' || p.beforeHo);
+  return { blinds, neut, blindsIn: blinds.filter(pointComplete).length, neutDone: neut.filter(pointComplete).length, ready: gate.length > 0 && gate.every(pointComplete) };
 }
 
 export function planVsActual(acts: TrkActivity[], actual: number, now: number): PlanVsActual | null {
@@ -314,11 +344,21 @@ export function criticalHandover(d: TrkData, steps: Map<string, StepView>): { at
   return { at: times.length ? Math.max(...times) : null, critical };
 }
 
-export function opsProgress(steps: Map<string, StepView>, s: TrkSettings, now: number, finishedAt: number | null = null): OpsProgress | null {
+/** The operations results: critical blinds in, neutralization (before handover) done, operations items handed over. */
+export function opsResults(d: TrkData, eqs: EquipView[]): { done: number; total: number; blinds: [number, number]; neut: [number, number]; ho: [number, number] } | null {
+  const pts = d.points ?? [];
+  if (!pts.length) return null;
+  const b = pts.filter((p) => p.kind === 'blind'), n = pts.filter((p) => p.kind === 'neut' && p.beforeHo), o = eqs.filter((e) => e.eq.opsItem && e.eq.tracked);
+  const blinds: [number, number] = [b.filter(pointComplete).length, b.length], neut: [number, number] = [n.filter(pointComplete).length, n.length], ho: [number, number] = [o.filter((e) => e.stage >= 1).length, o.length];
+  return { done: blinds[0] + neut[0] + ho[0], total: blinds[1] + neut[1] + ho[1], blinds, neut, ho };
+}
+
+export function opsProgress(steps: Map<string, StepView>, s: TrkSettings, now: number, finishedAt: number | null = null, results: { done: number; total: number } | null = null): OpsProgress | null {
   const start = ms(s.opsStart), end = ms(s.miStart ?? s.hoTarget);
   if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return null;
+  // measured by the results (blinds, neutralization, handovers), the guideline steps when there are none
   const sv = [...steps.values()].filter((v) => v.state !== 'NA');
-  const actual = sv.length ? sv.filter((v) => v.state === 'DONE').length / sv.length : 0;
+  const actual = results && results.total ? results.done / results.total : sv.length ? sv.filter((v) => v.state === 'DONE').length / sv.length : 0;
   const t = finishedAt ?? now;
   const plan = Math.min(1, Math.max(0, (t - start) / (end - start)));
   const day = Math.max(1, Math.floor((t - start) / DAY) + 1), days = Math.max(Math.round((end - start) / DAY), day);
@@ -336,7 +376,7 @@ export function phases(d: TrkData, now: number, steps = stepViews(d, now)): Phas
   const started = ho.at !== null && ho.at <= now ? ho.at : null;
   const delay = started !== null && !Number.isNaN(planned) ? started - planned : 0;
   return {
-    ops: opsProgress(steps, d.settings, now, started),
+    ops: opsProgress(steps, d.settings, now, started, opsResults(d, equipViews(d, now, steps))),
     mi: { planned, actualStart: started, delayH: started !== null && !Number.isNaN(planned) ? r1(delay / H) : null, critical: ho.critical,
       banner: started !== null ? banner(equipViews(d, now - delay, steps)) : null },
   };

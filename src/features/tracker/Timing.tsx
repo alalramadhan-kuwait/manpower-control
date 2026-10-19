@@ -2,7 +2,7 @@
 // corrected), plan vs actual durations, and the record exported for future shutdowns.
 import { useState } from 'react';
 import { Download } from 'lucide-react';
-import { STAGES, blindLink, kwDay, kwTime, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type StepTiming, type Timing as T, type TrkActivity, type TrkStep } from '@/core/tracker';
+import { STAGES, blindLink, neutLink, kwDay, kwTime, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type StepTiming, type Timing as T, type TrkActivity, type TrkStep } from '@/core/tracker';
 import { addActivity, setActivity, setStep } from '@/data/tracker';
 import { Button, ErrorBox, Field, cx } from '@/ui/components';
 import { Tile } from './ui';
@@ -19,15 +19,15 @@ export function TimingChip({ t }: { t: T }) {
 }
 
 /** One activity: Started / Finished stamp now; the times and a note can be corrected. */
-export function ActivityRow({ t, canEdit, isHead = false, onDone }: { t: T; canEdit: boolean; isHead?: boolean; onDone: (msg: string) => void }) {
-  const a = t.a; const link = blindLink(a);
+export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, onDone }: { t: T; canEdit: boolean; isHead?: boolean; neutCovered?: boolean; onDone: (msg: string) => void }) {
+  const a = t.a; const link = blindLink(a); const nlink = neutCovered && neutLink(a);
   const [edit, setEdit] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [s, setS] = useState(local(a.actualStart)); const [f, setF] = useState(local(a.actualFinish)); const [note, setNote] = useState(a.actualNote ?? '');
   const [ps, setPs] = useState(local(a.start)); const [pf, setPf] = useState(local(a.finish));
   async function run(patch: Parameters<typeof setActivity>[1], msg: string) { setBusy(true); setErr(null); try { await setActivity(a.id, patch); setEdit(false); onDone(msg); } catch (e) { setErr(e); } finally { setBusy(false); } }
   return (
     <div className={cx('rounded-xl bg-white p-2.5 ring-1 ring-slate-200', !a.tracked && 'opacity-50')}>
-      <div className="flex items-start gap-2">{a.tracked && link ? <span className="inline-flex shrink-0 rounded bg-[#D6E6F5] px-1.5 py-0.5 text-[10px] font-bold text-[#004080]">{t.state === 'FINISHED' ? '✓ ' : ''}= STAGE {link}</span> : a.tracked ? <TimingChip t={t} /> : <span className="inline-flex shrink-0 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">NOT REQUIRED</span>}<span className="min-w-0 flex-1 text-sm leading-snug text-slate-900">{a.activity}</span><span className="shrink-0 text-[10px] text-slate-400">{a.activityId}</span></div>
+      <div className="flex items-start gap-2">{a.tracked && nlink ? <span className="inline-flex shrink-0 rounded bg-[#FFE699] px-1.5 py-0.5 text-[10px] font-bold text-amber-950">{t.state === 'FINISHED' ? '✓ ' : ''}= NEUTRALIZATION</span> : a.tracked && link ? <span className="inline-flex shrink-0 rounded bg-[#D6E6F5] px-1.5 py-0.5 text-[10px] font-bold text-[#004080]">{t.state === 'FINISHED' ? '✓ ' : ''}= STAGE {link}</span> : a.tracked ? <TimingChip t={t} /> : <span className="inline-flex shrink-0 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">NOT REQUIRED</span>}<span className="min-w-0 flex-1 text-sm leading-snug text-slate-900">{a.activity}</span><span className="shrink-0 text-[10px] text-slate-400">{a.activityId}</span></div>
       <div className="mt-1 grid grid-cols-2 gap-x-2 text-[11px] text-slate-600">
         <span>Plan {when(a.start)} · {t.plannedH ?? '—'} h</span>
         <span>Actual {a.actualStart ? when(a.actualStart) : '—'}{t.actualH !== null ? ` · ${t.actualH} h` : ''}</span>
@@ -38,9 +38,10 @@ export function ActivityRow({ t, canEdit, isHead = false, onDone }: { t: T; canE
       {canEdit && a.tracked && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {link && <span className="self-center text-[11px] text-slate-500">Done with the stage: {STAGES[link]}</span>}
-          {!link && !a.actualStart && <Button className="min-h-9 px-3 text-xs" disabled={busy} onClick={() => run({ actual_start: new Date().toISOString() }, `${a.key}: ${a.activityId} started.`)}>▶ Started</Button>}
-          {!link && a.actualStart && !a.actualFinish && <Button className="min-h-9 bg-[#08A048] px-3 text-xs hover:bg-green-700" disabled={busy} onClick={() => run({ actual_finish: new Date().toISOString() }, `${a.key}: ${a.activityId} finished.`)}>✓ Finished</Button>}
-          {isHead && !link && !a.actualStart && <Button variant="secondary" className="min-h-9 px-3 text-xs" disabled={busy} onClick={() => run({ tracked: false, disabled_reason: 'not required' }, `${a.key}: ${a.activityId} not required.`)}>Not required</Button>}
+          {nlink && <span className="self-center text-[11px] text-slate-500">Entered on the Isolation page</span>}
+          {!link && !nlink && !a.actualStart && <Button className="min-h-9 px-3 text-xs" disabled={busy} onClick={() => run({ actual_start: new Date().toISOString() }, `${a.key}: ${a.activityId} started.`)}>▶ Started</Button>}
+          {!link && !nlink && a.actualStart && !a.actualFinish && <Button className="min-h-9 bg-[#08A048] px-3 text-xs hover:bg-green-700" disabled={busy} onClick={() => run({ actual_finish: new Date().toISOString() }, `${a.key}: ${a.activityId} finished.`)}>✓ Finished</Button>}
+          {isHead && !link && !nlink && !a.actualStart && <Button variant="secondary" className="min-h-9 px-3 text-xs" disabled={busy} onClick={() => run({ tracked: false, disabled_reason: 'not required' }, `${a.key}: ${a.activityId} not required.`)}>Not required</Button>}
           <Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => { if (!edit) { setS(local(a.actualStart)); setF(local(a.actualFinish)); setNote(a.actualNote ?? ''); setPs(local(a.start)); setPf(local(a.finish)); } setEdit((x) => !x); }}>{edit ? 'Close' : isHead ? 'Edit times · bar chart' : 'Edit times · note'}</Button>
         </div>
       )}
@@ -71,14 +72,14 @@ function download(name: string, text: string) {
 }
 
 type Filter = 'open' | 'running' | 'finished' | 'late' | 'all';
-export function TimingTab({ activities, steps, now, canEdit, isHead, title, onDone }: { activities: TrkActivity[]; steps: TrkStep[]; now: number; canEdit: boolean; isHead: boolean; title: string; onDone: (msg: string) => void }) {
+export function TimingTab({ activities, steps, now, canEdit, isHead, title, neutKeys, onDone }: { activities: TrkActivity[]; steps: TrkStep[]; now: number; canEdit: boolean; isHead: boolean; title: string; neutKeys?: Set<string>; onDone: (msg: string) => void }) {
   const [kind, setKind] = useState<'mech' | 'steps'>('mech');
   const seg = <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-200/60 p-1">{([['mech', 'Mechanical (bar chart)'], ['steps', 'Guideline steps']] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setKind(k)} className={cx('min-h-10 rounded-lg text-xs font-semibold', kind === k ? 'bg-white text-[#004080] shadow-sm' : 'text-slate-600')}>{l}</button>)}</div>;
   if (kind === 'steps') return <div className="space-y-3">{seg}<StepTimingList steps={steps} now={now} canEdit={canEdit} isHead={isHead} title={title} onDone={onDone} /></div>;
-  return <div className="space-y-3">{seg}<MechTiming activities={activities} now={now} canEdit={canEdit} isHead={isHead} title={title} onDone={onDone} /></div>;
+  return <div className="space-y-3">{seg}<MechTiming activities={activities} now={now} canEdit={canEdit} isHead={isHead} title={title} neutKeys={neutKeys} onDone={onDone} /></div>;
 }
 
-function MechTiming({ activities, now, canEdit, isHead, title, onDone }: { activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; title: string; onDone: (msg: string) => void }) {
+function MechTiming({ activities, now, canEdit, isHead, title, neutKeys, onDone }: { activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; title: string; neutKeys?: Set<string>; onDone: (msg: string) => void }) {
   const [filter, setFilter] = useState<Filter>('open'); const [q, setQ] = useState('');
   const all = activities.filter((a) => a.tracked).map((a) => timing(a, now)).sort((x, y) => (x.a.start ?? '').localeCompare(y.a.start ?? '') || x.a.key.localeCompare(y.a.key));
   const sum = timingSummary(all);
@@ -104,7 +105,7 @@ function MechTiming({ activities, now, canEdit, isHead, title, onDone }: { activ
       {keys.slice(0, 40).map((k) => (
         <section key={k} className="space-y-1.5">
           <h3 className="text-xs font-bold text-[#004080]">{k}</h3>
-          {list.filter((t) => t.a.key === k).map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} onDone={onDone} />)}
+          {list.filter((t) => t.a.key === k).map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} neutCovered={!!neutKeys?.has(t.a.key)} onDone={onDone} />)}
         </section>
       ))}
       {!list.length && <p className="py-4 text-center text-sm text-slate-500">Nothing here.</p>}
@@ -116,7 +117,7 @@ function MechTiming({ activities, now, canEdit, isHead, title, onDone }: { activ
 
 /** The item's work steps (bar chart, and procedure steps added by the Section Head) inside the equipment sheet: open,
  *  the one running and the next one on top. */
-export function EquipActivities({ trackerId, itemKey, activities, now, canEdit, isHead, onDone }: { trackerId: string; itemKey: string; activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; onDone: (msg: string) => void }) {
+export function EquipActivities({ trackerId, itemKey, activities, now, canEdit, isHead, neutCovered = false, onDone }: { trackerId: string; itemKey: string; activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; neutCovered?: boolean; onDone: (msg: string) => void }) {
   const [open, setOpen] = useState(true); const [add, setAdd] = useState(false);
   const ts = activities.filter((a) => a.tracked).map((a) => timing(a, now)).sort((x, y) => (x.a.start ?? '9').localeCompare(y.a.start ?? '9'));
   const running = ts.filter((t) => t.state === 'RUNNING'), done = ts.filter((t) => t.state === 'FINISHED').length;
@@ -127,7 +128,7 @@ export function EquipActivities({ trackerId, itemKey, activities, now, canEdit, 
       <button type="button" onClick={() => setOpen((x) => !x)} className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-600"><span>Work steps · {done}/{ts.length} finished{running.length ? ` · ${running.length} running` : ''}</span><span>{open ? '▾' : '▸'}</span></button>
       {!ts.length && !off.length && <p className="mt-1 text-xs text-slate-500">None yet: import the bar chart (Admin){isHead ? ' or add the procedure steps here' : ''}.</p>}
       {ts.length > 0 && <p className="mt-1 text-xs text-slate-700">{running.length ? <>Now: <b>{running.map((t) => t.a.activity).join(' · ')}</b></> : null}{running.length && next ? ' · ' : ''}{next ? <>Next: <b>{next.a.activity}</b></> : null}</p>}
-      {open && <div className="mt-1.5 space-y-1.5">{ts.map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} onDone={onDone} />)}</div>}
+      {open && <div className="mt-1.5 space-y-1.5">{ts.map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} neutCovered={neutCovered} onDone={onDone} />)}</div>}
       {open && off.length > 0 && <div className="mt-1.5 space-y-1.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Not required · {off.length}</p>
         {off.map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} onDone={onDone} />)}</div>}
       {isHead && (add ? <AddActivity trackerId={trackerId} itemKey={itemKey} onDone={(m) => { setAdd(false); onDone(m); }} onCancel={() => setAdd(false)} />

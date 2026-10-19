@@ -4,17 +4,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
-import { FO_NAMES, REACTORS, STAGE_SHORT, phases, attention, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, totals, type Attention, type EquipView, type StepView } from '@/core/tracker';
+import { FO_NAMES, REACTORS, STAGE_SHORT, isolationOf, opsResults, phases, attention, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, totals, type Attention, type EquipView, type StepView } from '@/core/tracker';
 import { currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { Button, ErrorBox, Spinner, cx } from '@/ui/components';
 import { EquipSheet, StepSheet } from './TrackerSheets';
 import { TrackerAdmin, clockKey } from './TrackerAdmin';
 import { TimingTab } from './Timing';
+import { IsolationTab } from './Isolation';
 import { FlagChip, PlanChip, StageBar, StateChip, Tile } from './ui';
 
-type Tab = 'today' | 'guideline' | 'equipment' | 'timing' | 'map' | 'report' | 'admin';
-const TABS: [Tab, string][] = [['today', 'Today'], ['guideline', 'Guideline'], ['equipment', 'Equipment'], ['timing', 'Timing'], ['map', 'Map'], ['report', 'Report']];
+type Tab = 'today' | 'isolation' | 'guideline' | 'equipment' | 'timing' | 'map' | 'report' | 'admin';
+const TABS: [Tab, string][] = [['today', 'Today'], ['isolation', 'Isolation'], ['equipment', 'Equipment'], ['guideline', 'Sequence'], ['timing', 'Timing'], ['map', 'Map'], ['report', 'Report']];
 const BANNER_BG = { AHEAD: 'bg-[#08A048]', BEHIND: 'bg-[#E02028]', ON_PLAN: 'bg-amber-500' } as const;
 const today = () => new Date(Date.now() + 3 * 36e5).toISOString().slice(0, 10);
 
@@ -42,6 +43,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const [data, setData] = useState<TrackerData | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  const [focus, setFocus] = useState<string | null>(null);
   const [sheet, setSheet] = useState<{ kind: 'step'; id: string } | { kind: 'eq'; tag: string } | null>(null);
   const isHead = profile.role_code === 'section_head';
   const canEdit = ['section_head', 'manpower_coordinator', 'controller'].includes(profile.role_code);
@@ -72,6 +74,10 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const other = trackers.filter((t) => t.eventId === tracker.eventId && t.id !== tracker.id);
   const openStep = sheet?.kind === 'step' ? steps.get(sheet.id) ?? null : null;
   const openEq = sheet?.kind === 'eq' ? eqs.find((e) => e.eq.tag === sheet.tag) ?? null : null;
+  const points = data.points ?? [];
+  // a step ticked from elsewhere: its blinds / neutralization (Isolation) or its items handed over (Equipment)
+  const auto = new Map<string, 'isolation' | 'equipment'>([...data.equipment.filter((e) => e.hoStep).map((e) => [e.hoStep!, 'equipment'] as const), ...points.filter((p) => p.stepId).map((p) => [p.stepId!, 'isolation'] as const)]);
+  const toIsolation = (tag: string | null) => { setSheet(null); setFocus(tag); setTab('isolation'); };
   const open = (a: { kind: 'step' | 'equipment'; ref: string }) => setSheet(a.kind === 'step' ? { kind: 'step', id: a.ref } : { kind: 'eq', tag: a.ref });
 
   return (
@@ -91,14 +97,17 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       </nav>
       {flash && <div role="status" className="mb-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{flash}</div>}
       {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} now={now} onOpen={open} onTab={setTab} />}
-      {tab === 'guideline' && <GuidelineTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
+      {tab === 'isolation' && <IsolationTab points={points} steps={data.steps} now={now} canEdit={canEdit} focus={focus} onFocus={setFocus} onItem={(tag) => setSheet({ kind: 'eq', tag })} onDone={done} />}
+      {tab === 'guideline' && <SequenceTab steps={steps} auto={auto} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {tab === 'equipment' && <EquipmentTab eqs={eqs} activities={data.activities} now={now} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
-      {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} onDone={done} />}
+      {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={done} />}
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {tab === 'report' && <ReportTab data={data} now={now} canEdit={canEdit} by={profile.display_name} onSaved={() => load()} />}
       {tab === 'admin' && isHead && <TrackerAdmin data={data} eqs={eqs} onDone={done} />}
-      {openStep && <StepSheet v={openStep} isHead={isHead} canEdit={canEdit} onClose={() => setSheet(null)} onDone={done} />}
-      {openEq && <EquipSheet v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={data.activities.filter((a) => a.key === (openEq.eq.barchartKey ?? openEq.eq.tag))} now={now} onClose={() => setSheet(null)} onDone={(m) => done(m, true)} />}
+      {openStep && <StepSheet v={openStep} isHead={isHead} canEdit={canEdit} points={points.filter((p) => p.stepId === openStep.step.stepId)} items={eqs.filter((e) => e.eq.hoStep === openStep.step.stepId && e.eq.tracked)}
+        onIsolation={() => toIsolation(null)} onClose={() => setSheet(null)} onDone={done} />}
+      {openEq && <EquipSheet v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={data.activities.filter((a) => a.key === (openEq.eq.barchartKey ?? openEq.eq.tag))} now={now}
+        iso={isolationOf(openEq.eq.tag, points)} onIsolation={() => toIsolation(openEq.eq.tag)} onClose={() => setSheet(null)} onDone={(m) => done(m, true)} />}
     </div>
   );
 }
@@ -121,7 +130,7 @@ function PhaseBanners({ data, steps, now }: { data: TrackerData; steps: Map<stri
           <div className="text-2xl font-extrabold tracking-wide">● {opsText}</div>
           {ops.state === 'DONE' && ops.finishedAt !== null
             ? <div className="text-sm font-medium opacity-90">Finished {kwDay(ops.finishedAt)} {kwTime(ops.finishedAt)} · {hh(ops.finishDelayH)} vs plan · R-12-205 handed over</div>
-            : <div className="text-sm font-medium opacity-90">Plan {ops.planPct}% · Actual {ops.actualPct}% (guideline steps) · ends at {crit} handover</div>}
+            : <div className="text-sm font-medium opacity-90">Plan {ops.planPct}% · Actual {ops.actualPct}% ({data.points?.length ? 'blinds · neutralization · handovers' : 'guideline steps'}) · ends at {crit} handover</div>}
           {ops.state !== 'DONE' && <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/30"><div className="h-full bg-white" style={{ width: `${ops.actualPct}%` }} /></div>}
         </div>
       )}
@@ -153,7 +162,7 @@ function AttentionRow({ a, onOpen }: { a: Attention; onOpen: () => void }) {
 }
 
 function TodayTab({ steps, eqs, data, now, onOpen, onTab }: { steps: Map<string, StepView>; eqs: EquipView[]; data: TrackerData; now: number; onOpen: (a: { kind: 'step' | 'equipment'; ref: string }) => void; onTab: (t: Tab) => void }) {
-  const tot = totals(steps, eqs, data.iats); const att = attention(steps, eqs);
+  const tot = totals(steps, eqs, data.iats); const att = attention(steps, eqs); const res = opsResults(data, eqs);
   const [allReady, setAllReady] = useState(false);
   const ready = [...steps.values()].filter((v) => v.state === 'READY');
   const critical = eqs.filter((e) => e.eq.critical && e.eq.tracked);
@@ -161,12 +170,13 @@ function TodayTab({ steps, eqs, data, now, onOpen, onTab }: { steps: Map<string,
     <div className="space-y-3">
       <PhaseBanners data={data} steps={steps} now={now} />
       <div className="grid grid-cols-3 gap-2">
-        <Tile value={`${tot.stepsDone}/${tot.steps}`} label="steps" onClick={() => onTab('guideline')} />
+        {res ? <Tile value={`${res.blinds[0]}/${res.blinds[1]}`} label="blinds in" onClick={() => onTab('isolation')} /> : <Tile value={`${tot.stepsDone}/${tot.steps}`} label="steps" onClick={() => onTab('guideline')} />}
+        {res && <Tile value={`${res.neut[0]}/${res.neut[1]}`} label="neutralized" onClick={() => onTab('isolation')} />}
         <Tile value={`${tot.hoDone}/${tot.ho}`} label="handed over" onClick={() => onTab('equipment')} />
         <Tile value={tot.late} label="late" tone={tot.late ? 'red' : undefined} />
         <Tile value={tot.pending} label="pending" tone={tot.pending ? 'amber' : undefined} />
         <Tile value={tot.iatOpen} label="IAT open" tone={tot.iatOpen ? 'amber' : undefined} onClick={() => onTab('equipment')} />
-        <Tile value={tot.ready} label="ready" tone="green" onClick={() => onTab('guideline')} />
+        {!res && <Tile value={tot.ready} label="ready" tone="green" onClick={() => onTab('guideline')} />}
       </div>
       <section className="rounded-2xl bg-white p-3 ring-1 ring-slate-200">
         <h2 className="text-xs font-bold uppercase tracking-wide text-[#E02028]">⚠ Needs attention · {att.length}</h2>
@@ -191,32 +201,57 @@ function TodayTab({ steps, eqs, data, now, onOpen, onTab }: { steps: Map<string,
   );
 }
 
-function StepRow({ v, onOpen }: { v: StepView; onOpen: () => void }) {
+function StepRow({ v, auto, onOpen }: { v: StepView; auto?: 'isolation' | 'equipment'; onOpen: () => void }) {
   return (
     <button type="button" onClick={onOpen} className="flex w-full items-center gap-2 rounded-xl bg-white px-2.5 py-2.5 text-left ring-1 ring-slate-200 active:scale-[0.99]">
       <StateChip state={v.state} late={v.late} />
       <b className="w-11 shrink-0 text-sm">{v.step.stepId}</b>
       <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{v.step.shortName}</span>
-      {v.waitingFor.length > 0 && <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">waiting {v.waitingFor.join(', ')}</span>}
+      {v.state === 'WAITING' && v.waitingFor.length > 0 && <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">after {v.waitingFor.join(', ')}</span>}
+      {auto && v.state !== 'WAITING' && <span className="shrink-0 rounded bg-[#D6E6F5] px-1.5 py-0.5 text-[10px] font-semibold text-[#004080]">{auto === 'isolation' ? 'from Isolation' : 'from Equipment'}</span>}
     </button>
   );
 }
 
-function GuidelineTab({ steps, onOpen }: { steps: Map<string, StepView>; onOpen: (id: string) => void }) {
-  const [fo, setFo] = useState('FO1'); const [showDone, setShowDone] = useState(false);
+/** The guideline as a sequence: per field operator, the gates in order, the current one open with what to do now and
+ *  what comes after; done gates folded. Steps ticked from Isolation or Equipment are marked. */
+function SequenceTab({ steps, auto, onOpen }: { steps: Map<string, StepView>; auto: Map<string, 'isolation' | 'equipment'>; onOpen: (id: string) => void }) {
+  const [fo, setFo] = useState('FO1'); const [opened, setOpened] = useState<Record<number, boolean>>({});
   const list = [...steps.values()].filter((v) => v.step.fo === fo).sort((a, b) => a.step.gate - b.step.gate || a.step.stepId.localeCompare(b.step.stepId));
-  const open = list.filter((v) => v.state !== 'DONE' && v.state !== 'NA'), closed = list.filter((v) => v.state === 'DONE' || v.state === 'NA');
-  let gate = -1;
+  const closedOf = (v: StepView) => v.state === 'DONE' || v.state === 'NA';
+  const gates = [...new Set(list.map((v) => v.step.gate))];
+  const current = gates.find((g) => list.some((v) => v.step.gate === g && !closedOf(v)));
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-200/60 p-1">
-        {Object.entries(FO_NAMES).map(([k, n]) => <button key={k} type="button" onClick={() => setFo(k)} className={cx('min-h-10 rounded-lg text-xs font-semibold', fo === k ? 'bg-white text-[#004080] shadow-sm' : 'text-slate-600')}>{k} {n}</button>)}
+        {Object.entries(FO_NAMES).map(([k, n]) => <button key={k} type="button" onClick={() => { setFo(k); setOpened({}); }} className={cx('min-h-10 rounded-lg text-xs font-semibold', fo === k ? 'bg-white text-[#004080] shadow-sm' : 'text-slate-600')}>{k} {n}</button>)}
       </div>
-      {open.map((v) => { const head = v.step.gate !== gate; gate = v.step.gate;
-        return <div key={v.step.stepId}>{head && <h3 className="mb-1 mt-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">Gate {v.step.gate} · {v.step.gateName}</h3>}<StepRow v={v} onOpen={() => onOpen(v.step.stepId)} /></div>; })}
-      {!open.length && <p className="py-4 text-center text-sm text-slate-500">All steps of {fo} are done.</p>}
-      <button type="button" onClick={() => setShowDone((x) => !x)} className="mt-2 text-sm font-semibold text-[#08A048]">{showDone ? '▾' : '▸'} ✓ Done ({closed.length})</button>
-      {showDone && <div className="space-y-1.5 opacity-80">{closed.map((v) => <StepRow key={v.step.stepId} v={v} onOpen={() => onOpen(v.step.stepId)} />)}</div>}
+      {gates.map((g) => {
+        const xs = list.filter((v) => v.step.gate === g), done = xs.filter(closedOf).length;
+        const isNow = g === current, isNext = current !== undefined && g === gates[gates.indexOf(current) + 1];
+        const show = opened[g] ?? (isNow || isNext);
+        const now = xs.filter((v) => !closedOf(v) && v.state !== 'WAITING'), later = xs.filter((v) => v.state === 'WAITING'), fin = xs.filter(closedOf);
+        return (
+          <section key={g} className={cx('rounded-2xl p-2', isNow ? 'bg-[#D6E6F5]/50 ring-2 ring-[#0850A0]' : 'bg-white ring-1 ring-slate-200')}>
+            <button type="button" onClick={() => setOpened((o) => ({ ...o, [g]: !show }))} className="flex w-full items-center gap-2 text-left">
+              <span className={cx('flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold', done === xs.length ? 'bg-[#08A048] text-white' : isNow ? 'bg-[#0850A0] text-white' : 'bg-slate-200 text-slate-600')}>{done === xs.length ? '✓' : g}</span>
+              <span className="min-w-0 flex-1 text-sm font-semibold text-slate-800">{xs[0]?.step.gateName ?? `Gate ${g}`}{isNow && <span className="ml-1.5 rounded bg-[#0850A0] px-1.5 py-0.5 text-[10px] font-bold text-white">NOW</span>}</span>
+              <span className="text-xs tabular-nums text-slate-500">{done}/{xs.length} {show ? '▾' : '▸'}</span>
+            </button>
+            {show && (
+              <div className="mt-2 space-y-1.5">
+                {now.length > 0 && <p className="text-[11px] font-bold uppercase tracking-wide text-[#004080]">Do now</p>}
+                {now.map((v) => <StepRow key={v.step.stepId} v={v} auto={auto.get(v.step.stepId)} onOpen={() => onOpen(v.step.stepId)} />)}
+                {later.length > 0 && <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Then</p>}
+                {later.map((v) => <StepRow key={v.step.stepId} v={v} auto={auto.get(v.step.stepId)} onOpen={() => onOpen(v.step.stepId)} />)}
+                {fin.length > 0 && <div className="space-y-1.5 opacity-70">{fin.map((v) => <StepRow key={v.step.stepId} v={v} auto={auto.get(v.step.stepId)} onOpen={() => onOpen(v.step.stepId)} />)}</div>}
+              </div>
+            )}
+          </section>
+        );
+      })}
+      {current === undefined && <p className="py-3 text-center text-sm text-[#08A048]">All steps of {fo} are done.</p>}
+      <p className="text-[11px] text-slate-500">The guideline shows the order of the work. Blinds and neutralization are entered on Isolation and handovers on Equipment: their steps tick themselves.</p>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attention, blindLink, criticalHandover, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { attention, blindLink, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -184,5 +184,33 @@ describe('the two parts of the shutdown: operations end, M & I starts, at the R-
     expect([mi.actualStart, mi.delayH]).toEqual([Date.parse('2026-10-20T10:00:00+03:00'), 3]);
     expect(mi.banner).not.toBeNull();
     expect(reportText(shiftReport(d, now, null))).toContain('Operations done Tue 20 Oct 10:00 (+3 h)');
+  });
+});
+
+describe('isolation & neutralization', () => {
+  const pt = (o: Partial<TrkPoint>): TrkPoint => ({ id: o.ref ?? 'x', kind: 'blind', ref: 'SEG-1', name: '', detail: null, fo: 'FO1', stepId: null, items: [], beforeHo: true, sort: 0, status: 'open',
+    inAt: null, outAt: null, fillAt: null, soakAt: null, drainAt: null, doneAt: null, soakH: null, remark: null, updatedBy: null, updatedAt: null, ...o });
+  it('an item is ready (handed over) when all its blinds are in and its neutralization before handover is done', () => {
+    const pts = [pt({ ref: 'SEG-12', items: ['E-12-205'], status: 'in' }), pt({ ref: 'SEG-13', items: ['E-12-205'], status: 'open' }),
+      pt({ kind: 'neut', ref: 'E-12-205', items: ['E-12-205'], status: 'soaking' }), pt({ kind: 'neut', ref: 'H-12-202', items: ['H-12-202'], beforeHo: false })];
+    expect(isolationOf('E-12-205', pts)).toMatchObject({ blindsIn: 1, neutDone: 0, ready: false });
+    pts[1].status = 'in'; pts[2].status = 'done';
+    expect(isolationOf('E-12-205', pts)?.ready).toBe(true);
+    expect(isolationOf('H-12-202', pts)?.ready).toBe(false);
+    expect(isolationOf('V-12-201', pts)).toBeNull();
+    expect([pointComplete({ kind: 'blind', status: 'out' }), pointComplete({ kind: 'neut', status: 'draining' })]).toEqual([true, false]);
+  });
+  it('the soak timer, and the soda-ash lines moved by the neutralization', () => {
+    const p = pt({ kind: 'neut', status: 'soaking', soakH: 4, soakAt: '2026-10-21T10:00:00+03:00' });
+    expect([soakLeft(p, at('2026-10-21 12:30')), soakLeft(p, at('2026-10-21 14:30'))]).toEqual([1.5 * 36e5, -0.5 * 36e5]);
+    expect([neutLink({ activity: 'Soda ash soaking' }), neutLink({ activity: 'Neutralize with 2% soda ash.' }), neutLink({ activity: 'H-Blast Tube bundle using 2% soda ash' })]).toEqual([true, true, false]);
+  });
+  it('operations % = blinds in + neutralized + items handed over (the guideline steps only without them)', () => {
+    const d = seed();
+    d.points = [pt({ ref: 'A', status: 'in' }), pt({ ref: 'B' }), pt({ kind: 'neut', ref: 'N', status: 'done' }), pt({ kind: 'neut', ref: 'H', beforeHo: false })];
+    const now = at('2026-10-18 07:00'); const sv = stepViews(d, now); const r = opsResults(d, equipViews(d, now, sv))!;
+    expect([r.blinds, r.neut]).toEqual([[1, 2], [1, 1]]);
+    const o = opsProgress(sv, { opsStart: '2026-10-16T07:00:00+03:00', miStart: '2026-10-20T07:00:00+03:00' }, now, null, r)!;
+    expect(o.actualPct).toBe(Math.round(r.done / r.total * 100));
   });
 });

@@ -1,7 +1,7 @@
 // The two input sheets of the controllers: a guideline step (Start · Done · Pending) and an equipment item (stage,
 // blinded = handed over, IATs, pending). Big buttons, the time and the name are stamped by the database.
 import { useState } from 'react';
-import { PENDING_REASONS, STAGES, kwDay, kwTime, stepTiming, type EquipView, type StepView, type TrkActivity } from '@/core/tracker';
+import { NEUT_LABEL, PENDING_REASONS, STAGES, kwDay, kwTime, pointComplete, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint } from '@/core/tracker';
 import { EquipActivities, StepTimes } from './Timing';
 import { addIat, closeIat, setEquipment, setStep } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, Field, cx } from '@/ui/components';
@@ -21,7 +21,7 @@ function PendingForm({ initial, onSave, busy }: { initial: string | null; onSave
   );
 }
 
-export function StepSheet({ v, isHead, canEdit, onClose, onDone }: { v: StepView; isHead: boolean; canEdit: boolean; onClose: () => void; onDone: (msg: string) => void }) {
+export function StepSheet({ v, isHead, canEdit, points = [], items = [], onIsolation, onClose, onDone }: { v: StepView; isHead: boolean; canEdit: boolean; points?: TrkPoint[]; items?: EquipView[]; onIsolation?: () => void; onClose: () => void; onDone: (msg: string) => void }) {
   const s = v.step;
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [pending, setPending] = useState(false); const [blocked, setBlocked] = useState(false); const [details, setDetails] = useState(false);
@@ -36,7 +36,16 @@ export function StepSheet({ v, isHead, canEdit, onClose, onDone }: { v: StepView
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600"><StateChip state={v.state} late={v.late} />{s.fo} · Gate {s.gate} {s.gateName}{s.updatedAt ? <span>· {s.updatedBy} {when(s.updatedAt)}</span> : null}</div>
         {v.waitingFor.length > 0 && <p className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-sm text-slate-700">Waiting for <b>{v.waitingFor.join(', ')}</b></p>}
         {s.pendingReason && <p className="rounded-lg bg-[#FFC7CE] px-2.5 py-1.5 text-sm text-red-900">⏸ {s.pendingReason}</p>}
-        {canEdit && (
+        {(s.text || s.procedure) && <div className="rounded-lg bg-slate-50 px-2.5 py-2 text-sm text-slate-800">{s.text}{s.procedure && <span className="mt-0.5 block text-xs font-semibold text-[#004080]">{s.procedure}</span>}</div>}
+        {points.length > 0 && (
+          <div className="space-y-1.5 rounded-xl bg-[#D6E6F5]/40 p-2.5 ring-1 ring-[#0850A0]/30">
+            <p className="text-sm text-slate-800">Ticks itself from the <b>Isolation</b> page · {points.filter(pointComplete).length}/{points.length} done</p>
+            <div className="flex flex-wrap gap-1">{points.map((p) => <span key={p.id} className={cx('rounded px-1.5 py-0.5 text-[11px] font-semibold', pointComplete(p) ? 'bg-[#C6EFCE] text-green-900' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{pointComplete(p) ? '✓ ' : ''}{p.kind === 'blind' ? p.ref : `${p.ref} ${NEUT_LABEL[p.status].toLowerCase()}`}</span>)}</div>
+            {onIsolation && <Button variant="secondary" className="w-full" onClick={onIsolation}>Open on Isolation</Button>}
+          </div>
+        )}
+        {items.length > 0 && <p className="rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700">Ticks itself when its items are handed over: {items.map((e) => `${e.stage >= 1 ? '✓ ' : ''}${e.eq.tag}`).join(' · ')}</p>}
+        {canEdit && !points.length && (
           <div className="grid grid-cols-3 gap-2">
             <button type="button" disabled={busy || v.state === 'IN_PROGRESS'} onClick={() => run({ status: 'in_progress', pending_reason: null }, `${s.stepId} started.`)} className="flex min-h-16 flex-col items-center justify-center rounded-xl bg-[#D6E6F5] text-[#004080] disabled:opacity-40"><span className="text-xl">▶</span><span className="text-sm font-semibold">Start</span></button>
             <button type="button" disabled={busy || v.state === 'DONE'} onClick={done} className="flex min-h-16 flex-col items-center justify-center rounded-xl bg-[#C6EFCE] text-green-900 disabled:opacity-40"><span className="text-xl">✓</span><span className="text-sm font-semibold">Done</span></button>
@@ -73,7 +82,7 @@ export function StepSheet({ v, isHead, canEdit, onClose, onDone }: { v: StepView
   );
 }
 
-export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, onClose, onDone }: { v: EquipView; trackerId: string; canEdit: boolean; isHead: boolean; activities: TrkActivity[]; now: number; onClose: () => void; onDone: (msg: string) => void }) {
+export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso = null, onIsolation, onClose, onDone }: { v: EquipView; trackerId: string; canEdit: boolean; isHead: boolean; activities: TrkActivity[]; now: number; iso?: Isolation | null; onIsolation?: () => void; onClose: () => void; onDone: (msg: string) => void }) {
   const e = v.eq;
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [pending, setPending] = useState(false); const [iat, setIat] = useState(false); const [details, setDetails] = useState(false);
@@ -97,7 +106,18 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, onC
               Blinded = handed over (stage 1){e.hoStep ? `, also when ${e.hoStep} is done` : ''} · deblinded = stage 6. The blind / deblind bar-chart lines follow the stage.</p>
           </div>
         </Field>
-        <EquipActivities trackerId={trackerId} itemKey={e.barchartKey ?? e.tag} activities={activities} now={now} canEdit={canEdit} isHead={isHead} onDone={onDone} />
+        {iso && (
+          <button type="button" onClick={onIsolation} className="flex w-full items-center gap-2 rounded-xl bg-slate-50 p-2.5 text-left ring-1 ring-slate-200">
+            <span className="min-w-0 flex-1 text-xs text-slate-700">
+              <b className="block text-[11px] uppercase tracking-wide text-slate-500">Isolation</b>
+              {iso.blinds.length > 0 && <span className={cx('mr-2 font-semibold', iso.blindsIn === iso.blinds.length ? 'text-[#08A048]' : 'text-slate-800')}>Blinds {iso.blindsIn}/{iso.blinds.length} in</span>}
+              {iso.neut.map((p) => <span key={p.id} className={cx('mr-2 font-semibold', pointComplete(p) ? 'text-[#08A048]' : 'text-slate-800')}>{p.stepId ?? 'Neutralization'}: {NEUT_LABEL[p.status]}</span>)}
+              <span className="block text-[11px] text-slate-500">{iso.ready ? 'Ready: handed over automatically.' : 'Handed over automatically when the blinds are in and the neutralization is done.'}</span>
+            </span>
+            <span className="text-xs font-semibold text-[#0850A0]">Open ›</span>
+          </button>
+        )}
+        <EquipActivities trackerId={trackerId} itemKey={e.barchartKey ?? e.tag} activities={activities} now={now} canEdit={canEdit} isHead={isHead} neutCovered={!!iso?.neut.length} onDone={onDone} />
         <Field label={`IAT · ${iats.length} open`}>
           <div className="space-y-1.5">
             {iats.map((i) => <div key={i.id} className="flex items-center justify-between gap-2 rounded-lg bg-[#FFE699] px-2.5 py-1.5 text-sm"><span><b>{i.iatNo}</b> {i.jobText}{i.discipline ? ` · ${i.discipline}` : ''}</span>{canEdit && <Button variant="secondary" className="min-h-8 px-2 text-xs" disabled={busy} onClick={() => run(() => closeIat(i.id), `${i.iatNo} closed.`)}>Close IAT</Button>}</div>)}
