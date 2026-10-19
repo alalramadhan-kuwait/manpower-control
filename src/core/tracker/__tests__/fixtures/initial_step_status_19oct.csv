@@ -1,0 +1,24 @@
+step_id,status,remark
+S101,Done,Implied by later steps done – confirm
+S102,Done,Implied by later steps done – confirm
+S103,Done,Implied by later steps done – confirm
+S104,Done,C-201 stopped 09:30 19-Oct (logbook)
+S105,In progress,R-205 draining done (logbook) – FB reactors?
+S109,In progress,R-202 & R-203 outlet blinding done (logbook)
+S107,Done,From logbook 19-Oct D – confirm
+S206,Done,From logbook 19-Oct D – confirm
+S208,Done,From logbook 19-Oct D – confirm
+S209,Done,From logbook 19-Oct D – confirm
+S210,Done,From logbook 19-Oct D – confirm
+S205,In progress,V-206/207/208/212/213/236 PO/DX deblinded (logbook)
+S301,Done,Injection water blinded (logbook)
+S308,Done,Implied by later steps done – confirm
+S302,Done,V-202 under ventilation (logbook)
+S204,Done,V-210 under ventilation (logbook)
+S304,Done,Implied by later steps done – confirm
+S305,Done,"V-201 manway open, under ventilation (logbook)"
+S309,Done,From logbook 19-Oct D – confirm
+S310,Done,From logbook 19-Oct D – confirm
+S311,Done,From logbook 19-Oct D – confirm
+S312,Done,From logbook 19-Oct D – confirm
+S313,Done,From logbook 19-Oct D – confirm

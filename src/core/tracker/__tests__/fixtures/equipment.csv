@@ -1,0 +1,97 @@
+group,tag,description,fo,ho_step,procedure,barchart_key,ops_handover_item,planned_ho,planned_finish,critical,logbook_remark_19oct
+Reactors,R-12-201,Fixed bed reactor 1 (outlet grid),FO1,S109,SOP-12-2009,R-12-201,1,2026-10-20 07:00,2026-11-02 03:00,0,Decoke line still choked
+Reactors,R-12-202,Fixed bed reactor 2,FO1,S109,SOP-12-2009,R-12-202,1,2026-10-20 07:00,2026-11-02 03:00,0,Outlet blinding done
+Reactors,R-12-203,Fixed bed reactor 3,FO1,S109,SOP-12-2009,R-12-203,1,2026-10-20 07:00,2026-11-03 03:00,0,Outlet blinding done
+Reactors,R-12-204,Fixed bed reactor 4,FO1,S109,SOP-12-2009,R-12-204,1,2026-10-20 07:00,2026-11-02 15:00,0,
+Reactors,R-12-205,OCR reactor,FO1,S110,SOP-12-2008,R-12-205,1,2026-10-20 07:00,2026-11-07 07:00,1,Draining done
+Heaters,H-12-201,Charge heater,FO3,S327,SOP-12-2010,H-12-201,1,2026-10-20 07:00,2026-10-31 19:00,0,
+Heaters,H-12-202,Recycle gas heater,FO3,S326,SOP-12-2010,H-12-202,1,2026-10-20 07:00,2026-10-28 07:00,0,
+Exchangers,E-12-204,Recycle gas preheater no.2,FO3,S323,No SOP received,E-12-204,1,2026-10-20 07:00,2026-10-31 19:00,0,Hot bolting done
+Exchangers,E-12-205,Recycle gas preheater no.1,FO3,S323,No SOP received,E-12-205,1,2026-10-20 07:00,2026-10-31 19:00,0,Hot bolting done
+Exchangers,E-12-207,HPWS vapour trim cooler,FO2,S221,SOP-12-2015,E-12-207,1,2026-10-20 07:00,2026-10-31 01:00,0,
+Exchangers,E-12-210A/B,LP hot separator condenser,FO3,S324,No SOP received,,1,,,0,
+Exchangers,E-12-211,LP hot separator vapour trim cooler,FO3,S324,SOP-12-2017,E-12-211,1,2026-10-20 07:00,2026-10-31 07:00,0,
+Exchangers,E-12-216A,Feed preheater no.2 A,FO3,S322,SOP-12-2018,E-12-216A,1,2026-10-20 07:00,2026-10-28 19:00,0,
+Exchangers,E-12-216B,Feed preheater no.2 B,FO3,S322,SOP-12-2018,E-12-216B,1,2026-10-20 07:00,2026-10-28 19:00,0,
+Exchangers,E-12-229,OCR feed / effluent exchanger,FO1,S116,No SOP received,E-12-229,1,2026-10-20 07:00,2026-10-29 03:00,0,Hot bolting done
+Exchangers,E-12-119,In logbook – not in TR-2 bar chart (confirm),,,,,0,,,0,"Parts removed, tube bundle pulled out"
+Vessels,V-12-201,Residue surge drum,FO3,S305,No SOP received,V-12-201,1,2026-10-20 07:00,2026-10-23 07:00,0,"Manway open, under ventilation"
+Vessels,V-12-202,Injection water surge drum,FO3,S302,SOP-12-2022,V-12-202,1,2026-10-20 07:00,2026-10-25 03:00,0,Under ventilation
+Vessels,V-12-206,HP hot separator,FO2,S219,SOP-12-2024,V-12-206,1,2026-10-20 07:00,2026-10-22 15:00,0,For cleaning from outside; PO/DX deblinded
+Vessels,V-12-207,HP warm separator,FO2,S224,No SOP received,,1,,,0,PO/DX deblinded
+Vessels,V-12-208,HP cold separator,FO2,S224,No SOP received,,1,,,0,PO/DX deblinded
+Vessels,V-12-209,LP cold separator,FO3,S325,SOP-12-2027,V-12-209,1,2026-10-20 07:00,2026-10-24 19:00,0,
+Vessels,V-12-210,Wash water surge drum,FO2,S204,SOP-12-2028,V-12-210,1,2026-10-20 07:00,2026-10-25 03:00,0,Under ventilation
+Vessels,V-12-212,Recycle gas compressor K.O. drum,FO2,S222,SOP-12-2029,V-12-212,1,2026-10-20 07:00,2026-10-25 19:00,0,PO/DX deblinded
+Vessels,V-12-213,LP hot separator,FO3,S324,SOP-12-2030,V-12-213,1,2026-10-20 07:00,2026-10-25 07:00,0,PO/DX deblinded
+Vessels,V-12-236,HPCS sour water degassing drum,FO2,S211,SOP-12-2031,V-12-236,1,2026-10-20 07:00,2026-10-27 03:00,0,PO/DX deblinded
+Filters,F-12-202,Recycle gas filter,FO2,S220,No SOP received,F-12-202,1,2026-10-20 07:00,2026-10-26 07:00,0,
+Filters,C-12-201-F-01B,C-201 lube oil filter,FO2,S223,,C-12-201-F-01B,1,2026-10-20 07:00,2026-10-26 07:00,0,
+Filters,C-12-201-F-03A/B,C-201 lube oil filters (logbook),FO2,S223,,,1,,,0,
+Compressor,C-12-201,Recycle gas compressor,FO2,S223,No SOP (main body),C-12-201,1,2026-10-20 07:00,2026-11-04 07:00,0,Stopped at 09:30
+Compressor,C-12-201-ST,C-201 steam turbine driver,FO2,S223,,C-12-201-ST,1,2026-10-20 07:00,2026-11-04 07:00,0,
+Compressor,C-12-201 LO system,C-201 lube oil system,FO2,S223,,C-12-201 LO system,1,2026-10-20 07:00,2026-10-22 23:00,0,
+Pumps / LO,C-12-201-E-01A,C-201 LO cooler A,FO2,S223,SOP-12-2040,,1,,,0,
+Pumps / LO,C-12-201-E-01B,C-201 LO cooler B,FO2,S223,SOP-12-2040,,1,,,0,
+Pumps / LO,C-12-201-E-03,C-201 gland condenser,FO2,S223,SOP-12-2039,,1,,,0,
+Pumps / LO,C-12-201-EJ-01,C-201 ejector,FO2,S223,SOP-12-2039,,1,,,0,
+Pumps / LO,C-12-201-TK-01,C-201 LO tank,FO2,S223,SOP-12-2041,,1,,,0,
+Pumps / LO,C-12-201-TK-03,C-201 LO rundown tank,FO2,S223,No SOP received,C-12-201-TK-03,1,2026-10-20 07:00,2026-10-22 19:00,0,Not in guideline
+Pumps / LO,P-12-203-E-01A,P-203 LO cooler A,FO3,S303,SOP-12-2037,P-12-203-E-01A,1,2026-10-20 07:00,2026-10-24 07:00,0,
+Pumps / LO,P-12-203-E-01B,P-203 LO cooler B,FO3,S303,SOP-12-2037,P-12-203-E-01B,1,2026-10-20 07:00,2026-10-24 07:00,0,
+Pumps / LO,P-12-203-TK-01,P-203 LO tank,FO3,S303,No SOP received,,1,,,0,
+Pumps / LO,P-12-205-E-01,P-205 LO cooler,FO3,S307,SOP-12-2042,,1,,,0,
+Pumps / LO,P-12-205-TK-01,P-205 LO reservoir tank,FO3,S307,No SOP received,P-12-205-TK-01,1,2026-10-20 07:00,2026-10-22 07:00,0,
+Pumps / LO,P-12-203,Charge pump,FO3,S303,,P-12-203,1,2026-10-20 07:00,2026-10-30 07:00,0,
+Pumps / LO,P-12-205,HP amine pump / HPRT,FO3,S307,,P-12-205,1,2026-10-20 07:00,2026-10-30 07:00,0,Bar chart calls it 'charge pump' – check
+Pumps / LO,P-12-207A/B,Wash water pumps,FO2,S203,,P-12-207A/B,1,2026-10-20 07:00,2026-10-21 15:00,0,
+CV shells,12-HV-0534,"Control valve shell – remove, clean, inspect, hydrotest",,,No isolation step in guideline,12-HV-0534,0,2026-10-20 07:00,2026-10-23 03:00,0,
+CV shells,12-HV-0535,"Control valve shell – remove, clean, inspect, hydrotest",,,No isolation step in guideline,12-HV-0535,0,2026-10-20 07:00,2026-10-23 03:00,0,
+CV shells,12-HV-0536,"Control valve shell – remove, clean, inspect, hydrotest",,,No isolation step in guideline,12-HV-0536,0,2026-10-20 07:00,2026-10-23 03:00,0,
+CV shells,12-HV-0546A,"Control valve shell – remove, clean, inspect, hydrotest",,,No isolation step in guideline,12-HV-0546A,0,2026-10-20 07:00,2026-10-23 03:00,0,
+CV shells,12-HV-0546B,"Control valve shell – remove, clean, inspect, hydrotest",,,No isolation step in guideline,12-HV-0546B,0,2026-10-20 07:00,2026-10-23 03:00,0,
+CV shells,12-HV-0548,"Control valve shell – remove, clean, inspect, hydrotest",,,No isolation step in guideline,12-HV-0548,0,2026-10-20 07:00,2026-10-23 03:00,0,
+CV shells,12-HV-0548B,"Control valve shell – remove, clean, inspect, hydrotest",,,No isolation step in guideline,12-HV-0548B,0,2026-10-20 07:00,2026-10-23 03:00,0,
+CV shells,12-HV-0580,"Control valve shell – remove, clean, inspect, hydrotest",,,No isolation step in guideline,12-HV-0580,0,2026-10-20 07:00,2026-10-23 03:00,0,
+CV shells,12-LV-0531,"Control valve shell – remove, clean, inspect, hydrotest",,,No isolation step in guideline,12-LV-0531,0,2026-10-20 07:00,2026-10-23 03:00,0,
+CV shells,12-LV-0553B,"Control valve shell – remove, clean, inspect, hydrotest",,,No isolation step in guideline,12-LV-0553B,0,2026-10-20 07:00,2026-10-23 03:00,0,LV-553B passing (OPR list)
+PSVs,12-PSV-0519,PSV on V-12-202,,,,12-PSV-0519,0,2026-10-20 07:00,2026-11-04 07:00,0,
+PSVs,12-PSV-0537,PSV on H-12-201,,,,12-PSV-0537,0,2026-10-20 07:00,2026-11-04 07:00,0,
+PSVs,12-PSV-0601,PSV on P-12-203 suction,,,,12-PSV-0601,0,2026-10-20 07:00,2026-11-04 07:00,0,
+PSVs,12-PSV-0643,PSV on V-12-209,,,,12-PSV-0643,0,2026-10-20 07:00,2026-11-04 07:00,0,
+PSVs,12-PSV-0719,PSV on V-12-212,,,,12-PSV-0719,0,2026-10-20 07:00,2026-11-04 07:00,0,
+PSVs,12-PSV-1322,PSV on C-12-201 P1A,,,,12-PSV-1322,0,2026-10-20 07:00,2026-11-04 07:00,0,
+PSVs,12-PSV-1339,PSV on C-12-201 E3,,,,12-PSV-1339,0,2026-10-20 07:00,2026-10-30 07:00,0,
+PSVs,12-PSV-1403,PSV on NSD – bar chart only,,,,12-PSV-1403,0,2026-10-20 07:00,2026-10-30 07:00,0,
+PSVs,12-PSV-1404,PSV on NSD – bar chart only,,,,12-PSV-1404,0,2026-10-20 07:00,2026-10-30 07:00,0,
+Check valves,12-VC-0105,XV-12-542 d/s NRV,,,,12-VC-0105,0,2026-10-20 07:00,2026-10-30 07:00,0,
+Check valves,12-VC-0106,FV-12-0548 d/s NRV,FO1,S111,SOP-12-2006,12-VC-0106,1,2026-10-20 07:00,2026-10-30 07:00,0,
+Check valves,12-VC-0107,FV-12-1427 d/s NRV,FO1,S115,SOP-12-2006,12-VC-0107,1,2026-10-20 07:00,2026-10-30 07:00,0,
+Check valves,12-VC-0108,FV-12-1426 d/s NRV,FO1,S111,SOP-12-2006,12-VC-0108,1,2026-10-20 07:00,2026-10-30 07:00,0,
+RTJ & injection,R-205 withdrawal line d/s KV-7B/8B,4 RTJ / injection points,,S117,SOP-12-2006,,0,,,0,
+RTJ & injection,H-201 O/L to R-205 I/L,12 RTJ / injection points,,S115,SOP-12-2006,,0,,,0,
+RTJ & injection,H-202 O/L,2 RTJ / injection points,,S118,SOP-12-2006,,0,,,0,
+RTJ & injection,R-201 to R-202,14 RTJ / injection points,,S113,SOP-12-2006,,0,,,0,
+RTJ & injection,R-202 to R-203,15 RTJ / injection points,,S113,SOP-12-2006,,0,,,0,
+RTJ & injection,R-203 to R-204,14 RTJ / injection points,,S113,SOP-12-2006,,0,,,0,
+RTJ & injection,R-204 to V-206,6 RTJ / injection points,,S113,SOP-12-2006,,0,,,0,
+RTJ & injection,E-202 to E-203,2 RTJ / injection points,,S215,SOP-12-2006,,0,,,0,
+RTJ & injection,E-205 to EA-201,74 RTJ / injection points,,S218,SOP-12-2006,,0,,,0,
+RTJ & injection,V-207 to V-213,15 RTJ / injection points,,S217,SOP-12-2006,,0,,,0,
+RTJ & injection,V-206 to V-213,6 RTJ / injection points,,S217,SOP-12-2006,,0,,,0,
+RTJ & injection,E-229 sample point,4 RTJ / injection points,,S111,SOP-12-2006,,0,,,0,
+RTJ & injection,FV-1427,2 RTJ / injection points,,S118,SOP-12-2006,,0,,,0,
+RTJ & injection,R-205 to E-229,4 RTJ / injection points,,S111,SOP-12-2006,,0,,,0,
+RTJ & injection,FV-1426 d/s,1 RTJ / injection points,,S111,SOP-12-2006,,0,,,0,
+RTJ & injection,V-206 LT bridle,27 RTJ / injection points,,S219,SOP-12-2006,,0,,,0,
+RTJ & injection,Wash water to EA-201,29 RTJ / injection points,,S218,SOP-12-2006,,0,,,0,
+Process piping,WP-12-2017-HRE5-1,Process piping inspection,,,,WP-12-2017-HRE5-1,0,2026-10-20 07:00,2026-10-25 07:00,0,
+Process piping,P-12-2057-HRW1,Process piping inspection,,,,P-12-2057-HRW1,0,2026-10-20 07:00,2026-10-30 07:00,0,
+Process piping,P-12-2059&P-12-2065,Process piping inspection,,,,P-12-2059&P-12-2065,0,2026-10-20 07:00,2026-10-30 07:00,0,
+OPR list,OPR list (36 items),Operations misc. items as per bar chart,,,,OPR LIST MISC. ITEMS as per list (36 nos),0,2026-10-20 07:00,2026-10-20 15:00,0,
+PMRs,MAB-2931,Injection water supply upstream of E-12-205,,,,,0,,,0,
+PMRs,MAB-4637,Isolation valves upstream of FV-12-004B,,,,,0,,,0,
+PMRs,MAB-4636,Isolation valve upstream of FV-12-003B,,,,,0,,,0,
+PMRs,MAB-2345,Flow indicator on utility water header to V-213 PSV header,,,,,0,,,0,
+PMRs,MAB-1881,Replace obsolete LTs for R-12-205,,,,,0,,,0,
+PMRs,MAB-3596,Upgrade obsolete PLCs for C-12-201,,,,,0,,,0,

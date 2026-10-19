@@ -1,0 +1,594 @@
+group,equipment_key,activity_id,activity,duration_h,planned_start,planned_finish,stage,tracked
+Reactors,R-12-205,A3860,Erect External Scaffolding (Pre-SD),0,2026-10-20 07:00,2026-10-20 07:00,0,1
+Reactors,R-12-205,A3861,Disconnect isotopes / Blind / Open top & bottom elbows,24,2026-10-20 07:00,2026-10-21 07:00,2,1
+Reactors,R-12-205,A4620,Filling of Soda ash & Neutralization/Soaking/Draining,24,2026-10-21 07:00,2026-10-22 07:00,1,1
+Reactors,R-12-205,A5090,Entry Permit,8,2026-10-22 07:00,2026-10-22 15:00,1,1
+Reactors,R-12-205,A5260,Remove top basket,12,2026-10-22 15:00,2026-10-23 03:00,2,1
+Reactors,R-12-205,A5410,Dump Catalyst by Double Vacuum,120,2026-10-23 03:00,2026-10-28 03:00,2,1
+Reactors,R-12-205,A6840,Open windows & doors of Johnson screen,12,2026-10-28 03:00,2026-10-28 15:00,2,1
+Reactors,R-12-205,A7050,Dump ceramic balls & remaining catalyst inside the cone,12,2026-10-28 15:00,2026-10-29 03:00,2,1
+Reactors,R-12-205,A7130,Removal of bottom inlet elbow / Chimney trays,12,2026-10-29 03:00,2026-10-29 15:00,2,1
+Reactors,R-12-205,A7240,"Erect complete internal scaffolding at all thermowells, nozzles & quench",12,2026-10-29 15:00,2026-10-30 03:00,2,1
+Reactors,R-12-205,A7480,Hydro blast cleaning internally for Inspection using 2% Soda Ash solution,24,2026-10-30 03:00,2026-10-31 03:00,2,1
+Reactors,R-12-205,A7560,Remove grating from the top platform & provide suitable approach for inlet,24,2026-10-31 03:00,2026-11-01 03:00,2,1
+Reactors,R-12-205,A7570,"clean by buffing for all thermowells, nozzles & quench pipe locations RTJ",24,2026-10-31 03:00,2026-11-01 03:00,2,1
+Reactors,R-12-205,A7571,Remove the insulaton for inlet Nozzle,12,2026-11-01 03:00,2026-11-01 15:00,2,1
+Reactors,R-12-205,A7572,Offer for inspection,8,2026-11-01 15:00,2026-11-01 23:00,3,1
+Reactors,R-12-205,A7580,Cleaning of chimney trays around with drawal pipe / Inspection by Process,12,2026-10-31 03:00,2026-10-31 15:00,3,1
+Reactors,R-12-205,A7590,Open catalyst support cone manways,12,2026-10-31 03:00,2026-10-31 15:00,2,1
+Reactors,R-12-205,A7600,Repair if Required.,24,2026-10-31 03:00,2026-11-01 03:00,4,1
+Reactors,R-12-205,A7660,Offer for Process,24,2026-11-01 03:00,2026-11-02 03:00,3,1
+Reactors,R-12-205,A7740,"Possible replacement of 3"" dia catalyst withdrawal pipe (If required based",24,2026-11-02 03:00,2026-11-03 03:00,4,1
+Reactors,R-12-205,A7750,"quench pipes Repair if required, Fixing and Leak Test",24,2026-11-02 03:00,2026-11-03 03:00,4,1
+Reactors,R-12-205,A7760,Repair of thermowell pipe (If required),12,2026-11-02 03:00,2026-11-02 15:00,4,1
+Reactors,R-12-205,A7770,Repair of Johnson screen (If required),12,2026-11-02 03:00,2026-11-02 15:00,4,1
+Reactors,R-12-205,A7820,Remove scaffolding,12,2026-11-03 03:00,2026-11-03 15:00,2,1
+Reactors,R-12-205,A7830,Box up chimney trays & load ceramic balls,8,2026-11-03 15:00,2026-11-03 23:00,5,1
+Reactors,R-12-205,A7840,Fix back windows & doors,8,2026-11-03 23:00,2026-11-04 07:00,5,1
+Reactors,R-12-205,A7850,Loading of fresh catalyst,36,2026-11-04 07:00,2026-11-05 19:00,5,1
+Reactors,R-12-205,A7860,Re-install insulation,24,2026-11-04 07:00,2026-11-05 07:00,5,1
+Reactors,R-12-205,A7870,Fix top basket & top elbow,24,2026-11-05 19:00,2026-11-06 19:00,5,1
+Reactors,R-12-205,A7880,De-blind,12,2026-11-06 19:00,2026-11-07 07:00,6,1
+Reactors,R-12-201,A8350,External scaffolding (Pre SD) If required,0,2026-10-20 07:00,2026-10-20 07:00,2,1
+Reactors,R-12-201,A8351,"Blind, Remove elbow & Top Trays",24,2026-10-20 07:00,2026-10-21 07:00,2,1
+Reactors,R-12-201,A8360,Neutralization / Filling and draining of soda ash,24,2026-10-21 07:00,2026-10-22 07:00,1,1
+Reactors,R-12-201,A8370,Dumping catalyst ( Free fall ),72,2026-10-22 07:00,2026-10-25 07:00,2,1
+Reactors,R-12-201,A8380,Initial Inspection/ manual Cleaning,12,2026-10-25 07:00,2026-10-25 19:00,3,1
+Reactors,R-12-201,A8390,Cleaning all internal by Hydrojetting,32,2026-10-25 19:00,2026-10-27 03:00,2,1
+Reactors,R-12-201,A8400,Process Inspection,12,2026-10-27 03:00,2026-10-27 15:00,3,1
+Reactors,R-12-201,A8410,Possible welding of the bolts to fix the bubble cap trays,36,2026-10-27 15:00,2026-10-29 03:00,4,1
+Reactors,R-12-201,A8420,Offer RTJ grooves of all open flanges for Visual inspection & LPT.,36,2026-10-27 15:00,2026-10-29 03:00,3,1
+Reactors,R-12-201,A8430,Repair of thermowell brackets,36,2026-10-27 15:00,2026-10-29 03:00,4,1
+Reactors,R-12-201,A8435,Remove scaffolding & Prepare for loading,12,2026-10-29 03:00,2026-10-29 15:00,2,1
+Reactors,R-12-201,A8440,Load catalyst & Install Trays,36,2026-10-29 15:00,2026-10-31 03:00,5,1
+Reactors,R-12-201,A8450,Elbow box-up & Deblind,24,2026-10-31 03:00,2026-11-01 03:00,6,1
+Reactors,R-12-201,A8460,Re-install insulation (if required),48,2026-10-31 03:00,2026-11-02 03:00,5,1
+Reactors,R-12-202,A3880,External scaffolding (Pre SD),0,2026-10-20 07:00,2026-10-20 07:00,2,1
+Reactors,R-12-202,A3881,"Blind, Remove Elbow & Top trays",24,2026-10-20 07:00,2026-10-21 07:00,2,1
+Reactors,R-12-202,A4750,Neutralization / Filling and draining of soda ash,24,2026-10-21 07:00,2026-10-22 07:00,1,1
+Reactors,R-12-202,A5180,Dumping catalyst ( Free fall ),72,2026-10-22 07:00,2026-10-25 07:00,2,1
+Reactors,R-12-202,A6140,Erect Complete Internal Scaffold,24,2026-10-25 07:00,2026-10-26 07:00,2,1
+Reactors,R-12-202,A6670,Cleaning all internal by Hydrojet,32,2026-10-26 07:00,2026-10-27 15:00,2,1
+Reactors,R-12-202,A6940,Repair if required,24,2026-10-27 15:00,2026-10-28 15:00,4,1
+Reactors,R-12-202,A7070,Offer for Process,12,2026-10-27 15:00,2026-10-28 03:00,3,1
+Reactors,R-12-202,A7140,Offer RTJ grooves of all open flanges for Visual inspection & LPT.,36,2026-10-27 15:00,2026-10-29 03:00,3,1
+Reactors,R-12-202,A7150,Possible welding of the bolts to fix the bubble cap trays,36,2026-10-27 15:00,2026-10-29 03:00,4,1
+Reactors,R-12-202,A7160,Repair of thermowell brackets,36,2026-10-27 15:00,2026-10-29 03:00,4,1
+Reactors,R-12-202,A7170,Repair If Required,36,2026-10-27 15:00,2026-10-29 03:00,4,1
+Reactors,R-12-202,A7470,Remove scaffolding & Prepare for loading,12,2026-10-29 03:00,2026-10-29 15:00,2,1
+Reactors,R-12-202,A7510,Load catalyst & Install Trays,36,2026-10-29 15:00,2026-10-31 03:00,5,1
+Reactors,R-12-202,A7650,Elbow box-up & Deblind,24,2026-10-31 03:00,2026-11-01 03:00,6,1
+Reactors,R-12-202,A7710,Re-install insulation if Required,48,2026-10-31 03:00,2026-11-02 03:00,5,1
+Reactors,R-12-203,A3900,External scaffolding (Pre SD),0,2026-10-20 07:00,2026-10-20 07:00,2,1
+Reactors,R-12-203,A3901,"Blind, Remove Elbow & Top trays",24,2026-10-20 07:00,2026-10-21 07:00,2,1
+Reactors,R-12-203,A4760,Neutralization / Filling and draining of soda ash,24,2026-10-21 07:00,2026-10-22 07:00,1,1
+Reactors,R-12-203,A5190,Dumping catalyst ( Free fall ),72,2026-10-22 07:00,2026-10-25 07:00,2,1
+Reactors,R-12-203,A6160,Erect Complete Internal Scaffold/ manual Cleaning as per inspection,24,2026-10-25 07:00,2026-10-26 07:00,2,1
+Reactors,R-12-203,A6950,Cleaning all internal by Hydrojet,32,2026-10-26 07:00,2026-10-27 15:00,2,1
+Reactors,R-12-203,A7180,Repair if required,24,2026-10-27 15:00,2026-10-28 15:00,4,1
+Reactors,R-12-203,A7260,Offer for Process,12,2026-10-27 15:00,2026-10-28 03:00,3,1
+Reactors,R-12-203,A7320,Offer RTJ grooves of all open flanges for Visual inspection & LPT.,36,2026-10-28 15:00,2026-10-30 03:00,3,1
+Reactors,R-12-203,A7330,Possible welding of the bolts to fix the bubble cap trays,36,2026-10-28 15:00,2026-10-30 03:00,4,1
+Reactors,R-12-203,A7340,Repair of thermowell brackets,36,2026-10-28 15:00,2026-10-30 03:00,4,1
+Reactors,R-12-203,A7350,Repair If Required,36,2026-10-28 15:00,2026-10-30 03:00,4,1
+Reactors,R-12-203,A7540,Remove scaffolding & Prepare for loading,12,2026-10-30 03:00,2026-10-30 15:00,2,1
+Reactors,R-12-203,A7610,Load catalyst & Install Trays,36,2026-10-30 15:00,2026-11-01 03:00,5,1
+Reactors,R-12-203,A7720,Elbow box-up & Deblind,24,2026-11-01 03:00,2026-11-02 03:00,6,1
+Reactors,R-12-203,A7800,Re-install insulation if Required,48,2026-11-01 03:00,2026-11-03 03:00,5,1
+Reactors,R-12-204,A3920,External scaffolding (Pre SD),0,2026-10-20 07:00,2026-10-20 07:00,2,1
+Reactors,R-12-204,A3921,"Blind, Remove Elbow & Top trays",24,2026-10-20 07:00,2026-10-21 07:00,2,1
+Reactors,R-12-204,A4770,Neutralization / Filling and draining of soda ash,24,2026-10-21 07:00,2026-10-22 07:00,1,1
+Reactors,R-12-204,A5200,Dumping catalyst ( Free fall ),72,2026-10-22 07:00,2026-10-25 07:00,2,1
+Reactors,R-12-204,A6170,Erect Complete Internal Scaffold/ manual Cleaning as per inspection,24,2026-10-25 07:00,2026-10-26 07:00,2,1
+Reactors,R-12-204,A6970,Cleaning all internal by Hydrojet,32,2026-10-26 07:00,2026-10-27 15:00,2,1
+Reactors,R-12-204,A7190,Repair if required,24,2026-10-27 15:00,2026-10-28 15:00,4,1
+Reactors,R-12-204,A7280,Offer for Process,12,2026-10-27 15:00,2026-10-28 03:00,3,1
+Reactors,R-12-204,A7360,Offer RTJ grooves of all open flanges for Visual inspection & LPT.,36,2026-10-28 03:00,2026-10-29 15:00,3,1
+Reactors,R-12-204,A7370,Possible welding of the bolts to fix the bubble cap trays,36,2026-10-28 03:00,2026-10-29 15:00,4,1
+Reactors,R-12-204,A7380,Repair of thermowell brackets,36,2026-10-28 03:00,2026-10-29 15:00,4,1
+Reactors,R-12-204,A7390,Repair If Required,36,2026-10-28 03:00,2026-10-29 15:00,4,1
+Reactors,R-12-204,A7550,Remove scaffolding & Prepare for loading,12,2026-10-29 15:00,2026-10-30 03:00,2,1
+Reactors,R-12-204,A7620,Load catalyst & Install Trays,36,2026-10-30 03:00,2026-10-31 15:00,5,1
+Reactors,R-12-204,A7730,Elbow box-up & Deblind,24,2026-10-31 15:00,2026-11-01 15:00,6,1
+Reactors,R-12-204,A7810,Re-install insulation if Required,48,2026-10-31 15:00,2026-11-02 15:00,5,1
+Heaters,H-12-201,A2630,Blind,12,2026-10-20 07:00,2026-10-20 19:00,1,1
+Heaters,H-12-201,A4420,Steaming,24,2026-10-20 19:00,2026-10-21 19:00,1,1
+Heaters,H-12-201,A4880,"Neutralize OD, Open ManWays",12,2026-10-21 19:00,2026-10-22 07:00,2,1
+Heaters,H-12-201,A5100,Burner Drop & Cleaning,48,2026-10-22 07:00,2026-10-24 07:00,2,1
+Heaters,H-12-201,A5710,Erect scaffolding for outlet header,12,2026-10-24 07:00,2026-10-24 19:00,2,1
+Heaters,H-12-201,A5880,Remove complete insulation on outlet headers including all the 4 pass,12,2026-10-24 19:00,2026-10-25 07:00,2,1
+Heaters,H-12-201,A6010,Swing the elbow,12,2026-10-25 07:00,2026-10-25 19:00,2,1
+Heaters,H-12-201,A6300,Pigging,96,2026-10-25 19:00,2026-10-29 19:00,1,1
+Heaters,H-12-201,A7300,Carry out profile radiography and UFD scanning of 90° elbows on the,12,2026-10-29 19:00,2026-10-30 07:00,3,1
+Heaters,H-12-201,A7420,Fix Back burners,24,2026-10-30 07:00,2026-10-31 07:00,5,1
+Heaters,H-12-201,A7520,Deblind,12,2026-10-31 07:00,2026-10-31 19:00,6,1
+Heaters,H-12-202,A3670,Blind,12,2026-10-20 07:00,2026-10-20 19:00,1,1
+Heaters,H-12-202,A4380,"Neutralize OD, Open ManWays & Neutreize ID with 2% soda ash solution.",12,2026-10-20 19:00,2026-10-21 07:00,2,1
+Heaters,H-12-202,A4710,Burner Drop & Cleaning,48,2026-10-21 07:00,2026-10-23 07:00,2,1
+Heaters,H-12-202,A5520,Carry out profile radiography of the U-Bends.,48,2026-10-23 07:00,2026-10-25 07:00,3,1
+Heaters,H-12-202,A6080,Refractory Repair if Required.,12,2026-10-25 07:00,2026-10-25 19:00,4,1
+Heaters,H-12-202,A6330,Fix Back Burners.,24,2026-10-25 19:00,2026-10-26 19:00,5,1
+Heaters,H-12-202,A6550,Fix Back all Covers & Box-up,24,2026-10-26 19:00,2026-10-27 19:00,5,1
+Heaters,H-12-202,A6790,Deblind,12,2026-10-27 19:00,2026-10-28 07:00,6,1
+Exchangers,E-12-204,A3660,Neutralize with 2% soda ash.,36,2026-10-20 07:00,2026-10-21 19:00,1,1
+Exchangers,E-12-204,A4370,Blind,12,2026-10-21 19:00,2026-10-22 07:00,1,1
+Exchangers,E-12-204,A4700,"Open channel, Diaphragm & Pull tube bundle",36,2026-10-22 07:00,2026-10-23 19:00,2,1
+Exchangers,E-12-204,A5330,H-Blast Tube bundle using 2% soda ash,12,2026-10-23 19:00,2026-10-24 07:00,2,1
+Exchangers,E-12-204,A5510,Cleaning components & Measure Diaphragm dimensions,36,2026-10-24 07:00,2026-10-25 19:00,3,1
+Exchangers,E-12-204,A5515,"Remove insulation on shell, channel external surface over approx. 2ft. X",12,2026-10-25 19:00,2026-10-26 07:00,2,1
+Exchangers,E-12-204,A5920,Offer for Inspection,72,2026-10-26 07:00,2026-10-29 07:00,3,1
+Exchangers,E-12-204,A6920,Hydrotest shell side at differential pressure of 866 psig,24,2026-10-29 07:00,2026-10-30 07:00,4,1
+Exchangers,E-12-204,A7040,Simultaneous hydro test - shell at 3300 psig & tube at 2850 psig,24,2026-10-30 07:00,2026-10-31 07:00,4,1
+Exchangers,E-12-204,A7120,Deblind,12,2026-10-31 07:00,2026-10-31 19:00,6,1
+Exchangers,E-12-205,,Neutralize with 2% soda ash.,36,2026-10-20 07:00,2026-10-21 19:00,1,1
+Exchangers,E-12-205,,Blind,12,2026-10-21 19:00,2026-10-22 07:00,1,1
+Exchangers,E-12-205,,"Open channel, Diaphragm & Pull tube bundle",36,2026-10-22 07:00,2026-10-23 19:00,2,1
+Exchangers,E-12-205,,H-Blast Tube bundle using 2% soda ash,12,2026-10-23 19:00,2026-10-24 07:00,2,1
+Exchangers,E-12-205,,Cleaning components & Measure Diaphragm dimensions,36,2026-10-24 07:00,2026-10-25 19:00,3,1
+Exchangers,E-12-205,,Hydrotest shell side at differential pressure of 866 psig,24,2026-10-25 19:00,2026-10-26 19:00,4,1
+Exchangers,E-12-205,,Simultaneous hydro test - shell at 3300 psig & tube at 2850 psig,24,2026-10-30 07:00,2026-10-31 07:00,4,1
+Exchangers,E-12-205,,Deblind,12,2026-10-31 07:00,2026-10-31 19:00,6,1
+Exchangers,E-12-207,A9500,Blind,12,2026-10-20 07:00,2026-10-20 19:00,1,1
+Exchangers,E-12-207,A9510,Steaming/diesel flushing as required,12,2026-10-20 19:00,2026-10-21 07:00,1,1
+Exchangers,E-12-207,A9520,Shell pull out(scaffolding modification as required),36,2026-10-21 07:00,2026-10-22 19:00,2,1
+Exchangers,E-12-207,A9530,Preliminary inspection by process,12,2026-10-22 19:00,2026-10-23 07:00,3,1
+Exchangers,E-12-207,A9540,Hydro blasting for shell internal and tube bundle external,36,2026-10-23 07:00,2026-10-24 19:00,2,1
+Exchangers,E-12-207,A9550,Shell internal grit blasting if needed,72,2026-10-24 19:00,2026-10-27 19:00,2,1
+Exchangers,E-12-207,A9560,welding repair if needed,12,2026-10-27 19:00,2026-10-28 07:00,4,1
+Exchangers,E-12-207,A9570,Offer for process,6,2026-10-28 07:00,2026-10-28 13:00,3,1
+Exchangers,E-12-207,A9580,Shell push back(scaffolding modification as required,12,2026-10-28 13:00,2026-10-29 01:00,2,1
+Exchangers,E-12-207,A9590,Shell side hydro test at 383 psig,24,2026-10-29 01:00,2026-10-30 01:00,4,1
+Exchangers,E-12-207,A9600,Deblind,24,2026-10-30 01:00,2026-10-31 01:00,6,1
+Exchangers,E-12-211,A1890,Blind,24,2026-10-20 07:00,2026-10-21 07:00,1,1
+Exchangers,E-12-211,A1900,Open covers and pull out the tube bundle,24,2026-10-21 07:00,2026-10-22 07:00,2,1
+Exchangers,E-12-211,A1910,H-Blast tube bundle using process water containing chloride < 50 ppm,48,2026-10-22 07:00,2026-10-24 07:00,2,1
+Exchangers,E-12-211,A1920,Clean shell and components thoroughly to prepare for NDT,12,2026-10-24 07:00,2026-10-24 19:00,3,1
+Exchangers,E-12-211,A1930,Extensive NDT on the shell and nozzles,24,2026-10-24 19:00,2026-10-25 19:00,3,1
+Exchangers,E-12-211,A1940,Apply possible Belzona 1311 & 1321 coating on the seawater side,72,2026-10-25 19:00,2026-10-28 19:00,4,1
+Exchangers,E-12-211,A1950,"Install the tube bundle, channel and covers back",24,2026-10-28 19:00,2026-10-29 19:00,5,1
+Exchangers,E-12-211,A1960,Hydrotest Shell Side & Tube Side at 620 psig with process water containing,24,2026-10-29 19:00,2026-10-30 19:00,4,1
+Exchangers,E-12-211,A1990,Deblind,12,2026-10-30 19:00,2026-10-31 07:00,6,1
+Exchangers,E-12-216A,A3060,Neutralize with 2% soda ash.,36,2026-10-20 07:00,2026-10-21 19:00,1,1
+Exchangers,E-12-216A,A4900,Blind,24,2026-10-21 19:00,2026-10-22 19:00,1,1
+Exchangers,E-12-216A,A5310,"Open channel, Diaphragm & pull out shell",48,2026-10-22 19:00,2026-10-24 19:00,2,1
+Exchangers,E-12-216A,A5900,H-Blast Tube bundle using 2% soda ash,24,2026-10-24 19:00,2026-10-25 19:00,2,1
+Exchangers,E-12-216A,A6310,H/blast clean the shell & components using 2% soda ash solution.,8,2026-10-24 19:00,2026-10-25 03:00,2,1
+Exchangers,E-12-216A,A6370,Carry out Eddy current /IRIS inspection,36,2026-10-25 19:00,2026-10-27 07:00,3,1
+Exchangers,E-12-216A,A6690,Hydrotest tube side at 4500 psig and shell side 383 psig using process,24,2026-10-27 07:00,2026-10-28 07:00,4,1
+Exchangers,E-12-216A,A7200,Deblind,12,2026-10-28 07:00,2026-10-28 19:00,6,1
+Exchangers,E-12-216B,A7895,Neutralize with 2% soda ash.,36,2026-10-20 07:00,2026-10-21 19:00,1,1
+Exchangers,E-12-216B,A7900,Blind,24,2026-10-21 19:00,2026-10-22 19:00,1,1
+Exchangers,E-12-216B,A7920,"Open channel, Diaphragm & pull out shell",48,2026-10-22 19:00,2026-10-24 19:00,2,1
+Exchangers,E-12-216B,A7930,H-Blast Tube bundle using 2% soda ash,24,2026-10-24 19:00,2026-10-25 19:00,2,1
+Exchangers,E-12-216B,A7935,H/blast clean the shell & components using 2% soda ash solution.,8,2026-10-24 19:00,2026-10-25 03:00,2,1
+Exchangers,E-12-216B,A7937,Carry out Eddy current /IRIS inspection,36,2026-10-25 19:00,2026-10-27 07:00,3,1
+Exchangers,E-12-216B,A7950,Hydrotest tube side at 4500 psig and shell side 383 psig using process,24,2026-10-27 07:00,2026-10-28 07:00,4,1
+Exchangers,E-12-216B,A7970,Deblind,12,2026-10-28 07:00,2026-10-28 19:00,6,1
+Exchangers,E-12-229,A9260,Neutralize with 2% soda ash,36,2026-10-20 07:00,2026-10-21 19:00,1,1
+Exchangers,E-12-229,A9270,Blind,12,2026-10-21 19:00,2026-10-22 07:00,1,1
+Exchangers,E-12-229,A9280,"Open channel, Diaphragm & Pull tube bundle",48,2026-10-22 07:00,2026-10-24 07:00,2,1
+Exchangers,E-12-229,A9290,H-Blast Tube bundle using 2% soda ash,24,2026-10-24 07:00,2026-10-25 07:00,2,1
+Exchangers,E-12-229,A9300,H/blast clean the shell & components using 2% soda ash solution.,12,2026-10-24 07:00,2026-10-24 19:00,2,1
+Exchangers,E-12-229,A9310,Buff clean the components & shell weld joints internally & Measure,8,2026-10-25 07:00,2026-10-25 15:00,4,1
+Exchangers,E-12-229,A9320,Offer for Inspection,24,2026-10-25 15:00,2026-10-26 15:00,3,1
+Exchangers,E-12-229,A9340,Hydrotest shell side at differential pressure of 1900 psig,24,2026-10-26 15:00,2026-10-27 15:00,4,1
+Exchangers,E-12-229,A9341,Simultaneous hydro test - shell at 4805 psig & tube at 3300 psig,24,2026-10-27 15:00,2026-10-28 15:00,4,1
+Exchangers,E-12-229,A9350,Deblind,12,2026-10-28 15:00,2026-10-29 03:00,6,1
+Vessels,V-12-201,A9450,Blinding,12,2026-10-20 07:00,2026-10-20 19:00,1,1
+Vessels,V-12-201,A9460,Open Manway/Install Ventilation,12,2026-10-20 19:00,2026-10-21 07:00,2,1
+Vessels,V-12-201,A9470,Internal Cleaning by HB,12,2026-10-21 07:00,2026-10-21 19:00,2,1
+Vessels,V-12-201,A9471,Buff & clean Weld Joints Internally,12,2026-10-21 19:00,2026-10-22 07:00,4,1
+Vessels,V-12-201,A9472,Offer for Inspection,12,2026-10-22 07:00,2026-10-22 19:00,3,1
+Vessels,V-12-201,A9480,Box-up & Deblind,12,2026-10-22 19:00,2026-10-23 07:00,6,1
+Vessels,V-12-209,A9610,Blind,12,2026-10-20 07:00,2026-10-20 19:00,1,1
+Vessels,V-12-209,A9620,Open Manway/ install ventilation,12,2026-10-20 19:00,2026-10-21 07:00,2,1
+Vessels,V-12-209,A9630,Erect Internal Scaffold,12,2026-10-21 07:00,2026-10-21 19:00,2,1
+Vessels,V-12-209,A9640,Demister Removal (If required),12,2026-10-21 19:00,2026-10-22 07:00,2,1
+Vessels,V-12-209,A9650,Internal cleaning by Hydrojetting,12,2026-10-22 07:00,2026-10-22 19:00,2,1
+Vessels,V-12-209,A9660,PE/OP. inspection & Clearance,12,2026-10-22 19:00,2026-10-23 07:00,3,1
+Vessels,V-12-209,A9670,Demister fixing back,12,2026-10-23 07:00,2026-10-23 19:00,5,1
+Vessels,V-12-209,A9680,Remove Internal Scaffolding,12,2026-10-23 19:00,2026-10-24 07:00,2,1
+Vessels,V-12-209,A9690,Box-up & Deblind,12,2026-10-24 07:00,2026-10-24 19:00,6,1
+Vessels,V-12-212,A9700,Blind,12,2026-10-20 07:00,2026-10-20 19:00,1,1
+Vessels,V-12-212,A9710,Open Manway/ install ventilation,12,2026-10-20 19:00,2026-10-21 07:00,2,1
+Vessels,V-12-212,A9720,Erect Internal Scaffold,12,2026-10-21 07:00,2026-10-21 19:00,2,1
+Vessels,V-12-212,A9730,Demister Removal,24,2026-10-21 19:00,2026-10-22 19:00,2,1
+Vessels,V-12-212,A9740,Internal cleaning by Hydrojetting,12,2026-10-22 19:00,2026-10-23 07:00,2,1
+Vessels,V-12-212,A9750,PE/OP. inspection & Clearance,24,2026-10-23 07:00,2026-10-24 07:00,3,1
+Vessels,V-12-212,A9760,Demister fixing back,12,2026-10-24 07:00,2026-10-24 19:00,5,1
+Vessels,V-12-212,A9770,Remove Internal Scaffolding,12,2026-10-24 19:00,2026-10-25 07:00,2,1
+Vessels,V-12-212,A9780,Box-up & Deblind,12,2026-10-25 07:00,2026-10-25 19:00,6,1
+Vessels,V-12-213,A9790,Blind,12,2026-10-20 07:00,2026-10-20 19:00,1,1
+Vessels,V-12-213,A9800,Open Manway/ install ventilation,12,2026-10-20 19:00,2026-10-21 07:00,2,1
+Vessels,V-12-213,A9810,Erect Internal Scaffold,12,2026-10-21 07:00,2026-10-21 19:00,2,1
+Vessels,V-12-213,A9830,Internal cleaning by Hydrojetting,36,2026-10-21 19:00,2026-10-23 07:00,2,1
+Vessels,V-12-213,A9840,PE/OP. inspection & Clearance,24,2026-10-23 07:00,2026-10-24 07:00,3,1
+Vessels,V-12-213,A9860,Remove Internal Scaffolding,12,2026-10-24 07:00,2026-10-24 19:00,2,1
+Vessels,V-12-213,A9870,Box-up & Deblind,12,2026-10-24 19:00,2026-10-25 07:00,6,1
+Vessels,V-12-236,A2720,Blind,12,2026-10-20 07:00,2026-10-20 19:00,1,1
+Vessels,V-12-236,A4340,Open Manway/ install ventilation,12,2026-10-20 19:00,2026-10-21 07:00,2,1
+Vessels,V-12-236,A4640,Erect internal scaffold,12,2026-10-21 07:00,2026-10-21 19:00,2,1
+Vessels,V-12-236,A4920,HB& GB Shell ID,24,2026-10-21 19:00,2026-10-22 19:00,2,1
+Vessels,V-12-236,A5300,Spot Buff Clean the shell weld joints internally,24,2026-10-22 19:00,2026-10-23 19:00,4,1
+Vessels,V-12-236,A5490,Offer NDT/Inspection,12,2026-10-23 07:00,2026-10-23 19:00,3,1
+Vessels,V-12-236,A5640,Possible Welding Repair,24,2026-10-23 19:00,2026-10-24 19:00,4,1
+Vessels,V-12-236,A5890,Possible internal painting of the vessel with phenolic epoxy,36,2026-10-24 19:00,2026-10-26 07:00,4,1
+Vessels,V-12-236,A6380,Remove Internal Scaffold,12,2026-10-26 07:00,2026-10-26 19:00,2,1
+Vessels,V-12-236,A6540,Box-up & deblinding,8,2026-10-26 19:00,2026-10-27 03:00,6,1
+Vessels,V-12-202,,Blind,12,2026-10-20 07:00,2026-10-20 19:00,1,1
+Vessels,V-12-202,,Open Manway/ install ventilation,12,2026-10-20 19:00,2026-10-21 07:00,2,1
+Vessels,V-12-202,,Erect internal scaffold,12,2026-10-21 07:00,2026-10-21 19:00,2,1
+Vessels,V-12-202,,HB& GB Shell ID,24,2026-10-21 19:00,2026-10-22 19:00,2,1
+Vessels,V-12-202,,Possible internal painting of the vessel with phenolic epoxy,36,2026-10-22 19:00,2026-10-24 07:00,4,1
+Vessels,V-12-202,,Remove Internal Scaffold,12,2026-10-24 07:00,2026-10-24 19:00,2,1
+Vessels,V-12-202,,Box-up & deblinding,8,2026-10-24 19:00,2026-10-25 03:00,6,1
+Vessels,V-12-206,,Blind,12,2026-10-20 07:00,2026-10-20 19:00,1,1
+Vessels,V-12-206,,Open Manway/ install ventilation,12,2026-10-20 19:00,2026-10-21 07:00,2,1
+Vessels,V-12-206,,Cleaning by Hydroblast,24,2026-10-21 07:00,2026-10-22 07:00,2,1
+Vessels,V-12-206,,Box-up & deblinding,8,2026-10-22 07:00,2026-10-22 15:00,6,1
+Vessels,V-12-210,,Blind,12,2026-10-20 07:00,2026-10-20 19:00,1,1
+Vessels,V-12-210,,Open Manway/ install ventilation,12,2026-10-20 19:00,2026-10-21 07:00,2,1
+Vessels,V-12-210,,Erect internal scaffold,12,2026-10-21 07:00,2026-10-21 19:00,2,1
+Vessels,V-12-210,,HB& GB Shell ID,24,2026-10-21 19:00,2026-10-22 19:00,2,1
+Vessels,V-12-210,,Possible internal painting of the vessel with phenolic epoxy,36,2026-10-22 19:00,2026-10-24 07:00,4,1
+Vessels,V-12-210,,Remove Internal Scaffold,12,2026-10-24 07:00,2026-10-24 19:00,2,1
+Vessels,V-12-210,,Box-up & deblinding,8,2026-10-24 19:00,2026-10-25 03:00,6,1
+Filters,F-12-202,A2610,Blind,12,2026-10-20 07:00,2026-10-20 19:00,1,1
+Filters,F-12-202,A4320,Open Filter element,24,2026-10-20 19:00,2026-10-21 19:00,2,1
+Filters,F-12-202,A4870,Hydroblasting Cleaning,36,2026-10-21 19:00,2026-10-23 07:00,2,1
+Filters,F-12-202,A5480,Inspection by Process,24,2026-10-23 07:00,2026-10-24 07:00,3,1
+Filters,F-12-202,A5700,Re-fix filter element (New),24,2026-10-24 07:00,2026-10-25 07:00,5,1
+Filters,F-12-202,A6000,Box-up,12,2026-10-25 07:00,2026-10-25 19:00,5,1
+Filters,F-12-202,A6290,Deblind & connect piping,12,2026-10-25 19:00,2026-10-26 07:00,6,1
+Filters,C-12-201-F-01B,,Blind,12,2026-10-20 07:00,2026-10-20 19:00,1,1
+Filters,C-12-201-F-01B,,Open Filter element,24,2026-10-20 19:00,2026-10-21 19:00,2,1
+Filters,C-12-201-F-01B,,Hydroblasting Cleaning,36,2026-10-21 19:00,2026-10-23 07:00,2,1
+Filters,C-12-201-F-01B,,Inspection by Process,24,2026-10-23 07:00,2026-10-24 07:00,3,1
+Filters,C-12-201-F-01B,,Re-fix filter element (New),24,2026-10-24 07:00,2026-10-25 07:00,5,1
+Filters,C-12-201-F-01B,,Box-up,12,2026-10-25 07:00,2026-10-25 19:00,5,1
+Filters,C-12-201-F-01B,,Deblind & connect piping,12,2026-10-25 19:00,2026-10-26 07:00,6,1
+Coolers / Tanks,P-12-203-E-01A,A9000,Install Blinds,12,2026-10-20 07:00,2026-10-20 19:00,1,1
+Coolers / Tanks,P-12-203-E-01A,A9010,Remove & Dismantle,4,2026-10-20 19:00,2026-10-20 23:00,2,1
+Coolers / Tanks,P-12-203-E-01A,A9020,"Clean bundle & shell internally, heads & parts",3,2026-10-20 23:00,2026-10-21 02:00,2,1
+Coolers / Tanks,P-12-203-E-01A,A9030,Offer for Rotating,8,2026-10-21 02:00,2026-10-21 10:00,3,1
+Coolers / Tanks,P-12-203-E-01A,A9040,Shell test at 225 psig,3,2026-10-21 10:00,2026-10-21 13:00,4,1
+Coolers / Tanks,P-12-203-E-01A,A9050,Tube test at 135 psig,6,2026-10-21 13:00,2026-10-21 19:00,4,1
+Coolers / Tanks,P-12-203-E-01A,A9060,Possible repair to internal / external painting,48,2026-10-21 19:00,2026-10-23 19:00,4,1
+Coolers / Tanks,P-12-203-E-01A,A9070,Remove blinds,12,2026-10-23 19:00,2026-10-24 07:00,2,1
+Coolers / Tanks,P-12-203-E-01B,A8920,Install Blinds,12,2026-10-20 07:00,2026-10-20 19:00,1,1
+Coolers / Tanks,P-12-203-E-01B,A8930,Remove & Dismantle,4,2026-10-20 19:00,2026-10-20 23:00,2,1
+Coolers / Tanks,P-12-203-E-01B,A8940,"Clean bundle & shell internally, heads & parts",3,2026-10-20 23:00,2026-10-21 02:00,2,1
+Coolers / Tanks,P-12-203-E-01B,A8950,Offer for Rotating,8,2026-10-21 02:00,2026-10-21 10:00,3,1
+Coolers / Tanks,P-12-203-E-01B,A8960,Shell test at 225 psig,3,2026-10-21 10:00,2026-10-21 13:00,4,1
+Coolers / Tanks,P-12-203-E-01B,A8970,Tube test at 135 psig,6,2026-10-21 13:00,2026-10-21 19:00,4,1
+Coolers / Tanks,P-12-203-E-01B,A8980,Possible repair to internal / external painting,48,2026-10-21 19:00,2026-10-23 19:00,4,1
+Coolers / Tanks,P-12-203-E-01B,A8990,Remove blinds,12,2026-10-23 19:00,2026-10-24 07:00,2,1
+Coolers / Tanks,P-12-205-TK-01,A9360,"Isolate, Drain & Blinding",8,2026-10-20 07:00,2026-10-20 15:00,1,1
+Coolers / Tanks,P-12-205-TK-01,A9370,Remove all the lube oil,6,2026-10-20 15:00,2026-10-20 21:00,2,1
+Coolers / Tanks,P-12-205-TK-01,A9380,Hydro blast cleaning,6,2026-10-20 21:00,2026-10-21 03:00,2,1
+Coolers / Tanks,P-12-205-TK-01,A9390,Offer for Inspection,8,2026-10-21 03:00,2026-10-21 11:00,3,1
+Coolers / Tanks,P-12-205-TK-01,A9400,Repair (if required),8,2026-10-21 11:00,2026-10-21 19:00,4,1
+Coolers / Tanks,P-12-205-TK-01,A9430,Box-up & De-blind,12,2026-10-21 19:00,2026-10-22 07:00,6,1
+CV shells,12-HV-0534,A3930,"Isolate, Drain & Blinding",8,2026-10-20 07:00,2026-10-20 15:00,1,1
+CV shells,12-HV-0534,A4280,Remove Shell,6,2026-10-20 15:00,2026-10-20 21:00,2,1
+CV shells,12-HV-0534,A4450,Clean Shell By HB,6,2026-10-20 21:00,2026-10-21 03:00,2,1
+CV shells,12-HV-0534,A4550,Offer for Inspection,8,2026-10-21 03:00,2026-10-21 11:00,3,1
+CV shells,12-HV-0534,A4800,Repair (if required),8,2026-10-21 11:00,2026-10-21 19:00,4,1
+CV shells,12-HV-0534,A4970,Painting (If required),8,2026-10-21 19:00,2026-10-22 03:00,4,1
+CV shells,12-HV-0534,A5050,Shell Hydrotest at 225 PSIG,8,2026-10-22 03:00,2026-10-22 11:00,4,1
+CV shells,12-HV-0534,A5220,Shell Fixing B ack,8,2026-10-22 11:00,2026-10-22 19:00,5,1
+CV shells,12-HV-0534,A5350,DeBlind,8,2026-10-22 19:00,2026-10-23 03:00,6,1
+CV shells,12-HV-0535,A5420,"Isolate, Drain & Blinding",8,2026-10-20 07:00,2026-10-20 15:00,1,1
+CV shells,12-HV-0535,A5560,Remove Shell,6,2026-10-20 15:00,2026-10-20 21:00,2,1
+CV shells,12-HV-0535,A5610,Clean Shell By HB,6,2026-10-20 21:00,2026-10-21 03:00,2,1
+CV shells,12-HV-0535,A5660,Offer for Inspection,8,2026-10-21 03:00,2026-10-21 11:00,3,1
+CV shells,12-HV-0535,A5790,Repair (if required),8,2026-10-21 11:00,2026-10-21 19:00,4,1
+CV shells,12-HV-0535,A5850,Painting (If required),8,2026-10-21 19:00,2026-10-22 03:00,4,1
+CV shells,12-HV-0535,A5950,Shell Hydrotest at 225 PSIG,8,2026-10-22 03:00,2026-10-22 11:00,4,1
+CV shells,12-HV-0535,A6180,Shell Fixing B ack,8,2026-10-22 11:00,2026-10-22 19:00,5,1
+CV shells,12-HV-0535,A6250,DeBlind,8,2026-10-22 19:00,2026-10-23 03:00,6,1
+CV shells,12-HV-0536,A6340,"Isolate, Drain & Blinding",8,2026-10-20 07:00,2026-10-20 15:00,1,1
+CV shells,12-HV-0536,A6460,Remove Shell,6,2026-10-20 15:00,2026-10-20 21:00,2,1
+CV shells,12-HV-0536,A6500,Clean Shell By HB,6,2026-10-20 21:00,2026-10-21 03:00,2,1
+CV shells,12-HV-0536,A6560,Offer for Inspection,8,2026-10-21 03:00,2026-10-21 11:00,3,1
+CV shells,12-HV-0536,A6590,Repair (if required),8,2026-10-21 11:00,2026-10-21 19:00,4,1
+CV shells,12-HV-0536,A6700,Painting (If required),8,2026-10-21 19:00,2026-10-22 03:00,4,1
+CV shells,12-HV-0536,A6800,Shell Hydrotest at 225 PSIG,8,2026-10-22 03:00,2026-10-22 11:00,4,1
+CV shells,12-HV-0536,A6850,Shell Fixing B ack,8,2026-10-22 11:00,2026-10-22 19:00,5,1
+CV shells,12-HV-0536,A7000,DeBlind,8,2026-10-22 19:00,2026-10-23 03:00,6,1
+CV shells,12-HV-0546A,A3940,"Isolate, Drain & Blinding",8,2026-10-20 07:00,2026-10-20 15:00,1,1
+CV shells,12-HV-0546A,A4290,Remove Shell,6,2026-10-20 15:00,2026-10-20 21:00,2,1
+CV shells,12-HV-0546A,A4460,Clean Shell By HB,6,2026-10-20 21:00,2026-10-21 03:00,2,1
+CV shells,12-HV-0546A,A4560,Offer for Inspection,8,2026-10-21 03:00,2026-10-21 11:00,3,1
+CV shells,12-HV-0546A,A4810,Repair (if required),8,2026-10-21 11:00,2026-10-21 19:00,4,1
+CV shells,12-HV-0546A,A4980,Painting (If required),8,2026-10-21 19:00,2026-10-22 03:00,4,1
+CV shells,12-HV-0546A,A5060,Shell Hydrotest at 225 PSIG,8,2026-10-22 03:00,2026-10-22 11:00,4,1
+CV shells,12-HV-0546A,A5230,Shell Fixing B ack,8,2026-10-22 11:00,2026-10-22 19:00,5,1
+CV shells,12-HV-0546A,A5360,DeBlind,8,2026-10-22 19:00,2026-10-23 03:00,6,1
+CV shells,12-HV-0546B,A5430,"Isolate, Drain & Blinding",8,2026-10-20 07:00,2026-10-20 15:00,1,1
+CV shells,12-HV-0546B,A5570,Remove Shell,6,2026-10-20 15:00,2026-10-20 21:00,2,1
+CV shells,12-HV-0546B,A5620,Clean Shell By HB,6,2026-10-20 21:00,2026-10-21 03:00,2,1
+CV shells,12-HV-0546B,A5670,Offer for Inspection,8,2026-10-21 03:00,2026-10-21 11:00,3,1
+CV shells,12-HV-0546B,A5800,Repair (if required),8,2026-10-21 11:00,2026-10-21 19:00,4,1
+CV shells,12-HV-0546B,A5860,Painting (If required),8,2026-10-21 19:00,2026-10-22 03:00,4,1
+CV shells,12-HV-0546B,A5960,Shell Hydrotest at 225 PSIG,8,2026-10-22 03:00,2026-10-22 11:00,4,1
+CV shells,12-HV-0546B,A6190,Shell Fixing B ack,8,2026-10-22 11:00,2026-10-22 19:00,5,1
+CV shells,12-HV-0546B,A6260,DeBlind,8,2026-10-22 19:00,2026-10-23 03:00,6,1
+CV shells,12-HV-0548B,A6350,"Isolate, Drain & Blinding",8,2026-10-20 07:00,2026-10-20 15:00,1,1
+CV shells,12-HV-0548B,A6470,Remove Shell,6,2026-10-20 15:00,2026-10-20 21:00,2,1
+CV shells,12-HV-0548B,A6510,Clean Shell By HB,6,2026-10-20 21:00,2026-10-21 03:00,2,1
+CV shells,12-HV-0548B,A6570,Offer for Inspection,8,2026-10-21 03:00,2026-10-21 11:00,3,1
+CV shells,12-HV-0548B,A6600,Repair (if required),8,2026-10-21 11:00,2026-10-21 19:00,4,1
+CV shells,12-HV-0548B,A6710,Painting (If required),8,2026-10-21 19:00,2026-10-22 03:00,4,1
+CV shells,12-HV-0548B,A6810,Shell Hydrotest at 225 PSIG,8,2026-10-22 03:00,2026-10-22 11:00,4,1
+CV shells,12-HV-0548B,A6860,Shell Fixing B ack,8,2026-10-22 11:00,2026-10-22 19:00,5,1
+CV shells,12-HV-0548B,A7010,DeBlind,8,2026-10-22 19:00,2026-10-23 03:00,6,1
+CV shells,12-HV-0548,A3950,"Isolate, Drain & Blinding",8,2026-10-20 07:00,2026-10-20 15:00,1,1
+CV shells,12-HV-0548,A4300,Remove Shell,6,2026-10-20 15:00,2026-10-20 21:00,2,1
+CV shells,12-HV-0548,A4470,Clean Shell By HB,6,2026-10-20 21:00,2026-10-21 03:00,2,1
+CV shells,12-HV-0548,A4570,Offer for Inspection,8,2026-10-21 03:00,2026-10-21 11:00,3,1
+CV shells,12-HV-0548,A4820,Repair (if required),8,2026-10-21 11:00,2026-10-21 19:00,4,1
+CV shells,12-HV-0548,A4990,Painting (If required),8,2026-10-21 19:00,2026-10-22 03:00,4,1
+CV shells,12-HV-0548,A5070,Shell Hydrotest at 225 PSIG,8,2026-10-22 03:00,2026-10-22 11:00,4,1
+CV shells,12-HV-0548,A5240,Shell Fixing B ack,8,2026-10-22 11:00,2026-10-22 19:00,5,1
+CV shells,12-HV-0548,A5370,DeBlind,8,2026-10-22 19:00,2026-10-23 03:00,6,1
+CV shells,12-HV-0580,A3960,"Isolate, Drain & Blinding",8,2026-10-20 07:00,2026-10-20 15:00,1,1
+CV shells,12-HV-0580,A4310,Remove Shell,6,2026-10-20 15:00,2026-10-20 21:00,2,1
+CV shells,12-HV-0580,A4480,Clean Shell By HB,6,2026-10-20 21:00,2026-10-21 03:00,2,1
+CV shells,12-HV-0580,A4580,Offer for Inspection,8,2026-10-21 03:00,2026-10-21 11:00,3,1
+CV shells,12-HV-0580,A4830,Repair (if required),8,2026-10-21 11:00,2026-10-21 19:00,4,1
+CV shells,12-HV-0580,A5000,Painting (If required),8,2026-10-21 19:00,2026-10-22 03:00,4,1
+CV shells,12-HV-0580,A5080,Shell Hydrotest at 214 PSIG,8,2026-10-22 03:00,2026-10-22 11:00,4,1
+CV shells,12-HV-0580,A5250,Shell Fixing B ack,8,2026-10-22 11:00,2026-10-22 19:00,5,1
+CV shells,12-HV-0580,A5380,DeBlind,8,2026-10-22 19:00,2026-10-23 03:00,6,1
+CV shells,12-LV-0531,A6360,"Isolate, Drain & Blinding",8,2026-10-20 07:00,2026-10-20 15:00,1,1
+CV shells,12-LV-0531,A6480,Remove Shell,6,2026-10-20 15:00,2026-10-20 21:00,2,1
+CV shells,12-LV-0531,A6520,Clean Shell By HB,6,2026-10-20 21:00,2026-10-21 03:00,2,1
+CV shells,12-LV-0531,A6580,Offer for Inspection,8,2026-10-21 03:00,2026-10-21 11:00,3,1
+CV shells,12-LV-0531,A6610,Repair (if required),8,2026-10-21 11:00,2026-10-21 19:00,4,1
+CV shells,12-LV-0531,A6720,Painting (If required),8,2026-10-21 19:00,2026-10-22 03:00,4,1
+CV shells,12-LV-0531,A6820,Shell Hydrotest at 300 PSIG,8,2026-10-22 03:00,2026-10-22 11:00,4,1
+CV shells,12-LV-0531,A6870,Shell Fixing B ack,8,2026-10-22 11:00,2026-10-22 19:00,5,1
+CV shells,12-LV-0531,A7020,DeBlind,8,2026-10-22 19:00,2026-10-23 03:00,6,1
+CV shells,12-LV-0553B,A8000,"Isolate, Drain & Blinding",8,2026-10-20 07:00,2026-10-20 15:00,1,1
+CV shells,12-LV-0553B,A8010,Remove Shell,6,2026-10-20 15:00,2026-10-20 21:00,2,1
+CV shells,12-LV-0553B,A8020,Clean Shell By HB,6,2026-10-20 21:00,2026-10-21 03:00,2,1
+CV shells,12-LV-0553B,A8030,Offer for Inspection,8,2026-10-21 03:00,2026-10-21 11:00,3,1
+CV shells,12-LV-0553B,A8040,Repair (if required),8,2026-10-21 11:00,2026-10-21 19:00,4,1
+CV shells,12-LV-0553B,A8050,Painting (If required),8,2026-10-21 19:00,2026-10-22 03:00,4,1
+CV shells,12-LV-0553B,A8060,Shell Hydrotest at 300 PSIG,8,2026-10-22 03:00,2026-10-22 11:00,4,1
+CV shells,12-LV-0553B,A8070,Shell Fixing B ack,8,2026-10-22 11:00,2026-10-22 19:00,5,1
+CV shells,12-LV-0553B,A8080,DeBlind,8,2026-10-22 19:00,2026-10-23 03:00,6,1
+CV shells,C-12-201-TK-03,A8180,"Isolate, Drain & Blinding",8,2026-10-20 07:00,2026-10-20 15:00,1,1
+CV shells,C-12-201-TK-03,A8190,Remove Shell,6,2026-10-20 15:00,2026-10-20 21:00,2,1
+CV shells,C-12-201-TK-03,A8200,Clean Shell By HB,6,2026-10-20 21:00,2026-10-21 03:00,2,1
+CV shells,C-12-201-TK-03,A8210,Offer for Inspection,8,2026-10-21 03:00,2026-10-21 11:00,3,1
+CV shells,C-12-201-TK-03,A8220,Repair (if required),8,2026-10-21 11:00,2026-10-21 19:00,4,1
+CV shells,C-12-201-TK-03,A8230,Painting (If required),8,2026-10-21 19:00,2026-10-22 03:00,4,1
+CV shells,C-12-201-TK-03,A8250,Shell Fixing B ack,8,2026-10-22 03:00,2026-10-22 11:00,5,1
+CV shells,C-12-201-TK-03,A8260,DeBlind,8,2026-10-22 11:00,2026-10-22 19:00,6,1
+PSVs,12-PSV-0519,A8085,IS OLATE AND REMOVE PSV TO SHOP,120,2026-10-20 07:00,2026-10-25 07:00,2,1
+PSVs,12-PSV-0519,A8090,INSTALL BLIND ON FLANGE OR PIPE PLUG IF THREADED,120,2026-10-25 07:00,2026-10-30 07:00,1,1
+PSVs,12-PSV-0519,A8100,REMOVE BLIND AND INSTALL PSV,120,2026-10-30 07:00,2026-11-04 07:00,6,1
+PSVs,12-PSV-0537,A8130,IS OLATE AND REMOVE PSV TO SHOP,120,2026-10-20 07:00,2026-10-25 07:00,2,1
+PSVs,12-PSV-0537,A8140,INSTALL BLIND ON FLANGE OR PIPE PLUG IF THREADED,120,2026-10-25 07:00,2026-10-30 07:00,1,1
+PSVs,12-PSV-0537,A8142,REMOVE BLIND AND INSTALL PSV,120,2026-10-30 07:00,2026-11-04 07:00,6,1
+PSVs,12-PSV-0601,A4130,IS OLATE AND REMOVE PSV TO SHOP,120,2026-10-20 07:00,2026-10-25 07:00,2,1
+PSVs,12-PSV-0601,A6220,INSTALL BLIND ON FLANGE OR PIPE PLUG IF THREADED,120,2026-10-25 07:00,2026-10-30 07:00,1,1
+PSVs,12-PSV-0601,A7460,REMOVE BLIND AND INSTALL PSV,120,2026-10-30 07:00,2026-11-04 07:00,6,1
+PSVs,12-PSV-0643,A3220,IS OLATE AND REMOVE PSV TO SHOP,120,2026-10-20 07:00,2026-10-25 07:00,2,1
+PSVs,12-PSV-0643,A6070,INSTALL BLIND ON FLANGE OR PIPE PLUG IF THREADED,120,2026-10-25 07:00,2026-10-30 07:00,1,1
+PSVs,12-PSV-0643,A7450,REMOVE BLIND AND INSTALL PSV,120,2026-10-30 07:00,2026-11-04 07:00,6,1
+PSVs,12-PSV-0719,A2670,IS OLATE AND REMOVE PSV TO SHOP,120,2026-10-20 07:00,2026-10-25 07:00,2,1
+PSVs,12-PSV-0719,A6020,INSTALL BLIND ON FLANGE OR PIPE PLUG IF THREADED,120,2026-10-25 07:00,2026-10-30 07:00,1,1
+PSVs,12-PSV-0719,A7410,REMOVE BLIND AND INSTALL PSV,120,2026-10-30 07:00,2026-11-04 07:00,6,1
+PSVs,12-PSV-1322,A2560,IS OLATE AND REMOVE PSV TO SHOP,120,2026-10-20 07:00,2026-10-25 07:00,2,1
+PSVs,12-PSV-1322,A5980,INSTALL BLIND ON FLANGE OR PIPE PLUG IF THREADED,120,2026-10-25 07:00,2026-10-30 07:00,1,1
+PSVs,12-PSV-1322,A7400,REMOVE BLIND AND INSTALL PSV,120,2026-10-30 07:00,2026-11-04 07:00,6,1
+PSVs,12-PSV-1339,A3040,IS OLATE AND REMOVE PSV TO SHOP,120,2026-10-20 07:00,2026-10-25 07:00,2,1
+PSVs,12-PSV-1339,A6050,INSTALL BLIND ON FLANGE OR PIPE PLUG IF THREADED,60,2026-10-25 07:00,2026-10-27 19:00,1,1
+PSVs,12-PSV-1339,A6760,REMOVE BLIND AND INSTALL PSV,60,2026-10-27 19:00,2026-10-30 07:00,6,1
+PSVs,12-PSV-1403,,IS OLATE AND REMOVE PSV TO SHOP,120,2026-10-20 07:00,2026-10-25 07:00,2,1
+PSVs,12-PSV-1403,,INSTALL BLIND ON FLANGE OR PIPE PLUG IF THREADED,60,2026-10-25 07:00,2026-10-27 19:00,1,1
+PSVs,12-PSV-1403,,REMOVE BLIND AND INSTALL PSV,60,2026-10-27 19:00,2026-10-30 07:00,6,1
+PSVs,12-PSV-1404,,IS OLATE AND REMOVE PSV TO SHOP,120,2026-10-20 07:00,2026-10-25 07:00,2,1
+PSVs,12-PSV-1404,,INSTALL BLIND ON FLANGE OR PIPE PLUG IF THREADED,60,2026-10-25 07:00,2026-10-27 19:00,1,1
+PSVs,12-PSV-1404,,REMOVE BLIND AND INSTALL PSV,60,2026-10-27 19:00,2026-10-30 07:00,6,1
+Check valves,12-VC-0105,A3080,Isolate / Blind,48,2026-10-20 07:00,2026-10-22 07:00,1,1
+Check valves,12-VC-0105,A5120,Neutralization,48,2026-10-22 07:00,2026-10-24 07:00,1,1
+Check valves,12-VC-0105,A5720,Remove to Service at Shop,48,2026-10-24 07:00,2026-10-26 07:00,2,1
+Check valves,12-VC-0105,A6390,Hydrotest (2860 psig),48,2026-10-26 07:00,2026-10-28 07:00,4,1
+Check valves,12-VC-0105,A6880,De-Blind,48,2026-10-28 07:00,2026-10-30 07:00,6,1
+Check valves,12-VC-0106,A3100,Isolate / Blind,48,2026-10-20 07:00,2026-10-22 07:00,1,1
+Check valves,12-VC-0106,A5140,Neutralization,48,2026-10-22 07:00,2026-10-24 07:00,1,1
+Check valves,12-VC-0106,A5740,Remove to Service at Shop,48,2026-10-24 07:00,2026-10-26 07:00,2,1
+Check valves,12-VC-0106,A6410,Hydrotest (2860 psig),48,2026-10-26 07:00,2026-10-28 07:00,4,1
+Check valves,12-VC-0106,A6900,De-Blind,48,2026-10-28 07:00,2026-10-30 07:00,6,1
+Check valves,12-VC-0107,A3110,Isolate / Blind,48,2026-10-20 07:00,2026-10-22 07:00,1,1
+Check valves,12-VC-0107,A5150,Neutralization,48,2026-10-22 07:00,2026-10-24 07:00,1,1
+Check valves,12-VC-0107,A5750,Remove to Service at Shop,48,2026-10-24 07:00,2026-10-26 07:00,2,1
+Check valves,12-VC-0107,A6420,Hydrotest (2200 psig),48,2026-10-26 07:00,2026-10-28 07:00,4,1
+Check valves,12-VC-0107,A6910,De-Blind,48,2026-10-28 07:00,2026-10-30 07:00,6,1
+Check valves,12-VC-0108,A3090,Isolate / Blind,48,2026-10-20 07:00,2026-10-22 07:00,1,1
+Check valves,12-VC-0108,A5130,Neutralization,48,2026-10-22 07:00,2026-10-24 07:00,1,1
+Check valves,12-VC-0108,A5730,Remove to Service at Shop,48,2026-10-24 07:00,2026-10-26 07:00,2,1
+Check valves,12-VC-0108,A6400,Hydrotest (2200 psig),48,2026-10-26 07:00,2026-10-28 07:00,4,1
+Check valves,12-VC-0108,A6890,De-Blind,48,2026-10-28 07:00,2026-10-30 07:00,6,1
+Process piping,WP-12-2017-HRE5-1,A2570,Service the check valves in the injection water spools to H-12-101 & carry,120,2026-10-20 07:00,2026-10-25 07:00,,1
+Process piping,P-12-2057-HRW1,A2580,Erect complete Scaffolding TO CARRY OUT 100% UT Scanning of pipe,120,2026-10-20 07:00,2026-10-25 07:00,2,1
+Process piping,P-12-2057-HRW1,A6030,X-ray / Radiography of 25% butt weld joints,120,2026-10-25 07:00,2026-10-30 07:00,4,1
+Process piping,P-12-2059&P-12-2065,A2590,Erect complete scaffolding to carry out 100% UT,120,2026-10-20 07:00,2026-10-25 07:00,2,1
+Process piping,P-12-2059&P-12-2065,A6040,RT for all weld joints for both lines,120,2026-10-25 07:00,2026-10-30 07:00,4,1
+Process piping,P-12-2059&P-12-2065,A2640,"Scaffolding, Crane/baskets etc. for thickness survey shall be provided as",120,2026-10-20 07:00,2026-10-25 07:00,2,1
+Process piping,P-12-2059&P-12-2065,A2650,"Insulation removal, cleaning of welds by wire brush / buffing for carrying out",120,2026-10-20 07:00,2026-10-25 07:00,4,1
+RTJ / Inspection,RTJ / Inspection,A2600,"Provide access / Scaffolding, as required",120,2026-10-20 07:00,2026-10-25 07:00,2,1
+RTJ / Inspection,RTJ / Inspection,A5990,"Remove insulation, Open flanges, Clean & Offer for inspection & NDT",240,2026-10-25 07:00,2026-11-04 07:00,3,1
+RTJ / Inspection,Injection Nozzles,A3120,"open all the injection nozzles , clean the pipe section and offer for LP check",8,2026-10-20 07:00,2026-10-20 15:00,3,1
+RTJ / Inspection,Pressure Gauges,A3130,Use calibrated pressure gauges with tag numbers for all hydro static,8,2026-10-20 07:00,2026-10-20 15:00,,1
+RTJ / Inspection,Thermowells,A3140,"Open thermowells as per list, clean & offer for inspection,NDT & hydrotest.",8,2026-10-20 07:00,2026-10-20 15:00,4,1
+RTJ / Inspection,Neutralization,A3150,Neutralized using 2% Soda Ash solution and shall be completely drained.,8,2026-10-20 07:00,2026-10-20 15:00,1,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1000 H-201 Injection Water PSV-537 Clamp to be removed.,8,2026-10-20 07:00,2026-10-20 15:00,2,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1001 FT-547 Flange Gasket to be replaced.,8,2026-10-20 07:00,2026-10-20 15:00,4,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1002 TV-607 last BV stem damage. To be attended,8,2026-10-20 07:00,2026-10-20 15:00,,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1003 TRS-29 non Operating BVs to be replaced and Steam trap leak to be,8,2026-10-20 07:00,2026-10-20 15:00,4,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1004 H-201/202 FG Line to steam flushing to be done.,8,2026-10-20 07:00,2026-10-20 15:00,1,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1005 H-201/202 all burners air registers to be serviced.,8,2026-10-20 07:00,2026-10-20 15:00,,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1006 H-201/202 burner to be cleaned.,8,2026-10-20 07:00,2026-10-20 15:00,2,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1007 V-236 sample drain DX line to be dechocked.,8,2026-10-20 07:00,2026-10-20 15:00,,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1008 TV-667 u/s Flange gasket to be replaced.,8,2026-10-20 07:00,2026-10-20 15:00,4,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1009 V-206 LT bridle to be cleaned.,8,2026-10-20 07:00,2026-10-20 15:00,2,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1010 V-206 to be cleaned from out side.,8,2026-10-20 07:00,2026-10-20 15:00,2,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1011 C-201/P-203/P -205 suction strainers to be cleaned,8,2026-10-20 07:00,2026-10-20 15:00,2,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1012 C-201/P-203 lube oil pumps suction strainer to be cleaned,8,2026-10-20 07:00,2026-10-20 15:00,2,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,"OPlist-1013 HV-580 u/s, d/s and bypass block valve to be serviced at location.",8,2026-10-20 07:00,2026-10-20 15:00,,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1014 FV-1426 Down stream check valve servicing and hydrotest to be done.,8,2026-10-20 07:00,2026-10-20 15:00,4,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1015 FV-1427 Down stream check valve servicing and hydrotest to be done.,8,2026-10-20 07:00,2026-10-20 15:00,4,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1016 FV-548 Down stream check valve servicing and hydrotest to be done.,8,2026-10-20 07:00,2026-10-20 15:00,4,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1017 XV-542 Down stream check valve servicing and hydrotest to be done.,8,2026-10-20 07:00,2026-10-20 15:00,4,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1018 C-201 to V-12-126 BV (3 nos) to be serviced.,8,2026-10-20 07:00,2026-10-20 15:00,,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1019 V-207 to V-12-126 BV (2 nos) to be serviced.,8,2026-10-20 07:00,2026-10-20 15:00,,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1020 T-201 PDT steam flushing to be done,8,2026-10-20 07:00,2026-10-20 15:00,1,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1021 Injection water to H-201 check valves to be serviced.,8,2026-10-20 07:00,2026-10-20 15:00,,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1022 Injection Water line from B/L to H-201 inlet steam flushing to be done,8,2026-10-20 07:00,2026-10-20 15:00,1,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,"OPlist-1023 H-201 pass 3 & 4 injection water spool, block valve, check valve & Control",8,2026-10-20 07:00,2026-10-20 15:00,,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1024 Catalyst addition and withdrawal lines hydroblast cleaning to be done.,8,2026-10-20 07:00,2026-10-20 15:00,2,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1025 F-202 PDT steam flushing to be done,8,2026-10-20 07:00,2026-10-20 15:00,1,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1026 C-201 Turbine Insulation to be replaced,8,2026-10-20 07:00,2026-10-20 15:00,4,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1027 KV-1B and KV-2B passing to be checked,8,2026-10-20 07:00,2026-10-20 15:00,,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1028 KV-6B and KV-11B line to be dechocked,8,2026-10-20 07:00,2026-10-20 15:00,,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1029 V-212 LI-598 HP lead line root valve passing to be rectified.,8,2026-10-20 07:00,2026-10-20 15:00,,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1030 P-203 seal flushing line strainer to be cleanned,8,2026-10-20 07:00,2026-10-20 15:00,2,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1031 P-204/P-206 seal flushing line to be dechocked,8,2026-10-20 07:00,2026-10-20 15:00,1,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1032 C-201 HC-585 ENABLE alarm to be checked,8,2026-10-20 07:00,2026-10-20 15:00,,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1033 C-201 SAH-623 Alarm to be checked,8,2026-10-20 07:00,2026-10-20 15:00,,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1034 R-205 skin temperature TIX 2139/2127 to be checked,8,2026-10-20 07:00,2026-10-20 15:00,,1
+OPR list,OPR LIST MISC. ITEMS as per list (36 nos),,OPlist-1035 LV 553B Passing to be attended,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Instrument,CARRY OUT INSTRUMENT WORKSHOP JOBS,A2440,Indicators - 5 Nos. as per list,360,2026-10-20 07:00,2026-11-04 07:00,,1
+Instrument,CARRY OUT INSTRUMENT WORKSHOP JOBS,A2450,Switches - 37 Nos as per list,360,2026-10-20 07:00,2026-11-04 07:00,,1
+Instrument,CARRY OUT INSTRUMENT WORKSHOP JOBS,A2460,Control Valves - 67 Nos. as per list (For KOMC/IWS Service),360,2026-10-20 07:00,2026-11-04 07:00,,1
+Instrument,CARRY OUT INSTRUMENT WORKSHOP JOBS,A2470,Regulator - 10 Nos. as per list,360,2026-10-20 07:00,2026-11-04 07:00,,1
+Instrument,CARRY OUT INSTRUMENT WORKSHOP JOBS,A2480,Transmitter- 32 Nos. as per list,360,2026-10-20 07:00,2026-11-04 07:00,,1
+Instrument,CARRY OUT INSTRUMENT WORKSHOP JOBS,A2910,Thermowells 23 Nos as per list (Workshop Job),360,2026-10-20 07:00,2026-11-04 07:00,,1
+Instrument,CARRY OUT INSTRUMENT WORKSHOP JOBS,A9160,Flow Elements - 14 Nos (Field),360,2026-10-20 07:00,2026-11-04 07:00,,1
+Instrument,CARRY OUT INSTRUMENT WORKSHOP JOBS,A9240,Solenoid Valve,360,2026-10-20 07:00,2026-11-04 07:00,,1
+Misc,MISCELLANEOUS JOBS WITH OTHER DEPT.,A2680,Field Maintenance as per list,360,2026-10-20 07:00,2026-11-04 07:00,,1
+Misc,Steam Flushing Job prior to Start-up,A3160,15 jobs as per list,360,2026-10-20 07:00,2026-11-04 07:00,,1
+Rotating,C-12-201,A3750,Complete Compressor Overhauling And Rotor Replacement,360,2026-10-20 07:00,2026-11-04 07:00,4,1
+Rotating,C-12-201,A6630,Cleaning Compressor Suction Line Downstream Of Compressor Suction,72,2026-10-20 07:00,2026-10-23 07:00,2,1
+Rotating,C-12-201,A7430,Comp Suc Drum Inspection And Demister Cleaning,48,2026-10-20 07:00,2026-10-22 07:00,2,1
+Rotating,C-12-201,A7630,Compressor Suction Strainer Cleaning,24,2026-10-20 07:00,2026-10-21 07:00,2,1
+Rotating,C-12-201,A7690,Both Lube Oil Cooler To Be Cleaned,48,2026-10-20 07:00,2026-10-22 07:00,2,1
+Rotating,C-12-201,A7700,Both Lube Oil Filter And Drygas Filter To Be Cleaned,24,2026-10-20 07:00,2026-10-21 07:00,2,1
+Rotating,C-12-201-ST,A3760,"Complete Steam Turbine Overhauling, Solo Run And Check The",360,2026-10-20 07:00,2026-11-04 07:00,,1
+Rotating,C-12-201-ST,A3765,Insulation To Be Check & Replace If Required.,60,2026-10-20 07:00,2026-10-22 19:00,4,1
+Rotating,C-12-201-ST,A3768,Gland Condenser Cleaning,60,2026-10-20 07:00,2026-10-22 19:00,2,1
+Rotating,C-12-201-ST,A3769,Check The Condition Of Gland Condenser Ejector,60,2026-10-20 07:00,2026-10-22 19:00,,1
+Rotating,C-12-201-ST,A3771,Check The Functioning Of Turbine Overspeed System. (For Turbines With,72,2026-10-20 07:00,2026-10-23 07:00,,1
+Rotating,C-12-201-ST,A6640,Check The Governing System Linkages For Freeness.,72,2026-10-20 07:00,2026-10-23 07:00,,1
+Rotating,C-12-201 LO system,A8580,Check The N2 Pre-Charge Pressure In Bladder Accumulator,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Rotating,C-12-201 LO system,A8590,Clean The Lube Oil Reservoir And Put Fresh Oil,8,2026-10-20 15:00,2026-10-20 23:00,2,1
+Rotating,C-12-201 LO system,A8600,Check The Auxiliary Oil Pump Auto Cut-In,8,2026-10-20 23:00,2026-10-21 07:00,,1
+Rotating,C-12-201 LO system,A8610,Replace Lube Oil For Pump And Turbine Bearings,8,2026-10-21 07:00,2026-10-21 15:00,4,1
+Rotating,C-12-201 LO system,A8620,Replace Bearing Housing Oil And Clean Cooling Water Jacket.,8,2026-10-21 15:00,2026-10-21 23:00,4,1
+Rotating,C-12-201 LO system,A8630,For Mechanical Woodward Governor Drain Oil And Re-Fill With Fresh Oil.,8,2026-10-21 23:00,2026-10-22 07:00,,1
+Rotating,C-12-201 LO system,A8640,Check The Governing System Linkages For Freeness,8,2026-10-22 07:00,2026-10-22 15:00,,1
+Rotating,C-12-201 LO system,A8650,Solo Run And Check The Overspeed Trip,8,2026-10-22 15:00,2026-10-22 23:00,,1
+Rotating,P-12-203,A3560,Both Lube Oil Cooler Cleaning,240,2026-10-20 07:00,2026-10-30 07:00,2,1
+Rotating,P-12-203,A3570,Both Lube Oil Filter Cleaning (RE),240,2026-10-20 07:00,2026-10-30 07:00,2,1
+Rotating,P-12-203,A3580,Check The Auxiliary Oil Pump Auto Cut-In,240,2026-10-20 07:00,2026-10-30 07:00,,1
+Rotating,P-12-203,A3590,Pump Suc Strainer Cleaning,240,2026-10-20 07:00,2026-10-30 07:00,2,1
+Rotating,P-12-203,A8660,Clean The Lube Oil Reservoir And Put Fresh Oil,240,2026-10-20 07:00,2026-10-30 07:00,2,1
+Rotating,P-12-205,A8299,Both Lube Oil Filter Cleaning (RE),240,2026-10-20 07:00,2026-10-30 07:00,2,1
+Rotating,P-12-205,A8301,Pump Suc Strainer Cleaning,240,2026-10-20 07:00,2026-10-30 07:00,2,1
+Rotating,P-12-205,A8302,Check The Auxiliary Oil Pump Auto Cut-In,240,2026-10-20 07:00,2026-10-30 07:00,,1
+Rotating,P-12-205,A8320,Clean The Lube Oil Reservoir And Put Fresh Oil,240,2026-10-20 07:00,2026-10-30 07:00,2,1
+Rotating,P-12-207A/B,A3770,Pump Suc Line & Suc Stainer Cleaning,8,2026-10-20 07:00,2026-10-20 15:00,2,1
+Rotating,P-12-207A/B,A4270,Pump Suction Vessel Cleaning,8,2026-10-20 15:00,2026-10-20 23:00,2,1
+Rotating,P-12-207A/B,A4510,Pump Disc Line NRV To B e Checked,8,2026-10-20 23:00,2026-10-21 07:00,,1
+Rotating,P-12-207A/B,A8670,Gear Box Axial To Be Checked,8,2026-10-21 07:00,2026-10-21 15:00,,1
+Rotating,GENERAL SERVICE OF SKID,A3650,P-12-207 A/B,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Rotating,GENERAL SERVICE OF SKID,A4260,P-12-204 A/B,8,2026-10-20 15:00,2026-10-20 23:00,,1
+Rotating,GENERAL SERVICE OF SKID,A4660,P-12-202,8,2026-10-20 23:00,2026-10-21 07:00,,1
+Rotating,GENERAL SERVICE OF SKID,A4860,P-12-206 A/B,8,2026-10-21 07:00,2026-10-21 15:00,,1
+Rotating,H-201/202 damper,A5040,Servicing Of Damper Of Heater H-12-201/202,8,2026-10-21 15:00,2026-10-21 23:00,,1
+Rotating,P-12-207A/B,A5270,De-Couple & Couple Of Motors As Per Electrical request,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Rotating,P-12-207A/B,A5400,All The NRV To Be Check,8,2026-10-20 15:00,2026-10-20 23:00,,1
+Rotating,P-12-207A/B,A5500,All The Lubricator To Be Check & Check The Gear Box,8,2026-10-20 23:00,2026-10-21 07:00,,1
+Electrical,Electrical,A2410,Site Servicing of the following HT motors. ( 2 nos).,360,2026-10-20 07:00,2026-11-04 07:00,,1
+Electrical,Electrical,A2420,LT Motor (19nos.) along with maint. on switchgear & respective push button,360,2026-10-20 07:00,2026-11-04 07:00,,1
+Electrical,Electrical,A2430,Motors to be Overhauled (6 Nos),360,2026-10-20 07:00,2026-11-04 07:00,,1
+Electrical,Electrical,A2490,MOVs-17 Nos. as per list with maintenance of their respective cubicle &,360,2026-10-20 07:00,2026-11-04 07:00,,1
+Electrical,Electrical,A2500,Heaters - 3 Nos as per list with maintenance of their switchgear feeders,360,2026-10-20 07:00,2026-11-04 07:00,,1
+Electrical,Electrical,A2510,LT Panels - 3 Nos as per list - Maintenance of their Transformers and,360,2026-10-20 07:00,2026-11-04 07:00,,1
+Electrical,Electrical,A2540,Replacement of damaged flexible conduits and connectors,360,2026-10-20 07:00,2026-11-04 07:00,4,1
+Electrical,Electrical,A2545,Arranging hand lamps and temporary power supply for shutdown jobs as,360,2026-10-20 07:00,2026-11-04 07:00,,1
+Electrical,Electrical,A9250,Assist with Instrument crew to removal of BTS for calibration (P-12-205,360,2026-10-20 07:00,2026-11-04 07:00,2,1
+Electrical,P-203/205 HT motors,A2730,Site Servicing of HT motors,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A4250,maintenance on switchgears,8,2026-10-20 15:00,2026-10-20 23:00,,1
+Electrical,P-203/205 HT motors,A4490,local push button station,8,2026-10-20 23:00,2026-10-21 07:00,,1
+Electrical,P-203/205 HT motors,A4650,replacement of bearing oil,8,2026-10-21 07:00,2026-10-21 15:00,4,1
+Electrical,P-203/205 HT motors,A4850,functional test,8,2026-10-21 15:00,2026-10-21 23:00,,1
+Electrical,P-203/205 HT motors,A5030,Measuring Winding & Insulation Resistance.,8,2026-10-21 23:00,2026-10-22 07:00,,1
+Electrical,P-203/205 HT motors,A2740,P-12-202 -M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A2750,P-12-203 P1 B-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A3170,P-12-204-B-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A3180,P-12-205 P2-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A3230,P-12-206-A-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A3240,P-12-207-A-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A3250,P-12-207-B-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A3260,P-12-207 P1 B-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A3270,P-12-207 P2 B-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A3280,EA-12-201-A1-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A3290,EA-12-201-A2-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A3300,EA-12-201-B1-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A3310,EA-12-201-B2-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A3320,EA-12-201-C1-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A3330,EA-12-201-C2-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A3340,EA-12-201-D1-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A3350,EA-12-201-D2-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A3360,C-12-201 P1B-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,P-203/205 HT motors,A3370,C-12-201 CL1-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Motors to be overhauled (6 nos),A2760,P-12-204-A-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Motors to be overhauled (6 nos),A2770,P-12-206-B-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Motors to be overhauled (6 nos),A2780,P-12-207 P1 A-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Motors to be overhauled (6 nos),A2790,P-12-207 P2 A-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Motors to be overhauled (6 nos),A2800,LB-12-201-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Motors to be overhauled (6 nos),A8270,LB-12-202-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for MOV's (17 nos),A2810,MOV – 12 – 501-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for MOV's (17 nos),A2820,MOV – 12 – 502-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for MOV's (17 nos),A2830,MOV – 12 – 503-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for MOV's (17 nos),A3390,MOV – 12 – 504-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for MOV's (17 nos),A3400,MOV – 12 – 505-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for MOV's (17 nos),A3410,MOV – 12 – 506-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for MOV's (17 nos),A3420,MOV – 12 – 507-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for MOV's (17 nos),A3430,MOV – 12 – 530-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for MOV's (17 nos),A3440,MOV – 12 – 531-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for MOV's (17 nos),A3450,MOV – 12 – 532-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for MOV's (17 nos),A3460,MOV – 12 – 534-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for MOV's (17 nos),A3470,MOV – 12 – 535-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for MOV's (17 nos),A3480,MOV – 12 – 536-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for MOV's (17 nos),A3490,MOV – 12 – 537-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for MOV's (17 nos),A3500,MOV – 12 – 540-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for MOV's (17 nos),A3510,MOV – 12 – 544-M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for MOV's (17 nos),A3520,MOV – 12 – 545 M,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for Heaters (3 nos),A3530,C-12-201 E2-HT,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for Heaters (3 nos),A3540,P-12-203 E2-HT,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site Service for Heaters (3 nos),A3550,P-12-205 E2-HT,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site servicing: LT Panels (5 Nos) maint. Tran,A2840,LP-12-03,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site servicing: LT Panels (5 Nos) maint. Tran,A2850,LP-12-A3,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site servicing: LT Panels (5 Nos) maint. Tran,A2860,RP-12-04,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site servicing: LT Panels (5 Nos) maint. Tran,A8280,EP-12-09,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Site servicing: LT Panels (5 Nos) maint. Tran,A8290,PP-12-16,8,2026-10-20 07:00,2026-10-20 15:00,,1
+Electrical,Miscellaneous Jobs. Replacement of conduits a,A2870,Replacement of missing and damaged flexible conduits & connectors,8,2026-10-20 07:00,2026-10-20 15:00,4,1
+Electrical,Miscellaneous Jobs. Replacement of conduits a,A2880,Assist with Instrument crew to removal of BTS for calibration (P-12-205 and,8,2026-10-20 07:00,2026-10-20 15:00,2,1
+Electrical,Miscellaneous Jobs. Replacement of conduits a,A2900,Arranging Hand Lamps and Temporary power supply for shutdown Jobs.,8,2026-10-20 07:00,2026-10-20 15:00,,1
+LDAR / Safety,LDAR / RGMS,A2660,SAFETY JOBS AS REQUIRED,240,2026-10-20 07:00,2026-10-30 07:00,,1
+LDAR / Safety,LDAR / RGMS,A3070,Environment LDAR: Under H-12-102 Burner No-12 by Mechanical,240,2026-10-20 07:00,2026-10-30 07:00,,1
+Projects / PMR,"Project No.: 102116 , CB/CPC/2233 - Upgrade o",A2010,CABLE LAYING,312,2026-10-20 07:00,2026-11-02 07:00,,1
+Projects / PMR,"Project No.: 102116 , CB/CPC/2233 - Upgrade o",A2020,Lay Secondary Cables in Conduits,312,2026-10-20 07:00,2026-11-02 07:00,,1
+Projects / PMR,PMR By PC Contract,A9190,MAB-2931 : Provision of Injection water upstream of E-12-105/205,312,2026-10-20 07:00,2026-11-02 07:00,,1
+Projects / PMR,PMR By PC Contract,A9200,N-MAB-2345 : Implement RCA Recommendation to provide flow indicators,312,2026-10-20 07:00,2026-11-02 07:00,,1
+Projects / PMR,PMR By PC Contract,A9210,N-MAB-4637 : Provision of isolation valves at upstream of FV-12-004A/B,312,2026-10-20 07:00,2026-11-02 07:00,,1
+Projects / PMR,PMR By PC Contract,A9220,N-MAB-4636 : Provision of isolating valves for FV-12-003A/B for,312,2026-10-20 07:00,2026-11-02 07:00,,1
+Projects / PMR,PMR By PC Contract,A9230,MAB-1881 To replace existing obsolete LDS in R-12-105/205 (based on,312,2026-10-20 07:00,2026-11-02 07:00,4,1
+Projects / PMR,PMR By PC Contract,A9490,PMR # N-MAB-3596 / Upgrade of Obsolete Allen-Bradley PLCs in Unit-12,312,2026-10-20 07:00,2026-11-02 07:00,,1

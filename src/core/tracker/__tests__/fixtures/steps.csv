@@ -1,0 +1,70 @@
+step_id,fo,gate,gate_name,short_name,step_text,procedure,prereq_1,prereq_2,prereq_3,est_hours,note,equipment_covered
+S101,FO1,1,HPWS < 480°F,N2 header line-up,Nitrogen header line-up and arrangement,SOP-12-2001,,,,,,
+S102,FO1,2,Charge pump stopped,Stop charge pump / flush H-201,"Stop charge pump, close D/S MOV & warm-up B/V; flush H-201 passes with recycle gas via XV-542",SOP-12-2001,S101,,,,,
+S103,FO1,3,System 600 psi,Drain V-126→V-132 / OCR→V-213,Drain V-126 to V-132 until gas break-through; drain OCR to V-213,SOP-12-2001,S102,,,,,
+S104,FO1,4,500 psi · C-201 stopped,Stop C-201,Stop C-201; isolate 900/450 psi warm-up steam as per Rotating advice,SOP-12-2001,S103,,,,,
+S105,FO1,5,150 psi → 0,Drain reactors,Fixed bed & OCR: drain reactors,SOP-12-2008 / 2009,S104,,,,,
+S106,FO1,5,150 psi → 0,Connect N2 hoses,Fixed bed & OCR: connect N2 hoses,SOP-12-2008 / 2009,S105,,,,,
+S107,FO1,6,0 psi · Segregation,R-204 outlet blind,R-204 outlet blind,SOP-12-2004 §3.1,S106,,,,,
+S108,FO1,6,0 psi · Segregation,OCR segregation,"OCR segregation – addition, withdrawal, PDT-011/017, V-207 & C-201 to V-126",SOP-12-2003 §3.10 / SOP-12-2004,S106,,,,,
+S109,FO1,6,0 psi · Segregation,R-201/202/203 blind & HO,R-201/202/203 outlet blinding & handover (outlet blinds BEFORE top elbow removal),SOP-12-2009,S107,,,4,Soda ash soak 4 h,R-12-201; R-12-202; R-12-203; R-12-204
+S110,FO1,6,0 psi · Segregation,R-205 segregation & HO,R-205 segregation & handover; disconnect radioactive LT source & power,SOP-12-2008,S108,,,4,Soda ash soak 4 h,R-12-205
+S111,FO1,7,Neutralization,R-205→R-201 neutralization,"R-205 O/L → R-201 I/L neutralization (E-229 T/S, FV-548 & FV-1426 D/S NRV)",SOP-12-2006 §3.1,S110,S109,,4,,12-VC-0106; 12-VC-0108; E-229 sample point; R-205 to E-229; FV-1426 d/s
+S112,FO1,7,Neutralization,Addition line neutralization,R-205 addition line RTJ neutralization,SOP-12-2006 §3.4,S108,,,4,,
+S113,FO1,7,Neutralization,Rx inter-piping neutralization,Reactor inter-piping neutralization (R-202/203/204),SOP-12-2005 §3.4,S109,,,4,,R-201 to R-202; R-202 to R-203; R-203 to R-204; R-204 to V-206
+S114,FO1,7,Neutralization,Quench line neutralization,R-205 quench gas/oil line RTJ neutralization,SOP-12-2006 §3.7,S110,,,4,,
+S115,FO1,7,Neutralization,H-201→R-205 neutralization,H-201 O/L → R-205 I/L line neutralization (FV-1427 D/S NRV),SOP-12-2006 §3.2,S110,,,4,,12-VC-0107; H-201 O/L to R-205 I/L
+S118,FO1,7,Neutralization,H-202 in/out neutralization,H-202 inlet & outlet neutralization (to hand over FI-1427 & FV-1427),SOP-12-2006 §3.3,S110,,,4,In SOP but not in guideline,H-202 O/L; FV-1427
+S116,FO1,8,Equipment handover,E-229 handover,E-229 handover,No SOP received,S111,,,,,E-12-229
+S117,FO1,8,Equipment handover,Withdrawal line neutralization,R-205 withdrawal & HP line RTJ neutralization (after R-205 catalyst dumping),SOP-12-2006 §3.5,S110,,,4,"Also needs R-205 catalyst dumped (bar chart A5410, plan 28-Oct)",R-205 withdrawal line d/s KV-7B/8B
+S201,FO2,1,HPWS < 480°F,Hoses line-up,Hoses line-up,,,,,,,
+S202,FO2,2,Charge pump stopped,"Close HV-548B/546B, stop LBs",Close HV-548B/HV-546B & HV-863; stop LB-201/202/203/204; isolate quench oil to R-205 (all B/Vs) & LB-108,,S201,,,,,
+S203,FO2,4,500 psi · C-201 stopped,Stop wash water pumps,"Stop P-207A/B, P-204, P-206A/B; isolate FV-546 & PV-891; reduce vessel levels; isolate wash-water balancing line & close MOV",,S202,,,,,P-12-207A/B
+S204,FO2,4,500 psi · C-201 stopped,V-210 handover,V-210 handover (steam-out 24 h),SOP-12-2028,S203,,,24,,V-12-210
+S205,FO2,5,150 psi → 0,Empty V-206/207/208/236,"Hose connection & empty V-206, V-207, V-208, V-236 to LP (V-213 / V-209)",,S203,S104,,,,
+S206,FO2,5,150 psi → 0,H2 make-up segregation,H2 make-up segregation,SOP-12-2003 §3.1,S104,,,,,
+S207,FO2,5,150 psi → 0,Drain lean/rich amine lines,Drain lean & rich amine lines (for line inspection),,S306,,,,,
+S208,FO2,6,0 psi · Segregation,V-212→V-114 segregation,V-212 drain to V-114 segregation,SOP-12-2003 §3.3,S104,,,,,
+S209,FO2,6,0 psi · Segregation,HP purge segregation,HP purge gas segregation,SOP-12-2003 §3.2,S104,,,,,
+S210,FO2,6,0 psi · Segregation,V-236 segregation,V-236 sour water segregation,SOP-12-2003 §3.9,S205,,,,,
+S211,FO2,6,0 psi · Segregation,V-236 handover,"V-236 handover (N2 purge 3 h, steam-out 18 h)",SOP-12-2031,S210,,,24,,V-12-236
+S212,FO2,6,0 psi · Segregation,HPRT outlet blinding,P-205 HPRT common B/V outlet blinding,SOP-12-2003 §3.15,S306,,,,,
+S213,FO2,6,0 psi · Segregation,HP critical blinds,"HP critical blinds – C-201 anti-surge, V-207 & C-201 to V-126, E-205 T/S O/L, E-205 S/S I/L, E-202 S/S O/L, TV-667",SOP-12-2004,S205,S106,,,,
+S214,FO2,7,Neutralization,V-206→E-205 T/S loop neutralization,Recycle gas loop neutralization: V-206 vapour → E-205 T/S O/L (V-206 → V-207),SOP-12-2005 §3.2,S213,,,4,,
+S215,FO2,7,Neutralization,C-201 disch.→E-202 neutralization,C-201 discharge loop neutralization: E-205 S/S I/L → E-202 S/S O/L,SOP-12-2005 §3.1,S213,,,4,,E-202 to E-203
+S216,FO2,7,Neutralization,E-205 T/S→V-208 neutralization,E-205 T/S O/L → V-208 H/C inlet neutralization,No SOP found,S213,,,4,"Required by E-207 SOP, missing from guideline",
+S217,FO2,7,Neutralization,V-206/207→LV-511 neutralization,V-206/207 O/L → LV-511A/B hydrocarbon line RTJ neutralization,SOP-12-2006 §3.6,S214,,,4,,V-207 to V-213; V-206 to V-213
+S218,FO2,7,Neutralization,EA-201/E-207/WW RTJ neutralization,"EA-201, E-207 & wash-water injection point RTJ neutralization",SOP-12-2006 §3.8,S216,,,4,,E-205 to EA-201; Wash water to EA-201
+S219,FO2,8,Equipment handover,V-206 handover,V-206 handover,SOP-12-2024,S214,,,,,V-12-206; V-206 LT bridle
+S220,FO2,8,Equipment handover,F-202 handover,F-202 recycle gas filter handover,No SOP received,S213,,,,,F-12-202
+S221,FO2,8,Equipment handover,E-207 handover,E-207 handover,SOP-12-2015,S216,,,,,E-12-207
+S222,FO2,8,Equipment handover,V-212 handover,"V-212 handover (steam-out 24 h, pyrophoric)",SOP-12-2029,S208,S209,,24,,V-12-212
+S223,FO2,8,Equipment handover,C-201 + LO / gland cond. HO,"C-201 with LO tank TK-01, LO coolers E-01A/B, gland condenser E-03 & EJ-01 handover",SOP-12-2039 / 2040 / 2041,S104,S213,,,C-201 main body: no SOP,C-12-201-F-01B; C-12-201-F-03A/B; C-12-201; C-12-201-ST; C-12-201 LO system; C-12-201-E-01A; C-12-201-E-01B; C-12-201-E-03; C-12-201-EJ-01; C-12-201-TK-01; C-12-201-TK-03
+S224,FO2,8,Equipment handover,V-207 & V-208 handover,V-207 & V-208 handover,No SOP received,S214,S216,,,Not in guideline,V-12-207; V-12-208
+S301,FO3,1,HPWS < 480°F,H-201 inj. water / decoking,Close H-201 injection water pass B/Vs; line up process water → H-201 convection coil → decoking drum (if P-202/P-207B & P-107C stopped); isolate spill-back PV-880,,,,,,,
+S302,FO3,2,Charge pump stopped,V-202 handover,V-202 handover (steam-out 24 h),SOP-12-2022,S301,,,24,,V-12-202
+S303,FO3,2,Charge pump stopped,P-203 LO coolers & tank HO,P-203 LO coolers & LO tank handover,SOP-12-2037 (tank: no SOP),S102,,,,,P-12-203-E-01A; P-12-203-E-01B; P-12-203-TK-01; P-12-203
+S304,FO3,2,Charge pump stopped,Stop LB-111 / flush V-201,Stop LB-111; flush V-201 with diesel to LT/LSHH/LSLL then isolate,,S102,,,,,
+S305,FO3,2,Charge pump stopped,V-201 handover,V-201 handover,No SOP received,S304,,,,,V-12-201
+S306,FO3,4,500 psi · C-201 stopped,Stop amine pump / drain amine,"Stop amine pump; close FV-558 U/S, D/S & bypass; disconnect P-205 & P-105B discharge to TR-2; drain amine T-201 → V-114",,S104,,,,,
+S307,FO3,4,500 psi · C-201 stopped,P-205 LO coolers & tank HO,P-205 LO coolers & LO tank handover,SOP-12-2042 (tank: no SOP),S306,,,,,P-12-205-E-01; P-12-205-TK-01; P-12-205
+S308,FO3,5,150 psi → 0,H-201 drain / isolate HP-LP,H-201 inlet passes draining arrangement; isolate HP system from LP system,,S102,S104,,,,
+S309,FO3,6,0 psi · Segregation,H-103 passes segregation,H-103 TR-2 passes segregation,SOP-12-2003 §3.5,S308,,,,,
+S310,FO3,6,0 psi · Segregation,LV-572 segregation,LV-572 segregation,SOP-12-2003 §3.6,S308,,,,,
+S311,FO3,6,0 psi · Segregation,PV-644 segregation,PV-644 segregation,SOP-12-2003 §3.7,S308,,,,,
+S312,FO3,6,0 psi · Segregation,E-210 S/S O/L segregation,E-210 S/S outlet segregation,SOP-12-2003 §3.8,S308,,,,,
+S313,FO3,6,0 psi · Segregation,E-216A/B flush & segregation,"E-216A/B S/S isolation, diesel flushing & segregation blinding",SOP-12-2002 + SOP-12-2003 §3.4,S102,,,,,
+S314,FO3,6,0 psi · Segregation,Charge pump→H-201 segregation,Charge pump discharge → H-201 line segregation,SOP-12-2003 §3.14,S308,,,,,
+S315,FO3,6,0 psi · Segregation,Fuel gas segregation,Fuel gas segregation,SOP-12-2003 §3.11,S102,,,,,
+S316,FO3,6,0 psi · Segregation,LP flare segregation,LP flare header segregation,SOP-12-2003 §3.13,S308,,,,,
+S317,FO3,6,0 psi · Segregation,HP flare segregation,HP flare header segregation,SOP-12-2003 §3.12,S106,S205,,,,
+S318,FO3,7,Neutralization,Charge pump→H-201 neutralization,Charge pump discharge → H-201 inlet neutralization,SOP-12-2005 §3.3,S314,,,4,,
+S319,FO3,7,Neutralization,H-201 pigging prep,H-201 preparation for pigging,No SOP received,S318,,,,,
+S320,FO3,7,Neutralization,V-213→V-209 neutralization,V-213 → V-209 loop neutralization (soda ash soak 4 h),SOP-12-2005 §3.5,S310,S311,S312,4,"Needed by V-213, V-209, E-211 SOPs",
+S321,FO3,7,Neutralization,E-216A/B S/S neutralization,E-216A/B S/S neutralization (soda ash soak 4 h),SOP-12-2018,S313,,,4,,
+S322,FO3,8,Equipment handover,E-216A/B handover,E-216A/B handover,SOP-12-2018,S321,,,,,E-12-216A; E-12-216B
+S323,FO3,8,Equipment handover,E-204 & E-205 handover,E-204 & E-205 handover,No SOP received,S215,S214,,,,E-12-204; E-12-205
+S324,FO3,8,Equipment handover,"V-213, E-210, E-211 HO","V-213, E-210A/B & E-211 handover (E-211 steam-out 12 h)",SOP-12-2030 / 2017 (E-210: no SOP),S320,,,12,,E-12-210A/B; E-12-211; V-12-213
+S325,FO3,8,Equipment handover,V-209 handover,V-209 handover (steam-out 24 h),SOP-12-2027,S320,S211,S315,24,Needs V-236 1st blinding & F/G blind,V-12-209
+S326,FO3,8,Equipment handover,H-202 handover,H-202 handover,SOP-12-2010,S315,S118,,,,H-12-202
+S327,FO3,8,Equipment handover,H-201 handover,H-201 handover (with H-202 – common stack),SOP-12-2010,S326,S319,,,H-201/202 cannot be entered individually,H-12-201
