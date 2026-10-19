@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attention, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { attention, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -120,5 +120,30 @@ describe('shifts', () => {
     expect(shiftOf(at('2026-10-20 18:59')).shift).toBe('D');
     expect([shiftOf(at('2026-10-20 19:00')).shift, shiftOf(at('2026-10-20 19:00')).date]).toEqual(['N', '2026-10-20']);
     expect([shiftOf(at('2026-10-21 03:00')).shift, shiftOf(at('2026-10-21 03:00')).date]).toEqual(['N', '2026-10-20']);
+  });
+});
+
+describe('mechanical activity timing', () => {
+  const a = { id: '1', activityId: 'A5410', group: 'Reactors', key: 'R-12-205', activity: 'Dump Catalyst by Double Vacuum', durationH: 120, start: '2026-10-23T03:00:00+03:00', finish: '2026-10-28T03:00:00+03:00', stage: 2, tracked: true };
+  it('not started after its planned start: late start', () => {
+    const t = timing(a, at('2026-10-23 12:00'));
+    expect([t.state, t.plannedH, t.lateStart, t.actualH]).toEqual(['NOT_STARTED', 120, true, null]);
+  });
+  it('started 9 h late, finished in 130 h: delay +9 h, overrun +10 h', () => {
+    const t = timing({ ...a, actualStart: '2026-10-23T12:00:00+03:00', actualFinish: '2026-10-28T22:00:00+03:00' }, at('2026-10-30 10:00'));
+    expect([t.state, t.startDelayH, t.actualH, t.overrunH]).toEqual(['FINISHED', 9, 130, 10]);
+    expect(timingSummary([t, timing(a, at('2026-10-30 10:00'))])).toEqual({ total: 2, started: 1, finished: 1, running: 0, avgStartDelayH: 9, avgOverrunH: 10 });
+  });
+  it('the record for future reference: one CSV line per activity, Kuwait time', () => {
+    const csvText = timingCsv([timing({ ...a, actualStart: '2026-10-23T12:00:00+03:00', actualNote: 'vacuum truck late, 2 h' }, at('2026-10-24 12:00'))]);
+    const [head, line] = csvText.split('\n');
+    expect(head.startsWith('equipment,activity_id,activity,stage,planned_start')).toBe(true);
+    expect(line).toBe('R-12-205,A5410,Dump Catalyst by Double Vacuum,2,2026-10-23 03:00,2026-10-28 03:00,120,2026-10-23 12:00,,,9,,"vacuum truck late, 2 h",');
+  });
+  it('the shift report counts the activities started and finished in the shift', () => {
+    const d = seed(); d.log = [{ kind: 'activity', ref: 'R-12-205 · A5410', field: 'actual_start', oldValue: null, newValue: '2026-10-23T09:00:00+03:00', byName: 'Ctl', at: '2026-10-23T09:05:00+03:00' }];
+    const r = shiftReport(d, at('2026-10-23 12:00'), null);
+    expect(r.activities.length).toBe(1);
+    expect(reportText(r)).toContain('⏱ Mechanical: 1 started · 0 finished');
   });
 });

@@ -1,7 +1,8 @@
 // The two input sheets of the controllers: a guideline step (Start · Done · Pending) and an equipment item (stage,
 // blinds, IATs, pending). Big buttons, the time and the name are stamped by the database.
 import { useState } from 'react';
-import { PENDING_REASONS, STAGES, kwDay, kwTime, type EquipView, type StepView } from '@/core/tracker';
+import { PENDING_REASONS, STAGES, kwDay, kwTime, type EquipView, type StepView, type TrkActivity } from '@/core/tracker';
+import { EquipActivities } from './Timing';
 import { addIat, closeIat, setEquipment, setStep } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, Field, cx } from '@/ui/components';
 import { FlagChip, PlanChip, StageBar, StateChip } from './ui';
@@ -71,7 +72,7 @@ export function StepSheet({ v, isHead, canEdit, onClose, onDone }: { v: StepView
   );
 }
 
-export function EquipSheet({ v, trackerId, canEdit, onClose, onDone }: { v: EquipView; trackerId: string; canEdit: boolean; onClose: () => void; onDone: (msg: string) => void }) {
+export function EquipSheet({ v, trackerId, canEdit, activities, now, onClose, onDone }: { v: EquipView; trackerId: string; canEdit: boolean; activities: TrkActivity[]; now: number; onClose: () => void; onDone: (msg: string) => void }) {
   const e = v.eq;
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [pending, setPending] = useState(false); const [iat, setIat] = useState(false); const [details, setDetails] = useState(false);
@@ -94,6 +95,7 @@ export function EquipSheet({ v, trackerId, canEdit, onClose, onDone }: { v: Equi
             {e.hoStep && <p className="text-[11px] text-slate-500">Handed over automatically when {e.hoStep} is done{v.hoAt ? ` (${when(v.hoAt)})` : ''}.</p>}
           </div>
         </Field>
+        <EquipActivities activities={activities} now={now} canEdit={canEdit} onDone={onDone} />
         {canEdit && <div className="grid grid-cols-2 gap-2">
           <Button variant="secondary" disabled={busy} onClick={() => run(() => setEquipment(e.id, { blinds_in_at: new Date().toISOString() }), `${e.tag}: blinds in.`)}>Blinds IN{e.blindsIn ? ` · ${when(e.blindsIn)}` : ''}</Button>
           <Button variant="secondary" disabled={busy} onClick={() => run(() => setEquipment(e.id, { blinds_out_at: new Date().toISOString() }), `${e.tag}: blinds out.`)}>Blinds OUT{e.blindsOut ? ` · ${when(e.blindsOut)}` : ''}</Button>

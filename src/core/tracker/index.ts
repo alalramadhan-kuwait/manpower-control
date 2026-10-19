@@ -18,8 +18,12 @@ export interface TrkEquipment {
   blindsIn: string | null; blindsOut: string | null; updatedBy: string | null; updatedAt: string | null;
 }
 export interface TrkIat { id: string; tag: string; iatNo: string; jobText: string | null; discipline: string | null; issuedAt: string; status: 'open' | 'closed'; closedAt: string | null }
-export interface TrkActivity { id: string; activityId: string; group: string | null; key: string; activity: string; durationH: number | null; start: string | null; finish: string | null; stage: number | null; tracked: boolean }
-export interface TrkLog { kind: 'step' | 'equipment' | 'iat'; ref: string; field: string; oldValue: string | null; newValue: string | null; byName: string | null; at: string }
+export interface TrkActivity {
+  id: string; activityId: string; group: string | null; key: string; activity: string; durationH: number | null; start: string | null; finish: string | null; stage: number | null; tracked: boolean;
+  /** the mechanical activity as it went (kept for future shutdowns) */
+  actualStart?: string | null; actualFinish?: string | null; actualNote?: string | null; updatedBy?: string | null; updatedAt?: string | null;
+}
+export interface TrkLog { kind: 'step' | 'equipment' | 'iat' | 'activity'; ref: string; field: string; oldValue: string | null; newValue: string | null; byName: string | null; at: string }
 export interface TrkSettings { hoTarget?: string; end?: string; workOrder?: string; whatsapp?: string }
 export interface TrkData { steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings }
 
@@ -158,6 +162,8 @@ export interface ShiftReport {
   title: string; banner: Banner; totals: Totals;
   stepsDone: { stepId: string; name: string; at: string; by: string | null }[];
   stageChanges: { tag: string; from: number; to: number; at: string; by: string | null }[];
+  /** mechanical activities started / finished in the shift */
+  activities: { ref: string; field: 'actual_start' | 'actual_finish'; at: string; by: string | null }[];
   attention: Attention[]; ready: StepView[]; notes: string; temps: Record<string, string>;
 }
 export const REACTORS = ['R205', 'R201', 'R202', 'R203', 'R204'] as const;
@@ -175,9 +181,11 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
   for (const l of inShift) if (l.kind === 'equipment' && l.field === 'stage' && !firstOld.has(l.ref)) firstOld.set(l.ref, Number(l.oldValue ?? 0));
   const stageChanges = lastBy(inShift.filter((l) => l.kind === 'equipment' && l.field === 'stage')).map((l) => ({ tag: l.ref, from: firstOld.get(l.ref) ?? 0, to: Number(l.newValue ?? 0), at: l.at, by: l.byName }))
     .filter((c) => c.from !== c.to);
+  const activities = inShift.filter((l) => l.kind === 'activity' && (l.field === 'actual_start' || l.field === 'actual_finish') && l.newValue)
+    .map((l) => ({ ref: l.ref, field: l.field as 'actual_start' | 'actual_finish', at: l.at, by: l.byName }));
   return {
     title: `${title} · ${kwDay(sh.from)} · ${sh.shift === 'D' ? 'Day' : 'Night'}`,
-    banner: banner(eqs), totals: totals(steps, eqs, d.iats), stepsDone, stageChanges,
+    banner: banner(eqs), totals: totals(steps, eqs, d.iats), stepsDone, stageChanges, activities,
     attention: attention(steps, eqs), ready: [...steps.values()].filter((v) => v.state === 'READY'),
     notes: log?.notes ?? '', temps: log?.temps ?? {},
   };
@@ -195,6 +203,8 @@ export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string }
     `✅ Steps ${r.totals.stepsDone}/${r.totals.steps} · HO ${r.totals.hoDone}/${r.totals.ho}`];
   if (r.stepsDone.length) lines.push(`✔️ Done this shift: ${r.stepsDone.map((s) => s.stepId).join(', ')}`);
   if (r.stageChanges.length) lines.push(`🔧 Moved: ${r.stageChanges.map((c) => `${c.tag} → ${STAGE_SHORT[c.to]}`).join(', ')}`);
+  const fin = r.activities.filter((x) => x.field === 'actual_finish').length, sta = r.activities.filter((x) => x.field === 'actual_start').length;
+  if (fin || sta) lines.push(`⏱ Mechanical: ${sta} started · ${fin} finished`);
   lines.push(`⚠️ Needs attention (${r.attention.length})`);
   for (const a of r.attention.slice(0, 8)) lines.push(`• ${a.label} ${flagText(a.flag)}${a.detail ? ` – ${a.detail}` : ''}`);
   if (r.attention.length > 8) lines.push(`• +${r.attention.length - 8} more`);
@@ -204,4 +214,47 @@ export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string }
   if (r.notes.trim()) lines.push(`📝 ${r.notes.trim()}`);
   if (opts.by) lines.push(`— ${opts.by}`);
   return lines.join('\n');
+}
+
+// ── Mechanical activity timing (plan vs actual, for future shutdowns) ───────────────────────────────────────────
+export type TimingState = 'NOT_STARTED' | 'RUNNING' | 'FINISHED';
+export interface Timing {
+  a: TrkActivity; state: TimingState;
+  plannedH: number | null;
+  /** hours from the actual start to the finish (or to now while it runs) */
+  actualH: number | null;
+  /** actual start less the planned start, h (+ late) */
+  startDelayH: number | null;
+  /** actual duration less the planned duration, h (+ longer) */
+  overrunH: number | null;
+  /** planned to have started (or finished) by now and has not */
+  lateStart: boolean; lateFinish: boolean;
+}
+const r1 = (x: number) => Math.round(x * 10) / 10;
+export function timing(a: TrkActivity, now: number): Timing {
+  const ps = ms(a.start), pf = ms(a.finish), as = ms(a.actualStart), af = ms(a.actualFinish);
+  const plannedH = !Number.isNaN(ps) && !Number.isNaN(pf) ? r1((pf - ps) / H) : a.durationH ?? null;
+  const state: TimingState = !Number.isNaN(af) ? 'FINISHED' : !Number.isNaN(as) ? 'RUNNING' : 'NOT_STARTED';
+  const actualH = Number.isNaN(as) ? null : r1(((Number.isNaN(af) ? now : af) - as) / H);
+  return {
+    a, state, plannedH, actualH,
+    startDelayH: Number.isNaN(as) || Number.isNaN(ps) ? null : r1((as - ps) / H),
+    overrunH: state === 'FINISHED' && actualH !== null && plannedH !== null ? r1(actualH - plannedH) : null,
+    lateStart: state === 'NOT_STARTED' && !Number.isNaN(ps) && now > ps,
+    lateFinish: state !== 'FINISHED' && !Number.isNaN(pf) && now > pf,
+  };
+}
+export interface TimingSummary { total: number; started: number; finished: number; running: number; avgStartDelayH: number | null; avgOverrunH: number | null }
+export function timingSummary(ts: Timing[]): TimingSummary {
+  const avg = (xs: number[]) => (xs.length ? r1(xs.reduce((t, x) => t + x, 0) / xs.length) : null);
+  return { total: ts.length, started: ts.filter((t) => t.state !== 'NOT_STARTED').length, finished: ts.filter((t) => t.state === 'FINISHED').length, running: ts.filter((t) => t.state === 'RUNNING').length,
+    avgStartDelayH: avg(ts.flatMap((t) => (t.startDelayH === null ? [] : [t.startDelayH]))), avgOverrunH: avg(ts.flatMap((t) => (t.overrunH === null ? [] : [t.overrunH]))) };
+}
+const kwFull = (iso: string | null | undefined) => (iso ? new Date(Date.parse(iso) + KW).toISOString().slice(0, 16).replace('T', ' ') : '');
+/** The record for future reference: one line per activity, plan and actual (Kuwait time), as CSV. */
+export function timingCsv(ts: Timing[]): string {
+  const q = (v: unknown) => { const s = v === null || v === undefined ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const head = ['equipment', 'activity_id', 'activity', 'stage', 'planned_start', 'planned_finish', 'planned_h', 'actual_start', 'actual_finish', 'actual_h', 'start_delay_h', 'overrun_h', 'note', 'by'];
+  return [head.join(','), ...ts.map((t) => [t.a.key, t.a.activityId, t.a.activity, t.a.stage, kwFull(t.a.start), kwFull(t.a.finish), t.plannedH, kwFull(t.a.actualStart), kwFull(t.a.actualFinish),
+    t.state === 'FINISHED' ? t.actualH : '', t.startDelayH, t.overrunH, t.a.actualNote, t.a.updatedBy].map(q).join(','))].join('\n');
 }

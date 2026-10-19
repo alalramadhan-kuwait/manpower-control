@@ -10,10 +10,11 @@ import type { UserProfile } from '@/data/types';
 import { Button, ErrorBox, Spinner, cx } from '@/ui/components';
 import { EquipSheet, StepSheet } from './TrackerSheets';
 import { TrackerAdmin, clockKey } from './TrackerAdmin';
+import { TimingTab } from './Timing';
 import { FlagChip, PlanChip, StageBar, StateChip, Tile } from './ui';
 
-type Tab = 'today' | 'guideline' | 'equipment' | 'map' | 'report' | 'admin';
-const TABS: [Tab, string][] = [['today', 'Today'], ['guideline', 'Guideline'], ['equipment', 'Equipment'], ['map', 'Map'], ['report', 'Report']];
+type Tab = 'today' | 'guideline' | 'equipment' | 'timing' | 'map' | 'report' | 'admin';
+const TABS: [Tab, string][] = [['today', 'Today'], ['guideline', 'Guideline'], ['equipment', 'Equipment'], ['timing', 'Timing'], ['map', 'Map'], ['report', 'Report']];
 const BANNER_BG = { AHEAD: 'bg-[#08A048]', BEHIND: 'bg-[#E02028]', ON_PLAN: 'bg-amber-500' } as const;
 const today = () => new Date(Date.now() + 3 * 36e5).toISOString().slice(0, 10);
 
@@ -91,11 +92,12 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} onOpen={open} onTab={setTab} />}
       {tab === 'guideline' && <GuidelineTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {tab === 'equipment' && <EquipmentTab eqs={eqs} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
+      {tab === 'timing' && <TimingTab activities={data.activities} now={now} canEdit={canEdit} title={tracker.title} onDone={done} />}
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {tab === 'report' && <ReportTab data={data} now={now} canEdit={canEdit} by={profile.display_name} onSaved={() => load()} />}
       {tab === 'admin' && isHead && <TrackerAdmin data={data} eqs={eqs} onDone={done} />}
       {openStep && <StepSheet v={openStep} isHead={isHead} canEdit={canEdit} onClose={() => setSheet(null)} onDone={done} />}
-      {openEq && <EquipSheet v={openEq} trackerId={tracker.id} canEdit={canEdit} onClose={() => setSheet(null)} onDone={done} />}
+      {openEq && <EquipSheet v={openEq} trackerId={tracker.id} canEdit={canEdit} activities={openEq.eq.barchartKey ? data.activities.filter((a) => a.key === openEq.eq.barchartKey) : []} now={now} onClose={() => setSheet(null)} onDone={done} />}
     </div>
   );
 }
@@ -274,6 +276,8 @@ function ReportTab({ data, now, canEdit, by, onSaved }: { data: TrackerData; now
         {r.stepsDone.length ? <ul className="ml-4 list-disc">{r.stepsDone.map((s) => <li key={s.stepId}>{s.stepId} {s.name} <span className="text-xs text-slate-500">{kwTime(s.at)} · {s.by}</span></li>)}</ul> : <p className="text-slate-500">None yet.</p>}
         <h3 className="mt-2 font-semibold">Equipment moved ({r.stageChanges.length})</h3>
         {r.stageChanges.length ? <ul className="ml-4 list-disc">{r.stageChanges.map((c) => <li key={c.tag}>{c.tag}: {STAGE_SHORT[c.from]} → <b>{STAGE_SHORT[c.to]}</b> <span className="text-xs text-slate-500">{kwTime(c.at)} · {c.by}</span></li>)}</ul> : <p className="text-slate-500">None yet.</p>}
+        <h3 className="mt-2 font-semibold">Mechanical activities this shift ({r.activities.length})</h3>
+        {r.activities.length ? <ul className="ml-4 list-disc">{r.activities.map((x, i) => <li key={i}>{x.ref} {x.field === 'actual_start' ? 'started' : 'finished'} <span className="text-xs text-slate-500">{kwTime(x.at)} · {x.by}</span></li>)}</ul> : <p className="text-slate-500">None recorded.</p>}
         <h3 className="mt-2 font-semibold">Needs attention ({r.attention.length})</h3>
         {r.attention.length ? <ul className="ml-4 list-disc">{r.attention.map((a) => <li key={`${a.kind}-${a.ref}`}>{a.label} · {flagText(a.flag)}{a.detail ? ` – ${a.detail}` : ''}</li>)}</ul> : <p className="text-slate-500">Nothing.</p>}
         <h3 className="mt-2 font-semibold">Ready for the next shift ({r.ready.length})</h3>
