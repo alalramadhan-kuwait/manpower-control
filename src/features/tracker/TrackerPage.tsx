@@ -48,10 +48,11 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const [sheet, setSheet] = useState<{ kind: 'step'; id: string } | { kind: 'eq'; tag: string } | null>(null);
   const isHead = profile.role_code === 'section_head';
   const canEdit = ['section_head', 'manpower_coordinator', 'controller'].includes(profile.role_code);
-  const tracker = useMemo(() => (trackers ? (id ? trackers.find((t) => t.id === id) ?? null : currentTracker(trackers, today())) : null), [trackers, id]);
+  // a link to a tracker no longer active (e.g. the test copy after going live) opens the current one
+  const tracker = useMemo(() => (trackers ? (id ? trackers.find((t) => t.id === id) : undefined) ?? currentTracker(trackers, today()) : null), [trackers, id]);
 
   const load = useCallback(async () => {
-    try { const list = await fetchTrackers(); setTrackers(list); const t = id ? list.find((x) => x.id === id) : currentTracker(list, today()); if (t) setData(await fetchTrackerData(t.id)); setError(null); }
+    try { const list = await fetchTrackers(); setTrackers(list); const t = (id ? list.find((x) => x.id === id) : undefined) ?? currentTracker(list, today()); if (t) setData(await fetchTrackerData(t.id)); setError(null); }
     catch (e) { setError(e); }
   }, [id]);
   useEffect(() => { load(); }, [load]);
