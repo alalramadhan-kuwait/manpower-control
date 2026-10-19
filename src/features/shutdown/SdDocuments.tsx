@@ -10,7 +10,7 @@ import { addDaysIso, type Crew } from '@/core/roster';
 import { areasOf, isDutyDay, memberHoursOn, memberWorks, planDates, type SdMember, type SdPlan, type SdTeam } from '@/core/shutdown';
 import { fetchManpowerInputs } from '@/data/manpower';
 import { fetchDirectory } from '@/data/queries';
-import { fetchSdPlan, updateSdPlan, type Signature } from '@/data/shutdown';
+import { fetchSdPlan, updateSdPlan, type MemoSettings, type Signature } from '@/data/shutdown';
 import type { EmployeeDirectoryRow } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Field, Spinner, cx } from '@/ui/components';
 import { shortDate } from '@/ui/leave';
@@ -22,7 +22,7 @@ const hrs = (label: string | null) => label?.replace(/(\d\d:\d\d)/g, '$1 HRS').r
 
 const KNPC_BLUE = '#005DAA';
 /** The KNPC letterhead, as on the Excel sheets: the logo, the title, the refinery and unit, the period and the flame's colours. */
-function Letterhead({ title, sub }: { title: string; sub: string }) {
+export function Letterhead({ title, sub }: { title: string; sub: string }) {
   return (
     <header className="mb-3">
       <div className="flex items-center gap-3">
@@ -42,7 +42,7 @@ const periodOf = (p: SdPlan) => { const f = (d: string) => new Date(`${d}T00:00:
 
 /** A row: the member, the group it is printed under (Controller, an area, Operators) and its number within the team. */
 export interface Row { m: SdMember; team: SdTeam; r: EmployeeDirectoryRow | undefined; /** the crew whose duty days he keeps on the team (the one he follows, else his own) */ crew: Crew | null; /** the shift he is counted in: his own crew, the shutdown aside (a VR Controller on the team: the shift he follows) */ home: Crew | null; /** the crew he is in the day after the shutdown (a VR Controller: his placement then) */ after: Crew | null; vr: boolean; group: string; no: number; /** the person (role history and shift movements), for the roster of each date */ person?: MpPerson }
-export interface Doc { plan: SdPlan; teams: SdTeam[]; rows: Row[]; signatures: Signature[]; dates: string[]; months: string[]; name: string;
+export interface Doc { plan: SdPlan; teams: SdTeam[]; rows: Row[]; signatures: Signature[]; memo?: MemoSettings; people?: MpPerson[]; dates: string[]; months: string[]; name: string;
   /** Leave already approved in Oracle on a date (credited in the overtime: the regular hours of that duty day are not owed). */
   leaveOn?: (employeeId: string, date: string) => boolean }
 
@@ -69,10 +69,10 @@ export async function loadSdDoc(id: string): Promise<Doc> {
   const months = [...new Set(dates.map((d) => d.slice(0, 7)))];
   const period = months.length > 1 ? `${MONTH(months[0])} - ${MONTH(months[months.length - 1])}` : MONTH(months[0]);
   const name = `${sd.plan.title.toUpperCase().replace(/\s*SD$/, '')} ${period}`;
-  return { plan: sd.plan, teams: sd.teams, rows, signatures: sd.signatures, dates, months, name, leaveOn: awayOn(inputs.absences) };
+  return { plan: sd.plan, teams: sd.teams, rows, signatures: sd.signatures, memo: sd.memo, people: inputs.people, dates, months, name, leaveOn: awayOn(inputs.absences) };
 }
 
-function useDoc(id: string) {
+export function useDoc(id: string) {
   const [doc, setDoc] = useState<Doc | null>(null);
   const [error, setError] = useState<unknown>(null);
   const load = useCallback(async () => { try { setDoc(await loadSdDoc(id)); } catch (e) { setError(e); } }, [id]);
@@ -108,11 +108,20 @@ export function SdSchedulePage() {
   const { doc, error } = useDoc(id!);
   if (error) return <ErrorBox error={error} />;
   if (!doc) return <Spinner />;
+  return (
+    <Page back={`/shutdown/${doc.plan.id}`} title={doc.plan.title}>
+      <ScheduleBody doc={doc} />
+    </Page>
+  );
+}
+
+/** The schedule itself (its own page, and the attachment of the memo). */
+export function ScheduleBody({ doc }: { doc: Doc }) {
   const { plan, rows, dates } = doc;
   const blocks: string[][] = [];
   for (let i = 0; i < dates.length; i += 15) blocks.push(dates.slice(i, i + 15));
   return (
-    <Page back={`/shutdown/${plan.id}`} title={plan.title}>
+    <>
       <Letterhead title={`ARDS UNIT-12 ${doc.name} SHUTDOWN MANPOWER SCHEDULE`} sub={`${unitLine} · ${periodOf(plan)}`} />
       {blocks.map((b, bi) => (
         <table key={bi} className="mb-3 w-full border-collapse text-center text-[10px] text-slate-900 print:break-inside-avoid">
@@ -155,7 +164,7 @@ export function SdSchedulePage() {
         <span><b className="mr-1 inline-block w-5 border border-slate-500 bg-slate-900 text-center">&nbsp;</b>Not on the team</span>
         {doc.rows.filter((x) => x.m.restDays?.length).map((x) => <span key={`rest-${x.m.id}`} className="basis-full">Rest day off his crew: {x.r?.display_name}{x.r?.employee_number ? ` (${x.r.employee_number})` : ''} {[...x.m.restDays!].sort().map(shortDate).join(', ')} ({x.m.restDays!.every((d) => d < x.m.start) ? 'before joining' : 'around the shutdown'}); his shift keeps its minimum</span>)}
       </div>
-    </Page>
+    </>
   );
 }
 

@@ -9,6 +9,7 @@ import MorePage from '@/features/more/MorePage';
 import CalendarPage from '@/features/calendar/CalendarPage';
 import SdPlanPage from '@/features/shutdown/SdPlanPage';
 import { SdOvertimePage, SdSchedulePage } from '@/features/shutdown/SdDocuments';
+import { SdMemoPage } from '@/features/shutdown/SdMemo';
 import RequestsPage from '@/features/requests/RequestsPage';
 import NotificationsPage from '@/features/notifications/NotificationsPage';
 import { AdminWorkspace, ControllersWorkspace, DataQualityWorkspace, ImportWorkspace, LeavePlanningWorkspace, ShutdownWorkspace } from '@/features/workspaces';
@@ -76,6 +77,7 @@ export default function App() {
           <Route path="/shutdown/:id" element={<SdPlanPage isHead={profile.role_code === 'section_head'} />} />
           <Route path="/shutdown/:id/schedule" element={<SdSchedulePage />} />
           <Route path="/shutdown/:id/overtime" element={<SdOvertimePage />} />
+          <Route path="/shutdown/:id/memo" element={<SdMemoPage />} />
           <Route path="/data-quality" element={<DataQualityWorkspace profile={profile} />} />
           <Route path="/import" element={<ImportWorkspace profile={profile} />} />
           <Route path="/import/:batchId" element={<ImportBatchPage />} />

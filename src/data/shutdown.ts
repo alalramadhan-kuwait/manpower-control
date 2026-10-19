@@ -8,7 +8,7 @@ import { V2_DEFAULTS } from '@/core/shutdown/v2';
 import { memberHoursOn, memberWorks, teamGaps, type TeamGap, type FoLevel, type SdDay, type SdKind, type SdMember, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
 
 export interface Signature { title: string; name: string }
-interface PlanRow { signatures: Signature[]; kind: SdKind; areas: string[] | null; sections: string[] | null; id: string; event_id: string | null; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; max_overtime_year?: number | null; status: string; rules_version?: number | null; max_overtime_hard?: number | null; max_overtime_year_hard?: number | null; cycle_until?: string | null }
+interface PlanRow { signatures: Signature[]; memo?: MemoSettings | null; kind: SdKind; areas: string[] | null; sections: string[] | null; id: string; event_id: string | null; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; max_overtime_year?: number | null; status: string; rules_version?: number | null; max_overtime_hard?: number | null; max_overtime_year_hard?: number | null; cycle_until?: string | null }
 interface TeamRow { id: string; plan_id: string; name: string; sort: number; shift_code: 'M' | 'N'; shift_hours_label: string | null; controller_n: number; senior_n: number; good_n: number; new_n: number; ramp_controller_n: number; ramp_senior_n: number; ramp_good_n: number; ramp_new_n: number }
 interface MemberRow { id: string; plan_id: string; team_id: string; employee_id: string; slot: SdSlot; day_offset: number; start_date: string; end_date: string; area: string | null; note: string | null; follow_crew: Crew | null; controller_role?: 'primary' | 'assistant' | null; rest_days?: string[] | null }
 interface PhaseRow { id: string; plan_id: string; start_date: string; end_date: string; needs: SdPhase['needs'] }
@@ -28,7 +28,10 @@ export async function fetchSdPlans(): Promise<SdPlan[]> {
   return (data as PlanRow[]).map(toPlan);
 }
 
-export async function fetchSdPlan(id: string): Promise<{ plan: SdPlan; teams: SdTeam[]; members: SdMember[]; phases: SdPhase[]; signatures: Signature[] }> {
+/** The instruction memo's own details (the rest is read from the plan). */
+export interface MemoSettings { date?: string; signer?: Signature; cc?: string[]; notes?: string[] }
+
+export async function fetchSdPlan(id: string): Promise<{ plan: SdPlan; teams: SdTeam[]; members: SdMember[]; phases: SdPhase[]; signatures: Signature[]; memo: MemoSettings }> {
   const [p, t, m, ph] = await Promise.all([
     supabase.from('sd_plans').select('*').eq('id', id).single(),
     supabase.from('sd_teams').select('*').eq('plan_id', id).eq('status', 'active').order('sort'),
@@ -47,7 +50,7 @@ export async function fetchSdPlan(id: string): Promise<{ plan: SdPlan; teams: Sd
       (mem.days ??= {})[r.work_date] = { works: r.works, hours: r.hours == null ? null : Number(r.hours) };
     }
   }
-  return { plan: toPlan(p.data as PlanRow), teams: (t.data as TeamRow[]).map(toTeam), members, phases: (ph.data as PhaseRow[]).map(toPhase), signatures: (p.data as PlanRow).signatures ?? [] };
+  return { plan: toPlan(p.data as PlanRow), teams: (t.data as TeamRow[]).map(toTeam), members, phases: (ph.data as PhaseRow[]).map(toPhase), signatures: (p.data as PlanRow).signatures ?? [], memo: (p.data as PlanRow).memo ?? {} };
 }
 
 /** Active shutdown team members overlapping [from, to] (plans not cancelled), for the manpower engine. */
@@ -147,7 +150,7 @@ export async function copyPlanToCurrentRules(planId: string): Promise<string> {
   return id;
 }
 
-export async function updateSdPlan(id: string, v: Partial<{ cycle_until: string | null; max_overtime_hard: number; max_overtime_year_hard: number; signatures: Signature[]; kind: SdKind; areas: string[]; sections: string[]; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; max_overtime_year: number; status: 'active' | 'cancelled' }>) {
+export async function updateSdPlan(id: string, v: Partial<{ memo: MemoSettings; cycle_until: string | null; max_overtime_hard: number; max_overtime_year_hard: number; signatures: Signature[]; kind: SdKind; areas: string[]; sections: string[]; title: string; start_date: string; end_date: string; days_on: number; days_off: number; shift_hours: number; ramp_days: number; ramp_hours: number; normal_hours: number; max_overtime: number; max_overtime_year: number; status: 'active' | 'cancelled' }>) {
   const { error } = await supabase.from('sd_plans').update(v).eq('id', id);
   if (error) throw error;
   dataChanged();

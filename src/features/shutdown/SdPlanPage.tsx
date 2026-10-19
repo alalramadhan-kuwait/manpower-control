@@ -254,6 +254,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
                 <ToolButton onClick={copyList} label="Copy team list" hint="To paste in a message" />
                 <ToolButton to={`/shutdown/${plan.id}/schedule`} label="Duty schedule" hint="Who works which day (print)" />
                 <ToolButton to={`/shutdown/${plan.id}/overtime`} label="Overtime sheet" hint="For approval (print)" />
+                <ToolButton to={`/shutdown/${plan.id}/memo`} label="Instruction memo" hint="For the staff, with the schedule (print)" />
                 <ToolButton onClick={generate} disabled={generating} label={generating ? 'Creating…' : 'Excel file'} hint="All 4 sheets in one file" />
                 <ToolButton onClick={() => setEditPattern(true)} label="Plan settings" hint="Dates, 3 on / 1 off, hours, limits" />
               </div>
@@ -268,7 +269,8 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
         </div>
         {/* v2: the Oracle overtime and HR sick-leave figures are checked outside the app */}
         {!data.v2 && <ActionButton onClick={() => setYearOt(true)} icon={<Pencil className="h-4 w-4" />} title="Overtime taken this year" hint={`Hours each person already took this year: the shutdown keeps everyone within ${yearCap(plan)} h a year`} />}
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Link to={`/shutdown/${plan.id}/memo`} className="flex min-h-12 flex-col items-center justify-center rounded-lg bg-white px-1 text-center ring-1 ring-slate-300"><span className="flex items-center gap-1 text-xs font-semibold text-brand-700"><FileText className="h-3.5 w-3.5" />Instruction memo</span><span className="text-[10px] leading-tight text-slate-500">For the staff, with the schedule</span></Link>
           <Link to={`/shutdown/${plan.id}/schedule`} className="flex min-h-12 flex-col items-center justify-center rounded-lg bg-white px-1 text-center ring-1 ring-slate-300"><span className="flex items-center gap-1 text-xs font-semibold text-brand-700"><FileText className="h-3.5 w-3.5" />Duty schedule</span><span className="text-[10px] leading-tight text-slate-500">Who works which day</span></Link>
           <Link to={`/shutdown/${plan.id}/overtime`} className="flex min-h-12 flex-col items-center justify-center rounded-lg bg-white px-1 text-center ring-1 ring-slate-300"><span className="flex items-center gap-1 text-xs font-semibold text-brand-700"><FileText className="h-3.5 w-3.5" />Summary</span><span className="text-[10px] leading-tight text-slate-500">Overtime for approval</span></Link>
           <button type="button" disabled={generating} onClick={generate} className="flex min-h-12 flex-col items-center justify-center rounded-lg bg-brand-700 px-1 text-center text-white disabled:opacity-60"><span className="flex items-center gap-1 text-xs font-semibold"><FileSpreadsheet className="h-3.5 w-3.5" />{generating ? 'Preparing…' : 'Generate Excel'}</span><span className="text-[10px] leading-tight text-white/80">All 4 sheets in one file</span></button>
@@ -625,6 +627,7 @@ function AddSheet({ plan, team, slot, area, data, view, onClose, onDone }: { pla
   );
 }
 
+const MOVE_TEAM = false;
 /** A move to the other team during the shutdown: from a date, the person works with that team to the end of his place. */
 function MoveTeam({ m, teams, name, onDone }: { m: SdMember; teams: SdTeam[]; name: string; onDone: (msg: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -751,7 +754,8 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
           <Field label="From"><input type="date" className="input" value={start} min={plan.start} max={plan.end} onChange={(e) => setStart(e.target.value)} /></Field>
           <Field label={total ? 'Until (released after)' : 'Until'}><input type="date" className="input" value={end} min={plan.start} max={plan.end} onChange={(e) => setEnd(e.target.value)} /></Field>
         </div>
-        {!total && data.teams.length > 1 && <MoveTeam m={m} teams={data.teams.filter((t) => t.id !== m.teamId)} name={r?.display_name ?? 'Employee'} onDone={onDone} />}
+        {/* a move to the other team from a date: ready, shown once the database allows two places one after the other */}
+        {MOVE_TEAM && !total && data.teams.length > 1 && <MoveTeam m={m} teams={data.teams.filter((t) => t.id !== m.teamId)} name={r?.display_name ?? 'Employee'} onDone={onDone} />}
         <table className="w-full text-sm">
           <thead><tr className="text-left text-[11px] text-slate-500"><th className="font-medium">Month</th><th className="text-right font-medium">Days</th><th className="text-right font-medium">SD h</th><th className="text-right font-medium">OT h</th></tr></thead>
           <tbody>{hours.map((h) => <tr key={h.month}><td>{new Date(`${h.month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' })}</td><td className="text-right tabular-nums">{h.days}</td><td className="text-right tabular-nums">{h.sd}</td>

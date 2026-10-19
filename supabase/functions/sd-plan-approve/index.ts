@@ -1318,7 +1318,7 @@ async function fetchSdPlan(id) {
       (mem.days ??= {})[r.work_date] = { works: r.works, hours: r.hours == null ? null : Number(r.hours) };
     }
   }
-  return { plan: toPlan(p.data), teams: t.data.map(toTeam), members, phases: ph.data.map(toPhase), signatures: p.data.signatures ?? [] };
+  return { plan: toPlan(p.data), teams: t.data.map(toTeam), members, phases: ph.data.map(toPhase), signatures: p.data.signatures ?? [], memo: p.data.memo ?? {} };
 }
 async function fetchSdMembers(from, to) {
   const { data, error } = await supabase.from("sd_members").select("*, sd_plans!inner(status)").eq("status", "active").eq("sd_plans.status", "active").lte("start_date", addDaysIso(to, 14)).gte("end_date", addDaysIso(from, -14));
