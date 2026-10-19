@@ -30,7 +30,9 @@ export interface TrkSettings { hoTarget?: string; end?: string; workOrder?: stri
 /** A critical blind (segregation point) or a neutralization (loop or item), entered once on the Isolation page. */
 export type PointStatus = 'open' | 'in' | 'out' | 'filling' | 'soaking' | 'draining' | 'done';
 export interface TrkPoint {
-  id: string; kind: 'blind' | 'neut'; ref: string; name: string; detail: string | null; fo: string | null; stepId: string | null; items: string[];
+  id: string; kind: 'blind' | 'neut';
+  /** a blind: segregation or HP critical (installed by M & I) */
+  grp: 'segregation' | 'hp_critical' | null; ref: string; name: string; detail: string | null; fo: string | null; stepId: string | null; items: string[];
   /** a neutralization the item's handover waits for */
   beforeHo: boolean; sort: number; status: PointStatus;
   inAt: string | null; outAt: string | null; fillAt: string | null; soakAt: string | null; drainAt: string | null; doneAt: string | null;
@@ -38,8 +40,8 @@ export interface TrkPoint {
 }
 export interface TrkData { steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
 
-export const STAGES = ['Not handed over', 'Blinded / handed over', 'Opened / cleaning', 'Inspection', 'Repair', 'Box-up', 'Deblinded / returned'] as const;
-export const STAGE_SHORT = ['Not HO', 'Blinded', 'Cleaning', 'Inspection', 'Repair', 'Box-up', 'Returned'] as const;
+export const STAGES = ['Not handed over', 'Handed over', 'Opened / cleaning', 'Inspection', 'Repair', 'Box-up', 'Deblinded / returned'] as const;
+export const STAGE_SHORT = ['Not HO', 'HO', 'Cleaning', 'Inspection', 'Repair', 'Box-up', 'Returned'] as const;
 export const PENDING_REASONS = ['Stuck / seized bolts', 'Waiting material', 'Waiting manpower', 'Waiting scaffolding', 'Waiting permit / gas test', 'Waiting inspection (IAT)',
   'Line choked', 'Valve passing', 'Waiting blind / gasket', 'Waiting crane / equipment', 'Waiting previous step', 'Waiting N2 / steam / soda ash', 'Weather', 'Other'] as const;
 export const FO_NAMES: Record<string, string> = { FO1: 'Reactors', FO2: 'HP', FO3: 'LP + Heaters' };
@@ -73,11 +75,13 @@ export interface EquipView {
   hoAt: string | null; iatsOpen: TrkIat[]; plan: PlanVsActual | null;
 }
 
-/** A bar-chart line that is the item's blinding (stage 1, = handed over) or deblinding (stage 6, = returned): done
- *  with the stage, not tapped on its own. */
-export function blindLink(a: Pick<TrkActivity, 'activity' | 'stage'>): 1 | 6 | null {
-  return /blind/i.test(a.activity) && (a.stage === 1 || a.stage === 6) ? a.stage : null;
+/** A bar-chart line done with the stage, not tapped on its own: the deblinding (stage 6, = returned). The blinding
+ *  (stage 1) is M & I work tapped on its own (finished, it also means the item is handed over). */
+export function blindLink(a: Pick<TrkActivity, 'activity' | 'stage'>): 6 | null {
+  return /blind/i.test(a.activity) && a.stage === 6 ? 6 : null;
 }
+/** An item's blind line installed by M & I (stage 1 in the bar chart). */
+export const equipBlind = (a: Pick<TrkActivity, 'activity' | 'stage' | 'tracked'>) => a.tracked && a.stage === 1 && /blind/i.test(a.activity) && !/deblind|de-blind|remove blind/i.test(a.activity);
 
 // ── Isolation & neutralization ─────────────────────────────────────────────────────────────────────────────────
 /** Blind in (or already out) · neutralization drained. */
@@ -91,12 +95,12 @@ export function soakLeft(p: TrkPoint, now: number): number | null {
 /** A bar-chart line moved by the item's neutralization (not tapped on its own). */
 export const neutLink = (a: Pick<TrkActivity, 'activity'>) => /neutrali|soda ash (filling|soaking|draining)/i.test(a.activity);
 export interface Isolation { blinds: TrkPoint[]; neut: TrkPoint[]; blindsIn: number; neutDone: number; ready: boolean }
-/** An item's blinds and neutralization: ready (handed over) when all blinds are in and the neutralization before handover is done. */
+/** An item's blinds and neutralization: ready (handed over) when its neutralization before handover is done (the blinds are M & I work after it). */
 export function isolationOf(tag: string, points: TrkPoint[] = []): Isolation | null {
   const mine = points.filter((p) => p.items.includes(tag));
   if (!mine.length) return null;
   const blinds = mine.filter((p) => p.kind === 'blind'), neut = mine.filter((p) => p.kind === 'neut');
-  const gate = mine.filter((p) => p.kind === 'blind' || p.beforeHo);
+  const gate = mine.filter((p) => p.kind === 'neut' && p.beforeHo);
   return { blinds, neut, blindsIn: blinds.filter(pointComplete).length, neutDone: neut.filter(pointComplete).length, ready: gate.length > 0 && gate.every(pointComplete) };
 }
 
@@ -331,6 +335,8 @@ export interface MiPhase {
   critical: { tag: string; hoStep: string | null; done: boolean }[];
   /** plan vs actual from the actual start (the bar chart shifted by the start delay) */
   banner: Banner | null;
+  /** the planned end (bar chart) and the end expected now: shifted by the start delay and by the days behind / ahead */
+  plannedEnd: number; estEnd: number | null;
 }
 export interface Phases { ops: OpsProgress | null; mi: MiPhase }
 
@@ -344,13 +350,23 @@ export function criticalHandover(d: TrkData, steps: Map<string, StepView>): { at
   return { at: times.length ? Math.max(...times) : null, critical };
 }
 
-/** The operations results: critical blinds in, neutralization (before handover) done, operations items handed over. */
-export function opsResults(d: TrkData, eqs: EquipView[]): { done: number; total: number; blinds: [number, number]; neut: [number, number]; ho: [number, number] } | null {
+/** The operations results: neutralization (before handover) done and operations items handed over. */
+export function opsResults(d: TrkData, eqs: EquipView[]): { done: number; total: number; neut: [number, number]; ho: [number, number] } | null {
   const pts = d.points ?? [];
   if (!pts.length) return null;
-  const b = pts.filter((p) => p.kind === 'blind'), n = pts.filter((p) => p.kind === 'neut' && p.beforeHo), o = eqs.filter((e) => e.eq.opsItem && e.eq.tracked);
-  const blinds: [number, number] = [b.filter(pointComplete).length, b.length], neut: [number, number] = [n.filter(pointComplete).length, n.length], ho: [number, number] = [o.filter((e) => e.stage >= 1).length, o.length];
-  return { done: blinds[0] + neut[0] + ho[0], total: blinds[1] + neut[1] + ho[1], blinds, neut, ho };
+  const n = pts.filter((p) => p.kind === 'neut' && p.beforeHo), o = eqs.filter((e) => e.eq.opsItem && e.eq.tracked);
+  const neut: [number, number] = [n.filter(pointComplete).length, n.length], ho: [number, number] = [o.filter((e) => e.stage >= 1).length, o.length];
+  return { done: neut[0] + ho[0], total: neut[1] + ho[1], neut, ho };
+}
+/** The blinds installed by M & I: segregation and HP critical points, and the items' blind lines (equipment). */
+export function miBlinds(d: TrkData): { segregation: [number, number]; hp: [number, number]; equipment: [number, number] } {
+  const pts = (d.points ?? []).filter((p) => p.kind === 'blind');
+  const c = (xs: { done: boolean }[]): [number, number] => [xs.filter((x) => x.done).length, xs.length];
+  return {
+    segregation: c(pts.filter((p) => p.grp !== 'hp_critical').map((p) => ({ done: pointComplete(p) }))),
+    hp: c(pts.filter((p) => p.grp === 'hp_critical').map((p) => ({ done: pointComplete(p) }))),
+    equipment: c(d.activities.filter(equipBlind).map((a) => ({ done: !!a.actualFinish }))),
+  };
 }
 
 export function opsProgress(steps: Map<string, StepView>, s: TrkSettings, now: number, finishedAt: number | null = null, results: { done: number; total: number } | null = null): OpsProgress | null {
@@ -375,9 +391,11 @@ export function phases(d: TrkData, now: number, steps = stepViews(d, now)): Phas
   const planned = miStart(d.settings);
   const started = ho.at !== null && ho.at <= now ? ho.at : null;
   const delay = started !== null && !Number.isNaN(planned) ? started - planned : 0;
+  const bn = started !== null ? banner(equipViews(d, now - delay, steps)) : null;
+  const plannedEnd = ms(d.settings.miEnd);
   return {
     ops: opsProgress(steps, d.settings, now, started, opsResults(d, equipViews(d, now, steps))),
-    mi: { planned, actualStart: started, delayH: started !== null && !Number.isNaN(planned) ? r1(delay / H) : null, critical: ho.critical,
-      banner: started !== null ? banner(equipViews(d, now - delay, steps)) : null },
+    mi: { planned, actualStart: started, delayH: started !== null && !Number.isNaN(planned) ? r1(delay / H) : null, critical: ho.critical, banner: bn,
+      plannedEnd, estEnd: Number.isNaN(plannedEnd) ? null : plannedEnd + delay + (bn && bn.state !== 'ON_PLAN' ? (bn.state === 'BEHIND' ? 1 : -1) * bn.days * DAY : 0) },
   };
 }

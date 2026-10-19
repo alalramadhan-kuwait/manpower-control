@@ -102,8 +102,8 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso
                 return <button key={s} type="button" disabled={busy || s === v.stage} onClick={() => run(() => setEquipment(e.id, { stage: s }), `${e.tag}: ${label}.`)}
                   className={cx('min-h-11 rounded-lg px-1 text-xs font-semibold ring-1 disabled:opacity-40', s === v.stage ? 'bg-[#0850A0] text-white ring-[#0850A0]' : next ? 'bg-[#D6E6F5] text-[#004080] ring-[#0850A0]' : 'bg-white text-slate-700 ring-slate-300')}>{s}. {label}</button>; })}
             </div>}
-            <p className="text-[11px] text-slate-500">{v.hoAt ? <>Blinded &amp; handed over {when(v.hoAt)}{e.blindsOut ? <> · deblinded {when(e.blindsOut)}</> : null}. </> : null}
-              Blinded = handed over (stage 1){e.hoStep ? `, also when ${e.hoStep} is done` : ''} · deblinded = stage 6. The blind / deblind bar-chart lines follow the stage.</p>
+            <p className="text-[11px] text-slate-500">{v.hoAt ? <>Handed over {when(v.hoAt)}{e.blindsOut ? <> · deblinded {when(e.blindsOut)}</> : null}. </> : null}
+              Handed over (stage 1) by operations{e.hoStep ? ` (${e.hoStep})` : ''}; its blind line finished by M &amp; I also counts · deblinded = stage 6.</p>
           </div>
         </Field>
         {iso && (
@@ -112,7 +112,7 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso
               <b className="block text-[11px] uppercase tracking-wide text-slate-500">Isolation</b>
               {iso.blinds.length > 0 && <span className={cx('mr-2 font-semibold', iso.blindsIn === iso.blinds.length ? 'text-[#08A048]' : 'text-slate-800')}>Blinds {iso.blindsIn}/{iso.blinds.length} in</span>}
               {iso.neut.map((p) => <span key={p.id} className={cx('mr-2 font-semibold', pointComplete(p) ? 'text-[#08A048]' : 'text-slate-800')}>{p.stepId ?? 'Neutralization'}: {NEUT_LABEL[p.status]}</span>)}
-              <span className="block text-[11px] text-slate-500">{iso.ready ? 'Ready: handed over automatically.' : 'Handed over automatically when the blinds are in and the neutralization is done.'}</span>
+              <span className="block text-[11px] text-slate-500">{iso.ready ? 'Neutralized: handed over automatically.' : iso.neut.some((p) => p.beforeHo) ? 'Handed over automatically when the neutralization is done.' : 'Blinds: M & I work.'}</span>
             </span>
             <span className="text-xs font-semibold text-[#0850A0]">Open ›</span>
           </button>
