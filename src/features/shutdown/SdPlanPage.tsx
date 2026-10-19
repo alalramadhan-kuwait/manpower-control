@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronUp, Copy, FileSpreadsheet, FileText, Pencil, Plus, RotateCcw, Shuffle, Trash2, UserMinus } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronRight, ChevronUp, Copy, FileSpreadsheet, FileText, Pencil, Plus, RotateCcw, Shuffle, Trash2, UserMinus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { COVER_GRADE } from '@/core/controllers';
@@ -9,6 +9,7 @@ import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { markPlanUnitsDown } from '@/data/calendar';
 import { minimumsText, minimumsWithDown, periodOn, sectionsName, unitsOn, type OperationPlan } from '@/core/modes';
 import { fetchDirectory } from '@/data/queries';
+import { FoLevelPicker } from '@/features/employees/FoLevelPicker';
 import { addSdMember, clearSdDays, copyPlanToCurrentRules, fetchAllSdMembers, fetchFollowMovements, fetchOvertimeTaken, fetchSdPlan, fetchSdPlans, fetchSickTotals, moveSdMemberTeam, moveSdPlan, removeSdMember, renameSdArea, saveSdPhases, setOvertimeTaken, setSdDays, updateSdMember, updateSdPlan, updateSdTeam, type Signature } from '@/data/shutdown';
 import type { EmployeeDirectoryRow } from '@/data/types';
 import { BottomSheet, Button, Card, ErrorBox, Field, Spinner, cx } from '@/ui/components';
@@ -701,7 +702,15 @@ function MemberSheet({ plan, m, data, view, onClose, onDone }: { plan: SdPlan; m
   return (
     <BottomSheet open onClose={onClose} title={r?.display_name ?? 'Team member'}>
       <div className="space-y-3">
-        <p className="text-sm text-slate-600">#{r?.employee_number} · {SD_SLOT_LABEL[m.slot]}{r?.crew_code ? ` · from ${r.crew_code} Shift` : ''}{team ? ` · ${team.name} team` : ''}</p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-slate-600">#{r?.employee_number} · {SD_SLOT_LABEL[m.slot]}{r?.crew_code ? ` · from ${r.crew_code} Shift` : ''}{team ? ` · ${team.name} team` : ''}</p>
+          <Link to={`/employees/${m.employeeId}`} className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-sm font-semibold text-brand-700 ring-1 ring-brand-200">Profile · leave · notes<ChevronRight className="h-4 w-4" /></Link>
+        </div>
+        {m.slot !== 'controller' && (r?.position_code === 'field_operator' || r?.position_code === 'panel_operator') && (
+          <Field label="Level">
+            <FoLevelPicker employeeId={m.employeeId} level={r?.fo_level ?? null} onChanged={(v) => onDone(`${r?.display_name}: ${v === 'senior' ? 'Experienced' : FO_LEVEL_LABEL[v]} FO. The plan check counts the new level.`)} />
+          </Field>
+        )}
         <PersonHistory employeeId={m.employeeId} crew={crew} skipPlanId={plan.id} />
         {data.v2 && m.slot === 'controller' && (
           <Field label="Controller role">

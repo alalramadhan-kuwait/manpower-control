@@ -13,6 +13,7 @@ import { OnLeaveChip, localToday, shortDate } from '@/ui/leave';
 import { isOpenEnd, splitLeave, type LeaveBlock, type LeaveSpan } from '@/core/leave';
 import { changeLabel } from '@/features/leave/LeaveSheet';
 import { Notes } from './Notes';
+import { FoLevelPicker } from './FoLevelPicker';
 import { PersonStats } from './PersonStats';
 import { t } from '@/i18n';
 import { withOpenEnd } from '@/data/openEnd';
@@ -113,6 +114,12 @@ export default function EmployeeProfilePage({ profile, editId }: { profile: User
           {emp.position_code === 'panel_operator' && (emp.can_cover_field || (emp.grade ?? 0) >= 13) && <Chip tone="blue">{t('Can cover Field')}</Chip>}
           {!emp.is_active && <Chip tone="red">{t('Inactive')}</Chip>}
         </div>
+        {isHead && (emp.position_code === 'field_operator' || emp.position_code === 'panel_operator') && (
+          <div className="mt-3">
+            <div className="mb-1 text-xs font-medium text-slate-500">{t('Field Operator level')}</div>
+            <FoLevelPicker employeeId={emp.id} level={emp.fo_level ?? null} onChanged={() => { setFlash(t('Level saved.')); load(); }} />
+          </div>
+        )}
         {!edit && <div className="mt-3 grid grid-cols-2 gap-2">
           <Link to={entry('leave')} className="flex min-h-11 items-center justify-center rounded-xl bg-brand-700 px-3 text-sm font-medium text-white">{t('New entry for this person')}</Link>
           <Link to={entry('shift')} className="flex min-h-11 items-center justify-center rounded-xl bg-white px-3 text-sm font-medium text-brand-800 ring-1 ring-slate-300">{t('Shift change / cover')}</Link>
