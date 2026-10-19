@@ -63,7 +63,8 @@ export function TodayTab({ steps, eqs, data, now, onOpen, onNav }: { steps: Map<
   const day = Math.max(1, Math.floor((now - start) / DAY) + 1), days = Math.round(span / DAY);
   const pos = (t: number) => `${Math.min(100, Math.max(0, ((t - start) / span) * 100))}%`;
   // the main items first, the miscellaneous ones (CV shells, PSVs, check valves …) after them
-  const behind = eqs.filter((e) => e.plan && e.plan.variance < 0 && e.eq.tracked).sort((a, b) => Number(isMisc(a.eq.group)) - Number(isMisc(b.eq.group)) || a.plan!.variance - b.plan!.variance || b.plan!.days - a.plan!.days);
+  // M & I behind: the items handed over to it, measured from their own handover
+  const behind = eqs.filter((e) => e.stage >= 1 && e.plan && e.plan.variance < 0 && e.eq.tracked).sort((a, b) => Number(isMisc(a.eq.group)) - Number(isMisc(b.eq.group)) || a.plan!.variance - b.plan!.variance || b.plan!.days - a.plan!.days);
   const go = (n: Nav) => { setSheet(null); onNav(n); };
   const open = (a: { kind: 'step' | 'equipment'; ref: string }) => { setSheet(null); onOpen(a); };
   const opsBadge = !ops ? null : ops.finishedAt !== null && ops.finishDelayH !== null
@@ -187,8 +188,7 @@ function OpsSheet({ data, eqs, plan, finished, badge, onOpen, onNav, onClose }: 
 function MiSheet({ data, steps, now, mi, behind, onOpen, onNav, onClose }: { data: TrackerData; steps: Map<string, StepView>; now: number; mi: ReturnType<typeof phases>['mi']; behind: EquipView[];
   onOpen: (a: { kind: 'step' | 'equipment'; ref: string }) => void; onNav: (n: Nav) => void; onClose: () => void }) {
   const [all, setAll] = useState(false);
-  const delay = mi.actualStart !== null && !Number.isNaN(mi.planned) ? mi.actualStart - mi.planned : 0;
-  const shifted = useMemo(() => equipViews(data, now - delay, steps), [data, now, delay, steps]);
+  const shifted = useMemo(() => equipViews(data, now, steps).filter((e) => e.stage >= 1), [data, now, steps]);
   const groups = [...[...new Set(shifted.map((e) => e.eq.group))].filter((g) => !isMisc(g)).map((g) => ({ g, b: banner(shifted.filter((e) => e.eq.group === g)) })),
     { g: 'Miscellaneous', b: banner(shifted.filter((e) => isMisc(e.eq.group))) }].filter((x) => x.b.items > 0);
   const pts = (data.points ?? []).filter((p) => p.kind === 'blind');

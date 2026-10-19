@@ -117,9 +117,10 @@ export function isolationOf(tag: string, points: TrkPoint[] = []): Isolation | n
 }
 
 export function planVsActual(acts: TrkActivity[], actual: number, now: number): PlanVsActual | null {
-  const list = acts.filter((a) => a.tracked && a.stage !== null && a.start);
+  const list = acts.filter((a) => a.tracked && a.stage !== null && a.start && a.group !== 'Operations');
   if (!list.length) return null;
-  const started = list.filter((a) => ms(a.start) <= now);
+  // a line counts for its stage once planned to start, a long one (over a day, e.g. a 15-day overhaul) once planned to finish
+  const started = list.filter((a) => ms((a.durationH ?? 0) > 24 && a.finish ? a.finish : a.start) <= now);
   const planned = started.length ? Math.max(...started.map((a) => a.stage!)) : 0;
   const variance = actual - planned;
   const firstOf = (st: number) => { const xs = list.filter((a) => a.stage === st).map((a) => ms(a.start)); return xs.length ? Math.min(...xs) : NaN; };
@@ -138,7 +139,12 @@ export function equipViews(d: TrkData, now: number, steps = stepViews(d, now)): 
     const stage = Math.max(eq.stage, hoDone ? 1 : 0);
     const iatsOpen = d.iats.filter((i) => i.tag === eq.tag && i.status === 'open');
     const ops = eq.opsItem && !!eq.fo && !!eq.hoStep;
-    const plan = eq.barchartKey ? planVsActual(actsBy.get(eq.barchartKey) ?? [], stage, now) : null;
+    const hoAtIso = eq.blindsIn ?? (hoDone ? ho!.step.doneAt ?? ho!.step.updatedAt : null);
+    // the bar chart of an item handed over runs from its own handover (moved by how early / late it came)
+    const acts = eq.barchartKey ? actsBy.get(eq.barchartKey) ?? [] : [];
+    const first = Math.min(...acts.filter((a) => a.tracked && a.start && a.group !== 'Operations').map((a) => ms(a.start)));
+    const shift = stage >= 1 && hoAtIso && Number.isFinite(first) ? ms(hoAtIso) - first : 0;
+    const plan = eq.barchartKey ? planVsActual(acts, stage, now - shift) : null;
     let flag: Flag = 'NONE', reason: string | null = null, lateBy = 0;
     // blinded = handed over: an item handed over on its own while its HO step (shared by several items) is open is fine
     if (stage >= 5 && iatsOpen.length) flag = 'IAT_OPEN';
@@ -150,7 +156,7 @@ export function equipViews(d: TrkData, now: number, steps = stepViews(d, now)): 
     else if (ops && eq.tracked && stage < 6 && eq.plannedFinish && now > ms(eq.plannedFinish)) { flag = 'LATE'; lateBy = now - ms(eq.plannedFinish); }
     else if (ops && stage === 0) flag = 'NOT_HO';
     else if (stage >= 1 && stage <= 5) flag = 'IN_PROGRESS';
-    const hoAt = eq.blindsIn ?? (hoDone ? ho!.step.doneAt ?? ho!.step.updatedAt : null);
+    const hoAt = hoAtIso;
     return { eq, stage, flag, reason, late: flag === 'HO_LATE' || flag === 'LATE', lateBy, hoAt, iatsOpen, plan };
   });
 }
@@ -221,6 +227,9 @@ export interface ShiftReport {
   attention: Attention[]; ready: StepView[]; notes: string; temps: Record<string, string>;
   /** the operations part and M & I (started at the critical handover) */
   ops: OpsProgress | null; mi: MiPhase;
+  /** for the brief message: each reactor (stage, its neutralization), handovers, neutralization and blinds */
+  reactors: { tag: string; critical: boolean; stage: number; neut: string | null; hoAt: string | null }[];
+  results: ReturnType<typeof opsResults>; blinds: ReturnType<typeof miBlinds>;
 }
 export const REACTORS = ['R205', 'R201', 'R202', 'R203', 'R204'] as const;
 
@@ -245,6 +254,11 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
     ...(() => { const ph = phases(d, now, steps); return { ops: ph.ops, mi: ph.mi }; })(),
     attention: attention(steps, eqs), ready: [...steps.values()].filter((v) => v.state === 'READY'),
     notes: log?.notes ?? '', temps: log?.temps ?? {},
+    reactors: eqs.filter((e) => e.eq.group === 'Reactors' && e.eq.tracked).map((e) => {
+      const n = (d.points ?? []).find((p) => p.kind === 'neut' && p.ref === e.eq.tag);
+      return { tag: e.eq.tag, critical: e.eq.critical, stage: e.stage, hoAt: e.hoAt, neut: !n ? null : pointComplete(n) ? 'neutralized' : n.status === 'open' ? null : NEUT_LABEL[n.status].toLowerCase() };
+    }),
+    results: opsResults(d, eqs), blinds: miBlinds(d),
   };
 }
 
@@ -253,24 +267,21 @@ export const bannerText = (b: Banner) => `${b.state === 'ON_PLAN' ? 'ON PLAN' : 
 const FLAG_TEXT: Record<string, string> = { HO_LATE: 'HO LATE', LATE: 'LATE', PENDING: 'Pending', IAT_OPEN: 'IAT open', STEP_LATE: 'LATE', STEP_PENDING: 'Pending' };
 export const flagText = (f: string) => FLAG_TEXT[f] ?? f;
 
-/** The WhatsApp message: short, the PDF carries the details. */
+/** The WhatsApp message: a brief (the critical item and the reactors, handover, neutralization, blinds, M & I); the
+ *  Report page and its PDF carry the details. */
 export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string } = {}): string {
-  const o = r.ops, mi = r.mi;
-  const h = (x: number) => `${x > 0 ? '+' : ''}${x} h`;
+  const mi = r.mi, res = r.results, b = r.blinds;
+  const pct = (x: [number, number]) => `${x[0]}/${x[1]}${x[1] ? ` (${Math.round((x[0] / x[1]) * 100)}%)` : ''}`;
+  const rx = (x: ShiftReport['reactors'][number]) => `${x.tag.replace('R-12-', 'R-')} ${STAGE_SHORT[x.stage]}${x.neut ? `, ${x.neut}` : ''}`;
+  const crit = r.reactors.filter((x) => x.critical);
   const lines = [`${opts.test ? '[TEST] ' : ''}${r.title}`,
-    ...(o && o.state === 'DONE' && o.finishedAt !== null ? [`🛠 Operations done ${kwDay(o.finishedAt)} ${kwTime(o.finishedAt)} (${h(o.finishDelayH ?? 0)})`]
-      : o && o.state !== 'NOT_STARTED' ? [`🛠 Operations day ${o.day}/${o.days}: Plan ${o.planPct}% · Actual ${o.actualPct}%`] : []),
-    mi.actualStart === null ? `🔧 M & I starts at ${mi.critical.map((c) => c.tag).join(', ') || 'critical'} handover (plan ${kwDay(mi.planned)} ${kwTime(mi.planned)})`
-      : `${BANNER_ICON[mi.banner!.state]} M & I ${bannerText(mi.banner!)}  (Plan ${mi.banner!.planPct}% · Actual ${mi.banner!.actualPct}%) · started ${h(mi.delayH ?? 0)}`,
-    `✅ Steps ${r.totals.stepsDone}/${r.totals.steps} · HO ${r.totals.hoDone}/${r.totals.ho}`];
-  if (r.stepsDone.length) lines.push(`✔️ Done this shift: ${r.stepsDone.map((s) => s.stepId).join(', ')}`);
-  if (r.stageChanges.length) lines.push(`🔧 Moved: ${r.stageChanges.map((c) => `${c.tag} → ${STAGE_SHORT[c.to]}`).join(', ')}`);
-  const fin = r.activities.filter((x) => x.field === 'actual_finish').length, sta = r.activities.filter((x) => x.field === 'actual_start').length;
-  if (fin || sta) lines.push(`⏱ Mechanical: ${sta} started · ${fin} finished`);
-  lines.push(`⚠️ Needs attention (${r.attention.length})`);
-  for (const a of r.attention.slice(0, 8)) lines.push(`• ${a.label} ${flagText(a.flag)}${a.detail ? ` – ${a.detail}` : ''}`);
-  if (r.attention.length > 8) lines.push(`• +${r.attention.length - 8} more`);
-  if (r.ready.length) lines.push(`▶️ Ready next: ${r.ready.slice(0, 6).map((v) => `${v.step.stepId} ${v.step.shortName}`).join(', ')}${r.ready.length > 6 ? ` +${r.ready.length - 6}` : ''}`);
+    ...crit.map((x) => (x.stage >= 1 && x.hoAt ? `⭐ ${x.tag.replace('R-12-', 'R-')} handed over ${kwDay(x.hoAt)} ${kwTime(x.hoAt)}${x.stage > 1 ? ` · ${STAGE_SHORT[x.stage]}` : ''}${x.neut ? `, ${x.neut}` : ''}` : `⭐ ${rx(x)}`)),
+    ...(r.reactors.length ? [`⚗️ ${r.reactors.filter((x) => !x.critical).map(rx).join(' · ')}`] : []),
+    ...(res ? [`✅ Handed over ${pct(res.ho)} · Neutralized ${pct(res.neut)}`] : [`✅ Handed over ${r.totals.hoDone}/${r.totals.ho}`]),
+    `🔒 Blinds: Segregation ${b.segregation[0]}/${b.segregation[1]} · HP critical ${b.hp[0]}/${b.hp[1]} · Equipment ${b.equipment[0]}/${b.equipment[1]}`,
+    mi.actualStart === null ? `🔧 M & I starts at ${mi.critical.map((c) => c.tag).join(', ') || 'critical'} handover`
+      : mi.banner && mi.banner.items ? `${BANNER_ICON[mi.banner.state]} M & I ${bannerText(mi.banner)} (${mi.banner.actualPct}% of ${mi.banner.planPct}%)` : '🔧 M & I started'];
+  if (r.attention.length) lines.push(`⚠️ Attention: ${r.attention.length}`);
   const temps = REACTORS.filter((k) => r.temps[k]).map((k) => `${k.slice(1)}:${r.temps[k]}`);
   if (temps.length) lines.push(`🌡 Max bed °F ${temps.join(' ')}`);
   if (r.notes.trim()) lines.push(`📝 ${r.notes.trim()}`);
@@ -403,7 +414,8 @@ export function phases(d: TrkData, now: number, steps = stepViews(d, now)): Phas
   const planned = miStart(d.settings);
   const started = ho.at !== null && ho.at <= now ? ho.at : null;
   const delay = started !== null && !Number.isNaN(planned) ? started - planned : 0;
-  const bn = started !== null ? banner(equipViews(d, now - delay, steps)) : null;
+  // M & I counts only the items handed over to it, each measured from its own handover
+  const bn = started !== null ? banner(equipViews(d, now, steps).filter((e) => e.stage >= 1)) : null;
   const plannedEnd = ms(d.settings.miEnd);
   return {
     ops: opsProgress(steps, d.settings, now, started, opsResults(d, equipViews(d, now, steps))),

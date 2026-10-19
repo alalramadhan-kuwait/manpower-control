@@ -154,7 +154,8 @@ describe('mechanical activity timing', () => {
     const d = seed(); d.log = [{ kind: 'activity', ref: 'R-12-205 · A5410', field: 'actual_start', oldValue: null, newValue: '2026-10-23T09:00:00+03:00', byName: 'Ctl', at: '2026-10-23T09:05:00+03:00' }];
     const r = shiftReport(d, at('2026-10-23 12:00'), null);
     expect(r.activities.length).toBe(1);
-    expect(reportText(r)).toContain('⏱ Mechanical: 1 started · 0 finished');
+    expect(reportText(r)).toContain('⭐ R-205 Not HO');
+    expect(reportText(r)).not.toContain('Mechanical');
   });
 });
 
@@ -174,7 +175,7 @@ describe('the two parts of the shutdown: operations end, M & I starts, at the R-
     const { ops, mi } = phases(d, now);
     expect([ops!.day, ops!.days, ops!.planPct, ops!.actualPct, ops!.state]).toEqual([3, 4, 63, 29, 'BEHIND']);
     expect([mi.actualStart, mi.critical]).toEqual([null, [{ tag: 'R-12-205', hoStep: 'S110', done: false }]]);
-    expect(reportText(shiftReport(d, at('2026-10-19 10:00'), null))).toContain('M & I starts at R-12-205 handover (plan Tue 20 Oct 07:00)');
+    expect(reportText(shiftReport(d, at('2026-10-19 10:00'), null))).toContain('M & I starts at R-12-205 handover');
   });
   it('S110 done 20-Oct 10:00: operations done (+3 h), M & I started then, its plan measured from that start', () => {
     const d = { ...seed(), settings }; Object.assign(step(d, 'S110'), { status: 'done', doneAt: '2026-10-20T10:00:00+03:00' });
@@ -183,7 +184,7 @@ describe('the two parts of the shutdown: operations end, M & I starts, at the R-
     expect([ops!.state, ops!.finishDelayH]).toEqual(['DONE', 3]);
     expect([mi.actualStart, mi.delayH]).toEqual([Date.parse('2026-10-20T10:00:00+03:00'), 3]);
     expect(mi.banner).not.toBeNull();
-    expect(reportText(shiftReport(d, now, null))).toContain('Operations done Tue 20 Oct 10:00 (+3 h)');
+    expect(reportText(shiftReport(d, now, null))).toContain('⭐ R-205 handed over Tue 20 Oct 10:00');
   });
 });
 
