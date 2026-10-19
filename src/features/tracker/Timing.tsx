@@ -5,7 +5,7 @@ import { Download } from 'lucide-react';
 import { STAGES, blindLink, neutLink, kwDay, kwTime, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type StepTiming, type Timing as T, type TrkActivity, type TrkStep } from '@/core/tracker';
 import { addActivity, setActivity, setStep } from '@/data/tracker';
 import { Button, ErrorBox, Field, cx } from '@/ui/components';
-import { Tile } from './ui';
+import { CRow, MenuBtn, RowBtn, RowList, Tile } from './ui';
 
 const when = (iso: string | null | undefined) => (iso ? `${kwDay(iso)} ${kwTime(iso)}` : '—');
 const local = (iso: string | null | undefined) => (iso ? new Date(Date.parse(iso) + 3 * 36e5).toISOString().slice(0, 16) : '');
@@ -18,51 +18,56 @@ export function TimingChip({ t }: { t: T }) {
   return <span className={cx('inline-flex shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold', late ? 'bg-[#E06666] text-white' : STATE[t.state].cls)}>{t.lateStart ? 'START LATE' : t.lateFinish ? 'FINISH LATE' : STATE[t.state].label}</span>;
 }
 
-/** One activity: Started / Finished stamp now; the times and a note can be corrected. */
+/** One activity as a thin row: Start / Finish stamp now; ⋯ holds the time and note correction, the bar-chart dates
+ *  (Section Head), Not required and Undo. */
 export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, onDone }: { t: T; canEdit: boolean; isHead?: boolean; neutCovered?: boolean; onDone: (msg: string) => void }) {
   const a = t.a; const link = blindLink(a); const nlink = neutCovered && neutLink(a);
-  const [edit, setEdit] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [s, setS] = useState(local(a.actualStart)); const [f, setF] = useState(local(a.actualFinish)); const [note, setNote] = useState(a.actualNote ?? '');
   const [ps, setPs] = useState(local(a.start)); const [pf, setPf] = useState(local(a.finish));
-  async function run(patch: Parameters<typeof setActivity>[1], msg: string) { setBusy(true); setErr(null); try { await setActivity(a.id, patch); setEdit(false); onDone(msg); } catch (e) { setErr(e); } finally { setBusy(false); } }
-  return (
-    <div className={cx('rounded-xl bg-white p-2.5 ring-1 ring-slate-200', !a.tracked && 'opacity-50')}>
-      <div className="flex items-start gap-2">{a.tracked && nlink ? <span className="inline-flex shrink-0 rounded bg-[#FFE699] px-1.5 py-0.5 text-[10px] font-bold text-amber-950">{t.state === 'FINISHED' ? '✓ ' : ''}= NEUTRALIZATION</span> : a.tracked && link ? <span className="inline-flex shrink-0 rounded bg-[#D6E6F5] px-1.5 py-0.5 text-[10px] font-bold text-[#004080]">{t.state === 'FINISHED' ? '✓ ' : ''}= STAGE {link}</span> : a.tracked ? <TimingChip t={t} /> : <span className="inline-flex shrink-0 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">NOT REQUIRED</span>}<span className="min-w-0 flex-1 text-sm leading-snug text-slate-900">{a.activity}</span><span className="shrink-0 text-[10px] text-slate-400">{a.activityId}</span></div>
-      <div className="mt-1 grid grid-cols-2 gap-x-2 text-[11px] text-slate-600">
-        <span>Plan {when(a.start)} · {t.plannedH ?? '—'} h</span>
-        <span>Actual {a.actualStart ? when(a.actualStart) : '—'}{t.actualH !== null ? ` · ${t.actualH} h` : ''}</span>
-        {(t.startDelayH !== null || t.overrunH !== null) && <span className="col-span-2">Start {h(t.startDelayH)}{t.overrunH !== null ? ` · duration ${h(t.overrunH)}` : ''}{a.updatedBy ? ` · ${a.updatedBy}` : ''}</span>}
-        {a.actualNote && <span className="col-span-2 italic">{a.actualNote}</span>}
+  async function run(patch: Parameters<typeof setActivity>[1], msg: string, close?: () => void) { setBusy(true); setErr(null); try { await setActivity(a.id, patch); close?.(); onDone(msg); } catch (e) { setErr(e); } finally { setBusy(false); } }
+  const late = t.lateStart || t.lateFinish;
+  const dot = !a.tracked ? 'grey' : t.state === 'FINISHED' ? 'green' : late ? 'red' : t.state === 'RUNNING' ? 'blue' : 'grey';
+  const sub = !a.tracked ? 'Not required'
+    : t.state === 'FINISHED' ? `✓ ${when(a.actualStart)} → ${kwTime(a.actualFinish!)}${t.actualH !== null ? ` · ${t.actualH} h` : ''}${t.overrunH ? ` (${h(t.overrunH)})` : ''}`
+    : t.state === 'RUNNING' ? `▶ since ${when(a.actualStart)} · ${t.actualH ?? 0} h of ${t.plannedH ?? '—'} h${t.lateFinish ? ' · finish late' : ''}`
+    : `Plan ${when(a.start)} · ${t.plannedH ?? '—'} h${t.lateStart ? ' · start late' : ''}`;
+  const free = canEdit && a.tracked && !link && !nlink;
+  const action = !a.tracked ? (isHead ? <RowBtn tone="ghost" disabled={busy} onClick={() => run({ tracked: true, disabled_reason: null }, `${a.key}: ${a.activityId} required again.`)}>↺ Required</RowBtn> : null)
+    : link ? <span className="shrink-0 text-[11px] font-bold text-[#004080]">= Stage {link}</span>
+    : nlink ? <span className="shrink-0 text-[11px] font-bold text-amber-800">= Neutralization</span>
+    : !free ? null
+    : !a.actualStart ? <RowBtn disabled={busy} onClick={() => run({ actual_start: new Date().toISOString() }, `${a.key}: ${a.activityId} started.`)}>▶ Start</RowBtn>
+    : !a.actualFinish ? <RowBtn tone="green" disabled={busy} onClick={() => run({ actual_finish: new Date().toISOString() }, `${a.key}: ${a.activityId} finished.`)}>✓ Finish</RowBtn>
+    : <span className="shrink-0 text-[11px] font-bold text-[#08A048]">Done</span>;
+  const menu = canEdit && a.tracked ? (close: () => void) => (
+    <>
+      <div className="flex flex-wrap gap-1.5">
+        {free && a.actualFinish && <MenuBtn danger disabled={busy} onClick={() => run({ actual_finish: null }, `${a.key}: ${a.activityId} back to running.`, close)}>↶ Undo finish</MenuBtn>}
+        {free && a.actualStart && !a.actualFinish && <MenuBtn danger disabled={busy} onClick={() => run({ actual_start: null }, `${a.key}: ${a.activityId} back to not started.`, close)}>↶ Undo start</MenuBtn>}
+        {isHead && free && !a.actualStart && <MenuBtn disabled={busy} onClick={() => run({ tracked: false, disabled_reason: 'not required' }, `${a.key}: ${a.activityId} not required.`, close)}>Not required</MenuBtn>}
+        <span className="self-center text-[10px] text-slate-400">{a.activityId}{a.updatedBy ? ` · ${a.updatedBy}` : ''}</span>
       </div>
-      {!a.tracked && isHead && <Button variant="ghost" className="mt-1 min-h-9 px-2 text-xs" disabled={busy} onClick={() => run({ tracked: true, disabled_reason: null }, `${a.key}: ${a.activityId} required again.`)}>↺ Required again</Button>}
-      {canEdit && a.tracked && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {link && <span className="self-center text-[11px] text-slate-500">Done with the stage: {STAGES[link]}</span>}
-          {nlink && <span className="self-center text-[11px] text-slate-500">Entered on the Isolation page</span>}
-          {!link && !nlink && !a.actualStart && <Button className="min-h-9 px-3 text-xs" disabled={busy} onClick={() => run({ actual_start: new Date().toISOString() }, `${a.key}: ${a.activityId} started.`)}>▶ Started</Button>}
-          {!link && !nlink && a.actualStart && !a.actualFinish && <Button className="min-h-9 bg-[#08A048] px-3 text-xs hover:bg-green-700" disabled={busy} onClick={() => run({ actual_finish: new Date().toISOString() }, `${a.key}: ${a.activityId} finished.`)}>✓ Finished</Button>}
-          {isHead && !link && !nlink && !a.actualStart && <Button variant="secondary" className="min-h-9 px-3 text-xs" disabled={busy} onClick={() => run({ tracked: false, disabled_reason: 'not required' }, `${a.key}: ${a.activityId} not required.`)}>Not required</Button>}
-          <Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => { if (!edit) { setS(local(a.actualStart)); setF(local(a.actualFinish)); setNote(a.actualNote ?? ''); setPs(local(a.start)); setPf(local(a.finish)); } setEdit((x) => !x); }}>{edit ? 'Close' : isHead ? 'Edit times · bar chart' : 'Edit times · note'}</Button>
-        </div>
-      )}
-      {edit && (
-        <div className="mt-2 space-y-1.5 rounded-lg bg-slate-50 p-2">
-          <div className="grid grid-cols-2 gap-1.5">
-            <Field label="Started"><input type="datetime-local" className="input" value={s} onChange={(e) => setS(e.target.value)} /></Field>
-            <Field label="Finished"><input type="datetime-local" className="input" value={f} onChange={(e) => setF(e.target.value)} /></Field>
-          </div>
-          <input className="input" placeholder="Note (why late / longer, for next time)" value={note} onChange={(e) => setNote(e.target.value)} />
-          {isHead && <div className="grid grid-cols-2 gap-1.5">
-            <Field label="Bar chart start"><input type="datetime-local" className="input" value={ps} onChange={(e) => setPs(e.target.value)} /></Field>
-            <Field label="Bar chart finish"><input type="datetime-local" className="input" value={pf} onChange={(e) => setPf(e.target.value)} /></Field>
-          </div>}
-          <Button className="w-full" disabled={busy || (!!s && !!f && f < s) || (!!ps && !!pf && pf < ps)} onClick={() => run({ actual_start: fromLocal(s), actual_finish: fromLocal(f), actual_note: note.trim() || null,
-            ...(isHead && (ps !== local(a.start) || pf !== local(a.finish)) ? { planned_start: fromLocal(ps), planned_finish: fromLocal(pf), duration_h: ps && pf ? Math.round((Date.parse(pf) - Date.parse(ps)) / 36e5 * 10) / 10 : null } : {}) }, `${a.key}: ${a.activityId} times saved.`)}>Save</Button>
-          {!!s && !!f && f < s && <p className="text-xs text-status-red">The finish is before the start.</p>}
-        </div>
-      )}
+      <div className="grid grid-cols-2 gap-1.5">
+        <Field label="Started"><input type="datetime-local" className="input" value={s} onChange={(e) => setS(e.target.value)} /></Field>
+        <Field label="Finished"><input type="datetime-local" className="input" value={f} onChange={(e) => setF(e.target.value)} /></Field>
+      </div>
+      <input className="input" placeholder="Note (why late / longer, for next time)" value={note} onChange={(e) => setNote(e.target.value)} />
+      {isHead && <div className="grid grid-cols-2 gap-1.5">
+        <Field label="Bar chart start"><input type="datetime-local" className="input" value={ps} onChange={(e) => setPs(e.target.value)} /></Field>
+        <Field label="Bar chart finish"><input type="datetime-local" className="input" value={pf} onChange={(e) => setPf(e.target.value)} /></Field>
+      </div>}
+      <Button className="w-full" disabled={busy || (!!s && !!f && f < s) || (!!ps && !!pf && pf < ps)} onClick={() => run({ actual_start: fromLocal(s), actual_finish: fromLocal(f), actual_note: note.trim() || null,
+        ...(isHead && (ps !== local(a.start) || pf !== local(a.finish)) ? { planned_start: fromLocal(ps), planned_finish: fromLocal(pf), duration_h: ps && pf ? Math.round((Date.parse(pf) - Date.parse(ps)) / 36e5 * 10) / 10 : null } : {}) }, `${a.key}: ${a.activityId} times saved.`, close)}>Save</Button>
+      {!!s && !!f && f < s && <p className="text-xs text-status-red">The finish is before the start.</p>}
+    </>
+  ) : undefined;
+  return (
+    <>
+      <CRow dot={dot} faded={!a.tracked} title={a.activity} sub={<>{sub}{a.actualNote ? <i> · {a.actualNote}</i> : null}</>} action={action}
+        menu={menu} />
       {err != null && <ErrorBox error={err} />}
-    </div>
+    </>
   );
 }
 
@@ -103,9 +108,9 @@ function MechTiming({ activities, now, canEdit, isHead, title, neutKeys, onDone 
       </div>
       <input className="input" placeholder="Search equipment or activity" value={q} onChange={(e) => setQ(e.target.value)} />
       {keys.slice(0, 40).map((k) => (
-        <section key={k} className="space-y-1.5">
+        <section key={k} className="space-y-1">
           <h3 className="text-xs font-bold text-[#004080]">{k}</h3>
-          {list.filter((t) => t.a.key === k).map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} neutCovered={!!neutKeys?.has(t.a.key)} onDone={onDone} />)}
+          <RowList>{list.filter((t) => t.a.key === k).map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} neutCovered={!!neutKeys?.has(t.a.key)} onDone={onDone} />)}</RowList>
         </section>
       ))}
       {!list.length && <p className="py-4 text-center text-sm text-slate-500">Nothing here.</p>}
@@ -128,9 +133,9 @@ export function EquipActivities({ trackerId, itemKey, activities, now, canEdit, 
       <button type="button" onClick={() => setOpen((x) => !x)} className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-600"><span>Work steps · {done}/{ts.length} finished{running.length ? ` · ${running.length} running` : ''}</span><span>{open ? '▾' : '▸'}</span></button>
       {!ts.length && !off.length && <p className="mt-1 text-xs text-slate-500">None yet: import the bar chart (Admin){isHead ? ' or add the procedure steps here' : ''}.</p>}
       {ts.length > 0 && <p className="mt-1 text-xs text-slate-700">{running.length ? <>Now: <b>{running.map((t) => t.a.activity).join(' · ')}</b></> : null}{running.length && next ? ' · ' : ''}{next ? <>Next: <b>{next.a.activity}</b></> : null}</p>}
-      {open && <div className="mt-1.5 space-y-1.5">{ts.map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} neutCovered={neutCovered} onDone={onDone} />)}</div>}
+      {open && ts.length > 0 && <RowList className="mt-1.5">{ts.map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} neutCovered={neutCovered} onDone={onDone} />)}</RowList>}
       {open && off.length > 0 && <div className="mt-1.5 space-y-1.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Not required · {off.length}</p>
-        {off.map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} onDone={onDone} />)}</div>}
+        <RowList>{off.map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} onDone={onDone} />)}</RowList></div>}
       {isHead && (add ? <AddActivity trackerId={trackerId} itemKey={itemKey} onDone={(m) => { setAdd(false); onDone(m); }} onCancel={() => setAdd(false)} />
         : <Button variant="ghost" className="mt-1 min-h-9 px-2 text-xs" onClick={() => setAdd(true)}>+ Add work step (procedure)</Button>)}
     </div>

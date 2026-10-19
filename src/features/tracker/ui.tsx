@@ -1,5 +1,5 @@
 // Shared look of the progress tracker: the status colours of the module plan (§9), chips and the stage bar.
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { STAGE_SHORT, type Flag, type StepState } from '@/core/tracker';
 import { cx } from '@/ui/components';
 
@@ -46,4 +46,35 @@ export const Tile = ({ value, label, tone, onClick }: { value: ReactNode; label:
     <span className={cx('text-lg font-bold tabular-nums', tone === 'red' ? 'text-[#E02028]' : tone === 'amber' ? 'text-amber-700' : tone === 'green' ? 'text-[#08A048]' : 'text-slate-900')}>{value}</span>
     <span className="text-[11px] text-slate-500">{label}</span>
   </button>
+);
+
+/** The list a set of compact rows sits in: one white box, a thin line between the rows. */
+export const RowList = ({ children, className }: { children: ReactNode; className?: string }) =>
+  <div className={cx('divide-y divide-slate-100 overflow-hidden rounded-xl bg-white ring-1 ring-slate-200', className)}>{children}</div>;
+const DOT = { grey: 'bg-slate-300', blue: 'bg-[#0850A0]', green: 'bg-[#08A048]', red: 'bg-[#E02028]', amber: 'bg-amber-500' } as const;
+/** One thin row: a status dot, the name and one line under it, the next action, and ⋯ for the rest. */
+export function CRow({ dot, title, sub, action, menu, onTitle, faded }: { dot: keyof typeof DOT; title: ReactNode; sub?: ReactNode; action?: ReactNode;
+  menu?: (close: () => void) => ReactNode; onTitle?: () => void; faded?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const text = <><span className="line-clamp-2 block text-[13.5px] font-semibold leading-snug text-slate-900">{title}</span>{sub && <span className="block truncate text-[11px] leading-snug text-slate-500">{sub}</span>}</>;
+  return (
+    <div className={cx('px-2.5 py-1.5', faded && 'opacity-60')}>
+      <div className="flex min-h-10 items-center gap-2">
+        <span className={cx('h-2 w-2 shrink-0 rounded-full', DOT[dot])} />
+        {onTitle ? <button type="button" onClick={onTitle} className="min-w-0 flex-1 text-left">{text}</button> : <span className="min-w-0 flex-1">{text}</span>}
+        {action}
+        {menu && <button type="button" aria-label="More" aria-expanded={open} onClick={() => setOpen((x) => !x)} className="flex h-9 w-7 shrink-0 items-center justify-center text-lg leading-none text-slate-500">⋯</button>}
+      </div>
+      {open && menu && <div className="mb-1 mt-1 space-y-1.5 rounded-lg bg-slate-50 p-2">{menu(() => setOpen(false))}</div>}
+    </div>
+  );
+}
+/** The small action button of a row. */
+export const RowBtn = ({ children, onClick, disabled, tone = 'navy' }: { children: ReactNode; onClick: () => void; disabled?: boolean; tone?: 'navy' | 'green' | 'ghost' }) => (
+  <button type="button" onClick={onClick} disabled={disabled} className={cx('shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-bold disabled:opacity-50',
+    tone === 'green' ? 'bg-[#08A048] text-white' : tone === 'ghost' ? 'bg-white text-[#0d2a5e] ring-1 ring-slate-300' : 'bg-[#0d2a5e] text-white')}>{children}</button>
+);
+/** A small action inside the ⋯ menu. */
+export const MenuBtn = ({ children, onClick, disabled, danger }: { children: ReactNode; onClick: () => void; disabled?: boolean; danger?: boolean }) => (
+  <button type="button" onClick={onClick} disabled={disabled} className={cx('rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold ring-1 ring-slate-200 disabled:opacity-50', danger ? 'text-red-700' : 'text-slate-800')}>{children}</button>
 );
