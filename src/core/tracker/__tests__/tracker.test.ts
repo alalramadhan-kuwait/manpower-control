@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attention, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { attention, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, opsProgress, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -154,5 +154,21 @@ describe('step timing', () => {
     expect(stepTiming(s, at('2026-10-22 10:00'))).toMatchObject({ estH: 4, actualH: 6.5, overrunH: 2.5, running: false });
     expect(stepTiming({ ...s, doneAt: null }, at('2026-10-21 10:00'))).toMatchObject({ actualH: 2, running: true, overrunH: null });
     expect(stepTimingCsv([stepTiming(s, at('2026-10-22 10:00'))]).split('\n')[1]).toBe('S321,FO3,7,E-216A/B S/S neutralization,SOP-12-2018,4,2026-10-21 08:00,2026-10-21 14:30,6.5,2.5,');
+  });
+});
+
+describe('the two parts of the shutdown', () => {
+  const settings = { hoTarget: '2026-10-20T07:00:00+03:00', opsStart: '2026-10-16T07:00:00+03:00', miStart: '2026-10-20T07:00:00+03:00' };
+  it('operations: day 3 of 4 on 18-Oct 19:00, plan by the time gone, actual by the steps done', () => {
+    const d = { ...seed(), settings }; const now = at('2026-10-18 19:00');
+    const o = opsProgress(stepViews(d, now), settings, now)!;
+    expect([o.day, o.days, o.planPct, o.actualPct]).toEqual([3, 4, 63, 29]);
+    expect(o.state).toBe('BEHIND');
+  });
+  it('M & I not started yet: the report says when it starts', () => {
+    const d = { ...seed(), settings };
+    const r = shiftReport(d, at('2026-10-19 10:00'), null);
+    expect(reportText(r)).toContain('M & I starts Tue 20 Oct 07:00');
+    expect(reportText(r)).toContain('Operations day 4/4');
   });
 });

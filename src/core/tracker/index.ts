@@ -26,7 +26,7 @@ export interface TrkActivity {
   actualStart?: string | null; actualFinish?: string | null; actualNote?: string | null; updatedBy?: string | null; updatedAt?: string | null;
 }
 export interface TrkLog { kind: 'step' | 'equipment' | 'iat' | 'activity'; ref: string; field: string; oldValue: string | null; newValue: string | null; byName: string | null; at: string }
-export interface TrkSettings { hoTarget?: string; end?: string; workOrder?: string; whatsapp?: string }
+export interface TrkSettings { hoTarget?: string; end?: string; workOrder?: string; whatsapp?: string; opsStart?: string; miStart?: string; miEnd?: string }
 export interface TrkData { steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings }
 
 export const STAGES = ['Not handed over', 'Handed over', 'Opened / cleaning', 'Inspection', 'Repair', 'Box-up', 'Deblinded / returned'] as const;
@@ -167,6 +167,8 @@ export interface ShiftReport {
   /** mechanical activities started / finished in the shift */
   activities: { ref: string; field: 'actual_start' | 'actual_finish'; at: string; by: string | null }[];
   attention: Attention[]; ready: StepView[]; notes: string; temps: Record<string, string>;
+  /** the operations part, and M & I's start while it has not started */
+  ops: OpsProgress | null; miStartsAt: number | null;
 }
 export const REACTORS = ['R205', 'R201', 'R202', 'R203', 'R204'] as const;
 
@@ -188,6 +190,7 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
   return {
     title: `${title} · ${kwDay(sh.from)} · ${sh.shift === 'D' ? 'Day' : 'Night'}`,
     banner: banner(eqs), totals: totals(steps, eqs, d.iats), stepsDone, stageChanges, activities,
+    ops: opsProgress(steps, d.settings, now), miStartsAt: now < miStart(d.settings) ? miStart(d.settings) : null,
     attention: attention(steps, eqs), ready: [...steps.values()].filter((v) => v.state === 'READY'),
     notes: log?.notes ?? '', temps: log?.temps ?? {},
   };
@@ -200,8 +203,10 @@ export const flagText = (f: string) => FLAG_TEXT[f] ?? f;
 
 /** The WhatsApp message: short, the PDF carries the details. */
 export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string } = {}): string {
+  const o = r.ops;
   const lines = [`${opts.test ? '[TEST] ' : ''}${r.title}`,
-    `${BANNER_ICON[r.banner.state]} ${bannerText(r.banner)}  (Plan ${r.banner.planPct}% · Actual ${r.banner.actualPct}%)`,
+    ...(o && o.state !== 'NOT_STARTED' && o.state !== 'DONE' ? [`🛠 Operations day ${o.day}/${o.days}: Plan ${o.planPct}% · Actual ${o.actualPct}%`] : []),
+    r.miStartsAt ? `🔧 M & I starts ${kwDay(r.miStartsAt)} ${kwTime(r.miStartsAt)}` : `${BANNER_ICON[r.banner.state]} M & I ${bannerText(r.banner)}  (Plan ${r.banner.planPct}% · Actual ${r.banner.actualPct}%)`,
     `✅ Steps ${r.totals.stepsDone}/${r.totals.steps} · HO ${r.totals.hoDone}/${r.totals.ho}`];
   if (r.stepsDone.length) lines.push(`✔️ Done this shift: ${r.stepsDone.map((s) => s.stepId).join(', ')}`);
   if (r.stageChanges.length) lines.push(`🔧 Moved: ${r.stageChanges.map((c) => `${c.tag} → ${STAGE_SHORT[c.to]}`).join(', ')}`);
@@ -274,3 +279,19 @@ export function stepTimingCsv(ts: StepTiming[]): string {
   const head = ['step', 'fo', 'gate', 'name', 'procedure', 'est_h', 'started', 'done', 'actual_h', 'overrun_h', 'remark'];
   return [head.join(','), ...ts.map((t) => [t.s.stepId, t.s.fo, t.s.gate, t.s.shortName, t.s.procedure, t.estH, kwFull(t.s.startedAt), kwFull(t.s.doneAt), t.running ? '' : t.actualH, t.overrunH, t.s.remark].map(q).join(','))].join('\n');
 }
+
+// ── The two parts of the shutdown: operations (guideline steps) and M & I (bar chart) ──────────────────────────
+export interface OpsProgress { state: Banner['state'] | 'NOT_STARTED' | 'DONE'; planPct: number; actualPct: number; day: number; days: number; offDays: number; start: number; end: number }
+/** Operations shutdown: the guideline steps done against the time gone in its window (start → M & I start). */
+export function opsProgress(steps: Map<string, StepView>, s: TrkSettings, now: number): OpsProgress | null {
+  const start = ms(s.opsStart), end = ms(s.miStart ?? s.hoTarget);
+  if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return null;
+  const sv = [...steps.values()].filter((v) => v.state !== 'NA');
+  const actual = sv.length ? sv.filter((v) => v.state === 'DONE').length / sv.length : 0;
+  const plan = Math.min(1, Math.max(0, (now - start) / (end - start)));
+  const days = Math.round((end - start) / DAY), day = Math.min(days, Math.max(1, Math.floor((now - start) / DAY) + 1));
+  const state = now < start ? 'NOT_STARTED' : actual >= 1 ? 'DONE' : actual >= plan + 0.05 ? 'AHEAD' : actual < plan - 0.05 ? 'BEHIND' : 'ON_PLAN';
+  return { state, planPct: Math.round(plan * 100), actualPct: Math.round(actual * 100), day, days, offDays: r1((actual - plan) * (end - start) / DAY), start, end };
+}
+/** M & I: before its start, when it starts; then the bar-chart banner. */
+export function miStart(s: TrkSettings): number { return ms(s.miStart ?? s.hoTarget); }

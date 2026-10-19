@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
-import { FO_NAMES, REACTORS, STAGE_SHORT, attention, banner, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, totals, type Attention, type EquipView, type StepView } from '@/core/tracker';
+import { FO_NAMES, REACTORS, STAGE_SHORT, miStart, opsProgress, attention, banner, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, totals, type Attention, type EquipView, type StepView } from '@/core/tracker';
 import { currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { Button, ErrorBox, Spinner, cx } from '@/ui/components';
@@ -89,7 +89,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
         ))}
       </nav>
       {flash && <div role="status" className="mb-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{flash}</div>}
-      {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} onOpen={open} onTab={setTab} />}
+      {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} now={now} onOpen={open} onTab={setTab} />}
       {tab === 'guideline' && <GuidelineTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {tab === 'equipment' && <EquipmentTab eqs={eqs} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} onDone={done} />}
@@ -98,6 +98,40 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {tab === 'admin' && isHead && <TrackerAdmin data={data} eqs={eqs} onDone={done} />}
       {openStep && <StepSheet v={openStep} isHead={isHead} canEdit={canEdit} onClose={() => setSheet(null)} onDone={done} />}
       {openEq && <EquipSheet v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={openEq.eq.barchartKey ? data.activities.filter((a) => a.key === openEq.eq.barchartKey) : []} now={now} onClose={() => setSheet(null)} onDone={done} />}
+    </div>
+  );
+}
+
+const span = (msec: number) => { const d = Math.floor(msec / 864e5), h = Math.round((msec % 864e5) / 36e5); return d ? `${d} d ${h} h` : `${h} h`; };
+/** Two parts: the operations shutdown (guideline steps against the time gone) and M & I (the bar chart). */
+function PhaseBanners({ steps, b, settings, now }: { steps: Map<string, StepView>; b: ReturnType<typeof banner>; settings: TrackerData['settings']; now: number }) {
+  const ops = opsProgress(steps, settings, now); const mi = miStart(settings);
+  const opsBg = !ops ? '' : ops.state === 'NOT_STARTED' ? 'bg-slate-500' : ops.state === 'DONE' || ops.state === 'AHEAD' ? 'bg-[#08A048]' : ops.state === 'BEHIND' ? 'bg-[#E02028]' : 'bg-amber-500';
+  const opsText = !ops ? '' : ops.state === 'NOT_STARTED' ? 'NOT STARTED' : ops.state === 'DONE' ? 'DONE' : ops.state === 'ON_PLAN' ? 'ON PLAN' : `${ops.state} ${ops.offDays > 0 ? '+' : '−'}${Math.abs(ops.offDays)} d`;
+  const miNotYet = !Number.isNaN(mi) && now < mi;
+  return (
+    <div className="space-y-2">
+      {ops && (
+        <div className={cx('rounded-2xl px-4 py-3 text-white', opsBg)}>
+          <div className="text-[11px] font-bold uppercase tracking-wide opacity-90">Operations shutdown · day {ops.day} of {ops.days}</div>
+          <div className="text-2xl font-extrabold tracking-wide">● {opsText}</div>
+          <div className="text-sm font-medium opacity-90">Plan {ops.planPct}% · Actual {ops.actualPct}% (guideline steps)</div>
+          <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/30"><div className="h-full bg-white" style={{ width: `${ops.actualPct}%` }} /></div>
+        </div>
+      )}
+      {miNotYet ? (
+        <div className="rounded-2xl bg-[#004080] px-4 py-3 text-white">
+          <div className="text-[11px] font-bold uppercase tracking-wide opacity-90">M &amp; I (bar chart)</div>
+          <div className="text-xl font-extrabold">Starts {kwDay(mi)} {kwTime(mi)}</div>
+          <div className="text-sm opacity-90">in {span(mi - now)}{b.items ? '' : ' · import the bar chart (Admin)'}</div>
+        </div>
+      ) : (
+        <div className={cx('rounded-2xl px-4 py-3 text-white', BANNER_BG[b.state])}>
+          <div className="text-[11px] font-bold uppercase tracking-wide opacity-90">M &amp; I (bar chart)</div>
+          <div className="text-2xl font-extrabold tracking-wide">● {bannerText(b)}</div>
+          <div className="text-sm font-medium opacity-90">Plan {b.planPct}% · Actual {b.actualPct}%{b.items ? ` · ${b.items} items` : ' · import the bar chart (Admin)'}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -112,17 +146,14 @@ function AttentionRow({ a, onOpen }: { a: Attention; onOpen: () => void }) {
   );
 }
 
-function TodayTab({ steps, eqs, data, onOpen, onTab }: { steps: Map<string, StepView>; eqs: EquipView[]; data: TrackerData; onOpen: (a: { kind: 'step' | 'equipment'; ref: string }) => void; onTab: (t: Tab) => void }) {
+function TodayTab({ steps, eqs, data, now, onOpen, onTab }: { steps: Map<string, StepView>; eqs: EquipView[]; data: TrackerData; now: number; onOpen: (a: { kind: 'step' | 'equipment'; ref: string }) => void; onTab: (t: Tab) => void }) {
   const b = banner(eqs); const tot = totals(steps, eqs, data.iats); const att = attention(steps, eqs);
   const [allReady, setAllReady] = useState(false);
   const ready = [...steps.values()].filter((v) => v.state === 'READY');
   const critical = eqs.filter((e) => e.eq.critical && e.eq.tracked);
   return (
     <div className="space-y-3">
-      <div className={cx('rounded-2xl px-4 py-3 text-white', BANNER_BG[b.state])}>
-        <div className="text-2xl font-extrabold tracking-wide">● {bannerText(b)}</div>
-        <div className="text-sm font-medium opacity-90">Plan {b.planPct}% · Actual {b.actualPct}%{b.items ? ` · ${b.items} items on the bar chart` : ' · import the bar chart (Admin)'}</div>
-      </div>
+      <PhaseBanners steps={steps} b={b} settings={data.settings} now={now} />
       <div className="grid grid-cols-3 gap-2">
         <Tile value={`${tot.stepsDone}/${tot.steps}`} label="steps" onClick={() => onTab('guideline')} />
         <Tile value={`${tot.hoDone}/${tot.ho}`} label="handed over" onClick={() => onTab('equipment')} />
@@ -269,7 +300,9 @@ function ReportTab({ data, now, canEdit, by, onSaved }: { data: TrackerData; now
         <header className="mb-2 border-b border-slate-200 pb-2">
           <img src={`${import.meta.env.BASE_URL}brand/knpc-logo.png`} alt="KNPC" className="mb-1 hidden h-10 print:block" />
           <h2 className="font-bold text-[#004080]">{test ? '[TEST] ' : ''}{r.title}</h2>
-          <p className={cx('font-semibold', r.banner.state === 'BEHIND' ? 'text-[#E02028]' : r.banner.state === 'AHEAD' ? 'text-[#08A048]' : 'text-amber-700')}>{bannerText(r.banner)} · Plan {r.banner.planPct}% · Actual {r.banner.actualPct}%</p>
+          {r.ops && r.ops.state !== 'NOT_STARTED' && <p className="font-semibold text-slate-800">Operations day {r.ops.day}/{r.ops.days} · Plan {r.ops.planPct}% · Actual {r.ops.actualPct}%</p>}
+          {r.miStartsAt ? <p className="font-semibold text-[#004080]">M &amp; I starts {kwDay(r.miStartsAt)} {kwTime(r.miStartsAt)}</p>
+            : <p className={cx('font-semibold', r.banner.state === 'BEHIND' ? 'text-[#E02028]' : r.banner.state === 'AHEAD' ? 'text-[#08A048]' : 'text-amber-700')}>M &amp; I {bannerText(r.banner)} · Plan {r.banner.planPct}% · Actual {r.banner.actualPct}%</p>}
           <p className="text-xs text-slate-600">Steps {r.totals.stepsDone}/{r.totals.steps} · HO {r.totals.hoDone}/{r.totals.ho} · late {r.totals.late} · pending {r.totals.pending} · IAT open {r.totals.iatOpen}</p>
         </header>
         <h3 className="mt-2 font-semibold">Done this shift ({r.stepsDone.length})</h3>
