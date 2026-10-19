@@ -2,7 +2,7 @@
 // corrected), plan vs actual durations, and the record exported for future shutdowns.
 import { useState } from 'react';
 import { Download } from 'lucide-react';
-import { STAGES, blindLink, neutLink, kwDay, kwTime, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type StepTiming, type Timing as T, type TrkActivity, type TrkStep } from '@/core/tracker';
+import { STAGES, actOrder, blindLink, neutLink, kwDay, kwTime, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type StepTiming, type Timing as T, type TrkActivity, type TrkStep } from '@/core/tracker';
 import { addActivity, setActivity, setStep } from '@/data/tracker';
 import { Button, ErrorBox, Field, cx } from '@/ui/components';
 import { CRow, MenuBtn, RowBtn, RowList, Tile } from './ui';
@@ -31,6 +31,7 @@ export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, o
   const sub = !a.tracked ? 'Not required'
     : t.state === 'FINISHED' ? `✓ ${when(a.actualStart)} → ${kwTime(a.actualFinish!)}${t.actualH !== null ? ` · ${t.actualH} h` : ''}${t.overrunH ? ` (${h(t.overrunH)})` : ''}`
     : t.state === 'RUNNING' ? `▶ since ${when(a.actualStart)} · ${t.actualH ?? 0} h of ${t.plannedH ?? '—'} h${t.lateFinish ? ' · finish late' : ''}`
+    : a.group === 'Operations' ? `Operations${a.durationH ? ` · ${a.durationH} h` : ''}`
     : `Plan ${when(a.start)} · ${t.plannedH ?? '—'} h${t.lateStart ? ' · start late' : ''}`;
   const free = canEdit && a.tracked && !link && !nlink;
   const action = !a.tracked ? (isHead ? <RowBtn tone="ghost" disabled={busy} onClick={() => run({ tracked: true, disabled_reason: null }, `${a.key}: ${a.activityId} required again.`)}>↺ Required</RowBtn> : null)
@@ -124,7 +125,7 @@ function MechTiming({ activities, now, canEdit, isHead, title, neutKeys, onDone 
  *  the one running and the next one on top. */
 export function EquipActivities({ trackerId, itemKey, activities, now, canEdit, isHead, neutCovered = false, onDone }: { trackerId: string; itemKey: string; activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; neutCovered?: boolean; onDone: (msg: string) => void }) {
   const [open, setOpen] = useState(true); const [add, setAdd] = useState(false);
-  const ts = activities.filter((a) => a.tracked).map((a) => timing(a, now)).sort((x, y) => (x.a.start ?? '9').localeCompare(y.a.start ?? '9'));
+  const ts = activities.filter((a) => a.tracked).map((a) => timing(a, now)).sort((x, y) => actOrder(x.a, y.a));
   const running = ts.filter((t) => t.state === 'RUNNING'), done = ts.filter((t) => t.state === 'FINISHED').length;
   const next = ts.find((t) => t.state === 'NOT_STARTED');
   const off = activities.filter((a) => !a.tracked).map((a) => timing(a, now));

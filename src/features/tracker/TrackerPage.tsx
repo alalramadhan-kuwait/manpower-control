@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
-import { FO_NAMES, NEUT_LABEL, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
+import { FO_NAMES, NEUT_LABEL, actOrder, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import { currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { Button, ErrorBox, Spinner, cx } from '@/ui/components';
@@ -176,7 +176,7 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
   const lineOf = (e: EquipView): { text: string; tone: 'run' | 'muted' | 'red' } | null => {
     if (e.eq.pendingReason) return { text: `⏸ ${e.eq.pendingReason}`, tone: 'red' };
     const key = e.eq.barchartKey ?? e.eq.tag;
-    const xs = activities.filter((a) => a.tracked && a.key === key).sort((x, y) => (x.start ?? '9').localeCompare(y.start ?? '9'));
+    const xs = activities.filter((a) => a.tracked && a.key === key).sort(actOrder);
     const run = xs.filter((a) => a.actualStart && !a.actualFinish);
     if (run.length) return { text: `▶ ${run.map((a) => a.activity).join(' · ')}`, tone: 'run' };
     const iso = e.stage === 0 ? isolationOf(e.eq.tag, points) : null;

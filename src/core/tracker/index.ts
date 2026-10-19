@@ -84,8 +84,16 @@ export interface EquipView {
 export function blindLink(a: Pick<TrkActivity, 'activity' | 'stage'>): 6 | null {
   return /blind/i.test(a.activity) && a.stage === 6 ? 6 : null;
 }
-/** An item's blind line installed by M & I (stage 1 in the bar chart). */
-export const equipBlind = (a: Pick<TrkActivity, 'activity' | 'stage' | 'tracked'>) => a.tracked && a.stage === 1 && /blind/i.test(a.activity) && !/deblind|de-blind|remove blind/i.test(a.activity);
+/** An item's blind line installed by M & I (stage 1 in the bar chart; not the operations steps that mention blinds). */
+export const equipBlind = (a: Pick<TrkActivity, 'activity' | 'stage' | 'tracked' | 'group'>) => a.tracked && a.stage === 1 && a.group !== 'Operations' && /blind/i.test(a.activity) && !/deblind|de-blind|remove blind/i.test(a.activity);
+/** The order of an item's work steps: the operations steps of its handover procedure first (in their order), then the
+ *  bar chart by planned start. */
+export function actOrder(x: Pick<TrkActivity, 'group' | 'activityId' | 'start'>, y: Pick<TrkActivity, 'group' | 'activityId' | 'start'>): number {
+  const ox = x.group === 'Operations', oy = y.group === 'Operations';
+  if (ox !== oy) return ox ? -1 : 1;
+  if (ox) return x.activityId.localeCompare(y.activityId);
+  return (x.start ?? '9').localeCompare(y.start ?? '9');
+}
 
 // ── Isolation & neutralization ─────────────────────────────────────────────────────────────────────────────────
 /** Blind in (or already out) · neutralization drained. */
