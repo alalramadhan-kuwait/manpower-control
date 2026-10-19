@@ -2,8 +2,8 @@
 // corrected), plan vs actual durations, and the record exported for future shutdowns.
 import { useState } from 'react';
 import { Download } from 'lucide-react';
-import { kwDay, kwTime, timing, timingCsv, timingSummary, type Timing as T, type TrkActivity } from '@/core/tracker';
-import { setActivity } from '@/data/tracker';
+import { kwDay, kwTime, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type StepTiming, type Timing as T, type TrkActivity, type TrkStep } from '@/core/tracker';
+import { setActivity, setStep } from '@/data/tracker';
 import { Button, ErrorBox, Field, cx } from '@/ui/components';
 import { Tile } from './ui';
 
@@ -19,10 +19,11 @@ export function TimingChip({ t }: { t: T }) {
 }
 
 /** One activity: Started / Finished stamp now; the times and a note can be corrected. */
-export function ActivityRow({ t, canEdit, onDone }: { t: T; canEdit: boolean; onDone: (msg: string) => void }) {
+export function ActivityRow({ t, canEdit, isHead = false, onDone }: { t: T; canEdit: boolean; isHead?: boolean; onDone: (msg: string) => void }) {
   const a = t.a;
   const [edit, setEdit] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [s, setS] = useState(local(a.actualStart)); const [f, setF] = useState(local(a.actualFinish)); const [note, setNote] = useState(a.actualNote ?? '');
+  const [ps, setPs] = useState(local(a.start)); const [pf, setPf] = useState(local(a.finish));
   async function run(patch: Parameters<typeof setActivity>[1], msg: string) { setBusy(true); setErr(null); try { await setActivity(a.id, patch); onDone(msg); } catch (e) { setErr(e); setBusy(false); } }
   return (
     <div className={cx('rounded-xl bg-white p-2.5 ring-1 ring-slate-200', !a.tracked && 'opacity-50')}>
@@ -37,7 +38,7 @@ export function ActivityRow({ t, canEdit, onDone }: { t: T; canEdit: boolean; on
         <div className="mt-2 flex flex-wrap gap-1.5">
           {!a.actualStart && <Button className="min-h-9 px-3 text-xs" disabled={busy} onClick={() => run({ actual_start: new Date().toISOString() }, `${a.key}: ${a.activityId} started.`)}>▶ Started</Button>}
           {a.actualStart && !a.actualFinish && <Button className="min-h-9 bg-[#08A048] px-3 text-xs hover:bg-green-700" disabled={busy} onClick={() => run({ actual_finish: new Date().toISOString() }, `${a.key}: ${a.activityId} finished.`)}>✓ Finished</Button>}
-          <Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => setEdit((x) => !x)}>{edit ? 'Close' : 'Edit times · note'}</Button>
+          <Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => setEdit((x) => !x)}>{edit ? 'Close' : isHead ? 'Edit times · bar chart' : 'Edit times · note'}</Button>
         </div>
       )}
       {edit && (
@@ -47,7 +48,12 @@ export function ActivityRow({ t, canEdit, onDone }: { t: T; canEdit: boolean; on
             <Field label="Finished"><input type="datetime-local" className="input" value={f} onChange={(e) => setF(e.target.value)} /></Field>
           </div>
           <input className="input" placeholder="Note (why late / longer, for next time)" value={note} onChange={(e) => setNote(e.target.value)} />
-          <Button className="w-full" disabled={busy || (!!s && !!f && f < s)} onClick={() => run({ actual_start: fromLocal(s), actual_finish: fromLocal(f), actual_note: note.trim() || null }, `${a.key}: ${a.activityId} times saved.`)}>Save</Button>
+          {isHead && <div className="grid grid-cols-2 gap-1.5">
+            <Field label="Bar chart start"><input type="datetime-local" className="input" value={ps} onChange={(e) => setPs(e.target.value)} /></Field>
+            <Field label="Bar chart finish"><input type="datetime-local" className="input" value={pf} onChange={(e) => setPf(e.target.value)} /></Field>
+          </div>}
+          <Button className="w-full" disabled={busy || (!!s && !!f && f < s) || (!!ps && !!pf && pf < ps)} onClick={() => run({ actual_start: fromLocal(s), actual_finish: fromLocal(f), actual_note: note.trim() || null,
+            ...(isHead && (ps !== local(a.start) || pf !== local(a.finish)) ? { planned_start: fromLocal(ps), planned_finish: fromLocal(pf), duration_h: ps && pf ? Math.round((Date.parse(pf) - Date.parse(ps)) / 36e5 * 10) / 10 : null } : {}) }, `${a.key}: ${a.activityId} times saved.`)}>Save</Button>
           {!!s && !!f && f < s && <p className="text-xs text-status-red">The finish is before the start.</p>}
         </div>
       )}
@@ -62,7 +68,14 @@ function download(name: string, text: string) {
 }
 
 type Filter = 'open' | 'running' | 'finished' | 'late' | 'all';
-export function TimingTab({ activities, now, canEdit, title, onDone }: { activities: TrkActivity[]; now: number; canEdit: boolean; title: string; onDone: (msg: string) => void }) {
+export function TimingTab({ activities, steps, now, canEdit, isHead, title, onDone }: { activities: TrkActivity[]; steps: TrkStep[]; now: number; canEdit: boolean; isHead: boolean; title: string; onDone: (msg: string) => void }) {
+  const [kind, setKind] = useState<'mech' | 'steps'>('mech');
+  const seg = <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-200/60 p-1">{([['mech', 'Mechanical (bar chart)'], ['steps', 'Guideline steps']] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setKind(k)} className={cx('min-h-10 rounded-lg text-xs font-semibold', kind === k ? 'bg-white text-[#004080] shadow-sm' : 'text-slate-600')}>{l}</button>)}</div>;
+  if (kind === 'steps') return <div className="space-y-3">{seg}<StepTimingList steps={steps} now={now} canEdit={canEdit} isHead={isHead} title={title} onDone={onDone} /></div>;
+  return <div className="space-y-3">{seg}<MechTiming activities={activities} now={now} canEdit={canEdit} isHead={isHead} title={title} onDone={onDone} /></div>;
+}
+
+function MechTiming({ activities, now, canEdit, isHead, title, onDone }: { activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; title: string; onDone: (msg: string) => void }) {
   const [filter, setFilter] = useState<Filter>('open'); const [q, setQ] = useState('');
   const all = activities.filter((a) => a.tracked).map((a) => timing(a, now)).sort((x, y) => (x.a.start ?? '').localeCompare(y.a.start ?? '') || x.a.key.localeCompare(y.a.key));
   const sum = timingSummary(all);
@@ -88,7 +101,7 @@ export function TimingTab({ activities, now, canEdit, title, onDone }: { activit
       {keys.slice(0, 40).map((k) => (
         <section key={k} className="space-y-1.5">
           <h3 className="text-xs font-bold text-[#004080]">{k}</h3>
-          {list.filter((t) => t.a.key === k).map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} onDone={onDone} />)}
+          {list.filter((t) => t.a.key === k).map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} onDone={onDone} />)}
         </section>
       ))}
       {!list.length && <p className="py-4 text-center text-sm text-slate-500">Nothing here.</p>}
@@ -99,7 +112,7 @@ export function TimingTab({ activities, now, canEdit, title, onDone }: { activit
 }
 
 /** The item's activities inside the equipment sheet. */
-export function EquipActivities({ activities, now, canEdit, onDone }: { activities: TrkActivity[]; now: number; canEdit: boolean; onDone: (msg: string) => void }) {
+export function EquipActivities({ activities, now, canEdit, isHead, onDone }: { activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; onDone: (msg: string) => void }) {
   const [open, setOpen] = useState(false);
   const ts = activities.filter((a) => a.tracked).map((a) => timing(a, now)).sort((x, y) => (x.a.start ?? '').localeCompare(y.a.start ?? ''));
   if (!ts.length) return null;
@@ -107,8 +120,69 @@ export function EquipActivities({ activities, now, canEdit, onDone }: { activiti
   return (
     <div>
       <button type="button" onClick={() => setOpen((x) => !x)} className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-600"><span>Mechanical activities · {done}/{ts.length} finished{running ? ` · ${running} running` : ''}</span><span>{open ? '▾' : '▸'}</span></button>
-      {open && <div className="mt-1.5 space-y-1.5">{ts.map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} onDone={onDone} />)}</div>}
+      {open && <div className="mt-1.5 space-y-1.5">{ts.map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} onDone={onDone} />)}</div>}
     </div>
   );
 }
 
+
+/** Step times inside the step sheet: estimate vs taken; the times can be corrected, the estimate by the Section Head. */
+export function StepTimes({ t, canEdit, isHead, onDone }: { t: StepTiming; canEdit: boolean; isHead: boolean; onDone: (msg: string) => void }) {
+  const s = t.s;
+  const [edit, setEdit] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const [a, setA] = useState(local(s.startedAt)); const [d, setD] = useState(local(s.doneAt)); const [est, setEst] = useState(s.estHours === null ? '' : String(s.estHours));
+  async function save() {
+    setBusy(true); setErr(null);
+    try { await setStep(s.id, { started_at: fromLocal(a), done_at: fromLocal(d), ...(isHead ? { est_hours: est === '' ? null : Number(est) } : {}) }); onDone(`${s.stepId}: times saved.`); }
+    catch (e) { setErr(e); setBusy(false); }
+  }
+  return (
+    <div className="rounded-xl bg-slate-50 p-2.5 text-sm ring-1 ring-slate-200">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span>⏱ Est <b>{t.estH ?? '—'}{t.estH !== null ? ' h' : ''}</b></span>
+        <span>Took <b>{t.actualH === null ? '—' : `${t.actualH} h`}</b>{t.running ? ' (running)' : ''}</span>
+        {t.overrunH !== null && <span className={cx('font-semibold', t.overrunH > 0 ? 'text-[#E02028]' : 'text-[#08A048]')}>{h(t.overrunH)}</span>}
+        {canEdit && <button type="button" className="ml-auto text-xs font-semibold text-brand-700 underline" onClick={() => setEdit((x) => !x)}>{edit ? 'Close' : 'Edit times'}</button>}
+      </div>
+      <div className="mt-0.5 text-[11px] text-slate-500">Started {when(s.startedAt)} · Done {when(s.doneAt)}</div>
+      {edit && <div className="mt-2 space-y-1.5">
+        <div className="grid grid-cols-2 gap-1.5">
+          <Field label="Started"><input type="datetime-local" className="input" value={a} onChange={(e) => setA(e.target.value)} /></Field>
+          <Field label="Done"><input type="datetime-local" className="input" value={d} onChange={(e) => setD(e.target.value)} /></Field>
+        </div>
+        {isHead && <Field label="Estimate (h)"><input inputMode="decimal" className="input" value={est} onChange={(e) => setEst(e.target.value.replace(/[^\d.]/g, ''))} /></Field>}
+        <Button className="w-full" disabled={busy || (!!a && !!d && d < a)} onClick={save}>Save</Button>
+        {!!a && !!d && d < a && <p className="text-xs text-status-red">Done is before the start.</p>}
+      </div>}
+      {err != null && <ErrorBox error={err} />}
+    </div>
+  );
+}
+
+function StepTimingList({ steps, now, canEdit, isHead, title, onDone }: { steps: TrkStep[]; now: number; canEdit: boolean; isHead: boolean; title: string; onDone: (msg: string) => void }) {
+  const [fo, setFo] = useState('all');
+  const all = [...steps].sort((x, y) => x.stepId.localeCompare(y.stepId)).map((s) => stepTiming(s, now));
+  const list = all.filter((t) => fo === 'all' || t.s.fo === fo);
+  const timed = all.filter((t) => t.overrunH !== null);
+  const avg = timed.length ? Math.round(timed.reduce((n, t) => n + t.overrunH!, 0) / timed.length * 10) / 10 : null;
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-3 gap-2">
+        <Tile value={all.filter((t) => t.s.doneAt).length} label="done with time" tone="green" />
+        <Tile value={all.filter((t) => t.running).length} label="running" />
+        <Tile value={h(avg)} label="avg vs estimate" tone={(avg ?? 0) > 0 ? 'red' : undefined} />
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {['all', 'FO1', 'FO2', 'FO3'].map((k) => <button key={k} type="button" onClick={() => setFo(k)} className={cx('min-h-9 rounded-full px-3 text-xs font-semibold', fo === k ? 'bg-[#0850A0] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{k === 'all' ? 'All' : k}</button>)}
+        <Button variant="secondary" className="ml-auto min-h-9 px-3 text-xs" onClick={() => download(`${title.replace(/\s+/g, '_')}_step_timing.csv`, stepTimingCsv(all))}><Download className="h-3.5 w-3.5" />Export</Button>
+      </div>
+      {list.map((t) => (
+        <div key={t.s.id} className="space-y-1">
+          <div className="text-xs font-semibold text-slate-700">{t.s.stepId} · {t.s.shortName}</div>
+          <StepTimes t={t} canEdit={canEdit} isHead={isHead} onDone={onDone} />
+        </div>
+      ))}
+      <p className="text-[11px] text-slate-500">Start and Done stamp the time; correct it here if it was entered late. Steps done before this was added have no time: enter it if known.</p>
+    </div>
+  );
+}

@@ -10,6 +10,8 @@ export interface TrkStep {
   id: string; stepId: string; fo: string; gate: number; gateName: string | null; shortName: string; text: string | null;
   procedure: string | null; prereq: string[]; estHours: number | null; note: string | null; target: string | null;
   status: StepStatus; pendingReason: string | null; remark: string | null; updatedBy: string | null; updatedAt: string | null;
+  /** when it was started and done (stamped, correctable) */
+  startedAt?: string | null; doneAt?: string | null;
 }
 export interface TrkEquipment {
   id: string; tag: string; group: string; description: string | null; fo: string | null; hoStep: string | null; procedure: string | null;
@@ -257,4 +259,18 @@ export function timingCsv(ts: Timing[]): string {
   const head = ['equipment', 'activity_id', 'activity', 'stage', 'planned_start', 'planned_finish', 'planned_h', 'actual_start', 'actual_finish', 'actual_h', 'start_delay_h', 'overrun_h', 'note', 'by'];
   return [head.join(','), ...ts.map((t) => [t.a.key, t.a.activityId, t.a.activity, t.a.stage, kwFull(t.a.start), kwFull(t.a.finish), t.plannedH, kwFull(t.a.actualStart), kwFull(t.a.actualFinish),
     t.state === 'FINISHED' ? t.actualH : '', t.startDelayH, t.overrunH, t.a.actualNote, t.a.updatedBy].map(q).join(','))].join('\n');
+}
+
+// ── Step timing (estimate vs actual) ───────────────────────────────────────────────────────────────────────────
+export interface StepTiming { s: TrkStep; estH: number | null; actualH: number | null; overrunH: number | null; running: boolean }
+export function stepTiming(s: TrkStep, now: number): StepTiming {
+  const a = ms(s.startedAt), d = ms(s.doneAt);
+  const running = !Number.isNaN(a) && Number.isNaN(d);
+  const actualH = Number.isNaN(a) ? null : r1(((Number.isNaN(d) ? now : d) - a) / H);
+  return { s, estH: s.estHours, actualH, running, overrunH: !running && actualH !== null && s.estHours !== null ? r1(actualH - s.estHours) : null };
+}
+export function stepTimingCsv(ts: StepTiming[]): string {
+  const q = (v: unknown) => { const x = v === null || v === undefined ? '' : String(v); return /[",\n]/.test(x) ? `"${x.replace(/"/g, '""')}"` : x; };
+  const head = ['step', 'fo', 'gate', 'name', 'procedure', 'est_h', 'started', 'done', 'actual_h', 'overrun_h', 'remark'];
+  return [head.join(','), ...ts.map((t) => [t.s.stepId, t.s.fo, t.s.gate, t.s.shortName, t.s.procedure, t.estH, kwFull(t.s.startedAt), kwFull(t.s.doneAt), t.running ? '' : t.actualH, t.overrunH, t.s.remark].map(q).join(','))].join('\n');
 }

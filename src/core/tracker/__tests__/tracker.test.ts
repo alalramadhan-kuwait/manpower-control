@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attention, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { attention, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -145,5 +145,14 @@ describe('mechanical activity timing', () => {
     const r = shiftReport(d, at('2026-10-23 12:00'), null);
     expect(r.activities.length).toBe(1);
     expect(reportText(r)).toContain('⏱ Mechanical: 1 started · 0 finished');
+  });
+});
+
+describe('step timing', () => {
+  it('estimate vs taken: started 08:00, done 14:30 against 4 h is +2.5 h; running counts to now', () => {
+    const d = seed(); const s = { ...step(d, 'S321'), startedAt: '2026-10-21T08:00:00+03:00', doneAt: '2026-10-21T14:30:00+03:00' };
+    expect(stepTiming(s, at('2026-10-22 10:00'))).toMatchObject({ estH: 4, actualH: 6.5, overrunH: 2.5, running: false });
+    expect(stepTiming({ ...s, doneAt: null }, at('2026-10-21 10:00'))).toMatchObject({ actualH: 2, running: true, overrunH: null });
+    expect(stepTimingCsv([stepTiming(s, at('2026-10-22 10:00'))]).split('\n')[1]).toBe('S321,FO3,7,E-216A/B S/S neutralization,SOP-12-2018,4,2026-10-21 08:00,2026-10-21 14:30,6.5,2.5,');
   });
 });

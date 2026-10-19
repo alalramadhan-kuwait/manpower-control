@@ -92,12 +92,12 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} onOpen={open} onTab={setTab} />}
       {tab === 'guideline' && <GuidelineTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {tab === 'equipment' && <EquipmentTab eqs={eqs} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
-      {tab === 'timing' && <TimingTab activities={data.activities} now={now} canEdit={canEdit} title={tracker.title} onDone={done} />}
+      {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} onDone={done} />}
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {tab === 'report' && <ReportTab data={data} now={now} canEdit={canEdit} by={profile.display_name} onSaved={() => load()} />}
       {tab === 'admin' && isHead && <TrackerAdmin data={data} eqs={eqs} onDone={done} />}
       {openStep && <StepSheet v={openStep} isHead={isHead} canEdit={canEdit} onClose={() => setSheet(null)} onDone={done} />}
-      {openEq && <EquipSheet v={openEq} trackerId={tracker.id} canEdit={canEdit} activities={openEq.eq.barchartKey ? data.activities.filter((a) => a.key === openEq.eq.barchartKey) : []} now={now} onClose={() => setSheet(null)} onDone={done} />}
+      {openEq && <EquipSheet v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={openEq.eq.barchartKey ? data.activities.filter((a) => a.key === openEq.eq.barchartKey) : []} now={now} onClose={() => setSheet(null)} onDone={done} />}
     </div>
   );
 }
