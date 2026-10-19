@@ -62,7 +62,8 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const steps = useMemo(() => (data ? stepViews(data, now) : null), [data, now]);
   const eqs = useMemo(() => (data && steps ? equipViews(data, now, steps) : null), [data, now, steps]);
 
-  const done = (msg: string) => { setSheet(null); setFlash(msg); load(); window.setTimeout(() => setFlash(null), 3000); };
+  // a step sheet closes after its action, the equipment sheet stays open (several actions in a row) and refreshes
+  const done = (msg: string, keep = false) => { if (!keep) setSheet(null); setFlash(msg); load(); window.setTimeout(() => setFlash(null), 3000); };
   if (error) return <ErrorBox error={error} />;
   if (!trackers) return <Spinner />;
   if (!tracker) return <div className="p-4 text-sm text-slate-600">No shutdown is being tracked yet.</div>;
@@ -97,7 +98,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {tab === 'report' && <ReportTab data={data} now={now} canEdit={canEdit} by={profile.display_name} onSaved={() => load()} />}
       {tab === 'admin' && isHead && <TrackerAdmin data={data} eqs={eqs} onDone={done} />}
       {openStep && <StepSheet v={openStep} isHead={isHead} canEdit={canEdit} onClose={() => setSheet(null)} onDone={done} />}
-      {openEq && <EquipSheet v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={data.activities.filter((a) => a.key === (openEq.eq.barchartKey ?? openEq.eq.tag))} now={now} onClose={() => setSheet(null)} onDone={done} />}
+      {openEq && <EquipSheet v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={data.activities.filter((a) => a.key === (openEq.eq.barchartKey ?? openEq.eq.tag))} now={now} onClose={() => setSheet(null)} onDone={(m) => done(m, true)} />}
     </div>
   );
 }

@@ -78,7 +78,7 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, onC
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [pending, setPending] = useState(false); const [iat, setIat] = useState(false); const [details, setDetails] = useState(false);
   const [iatNo, setIatNo] = useState(''); const [job, setJob] = useState(''); const [disc, setDisc] = useState('');
-  async function run(f: () => Promise<void>, msg: string) { setBusy(true); setErr(null); try { await f(); onDone(msg); } catch (x) { setErr(x); setBusy(false); } }
+  async function run(f: () => Promise<void>, msg: string) { setBusy(true); setErr(null); try { await f(); setPending(false); setIat(false); setIatNo(''); setJob(''); setDisc(''); onDone(msg); } catch (x) { setErr(x); } finally { setBusy(false); } }
   const iats = v.iatsOpen;
   return (
     <BottomSheet open onClose={onClose} title={e.tag}>
