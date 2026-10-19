@@ -2,8 +2,8 @@
 // corrected), plan vs actual durations, and the record exported for future shutdowns.
 import { useState } from 'react';
 import { Download } from 'lucide-react';
-import { kwDay, kwTime, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type StepTiming, type Timing as T, type TrkActivity, type TrkStep } from '@/core/tracker';
-import { setActivity, setStep } from '@/data/tracker';
+import { STAGES, kwDay, kwTime, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type StepTiming, type Timing as T, type TrkActivity, type TrkStep } from '@/core/tracker';
+import { addActivity, setActivity, setStep } from '@/data/tracker';
 import { Button, ErrorBox, Field, cx } from '@/ui/components';
 import { Tile } from './ui';
 
@@ -111,16 +111,43 @@ function MechTiming({ activities, now, canEdit, isHead, title, onDone }: { activ
   );
 }
 
-/** The item's activities inside the equipment sheet. */
-export function EquipActivities({ activities, now, canEdit, isHead, onDone }: { activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; onDone: (msg: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const ts = activities.filter((a) => a.tracked).map((a) => timing(a, now)).sort((x, y) => (x.a.start ?? '').localeCompare(y.a.start ?? ''));
-  if (!ts.length) return null;
-  const running = ts.filter((t) => t.state === 'RUNNING').length, done = ts.filter((t) => t.state === 'FINISHED').length;
+/** The item's work steps (bar chart, and procedure steps added by the Section Head) inside the equipment sheet: open,
+ *  the one running and the next one on top. */
+export function EquipActivities({ trackerId, itemKey, activities, now, canEdit, isHead, onDone }: { trackerId: string; itemKey: string; activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; onDone: (msg: string) => void }) {
+  const [open, setOpen] = useState(true); const [add, setAdd] = useState(false);
+  const ts = activities.filter((a) => a.tracked).map((a) => timing(a, now)).sort((x, y) => (x.a.start ?? '9').localeCompare(y.a.start ?? '9'));
+  const running = ts.filter((t) => t.state === 'RUNNING'), done = ts.filter((t) => t.state === 'FINISHED').length;
+  const next = ts.find((t) => t.state === 'NOT_STARTED');
   return (
-    <div>
-      <button type="button" onClick={() => setOpen((x) => !x)} className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-600"><span>Mechanical activities · {done}/{ts.length} finished{running ? ` · ${running} running` : ''}</span><span>{open ? '▾' : '▸'}</span></button>
+    <div className="rounded-xl bg-slate-50 p-2 ring-1 ring-slate-200">
+      <button type="button" onClick={() => setOpen((x) => !x)} className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-600"><span>Work steps · {done}/{ts.length} finished{running.length ? ` · ${running.length} running` : ''}</span><span>{open ? '▾' : '▸'}</span></button>
+      {!ts.length && <p className="mt-1 text-xs text-slate-500">None yet: import the bar chart (Admin){isHead ? ' or add the procedure steps here' : ''}.</p>}
+      {ts.length > 0 && <p className="mt-1 text-xs text-slate-700">{running.length ? <>Now: <b>{running.map((t) => t.a.activity).join(' · ')}</b></> : null}{running.length && next ? ' · ' : ''}{next ? <>Next: <b>{next.a.activity}</b></> : null}</p>}
       {open && <div className="mt-1.5 space-y-1.5">{ts.map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} onDone={onDone} />)}</div>}
+      {isHead && (add ? <AddActivity trackerId={trackerId} itemKey={itemKey} onDone={(m) => { setAdd(false); onDone(m); }} onCancel={() => setAdd(false)} />
+        : <Button variant="ghost" className="mt-1 min-h-9 px-2 text-xs" onClick={() => setAdd(true)}>+ Add work step (procedure)</Button>)}
+    </div>
+  );
+}
+
+function AddActivity({ trackerId, itemKey, onDone, onCancel }: { trackerId: string; itemKey: string; onDone: (msg: string) => void; onCancel: () => void }) {
+  const [name, setName] = useState(''); const [start, setStart] = useState(''); const [hours, setHours] = useState(''); const [stage, setStage] = useState('');
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  async function save() {
+    setBusy(true); setErr(null);
+    try { await addActivity(trackerId, { key: itemKey, activity: name.trim(), start: fromLocal(start), hours: hours ? Number(hours) : null, stage: stage === '' ? null : Number(stage) }); onDone(`${itemKey}: work step added.`); }
+    catch (e) { setErr(e); setBusy(false); }
+  }
+  return (
+    <div className="mt-2 space-y-1.5 rounded-lg bg-white p-2 ring-1 ring-slate-200">
+      <input className="input" placeholder="Work step (e.g. Gas test for basket removal)" value={name} onChange={(e) => setName(e.target.value)} />
+      <div className="grid grid-cols-3 gap-1.5">
+        <Field label="Planned start"><input type="datetime-local" className="input" value={start} onChange={(e) => setStart(e.target.value)} /></Field>
+        <Field label="Hours"><input inputMode="decimal" className="input" value={hours} onChange={(e) => setHours(e.target.value.replace(/[^\d.]/g, ''))} /></Field>
+        <Field label="Stage"><select className="input" value={stage} onChange={(e) => setStage(e.target.value)}><option value="">–</option>{STAGES.map((x, i) => <option key={x} value={i}>{i} {x}</option>)}</select></Field>
+      </div>
+      {err != null && <ErrorBox error={err} />}
+      <div className="flex gap-2"><Button variant="secondary" className="flex-1" onClick={onCancel}>Cancel</Button><Button className="flex-1" disabled={busy || !name.trim()} onClick={save}>Add</Button></div>
     </div>
   );
 }

@@ -96,7 +96,7 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, onC
             {e.hoStep && <p className="text-[11px] text-slate-500">Handed over automatically when {e.hoStep} is done{v.hoAt ? ` (${when(v.hoAt)})` : ''}.</p>}
           </div>
         </Field>
-        <EquipActivities activities={activities} now={now} canEdit={canEdit} isHead={isHead} onDone={onDone} />
+        <EquipActivities trackerId={trackerId} itemKey={e.barchartKey ?? e.tag} activities={activities} now={now} canEdit={canEdit} isHead={isHead} onDone={onDone} />
         {canEdit && <div className="grid grid-cols-2 gap-2">
           <Button variant="secondary" disabled={busy} onClick={() => run(() => setEquipment(e.id, { blinds_in_at: new Date().toISOString() }), `${e.tag}: blinds in.`)}>Blinds IN{e.blindsIn ? ` · ${when(e.blindsIn)}` : ''}</Button>
           <Button variant="secondary" disabled={busy} onClick={() => run(() => setEquipment(e.id, { blinds_out_at: new Date().toISOString() }), `${e.tag}: blinds out.`)}>Blinds OUT{e.blindsOut ? ` · ${when(e.blindsOut)}` : ''}</Button>

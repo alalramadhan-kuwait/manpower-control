@@ -64,6 +64,15 @@ const upd = async (table: string, id: string, patch: Record<string, unknown>) =>
 export const setStep = (id: string, patch: Partial<{ status: StepStatus; pending_reason: string | null; remark: string | null; prereq: string[]; target_at: string | null; started_at: string | null; done_at: string | null; est_hours: number | null }>) => upd('trk_steps', id, patch);
 export const setEquipment = (id: string, patch: Partial<{ stage: number; pending_reason: string | null; remark: string | null; blinds_in_at: string | null; blinds_out_at: string | null; tracked: boolean; disabled_reason: string | null; critical: boolean; planned_ho: string | null; planned_finish: string | null }>) => upd('trk_equipment', id, patch);
 export const setActivity = (id: string, patch: Partial<{ planned_start: string | null; planned_finish: string | null; duration_h: number | null; tracked: boolean; disabled_reason: string | null; stage: number | null; actual_start: string | null; actual_finish: string | null; actual_note: string | null }>) => upd('trk_activities', id, patch);
+/** A procedure activity the bar chart does not list, on an item (Section Head); in the bar chart's current baseline. */
+export async function addActivity(trackerId: string, v: { key: string; activity: string; start: string | null; hours: number | null; stage: number | null }) {
+  const { data: b, error: e0 } = await supabase.from('trk_activities').select('baseline').eq('tracker_id', trackerId).order('baseline', { ascending: false }).limit(1);
+  if (e0) throw e0;
+  const finish = v.start && v.hours ? new Date(Date.parse(v.start) + v.hours * 36e5).toISOString() : null;
+  const { error } = await supabase.from('trk_activities').insert({ tracker_id: trackerId, activity_id: `P-${Date.now().toString(36).toUpperCase()}`, grp: 'Procedure', equipment_key: v.key, activity: v.activity,
+    duration_h: v.hours, planned_start: v.start, planned_finish: finish, stage: v.stage, tracked: true, baseline: (b as { baseline: number }[])[0]?.baseline ?? 1 });
+  if (error) throw error;
+}
 export async function addIat(trackerId: string, v: { tag: string; iatNo: string; jobText: string; discipline: string }) {
   const { error } = await supabase.from('trk_iat').insert({ tracker_id: trackerId, tag: v.tag, iat_no: v.iatNo, job_text: v.jobText || null, discipline: v.discipline || null });
   if (error) throw error;

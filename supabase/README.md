@@ -168,3 +168,5 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261019101736_shutdown_progress_activity_timing` | Mechanical activity timing: `trk_activities.actual_start / actual_finish / actual_note` with who and when (stamp + `trk_log`); Controllers record them, bar-chart setup stays the Section Head's; a new baseline keeps the actuals of the same activities |
 | `20261019102914_shutdown_progress_step_timing` | Step timing: `trk_steps.started_at / done_at` stamped on Start / Done (correctable, logged); the estimate (`est_hours`) is the Section Head's |
 | `20261019105923_shutdown_progress_phase_dates` | Train-2 tracker settings: operations shutdown 16-Oct 07:00 → 20-Oct 07:00, M & I 20-Oct 07:00 → 7-Nov 07:00 (from the bar chart) |
+| `20261019121203_shutdown_progress_step_undo_times` | A step taken back from Done loses its done time (whatever it goes back to) |
+| `20261019121655_shutdown_progress_add_activity` | The Section Head adds a procedure activity to an item (not in the bar chart); tracked like the bar-chart ones |

@@ -91,13 +91,13 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {flash && <div role="status" className="mb-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{flash}</div>}
       {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} now={now} onOpen={open} onTab={setTab} />}
       {tab === 'guideline' && <GuidelineTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
-      {tab === 'equipment' && <EquipmentTab eqs={eqs} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
+      {tab === 'equipment' && <EquipmentTab eqs={eqs} activities={data.activities} now={now} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} onDone={done} />}
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {tab === 'report' && <ReportTab data={data} now={now} canEdit={canEdit} by={profile.display_name} onSaved={() => load()} />}
       {tab === 'admin' && isHead && <TrackerAdmin data={data} eqs={eqs} onDone={done} />}
       {openStep && <StepSheet v={openStep} isHead={isHead} canEdit={canEdit} onClose={() => setSheet(null)} onDone={done} />}
-      {openEq && <EquipSheet v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={openEq.eq.barchartKey ? data.activities.filter((a) => a.key === openEq.eq.barchartKey) : []} now={now} onClose={() => setSheet(null)} onDone={done} />}
+      {openEq && <EquipSheet v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={data.activities.filter((a) => a.key === (openEq.eq.barchartKey ?? openEq.eq.tag))} now={now} onClose={() => setSheet(null)} onDone={done} />}
     </div>
   );
 }
@@ -220,7 +220,10 @@ function GuidelineTab({ steps, onOpen }: { steps: Map<string, StepView>; onOpen:
   );
 }
 
-function EquipmentTab({ eqs, onOpen }: { eqs: EquipView[]; onOpen: (tag: string) => void }) {
+function EquipmentTab({ eqs, activities, now, onOpen }: { eqs: EquipView[]; activities: TrackerData['activities']; now: number; onOpen: (tag: string) => void }) {
+  // the work step running on each item (else the next one), shown on its card
+  const nowOf = (key: string) => { const xs = activities.filter((a) => a.tracked && a.key === key).sort((x, y) => (x.start ?? '9').localeCompare(y.start ?? '9'));
+    const run = xs.find((a) => a.actualStart && !a.actualFinish); if (run) return `Now: ${run.activity}`; const nx = xs.find((a) => !a.actualStart); return nx ? `Next: ${nx.activity}${nx.start && Date.parse(nx.start) < now ? ' (due)' : ''}` : null; };
   const groups = [...new Set(eqs.map((e) => e.eq.group))];
   const [g, setG] = useState(groups[0] ?? '');
   const [onlyOps, setOnlyOps] = useState(true);
@@ -234,6 +237,7 @@ function EquipmentTab({ eqs, onOpen }: { eqs: EquipView[]; onOpen: (tag: string)
           <button key={e.eq.tag} type="button" onClick={() => onOpen(e.eq.tag)} className={cx('rounded-xl bg-white p-3 text-left ring-1 ring-slate-200 active:scale-[0.99]', !e.eq.tracked && 'opacity-50')}>
             <div className="flex items-center justify-between gap-2"><b className="truncate text-sm text-slate-900">{e.eq.critical ? '★ ' : ''}{e.eq.tag}</b><FlagChip flag={e.flag} /></div>
             <StageBar stage={e.stage} className="my-2" />
+            {nowOf(e.eq.barchartKey ?? e.eq.tag) && <div className="mb-1 truncate text-xs font-medium text-[#004080]">{nowOf(e.eq.barchartKey ?? e.eq.tag)}</div>}
             <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600"><span>{STAGE_SHORT[e.stage]}</span>{e.plan && <><span>· Plan: {STAGE_SHORT[e.plan.planned]}</span><PlanChip variance={e.plan.variance} days={e.plan.days} /></>}{e.iatsOpen.length > 0 && <span className="font-semibold text-amber-800">· IAT {e.iatsOpen.length}</span>}{!e.eq.tracked && <span>· off</span>}</div>
           </button>
         ))}
