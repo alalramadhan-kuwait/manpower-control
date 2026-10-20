@@ -84,6 +84,8 @@ export function StepSheet({ v, isHead, canEdit, points = [], items = [], onIsola
 
 export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso = null, points = [], onIsolation, onNeut, onClose, onDone }: { v: EquipView; trackerId: string; canEdit: boolean; isHead: boolean; activities: TrkActivity[]; now: number; iso?: Isolation | null; points?: TrkPoint[]; onIsolation?: () => void; onNeut?: () => void; onClose: () => void; onDone: (msg: string) => void }) {
   // the neutralization the soda-ash lines stand for: the item's own soda ash first, else its loop
+  // the item's bar-chart steps by stage (what moves the stage), the field-detail steps left out
+  const stageLines = activities.filter((a) => a.tracked && !a.detail && a.group !== 'Operations' && a.stage !== null);
   const soda = iso?.neut.find((p) => !p.stepId) ?? iso?.neut[0];
   const e = v.eq;
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
@@ -100,12 +102,12 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso
           <div className="space-y-1.5">
             <StageBar stage={v.stage} />
             {canEdit && <div className="grid grid-cols-3 gap-1.5">
-              {STAGES.slice(1).map((label, i) => { const s = i + 1; const next = s === v.stage + 1;
+              {STAGES.slice(1).map((label, i) => { const s = i + 1; const next = s === v.stage + 1; const lines = stageLines.filter((a) => a.stage === s); const fin = lines.filter((a) => a.actualFinish).length;
                 return <button key={s} type="button" disabled={busy || s === v.stage} onClick={() => run(() => setEquipment(e.id, { stage: s }), `${e.tag}: ${label}.`)}
-                  className={cx('min-h-11 rounded-lg px-1 text-xs font-semibold ring-1 disabled:opacity-40', s === v.stage ? 'bg-[#0850A0] text-white ring-[#0850A0]' : next ? 'bg-[#D6E6F5] text-[#004080] ring-[#0850A0]' : 'bg-white text-slate-700 ring-slate-300')}>{s}. {label}</button>; })}
+                  className={cx('min-h-11 rounded-lg px-1 text-xs font-semibold ring-1 disabled:opacity-40', s === v.stage ? 'bg-[#0850A0] text-white ring-[#0850A0]' : next ? 'bg-[#D6E6F5] text-[#004080] ring-[#0850A0]' : 'bg-white text-slate-700 ring-slate-300')}>{s}. {label}{lines.length > 0 && <span className="block text-[10.5px] font-normal opacity-80">{fin}/{lines.length} steps</span>}</button>; })}
             </div>}
             <p className="text-[11px] text-slate-500">{v.hoAt ? <>Handed over {when(v.hoAt)}{e.blindsOut ? <> · deblinded {when(e.blindsOut)}</> : null}. </> : null}
-              Handed over (stage 1) by operations{e.hoStep ? ` (${e.hoStep})` : ''}; its blind line finished by M &amp; I also counts · deblinded = stage 6.</p>
+              The stage follows the work steps: a step finished moves the item to its stage (handed over by operations{e.hoStep ? ` (${e.hoStep})` : ''}, blinded by M &amp; I, deblinded = 6). Tap a stage only to correct it.</p>
           </div>
         </Field>
         {iso && (

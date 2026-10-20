@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attention, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -333,5 +333,14 @@ describe('IAT checks from the sheet', () => {
     expect(c.map((x) => [x.label, x.optional])).toEqual([['LPT', false], ['PWHT', true], ['Hydro 525 psig', false]]);
     expect(iatChecks({ checks: { hydro: 'REQ\n2740' }, recommendation: null })[0].label).toBe('Hydro 2740 psig');
     expect(iatStatus({ sheetStatus: null, status: 'closed' })).toBe('Completed');
+  });
+});
+
+describe('plan vs actual by finished steps', () => {
+  it('a stage is planned once its line is planned to finish', () => {
+    const t0 = Date.parse('2026-10-21T07:00:00+03:00');
+    const acts = [{ id: 'a', activityId: 'A1', group: 'Mech', key: 'R-12-202', activity: 'Remove top trays', durationH: 8, start: new Date(t0).toISOString(), finish: new Date(t0 + 8 * 36e5).toISOString(), stage: 2, tracked: true }];
+    expect(planVsActual(acts, 1, t0 + 4 * 36e5)?.variance).toBe(1);   // still running in the plan: stage 1 is on plan (+1 vs 0)
+    expect(planVsActual(acts, 1, t0 + 9 * 36e5)?.variance).toBe(-1);  // planned finished, not done: one stage behind
   });
 });

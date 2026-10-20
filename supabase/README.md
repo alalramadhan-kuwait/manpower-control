@@ -187,3 +187,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261020170851_shutdown_progress_iat_details` | `trk_iat`: finding, recommendation, line class, material, inspection `checks`, `painting` IAT, action by (from the daily IAT sheet) for the IATs tab |
 | `20261020172021_shutdown_progress_heater_od_spray` | `trk_points.method` (soak / spray). H-12-201 and H-12-202 tube OD neutralization is a spray (start, done), no soaking |
 | `20261020172049_shutdown_progress_copy_point_method` | `trk_copy` carries the point method and removed flag |
+| `20261020173433_shutdown_progress_stage_follows_steps` | Stage follows the work steps (`trk_item_stage_from_steps`, `trk_act_sync_stage`): a bar-chart step finished moves the item to its stage, an operations hand-over step finished = stage 1, undo goes back. Existing stages brought in line. C-12-201 off S215 with its own operations steps |

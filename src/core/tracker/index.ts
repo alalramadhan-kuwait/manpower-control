@@ -174,8 +174,8 @@ export function isoState(tag: string, stage: number, points: TrkPoint[] = []): I
 export function planVsActual(acts: TrkActivity[], actual: number, now: number): PlanVsActual | null {
   const list = acts.filter((a) => a.tracked && a.stage !== null && a.start && a.group !== 'Operations');
   if (!list.length) return null;
-  // a line counts for its stage once planned to start, a long one (over a day, e.g. a 15-day overhaul) once planned to finish
-  const started = list.filter((a) => ms((a.durationH ?? 0) > 24 && a.finish ? a.finish : a.start) <= now);
+  // a line counts for its stage once planned to finish, as the actual stage moves when a step is finished
+  const started = list.filter((a) => (a.finish ? ms(a.finish) : ms(a.start) + (a.durationH ?? 0) * H) <= now);
   const planned = started.length ? Math.max(...started.map((a) => a.stage!)) : 0;
   const variance = actual - planned;
   const firstOf = (st: number) => { const xs = list.filter((a) => a.stage === st).map((a) => ms(a.start)); return xs.length ? Math.min(...xs) : NaN; };
