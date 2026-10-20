@@ -51,12 +51,12 @@ export const Tile = ({ value, label, tone, onClick }: { value: ReactNode; label:
 /** The list a set of compact rows sits in: one white box, a thin line between the rows. */
 export const RowList = ({ children, className }: { children: ReactNode; className?: string }) =>
   <div className={cx('divide-y divide-slate-100 overflow-hidden rounded-xl bg-white ring-1 ring-slate-200', className)}>{children}</div>;
-const DOT = { grey: 'bg-slate-300', blue: 'bg-[#0850A0]', green: 'bg-[#08A048]', red: 'bg-[#E02028]', amber: 'bg-amber-500' } as const;
+const DOT = { grey: 'bg-slate-300', blue: 'bg-[#0850A0]', green: 'bg-[#08A048]', red: 'bg-[#E02028]', amber: 'bg-amber-500', teal: 'bg-teal-500' } as const;
 /** One thin row: a status dot, the name and one line under it, the next action, and ⋯ for the rest. */
-export function CRow({ dot, title, sub, action, menu, onTitle, faded }: { dot: keyof typeof DOT; title: ReactNode; sub?: ReactNode; action?: ReactNode;
+export function CRow({ dot, title, sub, extra, action, menu, onTitle, faded }: { dot: keyof typeof DOT; title: ReactNode; sub?: ReactNode; extra?: ReactNode; action?: ReactNode;
   menu?: (close: () => void) => ReactNode; onTitle?: () => void; faded?: boolean }) {
   const [open, setOpen] = useState(false);
-  const text = <><span className="line-clamp-2 block text-[13.5px] font-semibold leading-snug text-slate-900">{title}</span>{sub && <span className="block truncate text-[11px] leading-snug text-slate-500">{sub}</span>}</>;
+  const text = <><span className="line-clamp-2 block text-[13.5px] font-semibold leading-snug text-slate-900">{title}</span>{sub && <span className="block truncate text-[11px] leading-snug text-slate-500">{sub}</span>}{extra && <span className="mt-0.5 flex flex-wrap gap-1">{extra}</span>}</>;
   return (
     <div className={cx('px-2.5 py-1.5', faded && 'opacity-60')}>
       <div className="flex min-h-10 items-center gap-2">
@@ -78,3 +78,9 @@ export const RowBtn = ({ children, onClick, disabled, tone = 'navy' }: { childre
 export const MenuBtn = ({ children, onClick, disabled, danger }: { children: ReactNode; onClick: () => void; disabled?: boolean; danger?: boolean }) => (
   <button type="button" onClick={onClick} disabled={disabled} className={cx('rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold ring-1 ring-slate-200 disabled:opacity-50', danger ? 'text-red-700' : 'text-slate-800')}>{children}</button>
 );
+
+/** The isolation colours, the same on every page: blind missing · not started · neutralizing · ready to hand over · handed over. */
+export const ISO_CLS = { blind: 'bg-red-100 text-red-800', idle: 'bg-slate-100 text-slate-600', neut: 'bg-amber-100 text-amber-800', ready: 'bg-teal-100 text-teal-800', ho: 'bg-blue-100 text-blue-800' } as const;
+export const ISO_DOT = { blind: 'red', idle: 'grey', neut: 'amber', ready: 'teal', ho: 'blue' } as const;
+export const IsoChip = ({ state, children }: { state: keyof typeof ISO_CLS; children: ReactNode }) =>
+  <span className={cx('shrink-0 whitespace-nowrap rounded px-1.5 py-px text-[10.5px] font-bold', ISO_CLS[state])}>{children}</span>;

@@ -2,10 +2,10 @@
 // once here. The database moves the rest: the items (handed over when all their blinds are in and the neutralization
 // before handover is done), the guideline step of each row and the soda-ash bar-chart lines.
 import { useState } from 'react';
-import { NEUT_FLOW, NEUT_LABEL, equipBlind, hoursText, kwDay, kwTime, pointComplete, soakLeft, type PointStatus, type TrkActivity, type TrkPoint, type TrkStep } from '@/core/tracker';
+import { NEUT_FLOW, NEUT_LABEL, equipBlind, missingBlinds, hoursText, kwDay, kwTime, pointComplete, soakLeft, type PointStatus, type TrkActivity, type TrkPoint, type TrkStep } from '@/core/tracker';
 import { setActivity, setPoint } from '@/data/tracker';
 import { Button, ErrorBox, cx } from '@/ui/components';
-import { CRow, MenuBtn, RowBtn, RowList, Tile } from './ui';
+import { CRow, IsoChip, MenuBtn, RowBtn, RowList, Tile } from './ui';
 
 const when = (iso: string | null) => (iso ? `${kwDay(iso)} ${kwTime(iso)}` : '');
 const BLIND_LABEL: Record<string, string> = { open: 'Not blinded', in: 'Blinded', out: 'Deblinded' };
@@ -13,7 +13,8 @@ const NEXT: Record<string, [PointStatus, string] | undefined> = {
   open: ['filling', '▶ Fill'], filling: ['soaking', 'Soaking'], soaking: ['draining', 'Draining'], draining: ['done', '✓ Done'],
 };
 
-function PointRow({ p, now, canEdit, onItem, onDone }: { p: TrkPoint; now: number; canEdit: boolean; onItem: (tag: string) => void; onDone: (msg: string) => void }) {
+function PointRow({ p, points, isHead, now, canEdit, onItem, onDone }: { p: TrkPoint; points: TrkPoint[]; isHead: boolean; now: number; canEdit: boolean; onItem: (tag: string) => void; onDone: (msg: string) => void }) {
+  const [force, setForce] = useState(false);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [note, setNote] = useState(p.remark ?? '');
   async function run(patch: Parameters<typeof setPoint>[1], msg: string, close?: () => void) { setBusy(true); setErr(null); try { await setPoint(p.id, patch); close?.(); onDone(msg); } catch (e) { setErr(e); } finally { setBusy(false); } }
@@ -24,18 +25,31 @@ function PointRow({ p, now, canEdit, onItem, onDone }: { p: TrkPoint; now: numbe
   const items = p.items.join(', ');
   // the name often starts with the ref (E-12-205 · E-12-205 neutralization), show it once
   const name = p.name.startsWith(p.ref) ? p.name.slice(p.ref.length).trim() : p.name;
-  const dot = pointComplete(p) ? 'green' : left !== null && left <= 0 ? 'amber' : p.status !== 'open' ? 'blue' : 'grey';
+  // a loop waits for its blinds: locked until M & I has them in (the Section Head may start it anyway)
+  const missing = !blind && p.status === 'open' ? missingBlinds(p, points) : [];
+  const locked = missing.length > 0;
+  const loopState = pointComplete(p) ? 'ready' : p.status !== 'open' ? 'neut' : locked ? 'blind' : 'idle';
+  const dot = pointComplete(p) ? 'green' : locked ? 'red' : left !== null && left <= 0 ? 'amber' : p.status !== 'open' ? 'amber' : 'grey';
+  const reqName = (r: string) => points.find((b) => b.kind === 'blind' && b.ref === r)?.name ?? '';
   const sub = blind
     ? (p.status === 'open' ? items || '—' : `✓ In ${when(p.inAt)}${p.outAt ? ` · out ${when(p.outAt)}` : ''}${p.updatedBy ? ` · ${p.updatedBy}` : ''}`)
-    : <>{NEUT_LABEL[p.status]}{left !== null ? <b className={left > 0 ? 'text-amber-800' : 'text-green-800'}> · {left > 0 ? `${hoursText(left)} left` : 'soak reached'}</b> : null}{p.status === 'done' && p.doneAt ? ` ${when(p.doneAt)}` : ''}{items ? ` · ${items}` : ''}</>;
+    : locked ? <b className="text-red-800">🔒 Needs blinds: {missing.map((r) => `${r} ${reqName(r)}`.trim()).join(', ')}</b>
+    : <>{(p.requires ?? []).length > 0 && p.status === 'open' ? 'Blinds ready ✓ · ' : ''}{NEUT_LABEL[p.status]}{left !== null ? <b className={left > 0 ? 'text-amber-800' : 'text-green-800'}> · {left > 0 ? `${hoursText(left)} left` : 'soak reached'}</b> : null}{p.status === 'done' && p.doneAt ? ` ${when(p.doneAt)}` : ''}</>;
+  const extra = blind ? null : <>
+    {locked && (p.requires ?? []).map((r) => <IsoChip key={r} state={missing.includes(r) ? 'blind' : 'ready'}>{r} {missing.includes(r) ? '✗' : '✓'}</IsoChip>)}
+    {p.items.map((t) => <IsoChip key={t} state={loopState}>{t}</IsoChip>)}
+  </>;
   const action = !canEdit ? null
     : blind ? (p.status === 'open' ? <RowBtn disabled={busy} onClick={() => run({ status: 'in' }, `${p.ref} blinded.`)}>Blinded</RowBtn>
       : p.status === 'in' ? <RowBtn tone="ghost" disabled={busy} onClick={() => run({ status: 'out' }, `${p.ref} deblinded.`)}>Deblinded</RowBtn> : <span className="shrink-0 text-[11px] font-bold text-[#004080]">Out</span>)
+    : locked && !force ? (isHead ? <RowBtn tone="ghost" disabled={busy} onClick={() => setForce(true)}>🔒 Fill</RowBtn> : <span className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-500">🔒 Fill</span>)
     : next ? <RowBtn tone={next[0] === 'done' ? 'green' : 'navy'} disabled={busy} onClick={() => run({ status: next[0] }, `${p.ref}: ${NEUT_LABEL[next[0]].toLowerCase()}.`)}>{next[1]}</RowBtn>
     : <span className="shrink-0 text-[11px] font-bold text-[#08A048]">Done</span>;
   return (
     <>
-      <CRow dot={dot} title={<>{p.ref}{name ? ` · ${name}` : ''}{p.remark ? <span className="font-normal text-slate-500"> · 📝</span> : null}</>} sub={sub} action={action}
+      {force && locked && <div className="mx-2.5 mt-1 rounded-lg bg-red-50 p-2 text-xs text-red-900">Start {p.ref} without {missing.join(', ')}? It is logged as a Section Head override.
+        <div className="mt-1.5 flex gap-1.5"><RowBtn tone="navy" disabled={busy} onClick={() => run({ status: 'filling' }, `${p.ref}: filling (override).`, () => setForce(false))}>Start anyway</RowBtn><RowBtn tone="ghost" onClick={() => setForce(false)}>Cancel</RowBtn></div></div>}
+      <CRow dot={dot} extra={extra} title={<>{p.ref}{name ? ` · ${name}` : ''}{p.remark ? <span className="font-normal text-slate-500"> · 📝</span> : null}</>} sub={sub} action={action}
         onTitle={p.items.length === 1 ? () => onItem(p.items[0]) : undefined}
         menu={(close) => (
           <>
@@ -71,8 +85,8 @@ function EquipBlindRow({ a, canEdit, onItem, onDone }: { a: TrkActivity; canEdit
 
 const GRP: [string, string][] = [['segregation', 'Segregation'], ['hp_critical', 'HP critical'], ['equipment', 'Equipment']];
 
-export function IsolationTab({ initialKind, activities = [], points, steps, now, canEdit, focus, onFocus, onItem, onDone }: {
-  initialKind?: 'blind' | 'neut'; activities?: TrkActivity[]; points: TrkPoint[]; steps: TrkStep[]; now: number; canEdit: boolean; focus: string | null; onFocus: (tag: string | null) => void; onItem: (tag: string) => void; onDone: (msg: string) => void;
+export function IsolationTab({ initialKind, activities = [], points, steps, now, canEdit, isHead = false, focus, onFocus, onItem, onDone }: {
+  initialKind?: 'blind' | 'neut'; activities?: TrkActivity[]; points: TrkPoint[]; steps: TrkStep[]; now: number; canEdit: boolean; isHead?: boolean; focus: string | null; onFocus: (tag: string | null) => void; onItem: (tag: string) => void; onDone: (msg: string) => void;
 }) {
   const [kind, setKind] = useState<'blind' | 'neut'>(() => initialKind ?? (focus && !points.some((p) => p.kind === 'blind' && p.items.includes(focus)) ? 'neut' : 'blind'));
   const [grp, setGrp] = useState('segregation');
@@ -112,12 +126,12 @@ export function IsolationTab({ initialKind, activities = [], points, steps, now,
       {sections.map(([k, xs]) => { const all = list.filter((p) => secOf(p) === k); return (
         <section key={k} className="space-y-1">
           <h3 className="flex justify-between text-[11px] font-bold uppercase tracking-wide text-slate-500"><span className="truncate">{secTitle(k)}</span><span>{all.filter(pointComplete).length}/{all.length}</span></h3>
-          <RowList>{xs.map((p) => <PointRow key={p.id} p={p} now={now} canEdit={canEdit} onItem={onItem} onDone={onDone} />)}</RowList>
+          <RowList>{xs.map((p) => <PointRow key={p.id} p={p} points={points} isHead={isHead} now={now} canEdit={canEdit} onItem={onItem} onDone={onDone} />)}</RowList>
         </section>
       ); })}
       {!open.length && <p className="py-3 text-center text-sm text-[#08A048]">All {kind === 'blind' ? 'blinds are in' : 'neutralization is done'}{fo !== 'All' ? ` for ${fo}` : ''}.</p>}
       {closed.length > 0 && <button type="button" onClick={() => setShowDone((x) => !x)} className="text-sm font-semibold text-[#08A048]">{showDone ? '▾' : '▸'} ✓ {kind === 'blind' ? 'Blinded' : 'Neutralized'} ({closed.length})</button>}
-      {showDone && <RowList>{closed.map((p) => <PointRow key={p.id} p={p} now={now} canEdit={canEdit} onItem={onItem} onDone={onDone} />)}</RowList>}
+      {showDone && <RowList>{closed.map((p) => <PointRow key={p.id} p={p} points={points} isHead={isHead} now={now} canEdit={canEdit} onItem={onItem} onDone={onDone} />)}</RowList>}
       </>}
       <p className="text-[11px] text-slate-500">One tap here updates the rest: operations hands an item over when its neutralization is done, M &amp; I then installs the blinds (an item blinded counts as handed over), the guideline step ticks when all its rows are done, and the soda-ash and blind bar-chart lines take the times.</p>
     </div>

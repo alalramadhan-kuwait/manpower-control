@@ -24,7 +24,7 @@ interface StepRow { id: string; step_id: string; fo: string; gate: number; gate_
 interface EqRow { id: string; tag: string; grp: string; description: string | null; fo: string | null; ho_step: string | null; procedure: string | null; barchart_key: string | null; ops_item: boolean; critical: boolean; tracked: boolean; disabled_reason: string | null; planned_ho: string | null; planned_finish: string | null; sort: number; stage: number; pending_reason: string | null; remark: string | null; blinds_in_at: string | null; blinds_out_at: string | null; updated_by_name: string | null; updated_at: string | null }
 interface IatRow { id: string; tag: string; iat_no: string; job_text: string | null; discipline: string | null; issued_at: string; status: 'open' | 'closed'; closed_at: string | null }
 interface ActRow { id: string; activity_id: string; grp: string | null; equipment_key: string; activity: string; duration_h: number | null; planned_start: string | null; planned_finish: string | null; stage: number | null; tracked: boolean; baseline: number; actual_start: string | null; actual_finish: string | null; actual_note: string | null; disabled_reason: string | null; updated_by_name: string | null; updated_at: string | null }
-interface PointRow { id: string; kind: TrkPoint['kind']; grp: TrkPoint['grp']; ref: string; name: string; detail: string | null; fo: string | null; step_id: string | null; items: string[] | null; before_ho: boolean; sort: number; status: PointStatus;
+interface PointRow { id: string; kind: TrkPoint['kind']; grp: TrkPoint['grp']; ref: string; name: string; detail: string | null; fo: string | null; step_id: string | null; items: string[] | null; requires?: string[] | null; before_ho: boolean; sort: number; status: PointStatus;
   in_at: string | null; out_at: string | null; fill_at: string | null; soak_at: string | null; drain_at: string | null; done_at: string | null; soak_h: number | null; remark: string | null; updated_by_name: string | null; updated_at: string | null }
 interface LogRow { kind: TrkLog['kind']; ref: string; field: string; old_value: string | null; new_value: string | null; by_name: string | null; at: string }
 export interface ShiftLog { id: string; shiftDate: string; shift: 'D' | 'N'; notes: string | null; temps: Record<string, string>; updatedBy: string | null }
@@ -61,7 +61,7 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     shiftLogs: (sl.data as { id: string; shift_date: string; shift: 'D' | 'N'; notes: string | null; temps: Record<string, string> | null; updated_by_name: string | null }[])
       .map((r) => ({ id: r.id, shiftDate: r.shift_date, shift: r.shift, notes: r.notes, temps: r.temps ?? {}, updatedBy: r.updated_by_name })),
     settings: (t.data as unknown as TrackerRow).settings ?? {},
-    points: (pt.data as PointRow[]).map((r): TrkPoint => ({ id: r.id, kind: r.kind, grp: r.grp ?? null, ref: r.ref, name: r.name, detail: r.detail, fo: r.fo, stepId: r.step_id, items: r.items ?? [], beforeHo: r.before_ho, sort: r.sort, status: r.status,
+    points: (pt.data as PointRow[]).map((r): TrkPoint => ({ id: r.id, kind: r.kind, grp: r.grp ?? null, ref: r.ref, name: r.name, detail: r.detail, fo: r.fo, stepId: r.step_id, items: r.items ?? [], requires: r.requires ?? [], beforeHo: r.before_ho, sort: r.sort, status: r.status,
       inAt: r.in_at, outAt: r.out_at, fillAt: r.fill_at, soakAt: r.soak_at, drainAt: r.drain_at, doneAt: r.done_at, soakH: r.soak_h, remark: r.remark, updatedBy: r.updated_by_name, updatedAt: r.updated_at })),
   };
 }

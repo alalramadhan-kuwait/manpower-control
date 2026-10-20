@@ -1,11 +1,11 @@
 // The two input sheets of the controllers: a guideline step (Start · Done · Pending) and an equipment item (stage,
 // blinded = handed over, IATs, pending). Big buttons, the time and the name are stamped by the database.
 import { useState } from 'react';
-import { NEUT_LABEL, PENDING_REASONS, STAGES, kwDay, kwTime, pointComplete, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint } from '@/core/tracker';
+import { NEUT_LABEL, PENDING_REASONS, isoState, missingBlinds, STAGES, kwDay, kwTime, pointComplete, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint } from '@/core/tracker';
 import { EquipActivities, StepTimes } from './Timing';
 import { addIat, closeIat, setEquipment, setStep } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, Field, cx } from '@/ui/components';
-import { FlagChip, PlanChip, StageBar, StateChip } from './ui';
+import { FlagChip, IsoChip, PlanChip, StageBar, StateChip } from './ui';
 
 const when = (iso: string | null) => (iso ? `${kwDay(iso)} ${kwTime(iso)}` : '');
 
@@ -82,7 +82,7 @@ export function StepSheet({ v, isHead, canEdit, points = [], items = [], onIsola
   );
 }
 
-export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso = null, onIsolation, onClose, onDone }: { v: EquipView; trackerId: string; canEdit: boolean; isHead: boolean; activities: TrkActivity[]; now: number; iso?: Isolation | null; onIsolation?: () => void; onClose: () => void; onDone: (msg: string) => void }) {
+export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso = null, points = [], onIsolation, onClose, onDone }: { v: EquipView; trackerId: string; canEdit: boolean; isHead: boolean; activities: TrkActivity[]; now: number; iso?: Isolation | null; points?: TrkPoint[]; onIsolation?: () => void; onClose: () => void; onDone: (msg: string) => void }) {
   const e = v.eq;
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [pending, setPending] = useState(false); const [iat, setIat] = useState(false); const [details, setDetails] = useState(false);
@@ -110,9 +110,15 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso
           <button type="button" onClick={onIsolation} className="flex w-full items-center gap-2 rounded-xl bg-slate-50 p-2.5 text-left ring-1 ring-slate-200">
             <span className="min-w-0 flex-1 text-xs text-slate-700">
               <b className="block text-[11px] uppercase tracking-wide text-slate-500">Isolation</b>
-              {iso.blinds.length > 0 && <span className={cx('mr-2 font-semibold', iso.blindsIn === iso.blinds.length ? 'text-[#08A048]' : 'text-slate-800')}>Blinds {iso.blindsIn}/{iso.blinds.length} in</span>}
-              {iso.neut.map((p) => <span key={p.id} className={cx('mr-2 font-semibold', pointComplete(p) ? 'text-[#08A048]' : 'text-slate-800')}>{p.stepId ?? 'Neutralization'}: {NEUT_LABEL[p.status]}</span>)}
-              <span className="block text-[11px] text-slate-500">{iso.ready ? 'Neutralized: handed over automatically.' : iso.neut.some((p) => p.beforeHo) ? 'Handed over automatically when the neutralization is done.' : 'Blinds: M & I work.'}</span>
+              {(() => { const st = isoState(v.eq.tag, v.stage, points); const open = iso.neut.filter((p) => p.beforeHo && !pointComplete(p));
+                const block = [...(st?.missing ?? []), ...open.map((p) => (p.stepId ? p.ref : 'soda ash'))];
+                return <>
+                  {iso.blinds.length > 0 && <span className="mt-0.5 flex flex-wrap items-center gap-1">Blinds: {iso.blinds.map((b) => <IsoChip key={b.id} state={pointComplete(b) ? 'ready' : 'blind'}>{b.ref} {pointComplete(b) ? '✓' : '✗'}</IsoChip>)}</span>}
+                  {iso.neut.length > 0 && <span className="mt-0.5 flex flex-wrap items-center gap-1">Neutralization: {iso.neut.map((p) => { const m = p.status === 'open' ? missingBlinds(p, points) : [];
+                    return <IsoChip key={p.id} state={pointComplete(p) ? 'ready' : p.status !== 'open' ? 'neut' : m.length ? 'blind' : 'idle'}>{p.stepId ? p.ref : 'Soda ash'} · {m.length ? `🔒 ${m.join(', ')}` : NEUT_LABEL[p.status]}</IsoChip>; })}</span>}
+                  <span className={cx('mt-1 block text-[11px] font-semibold', v.stage >= 1 ? 'text-[#0850A0]' : block.length ? 'text-red-800' : 'text-teal-800')}>
+                    {v.stage >= 1 ? 'Handed over.' : block.length ? `Hand over blocked: ${[...new Set(block)].join(', ')}` : 'Ready: handed over automatically.'}</span>
+                </>; })()}
             </span>
             <span className="text-xs font-semibold text-[#0850A0]">Open ›</span>
           </button>

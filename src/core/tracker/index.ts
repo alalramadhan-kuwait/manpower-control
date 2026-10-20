@@ -33,6 +33,8 @@ export interface TrkPoint {
   id: string; kind: 'blind' | 'neut';
   /** a blind: segregation or HP critical (installed by M & I) */
   grp: 'segregation' | 'hp_critical' | null; ref: string; name: string; detail: string | null; fo: string | null; stepId: string | null; items: string[];
+  /** the blinds (refs) that must be in before this neutralization can start */
+  requires?: string[];
   /** a neutralization the item's handover waits for */
   beforeHo: boolean; sort: number; status: PointStatus;
   inAt: string | null; outAt: string | null; fillAt: string | null; soakAt: string | null; drainAt: string | null; doneAt: string | null;
@@ -113,7 +115,30 @@ export function isolationOf(tag: string, points: TrkPoint[] = []): Isolation | n
   if (!mine.length) return null;
   const blinds = mine.filter((p) => p.kind === 'blind'), neut = mine.filter((p) => p.kind === 'neut');
   const gate = mine.filter((p) => p.kind === 'neut' && p.beforeHo);
-  return { blinds, neut, blindsIn: blinds.filter(pointComplete).length, neutDone: neut.filter(pointComplete).length, ready: gate.length > 0 && gate.every(pointComplete) };
+  return { blinds, neut, blindsIn: blinds.filter(pointComplete).length, neutDone: neut.filter(pointComplete).length, ready: gate.length > 0 && gate.every(pointComplete) && blinds.every(pointComplete) };
+}
+
+/** The blinds a neutralization still waits for (refs not in yet), empty when it can start. */
+export function missingBlinds(p: Pick<TrkPoint, 'requires'>, points: TrkPoint[] = []): string[] {
+  return (p.requires ?? []).filter((r) => !points.some((b) => b.kind === 'blind' && b.ref === r && pointComplete(b)));
+}
+/** An item's isolation state, the colour it shows everywhere before (and at) the handover. */
+export type IsoState = 'blind' | 'idle' | 'neut' | 'ready' | 'ho';
+export const ISO_LABEL: Record<IsoState, string> = { blind: 'BLIND', idle: 'NOT READY', neut: 'NEUT', ready: 'READY HO', ho: 'HO' };
+export interface IsoView { state: IsoState; why: string; missing: string[]; loops: TrkPoint[] }
+export function isoState(tag: string, stage: number, points: TrkPoint[] = []): IsoView | null {
+  const mine = points.filter((p) => p.items.includes(tag));
+  const loops = mine.filter((p) => p.kind === 'neut' && p.beforeHo);
+  if (!mine.length) return null;
+  if (stage >= 1) return { state: 'ho', why: 'Handed over', missing: [], loops };
+  const open = loops.filter((p) => !pointComplete(p));
+  // blinds linked to the item, and those its open loops wait for
+  const missing = [...new Set([...mine.filter((p) => p.kind === 'blind' && !pointComplete(p)).map((p) => p.ref), ...open.flatMap((p) => missingBlinds(p, points))])].sort();
+  const running = open.filter((p) => p.status !== 'open');
+  if (running.length) return { state: 'neut', why: `Neutralizing ${running.map((p) => `${p.ref} · ${NEUT_LABEL[p.status]}`).join(', ')}`, missing, loops };
+  if (missing.length) return { state: 'blind', why: `🔒 ${missing.join(', ')} not in`, missing, loops };
+  if (!open.length) return { state: 'ready', why: loops.length ? `Neutralized ${loops.map((p) => p.ref).join(', ')} → hand over` : 'Blinds in → hand over', missing, loops };
+  return { state: 'idle', why: `Waiting ${open.map((p) => p.ref).join(', ')} (not started)`, missing, loops };
 }
 
 export function planVsActual(acts: TrkActivity[], actual: number, now: number): PlanVsActual | null {
@@ -207,7 +232,10 @@ export function nextStep(e: EquipView, acts: TrkActivity[], points: TrkPoint[] =
   const ops = pick(mine.filter((a) => a.group === 'Operations'));
   if (ops) return ops;
   const p = points.find((x) => x.kind === 'neut' && x.beforeHo && x.items.includes(e.eq.tag) && !pointComplete(x));
-  if (p) return { text: `Neutralize ${p.ref} · ${NEUT_LABEL[p.status]}`, running: p.status !== 'open', n: 0, of: 0 };
+  if (p) { const m = p.status === 'open' ? missingBlinds(p, points) : [];
+    return { text: m.length ? `🔒 Blinds for ${p.ref}: ${m.join(', ')}` : `Neutralize ${p.ref} · ${NEUT_LABEL[p.status]}`, running: p.status !== 'open', n: 0, of: 0 }; }
+  const b = points.find((x) => x.kind === 'blind' && x.items.includes(e.eq.tag) && !pointComplete(x));
+  if (b) return { text: `🔒 Blind ${b.ref} · ${b.name}`, running: false, n: 0, of: 0 };
   return { text: e.eq.hoStep ? `Hand over (${e.eq.hoStep})` : 'Hand over', running: false, n: 0, of: 0 };
 }
 

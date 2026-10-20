@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attention, focusList, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { attention, focusList, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -194,11 +194,13 @@ describe('the two parts of the shutdown: operations end, M & I starts, at the R-
 describe('isolation & neutralization', () => {
   const pt = (o: Partial<TrkPoint>): TrkPoint => ({ id: o.ref ?? 'x', kind: 'blind', grp: null, ref: 'SEG-1', name: '', detail: null, fo: 'FO1', stepId: null, items: [], beforeHo: true, sort: 0, status: 'open',
     inAt: null, outAt: null, fillAt: null, soakAt: null, drainAt: null, doneAt: null, soakH: null, remark: null, updatedBy: null, updatedAt: null, ...o });
-  it('an item is ready (handed over) when its neutralization before handover is done (blinds are M & I work after it)', () => {
+  it('an item is ready (handed over) when its neutralization before handover is done and its linked blinds are in', () => {
     const pts = [pt({ ref: 'SEG-12', items: ['E-12-205'], status: 'in' }), pt({ ref: 'SEG-13', items: ['E-12-205'], status: 'open' }),
       pt({ kind: 'neut', ref: 'E-12-205', items: ['E-12-205'], status: 'soaking' }), pt({ kind: 'neut', ref: 'H-12-202', items: ['H-12-202'], beforeHo: false })];
     expect(isolationOf('E-12-205', pts)).toMatchObject({ blindsIn: 1, neutDone: 0, ready: false });
     pts[2].status = 'done';
+    expect(isolationOf('E-12-205', pts)?.ready).toBe(false);   // SEG-13 not in yet
+    pts[1].status = 'in';
     expect(isolationOf('E-12-205', pts)?.ready).toBe(true);
     expect(isolationOf('H-12-202', pts)?.ready).toBe(false);
     expect(isolationOf('V-12-201', pts)).toBeNull();
@@ -245,5 +247,31 @@ describe('focus order (needs attention)', () => {
     const f = focusList(eqs.map((e) => at(e.eq.tag)), eqs, []);
     expect(f.map((x) => x.a.ref)).toEqual(['V-12-212', 'C-12-201', 'P-12-203', 'C-12-201-E-01A', '12-VC-0106']);
     expect(f.filter((x) => x.minor).map((x) => x.a.ref)).toEqual(['C-12-201-E-01A', '12-VC-0106']);
+  });
+});
+
+describe('isolation links: blinds lock the loops, items take the colour', () => {
+  const pt = (x: Partial<TrkPoint>) => ({ id: x.ref, kind: 'neut', grp: null, name: '', detail: null, fo: null, stepId: null, items: [], requires: [], beforeHo: true, sort: 0, status: 'open',
+    inAt: null, outAt: null, fillAt: null, soakAt: null, drainAt: null, doneAt: null, soakH: 4, remark: null, updatedBy: null, updatedAt: null, ...x } as TrkPoint);
+  const seg06 = pt({ ref: 'SEG-06', kind: 'blind', grp: 'hp_critical', items: ['E-202 to E-203'] });
+  const seg11 = pt({ ref: 'SEG-11', kind: 'blind', status: 'in' });
+  const s215 = pt({ ref: 'S215', stepId: 'S215', items: ['E-202 to E-203', 'C-12-201'], requires: ['SEG-06', 'SEG-11'] });
+  const s320 = pt({ ref: 'S320', stepId: 'S320', items: ['V-12-213'], status: 'done' });
+  const all = [seg06, seg11, s215, s320];
+  it('a loop waits for the blinds not in', () => {
+    expect(missingBlinds(s215, all)).toEqual(['SEG-06']);
+    expect(missingBlinds(s215, [{ ...seg06, status: 'in' }, seg11])).toEqual([]);
+  });
+  it('the items: blind missing, not started, neutralizing, ready, handed over', () => {
+    expect(isoState('C-12-201', 0, all)?.state).toBe('blind');
+    expect(isoState('C-12-201', 0, [{ ...seg06, status: 'in' }, seg11, s215])?.state).toBe('idle');
+    expect(isoState('C-12-201', 0, [seg06, seg11, { ...s215, status: 'filling' }])?.state).toBe('neut');
+    expect(isoState('V-12-213', 0, all)?.state).toBe('ready');
+    expect(isoState('V-12-213', 1, all)?.state).toBe('ho');
+    expect(isoState('P-12-203', 0, all)).toBeNull();
+  });
+  it('the next step names the missing blind', () => {
+    const e = { eq: { tag: 'C-12-201', barchartKey: null, hoStep: 'S223' }, stage: 0 } as Parameters<typeof nextStep>[0];
+    expect(nextStep(e, [], all)?.text).toBe('🔒 Blinds for S215: SEG-06');
   });
 });

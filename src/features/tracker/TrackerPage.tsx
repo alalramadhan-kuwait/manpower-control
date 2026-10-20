@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
-import { FO_NAMES, NEUT_LABEL, actOrder, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
+import { FO_NAMES, actOrder, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import { currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { Button, ErrorBox, Spinner, cx } from '@/ui/components';
@@ -13,7 +13,7 @@ import { TrackerAdmin, clockKey } from './TrackerAdmin';
 import { TimingTab } from './Timing';
 import { IsolationTab } from './Isolation';
 import { TodayTab, type Nav } from './TrackerToday';
-import { FLAG_STYLE, PlanChip, StageBar, StateChip } from './ui';
+import { FLAG_STYLE, ISO_DOT, IsoChip, PlanChip, StageBar, StateChip } from './ui';
 
 type Tab = 'today' | 'isolation' | 'guideline' | 'equipment' | 'timing' | 'map' | 'report' | 'admin';
 const TABS: [Tab, string][] = [['today', 'Today'], ['isolation', 'Isolation'], ['equipment', 'Equipment'], ['guideline', 'Sequence'], ['timing', 'Timing'], ['map', 'Map'], ['report', 'Report']];
@@ -100,7 +100,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       </nav>
       {flash && <div role="status" className="mb-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{flash}</div>}
       {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} now={now} onOpen={open} onNav={nav} />}
-      {tab === 'isolation' && <IsolationTab key={`iso-${isoKind}`} initialKind={isoKind} activities={data.activities} points={points} steps={data.steps} now={now} canEdit={canEdit} focus={focus} onFocus={setFocus} onItem={(tag) => setSheet({ kind: 'eq', tag })} onDone={done} />}
+      {tab === 'isolation' && <IsolationTab key={`iso-${isoKind}`} initialKind={isoKind} activities={data.activities} points={points} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} focus={focus} onFocus={setFocus} onItem={(tag) => setSheet({ kind: 'eq', tag })} onDone={done} />}
       {tab === 'guideline' && <SequenceTab steps={steps} auto={auto} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {tab === 'equipment' && <EquipmentTab key={`eq-${lateFirst}`} initialLateFirst={lateFirst} eqs={eqs} activities={data.activities} points={points} now={now} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={done} />}
@@ -110,7 +110,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {openStep && <StepSheet v={openStep} isHead={isHead} canEdit={canEdit} points={points.filter((p) => p.stepId === openStep.step.stepId)} items={eqs.filter((e) => e.eq.hoStep === openStep.step.stepId && e.eq.tracked)}
         onIsolation={() => toIsolation(null)} onClose={() => setSheet(null)} onDone={done} />}
       {openEq && <EquipSheet v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={data.activities.filter((a) => a.key === (openEq.eq.barchartKey ?? openEq.eq.tag))} now={now}
-        iso={isolationOf(openEq.eq.tag, points)} onIsolation={() => toIsolation(openEq.eq.tag)} onClose={() => setSheet(null)} onDone={(m) => done(m, true)} />}
+        iso={isolationOf(openEq.eq.tag, points)} points={points} onIsolation={() => toIsolation(openEq.eq.tag)} onClose={() => setSheet(null)} onDone={(m) => done(m, true)} />}
     </div>
   );
 }
@@ -173,6 +173,7 @@ function SequenceTab({ steps, auto, onOpen }: { steps: Map<string, StepView>; au
 /** One thin row per item: tag, stage bar and the one thing to know (pending, the step running, the isolation, the next
  *  step), the status and the plan difference. "All" groups the items under their group; "Late first" puts the late,
  *  pending and IAT items on top. */
+const ISO_BG = { red: 'bg-[#E02028]', grey: 'bg-slate-300', amber: 'bg-amber-500', teal: 'bg-teal-500', blue: 'bg-[#0850A0]' } as const;
 function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, onOpen }: { initialLateFirst?: boolean; eqs: EquipView[]; activities: TrackerData['activities']; points: TrkPoint[]; now: number; onOpen: (tag: string) => void }) {
   const lineOf = (e: EquipView): { text: string; tone: 'run' | 'muted' | 'red' } | null => {
     if (e.eq.pendingReason) return { text: `⏸ ${e.eq.pendingReason}`, tone: 'red' };
@@ -180,15 +181,17 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
     const xs = activities.filter((a) => a.tracked && a.key === key).sort(actOrder);
     const run = xs.filter((a) => a.actualStart && !a.actualFinish);
     if (run.length) return { text: `▶ ${run.map((a) => a.activity).join(' · ')}`, tone: 'run' };
-    const iso = e.stage === 0 ? isolationOf(e.eq.tag, points) : null;
+    const iso = e.stage === 0 ? isoState(e.eq.tag, e.stage, points) : null;
     if (iso) {
-      const n = iso.neut.find((p) => !pointComplete(p)); const left = n ? soakLeft(n, now) : null;
-      return { text: [iso.blinds.length ? `🔒 Blinds ${iso.blindsIn}/${iso.blinds.length}` : '', n ? `🧪 ${n.status === 'open' ? 'Not neutralized' : NEUT_LABEL[n.status]}${left !== null && left > 0 ? ` ${hoursText(left)}` : ''}` : iso.neut.length ? '🧪 Neutralized' : ''].filter(Boolean).join(' · '), tone: 'muted' };
+      const n = iso.loops.find((p) => p.status !== 'open' && !pointComplete(p)); const left = n ? soakLeft(n, now) : null;
+      return { text: `${iso.why}${left !== null && left > 0 ? ` · ${hoursText(left)} left` : ''}`, tone: iso.state === 'blind' ? 'red' : 'muted' };
     }
     if (e.stage === 6) return { text: e.eq.blindsOut ? `Deblinded ${kwDay(e.eq.blindsOut)} ${kwTime(e.eq.blindsOut)}` : 'Returned', tone: 'muted' };
     const nx = xs.find((a) => !a.actualStart);
     return nx ? { text: `Next: ${nx.activity}${nx.start && Date.parse(nx.start) < now ? ' (due)' : ''}`, tone: 'muted' } : null;
   };
+  const isoMemo = new Map(eqs.map((e) => [e.eq.tag, e.stage === 0 ? isoState(e.eq.tag, 0, points) : null]));
+  const iso = (e: EquipView) => isoMemo.get(e.eq.tag) ?? null;
   const groups = [...new Set(eqs.map((e) => e.eq.group))];
   const main = groups.filter((x) => !isMisc(x)), misc = groups.filter(isMisc);
   const [g, setG] = useState('All'); const [showMisc, setShowMisc] = useState(false);
@@ -205,12 +208,13 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
   const miscRows = g === 'All' && !lateFirst ? by(misc) : [];
   const row = (e: EquipView) => { const l = lineOf(e); return (
     <button key={e.eq.tag} type="button" onClick={() => onOpen(e.eq.tag)} className={cx('grid w-full grid-cols-[6.5rem_1fr_auto] items-center gap-2 border-t border-slate-100 px-2.5 py-2 text-left first:border-t-0 active:bg-slate-50', !e.eq.tracked && 'opacity-50')}>
-      <b className="truncate text-[13px] text-slate-900">{e.eq.critical && <span className="text-[#E02028]">★ </span>}{e.eq.tag}</b>
+      <b className="flex min-w-0 items-center gap-1.5 text-[13px] text-slate-900">{iso(e) && <span className={cx('h-2 w-2 shrink-0 rounded-full', ISO_BG[ISO_DOT[iso(e)!.state]])} />}<span className="truncate">{e.eq.critical && <span className="text-[#E02028]">★ </span>}{e.eq.tag}</span></b>
       <span className="min-w-0">
         <StageBar stage={e.stage} className="mb-1" />
         {l && <span className={cx('block truncate text-[11.5px]', l.tone === 'run' ? 'text-[#004080]' : l.tone === 'red' ? 'text-red-800' : 'text-slate-600')}>{l.text}</span>}
       </span>
       <span className="flex flex-col items-end gap-0.5">
+        {iso(e) && iso(e)!.state !== 'ho' && <IsoChip state={iso(e)!.state}>{ISO_LABEL[iso(e)!.state]}</IsoChip>}
         <span className={cx('whitespace-nowrap rounded px-1.5 py-0.5 text-[9.5px] font-bold', FLAG_STYLE[e.flag].cls)}>{FLAG_STYLE[e.flag].label}{e.late ? ` ${hoursText(e.lateBy)}` : ''}{e.iatsOpen.length && e.flag !== 'IAT_OPEN' ? ` · IAT ${e.iatsOpen.length}` : ''}</span>
         {e.plan && e.stage < 6 && <PlanChip variance={e.plan.variance} days={e.plan.days} short />}
       </span>
