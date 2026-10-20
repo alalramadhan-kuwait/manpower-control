@@ -20,7 +20,7 @@ export function TimingChip({ t }: { t: T }) {
 
 /** One activity as a thin row: Start / Finish stamp now; ⋯ holds the time and note correction, the bar-chart dates
  *  (Section Head), Not required and Undo. */
-export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, onDone }: { t: T; canEdit: boolean; isHead?: boolean; neutCovered?: boolean; onDone: (msg: string) => void }) {
+export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, neutLabel, onNeut, onDone }: { t: T; canEdit: boolean; isHead?: boolean; neutCovered?: boolean; neutLabel?: string; onNeut?: () => void; onDone: (msg: string) => void }) {
   const a = t.a; const link = blindLink(a); const nlink = neutCovered && neutLink(a);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [s, setS] = useState(local(a.actualStart)); const [f, setF] = useState(local(a.actualFinish)); const [note, setNote] = useState(a.actualNote ?? '');
@@ -36,7 +36,9 @@ export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, o
   const free = canEdit && a.tracked && !link && !nlink;
   const action = !a.tracked ? (isHead ? <RowBtn tone="ghost" disabled={busy} onClick={() => run({ tracked: true, disabled_reason: null }, `${a.key}: ${a.activityId} required again.`)}>↺ Required</RowBtn> : null)
     : link ? <span className="shrink-0 text-[11px] font-bold text-[#004080]">= Stage {link}</span>
-    : nlink ? <span className="shrink-0 text-[11px] font-bold text-amber-800">= Neutralization</span>
+    // done on the Isolation page: names which neutralization, one tap opens it there
+    : nlink ? (onNeut ? <button type="button" onClick={onNeut} className="max-w-[45%] shrink-0 truncate rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800 ring-1 ring-amber-200">🧪 {neutLabel ?? 'Neutralization'} ›</button>
+      : <span className="shrink-0 text-[11px] font-bold text-amber-800">= {neutLabel ?? 'Neutralization'}</span>)
     : !free ? null
     : !a.actualStart ? <RowBtn disabled={busy} onClick={() => run({ actual_start: new Date().toISOString() }, `${a.key}: ${a.activityId} started.`)}>▶ Start</RowBtn>
     : !a.actualFinish ? <RowBtn tone="green" disabled={busy} onClick={() => run({ actual_finish: new Date().toISOString() }, `${a.key}: ${a.activityId} finished.`)}>✓ Finish</RowBtn>
@@ -123,7 +125,7 @@ function MechTiming({ activities, now, canEdit, isHead, title, neutKeys, onDone 
 
 /** The item's work steps (bar chart, and procedure steps added by the Section Head) inside the equipment sheet: open,
  *  the one running and the next one on top. */
-export function EquipActivities({ trackerId, itemKey, activities, now, canEdit, isHead, neutCovered = false, onDone }: { trackerId: string; itemKey: string; activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; neutCovered?: boolean; onDone: (msg: string) => void }) {
+export function EquipActivities({ trackerId, itemKey, activities, now, canEdit, isHead, neutCovered = false, neutLabel, onNeut, onDone }: { trackerId: string; itemKey: string; activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; neutCovered?: boolean; neutLabel?: string; onNeut?: () => void; onDone: (msg: string) => void }) {
   const [open, setOpen] = useState(true); const [add, setAdd] = useState(false);
   const [showDone, setShowDone] = useState(false); const [showField, setShowField] = useState(false); const [order, setOrderIds] = useState<string[] | null>(null);
   // the Section Head follows the milestones: the field-operator detail steps are hidden (one tap shows them)
@@ -132,7 +134,7 @@ export function EquipActivities({ trackerId, itemKey, activities, now, canEdit, 
   const running = ts.filter((t) => t.state === 'RUNNING'), fin = ts.filter((t) => t.state === 'FINISHED'), rest = ts.filter((t) => t.state !== 'FINISHED');
   const next = ts.find((t) => t.state === 'NOT_STARTED');
   const off = activities.filter((a) => !a.tracked).map((a) => timing(a, now));
-  const row = (t: T) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} neutCovered={neutCovered} onDone={onDone} />;
+  const row = (t: T) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} neutCovered={neutCovered} neutLabel={neutLabel} onNeut={onNeut} onDone={onDone} />;
   return (
     <div className="rounded-xl bg-slate-50 p-2 ring-1 ring-slate-200">
       <div className="flex items-center gap-2">

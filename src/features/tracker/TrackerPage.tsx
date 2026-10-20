@@ -80,7 +80,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   // a step ticked from elsewhere: its blinds / neutralization (Isolation) or its items handed over (Equipment)
   const auto = new Map<string, 'isolation' | 'equipment'>([...data.equipment.filter((e) => e.hoStep).map((e) => [e.hoStep!, 'equipment'] as const), ...points.filter((p) => p.stepId).map((p) => [p.stepId!, 'isolation'] as const)]);
   const nav = (n: Nav) => { setFocus(null); setIsoKind(n.iso); setLateFirst(!!n.lateFirst); setTab(n.tab); };
-  const toIsolation = (tag: string | null) => { setSheet(null); setFocus(tag); setTab('isolation'); };
+  const toIsolation = (tag: string | null, kind?: 'blind' | 'neut') => { setSheet(null); setFocus(tag); setIsoKind(kind); setTab('isolation'); };
   const open = (a: { kind: 'step' | 'equipment'; ref: string }) => setSheet(a.kind === 'step' ? { kind: 'step', id: a.ref } : { kind: 'eq', tag: a.ref });
 
   return (
@@ -110,7 +110,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {openStep && <StepSheet v={openStep} isHead={isHead} canEdit={canEdit} points={points.filter((p) => p.stepId === openStep.step.stepId)} items={eqs.filter((e) => e.eq.hoStep === openStep.step.stepId && e.eq.tracked)}
         onIsolation={() => toIsolation(null)} onClose={() => setSheet(null)} onDone={done} />}
       {openEq && <EquipSheet v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={data.activities.filter((a) => a.key === (openEq.eq.barchartKey ?? openEq.eq.tag))} now={now}
-        iso={isolationOf(openEq.eq.tag, points)} points={points} onIsolation={() => toIsolation(openEq.eq.tag)} onClose={() => setSheet(null)} onDone={(m) => done(m, true)} />}
+        iso={isolationOf(openEq.eq.tag, points)} points={points} onIsolation={() => toIsolation(openEq.eq.tag)} onNeut={() => toIsolation(openEq.eq.tag, 'neut')} onClose={() => setSheet(null)} onDone={(m) => done(m, true)} />}
     </div>
   );
 }
