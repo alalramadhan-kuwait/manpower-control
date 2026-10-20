@@ -2,7 +2,7 @@
 // corrected), plan vs actual durations, and the record exported for future shutdowns.
 import { useState } from 'react';
 import { Download } from 'lucide-react';
-import { STAGES, actOrder, blindLink, neutLink, kwDay, kwTime, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type StepTiming, type Timing as T, type TrkActivity, type TrkStep } from '@/core/tracker';
+import { STAGES, sortActs, blindLink, neutLink, kwDay, kwTime, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type StepTiming, type Timing as T, type TrkActivity, type TrkStep } from '@/core/tracker';
 import { addActivity, setActivity, setStep } from '@/data/tracker';
 import { Button, ErrorBox, Field, cx } from '@/ui/components';
 import { CRow, MenuBtn, RowBtn, RowList, Tile } from './ui';
@@ -125,7 +125,7 @@ function MechTiming({ activities, now, canEdit, isHead, title, neutKeys, onDone 
  *  the one running and the next one on top. */
 export function EquipActivities({ trackerId, itemKey, activities, now, canEdit, isHead, neutCovered = false, onDone }: { trackerId: string; itemKey: string; activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; neutCovered?: boolean; onDone: (msg: string) => void }) {
   const [open, setOpen] = useState(true); const [add, setAdd] = useState(false);
-  const ts = activities.filter((a) => a.tracked).map((a) => timing(a, now)).sort((x, y) => actOrder(x.a, y.a));
+  const ts = sortActs(activities.filter((a) => a.tracked).map((a) => timing(a, now)), (t) => t.a);
   const running = ts.filter((t) => t.state === 'RUNNING'), done = ts.filter((t) => t.state === 'FINISHED').length;
   const next = ts.find((t) => t.state === 'NOT_STARTED');
   const off = activities.filter((a) => !a.tracked).map((a) => timing(a, now));

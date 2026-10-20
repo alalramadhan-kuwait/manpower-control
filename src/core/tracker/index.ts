@@ -97,6 +97,23 @@ export function actOrder(x: Pick<TrkActivity, 'group' | 'activityId' | 'start'>,
   return (x.start ?? '9').localeCompare(y.start ?? '9');
 }
 
+type Orderable = Pick<TrkActivity, 'group' | 'activityId' | 'start'> & { activity?: string; actualStart?: string | null };
+/** The work steps in the order they go: the operations steps first, then the bar-chart lines by when they really
+ *  started (the plan for those not started yet). The soda-ash parts (filling · soaking · draining) stay together. */
+export function sortActs<T>(xs: T[], get: (x: T) => Orderable = (x) => x as unknown as Orderable): T[] {
+  const base = (a: Orderable) => a.activityId.replace(/-\d+$/, '');
+  const soda = (a: Orderable) => /soda ash|neutrali/i.test(a.activity ?? '');
+  const first = new Map<string, string>();
+  for (const x of xs) { const a = get(x); if (soda(a) && a.actualStart && (!first.has(base(a)) || a.actualStart < first.get(base(a))!)) first.set(base(a), a.actualStart); }
+  const when = (a: Orderable) => (soda(a) && first.has(base(a)) ? first.get(base(a))! : a.actualStart ?? a.start ?? '9');
+  return [...xs].sort((p, q) => {
+    const x = get(p), y = get(q); const ox = x.group === 'Operations', oy = y.group === 'Operations';
+    if (ox !== oy) return ox ? -1 : 1;
+    if (ox) return x.activityId.localeCompare(y.activityId);
+    return when(x).localeCompare(when(y)) || x.activityId.localeCompare(y.activityId, undefined, { numeric: true });
+  });
+}
+
 // ── Isolation & neutralization ─────────────────────────────────────────────────────────────────────────────────
 /** Blind in (or already out) · neutralization drained. */
 export const pointComplete = (p: Pick<TrkPoint, 'kind' | 'status'>) => (p.kind === 'blind' ? p.status === 'in' || p.status === 'out' : p.status === 'done');
@@ -225,7 +242,7 @@ export function nextStep(e: EquipView, acts: TrkActivity[], points: TrkPoint[] =
   const key = e.eq.barchartKey ?? e.eq.tag;
   const mine = acts.filter((a) => a.tracked && a.key === key);
   const pick = (xs: TrkActivity[]): NextStep | null => {
-    const s = [...xs].sort(actOrder), a = s.find((x) => !x.actualFinish);
+    const s = sortActs(xs), a = s.find((x) => !x.actualFinish);
     return a ? { text: a.activity, running: !!a.actualStart, n: s.indexOf(a) + 1, of: s.length } : null;
   };
   if (e.stage >= 1) return pick(mine.filter((a) => a.group !== 'Operations'));

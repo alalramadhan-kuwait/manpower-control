@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attention, focusList, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { attention, focusList, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -273,5 +273,14 @@ describe('isolation links: blinds lock the loops, items take the colour', () => 
   it('the next step names the missing blind', () => {
     const e = { eq: { tag: 'C-12-201', barchartKey: null, hoStep: 'S223' }, stage: 0 } as Parameters<typeof nextStep>[0];
     expect(nextStep(e, [], all)?.text).toBe('🔒 Blinds for S215: SEG-06');
+  });
+});
+
+describe('work-step order', () => {
+  const a = (activityId: string, start: string, actualStart: string | null = null, group = 'Mech') => ({ activityId, group, start, actualStart, activity: activityId.startsWith('A4750') ? 'Soda ash part' : 'Work' });
+  it('operations first, then by the real start, split parts kept together', () => {
+    const xs = [a('A3881-3', '2026-10-20T20:00Z'), a('A4750-2', '2026-10-21T12:00Z', '2026-10-19T15:51Z'), a('A4750-3', '2026-10-21T20:00Z'),
+      a('A4750-1', '2026-10-21T04:00Z', '2026-10-19T15:51Z'), a('A3881-2', '2026-10-20T12:00Z', '2026-10-19T14:18Z'), a('OP-02', '', null, 'Operations'), a('A3881-1', '2026-10-20T04:00Z', '2026-10-19T10:20Z')];
+    expect(sortActs(xs).map((x) => x.activityId)).toEqual(['OP-02', 'A3881-1', 'A3881-2', 'A4750-1', 'A4750-2', 'A4750-3', 'A3881-3']);
   });
 });
