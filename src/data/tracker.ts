@@ -1,7 +1,7 @@
 // Shutdown progress tracker: the trackers of the calendar shutdowns (template / test / live), their steps, equipment,
 // IATs, bar chart, shift log and change log. Who and when are stamped by the database on every change.
 import { supabase } from './supabase';
-import type { PointStatus, StepStatus, TrkActivity, TrkData, TrkEquipment, TrkIat, TrkLog, LuStream, TrkPoint, TrkSettings, TrkStep } from '@/core/tracker';
+import type { PointStatus, StepStatus, TrkActivity, TrkData, TrkEquipment, TrkIat, TrkLog, LuEquip, LuStream, TrkPoint, TrkSettings, TrkStep } from '@/core/tracker';
 
 export interface Tracker { id: string; eventId: string | null; title: string; mode: 'template' | 'test' | 'live'; settings: TrkSettings; status: 'active' | 'closed'; eventStart: string | null; eventEnd: string | null; eventTitle: string | null }
 interface TrackerRow { id: string; event_id: string | null; title: string; mode: Tracker['mode']; settings: TrkSettings | null; status: Tracker['status']; unit_events?: { start_date: string; end_date: string; unit: string | null; title: string | null } | null }
@@ -44,10 +44,13 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     supabase.from('trk_points').select('*').eq('tracker_id', id).eq('removed', false).order('sort'),
   ]);
   // the U-12 process lineup (P&ID streams): optional, the tracker works without it
-  const lu = await supabase.from('lu_streams').select('id,frm,to_tag,fluid,line,line_nos,sheets,size,conf').limit(2000);
+  const [lu, le] = await Promise.all([supabase.from('lu_streams').select('id,frm,to_tag,fluid,line,line_nos,sheets,size,conf').limit(2000),
+    supabase.from('lu_equipment').select('tag,plant_tag,name,data,primary_sheet').limit(2000)]);
   const err = [t, s, e, i, a, l, sl, pt].find((r) => r.error)?.error; if (err) throw err;
   const acts = a.data as ActRow[]; const base = Math.max(0, ...acts.map((x) => x.baseline));
   return {
+    lineupEq: le.error ? [] : (le.data as { tag: string; plant_tag: string | null; name: string | null; data: string | null; primary_sheet: string | null }[])
+      .map((r): LuEquip => ({ tag: r.tag, plantTag: r.plant_tag, name: r.name, data: r.data, sheet: r.primary_sheet })),
     lineup: lu.error ? [] : (lu.data as { id: string; frm: string; to_tag: string; fluid: string | null; line: string | null; line_nos: string[]; sheets: string[]; size: string | null; conf: string | null }[])
       .map((r): LuStream => ({ id: r.id, from: r.frm, to: r.to_tag, fluid: r.fluid, line: r.line, lineNos: r.line_nos ?? [], sheets: r.sheets ?? [], size: r.size, conf: r.conf })),
     tracker: toTracker(t.data as unknown as TrackerRow),

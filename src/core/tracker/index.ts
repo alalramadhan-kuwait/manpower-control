@@ -44,7 +44,7 @@ export interface TrkPoint {
   inAt: string | null; outAt: string | null; fillAt: string | null; soakAt: string | null; drainAt: string | null; doneAt: string | null;
   soakH: number | null; remark: string | null; updatedBy: string | null; updatedAt: string | null;
 }
-export interface TrkData { lineup?: LuStream[]; steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
+export interface TrkData { lineup?: LuStream[]; lineupEq?: LuEquip[]; steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
 
 /** The main equipment groups; the rest (control valve shells, PSVs, check valves, RTJ & injection points, piping, OPR
  *  list, PMRs …) is miscellaneous, shown after them. */
@@ -293,6 +293,14 @@ export function luKeys(tag: string): string[] {
   return [base, ...letters.map((l) => base + l)];
 }
 const sameTag = (lineupTag: string, tag: string) => luKeys(lineupTag).includes(luTag(tag));
+/** A lineup equipment item: its tag, the tracker tag, name, data block (vents and trim lines are named there) and P&ID sheet. */
+export interface LuEquip { tag: string; plantTag: string | null; name: string | null; data: string | null; sheet: string | null }
+/** A line named in an equipment data block (a vent or trim line, e.g. VT-12-2018 on V-212), with the words before it. */
+export function lineOnEquipment(line: string | null | undefined, eqs: LuEquip[] = []): { eq: LuEquip; what: string }[] {
+  if (!line) return [];
+  return eqs.flatMap((e) => { const i = (e.data ?? '').indexOf(line); if (i < 0) return [];
+    const before = (e.data ?? '').slice(0, i).split(/[;,]/).pop()?.trim() ?? ''; return [{ eq: e, what: before || 'line' }]; });
+}
 /** Where a line is in the unit: the lineup connections carrying that line number. */
 export const lineStreams = (line: string | null | undefined, lu: LuStream[] = []) => (line ? lu.filter((s) => s.lineNos.includes(line)) : []);
 /** The tracker items at either end of a connection. */

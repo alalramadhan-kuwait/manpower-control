@@ -183,3 +183,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261020091358_shutdown_progress_e229_soda_ash_removed` | `trk_points.removed` (hidden by the app). E-12-229 own soda-ash entry removed: covered by S111 and S318 |
 | `20261020131837_shutdown_progress_iat_sheet` | `trk_iat`: `wo`, `line`, `sheet_status`, `remark` from the daily IAT tracking sheet, unique (tracker, IAT no.) for the daily upsert |
 | `20261020145345_ards_u12_lineup` | ARDS U-12 process lineup (P&ID): `lu_equipment` (465), `lu_streams` (749, with `line_nos`), `lu_meta`, read-only for the app. Loaded through `lu_load` with a one-time token, closed after. Used for IAT line locations and loop P&ID lines |
+| `20261020150358_ards_u12_pid_extracts` | `lu_sheets`: the 35 raw P&ID sheet readings. `lu_meta`: lineup guide, reading guide, sheet index, drawing template link. `lu_load` takes sheets; closed after loading |

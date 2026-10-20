@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attention, focusList, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { attention, focusList, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -316,5 +316,13 @@ describe('process lineup', () => {
   it('a loop covers the lines between its equipment', () => {
     expect(loopLines({ items: ['R-201 to R-202'], name: 'Reactor inter piping' }, lu).lines).toEqual(['P-12-2039']);
     expect(loopLines({ items: ['E-12-216A', 'E-12-229'], name: 'Charge pump to H-201' }, lu).lines).toEqual(['P-12-2029']);
+  });
+});
+
+describe('line named in an equipment data block', () => {
+  it('finds the vent line on its vessel', () => {
+    const eqs = [{ tag: 'V-212', plantTag: 'V-12-212', name: 'COMPRESSOR KO DRUM', data: 'design 1850 psig; oper 1641 psig @ 130F; LLLL 12 in; vent VT-12-2018-GR1', sheet: '1-R-12-0-117' }];
+    expect(lineOnEquipment('VT-12-2018', eqs).map((x) => [x.eq.plantTag, x.what])).toEqual([['V-12-212', 'vent']]);
+    expect(lineOnEquipment('P-12-9999', eqs)).toEqual([]);
   });
 });

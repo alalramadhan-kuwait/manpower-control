@@ -2,7 +2,7 @@
 // handover · M & I: the bar chart and the blinds it installs) with their planned and actual dates, and the late /
 // pending / IAT counts. Each card opens its detail; every line in it opens the step, item or page behind it.
 import { useMemo, useState } from 'react';
-import { FO_NAMES, isMisc, attention, focusList, lineStreams, loopLines, streamItems, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, NEUT_LABEL,
+import { FO_NAMES, isMisc, attention, focusList, lineOnEquipment, lineStreams, loopLines, streamItems, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, NEUT_LABEL,
   type Attention, type Banner, type Focus, type NextStep, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import type { TrackerData } from '@/data/tracker';
 import { BottomSheet, cx } from '@/ui/components';
@@ -268,6 +268,11 @@ function IatSheet({ data, onOpen, onClose }: { data: TrackerData; onOpen: (a: { 
           {(ends.length > 0 || loop) && <span className="mt-0.5 flex flex-wrap gap-1">{ends.map((t) => <button key={t} type="button" onClick={() => onOpen({ kind: 'equipment', ref: t })} className="rounded bg-white px-1.5 text-[11px] font-bold text-[#0850A0] ring-1 ring-slate-200">{t} ›</button>)}
             {loop && <span className="rounded bg-amber-50 px-1.5 text-[11px] font-bold text-amber-800 ring-1 ring-amber-200">🧪 in {loop.ref}</span>}</span>}
         </div>; })}
+      {lineStreams(i.line, lu).length === 0 && lineOnEquipment(i.line, data.lineupEq).map(({ eq, what }) =>
+        <div key={eq.tag} className="mt-1 rounded-lg bg-slate-50 px-2 py-1 text-[11.5px] text-slate-700 ring-1 ring-slate-200">
+          📍 <b>On {eq.tag}</b> ({what} {i.line}){eq.name ? ` · ${eq.name}` : ''}{eq.sheet ? <span className="text-slate-500"> · P&amp;ID {eq.sheet}</span> : null}
+          {eq.plantTag && items.has(eq.plantTag) && <button type="button" onClick={() => onOpen({ kind: 'equipment', ref: eq.plantTag! })} className="ml-1 rounded bg-white px-1.5 text-[11px] font-bold text-[#0850A0] ring-1 ring-slate-200">{eq.plantTag} ›</button>}
+        </div>)}
     </div>);
   const counts = IAT_ORDER.map((k) => [k, open.filter((i) => st(i) === k).length] as const).filter(([, n]) => n);
   return (
