@@ -19,7 +19,9 @@ export interface TrkEquipment {
   plannedHo: string | null; plannedFinish: string | null; sort: number; stage: number; pendingReason: string | null; remark: string | null;
   blindsIn: string | null; blindsOut: string | null; updatedBy: string | null; updatedAt: string | null;
 }
-export interface TrkIat { id: string; tag: string; iatNo: string; jobText: string | null; discipline: string | null; issuedAt: string; status: 'open' | 'closed'; closedAt: string | null }
+export interface TrkIat { id: string; tag: string; iatNo: string; jobText: string | null; discipline: string | null; issuedAt: string; status: 'open' | 'closed'; closedAt: string | null;
+  /** from the daily IAT tracking sheet: work order, the line it is on, the status as written in the sheet, a remark */
+  wo?: string | null; line?: string | null; sheetStatus?: string | null; remark?: string | null }
 export interface TrkActivity {
   id: string; activityId: string; group: string | null; key: string; activity: string; durationH: number | null; start: string | null; finish: string | null; stage: number | null; tracked: boolean;
   /** the mechanical activity as it went (kept for future shutdowns) */

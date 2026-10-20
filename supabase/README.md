@@ -181,3 +181,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261020074402_shutdown_progress_ops_audit_order` | Operations steps audit: 78 field-detail steps flagged `detail` (hidden for the Section Head), 19 permit steps disabled `removed`, "Confirm system pressure zero" moved to the unit step S205A. `trk_activities.seq` holds a hand-set order (`trk_set_order`, logged), kept by `trk_import_barchart` and `trk_copy` |
 | `20261020091256_shutdown_progress_e229_both_sides` | E-12-229 linked to S111 (tube side) as well as S318 (shell side), the side named in each loop's detail |
 | `20261020091358_shutdown_progress_e229_soda_ash_removed` | `trk_points.removed` (hidden by the app). E-12-229 own soda-ash entry removed: covered by S111 and S318 |
+| `20261020131837_shutdown_progress_iat_sheet` | `trk_iat`: `wo`, `line`, `sheet_status`, `remark` from the daily IAT tracking sheet, unique (tracker, IAT no.) for the daily upsert |
