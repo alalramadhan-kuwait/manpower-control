@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attention, focusList, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { attention, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -324,5 +324,14 @@ describe('line named in an equipment data block', () => {
     const eqs = [{ tag: 'V-212', plantTag: 'V-12-212', name: 'COMPRESSOR KO DRUM', data: 'design 1850 psig; oper 1641 psig @ 130F; LLLL 12 in; vent VT-12-2018-GR1', sheet: '1-R-12-0-117' }];
     expect(lineOnEquipment('VT-12-2018', eqs).map((x) => [x.eq.plantTag, x.what])).toEqual([['V-12-212', 'vent']]);
     expect(lineOnEquipment('P-12-9999', eqs)).toEqual([]);
+  });
+});
+
+describe('IAT checks from the sheet', () => {
+  it('in order, the hydro pressure from the sheet or the recommendation, IF REQ optional', () => {
+    const c = iatChecks({ checks: { hydro: 'REQ', lpt: 'REQ', pwht: 'IF REQ.' }, recommendation: '6. Hydrotest the spool at 525 psig.' });
+    expect(c.map((x) => [x.label, x.optional])).toEqual([['LPT', false], ['PWHT', true], ['Hydro 525 psig', false]]);
+    expect(iatChecks({ checks: { hydro: 'REQ\n2740' }, recommendation: null })[0].label).toBe('Hydro 2740 psig');
+    expect(iatStatus({ sheetStatus: null, status: 'closed' })).toBe('Completed');
   });
 });

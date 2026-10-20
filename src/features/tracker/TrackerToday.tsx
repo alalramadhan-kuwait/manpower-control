@@ -2,7 +2,7 @@
 // handover · M & I: the bar chart and the blinds it installs) with their planned and actual dates, and the late /
 // pending / IAT counts. Each card opens its detail; every line in it opens the step, item or page behind it.
 import { useMemo, useState } from 'react';
-import { FO_NAMES, isMisc, attention, focusList, lineOnEquipment, lineStreams, loopLines, streamItems, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, NEUT_LABEL,
+import { FO_NAMES, isMisc, attention, focusList, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, NEUT_LABEL,
   type Attention, type Banner, type Focus, type NextStep, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import type { TrackerData } from '@/data/tracker';
 import { BottomSheet, cx } from '@/ui/components';
@@ -13,7 +13,7 @@ const at = (t: number | null) => (t === null || Number.isNaN(t) ? '—' : `${kwD
 const iso = (s: string | undefined) => (s ? Date.parse(s) : NaN);
 const hrs = (x: number) => (Math.abs(x) >= 24 ? `${Math.round(Math.abs(x) / 2.4) / 10} d` : `${Math.round(Math.abs(x) * 10) / 10} h`);
 
-export type Nav = { tab: 'isolation' | 'equipment' | 'timing' | 'report' | 'guideline'; iso?: 'blind' | 'neut'; lateFirst?: boolean };
+export type Nav = { tab: 'isolation' | 'equipment' | 'iats' | 'timing' | 'report' | 'guideline'; iso?: 'blind' | 'neut'; lateFirst?: boolean };
 
 function Bar({ label, v, onClick }: { label: string; v: [number, number]; onClick?: () => void }) {
   const pct = v[1] ? Math.round((v[0] / v[1]) * 100) : 0;
@@ -53,7 +53,7 @@ const STATE_WORD: Record<Banner['state'], string> = { AHEAD: 'AHEAD', BEHIND: 'B
 
 export function TodayTab({ steps, eqs, data, now, onOpen, onNav }: { steps: Map<string, StepView>; eqs: EquipView[]; data: TrackerData; now: number;
   onOpen: (a: { kind: 'step' | 'equipment'; ref: string }) => void; onNav: (n: Nav) => void }) {
-  const [sheet, setSheet] = useState<'ops' | 'mi' | 'iat' | null>(null);
+  const [sheet, setSheet] = useState<'ops' | 'mi' | null>(null);
   const { ops, mi } = phases(data, now, steps);
   const s = data.settings;
   const tot = totals(steps, eqs, data.iats); const att = attention(steps, eqs);
@@ -118,12 +118,11 @@ export function TodayTab({ steps, eqs, data, now, onOpen, onNav }: { steps: Map<
       <div className="grid grid-cols-3 gap-2">
         <Tile value={tot.late} label="late" tone={tot.late ? 'red' : undefined} onClick={() => onNav({ tab: 'equipment', lateFirst: true })} />
         <Tile value={tot.pending} label="pending" tone={tot.pending ? 'amber' : undefined} onClick={() => onNav({ tab: 'equipment', lateFirst: true })} />
-        <Tile value={tot.iatOpen} label="IAT open" tone={tot.iatOpen ? 'amber' : undefined} onClick={() => setSheet('iat')} />
+        <Tile value={tot.iatOpen} label="IAT open" tone={tot.iatOpen ? 'amber' : undefined} onClick={() => onNav({ tab: 'iats' })} />
       </div>
       {att.length > 0 && <AttentionCard list={focusList(att, eqs, data.activities, data.points)} onOpen={onOpen} />}
 
       {sheet === 'ops' && <OpsSheet data={data} eqs={eqs} plan={[start, miPlan]} finished={ops?.finishedAt ?? null} badge={opsBadge?.text ?? ''} onOpen={open} onNav={go} onClose={() => setSheet(null)} />}
-      {sheet === 'iat' && <IatSheet data={data} onOpen={open} onClose={() => setSheet(null)} />}
       {sheet === 'mi' && <MiSheet data={data} steps={steps} now={now} mi={mi} behind={behind} onOpen={open} onNav={go} onClose={() => setSheet(null)} />}
     </div>
   );
@@ -246,44 +245,3 @@ function MiSheet({ data, steps, now, mi, behind, onOpen, onNav, onClose }: { dat
 }
 
 
-/** The IATs of the shutdown, as loaded from the daily IAT tracking sheet: open ones by status, completed folded. */
-const IAT_ORDER = ['In progress', 'To start', 'New IAT', 'Hold'];
-const IAT_CLS: Record<string, string> = { 'In progress': 'bg-blue-100 text-blue-800', 'To start': 'bg-amber-100 text-amber-800', 'New IAT': 'bg-slate-100 text-slate-700', Hold: 'bg-red-100 text-red-800', Completed: 'bg-green-100 text-green-800', Cancelled: 'bg-slate-100 text-slate-500' };
-function IatSheet({ data, onOpen, onClose }: { data: TrackerData; onOpen: (a: { kind: 'step' | 'equipment'; ref: string }) => void; onClose: () => void }) {
-  const [done, setDone] = useState(false);
-  const items = new Set(data.equipment.map((e) => e.tag)); const tags = [...items];
-  const lu = data.lineup ?? []; const loops = (data.points ?? []).filter((p) => p.kind === 'neut');
-  const st = (i: TrackerData['iats'][number]) => i.sheetStatus ?? (i.status === 'open' ? 'Open' : 'Completed');
-  const open = data.iats.filter((i) => i.status === 'open').sort((a, b) => (IAT_ORDER.indexOf(st(a)) + 9) % 9 - (IAT_ORDER.indexOf(st(b)) + 9) % 9 || a.iatNo.localeCompare(b.iatNo));
-  const closed = data.iats.filter((i) => i.status !== 'open');
-  const row = (i: TrackerData['iats'][number]) => (
-    <div key={i.id} className="space-y-0.5 px-2.5 py-2">
-      <div className="flex items-center gap-2"><b className="text-[13px]">{i.iatNo}</b><span className={cx('rounded px-1.5 py-px text-[10.5px] font-bold', IAT_CLS[st(i)] ?? 'bg-slate-100 text-slate-700')}>{st(i)}</span>
-        {items.has(i.tag) ? <button type="button" onClick={() => onOpen({ kind: 'equipment', ref: i.tag })} className="ml-auto text-xs font-bold text-[#0850A0]">{i.tag} ›</button> : <span className="ml-auto text-[11px] text-slate-500">{i.line ?? i.tag}</span>}</div>
-      <p className="text-[12.5px] text-slate-700">{i.jobText}</p>
-      <p className="text-[11px] text-slate-500">{[i.line && items.has(i.tag) ? `Line ${i.line}` : '', i.wo ? `WO ${i.wo}` : '', i.remark ?? ''].filter(Boolean).join(' · ')}</p>
-      {lineStreams(i.line, lu).map((st) => { const ends = streamItems(st, tags); const loop = loops.find((p) => loopLines(p, lu).lines.includes(i.line ?? ''));
-        return <div key={st.id} className="mt-1 rounded-lg bg-slate-50 px-2 py-1 text-[11.5px] text-slate-700 ring-1 ring-slate-200">
-          📍 <b>{st.from} → {st.to}</b>{st.fluid ? ` · ${st.fluid}` : ''}{st.sheets[0] ? <span className="text-slate-500"> · P&amp;ID {st.sheets[0]}</span> : null}
-          {(ends.length > 0 || loop) && <span className="mt-0.5 flex flex-wrap gap-1">{ends.map((t) => <button key={t} type="button" onClick={() => onOpen({ kind: 'equipment', ref: t })} className="rounded bg-white px-1.5 text-[11px] font-bold text-[#0850A0] ring-1 ring-slate-200">{t} ›</button>)}
-            {loop && <span className="rounded bg-amber-50 px-1.5 text-[11px] font-bold text-amber-800 ring-1 ring-amber-200">🧪 in {loop.ref}</span>}</span>}
-        </div>; })}
-      {lineStreams(i.line, lu).length === 0 && lineOnEquipment(i.line, data.lineupEq).map(({ eq, what }) =>
-        <div key={eq.tag} className="mt-1 rounded-lg bg-slate-50 px-2 py-1 text-[11.5px] text-slate-700 ring-1 ring-slate-200">
-          📍 <b>On {eq.tag}</b> ({what} {i.line}){eq.name ? ` · ${eq.name}` : ''}{eq.sheet ? <span className="text-slate-500"> · P&amp;ID {eq.sheet}</span> : null}
-          {eq.plantTag && items.has(eq.plantTag) && <button type="button" onClick={() => onOpen({ kind: 'equipment', ref: eq.plantTag! })} className="ml-1 rounded bg-white px-1.5 text-[11px] font-bold text-[#0850A0] ring-1 ring-slate-200">{eq.plantTag} ›</button>}
-        </div>)}
-    </div>);
-  const counts = IAT_ORDER.map((k) => [k, open.filter((i) => st(i) === k).length] as const).filter(([, n]) => n);
-  return (
-    <BottomSheet open onClose={onClose} title={`IATs · ${open.length} open`}>
-      <div className="space-y-2">
-        <div className="flex flex-wrap gap-1.5">{counts.map(([k, n]) => <span key={k} className={cx('rounded px-2 py-0.5 text-xs font-bold', IAT_CLS[k])}>{k} {n}</span>)}<span className={cx('rounded px-2 py-0.5 text-xs font-bold', IAT_CLS.Completed)}>Completed {closed.length}</span></div>
-        {open.length > 0 ? <div className="divide-y divide-slate-100 rounded-xl bg-white ring-1 ring-slate-200">{open.map(row)}</div> : <p className="py-3 text-center text-sm text-slate-500">No open IAT.</p>}
-        {closed.length > 0 && <button type="button" onClick={() => setDone((x) => !x)} className="text-sm font-semibold text-[#08A048]">{done ? '▾' : '▸'} ✓ Completed ({closed.length})</button>}
-        {done && <div className="divide-y divide-slate-100 rounded-xl bg-white opacity-80 ring-1 ring-slate-200">{closed.map(row)}</div>}
-        <p className="text-[11px] text-slate-500">Loaded from the daily IAT tracking sheet. An IAT on an item flags it IAT OPEN; one on a line shows its line number.</p>
-      </div>
-    </BottomSheet>
-  );
-}

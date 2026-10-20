@@ -21,7 +21,8 @@ export interface TrkEquipment {
 }
 export interface TrkIat { id: string; tag: string; iatNo: string; jobText: string | null; discipline: string | null; issuedAt: string; status: 'open' | 'closed'; closedAt: string | null;
   /** from the daily IAT tracking sheet: work order, the line it is on, the status as written in the sheet, a remark */
-  wo?: string | null; line?: string | null; sheetStatus?: string | null; remark?: string | null }
+  wo?: string | null; line?: string | null; sheetStatus?: string | null; remark?: string | null;
+  finding?: string | null; recommendation?: string | null; lineClass?: string | null; material?: string | null; checks?: Record<string, string>; painting?: Record<string, string>; actionBy?: string | null }
 export interface TrkActivity {
   id: string; activityId: string; group: string | null; key: string; activity: string; durationH: number | null; start: string | null; finish: string | null; stage: number | null; tracked: boolean;
   /** the mechanical activity as it went (kept for future shutdowns) */
@@ -279,6 +280,20 @@ export function focusList(att: Attention[], eqs: EquipView[], acts: TrkActivity[
   });
   return out.sort((x, y) => { for (let j = 0; j < x.k.length; j++) if (x.k[j] !== y.k[j]) return x.k[j] - y.k[j]; return 0; }).map((x) => x.f);
 }
+
+// ── IATs ───────────────────────────────────────────────────────────────────────────────────────────────────────
+const IAT_CHECKS: [string, string][] = [['prefab', 'Prefabrication'], ['excavation', 'Excavation'], ['lpt', 'LPT'], ['xray', 'X-ray'], ['pwht', 'PWHT'], ['hardness', 'Hardness'], ['hydro', 'Hydro test'], ['service', 'Service test']];
+/** The inspection checks the IAT sheet asks for, in order: label and the sheet's mark (REQ, IF REQ, done …); the hydro
+ *  test carries its pressure (from the sheet, else from the recommendation). */
+export function iatChecks(i: Pick<TrkIat, 'checks' | 'recommendation'>): { key: string; label: string; mark: string; optional: boolean }[] {
+  const c = i.checks ?? {};
+  return IAT_CHECKS.filter(([k]) => c[k]).map(([k, label]) => {
+    const raw = c[k].replace(/\s+/g, ' ').trim(); const p = raw.match(/(\d{2,5})/)?.[1] ?? (k === 'hydro' ? i.recommendation?.match(/hydro\s*test[^\d]{0,40}(\d{2,5})\s*psig/i)?.[1] : undefined);
+    return { key: k, label: k === 'hydro' && p ? `Hydro ${p} psig` : label, mark: raw.replace(/\d{2,5}/, '').trim() || 'REQ', optional: /if\s*req/i.test(raw) };
+  });
+}
+export const IAT_STATUSES = ['In progress', 'To start', 'New IAT', 'Hold', 'Completed', 'Cancelled'] as const;
+export const iatStatus = (i: Pick<TrkIat, 'sheetStatus' | 'status'>) => i.sheetStatus ?? (i.status === 'open' ? 'New IAT' : 'Completed');
 
 // ── Process lineup (P&ID) ──────────────────────────────────────────────────────────────────────────────────────
 /** One P&ID connection of the U-12 lineup: from → to, the fluid, the line numbers on it and the P&ID sheets. */
