@@ -1,6 +1,6 @@
 // Mechanical activity timing: the actual start and finish of each bar-chart activity (two taps, the time can be
 // corrected), plan vs actual durations, and the record exported for future shutdowns.
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Download } from 'lucide-react';
 import { STAGES, sortActs, blindLink, neutLink, kwDay, kwTime, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type StepTiming, type Timing as T, type TrkActivity, type TrkStep } from '@/core/tracker';
 import { addActivity, setActivity, setOrder, setStep } from '@/data/tracker';
@@ -159,26 +159,51 @@ export function EquipActivities({ trackerId, itemKey, activities, now, canEdit, 
   );
 }
 
-/** Put the work steps in order with ▲ ▼ (the field steps keep their place among them, hidden), saved and logged. */
+/** Put the work steps in order: hold a step (or press its ⋮⋮ handle) and drag it to its place, then save. The field
+ *  steps keep their place among them, hidden. Saved and logged. */
 function Reorder({ trackerId, itemKey, rows, ids, setIds, onDone }: { trackerId: string; itemKey: string; rows: T[]; ids: string[]; setIds: (x: string[] | null) => void; onDone: (msg: string) => void }) {
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  const by = new Map(rows.map((t) => [t.a.id, t])); const start = rows.map((t) => t.a.id);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null); const [drag, setDrag] = useState<string | null>(null);
+  const by = new Map(rows.map((t) => [t.a.id, t])); const start = rows.map((t) => t.a.id).filter((x) => !by.get(x)?.a.detail);
   const shown = ids.filter((id) => !by.get(id)?.a.detail);
-  const move = (id: string, d: -1 | 1) => {
-    const i = shown.indexOf(id), j = i + d; if (j < 0 || j >= shown.length) return;
-    const a = ids.indexOf(id), b = ids.indexOf(shown[j]); const x = [...ids]; [x[a], x[b]] = [x[b], x[a]]; setIds(x);
+  const els = useRef(new Map<string, HTMLDivElement>()); const list = useRef<HTMLDivElement>(null);
+  const hold = useRef<{ id: string; y: number; timer: number } | null>(null); const dragRef = useRef<string | null>(null); const idsRef = useRef(ids); idsRef.current = ids;
+  // while dragging, the page must not scroll under the finger
+  useEffect(() => { const el = list.current; if (!el) return; const stop = (e: TouchEvent) => { if (dragRef.current) e.preventDefault(); };
+    el.addEventListener('touchmove', stop, { passive: false }); return () => el.removeEventListener('touchmove', stop); }, []);
+  const begin = (id: string, target: HTMLDivElement, pointer: number) => { dragRef.current = id; setDrag(id); try { target.setPointerCapture(pointer); } catch { /* not captured: moves still arrive */ } navigator.vibrate?.(15); };
+  const down = (e: React.PointerEvent<HTMLDivElement>, id: string) => {
+    const target = e.currentTarget; const pointer = e.pointerId;
+    if ((e.target as HTMLElement).closest('[data-handle]')) { e.preventDefault(); begin(id, target, pointer); return; }
+    hold.current = { id, y: e.clientY, timer: window.setTimeout(() => begin(id, target, pointer), 280) };
   };
-  async function save(list: string[], msg: string) { setBusy(true); setErr(null); try { await setOrder(trackerId, itemKey, list); onDone(msg); } catch (e) { setErr(e); setBusy(false); } }
+  const move = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current) { if (hold.current && Math.abs(e.clientY - hold.current.y) > 8) { clearTimeout(hold.current.timer); hold.current = null; } return; }
+    const id = dragRef.current; const cur = idsRef.current.filter((x) => !by.get(x)?.a.detail);
+    // the place under the finger: past the middle of a row means after it
+    let to = cur.length;
+    for (let k = 0; k < cur.length; k++) { const r = els.current.get(cur[k])?.getBoundingClientRect(); if (r && e.clientY < r.top + r.height / 2) { to = k; break; } }
+    const from = cur.indexOf(id);
+    if (to !== from && to !== from + 1) {
+      const next = cur.filter((x) => x !== id); next.splice(to > from ? to - 1 : to, 0, id);
+      // put the moved visible order back among the hidden field steps (they keep their slots)
+      let n = 0; setIds(idsRef.current.map((x) => (by.get(x)?.a.detail ? x : next[n++])));
+    }
+    // near the top or bottom of the screen, scroll the list along
+    const vh = window.innerHeight; const dy = e.clientY < 90 ? -14 : e.clientY > vh - 90 ? 14 : 0;
+    if (dy) { let p = list.current?.parentElement ?? null; while (p && !/(auto|scroll)/.test(getComputedStyle(p).overflowY)) p = p.parentElement; (p ?? document.scrollingElement)?.scrollBy(0, dy); }
+  };
+  const up = () => { if (hold.current) { clearTimeout(hold.current.timer); hold.current = null; } dragRef.current = null; setDrag(null); };
+  async function save(order: string[], msg: string) { setBusy(true); setErr(null); try { await setOrder(trackerId, itemKey, order); onDone(msg); } catch (e) { setErr(e); setBusy(false); } }
   return (
     <div className="mt-1.5 space-y-1.5">
-      <p className="text-[11px] font-semibold text-slate-500">Move a step up or down, then save.</p>
-      <RowList>{shown.map((id, i) => { const t = by.get(id)!; const was = start.filter((x) => !by.get(x)?.a.detail).indexOf(id); const moved = was - i;
-        return <div key={id} className={cx('flex items-center gap-2 px-2.5 py-1.5', moved !== 0 && 'bg-amber-50')}>
-          <span className="text-slate-400">⋮⋮</span>
-          <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-semibold text-slate-900">{t.a.activity}</span>{moved !== 0 && <span className="block text-[11px] text-amber-800">moved {moved > 0 ? '↑' : '↓'} {Math.abs(moved)}</span>}</span>
-          <span className="flex flex-col gap-0.5"><button type="button" aria-label="Up" disabled={i === 0} onClick={() => move(id, -1)} className="rounded bg-slate-100 px-2 text-xs font-bold text-[#0d2a5e] disabled:opacity-30">▲</button>
-            <button type="button" aria-label="Down" disabled={i === shown.length - 1} onClick={() => move(id, 1)} className="rounded bg-slate-100 px-2 text-xs font-bold text-[#0d2a5e] disabled:opacity-30">▼</button></span>
-        </div>; })}</RowList>
+      <p className="text-[11px] font-semibold text-slate-500">Hold a step and drag it to its place, then save.</p>
+      <div ref={list} className="divide-y divide-slate-100 overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">{shown.map((id, i) => { const t = by.get(id)!; const moved = start.indexOf(id) - i;
+        return <div key={id} ref={(el) => { if (el) els.current.set(id, el); else els.current.delete(id); }} onPointerDown={(e) => down(e, id)} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
+          onContextMenu={(e) => e.preventDefault()} style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' }}
+          className={cx('flex items-center gap-2 px-2.5 py-2 transition-colors', drag === id ? 'relative z-10 scale-[1.02] bg-[#D6E6F5] shadow-lg' : moved !== 0 ? 'bg-amber-50' : '')}>
+          <span data-handle className="-my-2 -ml-2.5 flex w-9 shrink-0 items-center justify-center self-stretch text-lg text-slate-400" style={{ touchAction: 'none' }}>⋮⋮</span>
+          <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-semibold text-slate-900">{t.a.activity}</span>{moved !== 0 && !drag && <span className="block text-[11px] text-amber-800">moved {moved > 0 ? '↑' : '↓'} {Math.abs(moved)}</span>}</span>
+        </div>; })}</div>
       {err != null && <ErrorBox error={err} />}
       <div className="flex gap-1.5">
         <Button variant="secondary" className="flex-1" disabled={busy} onClick={() => setIds(null)}>Cancel</Button>

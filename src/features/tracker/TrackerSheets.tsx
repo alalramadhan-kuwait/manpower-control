@@ -1,7 +1,7 @@
 // The two input sheets of the controllers: a guideline step (Start · Done · Pending) and an equipment item (stage,
 // blinded = handed over, IATs, pending). Big buttons, the time and the name are stamped by the database.
 import { useState } from 'react';
-import { NEUT_LABEL, PENDING_REASONS, isoState, missingBlinds, STAGES, kwDay, kwTime, pointComplete, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint } from '@/core/tracker';
+import { PENDING_REASONS, neutLabel, neutName, isoState, missingBlinds, STAGES, kwDay, kwTime, pointComplete, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint } from '@/core/tracker';
 import { EquipActivities, StepTimes } from './Timing';
 import { addIat, closeIat, setEquipment, setStep } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, Field, cx } from '@/ui/components';
@@ -40,7 +40,7 @@ export function StepSheet({ v, isHead, canEdit, points = [], items = [], onIsola
         {points.length > 0 && (
           <div className="space-y-1.5 rounded-xl bg-[#D6E6F5]/40 p-2.5 ring-1 ring-[#0850A0]/30">
             <p className="text-sm text-slate-800">Ticks itself from the <b>Isolation</b> page · {points.filter(pointComplete).length}/{points.length} done</p>
-            <div className="flex flex-wrap gap-1">{points.map((p) => <span key={p.id} className={cx('rounded px-1.5 py-0.5 text-[11px] font-semibold', pointComplete(p) ? 'bg-[#C6EFCE] text-green-900' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{pointComplete(p) ? '✓ ' : ''}{p.kind === 'blind' ? p.ref : `${p.ref} ${NEUT_LABEL[p.status].toLowerCase()}`}</span>)}</div>
+            <div className="flex flex-wrap gap-1">{points.map((p) => <span key={p.id} className={cx('rounded px-1.5 py-0.5 text-[11px] font-semibold', pointComplete(p) ? 'bg-[#C6EFCE] text-green-900' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{pointComplete(p) ? '✓ ' : ''}{p.kind === 'blind' ? p.ref : `${p.ref} ${neutLabel(p).toLowerCase()}`}</span>)}</div>
             {onIsolation && <Button variant="secondary" className="w-full" onClick={onIsolation}>Open on Isolation</Button>}
           </div>
         )}
@@ -117,7 +117,7 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso
                 return <>
                   {iso.blinds.length > 0 && <span className="mt-0.5 flex flex-wrap items-center gap-1">Blinds: {iso.blinds.map((b) => <IsoChip key={b.id} state={pointComplete(b) ? 'ready' : 'blind'}>{b.ref} {pointComplete(b) ? '✓' : '✗'}</IsoChip>)}</span>}
                   {iso.neut.length > 0 && <span className="mt-0.5 flex flex-wrap items-center gap-1">Neutralization: {iso.neut.map((p) => { const m = p.status === 'open' ? missingBlinds(p, points) : [];
-                    return <IsoChip key={p.id} state={pointComplete(p) ? 'ready' : p.status !== 'open' ? 'neut' : m.length ? 'blind' : 'idle'}>{p.stepId ? p.ref : 'Soda ash'} · {m.length ? `🔒 ${m.join(', ')}` : NEUT_LABEL[p.status]}</IsoChip>; })}</span>}
+                    return <IsoChip key={p.id} state={pointComplete(p) ? 'ready' : p.status !== 'open' ? 'neut' : m.length ? 'blind' : 'idle'}>{neutName(p)} · {m.length ? `🔒 ${m.join(', ')}` : neutLabel(p)}</IsoChip>; })}</span>}
                   <span className={cx('mt-1 block text-[11px] font-semibold', v.stage >= 1 ? 'text-[#0850A0]' : block.length ? 'text-red-800' : 'text-teal-800')}>
                     {v.stage >= 1 ? 'Handed over.' : block.length ? `Hand over blocked: ${[...new Set(block)].join(', ')}` : 'Ready: handed over automatically.'}</span>
                 </>; })()}
@@ -125,7 +125,7 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso
             <span className="text-xs font-semibold text-[#0850A0]">Open ›</span>
           </button>
         )}
-        <EquipActivities trackerId={trackerId} itemKey={e.barchartKey ?? e.tag} activities={activities} now={now} canEdit={canEdit} isHead={isHead} neutCovered={!!iso?.neut.length} neutLabel={soda ? `${soda.stepId ? soda.ref : 'Soda ash'} · ${NEUT_LABEL[soda.status]}` : undefined} onNeut={onNeut} onDone={onDone} />
+        <EquipActivities trackerId={trackerId} itemKey={e.barchartKey ?? e.tag} activities={activities} now={now} canEdit={canEdit} isHead={isHead} neutCovered={!!iso?.neut.length} neutLabel={soda ? `${neutName(soda)} · ${neutLabel(soda)}` : undefined} onNeut={onNeut} onDone={onDone} />
         <Field label={`IAT · ${iats.length} open`}>
           <div className="space-y-1.5">
             {iats.map((i) => <div key={i.id} className="flex items-center justify-between gap-2 rounded-lg bg-[#FFE699] px-2.5 py-1.5 text-sm"><span><b>{i.iatNo}</b> {i.jobText}{i.sheetStatus ? ` · ${i.sheetStatus}` : i.discipline ? ` · ${i.discipline}` : ''}</span>{canEdit && <Button variant="secondary" className="min-h-8 px-2 text-xs" disabled={busy} onClick={() => run(() => closeIat(i.id), `${i.iatNo} closed.`)}>Close IAT</Button>}</div>)}

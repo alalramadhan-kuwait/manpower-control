@@ -2,7 +2,7 @@
 // handover · M & I: the bar chart and the blinds it installs) with their planned and actual dates, and the late /
 // pending / IAT counts. Each card opens its detail; every line in it opens the step, item or page behind it.
 import { useMemo, useState } from 'react';
-import { FO_NAMES, isMisc, attention, focusList, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, NEUT_LABEL,
+import { FO_NAMES, isMisc, attention, focusList, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, neutLabel,
   type Attention, type Banner, type Focus, type NextStep, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import type { TrackerData } from '@/data/tracker';
 import { BottomSheet, cx } from '@/ui/components';
@@ -180,7 +180,7 @@ function OpsSheet({ data, eqs, plan, finished, badge, onOpen, onNav, onClose }: 
   const c = (xs: boolean[]) => `${xs.filter(Boolean).length}/${xs.length}`;
   const behind = (xs: boolean[]) => xs.length > 0 && xs.filter(Boolean).length / xs.length < 0.5;
   const open: { key: string; tag: string; text: string; chip: string; cls: string; go: () => void }[] = [
-    ...pts.filter((p) => !pointComplete(p)).map((p) => ({ key: p.id, tag: p.ref, text: p.name, chip: NEUT_LABEL[p.status], cls: p.status === 'open' ? 'bg-slate-100 text-slate-600' : 'bg-[#FFE699] text-amber-950', go: () => onNav({ tab: 'isolation', iso: 'neut' }) })),
+    ...pts.filter((p) => !pointComplete(p)).map((p) => ({ key: p.id, tag: p.ref, text: p.name, chip: neutLabel(p), cls: p.status === 'open' ? 'bg-slate-100 text-slate-600' : 'bg-[#FFE699] text-amber-950', go: () => onNav({ tab: 'isolation', iso: 'neut' }) })),
     ...items.filter((e) => e.stage === 0).map((e) => ({ key: e.eq.id, tag: e.eq.tag, text: e.eq.hoStep ? `Handover ${e.eq.hoStep}` : 'Not handed over', chip: e.late ? 'HO LATE' : 'not HO', cls: e.late ? 'bg-[#E06666] text-white' : 'bg-slate-100 text-slate-600', go: () => onOpen({ kind: 'equipment', ref: e.eq.tag }) })),
   ];
   return (

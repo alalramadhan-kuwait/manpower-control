@@ -2,13 +2,14 @@
 // once here. The database moves the rest: the items (handed over when all their blinds are in and the neutralization
 // before handover is done), the guideline step of each row and the soda-ash bar-chart lines.
 import { useState } from 'react';
-import { NEUT_FLOW, NEUT_LABEL, equipBlind, loopLines, missingBlinds, type LuStream, type TrkIat, hoursText, kwDay, kwTime, pointComplete, soakLeft, type PointStatus, type TrkActivity, type TrkPoint, type TrkStep } from '@/core/tracker';
+import { NEUT_FLOW, NEUT_LABEL, neutLabel, equipBlind, loopLines, missingBlinds, type LuStream, type TrkIat, hoursText, kwDay, kwTime, pointComplete, soakLeft, type PointStatus, type TrkActivity, type TrkPoint, type TrkStep } from '@/core/tracker';
 import { setActivity, setPoint } from '@/data/tracker';
 import { Button, ErrorBox, cx } from '@/ui/components';
 import { CRow, IsoChip, MenuBtn, RowBtn, RowList, Tile } from './ui';
 
 const when = (iso: string | null) => (iso ? `${kwDay(iso)} ${kwTime(iso)}` : '');
 const BLIND_LABEL: Record<string, string> = { open: 'Not blinded', in: 'Blinded', out: 'Deblinded' };
+const SPRAY: Record<string, [PointStatus, string] | undefined> = { open: ['filling', '▶ Spray'], filling: ['done', '✓ Done'] };
 const NEXT: Record<string, [PointStatus, string] | undefined> = {
   open: ['filling', '▶ Fill'], filling: ['soaking', 'Soaking'], soaking: ['draining', 'Draining'], draining: ['done', '✓ Done'],
 };
@@ -20,8 +21,9 @@ function PointRow({ p, points, lineup = [], iats = [], isHead, now, canEdit, onI
   async function run(patch: Parameters<typeof setPoint>[1], msg: string, close?: () => void) { setBusy(true); setErr(null); try { await setPoint(p.id, patch); close?.(); onDone(msg); } catch (e) { setErr(e); } finally { setBusy(false); } }
   const blind = p.kind === 'blind';
   const left = soakLeft(p, now);
-  const back = blind ? (p.status === 'out' ? 'in' : 'open') : NEUT_FLOW[Math.max(0, NEUT_FLOW.indexOf(p.status as typeof NEUT_FLOW[number]) - 1)];
-  const next = blind ? undefined : NEXT[p.status];
+  const back = blind ? (p.status === 'out' ? 'in' : 'open') : p.method === 'spray' ? (p.status === 'done' ? 'filling' : 'open') : NEUT_FLOW[Math.max(0, NEUT_FLOW.indexOf(p.status as typeof NEUT_FLOW[number]) - 1)];
+  const spray = p.method === 'spray';
+  const next = blind ? undefined : (spray ? SPRAY : NEXT)[p.status];
   const items = p.items.join(', ');
   // the name often starts with the ref (E-12-205 · E-12-205 neutralization), show it once
   const name = p.name.startsWith(p.ref) ? p.name.slice(p.ref.length).trim() : p.name;
@@ -34,7 +36,7 @@ function PointRow({ p, points, lineup = [], iats = [], isHead, now, canEdit, onI
   const sub = blind
     ? (p.status === 'open' ? items || '—' : `✓ In ${when(p.inAt)}${p.outAt ? ` · out ${when(p.outAt)}` : ''}${p.updatedBy ? ` · ${p.updatedBy}` : ''}`)
     : locked ? <b className="text-red-800">🔒 Needs blinds: {missing.map((r) => `${r} ${reqName(r)}`.trim()).join(', ')}</b>
-    : <>{(p.requires ?? []).length > 0 && p.status === 'open' ? 'Blinds ready ✓ · ' : ''}{NEUT_LABEL[p.status]}{left !== null ? <b className={left > 0 ? 'text-amber-800' : 'text-green-800'}> · {left > 0 ? `${hoursText(left)} left` : 'soak reached'}</b> : null}{p.status === 'done' && p.doneAt ? ` ${when(p.doneAt)}` : ''}</>;
+    : <>{(p.requires ?? []).length > 0 && p.status === 'open' ? 'Blinds ready ✓ · ' : ''}{neutLabel(p)}{left !== null ? <b className={left > 0 ? 'text-amber-800' : 'text-green-800'}> · {left > 0 ? `${hoursText(left)} left` : 'soak reached'}</b> : null}{p.status === 'done' && p.doneAt ? ` ${when(p.doneAt)}` : ''}</>;
   const extra = blind ? null : <>
     {locked && (p.requires ?? []).map((r) => <IsoChip key={r} state={missing.includes(r) ? 'blind' : 'ready'}>{r} {missing.includes(r) ? '✗' : '✓'}</IsoChip>)}
     {p.items.map((t) => <IsoChip key={t} state={loopState}>{t}</IsoChip>)}
@@ -43,7 +45,7 @@ function PointRow({ p, points, lineup = [], iats = [], isHead, now, canEdit, onI
     : blind ? (p.status === 'open' ? <RowBtn disabled={busy} onClick={() => run({ status: 'in' }, `${p.ref} blinded.`)}>Blinded</RowBtn>
       : p.status === 'in' ? <RowBtn tone="ghost" disabled={busy} onClick={() => run({ status: 'out' }, `${p.ref} deblinded.`)}>Deblinded</RowBtn> : <span className="shrink-0 text-[11px] font-bold text-[#004080]">Out</span>)
     : locked && !force ? (isHead ? <RowBtn tone="ghost" disabled={busy} onClick={() => setForce(true)}>🔒 Fill</RowBtn> : <span className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-500">🔒 Fill</span>)
-    : next ? <RowBtn tone={next[0] === 'done' ? 'green' : 'navy'} disabled={busy} onClick={() => run({ status: next[0] }, `${p.ref}: ${NEUT_LABEL[next[0]].toLowerCase()}.`)}>{next[1]}</RowBtn>
+    : next ? <RowBtn tone={next[0] === 'done' ? 'green' : 'navy'} disabled={busy} onClick={() => run({ status: next[0] }, `${p.ref}: ${(next[0] === 'filling' && spray ? 'spraying' : NEUT_LABEL[next[0]].toLowerCase())}.`)}>{next[1]}</RowBtn>
     : <span className="shrink-0 text-[11px] font-bold text-[#08A048]">Done</span>;
   return (
     <>

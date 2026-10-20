@@ -185,3 +185,5 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261020145345_ards_u12_lineup` | ARDS U-12 process lineup (P&ID): `lu_equipment` (465), `lu_streams` (749, with `line_nos`), `lu_meta`, read-only for the app. Loaded through `lu_load` with a one-time token, closed after. Used for IAT line locations and loop P&ID lines |
 | `20261020150358_ards_u12_pid_extracts` | `lu_sheets`: the 35 raw P&ID sheet readings. `lu_meta`: lineup guide, reading guide, sheet index, drawing template link. `lu_load` takes sheets; closed after loading |
 | `20261020170851_shutdown_progress_iat_details` | `trk_iat`: finding, recommendation, line class, material, inspection `checks`, `painting` IAT, action by (from the daily IAT sheet) for the IATs tab |
+| `20261020172021_shutdown_progress_heater_od_spray` | `trk_points.method` (soak / spray). H-12-201 and H-12-202 tube OD neutralization is a spray (start, done), no soaking |
+| `20261020172049_shutdown_progress_copy_point_method` | `trk_copy` carries the point method and removed flag |

@@ -40,6 +40,8 @@ export interface TrkPoint {
   grp: 'segregation' | 'hp_critical' | null; ref: string; name: string; detail: string | null; fo: string | null; stepId: string | null; items: string[];
   /** the blinds (refs) that must be in before this neutralization can start */
   requires?: string[];
+  /** how a neutralization is done: soak (fill, soak, drain) or spray (start, done: heater tube OD after the burners stop) */
+  method?: 'soak' | 'spray';
   /** a neutralization the item's handover waits for */
   beforeHo: boolean; sort: number; status: PointStatus;
   inAt: string | null; outAt: string | null; fillAt: string | null; soakAt: string | null; drainAt: string | null; doneAt: string | null;
@@ -126,6 +128,10 @@ export function sortActs<T>(xs: T[], get: (x: T) => Orderable = (x) => x as unkn
 export const pointComplete = (p: Pick<TrkPoint, 'kind' | 'status'>) => (p.kind === 'blind' ? p.status === 'in' || p.status === 'out' : p.status === 'done');
 export const NEUT_FLOW = ['open', 'filling', 'soaking', 'draining', 'done'] as const;
 export const NEUT_LABEL: Record<string, string> = { open: 'Not started', filling: 'Filling', soaking: 'Soaking', draining: 'Draining', done: 'Neutralized' };
+/** A neutralization's state in words: a sprayed one is "Spraying" while it runs. */
+export const neutLabel = (p: Pick<TrkPoint, 'status' | 'method'>) => (p.method === 'spray' && p.status !== 'open' && p.status !== 'done' ? 'Spraying' : NEUT_LABEL[p.status]);
+/** What a neutralization is called on an item: its loop, the item's own soda ash, or its sprayed tube OD. */
+export const neutName = (p: Pick<TrkPoint, 'stepId' | 'ref' | 'method'>) => (p.stepId ? p.ref : p.method === 'spray' ? 'Tube OD spray' : /^[A-Z]{1,3}-12-/.test(p.ref) ? 'Soda ash' : p.ref);
 /** The time left of the soak (ms, below 0 = overdue), when soaking with a soak time. */
 export function soakLeft(p: TrkPoint, now: number): number | null {
   return p.kind === 'neut' && p.status === 'soaking' && p.soakH && p.soakAt ? Date.parse(p.soakAt) + p.soakH * H - now : null;
@@ -159,7 +165,7 @@ export function isoState(tag: string, stage: number, points: TrkPoint[] = []): I
   // blinds linked to the item, and those its open loops wait for
   const missing = [...new Set([...mine.filter((p) => p.kind === 'blind' && !pointComplete(p)).map((p) => p.ref), ...open.flatMap((p) => missingBlinds(p, points))])].sort();
   const running = open.filter((p) => p.status !== 'open');
-  if (running.length) return { state: 'neut', why: `Neutralizing ${running.map((p) => `${p.ref} · ${NEUT_LABEL[p.status]}`).join(', ')}`, missing, loops };
+  if (running.length) return { state: 'neut', why: `Neutralizing ${running.map((p) => `${p.ref} · ${neutLabel(p)}`).join(', ')}`, missing, loops };
   if (missing.length) return { state: 'blind', why: `🔒 ${missing.join(', ')} not in`, missing, loops };
   if (!open.length) return { state: 'ready', why: loops.length ? `Neutralized ${loops.map((p) => p.ref).join(', ')} → hand over` : 'Blinds in → hand over', missing, loops };
   return { state: 'idle', why: `Waiting ${open.map((p) => p.ref).join(', ')} (not started)`, missing, loops };
@@ -257,7 +263,7 @@ export function nextStep(e: EquipView, acts: TrkActivity[], points: TrkPoint[] =
   if (ops) return ops;
   const p = points.find((x) => x.kind === 'neut' && x.beforeHo && x.items.includes(e.eq.tag) && !pointComplete(x));
   if (p) { const m = p.status === 'open' ? missingBlinds(p, points) : [];
-    return { text: m.length ? `🔒 Blinds for ${p.ref}: ${m.join(', ')}` : `Neutralize ${p.ref} · ${NEUT_LABEL[p.status]}`, running: p.status !== 'open', n: 0, of: 0 }; }
+    return { text: m.length ? `🔒 Blinds for ${p.ref}: ${m.join(', ')}` : `Neutralize ${p.ref} · ${neutLabel(p)}`, running: p.status !== 'open', n: 0, of: 0 }; }
   const b = points.find((x) => x.kind === 'blind' && x.items.includes(e.eq.tag) && !pointComplete(x));
   if (b) return { text: `🔒 Blind ${b.ref} · ${b.name}`, running: false, n: 0, of: 0 };
   return { text: e.eq.hoStep ? `Hand over (${e.eq.hoStep})` : 'Hand over', running: false, n: 0, of: 0 };
@@ -395,7 +401,7 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
     notes: log?.notes ?? '', temps: log?.temps ?? {},
     reactors: eqs.filter((e) => e.eq.group === 'Reactors' && e.eq.tracked).map((e) => {
       const n = (d.points ?? []).find((p) => p.kind === 'neut' && p.ref === e.eq.tag);
-      return { tag: e.eq.tag, critical: e.eq.critical, stage: e.stage, hoAt: e.hoAt, neut: !n ? null : pointComplete(n) ? 'neutralized' : n.status === 'open' ? null : NEUT_LABEL[n.status].toLowerCase() };
+      return { tag: e.eq.tag, critical: e.eq.critical, stage: e.stage, hoAt: e.hoAt, neut: !n ? null : pointComplete(n) ? 'neutralized' : n.status === 'open' ? null : neutLabel(n).toLowerCase() };
     }),
     results: opsResults(d, eqs), blinds: miBlinds(d),
     shift: { date: sh.date, shift: sh.shift }, name: title,
