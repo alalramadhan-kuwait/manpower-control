@@ -178,7 +178,7 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
   const lineOf = (e: EquipView): { text: string; tone: 'run' | 'muted' | 'red' } | null => {
     if (e.eq.pendingReason) return { text: `⏸ ${e.eq.pendingReason}`, tone: 'red' };
     const key = e.eq.barchartKey ?? e.eq.tag;
-    const xs = sortActs(activities.filter((a) => a.tracked && a.key === key));
+    const xs = sortActs(activities.filter((a) => a.tracked && !a.detail && a.key === key));
     const run = xs.filter((a) => a.actualStart && !a.actualFinish);
     if (run.length) return { text: `▶ ${run.map((a) => a.activity).join(' · ')}`, tone: 'run' };
     const iso = e.stage === 0 ? isoState(e.eq.tag, e.stage, points) : null;

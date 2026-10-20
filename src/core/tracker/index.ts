@@ -24,6 +24,8 @@ export interface TrkActivity {
   id: string; activityId: string; group: string | null; key: string; activity: string; durationH: number | null; start: string | null; finish: string | null; stage: number | null; tracked: boolean;
   /** the mechanical activity as it went (kept for future shutdowns) */
   actualStart?: string | null; actualFinish?: string | null; actualNote?: string | null; updatedBy?: string | null; updatedAt?: string | null;
+  /** the place set by hand in the item's list (null = the plan order) · a field-operator detail step, hidden for the Section Head */
+  seq?: number | null; detail?: boolean;
 }
 export interface TrkLog { kind: 'step' | 'equipment' | 'iat' | 'activity' | 'point'; ref: string; field: string; oldValue: string | null; newValue: string | null; byName: string | null; at: string }
 export interface TrkSettings { hoTarget?: string; end?: string; workOrder?: string; whatsapp?: string; opsStart?: string; miStart?: string; miEnd?: string }
@@ -97,7 +99,7 @@ export function actOrder(x: Pick<TrkActivity, 'group' | 'activityId' | 'start'>,
   return (x.start ?? '9').localeCompare(y.start ?? '9');
 }
 
-type Orderable = Pick<TrkActivity, 'group' | 'activityId' | 'start'> & { activity?: string; actualStart?: string | null };
+type Orderable = Pick<TrkActivity, 'group' | 'activityId' | 'start'> & { activity?: string; actualStart?: string | null; seq?: number | null };
 /** The work steps in the order they go: the operations steps first, then the bar-chart lines by when they really
  *  started (the plan for those not started yet). The soda-ash parts (filling · soaking · draining) stay together. */
 export function sortActs<T>(xs: T[], get: (x: T) => Orderable = (x) => x as unknown as Orderable): T[] {
@@ -108,6 +110,8 @@ export function sortActs<T>(xs: T[], get: (x: T) => Orderable = (x) => x as unkn
   const when = (a: Orderable) => (soda(a) && first.has(base(a)) ? first.get(base(a))! : a.actualStart ?? a.start ?? '9');
   return [...xs].sort((p, q) => {
     const x = get(p), y = get(q); const ox = x.group === 'Operations', oy = y.group === 'Operations';
+    // an order set by hand wins (steps added later without a place go to the end)
+    if (x.seq != null || y.seq != null) { if (x.seq == null) return 1; if (y.seq == null) return -1; if (x.seq !== y.seq) return x.seq - y.seq; }
     if (ox !== oy) return ox ? -1 : 1;
     if (ox) return x.activityId.localeCompare(y.activityId);
     return when(x).localeCompare(when(y)) || x.activityId.localeCompare(y.activityId, undefined, { numeric: true });
@@ -240,7 +244,7 @@ export function attention(steps: Map<string, StepView>, eqs: EquipView[]): Atten
 export interface NextStep { text: string; running: boolean; n: number; of: number }
 export function nextStep(e: EquipView, acts: TrkActivity[], points: TrkPoint[] = []): NextStep | null {
   const key = e.eq.barchartKey ?? e.eq.tag;
-  const mine = acts.filter((a) => a.tracked && a.key === key);
+  const mine = acts.filter((a) => a.tracked && !a.detail && a.key === key);
   const pick = (xs: TrkActivity[]): NextStep | null => {
     const s = sortActs(xs), a = s.find((x) => !x.actualFinish);
     return a ? { text: a.activity, running: !!a.actualStart, n: s.indexOf(a) + 1, of: s.length } : null;

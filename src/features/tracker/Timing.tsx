@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Download } from 'lucide-react';
 import { STAGES, sortActs, blindLink, neutLink, kwDay, kwTime, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type StepTiming, type Timing as T, type TrkActivity, type TrkStep } from '@/core/tracker';
-import { addActivity, setActivity, setStep } from '@/data/tracker';
+import { addActivity, setActivity, setOrder, setStep } from '@/data/tracker';
 import { Button, ErrorBox, Field, cx } from '@/ui/components';
 import { CRow, MenuBtn, RowBtn, RowList, Tile } from './ui';
 
@@ -87,7 +87,7 @@ export function TimingTab({ activities, steps, now, canEdit, isHead, title, neut
 
 function MechTiming({ activities, now, canEdit, isHead, title, neutKeys, onDone }: { activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; title: string; neutKeys?: Set<string>; onDone: (msg: string) => void }) {
   const [filter, setFilter] = useState<Filter>('open'); const [q, setQ] = useState('');
-  const all = activities.filter((a) => a.tracked).map((a) => timing(a, now)).sort((x, y) => (x.a.start ?? '').localeCompare(y.a.start ?? '') || x.a.key.localeCompare(y.a.key));
+  const all = activities.filter((a) => a.tracked && !a.detail).map((a) => timing(a, now)).sort((x, y) => (x.a.start ?? '').localeCompare(y.a.start ?? '') || x.a.key.localeCompare(y.a.key));
   const sum = timingSummary(all);
   const pick = (t: T) => (filter === 'all' ? true : filter === 'running' ? t.state === 'RUNNING' : filter === 'finished' ? t.state === 'FINISHED' : filter === 'late' ? t.lateStart || t.lateFinish
     : t.state !== 'FINISHED' && !!t.a.start && Date.parse(t.a.start) <= now + 2 * 864e5);
@@ -111,7 +111,7 @@ function MechTiming({ activities, now, canEdit, isHead, title, neutKeys, onDone 
       {keys.slice(0, 40).map((k) => (
         <section key={k} className="space-y-1">
           <h3 className="text-xs font-bold text-[#004080]">{k}</h3>
-          <RowList>{list.filter((t) => t.a.key === k).map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} neutCovered={!!neutKeys?.has(t.a.key)} onDone={onDone} />)}</RowList>
+          <RowList>{sortActs(list.filter((t) => t.a.key === k), (t) => t.a).map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} neutCovered={!!neutKeys?.has(t.a.key)} onDone={onDone} />)}</RowList>
         </section>
       ))}
       {!list.length && <p className="py-4 text-center text-sm text-slate-500">Nothing here.</p>}
@@ -125,20 +125,64 @@ function MechTiming({ activities, now, canEdit, isHead, title, neutKeys, onDone 
  *  the one running and the next one on top. */
 export function EquipActivities({ trackerId, itemKey, activities, now, canEdit, isHead, neutCovered = false, onDone }: { trackerId: string; itemKey: string; activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; neutCovered?: boolean; onDone: (msg: string) => void }) {
   const [open, setOpen] = useState(true); const [add, setAdd] = useState(false);
-  const ts = sortActs(activities.filter((a) => a.tracked).map((a) => timing(a, now)), (t) => t.a);
-  const running = ts.filter((t) => t.state === 'RUNNING'), done = ts.filter((t) => t.state === 'FINISHED').length;
+  const [showDone, setShowDone] = useState(false); const [showField, setShowField] = useState(false); const [order, setOrderIds] = useState<string[] | null>(null);
+  // the Section Head follows the milestones: the field-operator detail steps are hidden (one tap shows them)
+  const all = sortActs(activities.filter((a) => a.tracked).map((a) => timing(a, now)), (t) => t.a);
+  const ts = all.filter((t) => !t.a.detail), field = all.filter((t) => t.a.detail);
+  const running = ts.filter((t) => t.state === 'RUNNING'), fin = ts.filter((t) => t.state === 'FINISHED'), rest = ts.filter((t) => t.state !== 'FINISHED');
   const next = ts.find((t) => t.state === 'NOT_STARTED');
   const off = activities.filter((a) => !a.tracked).map((a) => timing(a, now));
+  const row = (t: T) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} neutCovered={neutCovered} onDone={onDone} />;
   return (
     <div className="rounded-xl bg-slate-50 p-2 ring-1 ring-slate-200">
-      <button type="button" onClick={() => setOpen((x) => !x)} className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-600"><span>Work steps · {done}/{ts.length} finished{running.length ? ` · ${running.length} running` : ''}</span><span>{open ? '▾' : '▸'}</span></button>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => setOpen((x) => !x)} className="flex min-w-0 flex-1 items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-600"><span>Work steps · {fin.length}/{ts.length} finished{running.length ? ` · ${running.length} running` : ''}</span><span>{open ? '▾' : '▸'}</span></button>
+        {canEdit && open && ts.length > 1 && !order && <button type="button" onClick={() => setOrderIds(all.map((t) => t.a.id))} className="shrink-0 text-xs font-bold text-[#0850A0]">↕ Reorder</button>}
+      </div>
       {!ts.length && !off.length && <p className="mt-1 text-xs text-slate-500">None yet: import the bar chart (Admin){isHead ? ' or add the procedure steps here' : ''}.</p>}
-      {ts.length > 0 && <p className="mt-1 text-xs text-slate-700">{running.length ? <>Now: <b>{running.map((t) => t.a.activity).join(' · ')}</b></> : null}{running.length && next ? ' · ' : ''}{next ? <>Next: <b>{next.a.activity}</b></> : null}</p>}
-      {open && ts.length > 0 && <RowList className="mt-1.5">{ts.map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} neutCovered={neutCovered} onDone={onDone} />)}</RowList>}
-      {open && off.length > 0 && <div className="mt-1.5 space-y-1.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Not required · {off.length}</p>
+      {ts.length > 0 && !order && <p className="mt-1 text-xs text-slate-700">{running.length ? <>Now: <b>{running.map((t) => t.a.activity).join(' · ')}</b></> : null}{running.length && next ? ' · ' : ''}{next ? <>Next: <b>{next.a.activity}</b></> : null}</p>}
+      {open && order && <Reorder trackerId={trackerId} itemKey={itemKey} rows={all} ids={order} setIds={setOrderIds} onDone={(m) => { setOrderIds(null); onDone(m); }} />}
+      {open && !order && <>
+        {fin.length > 0 && <button type="button" onClick={() => setShowDone((x) => !x)} className="mt-1.5 flex w-full justify-between rounded-lg bg-green-50 px-2.5 py-1.5 text-xs font-semibold text-[#08A048] ring-1 ring-green-100"><span>{showDone ? '▾' : '▸'} ✓ Done ({fin.length})</span><span className="font-normal text-slate-500">{showDone ? 'hide' : 'show'}</span></button>}
+        {showDone && fin.length > 0 && <RowList className="mt-1">{fin.map(row)}</RowList>}
+        {rest.length > 0 && <RowList className="mt-1.5">{rest.map(row)}</RowList>}
+        {field.length > 0 && <button type="button" onClick={() => setShowField((x) => !x)} className="mt-1.5 text-[11px] font-semibold text-slate-500">{showField ? '▾' : '▸'} Field steps ({field.length}) · for the field operator</button>}
+        {showField && <RowList className="mt-1 opacity-80">{field.map(row)}</RowList>}
+      </>}
+      {open && !order && off.length > 0 && <div className="mt-1.5 space-y-1.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Not required · {off.length}</p>
         <RowList>{off.map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} onDone={onDone} />)}</RowList></div>}
-      {isHead && (add ? <AddActivity trackerId={trackerId} itemKey={itemKey} onDone={(m) => { setAdd(false); onDone(m); }} onCancel={() => setAdd(false)} />
+      {isHead && !order && (add ? <AddActivity trackerId={trackerId} itemKey={itemKey} onDone={(m) => { setAdd(false); onDone(m); }} onCancel={() => setAdd(false)} />
         : <Button variant="ghost" className="mt-1 min-h-9 px-2 text-xs" onClick={() => setAdd(true)}>+ Add work step (procedure)</Button>)}
+    </div>
+  );
+}
+
+/** Put the work steps in order with ▲ ▼ (the field steps keep their place among them, hidden), saved and logged. */
+function Reorder({ trackerId, itemKey, rows, ids, setIds, onDone }: { trackerId: string; itemKey: string; rows: T[]; ids: string[]; setIds: (x: string[] | null) => void; onDone: (msg: string) => void }) {
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const by = new Map(rows.map((t) => [t.a.id, t])); const start = rows.map((t) => t.a.id);
+  const shown = ids.filter((id) => !by.get(id)?.a.detail);
+  const move = (id: string, d: -1 | 1) => {
+    const i = shown.indexOf(id), j = i + d; if (j < 0 || j >= shown.length) return;
+    const a = ids.indexOf(id), b = ids.indexOf(shown[j]); const x = [...ids]; [x[a], x[b]] = [x[b], x[a]]; setIds(x);
+  };
+  async function save(list: string[], msg: string) { setBusy(true); setErr(null); try { await setOrder(trackerId, itemKey, list); onDone(msg); } catch (e) { setErr(e); setBusy(false); } }
+  return (
+    <div className="mt-1.5 space-y-1.5">
+      <p className="text-[11px] font-semibold text-slate-500">Move a step up or down, then save.</p>
+      <RowList>{shown.map((id, i) => { const t = by.get(id)!; const was = start.filter((x) => !by.get(x)?.a.detail).indexOf(id); const moved = was - i;
+        return <div key={id} className={cx('flex items-center gap-2 px-2.5 py-1.5', moved !== 0 && 'bg-amber-50')}>
+          <span className="text-slate-400">⋮⋮</span>
+          <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-semibold text-slate-900">{t.a.activity}</span>{moved !== 0 && <span className="block text-[11px] text-amber-800">moved {moved > 0 ? '↑' : '↓'} {Math.abs(moved)}</span>}</span>
+          <span className="flex flex-col gap-0.5"><button type="button" aria-label="Up" disabled={i === 0} onClick={() => move(id, -1)} className="rounded bg-slate-100 px-2 text-xs font-bold text-[#0d2a5e] disabled:opacity-30">▲</button>
+            <button type="button" aria-label="Down" disabled={i === shown.length - 1} onClick={() => move(id, 1)} className="rounded bg-slate-100 px-2 text-xs font-bold text-[#0d2a5e] disabled:opacity-30">▼</button></span>
+        </div>; })}</RowList>
+      {err != null && <ErrorBox error={err} />}
+      <div className="flex gap-1.5">
+        <Button variant="secondary" className="flex-1" disabled={busy} onClick={() => setIds(null)}>Cancel</Button>
+        <Button variant="secondary" className="flex-1" disabled={busy} onClick={() => save([], `${itemKey}: back to the plan order.`)}>Reset to plan</Button>
+        <Button className="flex-1" disabled={busy} onClick={() => save(ids, `${itemKey}: order saved.`)}>✓ Save order</Button>
+      </div>
     </div>
   );
 }

@@ -284,3 +284,16 @@ describe('work-step order', () => {
     expect(sortActs(xs).map((x) => x.activityId)).toEqual(['OP-02', 'A3881-1', 'A3881-2', 'A4750-1', 'A4750-2', 'A4750-3', 'A3881-3']);
   });
 });
+
+describe('order set by hand', () => {
+  it('the saved place wins over the plan, steps without a place go last', () => {
+    const a = (activityId: string, start: string, seq: number | null, group = 'Mech') => ({ activityId, group, start, seq });
+    const xs = [a('OP-01', '', 3, 'Operations'), a('B1', '2026-10-20T07:00Z', 1), a('B2', '2026-10-21T07:00Z', 2), a('B3', '2026-10-19T07:00Z', null)];
+    expect(sortActs(xs).map((x) => x.activityId)).toEqual(['B1', 'B2', 'OP-01', 'B3']);
+  });
+  it('the field-detail steps are not the next step', () => {
+    const e = { eq: { tag: 'V-12-206', barchartKey: null, hoStep: 'S219' }, stage: 0 } as Parameters<typeof nextStep>[0];
+    const mk = (id: string, detail: boolean) => ({ id, activityId: id, group: 'Operations', key: 'V-12-206', activity: id, tracked: true, stage: 1, start: null, detail } as Parameters<typeof nextStep>[1][number]);
+    expect(nextStep(e, [mk('OP-03', true), mk('OP-04', false)])).toMatchObject({ text: 'OP-04', n: 1, of: 1 });
+  });
+});
