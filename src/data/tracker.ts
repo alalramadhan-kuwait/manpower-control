@@ -41,7 +41,7 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     supabase.from('trk_activities').select('id,activity_id,grp,equipment_key,activity,duration_h,planned_start,planned_finish,stage,tracked,baseline,actual_start,actual_finish,actual_note,disabled_reason,seq,detail,updated_by_name,updated_at').eq('tracker_id', id).limit(5000),
     supabase.from('trk_log').select('kind,ref,field,old_value,new_value,by_name,at').eq('tracker_id', id).gte('at', since).order('at').limit(5000),
     supabase.from('trk_shift_log').select('*').eq('tracker_id', id).order('shift_date', { ascending: false }).limit(20),
-    supabase.from('trk_points').select('*').eq('tracker_id', id).order('sort'),
+    supabase.from('trk_points').select('*').eq('tracker_id', id).eq('removed', false).order('sort'),
   ]);
   const err = [t, s, e, i, a, l, sl, pt].find((r) => r.error)?.error; if (err) throw err;
   const acts = a.data as ActRow[]; const base = Math.max(0, ...acts.map((x) => x.baseline));
