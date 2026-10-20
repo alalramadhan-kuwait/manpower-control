@@ -44,7 +44,7 @@ export interface TrkPoint {
   inAt: string | null; outAt: string | null; fillAt: string | null; soakAt: string | null; drainAt: string | null; doneAt: string | null;
   soakH: number | null; remark: string | null; updatedBy: string | null; updatedAt: string | null;
 }
-export interface TrkData { steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
+export interface TrkData { lineup?: LuStream[]; steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
 
 /** The main equipment groups; the rest (control valve shells, PSVs, check valves, RTJ & injection points, piping, OPR
  *  list, PMRs …) is miscellaneous, shown after them. */
@@ -278,6 +278,33 @@ export function focusList(att: Attention[], eqs: EquipView[], acts: TrkActivity[
     return { f: { a, e, next, minor }, k: [Number(minor), e?.eq.critical ? 0 : 1, next?.running ? 0 : 1, g, i] };
   });
   return out.sort((x, y) => { for (let j = 0; j < x.k.length; j++) if (x.k[j] !== y.k[j]) return x.k[j] - y.k[j]; return 0; }).map((x) => x.f);
+}
+
+// ── Process lineup (P&ID) ──────────────────────────────────────────────────────────────────────────────────────
+/** One P&ID connection of the U-12 lineup: from → to, the fluid, the line numbers on it and the P&ID sheets. */
+export interface LuStream { id: string; from: string; to: string; fluid: string | null; line: string | null; lineNos: string[]; sheets: string[]; size: string | null; conf: string | null }
+/** The lineup form of a tracker tag (E-12-229 → E-229, R-205 stays), and a lineup tag's keys (E-216A/B → E-216A, E-216B, E-216). */
+export const luTag = (tag: string) => tag.replace(/^([A-Z]{1,3})-12-(\d{3})/, '$1-$2').trim();
+export function luKeys(tag: string): string[] {
+  const t = tag.replace(/^(HDR|BL|BL-TR2):\s*/, '').trim(); const m = t.match(/^([A-Z]{1,3}-\d{3})([A-Z](?:[/-][A-Z])*)?\b/);
+  if (!m) return [t];
+  const base = m[1], suf = m[2] ?? '';
+  const letters = suf.includes('-') ? (() => { const [a, b] = suf.split('-'); const r: string[] = []; for (let c = a.charCodeAt(0); c <= b.charCodeAt(0); c++) r.push(String.fromCharCode(c)); return r; })() : suf.split('/').filter(Boolean);
+  return [base, ...letters.map((l) => base + l)];
+}
+const sameTag = (lineupTag: string, tag: string) => luKeys(lineupTag).includes(luTag(tag));
+/** Where a line is in the unit: the lineup connections carrying that line number. */
+export const lineStreams = (line: string | null | undefined, lu: LuStream[] = []) => (line ? lu.filter((s) => s.lineNos.includes(line)) : []);
+/** The tracker items at either end of a connection. */
+export const streamItems = (s: LuStream, tags: string[]) => tags.filter((t) => sameTag(s.from, t) || sameTag(s.to, t));
+/** The lineup lines a neutralization loop covers: the connections between two of its equipment (an item named
+ *  "R-205 to E-229" counts both ends), the line numbers on them. */
+export function loopLines(p: Pick<TrkPoint, 'items' | 'name'>, lu: LuStream[] = []): { lines: string[]; streams: LuStream[] } {
+  const ends = new Set<string>();
+  for (const it of [...p.items, p.name]) for (const m of it.matchAll(/\b([A-Z]{1,3})-(?:12-)?(\d{3}[A-Z]?)\b/g)) ends.add(`${m[1]}-${m[2]}`);
+  const has = (x: string) => luKeys(x).some((k) => ends.has(k));
+  const streams = lu.filter((s) => has(s.from) && has(s.to));
+  return { lines: [...new Set(streams.flatMap((s) => s.lineNos))].sort(), streams };
 }
 
 export interface Totals { steps: number; stepsDone: number; ho: number; hoDone: number; late: number; pending: number; iatOpen: number; ready: number }

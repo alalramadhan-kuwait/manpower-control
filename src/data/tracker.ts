@@ -1,7 +1,7 @@
 // Shutdown progress tracker: the trackers of the calendar shutdowns (template / test / live), their steps, equipment,
 // IATs, bar chart, shift log and change log. Who and when are stamped by the database on every change.
 import { supabase } from './supabase';
-import type { PointStatus, StepStatus, TrkActivity, TrkData, TrkEquipment, TrkIat, TrkLog, TrkPoint, TrkSettings, TrkStep } from '@/core/tracker';
+import type { PointStatus, StepStatus, TrkActivity, TrkData, TrkEquipment, TrkIat, TrkLog, LuStream, TrkPoint, TrkSettings, TrkStep } from '@/core/tracker';
 
 export interface Tracker { id: string; eventId: string | null; title: string; mode: 'template' | 'test' | 'live'; settings: TrkSettings; status: 'active' | 'closed'; eventStart: string | null; eventEnd: string | null; eventTitle: string | null }
 interface TrackerRow { id: string; event_id: string | null; title: string; mode: Tracker['mode']; settings: TrkSettings | null; status: Tracker['status']; unit_events?: { start_date: string; end_date: string; unit: string | null; title: string | null } | null }
@@ -43,9 +43,13 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     supabase.from('trk_shift_log').select('*').eq('tracker_id', id).order('shift_date', { ascending: false }).limit(20),
     supabase.from('trk_points').select('*').eq('tracker_id', id).eq('removed', false).order('sort'),
   ]);
+  // the U-12 process lineup (P&ID streams): optional, the tracker works without it
+  const lu = await supabase.from('lu_streams').select('id,frm,to_tag,fluid,line,line_nos,sheets,size,conf').limit(2000);
   const err = [t, s, e, i, a, l, sl, pt].find((r) => r.error)?.error; if (err) throw err;
   const acts = a.data as ActRow[]; const base = Math.max(0, ...acts.map((x) => x.baseline));
   return {
+    lineup: lu.error ? [] : (lu.data as { id: string; frm: string; to_tag: string; fluid: string | null; line: string | null; line_nos: string[]; sheets: string[]; size: string | null; conf: string | null }[])
+      .map((r): LuStream => ({ id: r.id, from: r.frm, to: r.to_tag, fluid: r.fluid, line: r.line, lineNos: r.line_nos ?? [], sheets: r.sheets ?? [], size: r.size, conf: r.conf })),
     tracker: toTracker(t.data as unknown as TrackerRow),
     steps: (s.data as StepRow[]).map((r): TrkStep => ({ id: r.id, stepId: r.step_id, fo: r.fo, gate: r.gate, gateName: r.gate_name, shortName: r.short_name, text: r.step_text, procedure: r.procedure,
       prereq: r.prereq ?? [], estHours: r.est_hours, note: r.note, target: r.target_at, status: r.status, pendingReason: r.pending_reason, remark: r.remark, updatedBy: r.updated_by_name, updatedAt: r.updated_at, startedAt: r.started_at, doneAt: r.done_at })),

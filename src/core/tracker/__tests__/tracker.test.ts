@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attention, focusList, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { attention, focusList, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -295,5 +295,26 @@ describe('order set by hand', () => {
     const e = { eq: { tag: 'V-12-206', barchartKey: null, hoStep: 'S219' }, stage: 0 } as Parameters<typeof nextStep>[0];
     const mk = (id: string, detail: boolean) => ({ id, activityId: id, group: 'Operations', key: 'V-12-206', activity: id, tracked: true, stage: 1, start: null, detail } as Parameters<typeof nextStep>[1][number]);
     expect(nextStep(e, [mk('OP-03', true), mk('OP-04', false)])).toMatchObject({ text: 'OP-04', n: 1, of: 1 });
+  });
+});
+
+describe('process lineup', () => {
+  const st = (id: string, from: string, to: string, lineNos: string[]) => ({ id, from, to, fluid: 'x', line: lineNos.join(' '), lineNos, sheets: ['1-R-12-0-104'], size: null, conf: 'check' });
+  const lu = [st('a', 'R-201', 'R-202', ['P-12-2039']), st('b', 'E-216A/B', 'E-229', ['P-12-2029']), st('c', 'F-202', 'V-212', ['P-12-2061']), st('d', 'EA-201A-D', 'V-206', ['P-12-2047'])];
+  it('tags: tracker form to lineup form, lineup keys', () => {
+    expect(luTag('E-12-229')).toBe('E-229');
+    expect(luKeys('E-216A/B')).toEqual(['E-216', 'E-216A', 'E-216B']);
+    expect(luKeys('EA-201A-D')).toEqual(['EA-201', 'EA-201A', 'EA-201B', 'EA-201C', 'EA-201D']);
+    expect(luKeys('HDR: Injection water manifold')).toEqual(['Injection water manifold']);
+  });
+  it('a line gives its place and the tracker items at its ends', () => {
+    const s = lineStreams('P-12-2061', lu);
+    expect(s.map((x) => `${x.from}>${x.to}`)).toEqual(['F-202>V-212']);
+    expect(streamItems(s[0], ['F-12-202', 'V-12-212', 'V-12-213'])).toEqual(['F-12-202', 'V-12-212']);
+    expect(lineStreams(null, lu)).toEqual([]);
+  });
+  it('a loop covers the lines between its equipment', () => {
+    expect(loopLines({ items: ['R-201 to R-202'], name: 'Reactor inter piping' }, lu).lines).toEqual(['P-12-2039']);
+    expect(loopLines({ items: ['E-12-216A', 'E-12-229'], name: 'Charge pump to H-201' }, lu).lines).toEqual(['P-12-2029']);
   });
 });

@@ -2,7 +2,7 @@
 // handover · M & I: the bar chart and the blinds it installs) with their planned and actual dates, and the late /
 // pending / IAT counts. Each card opens its detail; every line in it opens the step, item or page behind it.
 import { useMemo, useState } from 'react';
-import { FO_NAMES, isMisc, attention, focusList, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, NEUT_LABEL,
+import { FO_NAMES, isMisc, attention, focusList, lineStreams, loopLines, streamItems, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, NEUT_LABEL,
   type Attention, type Banner, type Focus, type NextStep, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import type { TrackerData } from '@/data/tracker';
 import { BottomSheet, cx } from '@/ui/components';
@@ -251,7 +251,8 @@ const IAT_ORDER = ['In progress', 'To start', 'New IAT', 'Hold'];
 const IAT_CLS: Record<string, string> = { 'In progress': 'bg-blue-100 text-blue-800', 'To start': 'bg-amber-100 text-amber-800', 'New IAT': 'bg-slate-100 text-slate-700', Hold: 'bg-red-100 text-red-800', Completed: 'bg-green-100 text-green-800', Cancelled: 'bg-slate-100 text-slate-500' };
 function IatSheet({ data, onOpen, onClose }: { data: TrackerData; onOpen: (a: { kind: 'step' | 'equipment'; ref: string }) => void; onClose: () => void }) {
   const [done, setDone] = useState(false);
-  const items = new Set(data.equipment.map((e) => e.tag));
+  const items = new Set(data.equipment.map((e) => e.tag)); const tags = [...items];
+  const lu = data.lineup ?? []; const loops = (data.points ?? []).filter((p) => p.kind === 'neut');
   const st = (i: TrackerData['iats'][number]) => i.sheetStatus ?? (i.status === 'open' ? 'Open' : 'Completed');
   const open = data.iats.filter((i) => i.status === 'open').sort((a, b) => (IAT_ORDER.indexOf(st(a)) + 9) % 9 - (IAT_ORDER.indexOf(st(b)) + 9) % 9 || a.iatNo.localeCompare(b.iatNo));
   const closed = data.iats.filter((i) => i.status !== 'open');
@@ -261,6 +262,12 @@ function IatSheet({ data, onOpen, onClose }: { data: TrackerData; onOpen: (a: { 
         {items.has(i.tag) ? <button type="button" onClick={() => onOpen({ kind: 'equipment', ref: i.tag })} className="ml-auto text-xs font-bold text-[#0850A0]">{i.tag} ›</button> : <span className="ml-auto text-[11px] text-slate-500">{i.line ?? i.tag}</span>}</div>
       <p className="text-[12.5px] text-slate-700">{i.jobText}</p>
       <p className="text-[11px] text-slate-500">{[i.line && items.has(i.tag) ? `Line ${i.line}` : '', i.wo ? `WO ${i.wo}` : '', i.remark ?? ''].filter(Boolean).join(' · ')}</p>
+      {lineStreams(i.line, lu).map((st) => { const ends = streamItems(st, tags); const loop = loops.find((p) => loopLines(p, lu).lines.includes(i.line ?? ''));
+        return <div key={st.id} className="mt-1 rounded-lg bg-slate-50 px-2 py-1 text-[11.5px] text-slate-700 ring-1 ring-slate-200">
+          📍 <b>{st.from} → {st.to}</b>{st.fluid ? ` · ${st.fluid}` : ''}{st.sheets[0] ? <span className="text-slate-500"> · P&amp;ID {st.sheets[0]}</span> : null}
+          {(ends.length > 0 || loop) && <span className="mt-0.5 flex flex-wrap gap-1">{ends.map((t) => <button key={t} type="button" onClick={() => onOpen({ kind: 'equipment', ref: t })} className="rounded bg-white px-1.5 text-[11px] font-bold text-[#0850A0] ring-1 ring-slate-200">{t} ›</button>)}
+            {loop && <span className="rounded bg-amber-50 px-1.5 text-[11px] font-bold text-amber-800 ring-1 ring-amber-200">🧪 in {loop.ref}</span>}</span>}
+        </div>; })}
     </div>);
   const counts = IAT_ORDER.map((k) => [k, open.filter((i) => st(i) === k).length] as const).filter(([, n]) => n);
   return (
