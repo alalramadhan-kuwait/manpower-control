@@ -2,8 +2,8 @@
 // handover · M & I: the bar chart and the blinds it installs) with their planned and actual dates, and the late /
 // pending / IAT counts. Each card opens its detail; every line in it opens the step, item or page behind it.
 import { useMemo, useState } from 'react';
-import { FO_NAMES, isMisc, attention, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, NEUT_LABEL,
-  type Attention, type Banner, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
+import { FO_NAMES, isMisc, attention, nextStep, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, NEUT_LABEL,
+  type Attention, type Banner, type NextStep, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import type { TrackerData } from '@/data/tracker';
 import { BottomSheet, cx } from '@/ui/components';
 import { FlagChip, Tile } from './ui';
@@ -123,7 +123,8 @@ export function TodayTab({ steps, eqs, data, now, onOpen, onNav }: { steps: Map<
       {att.length > 0 && (
         <section className="rounded-2xl bg-white p-3 ring-1 ring-slate-200">
           <h2 className="text-xs font-bold uppercase tracking-wide text-[#E02028]">⚠ Needs attention · {att.length}</h2>
-          <div className="divide-y divide-slate-100">{att.slice(0, 8).map((a) => <AttentionRow key={`${a.kind}-${a.ref}`} a={a} onOpen={() => onOpen(a)} />)}</div>
+          <div className="divide-y divide-slate-100">{att.slice(0, 8).map((a) => { const e = a.kind === 'equipment' ? eqs.find((x) => x.eq.tag === a.ref) : undefined;
+            return <AttentionRow key={`${a.kind}-${a.ref}`} a={a} next={e ? nextStep(e, data.activities, data.points) : null} onOpen={() => onOpen(a)} />; })}</div>
           {att.length > 8 && <p className="pt-1 text-xs text-slate-500">+{att.length - 8} more</p>}
         </section>
       )}
@@ -134,12 +135,18 @@ export function TodayTab({ steps, eqs, data, now, onOpen, onNav }: { steps: Map<
   );
 }
 
-function AttentionRow({ a, onOpen }: { a: Attention; onOpen: () => void }) {
+function AttentionRow({ a, next, onOpen }: { a: Attention; next: NextStep | null; onOpen: () => void }) {
   return (
-    <button type="button" onClick={onOpen} className="flex w-full items-center gap-2 py-2 text-left">
-      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{a.label}</span>
-      <FlagChip flag={a.flag} />
-      {a.detail && <span className="max-w-[40%] truncate text-xs text-slate-600">{a.detail}</span>}
+    <button type="button" onClick={onOpen} className="w-full py-2 text-left">
+      <span className="flex items-center gap-2">
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{a.label}</span>
+        <FlagChip flag={a.flag} />
+        {a.detail && <span className="max-w-[40%] truncate text-xs text-slate-600">{a.detail}</span>}
+      </span>
+      {next && <span className="mt-0.5 flex items-center gap-1 text-[12.5px] text-[#0850A0]">
+        <b className="shrink-0">{next.running ? '▶ Now:' : 'Next:'}</b><span className="min-w-0 flex-1 truncate">{next.text}</span>
+        {next.of > 0 && <span className="shrink-0 text-[11px] text-slate-500">{next.n}/{next.of}</span>}<b>›</b>
+      </span>}
     </button>
   );
 }

@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attention, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { attention, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -217,5 +217,22 @@ describe('isolation & neutralization', () => {
     expect(miBlinds(d)).toMatchObject({ segregation: [1, 2], hp: [0, 0] });
     const o = opsProgress(sv, { opsStart: '2026-10-16T07:00:00+03:00', miStart: '2026-10-20T07:00:00+03:00' }, now, null, r)!;
     expect(o.actualPct).toBe(Math.round(r.done / r.total * 100));
+  });
+});
+
+describe('next step on an item (needs attention)', () => {
+  const eq = { tag: 'R-12-201', barchartKey: null, hoStep: 'S222' } as TrkEquipment;
+  const v = (stage: number) => ({ eq, stage } as Parameters<typeof nextStep>[0]);
+  const a = (id: string, group: string, actualStart: string | null = null, actualFinish: string | null = null) =>
+    ({ id, activityId: id, group, key: 'R-12-201', activity: `step ${id}`, tracked: true, stage: 1, start: '2026-10-20T07:00:00Z', actualStart, actualFinish } as Parameters<typeof nextStep>[1][number]);
+  it('before the handover: the first unfinished operations step, running or not', () => {
+    expect(nextStep(v(0), [a('OP-02', 'Operations'), a('OP-01', 'Operations', 'x', 'y'), a('B1', 'Mech')])).toEqual({ text: 'step OP-02', running: false, n: 2, of: 2 });
+    expect(nextStep(v(0), [a('OP-01', 'Operations', 'x')])?.running).toBe(true);
+  });
+  it('then the neutralization, then the handover step; after the handover the bar chart', () => {
+    const p = { kind: 'neut', beforeHo: true, items: ['R-12-201'], ref: 'S111', status: 'filling' } as TrkPoint;
+    expect(nextStep(v(0), [a('OP-01', 'Operations', 'x', 'y')], [p])?.text).toBe('Neutralize S111 · Filling');
+    expect(nextStep(v(0), [])?.text).toBe('Hand over (S222)');
+    expect(nextStep(v(1), [a('OP-01', 'Operations'), a('B1', 'Mech')])?.text).toBe('step B1');
   });
 });

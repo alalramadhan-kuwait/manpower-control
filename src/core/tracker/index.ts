@@ -193,6 +193,24 @@ export function attention(steps: Map<string, StepView>, eqs: EquipView[]): Atten
   return out.sort((a, b) => a.rank - b.rank || b.at - a.at || a.label.localeCompare(b.label));
 }
 
+/** What to do next on an item: before the handover its next operations step (then its neutralization, then the
+ *  handover itself), after the handover its next bar-chart line. `n`/`of` count the steps of that phase. */
+export interface NextStep { text: string; running: boolean; n: number; of: number }
+export function nextStep(e: EquipView, acts: TrkActivity[], points: TrkPoint[] = []): NextStep | null {
+  const key = e.eq.barchartKey ?? e.eq.tag;
+  const mine = acts.filter((a) => a.tracked && a.key === key);
+  const pick = (xs: TrkActivity[]): NextStep | null => {
+    const s = [...xs].sort(actOrder), a = s.find((x) => !x.actualFinish);
+    return a ? { text: a.activity, running: !!a.actualStart, n: s.indexOf(a) + 1, of: s.length } : null;
+  };
+  if (e.stage >= 1) return pick(mine.filter((a) => a.group !== 'Operations'));
+  const ops = pick(mine.filter((a) => a.group === 'Operations'));
+  if (ops) return ops;
+  const p = points.find((x) => x.kind === 'neut' && x.beforeHo && x.items.includes(e.eq.tag) && !pointComplete(x));
+  if (p) return { text: `Neutralize ${p.ref} · ${NEUT_LABEL[p.status]}`, running: p.status !== 'open', n: 0, of: 0 };
+  return { text: e.eq.hoStep ? `Hand over (${e.eq.hoStep})` : 'Hand over', running: false, n: 0, of: 0 };
+}
+
 export interface Totals { steps: number; stepsDone: number; ho: number; hoDone: number; late: number; pending: number; iatOpen: number; ready: number }
 export function totals(steps: Map<string, StepView>, eqs: EquipView[], iats: TrkIat[]): Totals {
   const sv = [...steps.values()];
