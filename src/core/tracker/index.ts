@@ -211,6 +211,24 @@ export function nextStep(e: EquipView, acts: TrkActivity[], points: TrkPoint[] =
   return { text: e.eq.hoStep ? `Hand over (${e.eq.hoStep})` : 'Hand over', running: false, n: 0, of: 0 };
 }
 
+/** Needs-attention order by what matters, not by name: critical items, then the main items (reactors, heaters,
+ *  compressor, vessels, exchangers, filters, pumps), a step already running before one not started; parts of another
+ *  item (C-12-201-E-01A, P-12-205-TK-01 …) and the miscellaneous ones (check valves, PSVs, CV shells …) are `minor`. */
+const FOCUS_GROUP = ['Reactors', 'Heaters', 'Compressor', 'Vessels', 'Exchangers', 'Filters', 'Pumps / LO'];
+export interface Focus { a: Attention; e: EquipView | null; next: NextStep | null; minor: boolean }
+export function focusList(att: Attention[], eqs: EquipView[], acts: TrkActivity[], points: TrkPoint[] = []): Focus[] {
+  const tags = eqs.map((x) => x.eq.tag);
+  const part = (t: string) => tags.some((p) => p !== t && (t.startsWith(`${p}-`) || t.startsWith(`${p} `)));
+  const out = att.map((a, i) => {
+    const e = a.kind === 'equipment' ? eqs.find((x) => x.eq.tag === a.ref) ?? null : null;
+    const next = e ? nextStep(e, acts, points) : null;
+    const minor = !!e && !e.eq.critical && (isMisc(e.eq.group) || part(e.eq.tag));
+    const g = e ? (FOCUS_GROUP.indexOf(e.eq.group) + 1 || 9) : 8;   // a late guideline step after the main items
+    return { f: { a, e, next, minor }, k: [Number(minor), e?.eq.critical ? 0 : 1, next?.running ? 0 : 1, g, i] };
+  });
+  return out.sort((x, y) => { for (let j = 0; j < x.k.length; j++) if (x.k[j] !== y.k[j]) return x.k[j] - y.k[j]; return 0; }).map((x) => x.f);
+}
+
 export interface Totals { steps: number; stepsDone: number; ho: number; hoDone: number; late: number; pending: number; iatOpen: number; ready: number }
 export function totals(steps: Map<string, StepView>, eqs: EquipView[], iats: TrkIat[]): Totals {
   const sv = [...steps.values()];

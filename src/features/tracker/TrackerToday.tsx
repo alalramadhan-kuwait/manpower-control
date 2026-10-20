@@ -2,8 +2,8 @@
 // handover · M & I: the bar chart and the blinds it installs) with their planned and actual dates, and the late /
 // pending / IAT counts. Each card opens its detail; every line in it opens the step, item or page behind it.
 import { useMemo, useState } from 'react';
-import { FO_NAMES, isMisc, attention, nextStep, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, NEUT_LABEL,
-  type Attention, type Banner, type NextStep, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
+import { FO_NAMES, isMisc, attention, focusList, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, NEUT_LABEL,
+  type Attention, type Banner, type Focus, type NextStep, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import type { TrackerData } from '@/data/tracker';
 import { BottomSheet, cx } from '@/ui/components';
 import { FlagChip, Tile } from './ui';
@@ -120,18 +120,30 @@ export function TodayTab({ steps, eqs, data, now, onOpen, onNav }: { steps: Map<
         <Tile value={tot.pending} label="pending" tone={tot.pending ? 'amber' : undefined} onClick={() => onNav({ tab: 'equipment', lateFirst: true })} />
         <Tile value={tot.iatOpen} label="IAT open" tone={tot.iatOpen ? 'amber' : undefined} onClick={() => onNav({ tab: 'equipment', lateFirst: true })} />
       </div>
-      {att.length > 0 && (
-        <section className="rounded-2xl bg-white p-3 ring-1 ring-slate-200">
-          <h2 className="text-xs font-bold uppercase tracking-wide text-[#E02028]">⚠ Needs attention · {att.length}</h2>
-          <div className="divide-y divide-slate-100">{att.slice(0, 8).map((a) => { const e = a.kind === 'equipment' ? eqs.find((x) => x.eq.tag === a.ref) : undefined;
-            return <AttentionRow key={`${a.kind}-${a.ref}`} a={a} next={e ? nextStep(e, data.activities, data.points) : null} onOpen={() => onOpen(a)} />; })}</div>
-          {att.length > 8 && <p className="pt-1 text-xs text-slate-500">+{att.length - 8} more</p>}
-        </section>
-      )}
+      {att.length > 0 && <AttentionCard list={focusList(att, eqs, data.activities, data.points)} onOpen={onOpen} />}
 
       {sheet === 'ops' && <OpsSheet data={data} eqs={eqs} plan={[start, miPlan]} finished={ops?.finishedAt ?? null} badge={opsBadge?.text ?? ''} onOpen={open} onNav={go} onClose={() => setSheet(null)} />}
       {sheet === 'mi' && <MiSheet data={data} steps={steps} now={now} mi={mi} behind={behind} onOpen={open} onNav={go} onClose={() => setSheet(null)} />}
     </div>
+  );
+}
+
+function AttentionCard({ list, onOpen }: { list: Focus[]; onOpen: (a: Attention) => void }) {
+  const [all, setAll] = useState(false); const [misc, setMisc] = useState(false);
+  const main = list.filter((f) => !f.minor), minor = list.filter((f) => f.minor);
+  const shown = all ? main : main.slice(0, 5);
+  const row = (f: Focus) => <AttentionRow key={`${f.a.kind}-${f.a.ref}`} a={f.a} next={f.next} onOpen={() => onOpen(f.a)} />;
+  return (
+    <section className="rounded-2xl bg-white p-3 ring-1 ring-slate-200">
+      <h2 className="text-xs font-bold uppercase tracking-wide text-[#E02028]">⚠ Focus now · {list.length}</h2>
+      <div className="divide-y divide-slate-100">{shown.map(row)}</div>
+      {main.length > 5 && <button type="button" onClick={() => setAll((x) => !x)} className="pt-1 text-xs font-semibold text-[#0850A0]">{all ? 'Show less' : `+${main.length - 5} more`}</button>}
+      {minor.length > 0 && <>
+        <button type="button" onClick={() => setMisc((x) => !x)} className="mt-1 flex w-full items-center gap-1 border-t border-slate-100 pt-2 text-left text-xs font-semibold text-slate-600">
+          {misc ? '▾' : '▸'} {minor.length} misc / sub-items ({[...new Set(minor.map((f) => f.a.flag === 'HO_LATE' ? 'not handed over' : f.a.flag === 'PENDING' ? 'pending' : 'late'))].join(', ')})</button>
+        {misc && <div className="divide-y divide-slate-100">{minor.map(row)}</div>}
+      </>}
+    </section>
   );
 }
 

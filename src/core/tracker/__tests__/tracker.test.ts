@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attention, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { attention, focusList, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -234,5 +234,16 @@ describe('next step on an item (needs attention)', () => {
     expect(nextStep(v(0), [a('OP-01', 'Operations', 'x', 'y')], [p])?.text).toBe('Neutralize S111 · Filling');
     expect(nextStep(v(0), [])?.text).toBe('Hand over (S222)');
     expect(nextStep(v(1), [a('OP-01', 'Operations'), a('B1', 'Mech')])?.text).toBe('step B1');
+  });
+});
+
+describe('focus order (needs attention)', () => {
+  const ev = (tag: string, group: string, critical = false) => ({ eq: { tag, group, critical, barchartKey: null, hoStep: null }, stage: 0 } as Parameters<typeof focusList>[1][number]);
+  const at = (tag: string) => ({ kind: 'equipment', ref: tag, label: tag, detail: '1 h', flag: 'HO_LATE', rank: 1, at: 3600e3 } as Parameters<typeof focusList>[0][number]);
+  it('main items before parts and misc, critical first, the compressor before the pumps', () => {
+    const eqs = [ev('12-VC-0106', 'Check valves'), ev('C-12-201', 'Compressor'), ev('C-12-201-E-01A', 'Pumps / LO'), ev('P-12-203', 'Pumps / LO'), ev('V-12-212', 'Vessels', true)];
+    const f = focusList(eqs.map((e) => at(e.eq.tag)), eqs, []);
+    expect(f.map((x) => x.a.ref)).toEqual(['V-12-212', 'C-12-201', 'P-12-203', 'C-12-201-E-01A', '12-VC-0106']);
+    expect(f.filter((x) => x.minor).map((x) => x.a.ref)).toEqual(['C-12-201-E-01A', '12-VC-0106']);
   });
 });
