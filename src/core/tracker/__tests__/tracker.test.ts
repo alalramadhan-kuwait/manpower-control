@@ -103,10 +103,12 @@ describe('§10 test scenarios', () => {
     expect(r.stepsDone.map((s) => s.stepId)).toEqual(['S203', 'S315']);
     expect(r.stageChanges).toEqual([expect.objectContaining({ tag: 'V-12-201', from: 2, to: 3 })]);
     const text = reportText(r, { test: true, by: 'Ali' });
-    expect(text.split('\n').slice(0, 4)).toEqual(['━━━━━━━━━━━━━━━━━━', '*[TEST] U-12 | TRAIN-2 SHUTDOWN*', '📅 20 Oct 2026 | ☀️ Day Shift', '━━━━━━━━━━━━━━━━━━']);
-    expect(text).toContain('*🌡 MAX BED TEMPERATURE*\nR-205 *202°F*\nR-201 *183°F*');
-    expect(text).toContain('*🔄 CHANGES THIS SHIFT*\n🔧 Moved on: *V-12-201 → Inspection*\n✔️ Guideline steps done: *2*');
-    expect(text.trimEnd().endsWith('*END OF SHIFT REPORT*\n— Ali\n━━━━━━━━━━━━━━━━━━')).toBe(true);
+    expect(text.split('\n').slice(0, 2)).toEqual(['*[TEST] Unit-12 Train-2 shutdown report*', '_20 Oct 2026 · Day shift · 15:00_']);
+    expect(text).toContain('\n*Reactors*\n- R-205: ');
+    expect(text).toContain('*Max bed temperature*\n- R-205: 202°F\n- R-201: 183°F');
+    expect(text).toContain('*Vessels*\n- V-201: Under inspection');
+    expect(text).toContain('*Notes*\nScaffold at R-205');
+    expect(text.trimEnd().endsWith('— Ali')).toBe(true);
     expect(text).not.toMatch(/ {2,}/);
   });
 });
@@ -157,7 +159,7 @@ describe('mechanical activity timing', () => {
     const d = seed(); d.log = [{ kind: 'activity', ref: 'R-12-205 · A5410', field: 'actual_start', oldValue: null, newValue: '2026-10-23T09:00:00+03:00', byName: 'Ctl', at: '2026-10-23T09:05:00+03:00' }];
     const r = shiftReport(d, at('2026-10-23 12:00'), null);
     expect(r.activities.length).toBe(1);
-    expect(reportText(r)).toContain('*R-205* ⭐ ⏳ *Not handed over*');
+    expect(reportText(r)).toContain('- R-205: ');
     expect(reportText(r)).not.toContain('Mechanical');
   });
 });
@@ -178,7 +180,7 @@ describe('the two parts of the shutdown: operations end, M & I starts, at the R-
     const { ops, mi } = phases(d, now);
     expect([ops!.day, ops!.days, ops!.planPct, ops!.actualPct, ops!.state]).toEqual([3, 4, 63, 29, 'BEHIND']);
     expect([mi.actualStart, mi.critical]).toEqual([null, [{ tag: 'R-12-205', hoStep: 'S110', done: false }]]);
-    expect(reportText(shiftReport(d, at('2026-10-19 10:00'), null))).toContain('🔧 M&I starts at *R-205* handover');
+    expect(reportText(shiftReport(d, at('2026-10-19 10:00'), null))).toContain('- R-205: Not handed over');
   });
   it('S110 done 20-Oct 10:00: operations done (+3 h), M & I started then, its plan measured from that start', () => {
     const d = { ...seed(), settings }; Object.assign(step(d, 'S110'), { status: 'done', doneAt: '2026-10-20T10:00:00+03:00' });
@@ -187,7 +189,7 @@ describe('the two parts of the shutdown: operations end, M & I starts, at the R-
     expect([ops!.state, ops!.finishDelayH]).toEqual(['DONE', 3]);
     expect([mi.actualStart, mi.delayH]).toEqual([Date.parse('2026-10-20T10:00:00+03:00'), 3]);
     expect(mi.banner).not.toBeNull();
-    expect(reportText(shiftReport(d, now, null))).toContain('*R-205* ⭐ ✅ Handed over | HO 10:00');
+    expect(reportText(shiftReport(d, now, null))).toContain('📊 Handover ');
   });
 });
 
@@ -342,5 +344,19 @@ describe('plan vs actual by finished steps', () => {
     const acts = [{ id: 'a', activityId: 'A1', group: 'Mech', key: 'R-12-202', activity: 'Remove top trays', durationH: 8, start: new Date(t0).toISOString(), finish: new Date(t0 + 8 * 36e5).toISOString(), stage: 2, tracked: true }];
     expect(planVsActual(acts, 1, t0 + 4 * 36e5)?.variance).toBe(1);   // still running in the plan: stage 1 is on plan (+1 vs 0)
     expect(planVsActual(acts, 1, t0 + 9 * 36e5)?.variance).toBe(-1);  // planned finished, not done: one stage behind
+  });
+});
+
+describe('WhatsApp report in the plant format', () => {
+  it('same status shares a line, pending blinds named, loops not started on one line', () => {
+    const d = seed(); const now = at('2026-10-21 10:00');
+    for (const t of ['V-12-202', 'V-12-210']) Object.assign(eq(d, t), { stage: 3, remark: null });
+    d.points = [{ id: 'b', kind: 'blind', grp: 'segregation', ref: 'SEG-18', name: 'HP flare', detail: null, fo: 'FO3', stepId: 'S317', items: [], beforeHo: true, sort: 1, status: 'open', inAt: null, outAt: null, fillAt: null, soakAt: null, drainAt: null, doneAt: null, soakH: null, remark: null, updatedBy: null, updatedAt: null },
+      { id: 'n1', kind: 'neut', grp: null, ref: 'S214', name: 'V-206 to V-207', detail: null, fo: 'FO2', stepId: 'S214', items: ['V-12-206'], beforeHo: true, sort: 2, status: 'draining', inAt: null, outAt: null, fillAt: null, soakAt: null, drainAt: null, doneAt: null, soakH: 4, remark: null, updatedBy: null, updatedAt: null },
+      { id: 'n2', kind: 'neut', grp: null, ref: 'S112', name: 'ADD line', detail: null, fo: 'FO1', stepId: 'S112', items: [], beforeHo: true, sort: 3, status: 'open', inAt: null, outAt: null, fillAt: null, soakAt: null, drainAt: null, doneAt: null, soakH: 4, remark: null, updatedBy: null, updatedAt: null }];
+    const text = reportText(shiftReport(d, now, null));
+    expect(text).toContain('- V-202/210: Under inspection');
+    expect(text).toContain('*Segregation blinding*\n- 1 blind pending: SEG-18');
+    expect(text).toContain('*Neutralization*\n- V-206 to V-207: Soda ash draining I/P\n- Not started: S112');
   });
 });

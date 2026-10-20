@@ -375,6 +375,31 @@ export interface ShiftReport {
   results: ReturnType<typeof opsResults>; blinds: ReturnType<typeof miBlinds>;
   /** the shift (date, day / night), the tracker title, the blinds / neutralizations completed in the shift */
   shift: { date: string; shift: 'D' | 'N' }; name: string; pointsDone: { ref: string; kind: 'blind' | 'neut' }[]; blindLinesDone: number;
+  /** when the report was made, and one status line per item (by section) and per open neutralization loop */
+  at: number; items: ReportItem[]; loops: { ref: string; name: string; line: string; running: boolean; started: boolean }[];
+  /** segregation / HP-critical blinds not in yet */
+  blindsOpen: { ref: string; name: string }[];
+}
+export type ReportSection = 'Reactors' | 'Heaters' | 'Exchangers' | 'Vessels' | 'Others';
+export interface ReportItem { tag: string; section: ReportSection; line: string }
+const SECTION: Record<string, ReportSection> = { Reactors: 'Reactors', Heaters: 'Heaters', Exchangers: 'Exchangers', 'Air coolers': 'Exchangers', Vessels: 'Vessels', Filters: 'Others', Compressor: 'Others', 'Pumps / LO': 'Others' };
+const STAGE_WORDS = ['Not handed over', 'Handed over', 'Opened / cleaning', 'Under inspection', 'Under repair', 'Box-up', 'Returned'];
+const NEUT_WORDS: Record<string, string> = { filling: 'Soda ash filling I/P', soaking: 'Under soaking', draining: 'Soda ash draining I/P' };
+/** An item's status in the plant's words: the logbook remark of the last day, else what runs now, else its own
+ *  neutralization, else its isolation state or stage; a pending reason is added when the line does not say it. */
+export function itemStatusLine(e: EquipView, d: TrkData, now: number): string {
+  const key = e.eq.barchartKey ?? e.eq.tag; const pts = d.points ?? [];
+  const recent = !!e.eq.remark?.trim() && !!e.eq.updatedAt && now - ms(e.eq.updatedAt) < DAY;
+  const running = sortActs(d.activities.filter((a) => a.key === key && a.tracked && !a.detail && a.actualStart && !a.actualFinish && !(a.group === 'Operations' && /neutrali|soak/i.test(a.activity)))).map((a) => a.activity);
+  const own = pts.find((p) => p.kind === 'neut' && !p.stepId && p.items.includes(e.eq.tag) && p.status !== 'open' && !pointComplete(p));
+  const iso = e.stage === 0 ? isoState(e.eq.tag, 0, pts) : null;
+  let line = recent ? e.eq.remark!.trim()
+    : running.length ? `${running.slice(0, 2).join(', ')} I/P`
+    : own ? (own.method === 'spray' ? 'Spraying I/P' : NEUT_WORDS[own.status] ?? neutLabel(own))
+    : iso?.state === 'ready' ? 'Ready for handover' : iso?.state === 'blind' ? `Awaiting blinds ${iso.missing.join(', ')}` : iso?.state === 'neut' ? `Under neutralization (${iso.loops.filter((p) => p.status !== 'open' && !pointComplete(p)).map((p) => p.ref).join(', ')})`
+    : STAGE_WORDS[e.stage];
+  if (e.eq.pendingReason && !line.toLowerCase().includes(e.eq.pendingReason.toLowerCase().slice(0, 8))) line += ` (pending: ${e.eq.pendingReason.toLowerCase()})`;
+  return line.replace(/\.$/, '');
 }
 export const REACTORS = ['R205', 'R201', 'R202', 'R203', 'R204'] as const;
 
@@ -408,6 +433,22 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
     pointsDone: lastBy(inShift.filter((l) => l.kind === 'point')).filter((l) => l.newValue === 'in' || l.newValue === 'done')
       .map((l) => ({ ref: l.ref, kind: l.newValue === 'in' ? 'blind' as const : 'neut' as const })),
     blindLinesDone: d.activities.filter((a) => equipBlind(a) && a.actualFinish && ms(a.actualFinish) >= sh.from && ms(a.actualFinish) < sh.to).length,
+    at: now,
+    items: (() => { const tags = eqs.map((e) => e.eq.tag); const part = (t: string) => tags.some((p) => p !== t && (t.startsWith(`${p}-`) || t.startsWith(`${p} `)));
+      return eqs.filter((e) => e.eq.tracked && SECTION[e.eq.group] && e.stage < 6).flatMap((e) => {
+        const recent = !!e.eq.remark?.trim() && !!e.eq.updatedAt && now - ms(e.eq.updatedAt) < DAY;
+        const running = d.activities.some((a) => a.key === (e.eq.barchartKey ?? e.eq.tag) && a.tracked && !a.detail && a.actualStart && !a.actualFinish && !(a.group === 'Operations' && /neutrali|soak/i.test(a.activity)));
+        const iso = e.stage === 0 ? isoState(e.eq.tag, 0, d.points ?? []) : null;
+        const show = e.eq.group === 'Reactors' || recent || ((running || !!e.eq.pendingReason || e.stage >= 2 || (iso && iso.state !== 'idle' && iso.state !== 'ho')) && !part(e.eq.tag));
+        return show ? [{ tag: e.eq.tag, section: SECTION[e.eq.group], line: itemStatusLine(e, d, now) }] : [];
+      }); })(),
+    loops: (d.points ?? []).filter((p) => p.kind === 'neut' && (p.stepId || !p.items.includes(p.ref)) && !pointComplete(p)).sort((a, b) => a.sort - b.sort).map((p) => {
+      const m = p.status === 'open' ? missingBlinds(p, d.points) : []; const left = soakLeft(p, now);
+      const line = m.length ? `Awaiting blinds ${m.join(', ')}` : p.status === 'open' ? 'Not started'
+        : p.method === 'spray' ? 'Spraying I/P' : p.status === 'soaking' ? `Under soaking${left !== null && left > 0 ? ` (${hoursText(left)} left)` : left !== null ? ' (soak time reached)' : ''}` : NEUT_WORDS[p.status] ?? neutLabel(p);
+      return { ref: p.ref, name: p.name.replace(/\s*(loop\s*)?neutrali[sz]ation.*$/i, '').replace(/→/g, ' to ').replace(/\s+/g, ' ').trim() || p.ref, line, running: p.status !== 'open', started: p.status !== 'open' || m.length > 0 };
+    }),
+    blindsOpen: (d.points ?? []).filter((p) => p.kind === 'blind' && !pointComplete(p)).map((p) => ({ ref: p.ref, name: p.name })),
   };
 }
 
@@ -415,49 +456,40 @@ export const bannerText = (b: Banner) => `${b.state === 'ON_PLAN' ? 'ON PLAN' : 
 const FLAG_TEXT: Record<string, string> = { HO_LATE: 'HO LATE', LATE: 'LATE', PENDING: 'Pending', IAT_OPEN: 'IAT open', STEP_LATE: 'LATE', STEP_PENDING: 'Pending' };
 export const flagText = (f: string) => FLAG_TEXT[f] ?? f;
 
-/** The WhatsApp message, the standard template of every shutdown (Train-1 / Train-2): a bold title between dividers,
- *  then short sections (overall progress, reactors, blinds, temperatures, changes this shift, attention) with WhatsApp
- *  formatting (*bold*), one item per line (no space-aligned columns: WhatsApp fonts are proportional). Delays and
- *  pending items are put first and marked red; the Report page and its PDF keep the details. */
-const RULE = '━━━━━━━━━━━━━━━━━━';
+/** The WhatsApp message, in the plant's own format (one short status line per item, by equipment type) and the same
+ *  for every shutdown: the title, then Reactors, Segregation blinding, Neutralization, Heaters, Exchangers, Vessels and
+ *  Others, then one progress line. Items with the same status share a line (V-202/210), the pending blinds are named,
+ *  the loops not started share one line, and empty sections are left out. *bold* titles, "- " lines, no columns. */
+const short = (tag: string) => tag.replace(/^([A-Z]{1,3})-12-/, '$1-');
+function joinTags(tags: string[]): string {
+  const xs = tags.map(short); if (xs.length < 2) return xs.join('');
+  let p = xs[0]; for (const x of xs) while (!x.startsWith(p)) p = p.slice(0, -1);
+  // E-216A + E-216B → E-216A/B · V-202 + V-210 → V-202/210 · otherwise a plain list
+  if (xs.every((x) => /^[A-Z]$/.test(x.slice(p.length)))) return p + xs.map((x) => x.slice(p.length)).join('/');
+  const m = xs.map((t) => t.match(/^([A-Z]{1,3}-)(\d[^-]*)$/));
+  return m.every((x) => x && x[1] === m[0]![1]) ? m[0]![1] + m.map((x) => x![2]).join('/') : xs.join(', ');
+}
 export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string } = {}): string {
-  const mi = r.mi, res = r.results, b = r.blinds;
-  const pct = (x: [number, number]) => `*${x[0]}/${x[1]}${x[1] ? ` (${Math.round((x[0] / x[1]) * 100)}%)` : ''}*`;
   const unit = r.name.match(/U-?\s?(\d+)/i)?.[1], train = r.name.match(/TR(?:AIN)?-?\s?(\d+)/i)?.[1];
-  const title = unit || train ? `${unit ? `U-${unit}` : ''}${unit && train ? ' | ' : ''}${train ? `TRAIN-${train}` : ''} SHUTDOWN` : r.name.toUpperCase();
+  const title = unit || train ? `${unit ? `Unit-${unit}` : ''}${unit && train ? ' ' : ''}${train ? `Train-${train}` : ''} shutdown report` : `${r.name} report`;
   const date = new Date(`${r.shift.date}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
-  const NEUT_ICON: Record<string, string> = { filling: '💧 Filling', soaking: '🔄 Soaking', draining: '🚿 Draining', neutralized: '🧪 Neutralized' };
-  const reactor = (x: ShiftReport['reactors'][number]) => {
-    const tag = `*${x.tag.replace('R-12-', 'R-')}*${x.critical ? ' ⭐' : ''}`;
-    const ho = x.stage >= 1 ? `HO${x.critical && x.hoAt ? ` ${kwTime(x.hoAt)}` : ''}` : '';
-    if (x.stage === 0) return `${tag} ⏳ *Not handed over*${x.neut ? ` | ${NEUT_ICON[x.neut] ?? x.neut}` : ''}`;
-    if (x.neut && x.neut !== 'neutralized') return `${tag} ${NEUT_ICON[x.neut] ?? x.neut} | ${ho}`;
-    return `${tag} ${x.stage === 1 ? '✅ Handed over' : `🔧 ${STAGES[x.stage]}`}${x.critical && x.hoAt ? ` | HO ${kwTime(x.hoAt)}` : ''}`;
-  };
-  const out: string[] = [RULE, `*${opts.test ? '[TEST] ' : ''}${title}*`, `📅 ${date} | ${r.shift.shift === 'D' ? '☀️ Day Shift' : '🌙 Night Shift'}`, RULE];
-  const section = (head: string, lines: string[]) => { if (lines.length) out.push('', `*${head}*`, ...lines, '', RULE); };
-  const misLine = mi.actualStart === null ? [`🔧 M&I starts at *${mi.critical.map((c) => c.tag.replace('R-12-', 'R-')).join(', ') || 'critical'}* handover`]
-    : mi.banner && mi.banner.items ? [`🔧 M&I Actual *${mi.banner.actualPct}%* | Planned *${mi.banner.planPct}%*`,
-      mi.banner.state === 'BEHIND' ? `🔴 *BEHIND${mi.banner.days ? ` ${mi.banner.days} d` : ''}*` : mi.banner.state === 'AHEAD' ? `🟢 *AHEAD${mi.banner.days ? ` ${mi.banner.days} d` : ''}*` : '🟢 *ON SCHEDULE*']
-    : ['🔧 M&I started'];
-  section('📊 OVERALL PROGRESS', [res ? `✅ Handover ${pct(res.ho)}` : `✅ Handover *${r.totals.hoDone}/${r.totals.ho}*`, ...(res ? [`🧪 Neutralized ${pct(res.neut)}`] : []), ...misLine]);
-  // delays and pending items come right after the overall progress, before the routine sections
-  const top = r.attention.slice(0, 3).map((x) => `${x.flag === 'PENDING' || x.flag === 'STEP_PENDING' ? '🟠' : x.flag === 'IAT_OPEN' ? '🟡' : '🔴'} *${x.label}* ${flagText(x.flag)}${x.detail ? ` – ${x.detail}` : ''}`);
-  section('⚠️ ATTENTION REQUIRED', r.attention.length ? [...top, ...(r.attention.length > 3 ? [`+${r.attention.length - 3} more in the app`] : [])] : []);
-  section('⚗️ REACTOR STATUS', [...r.reactors].sort((x, y) => Number(x.critical) - Number(y.critical) || x.tag.localeCompare(y.tag)).map(reactor));
-  section('🔒 BLIND INSTALLATION', b.segregation[1] + b.hp[1] + b.equipment[1] ? [`Segregation ${pct(b.segregation)}`, `HP Critical ${pct(b.hp)}`, `Equipment ${pct(b.equipment)}`] : []);
-  section('🌡 MAX BED TEMPERATURE', REACTORS.filter((k) => r.temps[k]).map((k) => `R-${k.slice(1)} *${r.temps[k]}°F*`));
-  const ho = r.stageChanges.filter((c) => c.from === 0 && c.to >= 1).map((c) => c.tag), moved = r.stageChanges.filter((c) => c.from >= 1 && c.to > c.from);
-  const neutDone = r.pointsDone.filter((p) => p.kind === 'neut').map((p) => p.ref), blindsIn = r.pointsDone.filter((p) => p.kind === 'blind').length + r.blindLinesDone;
-  section('🔄 CHANGES THIS SHIFT', [
-    ...(ho.length ? [`✅ Handed over: *${ho.join(', ')}*`] : []),
-    ...(neutDone.length ? [`🧪 Neutralized: *${neutDone.join(', ')}*`] : []),
-    ...(blindsIn ? [`🔒 Blinds installed: *${blindsIn}*`] : []),
-    ...(moved.length ? [`🔧 Moved on: *${moved.map((c) => `${c.tag} → ${STAGE_SHORT[c.to]}`).join(', ')}*`] : []),
-    ...(r.stepsDone.length ? [`✔️ Guideline steps done: *${r.stepsDone.length}*`] : []),
-  ]);
-  section('📝 NOTES', r.notes.trim() ? [r.notes.trim()] : []);
-  out.push(`*END OF SHIFT REPORT*${opts.by ? `\n— ${opts.by}` : ''}`, RULE);
+  const out: string[] = [`*${opts.test ? '[TEST] ' : ''}${title}*`, `_${date} · ${r.shift.shift === 'D' ? 'Day' : 'Night'} shift · ${kwTime(new Date(r.at).toISOString())}_`];
+  const section = (head: string, lines: string[]) => { if (lines.length) out.push('', `*${head}*`, ...lines.map((l) => `- ${l}`)); };
+  const merged = (sec: ReportSection) => { const by = new Map<string, string[]>(); for (const x of r.items.filter((i) => i.section === sec)) by.set(x.line, [...(by.get(x.line) ?? []), x.tag]);
+    return [...by.entries()].map(([line, tags]) => `${joinTags(tags)}: ${line}`); };
+  const rx = r.items.filter((i) => i.section === 'Reactors').sort((a, b) => Number(b.tag === 'R-12-205') - Number(a.tag === 'R-12-205') || a.tag.localeCompare(b.tag));
+  section('Reactors', rx.map((x) => `${short(x.tag)}: ${x.line}`));
+  const bo = r.blindsOpen;
+  section('Segregation blinding', [bo.length ? `${bo.length} blind${bo.length > 1 ? 's' : ''} pending${bo.length <= 6 ? `: ${bo.map((b) => b.ref).join(', ')}` : ''}` : 'All segregation blinds in ✓']);
+  const run = r.loops.filter((l) => l.started).sort((a, b) => Number(b.running) - Number(a.running)), idle = r.loops.filter((l) => !l.started);
+  section('Neutralization', [...run.map((l) => `${l.name}: ${l.line}`), ...(idle.length ? [`Not started: ${idle.map((l) => l.ref).join(', ')}`] : [])]);
+  section('Heaters', merged('Heaters')); section('Exchangers', merged('Exchangers')); section('Vessels', merged('Vessels')); section('Others', merged('Others'));
+  section('Max bed temperature', REACTORS.filter((k) => r.temps[k]).map((k) => `R-${k.slice(1)}: ${r.temps[k]}°F`));
+  if (r.notes.trim()) out.push('', '*Notes*', r.notes.trim());
+  const res = r.results, b = r.blinds, mi = r.mi.banner;
+  const blindsIn = b.segregation[0] + b.hp[0], blindsAll = b.segregation[1] + b.hp[1];
+  out.push('', `📊 Handover ${res ? `${res.ho[0]}/${res.ho[1]}` : `${r.totals.hoDone}/${r.totals.ho}`}${res ? ` · Neutralized ${res.neut[0]}/${res.neut[1]}` : ''}${blindsAll ? ` · Blinds ${blindsIn}/${blindsAll}` : ''}${mi && mi.items ? ` · M&I ${mi.state === 'BEHIND' ? `behind${mi.days ? ` ${mi.days} d` : ''}` : mi.state === 'AHEAD' ? `ahead${mi.days ? ` ${mi.days} d` : ''}` : 'on plan'}` : ''}`);
+  if (opts.by) out.push(`— ${opts.by}`);
   return out.join('\n');
 }
 
