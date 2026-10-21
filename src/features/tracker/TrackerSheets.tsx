@@ -86,7 +86,7 @@ export function StepSheet({ v, isHead, canEdit, points = [], items = [], onIsola
 // a spray that waits for work steps, in a few words (the reactor body spray waits for the catalyst dumping)
 const waitAfter = (steps: string[]) => (!steps.length ? [] : [steps.every((x) => /dump/i.test(x)) ? 'after dumping' : steps.length === 1 ? `after ${steps[0]}` : `after ${steps.length} steps`]);
 
-export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso = null, points = [], engine, settings = {}, me = null, onIsolation, onNeut, onClose, onDone }: { v: EquipView; trackerId: string; canEdit: boolean; isHead: boolean; activities: TrkActivity[]; now: number; iso?: Isolation | null; points?: TrkPoint[]; engine?: TrkEngine; settings?: TrkSettings; me?: string | null; onIsolation?: () => void; onNeut?: () => void; onClose: () => void; onDone: (msg: string) => void }) {
+export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso = null, points = [], engine, settings = {}, me = null, twins = [], onTwin, onIsolation, onNeut, onClose, onDone }: { twins?: string[]; onTwin?: (tag: string) => void; v: EquipView; trackerId: string; canEdit: boolean; isHead: boolean; activities: TrkActivity[]; now: number; iso?: Isolation | null; points?: TrkPoint[]; engine?: TrkEngine; settings?: TrkSettings; me?: string | null; onIsolation?: () => void; onNeut?: () => void; onClose: () => void; onDone: (msg: string) => void }) {
   // the neutralization the soda-ash lines stand for: the item's own soda ash first, else its loop
   // the item's bar-chart steps by stage (what moves the stage), the field-detail steps left out
   const stageLines = activities.filter((a) => a.tracked && !a.detail && a.group !== 'Operations' && a.stage !== null);
@@ -102,6 +102,7 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso
   return (
     <BottomSheet open onClose={onClose} title={e.tag}>
       <div className="space-y-3">
+        {twins.length > 1 && <div className="flex gap-1">{twins.map((t) => <button key={t} type="button" onClick={() => t !== e.tag && onTwin?.(t)} className={cx('min-h-9 rounded-full px-3 text-xs font-semibold', t === e.tag ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{t}</button>)}<span className="self-center text-[11px] text-slate-500">worked as one</span></div>}
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600"><FlagChip flag={v.flag} />{v.plan && <PlanChip variance={v.plan.variance} days={v.plan.days} />}{e.critical && <span className="font-bold text-[#E02028]">★ Critical</span>}<span>{e.description}</span></div>
         {v.reason && <p className="rounded-lg bg-[#FFC7CE] px-2.5 py-1.5 text-sm text-red-900">⏸ {v.reason}</p>}
         <Field label={`Stage · ${STAGES[v.stage]}`}>

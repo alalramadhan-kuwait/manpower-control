@@ -18,6 +18,8 @@ export interface TrkEquipment {
   barchartKey: string | null; opsItem: boolean; critical: boolean; tracked: boolean; disabledReason: string | null;
   plannedHo: string | null; plannedFinish: string | null; sort: number; stage: number; pendingReason: string | null; remark: string | null;
   blindsIn: string | null; blindsOut: string | null; updatedBy: string | null; updatedAt: string | null;
+  /** items worked as one (E-12-216A/B): one row in the list, a step started / finished on all of them */
+  combine?: string | null;
 }
 export interface TrkIat { id: string; tag: string; iatNo: string; jobText: string | null; discipline: string | null; issuedAt: string; status: 'open' | 'closed'; closedAt: string | null;
   /** from the daily IAT tracking sheet: work order, the line it is on, the status as written in the sheet, a remark */

@@ -138,7 +138,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
         <TrackerAdmin data={data} eqs={eqs} onDone={done} /></BottomSheet>}
       {openStep && <StepSheet v={openStep} isHead={isHead} canEdit={canEdit} points={points.filter((p) => p.stepId === openStep.step.stepId)} items={eqs.filter((e) => e.eq.hoStep === openStep.step.stepId && e.eq.tracked)}
         onIsolation={() => toIsolation(null)} onClose={() => setSheet(null)} onDone={done} />}
-      {openEq && <EquipSheet v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={data.activities.filter((a) => a.key === (openEq.eq.barchartKey ?? openEq.eq.tag))} now={now}
+      {openEq && <EquipSheet twins={openEq.eq.combine ? eqs.filter((x) => x.eq.combine === openEq.eq.combine).map((x) => x.eq.tag) : []} onTwin={(tag) => setSheet({ kind: 'eq', tag })} v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={data.activities.filter((a) => a.key === (openEq.eq.barchartKey ?? openEq.eq.tag))} now={now}
         iso={isolationOf(openEq.eq.tag, points)} points={points} engine={data.engine} settings={data.settings} me={profile.auth_user_id} onIsolation={() => toIsolation(openEq.eq.tag)} onNeut={() => toIsolation(openEq.eq.tag, 'neut')} onClose={() => setSheet(null)} onDone={(m) => done(m, true)} />}
     </div>
   );
@@ -233,7 +233,10 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
   const off = eqs.filter((e) => !e.eq.tracked);
   const shown = eqs.filter((e) => (showOff || e.eq.tracked) && (!onlyOps || e.eq.opsItem || e.stage > 0 || e.eq.group === 'PSVs'));
   const inChip = (e: EquipView) => (g === 'All' ? true : g === 'Misc' ? misc_(e.eq.group) : e.eq.group === g);
-  const list = shown.filter(inChip);
+  // items worked as one (E-12-216A/B) show as one row: the first of them stands for the set
+  const twins = new Map<string, EquipView[]>(); for (const e of eqs) if (e.eq.combine) twins.set(e.eq.combine, [...(twins.get(e.eq.combine) ?? []), e]);
+  const firstOf = new Set<string>(); const lead = (e: EquipView) => { if (!e.eq.combine) return true; if (firstOf.has(e.eq.combine)) return false; firstOf.add(e.eq.combine); return true; };
+  const list = shown.filter(inChip).filter(lead);
   const RANK: Record<string, number> = { HO_LATE: 0, LATE: 1, PENDING: 2, IAT_OPEN: 3 };
   const sorted = lateFirst ? [...list].sort((a, b) => (RANK[a.flag] ?? 9) - (RANK[b.flag] ?? 9) || b.lateBy - a.lateBy) : list;
   const by = (xs: string[]) => xs.map((x) => [x, sorted.filter((e) => e.eq.group === x)] as [string, EquipView[]]).filter(([, ys]) => ys.length);
@@ -262,27 +265,41 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
   const drumText = (key: string) => { const sc = scopeOf(key); if (!sc || !engine) return '';
     const v = engine.entries.filter((x) => x.scopeId === sc.id && x.verify === 'verified' && x.kind !== 'transfer').reduce((t, x) => t + x.qty, 0);
     return ` · ${v.toLocaleString('en-US')}/${sc.working ? sc.working.toLocaleString('en-US') : '—'} drums`; };
-  const row = (e: EquipView) => { const l = lineOf(e); const st = canEdit ? stepOf(e) : null; const sp = spare.get(e.eq.tag); const dm = dumping(e);
+  // a combined set: its stage is the lowest, the step is the same-named one of each member (started / finished together)
+  const setOf = (e: EquipView) => (e.eq.combine ? twins.get(e.eq.combine) ?? [e] : [e]);
+  const lineOfSet = (e: EquipView) => { const ms = setOf(e); if (ms.length < 2) return lineOf(e);
+    const ls = ms.map((m) => ({ m, l: lineOf(m) })); const texts = [...new Set(ls.map((x) => x.l?.text ?? ''))];
+    if (texts.length === 1) return ls[0].l;
+    const run = ls.find((x) => x.l?.tone === 'run') ?? ls[0];
+    return { text: ls.map((x) => `${x.m.eq.tag.slice(-1)}: ${x.l?.text ?? '—'}`).join(' · '), tone: run.l?.tone ?? 'muted' } as ReturnType<typeof lineOf>; };
+  const stepOfSet = (e: EquipView) => { const ms = setOf(e); const first = stepOf(e); if (ms.length < 2 || !canEdit) return first ? { ...first, also: [] as TrackerData['activities'] } : null;
+    const each = ms.map(stepOf);
+    const lead = each.find((x) => x?.finish) ?? each.find((x) => x) ?? null; if (!lead) return null;
+    // the same step on the others: running or next (a finish brings a member not started yet along, from the same start)
+    const also = each.filter((x) => x && x !== lead && x.a.activity === lead.a.activity && (x.finish === lead.finish || lead.finish)).map((x) => x!.a);
+    return { ...lead, also }; };
+  const row = (e: EquipView) => { const l = lineOfSet(e); const st = canEdit ? stepOfSet(e) : null; const sp = spare.get(e.eq.tag); const dm = dumping(e);
+    const set = setOf(e); const name = set.length > 1 ? e.eq.combine! : e.eq.tag; const stage = Math.min(...set.map((m) => m.stage));
     return (
     <div key={e.eq.tag} role="button" tabIndex={0} onClick={() => onOpen(e.eq.tag)} onKeyDown={(x) => x.key === 'Enter' && onOpen(e.eq.tag)}
       className={cx('grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-slate-100 px-2.5 py-1.5 text-left first:border-t-0 active:bg-slate-50', !e.eq.tracked && 'opacity-50')}>
       <span className="min-w-0">
         <span className="flex flex-wrap items-center gap-1">
           {iso(e) && <span className={cx('h-2 w-2 shrink-0 rounded-full', ISO_BG[ISO_DOT[iso(e)!.state]])} />}
-          <b className="mr-1 text-[13px] text-slate-900">{e.eq.critical && <span className="text-[#E02028]">★ </span>}{e.eq.tag}</b>
+          <b className="mr-1 text-[13px] text-slate-900">{e.eq.critical && <span className="text-[#E02028]">★ </span>}{name}</b>
           {iso(e) && iso(e)!.state !== 'ho' && <IsoChip state={iso(e)!.state}>{ISO_LABEL[iso(e)!.state]}</IsoChip>}
           <span className={cx('whitespace-nowrap rounded px-1 py-px text-[9.5px] font-bold', FLAG_STYLE[e.flag].cls)}>{FLAG_STYLE[e.flag].label}{e.late ? ` ${hoursText(e.lateBy)}` : ''}{e.iatsOpen.length && e.flag !== 'IAT_OPEN' ? ` · IAT ${e.iatsOpen.length}` : ''}</span>
           {e.plan && e.stage < 6 && e.plan.variance !== 0 && <PlanChip variance={e.plan.variance} days={e.plan.days} short />}
           {sp !== undefined && sp <= 7 && <span className={cx('rounded px-1 text-[9.5px] font-bold', sp < 0 ? 'bg-red-600 text-white' : sp <= 3 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{sp < 0 ? `delays ${-sp} d` : `${sp} d spare`}</span>}
         </span>
         <span className="mt-0.5 flex items-center gap-2">
-          <StageBar stage={e.stage} className="w-14 shrink-0" />
+          <StageBar stage={stage} className="w-14 shrink-0" />
           {l && <span className={cx('min-w-0 truncate text-[11.5px]', l.tone === 'run' ? 'text-[#004080]' : l.tone === 'red' ? 'text-red-800' : 'text-slate-600')}>{st && !st.finish && l.text.startsWith('Next:') ? `Next: ${st.a.activity}` : st && !st.finish && l.tone === 'red' ? `${l.text} · next ${st.a.activity}` : l.text}{dm ? drumText(dm.key) : ''}</span>}
         </span>
       </span>
       {dm && (!st || (st.finish && dm.activityIds.includes(st.a.activityId)))
         ? <button type="button" aria-label={`Drums ${e.eq.tag}`} onClick={(x) => { x.stopPropagation(); setDrumKey(dm.key); }} className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-400 text-base shadow-sm active:bg-amber-500">🛢</button>
-        : st ? <StepButton key={st.a.id} a={st.a} finish={st.finish} more={st.more} eq={e.eq} onDone={(m) => onDone?.(m)} /> : <span className="w-8" />}
+        : st ? <StepButton key={st.a.id} a={st.a} also={st.also} finish={st.finish} more={st.more} eq={e.eq} onDone={(m) => onDone?.(m)} /> : <span className="w-8" />}
     </div>); };
   return (
     <div className="space-y-2">
@@ -404,7 +421,7 @@ function ReportTab({ data, now, canEdit, by, onSaved }: { data: TrackerData; now
 /** The one-tap step button of an equipment row: ▶ starts the next step, ✓ finishes the running one. A first tap
  *  arms it (shows "Start?" / "Finish?" for 4 s), the second tap saves, so a stray touch changes nothing. The time is
  *  now; a different time or an undo is done in the item. */
-function StepButton({ a, finish, more, eq, onDone }: { a: TrackerData['activities'][number]; finish: boolean; more: number; eq: EquipView['eq']; onDone: (msg: string) => void }) {
+function StepButton({ a, also = [], finish, more, eq, onDone }: { a: TrackerData['activities'][number]; also?: TrackerData['activities']; finish: boolean; more: number; eq: EquipView['eq']; onDone: (msg: string) => void }) {
   const [armed, setArmed] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null);
   useEffect(() => { if (!armed) return; const t = window.setTimeout(() => setArmed(false), 4000); return () => window.clearTimeout(t); }, [armed]);
   const go = async (x: React.MouseEvent) => {
@@ -412,11 +429,13 @@ function StepButton({ a, finish, more, eq, onDone }: { a: TrackerData['activitie
     if (!armed) { setArmed(true); setErr(null); return; }
     setBusy(true);
     try {
-      await setActivity(a.id, finish ? { actual_finish: new Date().toISOString() } : { actual_start: new Date().toISOString() });
+      const at = new Date().toISOString();
+      // the same step of the items worked with it (E-12-216A/B) moves with it, each keeps its own line
+      for (const x of [a, ...also]) await setActivity(x.id, finish ? { actual_finish: at, ...(x.actualStart ? {} : { actual_start: a.actualStart ?? at }) } : { actual_start: at });
       // starting a step ends the item's waiting note (it was waiting for this work to begin)
       const cleared = !finish && !!eq.pendingReason;
       if (cleared) await setEquipment(eq.id, { pending_reason: null });
-      onDone(`${a.key}: ${a.activity} ${finish ? 'finished' : 'started'}.${cleared ? ` Waiting note "${eq.pendingReason}" cleared.` : ''}`);
+      onDone(`${[a.key, ...also.map((x) => x.key)].join(' + ')}: ${a.activity} ${finish ? 'finished' : 'started'}.${cleared ? ` Waiting note "${eq.pendingReason}" cleared.` : ''}`);
     }
     catch (e) { setErr(e instanceof Error ? e.message : 'Not saved'); } finally { setBusy(false); setArmed(false); }
   };
