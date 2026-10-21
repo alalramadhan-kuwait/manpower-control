@@ -55,7 +55,9 @@ export interface TrkPoint {
   inAt: string | null; outAt: string | null; fillAt: string | null; soakAt: string | null; drainAt: string | null; doneAt: string | null;
   soakH: number | null; remark: string | null; updatedBy: string | null; updatedAt: string | null;
 }
-export interface TrkData { engine?: TrkEngine; lineup?: LuStream[]; lineupEq?: LuEquip[]; steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
+/** A main field step of a neutralization (from its SOP): before filling, while filling, or after. */
+export interface TrkPointStep { id: string; pointId: string; seq: number; phase: 'before' | 'fill' | 'after'; text: string; source: string | null; doneAt: string | null; doneBy: string | null }
+export interface TrkData { engine?: TrkEngine; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
 
 /** The main equipment groups; the rest (control valve shells, PSVs, check valves, RTJ & injection points, piping, OPR
  *  list, PMRs …) is miscellaneous, shown after them. */
