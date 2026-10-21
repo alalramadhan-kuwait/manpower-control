@@ -4,7 +4,7 @@
 // provisional and say so.
 import { useState } from 'react';
 import { METHOD_LABEL, kwDay, kwTime, plannedPct, qtyForecast, qtyProgress, recentShifts, variancePts, type QtyMethod, type TrkActivity, type TrkQtyEntry, type TrkQtyEstimate, type TrkQtyScope, type TrkSettings, type TrkUpdate } from '@/core/tracker';
-import { addQtyEntry, addUpdate, confirmEmpty, reviseEstimate, verifyQtyEntry } from '@/data/tracker';
+import { addQtyEntry, addUpdate, confirmEmpty, reviseEstimate, setActivity, verifyQtyEntry } from '@/data/tracker';
 import { ErrorBox, cx } from '@/ui/components';
 import { RowBtn } from './ui';
 
@@ -43,6 +43,12 @@ export function DrumPanel({ scope, entries, estimates, activities, settings, now
     run(() => addQtyEntry(scope.id, { shiftDate: s.date, shift: s.shift, kind: transfer ? 'transfer' : 'removal', method, qty: n, stoppage: n === 0 ? stop : null, remark: remark || (transfer ? 'transfer of drums already counted' : null) }),
       `${scope.key}: ${fmt(n)} drums ${transfer ? 'transfer' : ''} entered for ${dayLabel(s.date, s.shift)} (awaiting verification).`, () => { setQty(''); setStop(''); setRemark(''); setTransfer(false); }); };
   const shown = [...entries].reverse();
+  // the dumping lines of this account: drums are entered once dumping has started; "vessel empty" finishes the running ones
+  const acts = activities.filter((a) => a.key === scope.key && scope.activityIds.includes(a.activityId));
+  const started = acts.some((a) => a.actualStart) || entries.length > 0;
+  const toStart = acts.find((a) => !a.actualStart);
+  const running = acts.filter((a) => a.actualStart && !a.actualFinish);
+  const closeOut = async () => { await confirmEmpty(scope.id); const at = new Date().toISOString(); for (const a of running) await setActivity(a.id, { actual_finish: at }); };
 
   return (
     <section className="space-y-2 rounded-xl bg-white p-2.5 ring-1 ring-amber-300" aria-label="Catalyst removal">
@@ -66,7 +72,13 @@ export function DrumPanel({ scope, entries, estimates, activities, settings, now
         <p className="text-[10.5px] text-slate-400">* Provisional: planned % is a straight line over the baseline dumping dates (no production targets yet); the forecast uses verified shifts only.</p>
       </div>
 
-      {canEdit && !scope.completeAt && (
+      {canEdit && !scope.completeAt && !started && toStart && (
+        <div className="flex items-center gap-2 rounded-lg bg-amber-50 p-2 text-[12px] text-amber-900">
+          <span className="min-w-0 flex-1">Dumping not started. Start it to enter the drums.</span>
+          <RowBtn tone="navy" disabled={busy} onClick={() => run(() => setActivity(toStart.id, { actual_start: new Date().toISOString() }), `${scope.key}: ${toStart.activity} started.`)}>▶ Start dumping</RowBtn>
+        </div>
+      )}
+      {canEdit && !scope.completeAt && started && (
         <div className="space-y-1.5 rounded-lg bg-amber-50 p-2">
           <div className="flex flex-wrap gap-1">{shifts.map((s, i) => <button key={i} type="button" onClick={() => setSh(i)} className={cx('min-h-9 rounded-full px-2.5 text-xs font-semibold', sh === i ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{dayLabel(s.date, s.shift)}</button>)}</div>
           <div className="flex flex-wrap gap-1">{METHODS.map((m) => <button key={m} type="button" onClick={() => setMethod(m)} className={cx('min-h-9 rounded-full px-2.5 text-xs font-semibold', method === m ? 'bg-[#0850A0] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{METHOD_LABEL[m]}</button>)}</div>
@@ -110,8 +122,8 @@ export function DrumPanel({ scope, entries, estimates, activities, settings, now
         <input className="input" aria-label="Reason" placeholder="Reason (plant information)" value={estWhy} onChange={(x) => setEstWhy(x.target.value)} />
         <RowBtn tone="navy" disabled={busy || !Number(estV) || !estWhy.trim()} onClick={() => run(() => reviseEstimate(scope.id, Number(estV), estWhy), `Estimate revised to ${fmt(Number(estV))} drums.`, () => setEst(false))}>Save</RowBtn>
       </div>}
-      {empty && <div className="rounded-lg bg-green-50 p-2 text-xs text-green-900">Confirm that {scope.key} is physically empty? The recorded drums stay as they are; this closes the removal at 100% and cannot be undone.
-        <div className="mt-1.5 flex gap-1.5"><RowBtn tone="green" disabled={busy} onClick={() => run(() => confirmEmpty(scope.id), `${scope.key} confirmed empty.`, () => setEmpty(false))}>Confirm empty</RowBtn><RowBtn tone="ghost" onClick={() => setEmpty(false)}>Cancel</RowBtn></div></div>}
+      {empty && <div className="rounded-lg bg-green-50 p-2 text-xs text-green-900">Confirm that {scope.key} is physically empty? The recorded drums stay as they are; this closes the removal at 100%{running.length ? `, finishes ${running.map((a) => a.activity).join(' and ')} now` : ''} and cannot be undone.
+        <div className="mt-1.5 flex gap-1.5"><RowBtn tone="green" disabled={busy} onClick={() => run(closeOut, `${scope.key} confirmed empty${running.length ? ', dumping finished' : ''}.`, () => setEmpty(false))}>Confirm empty</RowBtn><RowBtn tone="ghost" onClick={() => setEmpty(false)}>Cancel</RowBtn></div></div>}
       {err != null && <ErrorBox error={err} />}
     </section>
   );

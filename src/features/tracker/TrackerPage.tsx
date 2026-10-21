@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
 import { blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
-import { setActivity, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
+import { setActivity, setEquipment, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Spinner, cx } from '@/ui/components';
 import { EquipSheet, StepSheet } from './TrackerSheets';
@@ -202,12 +202,12 @@ function SequenceTab({ steps, auto, onOpen }: { steps: Map<string, StepView>; au
 const ISO_BG = { red: 'bg-[#E02028]', grey: 'bg-slate-300', amber: 'bg-amber-500', teal: 'bg-teal-500', blue: 'bg-[#0850A0]' } as const;
 function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, spare = new Map(), canEdit = false, onDone, onOpen }: { initialLateFirst?: boolean; eqs: EquipView[]; activities: TrackerData['activities']; points: TrkPoint[]; now: number; spare?: Map<string, number>; canEdit?: boolean; onDone?: (msg: string) => void; onOpen: (tag: string) => void }) {
   const lineOf = (e: EquipView): { text: string; tone: 'run' | 'muted' | 'red' } | null => {
-    if (e.eq.pendingReason) return { text: `⏸ ${e.eq.pendingReason}`, tone: 'red' };
     const key = e.eq.barchartKey ?? e.eq.tag;
     const xs = sortActs(activities.filter((a) => a.tracked && !a.detail && a.key === key));
     const run = xs.filter((a) => a.actualStart && !a.actualFinish);
     const hrs = (a: TrackerData['activities'][number]) => { const el = Math.max(0, (now - Date.parse(a.actualStart!)) / 36e5); return ` · ${el.toFixed(1)}${a.durationH ? ` of ${a.durationH}` : ''} h`; };
     if (run.length) return { text: run.length === 1 ? `▶ ${run[0].activity}${hrs(run[0])}` : `▶ ${run.map((a) => a.activity).join(' · ')}`, tone: 'run' };
+    if (e.eq.pendingReason) return { text: `⏸ ${e.eq.pendingReason}`, tone: 'red' };
     const iso = e.stage === 0 ? isoState(e.eq.tag, e.stage, points) : null;
     if (iso) {
       const n = iso.loops.find((p) => p.status !== 'open' && !pointComplete(p)); const left = n ? soakLeft(n, now) : null;
@@ -264,10 +264,10 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
         </span>
         <span className="mt-0.5 flex items-center gap-2">
           <StageBar stage={e.stage} className="w-14 shrink-0" />
-          {l && <span className={cx('min-w-0 truncate text-[11.5px]', l.tone === 'run' ? 'text-[#004080]' : l.tone === 'red' ? 'text-red-800' : 'text-slate-600')}>{st && !st.finish && l.text.startsWith('Next:') ? `Next: ${st.a.activity}` : l.text}</span>}
+          {l && <span className={cx('min-w-0 truncate text-[11.5px]', l.tone === 'run' ? 'text-[#004080]' : l.tone === 'red' ? 'text-red-800' : 'text-slate-600')}>{st && !st.finish && l.text.startsWith('Next:') ? `Next: ${st.a.activity}` : st && !st.finish && l.tone === 'red' ? `${l.text} · next ${st.a.activity}` : l.text}</span>}
         </span>
       </span>
-      {st ? <StepButton key={st.a.id} a={st.a} finish={st.finish} more={st.more} onDone={(m) => onDone?.(m)} /> : <span className="w-8" />}
+      {st ? <StepButton key={st.a.id} a={st.a} finish={st.finish} more={st.more} eq={e.eq} onDone={(m) => onDone?.(m)} /> : <span className="w-8" />}
     </div>); };
   return (
     <div className="space-y-2">
@@ -385,14 +385,20 @@ function ReportTab({ data, now, canEdit, by, onSaved }: { data: TrackerData; now
 /** The one-tap step button of an equipment row: ▶ starts the next step, ✓ finishes the running one. A first tap
  *  arms it (shows "Start?" / "Finish?" for 4 s), the second tap saves, so a stray touch changes nothing. The time is
  *  now; a different time or an undo is done in the item. */
-function StepButton({ a, finish, more, onDone }: { a: TrackerData['activities'][number]; finish: boolean; more: number; onDone: (msg: string) => void }) {
+function StepButton({ a, finish, more, eq, onDone }: { a: TrackerData['activities'][number]; finish: boolean; more: number; eq: EquipView['eq']; onDone: (msg: string) => void }) {
   const [armed, setArmed] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null);
   useEffect(() => { if (!armed) return; const t = window.setTimeout(() => setArmed(false), 4000); return () => window.clearTimeout(t); }, [armed]);
   const go = async (x: React.MouseEvent) => {
     x.stopPropagation();
     if (!armed) { setArmed(true); setErr(null); return; }
     setBusy(true);
-    try { await setActivity(a.id, finish ? { actual_finish: new Date().toISOString() } : { actual_start: new Date().toISOString() }); onDone(`${a.key}: ${a.activity} ${finish ? 'finished' : 'started'}.`); }
+    try {
+      await setActivity(a.id, finish ? { actual_finish: new Date().toISOString() } : { actual_start: new Date().toISOString() });
+      // starting a step ends the item's waiting note (it was waiting for this work to begin)
+      const cleared = !finish && !!eq.pendingReason;
+      if (cleared) await setEquipment(eq.id, { pending_reason: null });
+      onDone(`${a.key}: ${a.activity} ${finish ? 'finished' : 'started'}.${cleared ? ` Waiting note "${eq.pendingReason}" cleared.` : ''}`);
+    }
     catch (e) { setErr(e instanceof Error ? e.message : 'Not saved'); } finally { setBusy(false); setArmed(false); }
   };
   return (
