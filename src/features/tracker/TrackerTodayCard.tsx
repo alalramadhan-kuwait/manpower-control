@@ -18,8 +18,8 @@ export function TrackerTodayCard({ date }: { date: string }) {
       const d = await fetchTrackerData(t.id); const now = Date.now();
       const steps = stepViews(d, now); const eqs = equipViews(d, now, steps); const { ops, mi } = phases(d, now, steps);
       // operations until R-12-205 is handed over, then M & I
-      const state = mi.banner ? mi.banner.state : ops && (ops.state === 'AHEAD' || ops.state === 'BEHIND') ? ops.state : 'ON_PLAN';
-      const text = mi.banner ? `M & I ${bannerText(mi.banner)}` : ops ? `Operations day ${ops.day}/${ops.days} · ${ops.actualPct}% of ${ops.planPct}%` : 'Operations';
+      const state = mi.weighted ? mi.weighted.state : mi.banner ? mi.banner.state : ops && (ops.state === 'AHEAD' || ops.state === 'BEHIND') ? ops.state : 'ON_PLAN';
+      const text = mi.weighted ? `M & I ${mi.weighted.actualPct}% of ${mi.weighted.planPct}%` : mi.banner ? `M & I ${bannerText(mi.banner)}` : ops ? `Operations day ${ops.day}/${ops.days} · ${ops.actualPct}% of ${ops.planPct}%` : 'Operations';
       if (live) setV({ id: t.id, title: t.title, test: t.mode === 'test', state, text, att: attention(steps, eqs).length });
     })().catch(() => { if (live) setV(null); });
     return () => { live = false; };

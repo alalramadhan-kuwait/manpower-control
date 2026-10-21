@@ -94,7 +94,7 @@ export function TodayTab({ steps, eqs, data, now, onOpen, onNav }: { steps: Map<
       )}
 
       <div role="button" tabIndex={0} onClick={() => setSheet('mi')} onKeyDown={(e) => e.key === 'Enter' && setSheet('mi')} className="cursor-pointer rounded-2xl bg-white p-3 ring-1 ring-slate-200 active:scale-[0.99]">
-        <Head dot={mi.banner?.state === 'BEHIND' ? 'bg-[#E02028]' : mi.banner ? 'bg-[#08A048]' : 'bg-slate-400'} title="M & I" badge={mi.banner ? STATE_WORD[mi.banner.state] : 'NOT STARTED'} tone={mi.banner ? STATE_TONE[mi.banner.state] : 'grey'} />
+        {(() => { const st = mi.weighted?.state ?? mi.banner?.state; return <Head dot={st === 'BEHIND' ? 'bg-[#E02028]' : st ? 'bg-[#08A048]' : 'bg-slate-400'} title="M & I" badge={st ? STATE_WORD[st] : 'NOT STARTED'} tone={st ? STATE_TONE[st] : 'grey'} />; })()}
         <Dates plan={[mi.planned, mi.plannedEnd]} actual={[mi.actualStart, mi.actualStart !== null ? mi.estEnd : null, true]} />
         {mi.weighted && (
           <div className="pt-1.5">
