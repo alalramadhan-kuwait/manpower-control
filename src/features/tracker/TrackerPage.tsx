@@ -93,6 +93,8 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const nav = (n: Nav) => { setFocus(null); setIsoKind(n.iso); setLateFirst(!!n.lateFirst); setTab(n.tab); };
   const toIsolation = (tag: string | null, kind?: 'blind' | 'neut') => { setSheet(null); setFocus(tag); setIsoKind(kind); setTab('isolation'); };
   const tot = totals(steps, eqs, data.iats);
+  // the Isolation badge: blinds not in and neutralizations before handover not done (finished work drops off)
+  const isoOpen = points.filter((p) => (p.kind === 'blind' || p.beforeHo) && !pointComplete(p)).length;
   // spare time before the shutdown end, for the items with bar-chart work left
   const spare = new Map((phases(data, now, steps).mi.weighted?.items ?? []).filter((i) => i.done < i.lines).map((i) => [i.tag, i.spareD]));
   const open = (a: { kind: 'step' | 'equipment'; ref: string }) => setSheet(a.kind === 'step' ? { kind: 'step', id: a.ref } : { kind: 'eq', tag: a.ref });
@@ -111,11 +113,11 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
         </div>
       </div>
       <nav className="sticky top-0 z-20 mb-2 grid grid-cols-5 gap-0.5 rounded-2xl bg-slate-200/70 p-1 backdrop-blur print:hidden" aria-label="Progress">
-        {TABS.map(([k, label, icon]) => { const on = MAIN[tab] === k; const badge = k === 'equipment' ? tot.late : k === 'iats' ? tot.iatOpen : 0;
+        {TABS.map(([k, label, icon]) => { const on = MAIN[tab] === k; const badge = k === 'equipment' ? tot.late : k === 'iats' ? tot.iatOpen : k === 'isolation' ? isoOpen : 0;
           return <button key={k} type="button" aria-current={on ? 'page' : undefined} onClick={() => setTab(k)}
             className={cx('relative flex min-h-14 flex-col items-center justify-center rounded-xl px-0.5 text-[11.5px] font-semibold', on ? 'bg-white text-[#0850A0] shadow-sm' : 'text-slate-600 active:bg-white/60')}>
             <span className="text-lg leading-none" aria-hidden>{icon}</span><span className="mt-0.5 truncate">{label}</span>
-            {badge > 0 && <span className={cx('absolute right-1 top-0.5 min-w-[18px] rounded-full px-1 text-[10.5px] font-bold leading-[18px] text-white', k === 'equipment' ? 'bg-[#E02028]' : 'bg-[#D97706]')}>{badge}</span>}
+            {badge > 0 && <span className={cx('absolute right-1 top-0.5 min-w-[18px] rounded-full px-1 text-[10.5px] font-bold leading-[18px] text-white', k === 'equipment' ? 'bg-[#E02028]' : k === 'isolation' ? 'bg-[#0850A0]' : 'bg-[#D97706]')}>{badge}</span>}
           </button>; })}
       </nav>
       {VIEWS[MAIN[tab]] && <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-slate-200/60 p-1 print:hidden">
@@ -221,20 +223,22 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
   const isoMemo = new Map(eqs.map((e) => [e.eq.tag, e.stage === 0 ? isoState(e.eq.tag, 0, points) : null]));
   const iso = (e: EquipView) => isoMemo.get(e.eq.tag) ?? null;
   const groups = [...new Set(eqs.map((e) => e.eq.group))];
-  const main = groups.filter((x) => !isMisc(x)), misc = groups.filter(isMisc);
+  // PSVs have their own chip (operations isolate and remove them), the other small items stay under Misc
+  const misc_ = (g: string) => isMisc(g) && g !== 'PSVs';
+  const main = groups.filter((x) => !misc_(x)), misc = groups.filter(misc_);
   const [g, setG] = useState('All'); const [showMisc, setShowMisc] = useState(false);
   const [onlyOps, setOnlyOps] = useState(true); const [lateFirst, setLateFirst] = useState(initialLateFirst);
   // items switched off (Admin) are kept but not listed, unless asked for
   const [showOff, setShowOff] = useState(false);
   const off = eqs.filter((e) => !e.eq.tracked);
-  const shown = eqs.filter((e) => (showOff || e.eq.tracked) && (!onlyOps || e.eq.opsItem || e.stage > 0));
-  const inChip = (e: EquipView) => (g === 'All' ? true : g === 'Misc' ? isMisc(e.eq.group) : e.eq.group === g);
+  const shown = eqs.filter((e) => (showOff || e.eq.tracked) && (!onlyOps || e.eq.opsItem || e.stage > 0 || e.eq.group === 'PSVs'));
+  const inChip = (e: EquipView) => (g === 'All' ? true : g === 'Misc' ? misc_(e.eq.group) : e.eq.group === g);
   const list = shown.filter(inChip);
   const RANK: Record<string, number> = { HO_LATE: 0, LATE: 1, PENDING: 2, IAT_OPEN: 3 };
   const sorted = lateFirst ? [...list].sort((a, b) => (RANK[a.flag] ?? 9) - (RANK[b.flag] ?? 9) || b.lateBy - a.lateBy) : list;
   const by = (xs: string[]) => xs.map((x) => [x, sorted.filter((e) => e.eq.group === x)] as [string, EquipView[]]).filter(([, ys]) => ys.length);
   // All: the main groups, then miscellaneous folded · Misc: its groups · Late first: one list, main items first
-  const sections: [string, EquipView[]][] = lateFirst ? [['', [...sorted.filter((e) => !isMisc(e.eq.group)), ...sorted.filter((e) => isMisc(e.eq.group))]]]
+  const sections: [string, EquipView[]][] = lateFirst ? [['', [...sorted.filter((e) => !misc_(e.eq.group)), ...sorted.filter((e) => misc_(e.eq.group))]]]
     : g === 'All' ? by(main) : g === 'Misc' ? by(misc) : [['', sorted]];
   const miscRows = g === 'All' && !lateFirst ? by(misc) : [];
   // the one-tap step of a row: finish the running step, else start the next one (blind and neutralization lines are
@@ -282,7 +286,7 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
     </div>); };
   return (
     <div className="space-y-2">
-      <div className="flex gap-1.5 overflow-x-auto pb-1">{['All', ...main, ...(misc.length ? ['Misc'] : [])].map((x) => { const n = x === 'All' ? shown.length : x === 'Misc' ? shown.filter((e) => isMisc(e.eq.group)).length : shown.filter((e) => e.eq.group === x).length;
+      <div className="flex gap-1.5 overflow-x-auto pb-1">{['All', ...main, ...(misc.length ? ['Misc'] : [])].map((x) => { const n = x === 'All' ? shown.length : x === 'Misc' ? shown.filter((e) => misc_(e.eq.group)).length : shown.filter((e) => e.eq.group === x).length;
         return <button key={x} type="button" onClick={() => setG(x)} className={cx('min-h-9 shrink-0 rounded-full px-3 text-xs font-semibold', g === x ? 'bg-[#0850A0] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{x}{n ? <span className="ml-1 opacity-60">{n}</span> : null}</button>; })}</div>
       <div className="flex items-center gap-2 text-xs text-slate-600">
         <label className="flex items-center gap-2"><input type="checkbox" checked={onlyOps} onChange={(e) => setOnlyOps(e.target.checked)} />Operations items only</label>

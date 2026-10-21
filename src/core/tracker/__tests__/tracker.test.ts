@@ -162,6 +162,16 @@ describe('mechanical activity timing', () => {
     expect(reportText(r)).toContain('- R-205: ');
     expect(reportText(r)).not.toContain('Mechanical');
   });
+  it('the report carries the drums of a reactor dumping: verified total and this shift', () => {
+    const d = seed();
+    const sc = { id: 'sc', key: 'R-12-205', scope: 'removal' as const, unit: 'drums', low: 2300, high: 2600, initial: 2600, working: 2600, activityIds: ['A5410'], completeAt: null, completeBy: null };
+    const e = (q: number, date: string, shift: 'D' | 'N', verify: 'verified' | 'pending') => ({ id: `${q}${shift}`, scopeId: 'sc', shiftDate: date, shift, kind: 'removal' as const, method: 'vacuum' as const, qty: q, verify,
+      remark: null, source: 'field' as const, enteredBy: null, enteredByName: null, enteredAt: '', verifiedByName: null, verifiedAt: null });
+    d.engine = { scopes: [sc], entries: [e(150, '2026-10-22', 'N', 'verified'), e(170, '2026-10-23', 'D', 'pending')], estimates: [], updates: [] };
+    const text = reportText(shiftReport(d, at('2026-10-23 12:00'), null));
+    expect(text).toContain('*Catalyst removal (drums)*');
+    expect(text).toContain('- R-205: 150/2,600 drums (5.8%) · this shift +170 · 1 awaiting verification');
+  });
 });
 
 describe('step timing', () => {

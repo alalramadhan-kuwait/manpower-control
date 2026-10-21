@@ -31,7 +31,7 @@ export interface TrkActivity {
   seq?: number | null; detail?: boolean;
 }
 export interface TrkLog { kind: 'step' | 'equipment' | 'iat' | 'activity' | 'point'; ref: string; field: string; oldValue: string | null; newValue: string | null; byName: string | null; at: string }
-import type { TrkEngine } from './qty';
+import { qtyProgress, type TrkEngine } from './qty';
 export * from './qty';
 export interface TrkSettings { hoTarget?: string; end?: string; workOrder?: string; whatsapp?: string; opsStart?: string; miStart?: string; miEnd?: string;
   /** the progress engine (drums, updates) on this tracker, and its forecast window / freshness rules */
@@ -400,6 +400,10 @@ export interface ShiftReport {
   at: number; items: ReportItem[]; loops: { ref: string; name: string; line: string; running: boolean; started: boolean }[];
   /** segregation / HP-critical blinds not in yet */
   blindsOpen: { ref: string; name: string }[];
+  /** catalyst removal by drums: each reactor dumping (or emptied this shift), its verified total and this shift's drums */
+  drums: { key: string; verified: number; working: number | null; pct: number | null; shift: number; pending: number; empty: boolean }[];
+  /** PSVs: removed / installed of all, and what moved this shift or runs now */
+  psvs: { total: number; removed: number; installed: number; lines: string[] };
 }
 export type ReportSection = 'Reactors' | 'Heaters' | 'Exchangers' | 'Vessels' | 'Others';
 export interface ReportItem { tag: string; section: ReportSection; line: string }
@@ -465,13 +469,43 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
         return show ? [{ tag: e.eq.tag, section: SECTION[e.eq.group], line: itemStatusLine(e, d, now) }] : [];
       }); })(),
     // the loops still open, and those completed in the last day (shown once as completed)
-    loops: (d.points ?? []).filter((p) => p.kind === 'neut' && (p.stepId || (!p.items.includes(p.ref) && (p.method !== 'spray' || p.status !== 'open'))) && (!pointComplete(p) || (!!p.doneAt && now - ms(p.doneAt) < DAY))).sort((a, b) => a.sort - b.sort).map((p) => {
+    // the loops still open, and those completed in this shift (a finished loop is not repeated after its shift)
+    loops: (d.points ?? []).filter((p) => p.kind === 'neut' && (p.stepId || (!p.items.includes(p.ref) && (p.method !== 'spray' || p.status !== 'open'))) && (!pointComplete(p) || (!!p.doneAt && ms(p.doneAt) >= sh.from))).sort((a, b) => a.sort - b.sort).map((p) => {
       const m = p.status === 'open' ? missingBlinds(p, d.points) : []; const left = soakLeft(p, now); const done = pointComplete(p);
-      const line = done ? 'Completed' : m.length ? `Awaiting blinds ${m.join(', ')}` : p.status === 'open' ? (p.remark?.trim() || 'Not started')
+      // its field jobs (crane lifts, blinding): those running, and those finished this shift
+      const jobs = (d.pointSteps ?? []).filter((c) => c.pointId === p.id && c.kind === 'step');
+      const jobName = (c: TrkPointStep) => `${c.crane ? '🏗 ' : ''}${c.text.split(/,|:/)[0].replace(/\s*\(.*?\)/g, '').trim()}`;
+      const jobLines = done ? [] : [...jobs.filter((c) => c.startAt && !c.doneAt).map((c) => `${jobName(c)} I/P (${hoursText(now - ms(c.startAt!))})`),
+        ...jobs.filter((c) => c.doneAt && ms(c.doneAt) >= sh.from && ms(c.doneAt) < sh.to).map((c) => `${jobName(c)} ✓`)];
+      const left2 = jobs.filter((c) => c.phase === 'before' && !c.doneAt).length;
+      const base = done ? 'Completed' : m.length ? `Awaiting blinds ${m.join(', ')}` : p.status === 'open' ? (p.remark?.trim() || (jobs.length && left2 === 0 ? 'Ready to fill' : 'Not started'))
         : p.method === 'spray' ? 'Spraying I/P' : p.status === 'soaking' ? `Under soaking${left !== null && left > 0 ? ` (${hoursText(left)} left)` : left !== null ? ' (soak time reached)' : ''}` : NEUT_WORDS[p.status] ?? neutLabel(p);
-      return { ref: p.ref, name: p.name.replace(/\s*(loop\s*)?neutrali[sz]ation.*$/i, '').replace(/→/g, ' to ').replace(/\s+/g, ' ').trim() || p.ref, line, running: p.status !== 'open' && !done, started: p.status !== 'open' || m.length > 0 || !!p.remark?.trim() };
+      const line = jobLines.length ? `${base === 'Not started' ? '' : `${base} · `}${jobLines.join(' · ')}` : base;
+      return { ref: p.ref, name: p.name.replace(/\s*(loop\s*)?neutrali[sz]ation.*$/i, '').replace(/→/g, ' to ').replace(/\s+/g, ' ').trim() || p.ref, line, running: (p.status !== 'open' && !done) || jobLines.length > 0, started: p.status !== 'open' || m.length > 0 || !!p.remark?.trim() || jobs.some((c) => c.startAt || c.doneAt) };
     }),
     blindsOpen: (d.points ?? []).filter((p) => p.kind === 'blind' && !pointComplete(p)).map((p) => ({ ref: p.ref, name: p.name })),
+    drums: (d.engine?.scopes ?? []).filter((sc) => sc.scope === 'removal' && sc.unit && (!sc.completeAt || ms(sc.completeAt) >= sh.from)).flatMap((sc) => {
+      const es = (d.engine?.entries ?? []).filter((e) => e.scopeId === sc.id && e.kind !== 'transfer');
+      const started = es.length > 0 || d.activities.some((a) => a.key === sc.key && sc.activityIds.includes(a.activityId) && a.actualStart);
+      if (!started) return [];
+      const p = qtyProgress({ working: sc.working, initial: sc.initial, completeAt: sc.completeAt }, es);
+      const shiftQty = es.filter((e) => e.verify !== 'rejected' && e.shiftDate === sh.date && e.shift === sh.shift).reduce((t, e) => t + e.qty, 0);
+      return [{ key: sc.key, verified: p.verified, working: sc.working, pct: p.actualPct, shift: shiftQty, pending: es.filter((e) => e.verify === 'pending').length, empty: !!sc.completeAt }];
+    }),
+    psvs: (() => {
+      const tags = d.equipment.filter((e) => e.group === 'PSVs' && e.tracked).map((e) => e.barchartKey ?? e.tag);
+      const acts = (k: string) => d.activities.filter((a) => a.key === k && a.tracked);
+      const fin = (k: string, re: RegExp) => acts(k).find((a) => re.test(a.activity) && a.actualFinish);
+      const REMOVED = /remove psv|psv to shop/i, INSTALLED = /^install psv/i;
+      const lines = tags.flatMap((k) => {
+        // the four PSV jobs in the plant's words
+        const say = (x: string) => (REMOVED.test(x) ? 'removed to shop' : /^install blind|blind on flange/i.test(x) ? 'blind installed' : /^remove blind/i.test(x) ? 'blind removed' : INSTALLED.test(x) ? 'PSV installed' : x.toLowerCase());
+        const run = acts(k).filter((a) => a.actualStart && !a.actualFinish).map((a) => `${say(a.activity)} I/P`);
+        const now_ = acts(k).filter((a) => a.actualFinish && ms(a.actualFinish) >= sh.from && ms(a.actualFinish) < sh.to).map((a) => `${say(a.activity)} ✓`);
+        return run.length || now_.length ? [`${k.replace(/^12-/, '')}: ${[...now_, ...run].join(' · ')}`] : [];
+      });
+      return { total: tags.length, removed: tags.filter((k) => fin(k, REMOVED)).length, installed: tags.filter((k) => fin(k, INSTALLED)).length, lines };
+    })(),
   };
 }
 
@@ -503,10 +537,14 @@ export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string }
   const rx = r.items.filter((i) => i.section === 'Reactors').sort((a, b) => Number(b.tag === 'R-12-205') - Number(a.tag === 'R-12-205') || a.tag.localeCompare(b.tag));
   section('Reactors', rx.map((x) => `${short(x.tag)}: ${x.line}`));
   const bo = r.blindsOpen;
-  section('Segregation blinding', [bo.length ? `${bo.length} blind${bo.length > 1 ? 's' : ''} pending${bo.length <= 6 ? `: ${bo.map((b) => b.ref).join(', ')}` : ''}` : 'All segregation blinds in ✓']);
+  const bIn = r.pointsDone.filter((x) => x.kind === 'blind').map((x) => x.ref);
+  section('Segregation blinding', [bo.length ? `${bo.length} blind${bo.length > 1 ? 's' : ''} pending${bo.length <= 6 ? `: ${bo.map((b) => b.ref).join(', ')}` : ''}` : 'All segregation blinds in ✓', ...(bIn.length ? [`In this shift: ${bIn.join(', ')}`] : [])]);
   const rank = (l: ShiftReport['loops'][number]) => (l.line === 'Completed' ? 0 : l.running ? 1 : 2);
   const run = r.loops.filter((l) => l.started).sort((a, b) => rank(a) - rank(b)), idle = r.loops.filter((l) => !l.started);
   section('Neutralization', [...run.map((l) => `${l.name}: ${l.line}`), ...(idle.length ? [`Not started: ${idle.map((l) => l.ref).join(', ')}`] : [])]);
+  const fmtN = (n: number) => n.toLocaleString('en-US');
+  section('Catalyst removal (drums)', r.drums.map((x) => `${short(x.key)}: ${x.empty ? 'vessel empty ✓ · ' : ''}${fmtN(x.verified)}${x.working ? `/${fmtN(x.working)}` : ''} drums${x.pct !== null ? ` (${x.pct}%)` : ''}${x.shift ? ` · this shift ${x.shift > 0 ? '+' : ''}${fmtN(x.shift)}` : ''}${x.pending ? ` · ${x.pending} awaiting verification` : ''}`));
+  if (r.psvs.total) section('PSVs', [`Removed ${r.psvs.removed}/${r.psvs.total} · installed ${r.psvs.installed}/${r.psvs.total}`, ...r.psvs.lines]);
   section('Heaters', merged('Heaters')); section('Exchangers', merged('Exchangers')); section('Vessels', merged('Vessels')); section('Others', merged('Others'));
   section('Max bed temperature', REACTORS.filter((k) => r.temps[k]).map((k) => `R-${k.slice(1)}: ${r.temps[k]}°F`));
   if (r.notes.trim()) out.push('', '*Notes*', r.notes.trim());
