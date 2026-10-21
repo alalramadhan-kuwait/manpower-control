@@ -192,3 +192,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261020175219_shutdown_progress_zero_pressure_all_fo_e216_ts` | "Confirm system at 0 pressure" on every FO (S105A, S308A with S205A). E-216A/B tube side soak as its own neutralization (E-216 T/S) |
 | `20261020200602_trk_snapshot_for_checks` | `trk_snapshot`: read-only tracker snapshot behind a one-time token (closed after use), to check reports against live data |
 | `20261021031506_shutdown_progress_ready_needs_ho_step` | `trk_item_ready`: an item with its own operations hand-over step is handed over by that step, not by its loops and blinds alone |
+| `20261021035100_shutdown_progress_e204_e205_soda_ash_removed` | E-12-204 / E-12-205 own soda-ash points removed: neutralized only by the loops S214, S215 and S216 |
