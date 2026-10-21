@@ -398,7 +398,8 @@ export function itemStatusLine(e: EquipView, d: TrkData, now: number): string {
     : own ? (own.method === 'spray' ? 'Spraying I/P' : NEUT_WORDS[own.status] ?? neutLabel(own))
     : iso?.state === 'ready' ? 'Ready for handover' : iso?.state === 'blind' ? `Awaiting blinds ${iso.missing.join(', ')}` : iso?.state === 'neut' ? `Under neutralization (${iso.loops.filter((p) => p.status !== 'open' && !pointComplete(p)).map((p) => p.ref).join(', ')})`
     : STAGE_WORDS[e.stage];
-  if (e.eq.pendingReason && !line.toLowerCase().includes(e.eq.pendingReason.toLowerCase().slice(0, 8))) line += ` (pending: ${e.eq.pendingReason.toLowerCase()})`;
+  // the logbook words already say why it waits: the pending reason is added only to a line the app built
+  if (e.eq.pendingReason && !recent) line += ` (pending: ${e.eq.pendingReason.toLowerCase()})`;
   return line.replace(/\.$/, '');
 }
 export const REACTORS = ['R205', 'R201', 'R202', 'R203', 'R204'] as const;
@@ -442,11 +443,12 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
         const show = e.eq.group === 'Reactors' || recent || ((running || !!e.eq.pendingReason || e.stage >= 2 || (iso && iso.state !== 'idle' && iso.state !== 'ho')) && !part(e.eq.tag));
         return show ? [{ tag: e.eq.tag, section: SECTION[e.eq.group], line: itemStatusLine(e, d, now) }] : [];
       }); })(),
-    loops: (d.points ?? []).filter((p) => p.kind === 'neut' && (p.stepId || !p.items.includes(p.ref)) && !pointComplete(p)).sort((a, b) => a.sort - b.sort).map((p) => {
-      const m = p.status === 'open' ? missingBlinds(p, d.points) : []; const left = soakLeft(p, now);
-      const line = m.length ? `Awaiting blinds ${m.join(', ')}` : p.status === 'open' ? 'Not started'
+    // the loops still open, and those completed in the last day (shown once as completed)
+    loops: (d.points ?? []).filter((p) => p.kind === 'neut' && (p.stepId || !p.items.includes(p.ref)) && (!pointComplete(p) || (!!p.doneAt && now - ms(p.doneAt) < DAY))).sort((a, b) => a.sort - b.sort).map((p) => {
+      const m = p.status === 'open' ? missingBlinds(p, d.points) : []; const left = soakLeft(p, now); const done = pointComplete(p);
+      const line = done ? 'Completed' : m.length ? `Awaiting blinds ${m.join(', ')}` : p.status === 'open' ? (p.remark?.trim() || 'Not started')
         : p.method === 'spray' ? 'Spraying I/P' : p.status === 'soaking' ? `Under soaking${left !== null && left > 0 ? ` (${hoursText(left)} left)` : left !== null ? ' (soak time reached)' : ''}` : NEUT_WORDS[p.status] ?? neutLabel(p);
-      return { ref: p.ref, name: p.name.replace(/\s*(loop\s*)?neutrali[sz]ation.*$/i, '').replace(/→/g, ' to ').replace(/\s+/g, ' ').trim() || p.ref, line, running: p.status !== 'open', started: p.status !== 'open' || m.length > 0 };
+      return { ref: p.ref, name: p.name.replace(/\s*(loop\s*)?neutrali[sz]ation.*$/i, '').replace(/→/g, ' to ').replace(/\s+/g, ' ').trim() || p.ref, line, running: p.status !== 'open' && !done, started: p.status !== 'open' || m.length > 0 || !!p.remark?.trim() };
     }),
     blindsOpen: (d.points ?? []).filter((p) => p.kind === 'blind' && !pointComplete(p)).map((p) => ({ ref: p.ref, name: p.name })),
   };
@@ -481,7 +483,8 @@ export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string }
   section('Reactors', rx.map((x) => `${short(x.tag)}: ${x.line}`));
   const bo = r.blindsOpen;
   section('Segregation blinding', [bo.length ? `${bo.length} blind${bo.length > 1 ? 's' : ''} pending${bo.length <= 6 ? `: ${bo.map((b) => b.ref).join(', ')}` : ''}` : 'All segregation blinds in ✓']);
-  const run = r.loops.filter((l) => l.started).sort((a, b) => Number(b.running) - Number(a.running)), idle = r.loops.filter((l) => !l.started);
+  const rank = (l: ShiftReport['loops'][number]) => (l.line === 'Completed' ? 0 : l.running ? 1 : 2);
+  const run = r.loops.filter((l) => l.started).sort((a, b) => rank(a) - rank(b)), idle = r.loops.filter((l) => !l.started);
   section('Neutralization', [...run.map((l) => `${l.name}: ${l.line}`), ...(idle.length ? [`Not started: ${idle.map((l) => l.ref).join(', ')}`] : [])]);
   section('Heaters', merged('Heaters')); section('Exchangers', merged('Exchangers')); section('Vessels', merged('Vessels')); section('Others', merged('Others'));
   section('Max bed temperature', REACTORS.filter((k) => r.temps[k]).map((k) => `R-${k.slice(1)}: ${r.temps[k]}°F`));
