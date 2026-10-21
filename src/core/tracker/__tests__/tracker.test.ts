@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -260,6 +260,19 @@ describe('isolation links: blinds lock the loops, items take the colour', () => 
   const s215 = pt({ ref: 'S215', stepId: 'S215', items: ['E-202 to E-203', 'C-12-201'], requires: ['SEG-06', 'SEG-11'] });
   const s320 = pt({ ref: 'S320', stepId: 'S320', items: ['V-12-213'], status: 'done' });
   const all = [seg06, seg11, s215, s320];
+
+  it('reactor: catalyst soak, body spray after dumping, parts on their own', () => {
+    const soak = pt({ ref: 'R-12-205', items: ['R-12-205'], status: 'done' });
+    const body = pt({ ref: 'R-12-205 body', items: ['R-12-205'], method: 'spray', beforeHo: false, afterActs: ['A5410', 'A7050'] });
+    const wd = pt({ ref: 'S117', stepId: 'S117', items: ['R-205 withdrawal line'], partOf: ['R-12-205'] });
+    const act = (activityId: string, activity: string, fin: string | null) => ({ activityId, activity, key: 'R-12-205', actualFinish: fin }) as never;
+    expect([neutName(soak), neutName(body), neutName(wd)]).toEqual(['Catalyst soak', 'Body spray', 'S117']);
+    expect(waitingSteps(body, [act('A5410', 'Dump Catalyst by Double Vacuum', null), act('A7050', 'Dump ceramic balls', null), act('A5260', 'Remove top basket', null)])).toEqual(['Dump Catalyst by Double Vacuum', 'Dump ceramic balls']);
+    expect(waitingSteps(body, [act('A5410', 'Dump', kw('2026-10-21 08:00')), act('A7050', 'Dump balls', kw('2026-10-21 09:00'))])).toEqual([]);
+    expect(partsOf('R-12-205', [soak, body, wd]).map((p) => p.ref)).toEqual(['S117']);
+    // the body spray is not needed for the hand over: the reactor is ready on its soak alone
+    expect(isolationOf('R-12-205', [soak, body])?.ready).toBe(true);
+  });
   it('a loop waits for the blinds not in', () => {
     expect(missingBlinds(s215, all)).toEqual(['SEG-06']);
     expect(missingBlinds(s215, [{ ...seg06, status: 'in' }, seg11])).toEqual([]);

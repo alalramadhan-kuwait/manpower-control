@@ -42,6 +42,10 @@ export interface TrkPoint {
   requires?: string[];
   /** how a neutralization is done: soak (fill, soak, drain) or spray (start, done: heater tube OD after the burners stop) */
   method?: 'soak' | 'spray';
+  /** the main items this loop is a part of, neutralized on its own (R-205 addition / withdrawal / quench lines, the piping between the reactors) */
+  partOf?: string[];
+  /** the work steps (activity ids on its items) that must be finished before it starts: the reactor body spray after the catalyst dumping */
+  afterActs?: string[];
   /** a neutralization the item's handover waits for */
   beforeHo: boolean; sort: number; status: PointStatus;
   inAt: string | null; outAt: string | null; fillAt: string | null; soakAt: string | null; drainAt: string | null; doneAt: string | null;
@@ -131,7 +135,7 @@ export const NEUT_LABEL: Record<string, string> = { open: 'Not started', filling
 /** A neutralization's state in words: a sprayed one is "Spraying" while it runs. */
 export const neutLabel = (p: Pick<TrkPoint, 'status' | 'method'>) => (p.method === 'spray' && p.status !== 'open' && p.status !== 'done' ? 'Spraying' : NEUT_LABEL[p.status]);
 /** What a neutralization is called on an item: its loop, the item's own soda ash, or its sprayed tube OD. */
-export const neutName = (p: Pick<TrkPoint, 'stepId' | 'ref' | 'method'>) => (p.stepId ? p.ref : p.method === 'spray' ? 'Tube OD spray' : /^[A-Z]{1,3}-12-/.test(p.ref) ? 'Soda ash' : p.ref);
+export const neutName = (p: Pick<TrkPoint, 'stepId' | 'ref' | 'method'>) => (p.stepId ? p.ref : / body$/.test(p.ref) ? 'Body spray' : p.method === 'spray' ? 'Tube OD spray' : /^R-12-/.test(p.ref) ? 'Catalyst soak' : /^[A-Z]{1,3}-12-/.test(p.ref) ? 'Soda ash' : p.ref);
 /** The time left of the soak (ms, below 0 = overdue), when soaking with a soak time. */
 export function soakLeft(p: TrkPoint, now: number): number | null {
   return p.kind === 'neut' && p.status === 'soaking' && p.soakH && p.soakAt ? Date.parse(p.soakAt) + p.soakH * H - now : null;
@@ -152,6 +156,13 @@ export function isolationOf(tag: string, points: TrkPoint[] = []): Isolation | n
 export function missingBlinds(p: Pick<TrkPoint, 'requires'>, points: TrkPoint[] = []): string[] {
   return (p.requires ?? []).filter((r) => !points.some((b) => b.kind === 'blind' && b.ref === r && pointComplete(b)));
 }
+/** The work steps a neutralization still waits for (names, not finished yet), empty when it can start. */
+export function waitingSteps(p: Pick<TrkPoint, 'afterActs' | 'items'>, acts: TrkActivity[] = []): string[] {
+  const ids = p.afterActs ?? [];
+  return ids.length ? [...new Set(acts.filter((a) => ids.includes(a.activityId) && p.items.includes(a.key) && !a.actualFinish).map((a) => a.activity))] : [];
+}
+/** The loops neutralized on their own that are parts of a main item (a reactor's lines, the piping between reactors). */
+export const partsOf = (tag: string, points: TrkPoint[] = []) => points.filter((p) => p.kind === 'neut' && (p.partOf ?? []).includes(tag));
 /** An item's isolation state, the colour it shows everywhere before (and at) the handover. */
 export type IsoState = 'blind' | 'idle' | 'neut' | 'ready' | 'ho';
 export const ISO_LABEL: Record<IsoState, string> = { blind: 'BLIND', idle: 'NOT READY', neut: 'NEUT', ready: 'READY HO', ho: 'HO' };
@@ -395,7 +406,7 @@ export function itemStatusLine(e: EquipView, d: TrkData, now: number): string {
   const iso = e.stage === 0 ? isoState(e.eq.tag, 0, pts) : null;
   let line = recent ? e.eq.remark!.trim()
     : running.length ? `${running.slice(0, 2).join(', ')} I/P`
-    : own ? (own.method === 'spray' ? 'Spraying I/P' : NEUT_WORDS[own.status] ?? neutLabel(own))
+    : own ? (own.method === 'spray' ? (/ body$/.test(own.ref) ? 'Body spraying I/P' : 'Spraying I/P') : NEUT_WORDS[own.status] ?? neutLabel(own))
     : iso?.state === 'ready' ? 'Ready for handover' : iso?.state === 'blind' ? `Awaiting blinds ${iso.missing.join(', ')}` : iso?.state === 'neut' ? `Under neutralization (${iso.loops.filter((p) => p.status !== 'open' && !pointComplete(p)).map((p) => p.ref).join(', ')})`
     : STAGE_WORDS[e.stage];
   // the logbook words already say why it waits: the pending reason is added only to a line the app built
@@ -444,7 +455,7 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
         return show ? [{ tag: e.eq.tag, section: SECTION[e.eq.group], line: itemStatusLine(e, d, now) }] : [];
       }); })(),
     // the loops still open, and those completed in the last day (shown once as completed)
-    loops: (d.points ?? []).filter((p) => p.kind === 'neut' && (p.stepId || !p.items.includes(p.ref)) && (!pointComplete(p) || (!!p.doneAt && now - ms(p.doneAt) < DAY))).sort((a, b) => a.sort - b.sort).map((p) => {
+    loops: (d.points ?? []).filter((p) => p.kind === 'neut' && (p.stepId || (!p.items.includes(p.ref) && (p.method !== 'spray' || p.status !== 'open'))) && (!pointComplete(p) || (!!p.doneAt && now - ms(p.doneAt) < DAY))).sort((a, b) => a.sort - b.sort).map((p) => {
       const m = p.status === 'open' ? missingBlinds(p, d.points) : []; const left = soakLeft(p, now); const done = pointComplete(p);
       const line = done ? 'Completed' : m.length ? `Awaiting blinds ${m.join(', ')}` : p.status === 'open' ? (p.remark?.trim() || 'Not started')
         : p.method === 'spray' ? 'Spraying I/P' : p.status === 'soaking' ? `Under soaking${left !== null && left > 0 ? ` (${hoursText(left)} left)` : left !== null ? ' (soak time reached)' : ''}` : NEUT_WORDS[p.status] ?? neutLabel(p);

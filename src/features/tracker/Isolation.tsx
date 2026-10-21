@@ -2,7 +2,7 @@
 // once here. The database moves the rest: the items (handed over when all their blinds are in and the neutralization
 // before handover is done), the guideline step of each row and the soda-ash bar-chart lines.
 import { useState } from 'react';
-import { NEUT_FLOW, NEUT_LABEL, neutLabel, equipBlind, loopLines, missingBlinds, type LuStream, type TrkIat, hoursText, kwDay, kwTime, pointComplete, soakLeft, type PointStatus, type TrkActivity, type TrkPoint, type TrkStep } from '@/core/tracker';
+import { NEUT_FLOW, NEUT_LABEL, neutLabel, equipBlind, loopLines, missingBlinds, waitingSteps, type LuStream, type TrkIat, hoursText, kwDay, kwTime, pointComplete, soakLeft, type PointStatus, type TrkActivity, type TrkPoint, type TrkStep } from '@/core/tracker';
 import { setActivity, setPoint } from '@/data/tracker';
 import { Button, ErrorBox, cx } from '@/ui/components';
 import { CRow, IsoChip, MenuBtn, RowBtn, RowList, Tile } from './ui';
@@ -14,7 +14,7 @@ const NEXT: Record<string, [PointStatus, string] | undefined> = {
   open: ['filling', '▶ Fill'], filling: ['soaking', 'Soaking'], soaking: ['draining', 'Draining'], draining: ['done', '✓ Done'],
 };
 
-function PointRow({ p, points, lineup = [], iats = [], isHead, now, canEdit, onItem, onDone }: { p: TrkPoint; points: TrkPoint[]; lineup?: LuStream[]; iats?: TrkIat[]; isHead: boolean; now: number; canEdit: boolean; onItem: (tag: string) => void; onDone: (msg: string) => void }) {
+function PointRow({ p, points, acts = [], lineup = [], iats = [], isHead, now, canEdit, onItem, onDone }: { p: TrkPoint; points: TrkPoint[]; acts?: TrkActivity[]; lineup?: LuStream[]; iats?: TrkIat[]; isHead: boolean; now: number; canEdit: boolean; onItem: (tag: string) => void; onDone: (msg: string) => void }) {
   const [force, setForce] = useState(false);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [note, setNote] = useState(p.remark ?? '');
@@ -29,28 +29,31 @@ function PointRow({ p, points, lineup = [], iats = [], isHead, now, canEdit, onI
   const name = p.name.startsWith(p.ref) ? p.name.slice(p.ref.length).trim() : p.name;
   // a loop waits for its blinds: locked until M & I has them in (the Section Head may start it anyway)
   const missing = !blind && p.status === 'open' ? missingBlinds(p, points) : [];
-  const locked = missing.length > 0;
+  // the reactor body spray waits for the catalyst dumping
+  const waiting = !blind && p.status === 'open' ? waitingSteps(p, acts) : [];
+  const locked = missing.length + waiting.length > 0;
   const loopState = pointComplete(p) ? 'ready' : p.status !== 'open' ? 'neut' : locked ? 'blind' : 'idle';
   const dot = pointComplete(p) ? 'green' : locked ? 'red' : left !== null && left <= 0 ? 'amber' : p.status !== 'open' ? 'amber' : 'grey';
   const reqName = (r: string) => points.find((b) => b.kind === 'blind' && b.ref === r)?.name ?? '';
   const sub = blind
     ? (p.status === 'open' ? items || '—' : `✓ In ${when(p.inAt)}${p.outAt ? ` · out ${when(p.outAt)}` : ''}${p.updatedBy ? ` · ${p.updatedBy}` : ''}`)
-    : locked ? <b className="text-red-800">🔒 Needs blinds: {missing.map((r) => `${r} ${reqName(r)}`.trim()).join(', ')}</b>
+    : locked ? <b className="text-red-800">🔒 {missing.length ? `Needs blinds: ${missing.map((r) => `${r} ${reqName(r)}`.trim()).join(', ')}` : `After: ${waiting.join(', ')}`}</b>
     : <>{(p.requires ?? []).length > 0 && p.status === 'open' ? 'Blinds ready ✓ · ' : ''}{neutLabel(p)}{left !== null ? <b className={left > 0 ? 'text-amber-800' : 'text-green-800'}> · {left > 0 ? `${hoursText(left)} left` : 'soak reached'}</b> : null}{p.status === 'done' && p.doneAt ? ` ${when(p.doneAt)}` : ''}</>;
   const extra = blind ? null : <>
     {locked && (p.requires ?? []).map((r) => <IsoChip key={r} state={missing.includes(r) ? 'blind' : 'ready'}>{r} {missing.includes(r) ? '✗' : '✓'}</IsoChip>)}
     {p.items.map((t) => <IsoChip key={t} state={loopState}>{t}</IsoChip>)}
+    {(p.partOf ?? []).length > 0 && <span className="text-[10.5px] font-semibold text-slate-500">part of {p.partOf!.map((t) => t.replace('-12-', '-')).join(', ')} · on its own</span>}
   </>;
   const action = !canEdit ? null
     : blind ? (p.status === 'open' ? <RowBtn disabled={busy} onClick={() => run({ status: 'in' }, `${p.ref} blinded.`)}>Blinded</RowBtn>
       : p.status === 'in' ? <RowBtn tone="ghost" disabled={busy} onClick={() => run({ status: 'out' }, `${p.ref} deblinded.`)}>Deblinded</RowBtn> : <span className="shrink-0 text-[11px] font-bold text-[#004080]">Out</span>)
-    : locked && !force ? (isHead ? <RowBtn tone="ghost" disabled={busy} onClick={() => setForce(true)}>🔒 Fill</RowBtn> : <span className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-500">🔒 Fill</span>)
+    : locked && !force ? (isHead ? <RowBtn tone="ghost" disabled={busy} onClick={() => setForce(true)}>🔒 {spray ? 'Spray' : 'Fill'}</RowBtn> : <span className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-500">🔒 {spray ? 'Spray' : 'Fill'}</span>)
     : next ? <RowBtn tone={next[0] === 'done' ? 'green' : 'navy'} disabled={busy} onClick={() => run({ status: next[0] }, `${p.ref}: ${(next[0] === 'filling' && spray ? 'spraying' : NEUT_LABEL[next[0]].toLowerCase())}.`)}>{next[1]}</RowBtn>
     : <span className="shrink-0 text-[11px] font-bold text-[#08A048]">Done</span>;
   return (
     <>
-      {force && locked && <div className="mx-2.5 mt-1 rounded-lg bg-red-50 p-2 text-xs text-red-900">Start {p.ref} without {missing.join(', ')}? It is logged as a Section Head override.
-        <div className="mt-1.5 flex gap-1.5"><RowBtn tone="navy" disabled={busy} onClick={() => run({ status: 'filling' }, `${p.ref}: filling (override).`, () => setForce(false))}>Start anyway</RowBtn><RowBtn tone="ghost" onClick={() => setForce(false)}>Cancel</RowBtn></div></div>}
+      {force && locked && <div className="mx-2.5 mt-1 rounded-lg bg-red-50 p-2 text-xs text-red-900">Start {p.ref} {missing.length ? `without ${missing.join(', ')}` : `before ${waiting.join(', ')}`}? It is logged as a Section Head override.
+        <div className="mt-1.5 flex gap-1.5"><RowBtn tone="navy" disabled={busy} onClick={() => run({ status: 'filling' }, `${p.ref}: ${spray ? 'spraying' : 'filling'} (override).`, () => setForce(false))}>Start anyway</RowBtn><RowBtn tone="ghost" onClick={() => setForce(false)}>Cancel</RowBtn></div></div>}
       <CRow dot={dot} extra={extra} title={<>{p.ref}{name ? ` · ${name}` : ''}{p.remark ? <span className="font-normal text-slate-500"> · 📝</span> : null}</>} sub={sub} action={action}
         onTitle={p.items.length === 1 ? () => onItem(p.items[0]) : undefined}
         menu={(close) => (
@@ -99,7 +102,7 @@ export function IsolationTab({ initialKind, activities = [], points, lineup = []
   const blinds = points.filter((p) => p.kind === 'blind'), neut = points.filter((p) => p.kind === 'neut');
   const gate = neut.filter((p) => p.beforeHo);
   const soaking = neut.filter((p) => p.status === 'soaking').length;
-  const list = points.filter((p) => p.kind === kind && (kind === 'neut' || (p.grp ?? 'segregation') === grp) && (fo === 'All' || p.fo === fo) && (!focus || p.items.includes(focus))).sort((a, b) => a.sort - b.sort);
+  const list = points.filter((p) => p.kind === kind && (kind === 'neut' || (p.grp ?? 'segregation') === grp) && (fo === 'All' || p.fo === fo) && (!focus || p.items.includes(focus) || (p.partOf ?? []).includes(focus))).sort((a, b) => a.sort - b.sort);
   const eqView = kind === 'blind' && grp === 'equipment';
   const open = list.filter((p) => !pointComplete(p)), closed = list.filter(pointComplete);
   const stepName = (id: string) => `${id} · ${steps.find((s) => s.stepId === id)?.shortName ?? ''}`;
@@ -107,7 +110,7 @@ export function IsolationTab({ initialKind, activities = [], points, lineup = []
   const keyOf = (p: TrkPoint) => p.stepId ?? '';
   const per = new Map<string, number>(); for (const p of list) per.set(keyOf(p), (per.get(keyOf(p)) ?? 0) + 1);
   const secOf = (p: TrkPoint) => (!p.stepId ? (kind === 'neut' ? 'items' : 'loose') : (per.get(p.stepId) ?? 0) > 1 ? `step:${p.stepId}` : 'loose');
-  const secTitle = (k: string) => (k.startsWith('step:') ? stepName(k.slice(5)) : k === 'items' ? 'Items (soda ash)' : kind === 'neut' ? 'Loops' : GRP.find(([g]) => g === grp)?.[1] ?? 'Blinds');
+  const secTitle = (k: string) => (k.startsWith('step:') ? stepName(k.slice(5)) : k === 'items' ? 'Items' : kind === 'neut' ? 'Loops' : GRP.find(([g]) => g === grp)?.[1] ?? 'Blinds');
   const sections = (() => { const m = new Map<string, TrkPoint[]>(); for (const p of open) m.set(secOf(p), [...(m.get(secOf(p)) ?? []), p]); return [...m.entries()]; })();
   if (!points.length) return <p className="py-6 text-center text-sm text-slate-500">No blinds or neutralization set up for this shutdown.</p>;
   return (
@@ -130,12 +133,12 @@ export function IsolationTab({ initialKind, activities = [], points, lineup = []
       {sections.map(([k, xs]) => { const all = list.filter((p) => secOf(p) === k); return (
         <section key={k} className="space-y-1">
           <h3 className="flex justify-between text-[11px] font-bold uppercase tracking-wide text-slate-500"><span className="truncate">{secTitle(k)}</span><span>{all.filter(pointComplete).length}/{all.length}</span></h3>
-          <RowList>{xs.map((p) => <PointRow key={p.id} p={p} points={points} lineup={lineup} iats={iats} isHead={isHead} now={now} canEdit={canEdit} onItem={onItem} onDone={onDone} />)}</RowList>
+          <RowList>{xs.map((p) => <PointRow key={p.id} p={p} points={points} acts={activities} lineup={lineup} iats={iats} isHead={isHead} now={now} canEdit={canEdit} onItem={onItem} onDone={onDone} />)}</RowList>
         </section>
       ); })}
       {!open.length && <p className="py-3 text-center text-sm text-[#08A048]">All {kind === 'blind' ? 'blinds are in' : 'neutralization is done'}{fo !== 'All' ? ` for ${fo}` : ''}.</p>}
       {closed.length > 0 && <button type="button" onClick={() => setShowDone((x) => !x)} className="text-sm font-semibold text-[#08A048]">{showDone ? '▾' : '▸'} ✓ {kind === 'blind' ? 'Blinded' : 'Neutralized'} ({closed.length})</button>}
-      {showDone && <RowList>{closed.map((p) => <PointRow key={p.id} p={p} points={points} lineup={lineup} iats={iats} isHead={isHead} now={now} canEdit={canEdit} onItem={onItem} onDone={onDone} />)}</RowList>}
+      {showDone && <RowList>{closed.map((p) => <PointRow key={p.id} p={p} points={points} acts={activities} lineup={lineup} iats={iats} isHead={isHead} now={now} canEdit={canEdit} onItem={onItem} onDone={onDone} />)}</RowList>}
       </>}
       <p className="text-[11px] text-slate-500">One tap here updates the rest: operations hands an item over when its neutralization is done, M &amp; I then installs the blinds (an item blinded counts as handed over), the guideline step ticks when all its rows are done, and the soda-ash and blind bar-chart lines take the times.</p>
     </div>

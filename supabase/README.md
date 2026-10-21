@@ -193,3 +193,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261020200602_trk_snapshot_for_checks` | `trk_snapshot`: read-only tracker snapshot behind a one-time token (closed after use), to check reports against live data |
 | `20261021031506_shutdown_progress_ready_needs_ho_step` | `trk_item_ready`: an item with its own operations hand-over step is handed over by that step, not by its loops and blinds alone |
 | `20261021035100_shutdown_progress_e204_e205_soda_ash_removed` | E-12-204 / E-12-205 own soda-ash points removed: neutralized only by the loops S214, S215 and S216 |
+| `20261021035618_shutdown_progress_reactor_parts_loops` | Items a loop covers lose their own soda-ash point (trigger `trk_points_into_loops`). Reactors: soda ash = catalyst soak, new body spray after dumping (`after_acts`, checked by `trk_point_guard`). `part_of` links the R-205 lines and the inter piping loops to their reactors |

@@ -1,7 +1,7 @@
 // The two input sheets of the controllers: a guideline step (Start · Done · Pending) and an equipment item (stage,
 // blinded = handed over, IATs, pending). Big buttons, the time and the name are stamped by the database.
 import { useState } from 'react';
-import { PENDING_REASONS, neutLabel, neutName, isoState, missingBlinds, STAGES, kwDay, kwTime, pointComplete, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint } from '@/core/tracker';
+import { PENDING_REASONS, neutLabel, neutName, partsOf, waitingSteps, isoState, missingBlinds, STAGES, kwDay, kwTime, pointComplete, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint } from '@/core/tracker';
 import { EquipActivities, StepTimes } from './Timing';
 import { addIat, closeIat, setEquipment, setStep } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, Field, cx } from '@/ui/components';
@@ -86,7 +86,9 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso
   // the neutralization the soda-ash lines stand for: the item's own soda ash first, else its loop
   // the item's bar-chart steps by stage (what moves the stage), the field-detail steps left out
   const stageLines = activities.filter((a) => a.tracked && !a.detail && a.group !== 'Operations' && a.stage !== null);
-  const soda = iso?.neut.find((p) => !p.stepId) ?? iso?.neut[0];
+  const soda = iso?.neut.find((p) => !p.stepId && p.method !== 'spray') ?? iso?.neut[0];
+  // a reactor's lines and the piping between the reactors: neutralized on their own, shown with it
+  const parts = partsOf(v.eq.tag, points);
   const e = v.eq;
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [pending, setPending] = useState(false); const [iat, setIat] = useState(false); const [details, setDetails] = useState(false);
@@ -118,8 +120,9 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso
                 const block = [...(st?.missing ?? []), ...open.map((p) => (p.stepId ? p.ref : 'soda ash'))];
                 return <>
                   {iso.blinds.length > 0 && <span className="mt-0.5 flex flex-wrap items-center gap-1">Blinds: {iso.blinds.map((b) => <IsoChip key={b.id} state={pointComplete(b) ? 'ready' : 'blind'}>{b.ref} {pointComplete(b) ? '✓' : '✗'}</IsoChip>)}</span>}
-                  {iso.neut.length > 0 && <span className="mt-0.5 flex flex-wrap items-center gap-1">Neutralization: {iso.neut.map((p) => { const m = p.status === 'open' ? missingBlinds(p, points) : [];
+                  {iso.neut.length > 0 && <span className="mt-0.5 flex flex-wrap items-center gap-1">Neutralization: {iso.neut.map((p) => { const m = p.status === 'open' ? [...missingBlinds(p, points), ...waitingSteps(p, activities).map((x) => `after ${x}`)] : [];
                     return <IsoChip key={p.id} state={pointComplete(p) ? 'ready' : p.status !== 'open' ? 'neut' : m.length ? 'blind' : 'idle'}>{neutName(p)} · {m.length ? `🔒 ${m.join(', ')}` : neutLabel(p)}</IsoChip>; })}</span>}
+                  {parts.length > 0 && <span className="mt-0.5 flex flex-wrap items-center gap-1">Parts, on their own: {parts.map((p) => <IsoChip key={p.id} state={pointComplete(p) ? 'ready' : p.status !== 'open' ? 'neut' : 'idle'}>{p.ref} {p.name} · {neutLabel(p)}</IsoChip>)}</span>}
                   <span className={cx('mt-1 block text-[11px] font-semibold', v.stage >= 1 ? 'text-[#0850A0]' : block.length ? 'text-red-800' : 'text-teal-800')}>
                     {v.stage >= 1 ? 'Handed over.' : block.length ? `Hand over blocked: ${[...new Set(block)].join(', ')}` : 'Ready: handed over automatically.'}</span>
                 </>; })()}
