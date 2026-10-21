@@ -4,8 +4,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
-import { phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
-import { currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
+import { blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
+import { setActivity, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Spinner, cx } from '@/ui/components';
 import { EquipSheet, StepSheet } from './TrackerSheets';
@@ -124,7 +124,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} now={now} onOpen={open} onNav={nav} />}
       {tab === 'isolation' && <IsolationTab key={`iso-${isoKind}`} initialKind={isoKind} activities={data.activities} points={points} lineup={data.lineup} iats={data.iats} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} focus={focus} onFocus={setFocus} onItem={(tag) => setSheet({ kind: 'eq', tag })} onDone={done} />}
       {tab === 'guideline' && <SequenceTab steps={steps} auto={auto} onOpen={(id) => setSheet({ kind: 'step', id })} />}
-      {tab === 'equipment' && <EquipmentTab key={`eq-${lateFirst}`} initialLateFirst={lateFirst} eqs={eqs} activities={data.activities} points={points} now={now} spare={spare} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
+      {tab === 'equipment' && <EquipmentTab key={`eq-${lateFirst}`} initialLateFirst={lateFirst} eqs={eqs} activities={data.activities} points={points} now={now} spare={spare} canEdit={canEdit} onDone={(m) => done(m, true)} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={done} />}
       {tab === 'iats' && <IatsTab iats={data.iats} tags={data.equipment.map((e) => e.tag)} lineup={data.lineup} lineupEq={data.lineupEq} points={points} onItem={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
@@ -200,13 +200,14 @@ function SequenceTab({ steps, auto, onOpen }: { steps: Map<string, StepView>; au
  *  step), the status and the plan difference. "All" groups the items under their group; "Late first" puts the late,
  *  pending and IAT items on top. */
 const ISO_BG = { red: 'bg-[#E02028]', grey: 'bg-slate-300', amber: 'bg-amber-500', teal: 'bg-teal-500', blue: 'bg-[#0850A0]' } as const;
-function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, spare = new Map(), onOpen }: { initialLateFirst?: boolean; eqs: EquipView[]; activities: TrackerData['activities']; points: TrkPoint[]; now: number; spare?: Map<string, number>; onOpen: (tag: string) => void }) {
+function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, spare = new Map(), canEdit = false, onDone, onOpen }: { initialLateFirst?: boolean; eqs: EquipView[]; activities: TrackerData['activities']; points: TrkPoint[]; now: number; spare?: Map<string, number>; canEdit?: boolean; onDone?: (msg: string) => void; onOpen: (tag: string) => void }) {
   const lineOf = (e: EquipView): { text: string; tone: 'run' | 'muted' | 'red' } | null => {
     if (e.eq.pendingReason) return { text: `⏸ ${e.eq.pendingReason}`, tone: 'red' };
     const key = e.eq.barchartKey ?? e.eq.tag;
     const xs = sortActs(activities.filter((a) => a.tracked && !a.detail && a.key === key));
     const run = xs.filter((a) => a.actualStart && !a.actualFinish);
-    if (run.length) return { text: `▶ ${run.map((a) => a.activity).join(' · ')}`, tone: 'run' };
+    const hrs = (a: TrackerData['activities'][number]) => { const el = Math.max(0, (now - Date.parse(a.actualStart!)) / 36e5); return ` · ${el.toFixed(1)}${a.durationH ? ` of ${a.durationH}` : ''} h`; };
+    if (run.length) return { text: run.length === 1 ? `▶ ${run[0].activity}${hrs(run[0])}` : `▶ ${run.map((a) => a.activity).join(' · ')}`, tone: 'run' };
     const iso = e.stage === 0 ? isoState(e.eq.tag, e.stage, points) : null;
     if (iso) {
       const n = iso.loops.find((p) => p.status !== 'open' && !pointComplete(p)); const left = n ? soakLeft(n, now) : null;
@@ -222,7 +223,10 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
   const main = groups.filter((x) => !isMisc(x)), misc = groups.filter(isMisc);
   const [g, setG] = useState('All'); const [showMisc, setShowMisc] = useState(false);
   const [onlyOps, setOnlyOps] = useState(true); const [lateFirst, setLateFirst] = useState(initialLateFirst);
-  const shown = eqs.filter((e) => !onlyOps || e.eq.opsItem || e.stage > 0);
+  // items switched off (Admin) are kept but not listed, unless asked for
+  const [showOff, setShowOff] = useState(false);
+  const off = eqs.filter((e) => !e.eq.tracked);
+  const shown = eqs.filter((e) => (showOff || e.eq.tracked) && (!onlyOps || e.eq.opsItem || e.stage > 0));
   const inChip = (e: EquipView) => (g === 'All' ? true : g === 'Misc' ? isMisc(e.eq.group) : e.eq.group === g);
   const list = shown.filter(inChip);
   const RANK: Record<string, number> = { HO_LATE: 0, LATE: 1, PENDING: 2, IAT_OPEN: 3 };
@@ -232,20 +236,39 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
   const sections: [string, EquipView[]][] = lateFirst ? [['', [...sorted.filter((e) => !isMisc(e.eq.group)), ...sorted.filter((e) => isMisc(e.eq.group))]]]
     : g === 'All' ? by(main) : g === 'Misc' ? by(misc) : [['', sorted]];
   const miscRows = g === 'All' && !lateFirst ? by(misc) : [];
-  const row = (e: EquipView) => { const l = lineOf(e); return (
-    <button key={e.eq.tag} type="button" onClick={() => onOpen(e.eq.tag)} className={cx('grid w-full grid-cols-[6.5rem_1fr_auto] items-center gap-2 border-t border-slate-100 px-2.5 py-2 text-left first:border-t-0 active:bg-slate-50', !e.eq.tracked && 'opacity-50')}>
-      <b className="flex min-w-0 items-center gap-1.5 text-[13px] text-slate-900">{iso(e) && <span className={cx('h-2 w-2 shrink-0 rounded-full', ISO_BG[ISO_DOT[iso(e)!.state]])} />}<span className="truncate">{e.eq.critical && <span className="text-[#E02028]">★ </span>}{e.eq.tag}</span></b>
+  // the one-tap step of a row: finish the running step, else start the next one (blind and neutralization lines are
+  // done on the Isolation page, field-detail steps in the item)
+  const neutKeys = new Set(points.filter((p) => p.kind === 'neut').flatMap((p) => p.items));
+  const stepOf = (e: EquipView): { a: TrackerData['activities'][number]; finish: boolean; more: number } | null => {
+    if (!e.eq.tracked) return null;
+    const key = e.eq.barchartKey ?? e.eq.tag;
+    const ok = (a: TrackerData['activities'][number]) => !blindLink(a) && !(neutKeys.has(e.eq.tag) && neutLink(a));
+    const xs = sortActs(activities.filter((a) => a.tracked && !a.detail && a.key === key && ok(a)));
+    const run = xs.filter((a) => a.actualStart && !a.actualFinish);
+    if (run.length) return { a: run[0], finish: true, more: run.length - 1 };
+    const nx = xs.find((a) => !a.actualStart);
+    return nx ? { a: nx, finish: false, more: 0 } : null;
+  };
+  const row = (e: EquipView) => { const l = lineOf(e); const st = canEdit ? stepOf(e) : null; const sp = spare.get(e.eq.tag);
+    return (
+    <div key={e.eq.tag} role="button" tabIndex={0} onClick={() => onOpen(e.eq.tag)} onKeyDown={(x) => x.key === 'Enter' && onOpen(e.eq.tag)}
+      className={cx('grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-slate-100 px-2.5 py-1.5 text-left first:border-t-0 active:bg-slate-50', !e.eq.tracked && 'opacity-50')}>
       <span className="min-w-0">
-        <StageBar stage={e.stage} className="mb-1" />
-        {l && <span className={cx('block truncate text-[11.5px]', l.tone === 'run' ? 'text-[#004080]' : l.tone === 'red' ? 'text-red-800' : 'text-slate-600')}>{l.text}</span>}
+        <span className="flex flex-wrap items-center gap-1">
+          {iso(e) && <span className={cx('h-2 w-2 shrink-0 rounded-full', ISO_BG[ISO_DOT[iso(e)!.state]])} />}
+          <b className="mr-1 text-[13px] text-slate-900">{e.eq.critical && <span className="text-[#E02028]">★ </span>}{e.eq.tag}</b>
+          {iso(e) && iso(e)!.state !== 'ho' && <IsoChip state={iso(e)!.state}>{ISO_LABEL[iso(e)!.state]}</IsoChip>}
+          <span className={cx('whitespace-nowrap rounded px-1 py-px text-[9.5px] font-bold', FLAG_STYLE[e.flag].cls)}>{FLAG_STYLE[e.flag].label}{e.late ? ` ${hoursText(e.lateBy)}` : ''}{e.iatsOpen.length && e.flag !== 'IAT_OPEN' ? ` · IAT ${e.iatsOpen.length}` : ''}</span>
+          {e.plan && e.stage < 6 && e.plan.variance !== 0 && <PlanChip variance={e.plan.variance} days={e.plan.days} short />}
+          {sp !== undefined && sp <= 7 && <span className={cx('rounded px-1 text-[9.5px] font-bold', sp < 0 ? 'bg-red-600 text-white' : sp <= 3 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{sp < 0 ? `delays ${-sp} d` : `${sp} d spare`}</span>}
+        </span>
+        <span className="mt-0.5 flex items-center gap-2">
+          <StageBar stage={e.stage} className="w-14 shrink-0" />
+          {l && <span className={cx('min-w-0 truncate text-[11.5px]', l.tone === 'run' ? 'text-[#004080]' : l.tone === 'red' ? 'text-red-800' : 'text-slate-600')}>{st && !st.finish && l.text.startsWith('Next:') ? `Next: ${st.a.activity}` : l.text}</span>}
+        </span>
       </span>
-      <span className="flex flex-col items-end gap-0.5">
-        {iso(e) && iso(e)!.state !== 'ho' && <IsoChip state={iso(e)!.state}>{ISO_LABEL[iso(e)!.state]}</IsoChip>}
-        <span className={cx('whitespace-nowrap rounded px-1.5 py-0.5 text-[9.5px] font-bold', FLAG_STYLE[e.flag].cls)}>{FLAG_STYLE[e.flag].label}{e.late ? ` ${hoursText(e.lateBy)}` : ''}{e.iatsOpen.length && e.flag !== 'IAT_OPEN' ? ` · IAT ${e.iatsOpen.length}` : ''}</span>
-        {e.plan && e.stage < 6 && <PlanChip variance={e.plan.variance} days={e.plan.days} short />}
-        {spare.get(e.eq.tag) !== undefined && spare.get(e.eq.tag)! <= 7 && <span className={cx('rounded px-1.5 text-[10.5px] font-bold', spare.get(e.eq.tag)! < 0 ? 'bg-red-600 text-white' : spare.get(e.eq.tag)! <= 3 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{spare.get(e.eq.tag)! < 0 ? `delays ${-spare.get(e.eq.tag)!} d` : `${spare.get(e.eq.tag)} d spare`}</span>}
-      </span>
-    </button>); };
+      {st ? <StepButton key={st.a.id} a={st.a} finish={st.finish} more={st.more} onDone={(m) => onDone?.(m)} /> : <span className="w-8" />}
+    </div>); };
   return (
     <div className="space-y-2">
       <div className="flex gap-1.5 overflow-x-auto pb-1">{['All', ...main, ...(misc.length ? ['Misc'] : [])].map((x) => { const n = x === 'All' ? shown.length : x === 'Misc' ? shown.filter((e) => isMisc(e.eq.group)).length : shown.filter((e) => e.eq.group === x).length;
@@ -265,6 +288,7 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
         {showMisc && miscRows.map(([name, xs]) => <div key={name}><h3 className="mb-1 mt-2 px-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">{name} · {xs.length}</h3><div className="overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">{xs.map(row)}</div></div>)}
       </section>}
       {!list.length && <p className="py-4 text-center text-sm text-slate-500">No items here{onlyOps ? ' for operations' : ''}.</p>}
+      {off.length > 0 && <button type="button" onClick={() => setShowOff((x) => !x)} className="w-full py-2 text-xs font-semibold text-slate-500">{showOff ? 'Hide' : 'Show'} switched-off items ({off.length})</button>}
     </div>
   );
 }
@@ -357,3 +381,29 @@ function ReportTab({ data, now, canEdit, by, onSaved }: { data: TrackerData; now
   );
 }
 
+
+/** The one-tap step button of an equipment row: ▶ starts the next step, ✓ finishes the running one. A first tap
+ *  arms it (shows "Start?" / "Finish?" for 4 s), the second tap saves, so a stray touch changes nothing. The time is
+ *  now; a different time or an undo is done in the item. */
+function StepButton({ a, finish, more, onDone }: { a: TrackerData['activities'][number]; finish: boolean; more: number; onDone: (msg: string) => void }) {
+  const [armed, setArmed] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null);
+  useEffect(() => { if (!armed) return; const t = window.setTimeout(() => setArmed(false), 4000); return () => window.clearTimeout(t); }, [armed]);
+  const go = async (x: React.MouseEvent) => {
+    x.stopPropagation();
+    if (!armed) { setArmed(true); setErr(null); return; }
+    setBusy(true);
+    try { await setActivity(a.id, finish ? { actual_finish: new Date().toISOString() } : { actual_start: new Date().toISOString() }); onDone(`${a.key}: ${a.activity} ${finish ? 'finished' : 'started'}.`); }
+    catch (e) { setErr(e instanceof Error ? e.message : 'Not saved'); } finally { setBusy(false); setArmed(false); }
+  };
+  return (
+    <span className="flex flex-col items-end">
+      <button type="button" disabled={busy} onClick={go} title={`${finish ? 'Finish' : 'Start'}: ${a.activity}`} aria-label={`${finish ? 'Finish' : 'Start'} ${a.activity}`}
+        className={cx('flex h-8 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm disabled:opacity-50', armed ? 'px-2.5' : 'w-8',
+          finish ? 'bg-[#08A048] active:bg-green-700' : 'bg-[#0d2a5e] active:bg-[#0850A0]')}>
+        {armed ? (finish ? 'Finish?' : 'Start?') : finish ? '✓' : '▶'}
+      </button>
+      {more > 0 && !armed && <span className="text-[9.5px] font-semibold text-slate-500">+{more} running</span>}
+      {err && <span className="max-w-[7rem] text-right text-[9.5px] text-red-700">{err}</span>}
+    </span>
+  );
+}
