@@ -8,6 +8,7 @@ import { blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTO
 import { setActivity, setEquipment, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Spinner, cx } from '@/ui/components';
+import { DrumQuick } from './Drums';
 import { EquipSheet, StepSheet } from './TrackerSheets';
 import { TrackerAdmin, clockKey } from './TrackerAdmin';
 import { TimingTab } from './Timing';
@@ -124,7 +125,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} now={now} onOpen={open} onNav={nav} />}
       {tab === 'isolation' && <IsolationTab key={`iso-${isoKind}`} trackerId={tracker.id} initialKind={isoKind} activities={data.activities} points={points} pointSteps={data.pointSteps} lineup={data.lineup} iats={data.iats} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} focus={focus} onFocus={setFocus} onItem={(tag) => setSheet({ kind: 'eq', tag })} onStep={(id) => setSheet({ kind: 'step', id })} onDone={done} />}
       {tab === 'guideline' && <SequenceTab steps={steps} auto={auto} onOpen={(id) => setSheet({ kind: 'step', id })} />}
-      {tab === 'equipment' && <EquipmentTab key={`eq-${lateFirst}`} initialLateFirst={lateFirst} eqs={eqs} activities={data.activities} points={points} now={now} spare={spare} canEdit={canEdit} onDone={(m) => done(m, true)} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
+      {tab === 'equipment' && <EquipmentTab key={`eq-${lateFirst}`} initialLateFirst={lateFirst} eqs={eqs} activities={data.activities} points={points} now={now} spare={spare} canEdit={canEdit} engine={data.engine} onDone={(m) => done(m, true)} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={done} />}
       {tab === 'iats' && <IatsTab iats={data.iats} tags={data.equipment.map((e) => e.tag)} lineup={data.lineup} lineupEq={data.lineupEq} points={points} onItem={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
@@ -200,7 +201,7 @@ function SequenceTab({ steps, auto, onOpen }: { steps: Map<string, StepView>; au
  *  step), the status and the plan difference. "All" groups the items under their group; "Late first" puts the late,
  *  pending and IAT items on top. */
 const ISO_BG = { red: 'bg-[#E02028]', grey: 'bg-slate-300', amber: 'bg-amber-500', teal: 'bg-teal-500', blue: 'bg-[#0850A0]' } as const;
-function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, spare = new Map(), canEdit = false, onDone, onOpen }: { initialLateFirst?: boolean; eqs: EquipView[]; activities: TrackerData['activities']; points: TrkPoint[]; now: number; spare?: Map<string, number>; canEdit?: boolean; onDone?: (msg: string) => void; onOpen: (tag: string) => void }) {
+function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, spare = new Map(), canEdit = false, engine, onDone, onOpen }: { initialLateFirst?: boolean; engine?: TrackerData['engine']; eqs: EquipView[]; activities: TrackerData['activities']; points: TrkPoint[]; now: number; spare?: Map<string, number>; canEdit?: boolean; onDone?: (msg: string) => void; onOpen: (tag: string) => void }) {
   const lineOf = (e: EquipView): { text: string; tone: 'run' | 'muted' | 'red' } | null => {
     const key = e.eq.barchartKey ?? e.eq.tag;
     const xs = sortActs(activities.filter((a) => a.tracked && !a.detail && a.key === key));
@@ -249,7 +250,15 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
     const nx = xs.find((a) => !a.actualStart);
     return nx ? { a: nx, finish: false, more: 0 } : null;
   };
-  const row = (e: EquipView) => { const l = lineOf(e); const st = canEdit ? stepOf(e) : null; const sp = spare.get(e.eq.tag);
+  // a reactor dumping: the shift's update is its drums, one tap from the list
+  const [drumKey, setDrumKey] = useState<string | null>(null);
+  const scopeOf = (key: string) => engine?.scopes.find((x) => x.key === key && x.scope === 'removal' && x.unit);
+  const dumping = (e: EquipView) => { const sc = scopeOf(e.eq.barchartKey ?? e.eq.tag);
+    return sc && !sc.completeAt && activities.some((a) => a.key === sc.key && sc.activityIds.includes(a.activityId) && a.actualStart) ? sc : null; };
+  const drumText = (key: string) => { const sc = scopeOf(key); if (!sc || !engine) return '';
+    const v = engine.entries.filter((x) => x.scopeId === sc.id && x.verify === 'verified' && x.kind !== 'transfer').reduce((t, x) => t + x.qty, 0);
+    return ` · ${v.toLocaleString('en-US')}/${sc.working ? sc.working.toLocaleString('en-US') : '—'} drums`; };
+  const row = (e: EquipView) => { const l = lineOf(e); const st = canEdit ? stepOf(e) : null; const sp = spare.get(e.eq.tag); const dm = dumping(e);
     return (
     <div key={e.eq.tag} role="button" tabIndex={0} onClick={() => onOpen(e.eq.tag)} onKeyDown={(x) => x.key === 'Enter' && onOpen(e.eq.tag)}
       className={cx('grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-slate-100 px-2.5 py-1.5 text-left first:border-t-0 active:bg-slate-50', !e.eq.tracked && 'opacity-50')}>
@@ -264,10 +273,12 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
         </span>
         <span className="mt-0.5 flex items-center gap-2">
           <StageBar stage={e.stage} className="w-14 shrink-0" />
-          {l && <span className={cx('min-w-0 truncate text-[11.5px]', l.tone === 'run' ? 'text-[#004080]' : l.tone === 'red' ? 'text-red-800' : 'text-slate-600')}>{st && !st.finish && l.text.startsWith('Next:') ? `Next: ${st.a.activity}` : st && !st.finish && l.tone === 'red' ? `${l.text} · next ${st.a.activity}` : l.text}</span>}
+          {l && <span className={cx('min-w-0 truncate text-[11.5px]', l.tone === 'run' ? 'text-[#004080]' : l.tone === 'red' ? 'text-red-800' : 'text-slate-600')}>{st && !st.finish && l.text.startsWith('Next:') ? `Next: ${st.a.activity}` : st && !st.finish && l.tone === 'red' ? `${l.text} · next ${st.a.activity}` : l.text}{dm ? drumText(dm.key) : ''}</span>}
         </span>
       </span>
-      {st ? <StepButton key={st.a.id} a={st.a} finish={st.finish} more={st.more} eq={e.eq} onDone={(m) => onDone?.(m)} /> : <span className="w-8" />}
+      {dm && (!st || (st.finish && dm.activityIds.includes(st.a.activityId)))
+        ? <button type="button" aria-label={`Drums ${e.eq.tag}`} onClick={(x) => { x.stopPropagation(); setDrumKey(dm.key); }} className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-400 text-base shadow-sm active:bg-amber-500">🛢</button>
+        : st ? <StepButton key={st.a.id} a={st.a} finish={st.finish} more={st.more} eq={e.eq} onDone={(m) => onDone?.(m)} /> : <span className="w-8" />}
     </div>); };
   return (
     <div className="space-y-2">
@@ -288,6 +299,10 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
         {showMisc && miscRows.map(([name, xs]) => <div key={name}><h3 className="mb-1 mt-2 px-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">{name} · {xs.length}</h3><div className="overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">{xs.map(row)}</div></div>)}
       </section>}
       {!list.length && <p className="py-4 text-center text-sm text-slate-500">No items here{onlyOps ? ' for operations' : ''}.</p>}
+      {drumKey && engine && (() => { const sc = scopeOf(drumKey)!; const tag = eqs.find((e) => (e.eq.barchartKey ?? e.eq.tag) === drumKey)?.eq.tag ?? drumKey;
+        return <BottomSheet open onClose={() => setDrumKey(null)} title={`${tag} · drums`}>
+          <DrumQuick scope={sc} entries={engine.entries.filter((x) => x.scopeId === sc.id)} now={now} canEdit={canEdit} onOpen={() => { setDrumKey(null); onOpen(tag); }} onDone={(m) => { setDrumKey(null); onDone?.(m); }} />
+        </BottomSheet>; })()}
       {off.length > 0 && <button type="button" onClick={() => setShowOff((x) => !x)} className="w-full py-2 text-xs font-semibold text-slate-500">{showOff ? 'Hide' : 'Show'} switched-off items ({off.length})</button>}
     </div>
   );
