@@ -48,14 +48,14 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
   const [lu, le, ps] = await Promise.all([supabase.from('lu_streams').select('id,frm,to_tag,fluid,line,line_nos,sheets,size,conf').limit(2000),
     supabase.from('lu_equipment').select('tag,plant_tag,name,data,primary_sheet').limit(2000),
     // the SOP field steps of each neutralization: optional as well
-    supabase.from('trk_point_step').select('id,point_id,seq,phase,text,source,done_at,done_by_name').eq('tracker_id', id).order('seq').limit(2000)]);
+    supabase.from('trk_point_step').select('id,point_id,seq,phase,text,source,done_at,done_by_name,crane,kind,start_at,start_by_name').eq('tracker_id', id).order('seq').limit(2000)]);
   const err = [t, s, e, i, a, l, sl, pt].find((r) => r.error)?.error; if (err) throw err;
   const engine = (t.data as unknown as TrackerRow).settings?.progressV2 ? await fetchEngine(id) : undefined;
   const acts = a.data as ActRow[]; const base = Math.max(0, ...acts.map((x) => x.baseline));
   return {
     engine,
-    pointSteps: ps.error ? [] : (ps.data as { id: string; point_id: string; seq: number; phase: TrkPointStep['phase']; text: string; source: string | null; done_at: string | null; done_by_name: string | null }[])
-      .map((r): TrkPointStep => ({ id: r.id, pointId: r.point_id, seq: r.seq, phase: r.phase, text: r.text, source: r.source, doneAt: r.done_at, doneBy: r.done_by_name })),
+    pointSteps: ps.error ? [] : (ps.data as { id: string; point_id: string; seq: number; phase: TrkPointStep['phase']; text: string; source: string | null; done_at: string | null; done_by_name: string | null; crane: boolean | null; kind: string | null; start_at: string | null; start_by_name: string | null }[])
+      .map((r): TrkPointStep => ({ id: r.id, pointId: r.point_id, seq: r.seq, phase: r.phase, text: r.text, source: r.source, doneAt: r.done_at, doneBy: r.done_by_name, crane: !!r.crane, kind: r.kind === 'step' ? 'step' : 'check', startAt: r.start_at, startBy: r.start_by_name })),
     lineupEq: le.error ? [] : (le.data as { tag: string; plant_tag: string | null; name: string | null; data: string | null; primary_sheet: string | null }[])
       .map((r): LuEquip => ({ tag: r.tag, plantTag: r.plant_tag, name: r.name, data: r.data, sheet: r.primary_sheet })),
     lineup: lu.error ? [] : (lu.data as { id: string; frm: string; to_tag: string; fluid: string | null; line: string | null; line_nos: string[]; sheets: string[]; size: string | null; conf: string | null }[])
@@ -96,6 +96,8 @@ export async function addActivity(trackerId: string, v: { key: string; activity:
 }
 /** A blind or neutralization: its state (the time of each state is stamped, a time can be corrected) or a remark. */
 export const setPointStep = (id: string, done: boolean) => upd('trk_point_step', id, { done_at: done ? new Date().toISOString() : null });
+/** A timed field step: started / finished now, or undone (null). */
+export const setPointStepTime = (id: string, patch: Partial<{ start_at: string | null; done_at: string | null }>) => upd('trk_point_step', id, patch);
 export const setPoint = (id: string, patch: Partial<{ status: PointStatus; in_at: string | null; out_at: string | null; fill_at: string | null; soak_at: string | null; drain_at: string | null; done_at: string | null; remark: string | null }>) => upd('trk_points', id, patch);
 export async function addIat(trackerId: string, v: { tag: string; iatNo: string; jobText: string; discipline: string }) {
   const { error } = await supabase.from('trk_iat').insert({ tracker_id: trackerId, tag: v.tag, iat_no: v.iatNo, job_text: v.jobText || null, discipline: v.discipline || null });

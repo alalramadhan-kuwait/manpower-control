@@ -1,9 +1,9 @@
 // Isolation & neutralization: the critical blinds (segregation points) and the neutralization loops and items, entered
 // once here. The database moves the rest: the items (handed over when all their blinds are in and the neutralization
 // before handover is done), the guideline step of each row and the soda-ash bar-chart lines.
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { NEUT_FLOW, NEUT_LABEL, neutLabel, equipBlind, loopLines, missingBlinds, waitingSteps, type LuStream, type TrkIat, hoursText, kwDay, kwTime, pointComplete, soakLeft, type PointStatus, type TrkActivity, type TrkPoint, type TrkPointStep, type TrkStep } from '@/core/tracker';
-import { setActivity, setPoint, setPointStep } from '@/data/tracker';
+import { setActivity, setPoint, setPointStep, setPointStepTime } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, cx } from '@/ui/components';
 import { CRow, IsoChip, MenuBtn, RowBtn, RowList, Tile } from './ui';
 
@@ -42,6 +42,8 @@ function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], ch
   const extra = blind ? null : <>
     {locked && (p.requires ?? []).map((r) => <IsoChip key={r} state={missing.includes(r) ? 'blind' : 'ready'}>{r} {missing.includes(r) ? '✗' : '✓'}</IsoChip>)}
     {p.items.map((t) => <IsoChip key={t} state={loopState}>{t}</IsoChip>)}
+    {checks.some((c) => c.kind === 'step' && c.startAt && !c.doneAt) && <span className="rounded bg-[#004080] px-1 text-[10.5px] font-bold text-white">▶ {checks.filter((c) => c.kind === 'step' && c.startAt && !c.doneAt).length} running</span>}
+    {checks.some((c) => c.crane && !c.doneAt) && <span className="rounded bg-[#E02028] px-1 text-[10.5px] font-bold text-white">🏗 Crane</span>}
     {checks.length > 0 && <span className={cx('rounded px-1 text-[10.5px] font-bold', checks.every((c) => c.doneAt) ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-600')}>📋 {checks.filter((c) => c.doneAt).length}/{checks.length}</span>}
     {(p.partOf ?? []).length > 0 && <span className="text-[10.5px] font-semibold text-slate-500">part of {p.partOf!.map((t) => t.replace('-12-', '-')).join(', ')} · on its own</span>}
   </>;
@@ -77,6 +79,20 @@ function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], ch
   );
 }
 
+/** The start / finish button of a timed field step: a first tap arms it (4 s), the second saves. */
+function JobButton({ c, busy, onStart, onFinish }: { c: TrkPointStep; busy: boolean; onStart: () => void; onFinish: () => void }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => { if (!armed) return; const t = window.setTimeout(() => setArmed(false), 4000); return () => window.clearTimeout(t); }, [armed]);
+  if (c.doneAt) return <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#08A048] text-[12px] font-bold text-white">✓</span>;
+  const finish = !!c.startAt;
+  return (
+    <button type="button" disabled={busy} aria-label={`${finish ? 'Finish' : 'Start'} step ${c.seq}`} onClick={() => { if (!armed) { setArmed(true); return; } setArmed(false); (finish ? onFinish : onStart)(); }}
+      className={cx('mt-0.5 flex h-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white disabled:opacity-50', armed ? 'px-2' : 'w-6', finish ? 'bg-[#08A048]' : 'bg-[#0d2a5e]')}>
+      {armed ? (finish ? 'Finish?' : 'Start?') : finish ? '✓' : '▶'}
+    </button>
+  );
+}
+
 /** A neutralization opened: its procedure (the guideline step), the steps of the loop with their times, and the next action. */
 function LoopSheet({ p, points, lineup, iats, steps, checks, canEdit, onDone, now, missing, waiting, action, err, onClose, onItem, onStep }: { p: TrkPoint; points: TrkPoint[]; lineup: LuStream[]; iats: TrkIat[]; steps: TrkStep[]; checks: TrkPointStep[]; canEdit: boolean; onDone: (msg: string) => void; now: number;
   missing: string[]; waiting: string[]; action: ReactNode; err: unknown; onClose: () => void; onItem: (tag: string) => void; onStep?: (id: string) => void }) {
@@ -88,7 +104,11 @@ function LoopSheet({ p, points, lineup, iats, steps, checks, canEdit, onDone, no
   type Row = { label: string; done: boolean; now?: boolean; info?: string; check?: TrkPointStep };
   const [busy, setBusy] = useState<string | null>(null); const [cErr, setCErr] = useState<unknown>(null);
   const tick = async (c: TrkPointStep) => { setBusy(c.id); setCErr(null); try { await setPointStep(c.id, !c.doneAt); onDone(`${p.ref}: step ${c.seq} ${c.doneAt ? 'undone' : 'done'}.`); } catch (e) { setCErr(e); } finally { setBusy(null); } };
-  const sop = (ph: TrkPointStep['phase']): Row[] => checks.filter((c) => c.phase === ph).map((c) => ({ label: c.text, done: !!c.doneAt, info: c.doneAt ? `${when(c.doneAt)}${c.doneBy ? ` · ${c.doneBy}` : ''}` : undefined, check: c }));
+  const stepInfo = (c: TrkPointStep) => c.doneAt ? `${c.startAt ? `${when(c.startAt)} → ` : ''}${when(c.doneAt)}${dur(c.startAt, c.doneAt)}${c.doneBy ? ` · ${c.doneBy}` : ''}`
+    : c.startAt ? `started ${when(c.startAt)} · ${hoursText(now - Date.parse(c.startAt))} so far${c.startBy ? ` · ${c.startBy}` : ''}` : undefined;
+  const sop = (ph: TrkPointStep['phase']): Row[] => checks.filter((c) => c.phase === ph).map((c) => ({ label: c.text, done: !!c.doneAt, now: c.kind === 'step' && !!c.startAt && !c.doneAt,
+    info: c.kind === 'step' ? stepInfo(c) : c.doneAt ? `${when(c.doneAt)}${c.doneBy ? ` · ${c.doneBy}` : ''}` : undefined, check: c }));
+  const time = async (c: TrkPointStep, patch: Parameters<typeof setPointStepTime>[1], msg: string) => { setBusy(c.id); setCErr(null); try { await setPointStepTime(c.id, patch); onDone(`${p.ref}: ${msg}`); } catch (e) { setCErr(e); } finally { setBusy(null); } };
   const rows: Row[] = [
     ...(p.requires ?? []).map((r) => { const b = points.find((x) => x.kind === 'blind' && x.ref === r); const ok = !missing.includes(r);
       return { label: `Blind ${r}${b?.name ? ` · ${b.name}` : ''}`, done: ok, info: ok ? (b?.inAt ? `in ${when(b.inAt)}` : 'in') : 'not in yet' }; }),
@@ -126,16 +146,22 @@ function LoopSheet({ p, points, lineup, iats, steps, checks, canEdit, onDone, no
           <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Steps</h3>
           <ol className="overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">
             {rows.map((x, i) => <li key={i} className="flex items-start gap-2 border-t border-slate-100 px-2.5 py-1.5 first:border-t-0">
-              {x.check && canEdit
+              {x.check?.kind === 'step' && canEdit
+                ? <JobButton c={x.check} busy={busy === x.check.id}
+                    onStart={() => time(x.check!, { start_at: new Date().toISOString() }, `${x.check!.text.split(',')[0]} started.`)}
+                    onFinish={() => time(x.check!, { done_at: new Date().toISOString() }, `${x.check!.text.split(',')[0]} finished.`)} />
+                : x.check && canEdit
                 ? <button type="button" disabled={busy === x.check.id} onClick={() => tick(x.check!)} aria-label={`${x.done ? 'Undo' : 'Tick'} step ${i + 1}`}
                     className={cx('mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[12px] font-bold ring-1 disabled:opacity-50', x.done ? 'bg-[#08A048] text-white ring-[#08A048]' : 'bg-white text-slate-400 ring-slate-300')}>{x.done ? '✓' : ''}</button>
                 : <span className={cx('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold', x.done ? 'bg-[#08A048] text-white' : x.now ? 'bg-amber-400 text-white' : 'bg-slate-200 text-slate-500')}>{x.done ? '✓' : i + 1}</span>}
-              <span className="min-w-0 flex-1"><span className={cx('block', x.check ? 'text-[12.5px] font-medium' : 'font-semibold', x.done ? 'text-slate-900' : x.now ? 'text-amber-900' : 'text-slate-600')}>{x.label}{x.now ? ' · now' : ''}</span>
-                {x.info && <span className="block text-[11.5px] text-slate-500">{x.info}</span>}</span>
+              <span className="min-w-0 flex-1"><span className={cx('block', x.check ? 'text-[12.5px] font-medium' : 'font-semibold', x.done ? 'text-slate-900' : x.now ? 'text-amber-900' : 'text-slate-600')}>{x.check?.crane && <span className={cx('mr-1 rounded px-1 text-[10px] font-bold', x.done ? 'bg-slate-200 text-slate-600' : 'bg-[#E02028] text-white')}>🏗 CRANE · CRITICAL</span>}{x.label}{x.now ? ' · now' : ''}</span>
+                {x.info && <span className="block text-[11.5px] text-slate-500">{x.info}</span>}
+                {x.check?.kind === 'step' && canEdit && (x.check.startAt || x.check.doneAt) && <button type="button" disabled={busy === x.check.id} className="text-[11px] font-semibold text-slate-400"
+                  onClick={() => time(x.check!, x.check!.doneAt ? { done_at: null } : { start_at: null }, `step ${x.check!.seq} ${x.check!.doneAt ? 'finish' : 'start'} undone.`)}>↶ undo {x.check.doneAt ? 'finish' : 'start'}</button>}</span>
             </li>)}
           </ol>
         </section>
-        {checks[0]?.source && <p className="-mt-2 text-[10.5px] text-slate-400">Field steps from {checks[0].source}. Tick each as it is done.</p>}
+        {checks[0]?.source && <p className="-mt-2 text-[10.5px] text-slate-400">Field steps from {checks[0].source}. ▶ starts and ✓ finishes a job (crane, blinds, elbows), the boxes are ticks.</p>}
         {cErr != null && <ErrorBox error={cErr} />}
         {action && <div className="flex justify-end">{action}</div>}
         {err != null && <ErrorBox error={err} />}
