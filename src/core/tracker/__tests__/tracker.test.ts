@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { miWeighted, spareWeight, neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -371,5 +371,27 @@ describe('WhatsApp report in the plant format', () => {
     expect(text).toContain('- V-202/210: Under inspection');
     expect(text).toContain('*Segregation blinding*\n- 1 blind pending: SEG-18');
     expect(text).toContain('*Neutralization*\n- V-206 to V-207: Soda ash draining I/P\n- Not started: S112');
+  });
+});
+
+describe('M & I progress against time', () => {
+  const act = (key: string, id: string, start: string, finish: string, h: number, done = false) => ({ id: key + id, activityId: id, group: 'Mech', key, activity: id, durationH: h, start: kw(start), finish: kw(finish), stage: 2, tracked: true, actualStart: done ? kw(start) : null, actualFinish: done ? kw(finish) : null }) as never;
+  const ev = (tag: string, stage = 1, hoAt: string | null = kw('2026-10-20 07:00')) => ({ eq: { tag, barchartKey: tag, tracked: true }, stage, hoAt }) as never;
+  const d = { settings: { miEnd: kw('2026-11-07 07:00') }, activities: [
+    act('R-12-205', 'A1', '2026-10-20 07:00', '2026-10-25 07:00', 120, true), act('R-12-205', 'A2', '2026-10-25 07:00', '2026-11-07 07:00', 312),
+    act('V-12-206', 'B1', '2026-10-20 07:00', '2026-10-22 07:00', 48),
+    act('Electrical', 'E1', '2026-10-20 07:00', '2026-11-04 07:00', 360) ] } as unknown as TrkData;
+  it('weights the critical item, flags the delay, keeps support jobs apart', () => {
+    expect([spareWeight(0.5), spareWeight(2), spareWeight(5), spareWeight(10)]).toEqual([3, 2, 1.5, 1]);
+    const w = miWeighted(d, Date.parse(kw('2026-10-25 07:00')), [ev('R-12-205'), ev('V-12-206')])!;
+    expect(w.items.map((i) => [i.tag, i.spareD, i.weight])).toEqual([['R-12-205', 0, 3], ['V-12-206', 11, 1]]);
+    // V-206 not started 5 days after its plan: its finish moves 5 days (11 d spare left)
+    // plan: R-205 120 h × 3 + V-206 48 h; actual: R-205 120 h × 3 (V-206 not done)
+    expect([w.planPct, w.actualPct, w.state]).toEqual([Math.round((360 + 48) / (1296 + 48) * 100), Math.round(360 / 1344 * 100), 'BEHIND']);
+    expect(w.critical.map((i) => i.tag)).toEqual(['R-12-205']);
+    expect(w.support).toEqual([0, 1]);
+    // R-205's next line not started a day after its plan: the end moves, the shutdown is delayed
+    const late = miWeighted(d, Date.parse(kw('2026-10-26 07:00')), [ev('R-12-205'), ev('V-12-206')])!;
+    expect(late.delays.map((i) => [i.tag, i.spareD])).toEqual([['R-12-205', -1]]);
   });
 });

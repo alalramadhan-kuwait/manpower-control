@@ -2,7 +2,7 @@
 // handover · M & I: the bar chart and the blinds it installs) with their planned and actual dates, and the late /
 // pending / IAT counts. Each card opens its detail; every line in it opens the step, item or page behind it.
 import { useMemo, useState } from 'react';
-import { FO_NAMES, isMisc, attention, focusList, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, neutLabel,
+import { CRITICAL_SPARE_D, type MiItem, FO_NAMES, isMisc, attention, focusList, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, neutLabel,
   type Attention, type Banner, type Focus, type NextStep, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import type { TrackerData } from '@/data/tracker';
 import { BottomSheet, cx } from '@/ui/components';
@@ -96,13 +96,18 @@ export function TodayTab({ steps, eqs, data, now, onOpen, onNav }: { steps: Map<
       <div role="button" tabIndex={0} onClick={() => setSheet('mi')} onKeyDown={(e) => e.key === 'Enter' && setSheet('mi')} className="cursor-pointer rounded-2xl bg-white p-3 ring-1 ring-slate-200 active:scale-[0.99]">
         <Head dot={mi.banner?.state === 'BEHIND' ? 'bg-[#E02028]' : mi.banner ? 'bg-[#08A048]' : 'bg-slate-400'} title="M & I" badge={mi.banner ? STATE_WORD[mi.banner.state] : 'NOT STARTED'} tone={mi.banner ? STATE_TONE[mi.banner.state] : 'grey'} />
         <Dates plan={[mi.planned, mi.plannedEnd]} actual={[mi.actualStart, mi.actualStart !== null ? mi.estEnd : null, true]} />
-        {mi.banner && (
+        {mi.weighted && (
           <div className="pt-1.5">
-            <span className="flex justify-between text-[13px] text-slate-700"><span>Done</span><span><b className="text-slate-900">{mi.banner.actualPct}%</b> <span className="font-semibold text-slate-500">/ plan {mi.banner.planPct}%</span></span></span>
+            <span className="flex justify-between text-[13px] text-slate-700"><span>Done <span className="text-[11px] text-slate-500">(by hours, critical × more)</span></span><span><b className="text-slate-900">{mi.weighted.actualPct}%</b> <span className="font-semibold text-slate-500">/ plan {mi.weighted.planPct}%</span></span></span>
             <span className="relative mt-1 block h-2 rounded-full bg-slate-200">
-              <span className={cx('block h-full rounded-full', mi.banner.state === 'BEHIND' ? 'bg-[#E02028]' : 'bg-[#08A048]')} style={{ width: `${mi.banner.actualPct}%` }} />
-              <span className="absolute -top-1 h-4 w-0.5 bg-slate-900" style={{ left: `${mi.banner.planPct}%` }} />
+              <span className={cx('block h-full rounded-full', mi.weighted.state === 'BEHIND' ? 'bg-[#E02028]' : 'bg-[#08A048]')} style={{ width: `${mi.weighted.actualPct}%` }} />
+              <span className="absolute -top-1 h-4 w-0.5 bg-slate-900" style={{ left: `${mi.weighted.planPct}%` }} />
             </span>
+            {mi.weighted.critical.length > 0 && <>
+              <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">Critical path · {CRITICAL_SPARE_D} d spare or less</p>
+              <div className="mt-1 space-y-1">{mi.weighted.critical.slice(0, 4).map((i) => <SpareRow key={i.key} i={i} onClick={() => onOpen({ kind: 'equipment', ref: i.tag })} />)}</div>
+              {mi.weighted.critical.length > 4 && <p className="mt-1 text-[11px] text-slate-500">+ {mi.weighted.critical.length - 4} more in the M &amp; I sheet</p>}
+            </>}
           </div>
         )}
         <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">Blinds installed</p>
@@ -204,6 +209,17 @@ function OpsSheet({ data, eqs, plan, finished, badge, onOpen, onNav, onClose }: 
   );
 }
 
+/** An item on the critical path: steps done, spare time before the shutdown end, its next step. */
+function SpareRow({ i, onClick }: { i: MiItem; onClick: () => void }) {
+  return (
+    <button type="button" onClick={(x) => { x.stopPropagation(); onClick(); }} className="flex w-full items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5 text-left ring-1 ring-slate-200">
+      <span className="min-w-0 flex-1"><b className="text-[13px]">{i.tag}</b> <span className="text-[11px] text-slate-500">{i.done}/{i.lines} steps</span>
+        {i.next && <span className="block truncate text-[11px] text-slate-600">Next: {i.next}</span>}</span>
+      <span className={cx('shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold', i.spareD < 0 ? 'bg-red-600 text-white' : i.spareD <= 1 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{i.spareD < 0 ? `🔴 delays ${-i.spareD} d` : `${i.spareD} d spare`}</span>
+    </button>
+  );
+}
+
 function MiSheet({ data, steps, now, mi, behind, onOpen, onNav, onClose }: { data: TrackerData; steps: Map<string, StepView>; now: number; mi: ReturnType<typeof phases>['mi']; behind: EquipView[];
   onOpen: (a: { kind: 'step' | 'equipment'; ref: string }) => void; onNav: (n: Nav) => void; onClose: () => void }) {
   const [all, setAll] = useState(false);
@@ -229,6 +245,12 @@ function MiSheet({ data, steps, now, mi, behind, onOpen, onNav, onClose }: { dat
             </tbody>
           </table>
         )}
+        {mi.weighted && mi.weighted.critical.length > 0 && <>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Critical path · {CRITICAL_SPARE_D} d spare or less</p>
+          <div className="space-y-1">{mi.weighted.critical.map((i) => <SpareRow key={i.key} i={i} onClick={() => onOpen({ kind: 'equipment', ref: i.tag })} />)}</div>
+        </>}
+        {mi.weighted && mi.weighted.support[1] > 0 && <p className="text-xs text-slate-600">Support jobs (not on an item, not in the %): <b>{mi.weighted.support[0]}/{mi.weighted.support[1]}</b> done</p>}
+        <p className="text-[11px] text-slate-500">Done % counts every bar-chart line by its hours, × 3 when its item has 1 day spare or less before the shutdown end, × 2 up to 3 days, × 1.5 up to 7 days. Spare time moves with the handover and with steps not started in time.</p>
         <table className="w-full text-[13px]">
           <thead><tr><Th>Blinds installed</Th><Th>In</Th><Th>Open</Th><Th>Out</Th></tr></thead>
           <tbody>{rows.map(([l, i, t, o]) => <tr key={l} className="border-t border-slate-100"><td className="py-1.5 font-bold">{l}</td><td className={cx('text-right tabular-nums', t > 0 && i === 0 && 'font-bold text-[#E02028]')}>{i}/{t}</td><td className="text-right tabular-nums">{t - i}</td><td className="text-right tabular-nums">{o}</td></tr>)}</tbody>

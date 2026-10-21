@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
-import { totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
+import { phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import { currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Spinner, cx } from '@/ui/components';
@@ -92,6 +92,8 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const nav = (n: Nav) => { setFocus(null); setIsoKind(n.iso); setLateFirst(!!n.lateFirst); setTab(n.tab); };
   const toIsolation = (tag: string | null, kind?: 'blind' | 'neut') => { setSheet(null); setFocus(tag); setIsoKind(kind); setTab('isolation'); };
   const tot = totals(steps, eqs, data.iats);
+  // spare time before the shutdown end, for the items with bar-chart work left
+  const spare = new Map((phases(data, now, steps).mi.weighted?.items ?? []).filter((i) => i.done < i.lines).map((i) => [i.tag, i.spareD]));
   const open = (a: { kind: 'step' | 'equipment'; ref: string }) => setSheet(a.kind === 'step' ? { kind: 'step', id: a.ref } : { kind: 'eq', tag: a.ref });
 
   return (
@@ -122,7 +124,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} now={now} onOpen={open} onNav={nav} />}
       {tab === 'isolation' && <IsolationTab key={`iso-${isoKind}`} initialKind={isoKind} activities={data.activities} points={points} lineup={data.lineup} iats={data.iats} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} focus={focus} onFocus={setFocus} onItem={(tag) => setSheet({ kind: 'eq', tag })} onDone={done} />}
       {tab === 'guideline' && <SequenceTab steps={steps} auto={auto} onOpen={(id) => setSheet({ kind: 'step', id })} />}
-      {tab === 'equipment' && <EquipmentTab key={`eq-${lateFirst}`} initialLateFirst={lateFirst} eqs={eqs} activities={data.activities} points={points} now={now} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
+      {tab === 'equipment' && <EquipmentTab key={`eq-${lateFirst}`} initialLateFirst={lateFirst} eqs={eqs} activities={data.activities} points={points} now={now} spare={spare} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={done} />}
       {tab === 'iats' && <IatsTab iats={data.iats} tags={data.equipment.map((e) => e.tag)} lineup={data.lineup} lineupEq={data.lineupEq} points={points} onItem={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
@@ -198,7 +200,7 @@ function SequenceTab({ steps, auto, onOpen }: { steps: Map<string, StepView>; au
  *  step), the status and the plan difference. "All" groups the items under their group; "Late first" puts the late,
  *  pending and IAT items on top. */
 const ISO_BG = { red: 'bg-[#E02028]', grey: 'bg-slate-300', amber: 'bg-amber-500', teal: 'bg-teal-500', blue: 'bg-[#0850A0]' } as const;
-function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, onOpen }: { initialLateFirst?: boolean; eqs: EquipView[]; activities: TrackerData['activities']; points: TrkPoint[]; now: number; onOpen: (tag: string) => void }) {
+function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, spare = new Map(), onOpen }: { initialLateFirst?: boolean; eqs: EquipView[]; activities: TrackerData['activities']; points: TrkPoint[]; now: number; spare?: Map<string, number>; onOpen: (tag: string) => void }) {
   const lineOf = (e: EquipView): { text: string; tone: 'run' | 'muted' | 'red' } | null => {
     if (e.eq.pendingReason) return { text: `⏸ ${e.eq.pendingReason}`, tone: 'red' };
     const key = e.eq.barchartKey ?? e.eq.tag;
@@ -241,6 +243,7 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
         {iso(e) && iso(e)!.state !== 'ho' && <IsoChip state={iso(e)!.state}>{ISO_LABEL[iso(e)!.state]}</IsoChip>}
         <span className={cx('whitespace-nowrap rounded px-1.5 py-0.5 text-[9.5px] font-bold', FLAG_STYLE[e.flag].cls)}>{FLAG_STYLE[e.flag].label}{e.late ? ` ${hoursText(e.lateBy)}` : ''}{e.iatsOpen.length && e.flag !== 'IAT_OPEN' ? ` · IAT ${e.iatsOpen.length}` : ''}</span>
         {e.plan && e.stage < 6 && <PlanChip variance={e.plan.variance} days={e.plan.days} short />}
+        {spare.get(e.eq.tag) !== undefined && spare.get(e.eq.tag)! <= 7 && <span className={cx('rounded px-1.5 text-[10.5px] font-bold', spare.get(e.eq.tag)! < 0 ? 'bg-red-600 text-white' : spare.get(e.eq.tag)! <= 3 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{spare.get(e.eq.tag)! < 0 ? `delays ${-spare.get(e.eq.tag)!} d` : `${spare.get(e.eq.tag)} d spare`}</span>}
       </span>
     </button>); };
   return (

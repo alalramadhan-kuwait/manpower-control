@@ -500,9 +500,12 @@ export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string }
   section('Heaters', merged('Heaters')); section('Exchangers', merged('Exchangers')); section('Vessels', merged('Vessels')); section('Others', merged('Others'));
   section('Max bed temperature', REACTORS.filter((k) => r.temps[k]).map((k) => `R-${k.slice(1)}: ${r.temps[k]}°F`));
   if (r.notes.trim()) out.push('', '*Notes*', r.notes.trim());
-  const res = r.results, b = r.blinds, mi = r.mi.banner;
+  const res = r.results, b = r.blinds, mi = r.mi.banner, w = r.mi.weighted;
   const blindsIn = b.segregation[0] + b.hp[0], blindsAll = b.segregation[1] + b.hp[1];
-  out.push('', `📊 Handover ${res ? `${res.ho[0]}/${res.ho[1]}` : `${r.totals.hoDone}/${r.totals.ho}`}${res ? ` · Neutralized ${res.neut[0]}/${res.neut[1]}` : ''}${blindsAll ? ` · Blinds ${blindsIn}/${blindsAll}` : ''}${mi && mi.items ? ` · M&I ${mi.state === 'BEHIND' ? `behind${mi.days ? ` ${mi.days} d` : ''}` : mi.state === 'AHEAD' ? `ahead${mi.days ? ` ${mi.days} d` : ''}` : 'on plan'}` : ''}`);
+  out.push('', `📊 Handover ${res ? `${res.ho[0]}/${res.ho[1]}` : `${r.totals.hoDone}/${r.totals.ho}`}${res ? ` · Neutralized ${res.neut[0]}/${res.neut[1]}` : ''}${blindsAll ? ` · Blinds ${blindsIn}/${blindsAll}` : ''}${w ? ` · M&I ${w.actualPct}% (plan ${w.planPct}%)` : mi && mi.items ? ` · M&I ${mi.state === 'BEHIND' ? `behind${mi.days ? ` ${mi.days} d` : ''}` : mi.state === 'AHEAD' ? `ahead${mi.days ? ` ${mi.days} d` : ''}` : 'on plan'}` : ''}`);
+  // the critical path: the item with the least spare time, late = the shutdown end moves
+  const cp = w?.items.find((i) => i.done < i.lines);
+  if (cp) out.push(`⏱ Critical path: ${short(cp.tag)} ${cp.spareD < 0 ? `late ${hoursText(-cp.spareD * DAY)} (delays shutdown)` : `on time (${cp.spareD} d spare)`}${w!.delays.length > 1 ? ` · ${w!.delays.length} items past the end` : ''}`);
   if (opts.by) out.push(`— ${opts.by}`);
   return out.join('\n');
 }
@@ -576,10 +579,52 @@ export interface MiPhase {
   critical: { tag: string; hoStep: string | null; done: boolean }[];
   /** plan vs actual from the actual start (the bar chart shifted by the start delay) */
   banner: Banner | null;
-  /** the planned end (bar chart) and the end expected now: shifted by the start delay and by the days behind / ahead */
+  /** the planned end (bar chart) and the end expected now: the latest item forecast (the critical path) */
   plannedEnd: number; estEnd: number | null;
+  /** progress against time, weighted by the spare time of each item */
+  weighted: MiWeighted | null;
 }
 export interface Phases { ops: OpsProgress | null; mi: MiPhase }
+
+/** M & I progress against time: every bar-chart line counts by its hours, and more when its item has little spare time
+ *  before the shutdown end (an item finishing early cannot delay the shutdown). Lines not on an item (Electrical, workshop,
+ *  steam flushing …) are support jobs, counted apart. */
+export interface MiItem { tag: string; key: string; spareD: number; forecast: number; weight: number; done: number; lines: number; next: string | null }
+export interface MiWeighted { planPct: number; actualPct: number; state: Banner['state']; end: number; items: MiItem[]; critical: MiItem[]; delays: MiItem[]; support: [number, number] }
+/** the weight of an item by its spare time (days) before the shutdown end */
+export const spareWeight = (d: number) => (d <= 1 ? 3 : d <= 3 ? 2 : d <= 7 ? 1.5 : 1);
+export const CRITICAL_SPARE_D = 3;
+export function miWeighted(d: TrkData, now: number, eqs: EquipView[]): MiWeighted | null {
+  const end = ms(d.settings.miEnd ?? d.settings.end);
+  if (Number.isNaN(end)) return null;
+  const byKey = new Map(eqs.filter((e) => e.eq.tracked).map((e) => [e.eq.barchartKey ?? e.eq.tag, e]));
+  const lines = d.activities.filter((a) => a.tracked && !a.detail && a.group !== 'Operations' && a.start);
+  const fin = (a: TrkActivity) => (a.finish ? ms(a.finish) : ms(a.start) + (a.durationH ?? 0) * H);
+  const support = lines.filter((a) => !byKey.has(a.key));
+  const keys = [...new Set(lines.map((a) => a.key))].filter((k) => byKey.has(k));
+  if (!keys.length) return null;
+  let wp = 0, wa = 0, wt = 0;
+  const items = keys.map((key): MiItem => {
+    const e = byKey.get(key)!, xs = sortActs(lines.filter((a) => a.key === key));
+    const first = Math.min(...xs.map((a) => ms(a.start))), last = Math.max(...xs.map(fin));
+    // the plan moves with the handover (or with today while the item is not handed over yet), then with the next line not started in time
+    const shift = e.stage >= 1 && e.hoAt ? ms(e.hoAt) - first : Math.max(0, now - first);
+    const open = xs.filter((a) => !a.actualFinish);
+    const nx = [...open].sort((a, b) => ms(a.start) - ms(b.start))[0];
+    const extra = nx && !nx.actualStart ? Math.max(0, now - (ms(nx.start) + shift)) : 0;
+    const forecast = open.length ? Math.max(now, last + shift + extra) : Math.max(...xs.map((a) => ms(a.actualFinish)));
+    const spareD = r1((end - forecast) / DAY), weight = spareWeight(spareD);
+    for (const a of xs) {
+      const h = Math.max(1, a.durationH ?? (fin(a) - ms(a.start)) / H) * weight, len = fin(a) - ms(a.start);
+      wt += h; wp += h * Math.min(1, Math.max(0, len > 0 ? (now - ms(a.start)) / len : now >= ms(a.start) ? 1 : 0)); wa += h * (a.actualFinish ? 1 : a.actualStart ? 0.5 : 0);
+    }
+    return { tag: e.eq.tag, key, spareD, forecast, weight, done: xs.length - open.length, lines: xs.length, next: open[0]?.activity ?? null };
+  }).sort((a, b) => a.spareD - b.spareD || a.tag.localeCompare(b.tag));
+  const planPct = Math.round(wp / wt * 100), actualPct = Math.round(wa / wt * 100);
+  return { planPct, actualPct, state: actualPct >= planPct + 2 ? 'AHEAD' : actualPct < planPct - 2 ? 'BEHIND' : 'ON_PLAN', end, items,
+    critical: items.filter((i) => i.spareD <= CRITICAL_SPARE_D && i.done < i.lines), delays: items.filter((i) => i.spareD < 0),
+    support: [support.filter((a) => a.actualFinish).length, support.length] };
+}
 
 /** The critical handover: every tracked critical item blinded = handed over; the time is the last of them. */
 export function criticalHandover(d: TrkData, steps: Map<string, StepView>): { at: number | null; critical: MiPhase['critical'] } {
@@ -635,9 +680,10 @@ export function phases(d: TrkData, now: number, steps = stepViews(d, now)): Phas
   // M & I counts only the items handed over to it, each measured from its own handover
   const bn = started !== null ? banner(equipViews(d, now, steps).filter((e) => e.stage >= 1)) : null;
   const plannedEnd = ms(d.settings.miEnd);
+  const w = started !== null ? miWeighted(d, now, equipViews(d, now, steps)) : null;
   return {
     ops: opsProgress(steps, d.settings, now, started, opsResults(d, equipViews(d, now, steps))),
     mi: { planned, actualStart: started, delayH: started !== null && !Number.isNaN(planned) ? r1(delay / H) : null, critical: ho.critical, banner: bn,
-      plannedEnd, estEnd: Number.isNaN(plannedEnd) ? null : plannedEnd + delay + (bn && bn.state !== 'ON_PLAN' ? (bn.state === 'BEHIND' ? 1 : -1) * bn.days * DAY : 0) },
+      plannedEnd, estEnd: Number.isNaN(plannedEnd) ? null : w && w.items.length ? Math.max(...w.items.map((i) => i.forecast)) : plannedEnd + delay, weighted: w },
   };
 }
