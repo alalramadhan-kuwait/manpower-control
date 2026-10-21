@@ -1,13 +1,13 @@
-// Shutdown progress (U-12 TR-2 tracker v1): Today · Guideline · Equipment · Map · Report (· Admin for the Section
-// Head). The controllers update steps and equipment in a few taps; the status, the "needs me" list, plan vs actual and
+// Shutdown progress (U-12 TR-2 tracker v1): five tabs, all on screen (Today · Isolation · Equipment, with its Timing
+// view · Sequence, with its Map view · IATs), the WhatsApp report and the Admin (Section Head) as sheets from the header. The controllers update steps and equipment in a few taps; the status, the "needs me" list, plan vs actual and
 // the shift report are worked out from the rows (src/core/tracker). Reloads every 30 s and when the page comes back.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
-import { FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
+import { totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import { currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
-import { Button, ErrorBox, Spinner, cx } from '@/ui/components';
+import { BottomSheet, Button, ErrorBox, Spinner, cx } from '@/ui/components';
 import { EquipSheet, StepSheet } from './TrackerSheets';
 import { TrackerAdmin, clockKey } from './TrackerAdmin';
 import { TimingTab } from './Timing';
@@ -17,7 +17,11 @@ import { TodayTab, type Nav } from './TrackerToday';
 import { FLAG_STYLE, ISO_DOT, IsoChip, PlanChip, StageBar, StateChip } from './ui';
 
 type Tab = 'today' | 'isolation' | 'guideline' | 'equipment' | 'iats' | 'timing' | 'map' | 'report' | 'admin';
-const TABS: [Tab, string][] = [['today', 'Today'], ['isolation', 'Isolation'], ['equipment', 'Equipment'], ['guideline', 'Sequence'], ['iats', 'IATs'], ['timing', 'Timing'], ['map', 'Map'], ['report', 'Report']];
+// the bar: Timing is a view of Equipment, Map a view of Sequence; Report and Admin open as sheets
+type Main = 'today' | 'isolation' | 'equipment' | 'guideline' | 'iats';
+const TABS: [Main, string, string][] = [['today', 'Today', '🏠'], ['isolation', 'Isolation', '🔒'], ['equipment', 'Equipment', '🔧'], ['guideline', 'Sequence', '🧭'], ['iats', 'IATs', '📋']];
+const MAIN: Record<Tab, Main> = { today: 'today', isolation: 'isolation', equipment: 'equipment', timing: 'equipment', guideline: 'guideline', map: 'guideline', iats: 'iats', report: 'today', admin: 'today' };
+const VIEWS: Partial<Record<Main, [Tab, string][]>> = { equipment: [['equipment', 'Items'], ['timing', 'Timing']], guideline: [['guideline', 'Gates'], ['map', 'Map']] };
 const today = () => new Date(Date.now() + 3 * 36e5).toISOString().slice(0, 10);
 
 /** The clock the tracker runs on: now, or (TEST, this device) the time set in Admin to try a scenario. */
@@ -38,8 +42,13 @@ function useClock(t: Tracker | null) {
 export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const { id } = useParams();
   const [search, setSearch] = useSearchParams();
-  const tab = (search.get('tab') as Tab) || 'today';
-  const setTab = (t: Tab) => setSearch(t === 'today' ? {} : { tab: t }, { replace: true });
+  const raw = (search.get('tab') as Tab) || 'today';
+  // report / admin (old links, the Today report card) open their sheet over the page
+  const sheetTab = raw === 'report' || raw === 'admin' ? raw : null;
+  const [lastTab, setLastTab] = useState<Tab>('today');
+  const tab: Tab = sheetTab ? lastTab : raw in MAIN ? raw : 'today';
+  const setTab = (t: Tab) => { if (t !== 'report' && t !== 'admin') setLastTab(t); setSearch(t === 'today' ? {} : { tab: t }, { replace: true }); };
+  const closeSheetTab = () => setTab(lastTab);
   const [trackers, setTrackers] = useState<Tracker[] | null>(null);
   const [data, setData] = useState<TrackerData | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -82,23 +91,33 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const auto = new Map<string, 'isolation' | 'equipment'>([...data.equipment.filter((e) => e.hoStep).map((e) => [e.hoStep!, 'equipment'] as const), ...points.filter((p) => p.stepId).map((p) => [p.stepId!, 'isolation'] as const)]);
   const nav = (n: Nav) => { setFocus(null); setIsoKind(n.iso); setLateFirst(!!n.lateFirst); setTab(n.tab); };
   const toIsolation = (tag: string | null, kind?: 'blind' | 'neut') => { setSheet(null); setFocus(tag); setIsoKind(kind); setTab('isolation'); };
+  const tot = totals(steps, eqs, data.iats);
   const open = (a: { kind: 'step' | 'equipment'; ref: string }) => setSheet(a.kind === 'step' ? { kind: 'step', id: a.ref } : { kind: 'eq', tag: a.ref });
 
   return (
     <div className="mx-auto max-w-3xl pb-24">
-      {test && <div className="mb-2 rounded-lg bg-[#FFE699] px-3 py-1.5 text-center text-xs font-bold tracking-wide text-amber-950">TEST · a copy for trying; nothing here is live{now !== Date.now() && Math.abs(now - Date.now()) > 120_000 ? ` · clock ${kwDay(now)} ${kwTime(now)}` : ''}</div>}
+      {test && <div className="mb-2 rounded-lg bg-[#FFE699] px-3 py-1.5 text-center text-xs font-bold tracking-wide text-amber-950">TEST · a copy for trying; nothing here is live{now !== Date.now() && Math.abs(now - Date.now()) > 120_000 ? ` · clock ${kwDay(now)} ${kwTime(now)}` : ''}{other.filter((o) => o.mode === 'live').map((o) => <Link key={o.id} to={`/progress/${o.id}`} className="ml-2 underline">Live ›</Link>)}</div>}
       <div className="mb-2 flex items-center justify-between gap-2 print:hidden">
         <div className="min-w-0">
           <h1 className="truncate text-lg font-bold text-[#004080]">{tracker.title}</h1>
           <p className="text-xs text-slate-500">{tracker.eventTitle ?? ''}{tracker.settings.workOrder ? ` · WO ${tracker.settings.workOrder}` : ''}</p>
         </div>
-        {other.length > 0 && <div className="flex gap-1">{other.map((o) => <Link key={o.id} to={`/progress/${o.id}`} className="rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-slate-300">{o.mode === 'live' ? 'Live' : 'Test'}</Link>)}</div>}
+        <div className="flex shrink-0 gap-1.5">
+          <button type="button" onClick={() => setTab('report')} className="flex min-h-11 items-center gap-1 rounded-xl bg-[#08A048] px-3 text-sm font-bold text-white shadow-sm active:bg-green-700">💬 Report</button>
+          {isHead && <button type="button" aria-label="Admin" onClick={() => setTab('admin')} className="min-h-11 min-w-11 rounded-xl bg-white text-lg ring-1 ring-slate-200 active:bg-slate-50">⚙️</button>}
+        </div>
       </div>
-      <nav className="sticky top-0 z-20 -mx-1 mb-3 flex gap-1 overflow-x-auto bg-slate-50/95 px-1 py-1 backdrop-blur print:hidden" aria-label="Progress">
-        {[...TABS, ...(isHead ? [['admin', 'Admin'] as [Tab, string]] : [])].map(([k, label]) => (
-          <button key={k} type="button" onClick={() => setTab(k)} className={cx('min-h-10 shrink-0 rounded-full px-3.5 text-sm font-semibold', tab === k ? 'bg-[#0850A0] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{label}</button>
-        ))}
+      <nav className="sticky top-0 z-20 mb-2 grid grid-cols-5 gap-0.5 rounded-2xl bg-slate-200/70 p-1 backdrop-blur print:hidden" aria-label="Progress">
+        {TABS.map(([k, label, icon]) => { const on = MAIN[tab] === k; const badge = k === 'equipment' ? tot.late : k === 'iats' ? tot.iatOpen : 0;
+          return <button key={k} type="button" aria-current={on ? 'page' : undefined} onClick={() => setTab(k)}
+            className={cx('relative flex min-h-14 flex-col items-center justify-center rounded-xl px-0.5 text-[11.5px] font-semibold', on ? 'bg-white text-[#0850A0] shadow-sm' : 'text-slate-600 active:bg-white/60')}>
+            <span className="text-lg leading-none" aria-hidden>{icon}</span><span className="mt-0.5 truncate">{label}</span>
+            {badge > 0 && <span className={cx('absolute right-1 top-0.5 min-w-[18px] rounded-full px-1 text-[10.5px] font-bold leading-[18px] text-white', k === 'equipment' ? 'bg-[#E02028]' : 'bg-[#D97706]')}>{badge}</span>}
+          </button>; })}
       </nav>
+      {VIEWS[MAIN[tab]] && <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-slate-200/60 p-1 print:hidden">
+        {VIEWS[MAIN[tab]]!.map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={cx('min-h-10 rounded-lg text-sm font-semibold', tab === k ? 'bg-white text-[#004080] shadow-sm' : 'text-slate-600')}>{l}</button>)}
+      </div>}
       {flash && <div role="status" className="mb-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{flash}</div>}
       {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} now={now} onOpen={open} onNav={nav} />}
       {tab === 'isolation' && <IsolationTab key={`iso-${isoKind}`} initialKind={isoKind} activities={data.activities} points={points} lineup={data.lineup} iats={data.iats} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} focus={focus} onFocus={setFocus} onItem={(tag) => setSheet({ kind: 'eq', tag })} onDone={done} />}
@@ -107,8 +126,11 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={done} />}
       {tab === 'iats' && <IatsTab iats={data.iats} tags={data.equipment.map((e) => e.tag)} lineup={data.lineup} lineupEq={data.lineupEq} points={points} onItem={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
-      {tab === 'report' && <ReportTab data={data} now={now} canEdit={canEdit} by={profile.display_name} onSaved={() => load()} />}
-      {tab === 'admin' && isHead && <TrackerAdmin data={data} eqs={eqs} onDone={done} />}
+      {sheetTab === 'report' && <BottomSheet open onClose={closeSheetTab} title="💬 Shift report"><ReportTab data={data} now={now} canEdit={canEdit} by={profile.display_name} onSaved={() => load()} /></BottomSheet>}
+      {sheetTab === 'admin' && isHead && <BottomSheet open onClose={closeSheetTab} title="⚙️ Admin · Section Head">
+        {other.length > 0 && <div className="mb-3 flex items-center justify-between rounded-xl bg-white px-3 py-2.5 text-sm ring-1 ring-slate-200"><span><b className={test ? 'text-amber-800' : 'text-[#0850A0]'}>{test ? 'TEST' : 'LIVE'}</b> · {test ? 'a copy for trying' : 'this is the real tracker'}</span>
+          {other.map((o) => <Link key={o.id} to={`/progress/${o.id}`} className="font-bold text-[#0850A0]">{o.mode === 'live' ? 'Live' : 'Test copy'} ›</Link>)}</div>}
+        <TrackerAdmin data={data} eqs={eqs} onDone={done} /></BottomSheet>}
       {openStep && <StepSheet v={openStep} isHead={isHead} canEdit={canEdit} points={points.filter((p) => p.stepId === openStep.step.stepId)} items={eqs.filter((e) => e.eq.hoStep === openStep.step.stepId && e.eq.tracked)}
         onIsolation={() => toIsolation(null)} onClose={() => setSheet(null)} onDone={done} />}
       {openEq && <EquipSheet v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={data.activities.filter((a) => a.key === (openEq.eq.barchartKey ?? openEq.eq.tag))} now={now}
