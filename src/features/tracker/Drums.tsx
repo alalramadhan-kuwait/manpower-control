@@ -133,16 +133,15 @@ export function DrumEntry({ scope, entries, now, onDone, autoFocus = false }: { 
     <div className="space-y-1.5 rounded-lg bg-amber-50 p-2">
       <div className="grid grid-cols-2 gap-1 rounded-lg bg-white/70 p-0.5">{([['shift', 'Drums this shift'], ['total', 'Total so far']] as const).map(([k, l]) =>
         <button key={k} type="button" onClick={() => { setMode(k); setQty(''); }} className={cx('min-h-9 rounded-md text-xs font-semibold', mode === k ? 'bg-[#0d2a5e] text-white' : 'text-slate-700')}>{l}</button>)}</div>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-1.5">
+        <input className="input text-lg font-semibold tabular-nums" inputMode="numeric" enterKeyHint="done" autoFocus={autoFocus} aria-label={mode === 'total' ? 'Total drums so far' : 'Drums this shift'} placeholder={mode === 'total' ? `Total (≥ ${fmt(recorded)})` : 'Drums'} value={qty} onChange={(e) => setQty(e.target.value.replace(/[^0-9]/g, ''))} />
+        <RowBtn tone="navy" disabled={busy || !valid} onClick={save}>Save drums{qty && valid ? ` · ${fmt(n)}` : ''}</RowBtn>
+      </div>
+      {mode === 'total' && <p className={cx('text-[11.5px]', qty && n < 0 ? 'font-semibold text-red-700' : 'text-slate-600')}>Recorded so far {fmt(recorded)}{qty ? (n < 0 ? ' · the total cannot be less than that (use Correct on an entry)' : ` · this shift = ${fmt(n)} drums`) : ''}</p>}
+      <input className="input" aria-label="Remark" placeholder={zero ? 'Why 0? (stoppage)' : 'Remark (optional)'} value={zero ? stop : remark} onChange={(e) => (zero ? setStop(e.target.value) : setRemark(e.target.value))} />
       <div className="flex flex-wrap gap-1">{shifts.map((s, i) => <button key={i} type="button" onClick={() => setSh(i)} className={cx('min-h-9 rounded-full px-2.5 text-xs font-semibold', sh === i ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{dayLabel(s.date, s.shift)}</button>)}</div>
       <div className="flex flex-wrap gap-1">{METHODS.map((m) => <button key={m} type="button" onClick={() => setMethod(m)} className={cx('min-h-9 rounded-full px-2.5 text-xs font-semibold', method === m ? 'bg-[#0850A0] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{METHOD_LABEL[m]}</button>)}</div>
-      <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-1.5">
-        <input className="input" inputMode="numeric" autoFocus={autoFocus} aria-label={mode === 'total' ? 'Total drums so far' : 'Drums this shift'} placeholder={mode === 'total' ? `Total (≥ ${fmt(recorded)})` : 'Drums'} value={qty} onChange={(e) => setQty(e.target.value.replace(/[^0-9]/g, ''))} />
-        <input className="input" aria-label="Remark" placeholder={zero ? 'Why 0? (stoppage)' : 'Remark (optional)'} value={zero ? stop : remark} onChange={(e) => (zero ? setStop(e.target.value) : setRemark(e.target.value))} />
-      </div>
-      {mode === 'total'
-        ? <p className={cx('text-[11.5px]', qty && n < 0 ? 'font-semibold text-red-700' : 'text-slate-600')}>Recorded so far {fmt(recorded)}{qty ? (n < 0 ? ` · the total cannot be less than that (use Correct on an entry)` : ` · this shift = ${fmt(n)} drums`) : ''}</p>
-        : <label className="flex items-center gap-1.5 text-[11.5px] text-slate-600"><input type="checkbox" checked={transfer} onChange={(e) => setTransfer(e.target.checked)} /> Transfer of drums already counted (does not add)</label>}
-      <RowBtn tone="navy" disabled={busy || !valid} onClick={save}>Save drums{qty && valid ? ` · ${fmt(n)}` : ''}</RowBtn>
+      {mode === 'shift' && <label className="flex items-center gap-1.5 text-[11.5px] text-slate-600"><input type="checkbox" checked={transfer} onChange={(e) => setTransfer(e.target.checked)} /> Transfer of drums already counted (does not add)</label>}
       {err != null && <ErrorBox error={err} />}
     </div>
   );
@@ -156,7 +155,7 @@ export function DrumQuick({ scope, entries, now, canEdit, onOpen, onDone }: { sc
     <div className="space-y-2">
       <p className="text-[13px] text-slate-800"><b className="tabular-nums">{fmt(p.verified)}</b> of {scope.working ? fmt(scope.working) : '—'} drums verified{p.actualPct !== null ? ` · ${p.actualPct}%` : ''}{p.pending ? <span className="text-amber-800"> · {fmt(p.pending)} awaiting verification</span> : null}</p>
       {last && <p className="text-[11.5px] text-slate-500">Last entry: {fmt(last.qty)} · {dayLabel(last.shiftDate, last.shift)} · {METHOD_LABEL[last.method].toLowerCase()} · {last.verify}</p>}
-      {canEdit && !scope.completeAt && <DrumEntry scope={scope} entries={entries} now={now} onDone={onDone} autoFocus />}
+      {canEdit && !scope.completeAt && <DrumEntry scope={scope} entries={entries} now={now} onDone={onDone} />}
       <button type="button" onClick={onOpen} className="text-xs font-semibold text-[#0850A0]">Open {scope.key} (verify, correct, vessel empty) ›</button>
     </div>
   );

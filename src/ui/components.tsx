@@ -161,12 +161,21 @@ export function BottomSheet({ open, onClose, title, children }: { open: boolean;
     return () => { el.removeEventListener('touchstart', start); el.removeEventListener('touchmove', move); el.removeEventListener('touchend', end); el.removeEventListener('touchcancel', end); };
   }, [open]);
 
+  // the on-screen keyboard (iOS lays it over the page): lift the sheet above it and fit it to the space left
+  const [kb, setKb] = useState(0);
+  useEffect(() => {
+    const vv = window.visualViewport; if (!open || !vv) return;
+    const fit = () => setKb(Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)));
+    fit(); vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
+    return () => { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); };
+  }, [open]);
+
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" style={kb ? { bottom: kb } : undefined}>
       <div className="absolute inset-0 bg-black/40" onClick={onClose} style={{ opacity: dy ? Math.max(0.3, 1 - dy / 500) : 1 }} />
       <div ref={sheet} role="dialog" aria-modal="true" aria-label={title}
-        style={{ transform: dy ? `translateY(${dy}px)` : undefined, transition: dy ? 'none' : 'transform 180ms ease-out', overscrollBehavior: 'contain' }}
+        style={{ transform: dy ? `translateY(${dy}px)` : undefined, transition: dy ? 'none' : 'transform 180ms ease-out', overscrollBehavior: 'contain', maxHeight: kb ? '96%' : undefined }}
         className="relative max-h-[90vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-xl safe-bottom sm:max-w-lg sm:rounded-3xl">
         <div data-sheet-grip className="-mx-5 -mt-5 mb-1 px-5 pt-5">
           <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-slate-300 sm:hidden" />
