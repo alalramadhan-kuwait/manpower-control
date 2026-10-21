@@ -82,11 +82,14 @@ export function StepSheet({ v, isHead, canEdit, points = [], items = [], onIsola
   );
 }
 
+// a spray that waits for work steps, in a few words (the reactor body spray waits for the catalyst dumping)
+const waitAfter = (steps: string[]) => (!steps.length ? [] : [steps.every((x) => /dump/i.test(x)) ? 'after dumping' : steps.length === 1 ? `after ${steps[0]}` : `after ${steps.length} steps`]);
+
 export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso = null, points = [], onIsolation, onNeut, onClose, onDone }: { v: EquipView; trackerId: string; canEdit: boolean; isHead: boolean; activities: TrkActivity[]; now: number; iso?: Isolation | null; points?: TrkPoint[]; onIsolation?: () => void; onNeut?: () => void; onClose: () => void; onDone: (msg: string) => void }) {
   // the neutralization the soda-ash lines stand for: the item's own soda ash first, else its loop
   // the item's bar-chart steps by stage (what moves the stage), the field-detail steps left out
   const stageLines = activities.filter((a) => a.tracked && !a.detail && a.group !== 'Operations' && a.stage !== null);
-  const soda = iso?.neut.find((p) => !p.stepId && p.method !== 'spray') ?? iso?.neut[0];
+  const soda = iso?.neut.find((p) => !p.stepId && p.method !== 'spray') ?? iso?.neut.find((p) => p.method !== 'spray');
   // a reactor's lines and the piping between the reactors: neutralized on their own, shown with it
   const parts = partsOf(v.eq.tag, points);
   const e = v.eq;
@@ -120,7 +123,7 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso
                 const block = [...(st?.missing ?? []), ...open.map((p) => (p.stepId ? p.ref : 'soda ash'))];
                 return <>
                   {iso.blinds.length > 0 && <span className="mt-0.5 flex flex-wrap items-center gap-1">Blinds: {iso.blinds.map((b) => <IsoChip key={b.id} state={pointComplete(b) ? 'ready' : 'blind'}>{b.ref} {pointComplete(b) ? '✓' : '✗'}</IsoChip>)}</span>}
-                  {iso.neut.length > 0 && <span className="mt-0.5 flex flex-wrap items-center gap-1">Neutralization: {iso.neut.map((p) => { const m = p.status === 'open' ? [...missingBlinds(p, points), ...waitingSteps(p, activities).map((x) => `after ${x}`)] : [];
+                  {iso.neut.length > 0 && <span className="mt-0.5 flex flex-wrap items-center gap-1">Neutralization: {iso.neut.map((p) => { const m = p.status === 'open' ? [...missingBlinds(p, points), ...waitAfter(waitingSteps(p, activities))] : [];
                     return <IsoChip key={p.id} state={pointComplete(p) ? 'ready' : p.status !== 'open' ? 'neut' : m.length ? 'blind' : 'idle'}>{neutName(p)} · {m.length ? `🔒 ${m.join(', ')}` : neutLabel(p)}</IsoChip>; })}</span>}
                   {parts.length > 0 && <span className="mt-0.5 flex flex-wrap items-center gap-1">Parts, on their own: {parts.map((p) => <IsoChip key={p.id} state={pointComplete(p) ? 'ready' : p.status !== 'open' ? 'neut' : 'idle'}>{p.ref} {p.name} · {neutLabel(p)}</IsoChip>)}</span>}
                   <span className={cx('mt-1 block text-[11px] font-semibold', v.stage >= 1 ? 'text-[#0850A0]' : block.length ? 'text-red-800' : 'text-teal-800')}>
