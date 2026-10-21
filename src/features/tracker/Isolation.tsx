@@ -3,7 +3,7 @@
 // before handover is done), the guideline step of each row and the soda-ash bar-chart lines.
 import { useEffect, useState, type ReactNode } from 'react';
 import { NEUT_FLOW, NEUT_LABEL, neutLabel, equipBlind, loopLines, missingBlinds, waitingSteps, type LuStream, type TrkIat, hoursText, kwDay, kwTime, pointComplete, soakLeft, type PointStatus, type TrkActivity, type TrkPoint, type TrkPointStep, type TrkStep } from '@/core/tracker';
-import { setActivity, setPoint, setPointStep, setPointStepTime } from '@/data/tracker';
+import { addPointStep, setActivity, setPoint, setPointStep, setPointStepTime } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, cx } from '@/ui/components';
 import { CRow, IsoChip, MenuBtn, RowBtn, RowList, Tile } from './ui';
 
@@ -14,7 +14,7 @@ const NEXT: Record<string, [PointStatus, string] | undefined> = {
   open: ['filling', '▶ Fill'], filling: ['soaking', 'Soaking'], soaking: ['draining', 'Draining'], draining: ['done', '✓ Done'],
 };
 
-function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], checks = [], isHead, now, canEdit, onItem, onStep, onDone }: { p: TrkPoint; points: TrkPoint[]; acts?: TrkActivity[]; lineup?: LuStream[]; iats?: TrkIat[]; steps?: TrkStep[]; checks?: TrkPointStep[]; isHead: boolean; now: number; canEdit: boolean; onItem: (tag: string) => void; onStep?: (id: string) => void; onDone: (msg: string) => void }) {
+function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], checks = [], trackerId, isHead, now, canEdit, onItem, onStep, onDone }: { p: TrkPoint; points: TrkPoint[]; acts?: TrkActivity[]; lineup?: LuStream[]; iats?: TrkIat[]; steps?: TrkStep[]; checks?: TrkPointStep[]; trackerId?: string; isHead: boolean; now: number; canEdit: boolean; onItem: (tag: string) => void; onStep?: (id: string) => void; onDone: (msg: string) => void }) {
   const [force, setForce] = useState(false); const [sheet, setSheet] = useState(false);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [note, setNote] = useState(p.remark ?? '');
@@ -31,13 +31,15 @@ function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], ch
   const missing = !blind && p.status === 'open' ? missingBlinds(p, points) : [];
   // the reactor body spray waits for the catalyst dumping
   const waiting = !blind && p.status === 'open' ? waitingSteps(p, acts) : [];
-  const locked = missing.length + waiting.length > 0;
+  // and for its field jobs before the fill (crane lifts, blinding, scaffolding): started and finished first
+  const jobs = !blind && p.status === 'open' ? checks.filter((c) => c.kind === 'step' && c.phase === 'before' && !c.doneAt) : [];
+  const locked = missing.length + waiting.length + jobs.length > 0;
   const loopState = pointComplete(p) ? 'ready' : p.status !== 'open' ? 'neut' : locked ? 'blind' : 'idle';
   const dot = pointComplete(p) ? 'green' : locked ? 'red' : left !== null && left <= 0 ? 'amber' : p.status !== 'open' ? 'amber' : 'grey';
   const reqName = (r: string) => points.find((b) => b.kind === 'blind' && b.ref === r)?.name ?? '';
   const sub = blind
     ? (p.status === 'open' ? items || '—' : `✓ In ${when(p.inAt)}${p.outAt ? ` · out ${when(p.outAt)}` : ''}${p.updatedBy ? ` · ${p.updatedBy}` : ''}`)
-    : locked ? <b className="text-red-800">🔒 {missing.length ? `Needs blinds: ${missing.map((r) => `${r} ${reqName(r)}`.trim()).join(', ')}` : `After: ${waiting.every((x) => /dump/i.test(x)) ? 'catalyst dumping' : waiting.join(', ')}`}</b>
+    : locked ? <b className="text-red-800">🔒 {missing.length ? `Needs blinds: ${missing.map((r) => `${r} ${reqName(r)}`.trim()).join(', ')}` : waiting.length ? `After: ${waiting.every((x) => /dump/i.test(x)) ? 'catalyst dumping' : waiting.join(', ')}` : `Needs ${jobs.length} job${jobs.length > 1 ? 's' : ''} done: ${jobs.map((c) => c.text.split(',')[0]).join(' · ')}`}</b>
     : <>{(p.requires ?? []).length > 0 && p.status === 'open' ? 'Blinds ready ✓ · ' : ''}{neutLabel(p)}{left !== null ? <b className={left > 0 ? 'text-amber-800' : 'text-green-800'}> · {left > 0 ? `${hoursText(left)} left` : 'soak reached'}</b> : null}{p.status === 'done' && p.doneAt ? ` ${when(p.doneAt)}` : ''}</>;
   const extra = blind ? null : <>
     {locked && (p.requires ?? []).map((r) => <IsoChip key={r} state={missing.includes(r) ? 'blind' : 'ready'}>{r} {missing.includes(r) ? '✗' : '✓'}</IsoChip>)}
@@ -55,7 +57,7 @@ function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], ch
     : <span className="shrink-0 text-[11px] font-bold text-[#08A048]">Done</span>;
   return (
     <>
-      {force && locked && <div className="mx-2.5 mt-1 rounded-lg bg-red-50 p-2 text-xs text-red-900">Start {p.ref} {missing.length ? `without ${missing.join(', ')}` : `before ${waiting.join(', ')}`}? It is logged as a Section Head override.
+      {force && locked && <div className="mx-2.5 mt-1 rounded-lg bg-red-50 p-2 text-xs text-red-900">Start {p.ref} {missing.length ? `without ${missing.join(', ')}` : waiting.length ? `before ${waiting.join(', ')}` : `before ${jobs.length} job${jobs.length > 1 ? 's are' : ' is'} finished`}? It is logged as a Section Head override.
         <div className="mt-1.5 flex gap-1.5"><RowBtn tone="navy" disabled={busy} onClick={() => run({ status: 'filling' }, `${p.ref}: ${spray ? 'spraying' : 'filling'} (override).`, () => setForce(false))}>Start anyway</RowBtn><RowBtn tone="ghost" onClick={() => setForce(false)}>Cancel</RowBtn></div></div>}
       <CRow dot={dot} extra={extra} title={<>{p.ref}{name ? ` · ${name}` : ''}{p.remark ? <span className="font-normal text-slate-500"> · 📝</span> : null}</>} sub={sub} action={action}
         onTitle={!blind ? () => setSheet(true) : p.items.length === 1 ? () => onItem(p.items[0]) : undefined}
@@ -73,9 +75,29 @@ function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], ch
           </>
         )} />
       {err != null && <ErrorBox error={err} />}
-      {sheet && <LoopSheet p={p} points={points} lineup={lineup} iats={iats} steps={steps} checks={checks} canEdit={canEdit} onDone={onDone} now={now} missing={missing} waiting={waiting} action={action} err={err}
+      {sheet && <LoopSheet p={p} points={points} lineup={lineup} iats={iats} steps={steps} checks={checks} canEdit={canEdit} isHead={isHead} trackerId={trackerId} onDone={onDone} now={now} missing={missing} waiting={waiting} action={action} err={err}
         onClose={() => setSheet(false)} onItem={(t) => { setSheet(false); onItem(t); }} onStep={onStep ? (id) => { setSheet(false); onStep(id); } : undefined} />}
     </>
+  );
+}
+
+/** The Section Head adds a field job to a loop (scaffolding and the like): a timed step, before the fill unless said. */
+function AddJob({ onAdd }: { onAdd: (text: string, crane: boolean, after: boolean) => Promise<void> }) {
+  const [open, setOpen] = useState(false); const [text, setText] = useState(''); const [crane, setCrane] = useState(false); const [after, setAfter] = useState(false);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  if (!open) return <button type="button" onClick={() => setOpen(true)} className="text-xs font-semibold text-[#0850A0]">+ Add job (scaffolding…)</button>;
+  const save = async () => { setBusy(true); setErr(null); try { await onAdd(text.trim(), crane, after); setOpen(false); setText(''); setCrane(false); setAfter(false); } catch (e) { setErr(e); } finally { setBusy(false); } };
+  return (
+    <div className="space-y-1.5 rounded-lg bg-slate-50 p-2">
+      <div className="flex flex-wrap gap-1">{(after ? ['Scaffolding removed'] : ['Scaffolding erected']).map((x) => <button key={x} type="button" onClick={() => setText(x)} className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">{x}</button>)}</div>
+      <input className="input" placeholder="Job, e.g. Scaffolding erected at FV-1426" value={text} onChange={(e) => setText(e.target.value)} />
+      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-700">
+        <label className="flex items-center gap-1.5"><input type="checkbox" checked={crane} onChange={(e) => setCrane(e.target.checked)} /> Needs a crane</label>
+        <label className="flex items-center gap-1.5"><input type="checkbox" checked={after} onChange={(e) => setAfter(e.target.checked)} /> After the neutralization</label>
+      </div>
+      <div className="flex gap-1.5"><RowBtn tone="navy" disabled={busy || !text.trim()} onClick={save}>Add job</RowBtn><RowBtn tone="ghost" onClick={() => setOpen(false)}>Cancel</RowBtn></div>
+      {err != null && <ErrorBox error={err} />}
+    </div>
   );
 }
 
@@ -94,7 +116,7 @@ function JobButton({ c, busy, onStart, onFinish }: { c: TrkPointStep; busy: bool
 }
 
 /** A neutralization opened: its procedure (the guideline step), the steps of the loop with their times, and the next action. */
-function LoopSheet({ p, points, lineup, iats, steps, checks, canEdit, onDone, now, missing, waiting, action, err, onClose, onItem, onStep }: { p: TrkPoint; points: TrkPoint[]; lineup: LuStream[]; iats: TrkIat[]; steps: TrkStep[]; checks: TrkPointStep[]; canEdit: boolean; onDone: (msg: string) => void; now: number;
+function LoopSheet({ p, points, lineup, iats, steps, checks, canEdit, isHead, trackerId, onDone, now, missing, waiting, action, err, onClose, onItem, onStep }: { p: TrkPoint; points: TrkPoint[]; lineup: LuStream[]; iats: TrkIat[]; steps: TrkStep[]; checks: TrkPointStep[]; canEdit: boolean; isHead: boolean; trackerId?: string; onDone: (msg: string) => void; now: number;
   missing: string[]; waiting: string[]; action: ReactNode; err: unknown; onClose: () => void; onItem: (tag: string) => void; onStep?: (id: string) => void }) {
   const spray = p.method === 'spray';
   const step = p.stepId ? steps.find((x) => x.stepId === p.stepId) : undefined;
@@ -161,7 +183,9 @@ function LoopSheet({ p, points, lineup, iats, steps, checks, canEdit, onDone, no
             </li>)}
           </ol>
         </section>
-        {checks[0]?.source && <p className="-mt-2 text-[10.5px] text-slate-400">Field steps from {checks[0].source}. ▶ starts and ✓ finishes a job (crane, blinds, elbows), the boxes are ticks.</p>}
+        {checks.length > 0 && <p className="-mt-2 text-[10.5px] text-slate-400">Field steps from {checks.find((c) => c.source && c.source !== 'Added on site')?.source ?? 'site'}. ▶ starts and ✓ finishes a job (crane, blinds, elbows), the boxes are ticks.</p>}
+        {isHead && trackerId && <AddJob onAdd={(text, crane, after) => { const seqs = checks.map((c) => c.seq);
+          return addPointStep({ tracker_id: trackerId, point_id: p.id, seq: after ? Math.max(0, ...seqs) + 1 : Math.min(1, ...seqs) - 1, phase: after ? 'after' : 'before', text, kind: 'step', crane }).then(() => onDone(`${p.ref}: ${text} added.`)); }} />}
         {cErr != null && <ErrorBox error={cErr} />}
         {action && <div className="flex justify-end">{action}</div>}
         {err != null && <ErrorBox error={err} />}
@@ -195,8 +219,8 @@ function EquipBlindRow({ a, canEdit, onItem, onDone }: { a: TrkActivity; canEdit
 
 const GRP: [string, string][] = [['segregation', 'Segregation'], ['hp_critical', 'HP critical'], ['equipment', 'Equipment']];
 
-export function IsolationTab({ initialKind, activities = [], points, pointSteps = [], lineup = [], iats = [], steps, now, canEdit, isHead = false, focus, onFocus, onItem, onStep, onDone }: {
-  initialKind?: 'blind' | 'neut'; activities?: TrkActivity[]; points: TrkPoint[]; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; iats?: TrkIat[]; steps: TrkStep[]; now: number; canEdit: boolean; isHead?: boolean; focus: string | null; onFocus: (tag: string | null) => void; onItem: (tag: string) => void; onStep?: (id: string) => void; onDone: (msg: string) => void;
+export function IsolationTab({ trackerId, initialKind, activities = [], points, pointSteps = [], lineup = [], iats = [], steps, now, canEdit, isHead = false, focus, onFocus, onItem, onStep, onDone }: {
+  trackerId?: string; initialKind?: 'blind' | 'neut'; activities?: TrkActivity[]; points: TrkPoint[]; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; iats?: TrkIat[]; steps: TrkStep[]; now: number; canEdit: boolean; isHead?: boolean; focus: string | null; onFocus: (tag: string | null) => void; onItem: (tag: string) => void; onStep?: (id: string) => void; onDone: (msg: string) => void;
 }) {
   const [kind, setKind] = useState<'blind' | 'neut'>(() => initialKind ?? (focus && !points.some((p) => p.kind === 'blind' && p.items.includes(focus)) ? 'neut' : 'blind'));
   const [grp, setGrp] = useState('segregation');
@@ -236,12 +260,12 @@ export function IsolationTab({ initialKind, activities = [], points, pointSteps 
       {sections.map(([k, xs]) => { const all = list.filter((p) => secOf(p) === k); return (
         <section key={k} className="space-y-1">
           <h3 className="flex justify-between text-[11px] font-bold uppercase tracking-wide text-slate-500"><span className="truncate">{secTitle(k)}</span><span>{all.filter(pointComplete).length}/{all.length}</span></h3>
-          <RowList>{xs.map((p) => <PointRow key={p.id} p={p} points={points} acts={activities} lineup={lineup} iats={iats} steps={steps} checks={pointSteps.filter((c) => c.pointId === p.id)} isHead={isHead} now={now} canEdit={canEdit} onItem={onItem} onStep={onStep} onDone={onDone} />)}</RowList>
+          <RowList>{xs.map((p) => <PointRow key={p.id} p={p} points={points} acts={activities} lineup={lineup} iats={iats} steps={steps} checks={pointSteps.filter((c) => c.pointId === p.id)} trackerId={trackerId} isHead={isHead} now={now} canEdit={canEdit} onItem={onItem} onStep={onStep} onDone={onDone} />)}</RowList>
         </section>
       ); })}
       {!open.length && <p className="py-3 text-center text-sm text-[#08A048]">All {kind === 'blind' ? 'blinds are in' : 'neutralization is done'}{fo !== 'All' ? ` for ${fo}` : ''}.</p>}
       {closed.length > 0 && <button type="button" onClick={() => setShowDone((x) => !x)} className="text-sm font-semibold text-[#08A048]">{showDone ? '▾' : '▸'} ✓ {kind === 'blind' ? 'Blinded' : 'Neutralized'} ({closed.length})</button>}
-      {showDone && <RowList>{closed.map((p) => <PointRow key={p.id} p={p} points={points} acts={activities} lineup={lineup} iats={iats} steps={steps} checks={pointSteps.filter((c) => c.pointId === p.id)} isHead={isHead} now={now} canEdit={canEdit} onItem={onItem} onStep={onStep} onDone={onDone} />)}</RowList>}
+      {showDone && <RowList>{closed.map((p) => <PointRow key={p.id} p={p} points={points} acts={activities} lineup={lineup} iats={iats} steps={steps} checks={pointSteps.filter((c) => c.pointId === p.id)} trackerId={trackerId} isHead={isHead} now={now} canEdit={canEdit} onItem={onItem} onStep={onStep} onDone={onDone} />)}</RowList>}
       </>}
       <p className="text-[11px] text-slate-500">One tap here updates the rest: operations hands an item over when its neutralization is done, M &amp; I then installs the blinds (an item blinded counts as handed over), the guideline step ticks when all its rows are done, and the soda-ash and blind bar-chart lines take the times.</p>
     </div>

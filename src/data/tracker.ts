@@ -97,6 +97,10 @@ export async function addActivity(trackerId: string, v: { key: string; activity:
 /** A blind or neutralization: its state (the time of each state is stamped, a time can be corrected) or a remark. */
 export const setPointStep = (id: string, done: boolean) => upd('trk_point_step', id, { done_at: done ? new Date().toISOString() : null });
 /** A timed field step: started / finished now, or undone (null). */
+/** A field job added to a loop by the Section Head (scaffolding and the like). */
+export async function addPointStep(r: { tracker_id: string; point_id: string; seq: number; phase: 'before' | 'fill' | 'after'; text: string; kind: 'check' | 'step'; crane: boolean }) {
+  const { error } = await supabase.from('trk_point_step').insert({ ...r, source: 'Added on site' }); if (error) throw error;
+}
 export const setPointStepTime = (id: string, patch: Partial<{ start_at: string | null; done_at: string | null }>) => upd('trk_point_step', id, patch);
 export const setPoint = (id: string, patch: Partial<{ status: PointStatus; in_at: string | null; out_at: string | null; fill_at: string | null; soak_at: string | null; drain_at: string | null; done_at: string | null; remark: string | null }>) => upd('trk_points', id, patch);
 export async function addIat(trackerId: string, v: { tag: string; iatNo: string; jobText: string; discipline: string }) {
