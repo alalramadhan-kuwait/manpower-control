@@ -1,6 +1,6 @@
 // Phase 1 of the progress engine: the quantity rules (drums), against the plan's test scenarios.
 import { describe, expect, it } from 'vitest';
-import { plannedPct, qtyForecast, qtyProgress, qtyTotals, shiftOf, shiftRecords, variancePts, type QtyEntry } from '../qty';
+import { plannedPct, qtyForecast, qtyProgress, qtyTotals, kwShift, shiftRecords, variancePts, type QtyEntry } from '../qty';
 
 const kw = (s: string) => Date.parse(`${s.replace(' ', 'T')}:00+03:00`);
 let n = 0;
@@ -48,9 +48,9 @@ describe('planned curve (provisional) and variance', () => {
 
 describe('shifts', () => {
   it('day 07–19, night 19–07 dated by its start', () => {
-    expect(shiftOf(kw('2026-10-23 08:00'))).toEqual({ date: '2026-10-23', shift: 'D' });
-    expect(shiftOf(kw('2026-10-23 20:00'))).toEqual({ date: '2026-10-23', shift: 'N' });
-    expect(shiftOf(kw('2026-10-24 03:00'))).toEqual({ date: '2026-10-23', shift: 'N' });
+    expect(kwShift(kw('2026-10-23 08:00'))).toEqual({ date: '2026-10-23', shift: 'D' });
+    expect(kwShift(kw('2026-10-23 20:00'))).toEqual({ date: '2026-10-23', shift: 'N' });
+    expect(kwShift(kw('2026-10-24 03:00'))).toEqual({ date: '2026-10-23', shift: 'N' });
   });
   it('one record per shift, net of corrections, stopped shifts marked', () => {
     const rs = shiftRecords([e('2026-10-23', 'D', 150), e('2026-10-23', 'D', 20, { method: 'cone' }), e('2026-10-23', 'D', -10, { kind: 'correction' }),
@@ -89,5 +89,13 @@ describe('forecast (provisional)', () => {
     const es = [e('2026-10-22', 'D', 50), e('2026-10-22', 'N', 50), ...run];
     expect(qtyForecast(es, 1000, kw('2026-10-25 08:00'), { window: 4 })).toMatchObject({ shifts: 4, ratePerShift: 160 });
     expect(qtyForecast(es, 1000, kw('2026-10-25 08:00'), { window: 6 })).toMatchObject({ shifts: 6, ratePerShift: 123.3 });
+  });
+});
+
+describe('shift choice for an entry', () => {
+  it('the current shift and the two before it', async () => {
+    const { recentShifts } = await import('../qty');
+    expect(recentShifts(kw('2026-10-21 12:30'))).toEqual([{ date: '2026-10-21', shift: 'D' }, { date: '2026-10-20', shift: 'N' }, { date: '2026-10-20', shift: 'D' }]);
+    expect(recentShifts(kw('2026-10-22 02:00'))).toEqual([{ date: '2026-10-21', shift: 'N' }, { date: '2026-10-21', shift: 'D' }, { date: '2026-10-20', shift: 'N' }]);
   });
 });

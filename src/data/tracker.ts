@@ -1,7 +1,7 @@
 // Shutdown progress tracker: the trackers of the calendar shutdowns (template / test / live), their steps, equipment,
 // IATs, bar chart, shift log and change log. Who and when are stamped by the database on every change.
 import { supabase } from './supabase';
-import type { PointStatus, StepStatus, TrkActivity, TrkData, TrkEquipment, TrkIat, TrkLog, LuEquip, LuStream, TrkPoint, TrkSettings, TrkStep } from '@/core/tracker';
+import type { QtyKind, QtyMethod, Shift, TrkEngine, TrkQtyEntry, TrkUpdate, PointStatus, StepStatus, TrkActivity, TrkData, TrkEquipment, TrkIat, TrkLog, LuEquip, LuStream, TrkPoint, TrkSettings, TrkStep } from '@/core/tracker';
 
 export interface Tracker { id: string; eventId: string | null; title: string; mode: 'template' | 'test' | 'live'; settings: TrkSettings; status: 'active' | 'closed'; eventStart: string | null; eventEnd: string | null; eventTitle: string | null }
 interface TrackerRow { id: string; event_id: string | null; title: string; mode: Tracker['mode']; settings: TrkSettings | null; status: Tracker['status']; unit_events?: { start_date: string; end_date: string; unit: string | null; title: string | null } | null }
@@ -48,8 +48,10 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
   const [lu, le] = await Promise.all([supabase.from('lu_streams').select('id,frm,to_tag,fluid,line,line_nos,sheets,size,conf').limit(2000),
     supabase.from('lu_equipment').select('tag,plant_tag,name,data,primary_sheet').limit(2000)]);
   const err = [t, s, e, i, a, l, sl, pt].find((r) => r.error)?.error; if (err) throw err;
+  const engine = (t.data as unknown as TrackerRow).settings?.progressV2 ? await fetchEngine(id) : undefined;
   const acts = a.data as ActRow[]; const base = Math.max(0, ...acts.map((x) => x.baseline));
   return {
+    engine,
     lineupEq: le.error ? [] : (le.data as { tag: string; plant_tag: string | null; name: string | null; data: string | null; primary_sheet: string | null }[])
       .map((r): LuEquip => ({ tag: r.tag, plantTag: r.plant_tag, name: r.name, data: r.data, sheet: r.primary_sheet })),
     lineup: lu.error ? [] : (lu.data as { id: string; frm: string; to_tag: string; fluid: string | null; line: string | null; line_nos: string[]; sheets: string[]; size: string | null; conf: string | null }[])
@@ -108,3 +110,42 @@ export async function importBarchart(trackerId: string, rows: Record<string, str
 export async function setOrder(trackerId: string, key: string, ids: string[]): Promise<void> { const { error } = await supabase.rpc('trk_set_order', { p_tracker: trackerId, p_key: key, p_ids: ids }); if (error) throw error; }
 export async function resetTest(trackerId: string): Promise<string> { const { data, error } = await supabase.rpc('trk_reset', { p_tracker: trackerId }); if (error) throw error; return data as string; }
 export async function publishTracker(trackerId: string): Promise<string> { const { data, error } = await supabase.rpc('trk_publish', { p_tracker: trackerId }); if (error) throw error; return data as string; }
+
+// ── progress engine (phase 2): drum accounts, shift entries, estimate revisions, equipment updates ──────────────
+interface ScopeRow { id: string; equipment_key: string; scope: 'removal' | 'loading'; unit: string | null; range_low: number | null; range_high: number | null; initial_estimate: number | null; working_estimate: number | null; activity_ids: string[] | null; complete_at: string | null; complete_by_name: string | null }
+interface EntryRow { id: string; scope_id: string; shift_date: string; shift: Shift; kind: QtyKind; method: QtyMethod; qty: number; corrects: string | null; stoppage: string | null; remark: string | null; source: 'field' | 'plant_report';
+  entered_by: string | null; entered_by_name: string | null; entered_at: string; verify_state: TrkQtyEntry['verify']; verified_by_name: string | null; verified_at: string | null }
+async function fetchEngine(id: string): Promise<TrkEngine> {
+  const [sc, up] = await Promise.all([supabase.from('trk_qty_scope').select('*').eq('tracker_id', id), supabase.from('trk_update').select('*').eq('tracker_id', id).order('at', { ascending: false }).limit(500)]);
+  if (sc.error) throw sc.error; if (up.error) throw up.error;
+  const ids = (sc.data as ScopeRow[]).map((r) => r.id);
+  const [en, es] = ids.length ? await Promise.all([supabase.from('trk_qty_entry').select('*').in('scope_id', ids).order('entered_at').limit(5000), supabase.from('trk_qty_estimate').select('*').in('scope_id', ids).order('at')])
+    : [{ data: [], error: null }, { data: [], error: null }];
+  if (en.error) throw en.error; if (es.error) throw es.error;
+  return {
+    scopes: (sc.data as ScopeRow[]).map((r) => ({ id: r.id, key: r.equipment_key, scope: r.scope, unit: r.unit, low: r.range_low, high: r.range_high, initial: r.initial_estimate, working: r.working_estimate,
+      activityIds: r.activity_ids ?? [], completeAt: r.complete_at, completeBy: r.complete_by_name })),
+    entries: (en.data as EntryRow[]).map((r): TrkQtyEntry => ({ id: r.id, scopeId: r.scope_id, shiftDate: r.shift_date, shift: r.shift, kind: r.kind, method: r.method, qty: Number(r.qty), corrects: r.corrects, stoppage: r.stoppage,
+      verify: r.verify_state, remark: r.remark, source: r.source, enteredBy: r.entered_by, enteredByName: r.entered_by_name, enteredAt: r.entered_at, verifiedByName: r.verified_by_name, verifiedAt: r.verified_at })),
+    estimates: (es.data as { id: string; scope_id: string; value: number; reason: string; by_name: string | null; at: string }[]).map((r) => ({ id: r.id, scopeId: r.scope_id, value: Number(r.value), reason: r.reason, byName: r.by_name, at: r.at })),
+    updates: (up.data as { id: string; equipment_key: string; kind: TrkUpdate['kind']; reason: string | null; expected_finish: string | null; by_name: string | null; at: string }[])
+      .map((r) => ({ id: r.id, key: r.equipment_key, kind: r.kind, reason: r.reason, expectedFinish: r.expected_finish, byName: r.by_name, at: r.at })),
+  };
+}
+/** The database's own wording for the rules a shift entry breaks, in plain words. */
+function qtyError(e: { code?: string; message?: string }): Error {
+  if (e.code === '23505') return new Error('Drums for this shift and method are already entered. Use Correct on that entry to change them.');
+  if (e.code === '23514') return new Error(/check2/.test(e.message ?? '') ? 'A shift with 0 drums needs the reason (stoppage).' : /check1/.test(e.message ?? '') ? 'A correction needs the entry it corrects and a remark.' : 'Drums cannot be negative.');
+  return new Error(e.message ?? 'Not saved.');
+}
+export async function addQtyEntry(scopeId: string, v: { shiftDate: string; shift: Shift; kind: QtyKind; method: QtyMethod; qty: number; stoppage?: string | null; remark?: string | null; corrects?: string | null }) {
+  const { error } = await supabase.from('trk_qty_entry').insert({ scope_id: scopeId, shift_date: v.shiftDate, shift: v.shift, kind: v.kind, method: v.method, qty: v.qty, stoppage: v.stoppage || null, remark: v.remark || null, corrects: v.corrects ?? null });
+  if (error) throw qtyError(error);
+}
+export async function verifyQtyEntry(id: string, state: 'verified' | 'rejected') { const { error } = await supabase.from('trk_qty_entry').update({ verify_state: state }).eq('id', id); if (error) throw new Error(error.message); }
+export async function reviseEstimate(scopeId: string, value: number, reason: string) { const { error } = await supabase.from('trk_qty_estimate').insert({ scope_id: scopeId, value, reason }); if (error) throw error; }
+export async function confirmEmpty(scopeId: string) { const { error } = await supabase.from('trk_qty_scope').update({ complete_at: new Date().toISOString() }).eq('id', scopeId); if (error) throw new Error(error.message); }
+export async function addUpdate(trackerId: string, v: { key: string; kind: TrkUpdate['kind']; reason?: string | null; expectedFinish?: string | null }) {
+  const { error } = await supabase.from('trk_update').insert({ tracker_id: trackerId, equipment_key: v.key, kind: v.kind, reason: v.reason || null, expected_finish: v.expectedFinish || null });
+  if (error) throw new Error(error.message);
+}

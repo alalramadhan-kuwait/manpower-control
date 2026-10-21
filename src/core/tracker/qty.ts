@@ -44,7 +44,7 @@ export function plannedPct(lines: { start: string; finish: string }[], now: numb
 export const variancePts = (actual: number | null, planned: number | null) => (actual === null || planned === null ? null : r1(actual - planned));
 
 /** Kuwait shifts: day 07:00–19:00, night 19:00–07:00 (dated by its start). */
-export function shiftOf(ms: number): { date: string; shift: Shift } {
+export function kwShift(ms: number): { date: string; shift: Shift } {
   const k = new Date(ms + 3 * H); const h = k.getUTCHours();
   if (h >= 7 && h < 19) return { date: k.toISOString().slice(0, 10), shift: 'D' };
   if (h >= 19) return { date: k.toISOString().slice(0, 10), shift: 'N' };
@@ -77,7 +77,7 @@ export function qtyForecast(entries: QtyEntry[], remaining: number | null, now: 
   if (remaining === null) return no('no working estimate');
   const recs = shiftRecords(entries);
   if (!recs.length) return no('no verified shift yet');
-  const cur = shiftOf(now), last = recs[recs.length - 1];
+  const cur = kwShift(now), last = recs[recs.length - 1];
   // the shift before the current one must have its entry (a missing update is unknown, not zero)
   if (shiftIndex(last.date, last.shift) < shiftIndex(cur.date, cur.shift) - 1) return no('no entry for the last shift');
   const productive = recs.filter((r) => r.qty > 0 && !r.stopped);
@@ -96,4 +96,18 @@ export function qtyForecast(entries: QtyEntry[], remaining: number | null, now: 
   if (remaining <= 0) return { status: 'ok', provisional: true, method, shifts: win.length, ratePerShift: r1(ratePerShift), availability: r1(availability * 100) / 100, finish: now };
   const shiftsLeft = remaining / (ratePerShift * availability);
   return { status: 'ok', provisional: true, method, shifts: win.length, ratePerShift: r1(ratePerShift), availability: Math.round(availability * 100) / 100, finish: now + shiftsLeft * 12 * H };
+}
+
+/** The stored records (phase 1 tables) as the screens use them. */
+export interface TrkQtyScope { id: string; key: string; scope: 'removal' | 'loading'; unit: string | null; low: number | null; high: number | null; initial: number | null; working: number | null;
+  activityIds: string[]; completeAt: string | null; completeBy: string | null }
+export interface TrkQtyEntry extends QtyEntry { scopeId: string; remark: string | null; source: 'field' | 'plant_report'; enteredBy: string | null; enteredByName: string | null; enteredAt: string;
+  verifiedByName: string | null; verifiedAt: string | null }
+export interface TrkQtyEstimate { id: string; scopeId: string; value: number; reason: string; byName: string | null; at: string }
+export interface TrkUpdate { id: string; key: string; kind: 'milestone' | 'accept' | 'reject' | 'no_change' | 'delay' | 'forecast'; reason: string | null; expectedFinish: string | null; byName: string | null; at: string }
+export interface TrkEngine { scopes: TrkQtyScope[]; entries: TrkQtyEntry[]; estimates: TrkQtyEstimate[]; updates: TrkUpdate[] }
+export const METHOD_LABEL: Record<QtyMethod, string> = { vacuum: 'Vacuum', free_fall: 'Free fall', cone: 'Cone', other: 'Other' };
+/** The current shift and the two before it (for an entry made after the shift ended). */
+export function recentShifts(now: number, n = 3): { date: string; shift: Shift }[] {
+  return Array.from({ length: n }, (_, i) => kwShift(now - i * 12 * H));
 }

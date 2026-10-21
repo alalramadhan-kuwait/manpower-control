@@ -31,7 +31,11 @@ export interface TrkActivity {
   seq?: number | null; detail?: boolean;
 }
 export interface TrkLog { kind: 'step' | 'equipment' | 'iat' | 'activity' | 'point'; ref: string; field: string; oldValue: string | null; newValue: string | null; byName: string | null; at: string }
-export interface TrkSettings { hoTarget?: string; end?: string; workOrder?: string; whatsapp?: string; opsStart?: string; miStart?: string; miEnd?: string }
+import type { TrkEngine } from './qty';
+export * from './qty';
+export interface TrkSettings { hoTarget?: string; end?: string; workOrder?: string; whatsapp?: string; opsStart?: string; miStart?: string; miEnd?: string;
+  /** the progress engine (drums, updates) on this tracker, and its forecast window / freshness rules */
+  progressV2?: boolean; fcWindow?: number; fcMin?: number; staleH?: number; miscDays?: number }
 /** A critical blind (segregation point) or a neutralization (loop or item), entered once on the Isolation page. */
 export type PointStatus = 'open' | 'in' | 'out' | 'filling' | 'soaking' | 'draining' | 'done';
 export interface TrkPoint {
@@ -51,7 +55,7 @@ export interface TrkPoint {
   inAt: string | null; outAt: string | null; fillAt: string | null; soakAt: string | null; drainAt: string | null; doneAt: string | null;
   soakH: number | null; remark: string | null; updatedBy: string | null; updatedAt: string | null;
 }
-export interface TrkData { lineup?: LuStream[]; lineupEq?: LuEquip[]; steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
+export interface TrkData { engine?: TrkEngine; lineup?: LuStream[]; lineupEq?: LuEquip[]; steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
 
 /** The main equipment groups; the rest (control valve shells, PSVs, check valves, RTJ & injection points, piping, OPR
  *  list, PMRs …) is miscellaneous, shown after them. */
