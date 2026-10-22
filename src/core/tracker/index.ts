@@ -147,6 +147,8 @@ export function sortActs<T>(xs: T[], get: (x: T) => Orderable = (x) => x as unkn
 
 // ── Isolation & neutralization ─────────────────────────────────────────────────────────────────────────────────
 /** Blind in (or already out) · neutralization drained. */
+/** The reactor body spray (after the catalyst dumping): part of the reactor's own work, shown with the reactor only. */
+export const withReactor = (p: Pick<TrkPoint, 'afterActs'>) => (p.afterActs ?? []).length > 0;
 export const pointComplete = (p: Pick<TrkPoint, 'kind' | 'status'>) => (p.kind === 'blind' ? p.status === 'in' || p.status === 'out' : p.status === 'done');
 export const NEUT_FLOW = ['open', 'filling', 'soaking', 'draining', 'done'] as const;
 export const NEUT_LABEL: Record<string, string> = { open: 'Not started', filling: 'Filling', soaking: 'Soaking', draining: 'Draining', done: 'Neutralized' };
@@ -482,7 +484,7 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
       }); })(),
     // the loops still open, and those completed in the last day (shown once as completed)
     // the loops still open, and those completed in this shift (a finished loop is not repeated after its shift)
-    loops: (d.points ?? []).filter((p) => p.kind === 'neut' && (p.stepId || (!p.items.includes(p.ref) && (p.method !== 'spray' || p.status !== 'open'))) && (!pointComplete(p) || (!!p.doneAt && ms(p.doneAt) >= sh.from))).sort((a, b) => a.sort - b.sort).map((p) => {
+    loops: (d.points ?? []).filter((p) => p.kind === 'neut' && !withReactor(p) && (p.stepId || (!p.items.includes(p.ref) && (p.method !== 'spray' || p.status !== 'open'))) && (!pointComplete(p) || (!!p.doneAt && ms(p.doneAt) >= sh.from))).sort((a, b) => a.sort - b.sort).map((p) => {
       const m = p.status === 'open' ? missingBlinds(p, d.points) : []; const left = soakLeft(p, now); const done = pointComplete(p);
       // its field jobs (crane lifts, blinding): those running, and those finished this shift
       const jobs = (d.pointSteps ?? []).filter((c) => c.pointId === p.id && c.kind === 'step');

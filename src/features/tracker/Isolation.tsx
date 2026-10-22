@@ -2,7 +2,7 @@
 // once here. The database moves the rest: the items (handed over when all their blinds are in and the neutralization
 // before handover is done), the guideline step of each row and the soda-ash bar-chart lines.
 import { useState, type ReactNode } from 'react';
-import { NEUT_FLOW, NEUT_LABEL, neutLabel, equipBlind, loopLines, missingBlinds, waitingSteps, type LuStream, type TrkIat, hoursText, kwDay, kwTime, pointComplete, soakLeft, type PointStatus, type TrkActivity, type TrkPoint, type TrkPointStep, type TrkStep } from '@/core/tracker';
+import { withReactor, NEUT_FLOW, NEUT_LABEL, neutLabel, equipBlind, loopLines, missingBlinds, waitingSteps, type LuStream, type TrkIat, hoursText, kwDay, kwTime, pointComplete, soakLeft, type PointStatus, type TrkActivity, type TrkPoint, type TrkPointStep, type TrkStep } from '@/core/tracker';
 import { addPointStep, setActivity, setPoint, setPointStep, setPointStepTime } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, cx } from '@/ui/components';
 import { CRow, IsoChip, MenuBtn, RowBtn, RowList, Tile } from './ui';
@@ -287,7 +287,8 @@ export function IsolationTab({ trackerId, initialKind, activities = [], points, 
   const blinds = points.filter((p) => p.kind === 'blind'), neut = points.filter((p) => p.kind === 'neut');
   const gate = neut.filter((p) => p.beforeHo);
   const soaking = neut.filter((p) => p.status === 'soaking').length;
-  const list = points.filter((p) => p.kind === kind && (kind === 'neut' || (p.grp ?? 'segregation') === grp) && (fo === 'All' || p.fo === fo) && (!focus || p.items.includes(focus) || (p.partOf ?? []).includes(focus))).sort((a, b) => a.sort - b.sort);
+  // the reactor body sprays stay with their reactor (covered there), not listed here
+  const list = points.filter((p) => p.kind === kind && !(kind === 'neut' && withReactor(p)) && (kind === 'neut' || (p.grp ?? 'segregation') === grp) && (fo === 'All' || p.fo === fo) && (!focus || p.items.includes(focus) || (p.partOf ?? []).includes(focus))).sort((a, b) => a.sort - b.sort);
   const eqView = kind === 'blind' && grp === 'equipment';
   const open = list.filter((p) => !pointComplete(p)), closed = list.filter(pointComplete);
   const stepName = (id: string) => `${id} · ${steps.find((s) => s.stepId === id)?.shortName ?? ''}`;
