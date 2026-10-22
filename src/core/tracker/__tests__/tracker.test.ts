@@ -404,4 +404,15 @@ describe('M & I progress against time', () => {
     const late = miWeighted(d, Date.parse(kw('2026-10-26 07:00')), [ev('R-12-205'), ev('V-12-206')])!;
     expect(late.delays.map((i) => [i.tag, i.spareD])).toEqual([['R-12-205', -1]]);
   });
+  it('a PSV is planned in windows: waiting inside a window moves nothing, a window missed delays it', () => {
+    const psv = { settings: { miEnd: kw('2026-11-07 07:00') }, activities: [
+      act('12-PSV-0519', 'P1', '2026-10-20 07:00', '2026-10-25 07:00', 120), act('12-PSV-0519', 'P2', '2026-10-25 07:00', '2026-11-04 07:00', 240)] } as unknown as TrkData;
+    const pv = ({ eq: { tag: '12-PSV-0519', barchartKey: '12-PSV-0519', tracked: true, group: 'PSVs' }, stage: 0, hoAt: null }) as never;
+    // not started 1.5 days into its removal window: still 3 d spare (4 Nov to 7 Nov), not critical
+    const w = miWeighted(psv, Date.parse(kw('2026-10-21 19:00')), [pv])!;
+    expect(w.items[0].spareD).toBe(3); expect(w.critical.length).toBe(1);
+    expect(miWeighted(psv, Date.parse(kw('2026-10-24 07:00')), [pv])!.items[0].spareD).toBe(3);
+    // the removal window (25 Oct) missed by 2 days: the finish moves 2 days
+    expect(miWeighted(psv, Date.parse(kw('2026-10-27 07:00')), [pv])!.items[0].spareD).toBe(1);
+  });
 });

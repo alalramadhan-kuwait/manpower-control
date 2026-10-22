@@ -662,7 +662,12 @@ export function miWeighted(d: TrkData, now: number, eqs: EquipView[]): MiWeighte
     const open = xs.filter((a) => !a.actualFinish);
     const nx = [...open].sort((a, b) => ms(a.start) - ms(b.start))[0];
     const extra = nx && !nx.actualStart ? Math.max(0, now - (ms(nx.start) + shift)) : 0;
-    const forecast = open.length ? Math.max(now, last + shift + extra) : Math.max(...xs.map((a) => ms(a.actualFinish)));
+    // a PSV's bar-chart lines are windows (out to the shop by …, back in by …), not hours of work: waiting inside a
+    // window moves nothing, only a window already over with its line not done delays it, by as much as it is over
+    const window = e.eq.group === 'PSVs';
+    const overdue = window ? Math.max(0, ...open.filter((a) => fin(a) < now).map((a) => now - fin(a))) : 0;
+    const forecast = !open.length ? Math.max(...xs.map((a) => ms(a.actualFinish)))
+      : window ? Math.max(now, last + overdue) : Math.max(now, last + shift + extra);
     const spareD = r1((end - forecast) / DAY), weight = spareWeight(spareD);
     for (const a of xs) {
       const h = Math.max(1, a.durationH ?? (fin(a) - ms(a.start)) / H) * weight, len = fin(a) - ms(a.start);
