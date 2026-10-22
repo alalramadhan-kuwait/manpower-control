@@ -1,7 +1,7 @@
 // Isolation & neutralization: the critical blinds (segregation points) and the neutralization loops and items, entered
 // once here. The database moves the rest: the items (handed over when all their blinds are in and the neutralization
 // before handover is done), the guideline step of each row and the soda-ash bar-chart lines.
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { NEUT_FLOW, NEUT_LABEL, neutLabel, equipBlind, loopLines, missingBlinds, waitingSteps, type LuStream, type TrkIat, hoursText, kwDay, kwTime, pointComplete, soakLeft, type PointStatus, type TrkActivity, type TrkPoint, type TrkPointStep, type TrkStep } from '@/core/tracker';
 import { addPointStep, setActivity, setPoint, setPointStep, setPointStepTime } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, cx } from '@/ui/components';
@@ -14,7 +14,7 @@ const NEXT: Record<string, [PointStatus, string] | undefined> = {
   open: ['filling', '▶ Fill'], filling: ['soaking', 'Soaking'], soaking: ['draining', 'Draining'], draining: ['done', '✓ Done'],
 };
 
-function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], checks = [], trackerId, isHead, now, canEdit, onItem, onStep, onDone }: { p: TrkPoint; points: TrkPoint[]; acts?: TrkActivity[]; lineup?: LuStream[]; iats?: TrkIat[]; steps?: TrkStep[]; checks?: TrkPointStep[]; trackerId?: string; isHead: boolean; now: number; canEdit: boolean; onItem: (tag: string) => void; onStep?: (id: string) => void; onDone: (msg: string) => void }) {
+function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], checks = [], trackerId, isHead, now, canEdit, onItem, onStep, onDone }: { p: TrkPoint; points: TrkPoint[]; acts?: TrkActivity[]; lineup?: LuStream[]; iats?: TrkIat[]; steps?: TrkStep[]; checks?: TrkPointStep[]; trackerId?: string; isHead: boolean; now: number; canEdit: boolean; onItem: (tag: string) => void; onStep?: (id: string) => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   const [force, setForce] = useState(false); const [sheet, setSheet] = useState(false);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [note, setNote] = useState(p.remark ?? '');
@@ -101,22 +101,20 @@ function AddJob({ onAdd }: { onAdd: (text: string, crane: boolean, after: boolea
   );
 }
 
-/** The start / finish button of a timed field step: a first tap arms it (4 s), the second saves. */
+/** The start / finish button of a timed field step: one tap, now (the message offers Undo). */
 function JobButton({ c, busy, onStart, onFinish }: { c: TrkPointStep; busy: boolean; onStart: () => void; onFinish: () => void }) {
-  const [armed, setArmed] = useState(false);
-  useEffect(() => { if (!armed) return; const t = window.setTimeout(() => setArmed(false), 4000); return () => window.clearTimeout(t); }, [armed]);
   if (c.doneAt) return <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#08A048] text-[12px] font-bold text-white">✓</span>;
   const finish = !!c.startAt;
   return (
-    <button type="button" disabled={busy} aria-label={`${finish ? 'Finish' : 'Start'} step ${c.seq}`} onClick={() => { if (!armed) { setArmed(true); return; } setArmed(false); (finish ? onFinish : onStart)(); }}
-      className={cx('mt-0.5 flex h-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white disabled:opacity-50', armed ? 'px-2' : 'w-6', finish ? 'bg-[#08A048]' : 'bg-[#0d2a5e]')}>
-      {armed ? (finish ? 'Finish?' : 'Start?') : finish ? '✓' : '▶'}
+    <button type="button" disabled={busy} aria-label={`${finish ? 'Finish' : 'Start'} step ${c.seq}`} onClick={finish ? onFinish : onStart}
+      className={cx('mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white disabled:opacity-50', finish ? 'bg-[#08A048]' : 'bg-[#0d2a5e]')}>
+      {finish ? '✓' : '▶'}
     </button>
   );
 }
 
 /** A neutralization opened: its procedure (the guideline step), the steps of the loop with their times, and the next action. */
-function LoopSheet({ p, points, lineup, iats, steps, checks, canEdit, isHead, trackerId, onDone, now, missing, waiting, action, err, onClose, onItem, onStep }: { p: TrkPoint; points: TrkPoint[]; lineup: LuStream[]; iats: TrkIat[]; steps: TrkStep[]; checks: TrkPointStep[]; canEdit: boolean; isHead: boolean; trackerId?: string; onDone: (msg: string) => void; now: number;
+function LoopSheet({ p, points, lineup, iats, steps, checks, canEdit, isHead, trackerId, onDone, now, missing, waiting, action, err, onClose, onItem, onStep }: { p: TrkPoint; points: TrkPoint[]; lineup: LuStream[]; iats: TrkIat[]; steps: TrkStep[]; checks: TrkPointStep[]; canEdit: boolean; isHead: boolean; trackerId?: string; onDone: (msg: string, undo?: () => Promise<unknown>) => void; now: number;
   missing: string[]; waiting: string[]; action: ReactNode; err: unknown; onClose: () => void; onItem: (tag: string) => void; onStep?: (id: string) => void }) {
   const spray = p.method === 'spray';
   const step = p.stepId ? steps.find((x) => x.stepId === p.stepId) : undefined;
@@ -130,7 +128,9 @@ function LoopSheet({ p, points, lineup, iats, steps, checks, canEdit, isHead, tr
     : c.startAt ? `started ${when(c.startAt)} · ${hoursText(now - Date.parse(c.startAt))} so far${c.startBy ? ` · ${c.startBy}` : ''}` : undefined;
   const sop = (ph: TrkPointStep['phase']): Row[] => checks.filter((c) => c.phase === ph).map((c) => ({ label: c.text, done: !!c.doneAt, now: c.kind === 'step' && !!c.startAt && !c.doneAt,
     info: c.kind === 'step' ? stepInfo(c) : c.doneAt ? `${when(c.doneAt)}${c.doneBy ? ` · ${c.doneBy}` : ''}` : undefined, check: c }));
-  const time = async (c: TrkPointStep, patch: Parameters<typeof setPointStepTime>[1], msg: string) => { setBusy(c.id); setCErr(null); try { await setPointStepTime(c.id, patch); onDone(`${p.ref}: ${msg}`); } catch (e) { setCErr(e); } finally { setBusy(null); } };
+  const time = async (c: TrkPointStep, patch: Parameters<typeof setPointStepTime>[1], msg: string) => { setBusy(c.id); setCErr(null);
+    const back = { start_at: c.startAt ?? null, done_at: c.doneAt ?? null };
+    try { await setPointStepTime(c.id, patch); onDone(`${p.ref}: ${msg}`, () => setPointStepTime(c.id, back)); } catch (e) { setCErr(e); } finally { setBusy(null); } };
   const rows: Row[] = [
     ...(p.requires ?? []).map((r) => { const b = points.find((x) => x.kind === 'blind' && x.ref === r); const ok = !missing.includes(r);
       return { label: `Blind ${r}${b?.name ? ` · ${b.name}` : ''}`, done: ok, info: ok ? (b?.inAt ? `in ${when(b.inAt)}` : 'in') : 'not in yet' }; }),
@@ -202,7 +202,7 @@ function LoopSheet({ p, points, lineup, iats, steps, checks, canEdit, isHead, tr
 }
 
 /** An item's blind (its blind line in the bar chart), installed by M & I: Blinded stamps the line finished. */
-function EquipBlindRow({ a, canEdit, onItem, onDone }: { a: TrkActivity; canEdit: boolean; onItem: (tag: string) => void; onDone: (msg: string) => void }) {
+function EquipBlindRow({ a, canEdit, onItem, onDone }: { a: TrkActivity; canEdit: boolean; onItem: (tag: string) => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   async function run(patch: Parameters<typeof setActivity>[1], msg: string, close?: () => void) { setBusy(true); setErr(null); try { await setActivity(a.id, patch); close?.(); onDone(msg); } catch (e) { setErr(e); } finally { setBusy(false); } }
   const done = !!a.actualFinish;
@@ -220,7 +220,7 @@ function EquipBlindRow({ a, canEdit, onItem, onDone }: { a: TrkActivity; canEdit
 const GRP: [string, string][] = [['segregation', 'Segregation'], ['hp_critical', 'HP critical'], ['equipment', 'Equipment']];
 
 export function IsolationTab({ trackerId, initialKind, activities = [], points, pointSteps = [], lineup = [], iats = [], steps, now, canEdit, isHead = false, focus, onFocus, onItem, onStep, onDone }: {
-  trackerId?: string; initialKind?: 'blind' | 'neut'; activities?: TrkActivity[]; points: TrkPoint[]; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; iats?: TrkIat[]; steps: TrkStep[]; now: number; canEdit: boolean; isHead?: boolean; focus: string | null; onFocus: (tag: string | null) => void; onItem: (tag: string) => void; onStep?: (id: string) => void; onDone: (msg: string) => void;
+  trackerId?: string; initialKind?: 'blind' | 'neut'; activities?: TrkActivity[]; points: TrkPoint[]; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; iats?: TrkIat[]; steps: TrkStep[]; now: number; canEdit: boolean; isHead?: boolean; focus: string | null; onFocus: (tag: string | null) => void; onItem: (tag: string) => void; onStep?: (id: string) => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void;
 }) {
   const [kind, setKind] = useState<'blind' | 'neut'>(() => initialKind ?? (focus && !points.some((p) => p.kind === 'blind' && p.items.includes(focus)) ? 'neut' : 'blind'));
   const [grp, setGrp] = useState('segregation');

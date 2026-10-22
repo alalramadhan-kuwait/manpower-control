@@ -17,12 +17,12 @@ function PendingForm({ initial, onSave, busy }: { initial: string | null; onSave
     <div className="space-y-2 rounded-xl bg-red-50 p-2.5 ring-1 ring-red-200">
       <div className="flex flex-wrap gap-1.5">{PENDING_REASONS.map((r) => <button key={r} type="button" onClick={() => setReason(r)} className={cx('rounded-full px-2.5 py-1 text-xs ring-1', reason === r ? 'bg-[#E02028] text-white ring-[#E02028]' : 'bg-white text-slate-700 ring-slate-300')}>{r}</button>)}</div>
       <input className="input" placeholder="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
-      <Button className="w-full" disabled={!reason || busy} onClick={() => onSave(note.trim() ? `${reason} – ${note.trim()}` : reason)}>Save pending</Button>
+      <Button className="w-full" disabled={!reason || busy} onClick={() => onSave(note.trim() ? `${reason} – ${note.trim()}` : reason)}>Hold</Button>
     </div>
   );
 }
 
-export function StepSheet({ v, isHead, canEdit, points = [], items = [], onIsolation, onClose, onDone }: { v: StepView; isHead: boolean; canEdit: boolean; points?: TrkPoint[]; items?: EquipView[]; onIsolation?: () => void; onClose: () => void; onDone: (msg: string) => void }) {
+export function StepSheet({ v, isHead, canEdit, points = [], items = [], onIsolation, onClose, onDone }: { v: StepView; isHead: boolean; canEdit: boolean; points?: TrkPoint[]; items?: EquipView[]; onIsolation?: () => void; onClose: () => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   const s = v.step;
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [pending, setPending] = useState(false); const [blocked, setBlocked] = useState(false); const [details, setDetails] = useState(false);
@@ -86,7 +86,7 @@ export function StepSheet({ v, isHead, canEdit, points = [], items = [], onIsola
 // a spray that waits for work steps, in a few words (the reactor body spray waits for the catalyst dumping)
 const waitAfter = (steps: string[]) => (!steps.length ? [] : [steps.every((x) => /dump/i.test(x)) ? 'after dumping' : steps.length === 1 ? `after ${steps[0]}` : `after ${steps.length} steps`]);
 
-export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso = null, points = [], engine, settings = {}, me = null, twins = [], onTwin, onIsolation, onNeut, onClose, onDone }: { twins?: string[]; onTwin?: (tag: string) => void; v: EquipView; trackerId: string; canEdit: boolean; isHead: boolean; activities: TrkActivity[]; now: number; iso?: Isolation | null; points?: TrkPoint[]; engine?: TrkEngine; settings?: TrkSettings; me?: string | null; onIsolation?: () => void; onNeut?: () => void; onClose: () => void; onDone: (msg: string) => void }) {
+export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso = null, points = [], engine, settings = {}, me = null, twins = [], onTwin, onIsolation, onNeut, onClose, onDone }: { twins?: string[]; onTwin?: (tag: string) => void; v: EquipView; trackerId: string; canEdit: boolean; isHead: boolean; activities: TrkActivity[]; now: number; iso?: Isolation | null; points?: TrkPoint[]; engine?: TrkEngine; settings?: TrkSettings; me?: string | null; onIsolation?: () => void; onNeut?: () => void; onClose: () => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   // the neutralization the soda-ash lines stand for: the item's own soda ash first, else its loop
   // the item's bar-chart steps by stage (what moves the stage), the field-detail steps left out
   const stageLines = activities.filter((a) => a.tracked && !a.detail && a.group !== 'Operations' && a.stage !== null);
@@ -95,28 +95,23 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso
   const parts = partsOf(v.eq.tag, points);
   const e = v.eq;
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  const [pending, setPending] = useState(false); const [iat, setIat] = useState(false); const [details, setDetails] = useState(false);
+  const [pending, setPending] = useState(false); const [iat, setIat] = useState(false); const [details, setDetails] = useState(false); const [fixStage, setFixStage] = useState(false);
   const [iatNo, setIatNo] = useState(''); const [job, setJob] = useState(''); const [disc, setDisc] = useState('');
-  async function run(f: () => Promise<void>, msg: string) { setBusy(true); setErr(null); try { await f(); setPending(false); setIat(false); setIatNo(''); setJob(''); setDisc(''); onDone(msg); } catch (x) { setErr(x); } finally { setBusy(false); } }
+  async function run(f: () => Promise<void>, msg: string, undo?: () => Promise<unknown>) { setBusy(true); setErr(null); try { await f(); setPending(false); setIat(false); setIatNo(''); setJob(''); setDisc(''); onDone(msg, undo); } catch (x) { setErr(x); } finally { setBusy(false); } }
   const iats = v.iatsOpen;
   return (
     <BottomSheet open onClose={onClose} title={e.tag}>
       <div className="space-y-3">
         {twins.length > 1 && <div className="flex gap-1">{twins.map((t) => <button key={t} type="button" onClick={() => t !== e.tag && onTwin?.(t)} className={cx('min-h-9 rounded-full px-3 text-xs font-semibold', t === e.tag ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{t}</button>)}<span className="self-center text-[11px] text-slate-500">worked as one</span></div>}
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600"><FlagChip flag={v.flag} />{v.plan && <PlanChip variance={v.plan.variance} days={v.plan.days} />}{e.critical && <span className="font-bold text-[#E02028]">★ Critical</span>}<span>{e.description}</span></div>
-        {v.reason && <p className="rounded-lg bg-[#FFC7CE] px-2.5 py-1.5 text-sm text-red-900">⏸ {v.reason}</p>}
-        <Field label={`Stage · ${STAGES[v.stage]}`}>
-          <div className="space-y-1.5">
-            <StageBar stage={v.stage} />
-            {canEdit && <div className="grid grid-cols-3 gap-1.5">
-              {STAGES.slice(1).map((label, i) => { const s = i + 1; const next = s === v.stage + 1; const lines = stageLines.filter((a) => a.stage === s); const fin = lines.filter((a) => a.actualFinish).length;
-                return <button key={s} type="button" disabled={busy || s === v.stage} onClick={() => run(() => setEquipment(e.id, { stage: s }), `${e.tag}: ${label}.`)}
-                  className={cx('min-h-11 rounded-lg px-1 text-xs font-semibold ring-1 disabled:opacity-40', s === v.stage ? 'bg-[#0850A0] text-white ring-[#0850A0]' : next ? 'bg-[#D6E6F5] text-[#004080] ring-[#0850A0]' : 'bg-white text-slate-700 ring-slate-300')}>{s}. {label}{lines.length > 0 && <span className="block text-[10.5px] font-normal opacity-80">{fin}/{lines.length} steps</span>}</button>; })}
-            </div>}
-            <p className="text-[11px] text-slate-500">{v.hoAt ? <>Handed over {when(v.hoAt)}{e.blindsOut ? <> · deblinded {when(e.blindsOut)}</> : null}. </> : null}
-              The stage follows the work steps: a step finished moves the item to its stage (handed over by operations{e.hoStep ? ` (${e.hoStep})` : ''}, blinded by M &amp; I, deblinded = 6). Tap a stage only to correct it.</p>
-          </div>
-        </Field>
+        {v.reason && <div className="flex items-center gap-2 rounded-lg bg-[#FFC7CE] px-2.5 py-1.5 text-sm text-red-900"><span className="min-w-0 flex-1">⏸ On hold: {v.reason}</span>
+          {canEdit && e.pendingReason && <button type="button" disabled={busy} onClick={() => { const was = e.pendingReason; run(() => setEquipment(e.id, { pending_reason: null }), `${e.tag}: resumed.`, () => setEquipment(e.id, { pending_reason: was })); }} className="shrink-0 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-[#0d2a5e] ring-1 ring-red-200">▶ Resume</button>}</div>}
+        <EquipActivities trackerId={trackerId} itemKey={e.barchartKey ?? e.tag} activities={activities} now={now} canEdit={canEdit} isHead={isHead} neutCovered={!!iso?.neut.length} neutLabel={soda ? `${neutName(soda)} · ${neutLabel(soda)}` : undefined} onNeut={onNeut} onDone={onDone} />
+        {engine && (() => { const key = e.barchartKey ?? e.tag; const sc = engine.scopes.find((x) => x.key === key && x.scope === 'removal' && x.unit);
+          return <>
+            {sc && <DrumPanel scope={sc} entries={engine.entries.filter((x) => x.scopeId === sc.id)} estimates={engine.estimates.filter((x) => x.scopeId === sc.id)} activities={activities} settings={settings} now={now} canEdit={canEdit} isHead={isHead} me={me} onDone={onDone} />}
+            <ItemUpdate trackerId={trackerId} itemKey={key} updates={engine.updates} canEdit={canEdit} onDone={onDone} />
+          </>; })()}
         {iso && (
           <button type="button" onClick={onIsolation} className="flex w-full items-center gap-2 rounded-xl bg-slate-50 p-2.5 text-left ring-1 ring-slate-200">
             <span className="min-w-0 flex-1 text-xs text-slate-700">
@@ -135,12 +130,6 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso
             <span className="text-xs font-semibold text-[#0850A0]">Open ›</span>
           </button>
         )}
-        {engine && (() => { const key = e.barchartKey ?? e.tag; const sc = engine.scopes.find((x) => x.key === key && x.scope === 'removal' && x.unit);
-          return <>
-            {sc && <DrumPanel scope={sc} entries={engine.entries.filter((x) => x.scopeId === sc.id)} estimates={engine.estimates.filter((x) => x.scopeId === sc.id)} activities={activities} settings={settings} now={now} canEdit={canEdit} isHead={isHead} me={me} onDone={onDone} />}
-            <ItemUpdate trackerId={trackerId} itemKey={key} updates={engine.updates} canEdit={canEdit} onDone={onDone} />
-          </>; })()}
-        <EquipActivities trackerId={trackerId} itemKey={e.barchartKey ?? e.tag} activities={activities} now={now} canEdit={canEdit} isHead={isHead} neutCovered={!!iso?.neut.length} neutLabel={soda ? `${neutName(soda)} · ${neutLabel(soda)}` : undefined} onNeut={onNeut} onDone={onDone} />
         <Field label={`IAT · ${iats.length} open`}>
           <div className="space-y-1.5">
             {iats.map((i) => <div key={i.id} className="flex items-center justify-between gap-2 rounded-lg bg-[#FFE699] px-2.5 py-1.5 text-sm"><span><b>{i.iatNo}</b> {i.jobText}{i.sheetStatus ? ` · ${i.sheetStatus}` : i.discipline ? ` · ${i.discipline}` : ''}</span>{canEdit && <Button variant="secondary" className="min-h-8 px-2 text-xs" disabled={busy} onClick={() => run(() => closeIat(i.id), `${i.iatNo} closed.`)}>Close IAT</Button>}</div>)}
@@ -152,11 +141,20 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso
             </div>}
           </div>
         </Field>
-        {canEdit && <div className="flex gap-2">
-          <Button variant="secondary" className="flex-1" disabled={busy} onClick={() => setPending((x) => !x)}>⏸ Pending</Button>
-          {e.pendingReason && <Button variant="secondary" className="flex-1" disabled={busy} onClick={() => run(() => setEquipment(e.id, { pending_reason: null }), `${e.tag}: pending cleared.`)}>Clear pending</Button>}
-        </div>}
-        {pending && <PendingForm initial={e.pendingReason} busy={busy} onSave={(r) => run(() => setEquipment(e.id, { pending_reason: r }), `${e.tag}: pending.`)} />}
+        <Field label={`Stage · ${STAGES[v.stage]}`}>
+          <div className="space-y-1.5">
+            <StageBar stage={v.stage} />
+            {canEdit && fixStage && <div className="grid grid-cols-3 gap-1.5">
+              {STAGES.slice(1).map((label, i) => { const s = i + 1; const next = s === v.stage + 1; const lines = stageLines.filter((a) => a.stage === s); const fin = lines.filter((a) => a.actualFinish).length;
+                return <button key={s} type="button" disabled={busy || s === v.stage} onClick={() => run(() => setEquipment(e.id, { stage: s }), `${e.tag}: ${label}.`)}
+                  className={cx('min-h-11 rounded-lg px-1 text-xs font-semibold ring-1 disabled:opacity-40', s === v.stage ? 'bg-[#0850A0] text-white ring-[#0850A0]' : next ? 'bg-[#D6E6F5] text-[#004080] ring-[#0850A0]' : 'bg-white text-slate-700 ring-slate-300')}>{s}. {label}{lines.length > 0 && <span className="block text-[10.5px] font-normal opacity-80">{fin}/{lines.length} steps</span>}</button>; })}
+            </div>}
+            <p className="flex items-baseline gap-2 text-[11px] text-slate-500"><span className="min-w-0 flex-1">{v.hoAt ? <>Handed over {when(v.hoAt)}{e.blindsOut ? <> · deblinded {when(e.blindsOut)}</> : null}. </> : null}Moves by itself with the work steps.</span>
+              {canEdit && <button type="button" onClick={() => setFixStage((x) => !x)} className="shrink-0 font-semibold text-[#0850A0]">{fixStage ? 'Done' : 'Correct stage'}</button>}</p>
+          </div>
+        </Field>
+        {canEdit && !e.pendingReason && !pending && <Button variant="secondary" className="w-full" disabled={busy} onClick={() => setPending(true)}>⏸ Hold (with reason)</Button>}
+        {pending && <PendingForm initial={e.pendingReason} busy={busy} onSave={(r) => run(() => setEquipment(e.id, { pending_reason: r }), `${e.tag}: on hold.`)} />}
         {err != null && <ErrorBox error={err} />}
         <button type="button" onClick={() => setDetails((x) => !x)} className="text-xs font-semibold text-slate-600">{details ? '▾' : '▸'} Details</button>
         {details && (

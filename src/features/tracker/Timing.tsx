@@ -20,12 +20,12 @@ export function TimingChip({ t }: { t: T }) {
 
 /** One activity as a thin row: Start / Finish stamp now; ⋯ holds the time and note correction, the bar-chart dates
  *  (Section Head), Not required and Undo. */
-export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, neutLabel, onNeut, onDone }: { t: T; canEdit: boolean; isHead?: boolean; neutCovered?: boolean; neutLabel?: string; onNeut?: () => void; onDone: (msg: string) => void }) {
+export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, neutLabel, onNeut, onDone }: { t: T; canEdit: boolean; isHead?: boolean; neutCovered?: boolean; neutLabel?: string; onNeut?: () => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   const a = t.a; const link = blindLink(a); const nlink = neutCovered && neutLink(a);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [s, setS] = useState(local(a.actualStart)); const [f, setF] = useState(local(a.actualFinish)); const [note, setNote] = useState(a.actualNote ?? '');
   const [ps, setPs] = useState(local(a.start)); const [pf, setPf] = useState(local(a.finish));
-  async function run(patch: Parameters<typeof setActivity>[1], msg: string, close?: () => void) { setBusy(true); setErr(null); try { await setActivity(a.id, patch); close?.(); onDone(msg); } catch (e) { setErr(e); } finally { setBusy(false); } }
+  async function run(patch: Parameters<typeof setActivity>[1], msg: string, close?: () => void, undo?: () => Promise<unknown>) { setBusy(true); setErr(null); try { await setActivity(a.id, patch); close?.(); onDone(msg, undo); } catch (e) { setErr(e); } finally { setBusy(false); } }
   const late = t.lateStart || t.lateFinish;
   const dot = !a.tracked ? 'grey' : t.state === 'FINISHED' ? 'green' : late ? 'red' : t.state === 'RUNNING' ? 'blue' : 'grey';
   const sub = !a.tracked ? 'Not required'
@@ -40,8 +40,9 @@ export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, n
     : nlink ? (onNeut ? <button type="button" onClick={onNeut} className="max-w-[45%] shrink-0 truncate rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800 ring-1 ring-amber-200">🧪 {neutLabel ?? 'Neutralization'} ›</button>
       : <span className="shrink-0 text-[11px] font-bold text-amber-800">= {neutLabel ?? 'Neutralization'}</span>)
     : !free ? null
-    : !a.actualStart ? <RowBtn disabled={busy} onClick={() => run({ actual_start: new Date().toISOString() }, `${a.key}: ${a.activityId} started.`)}>▶ Start</RowBtn>
-    : !a.actualFinish ? <RowBtn tone="green" disabled={busy} onClick={() => run({ actual_finish: new Date().toISOString() }, `${a.key}: ${a.activityId} finished.`)}>✓ Finish</RowBtn>
+    // one tap, now; the message offers Undo
+    : !a.actualStart ? <RowBtn disabled={busy} onClick={() => run({ actual_start: new Date().toISOString() }, `${a.key}: ${a.activity} started.`, undefined, () => setActivity(a.id, { actual_start: null }))}>▶ Start</RowBtn>
+    : !a.actualFinish ? <RowBtn tone="green" disabled={busy} onClick={() => run({ actual_finish: new Date().toISOString() }, `${a.key}: ${a.activity} finished.`, undefined, () => setActivity(a.id, { actual_finish: null }))}>✓ Finish</RowBtn>
     : <span className="shrink-0 text-[11px] font-bold text-[#08A048]">Done</span>;
   const menu = canEdit && a.tracked ? (close: () => void) => (
     <>
@@ -80,14 +81,14 @@ function download(name: string, text: string) {
 }
 
 type Filter = 'open' | 'running' | 'finished' | 'late' | 'all';
-export function TimingTab({ activities, steps, now, canEdit, isHead, title, neutKeys, onDone }: { activities: TrkActivity[]; steps: TrkStep[]; now: number; canEdit: boolean; isHead: boolean; title: string; neutKeys?: Set<string>; onDone: (msg: string) => void }) {
+export function TimingTab({ activities, steps, now, canEdit, isHead, title, neutKeys, onDone }: { activities: TrkActivity[]; steps: TrkStep[]; now: number; canEdit: boolean; isHead: boolean; title: string; neutKeys?: Set<string>; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   const [kind, setKind] = useState<'mech' | 'steps'>('mech');
   const seg = <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-200/60 p-1">{([['mech', 'Mechanical (bar chart)'], ['steps', 'Guideline steps']] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setKind(k)} className={cx('min-h-10 rounded-lg text-xs font-semibold', kind === k ? 'bg-white text-[#004080] shadow-sm' : 'text-slate-600')}>{l}</button>)}</div>;
   if (kind === 'steps') return <div className="space-y-3">{seg}<StepTimingList steps={steps} now={now} canEdit={canEdit} isHead={isHead} title={title} onDone={onDone} /></div>;
   return <div className="space-y-3">{seg}<MechTiming activities={activities} now={now} canEdit={canEdit} isHead={isHead} title={title} neutKeys={neutKeys} onDone={onDone} /></div>;
 }
 
-function MechTiming({ activities, now, canEdit, isHead, title, neutKeys, onDone }: { activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; title: string; neutKeys?: Set<string>; onDone: (msg: string) => void }) {
+function MechTiming({ activities, now, canEdit, isHead, title, neutKeys, onDone }: { activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; title: string; neutKeys?: Set<string>; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   const [filter, setFilter] = useState<Filter>('open'); const [q, setQ] = useState('');
   const all = activities.filter((a) => a.tracked && !a.detail).map((a) => timing(a, now)).sort((x, y) => (x.a.start ?? '').localeCompare(y.a.start ?? '') || x.a.key.localeCompare(y.a.key));
   const sum = timingSummary(all);
@@ -125,7 +126,7 @@ function MechTiming({ activities, now, canEdit, isHead, title, neutKeys, onDone 
 
 /** The item's work steps (bar chart, and procedure steps added by the Section Head) inside the equipment sheet: open,
  *  the one running and the next one on top. */
-export function EquipActivities({ trackerId, itemKey, activities, now, canEdit, isHead, neutCovered = false, neutLabel, onNeut, onDone }: { trackerId: string; itemKey: string; activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; neutCovered?: boolean; neutLabel?: string; onNeut?: () => void; onDone: (msg: string) => void }) {
+export function EquipActivities({ trackerId, itemKey, activities, now, canEdit, isHead, neutCovered = false, neutLabel, onNeut, onDone }: { trackerId: string; itemKey: string; activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; neutCovered?: boolean; neutLabel?: string; onNeut?: () => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   const [open, setOpen] = useState(true); const [add, setAdd] = useState(false);
   const [showDone, setShowDone] = useState(false); const [showField, setShowField] = useState(false); const [order, setOrderIds] = useState<string[] | null>(null);
   // the Section Head follows the milestones: the field-operator detail steps are hidden (one tap shows them)
@@ -161,7 +162,7 @@ export function EquipActivities({ trackerId, itemKey, activities, now, canEdit, 
 
 /** Put the work steps in order: hold a step (or press its ⋮⋮ handle) and drag it to its place, then save. The field
  *  steps keep their place among them, hidden. Saved and logged. */
-function Reorder({ trackerId, itemKey, rows, ids, setIds, onDone }: { trackerId: string; itemKey: string; rows: T[]; ids: string[]; setIds: (x: string[] | null) => void; onDone: (msg: string) => void }) {
+function Reorder({ trackerId, itemKey, rows, ids, setIds, onDone }: { trackerId: string; itemKey: string; rows: T[]; ids: string[]; setIds: (x: string[] | null) => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null); const [drag, setDrag] = useState<string | null>(null);
   const by = new Map(rows.map((t) => [t.a.id, t])); const start = rows.map((t) => t.a.id).filter((x) => !by.get(x)?.a.detail);
   const shown = ids.filter((id) => !by.get(id)?.a.detail);
@@ -214,7 +215,7 @@ function Reorder({ trackerId, itemKey, rows, ids, setIds, onDone }: { trackerId:
   );
 }
 
-function AddActivity({ trackerId, itemKey, onDone, onCancel }: { trackerId: string; itemKey: string; onDone: (msg: string) => void; onCancel: () => void }) {
+function AddActivity({ trackerId, itemKey, onDone, onCancel }: { trackerId: string; itemKey: string; onDone: (msg: string, undo?: () => Promise<unknown>) => void; onCancel: () => void }) {
   const [name, setName] = useState(''); const [start, setStart] = useState(''); const [hours, setHours] = useState(''); const [stage, setStage] = useState('');
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   async function save() {
@@ -238,7 +239,7 @@ function AddActivity({ trackerId, itemKey, onDone, onCancel }: { trackerId: stri
 
 
 /** Step times inside the step sheet: estimate vs taken; the times can be corrected, the estimate by the Section Head. */
-export function StepTimes({ t, canEdit, isHead, onDone }: { t: StepTiming; canEdit: boolean; isHead: boolean; onDone: (msg: string) => void }) {
+export function StepTimes({ t, canEdit, isHead, onDone }: { t: StepTiming; canEdit: boolean; isHead: boolean; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   const s = t.s;
   const [edit, setEdit] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [a, setA] = useState(local(s.startedAt)); const [d, setD] = useState(local(s.doneAt)); const [est, setEst] = useState(s.estHours === null ? '' : String(s.estHours));
@@ -270,7 +271,7 @@ export function StepTimes({ t, canEdit, isHead, onDone }: { t: StepTiming; canEd
   );
 }
 
-function StepTimingList({ steps, now, canEdit, isHead, title, onDone }: { steps: TrkStep[]; now: number; canEdit: boolean; isHead: boolean; title: string; onDone: (msg: string) => void }) {
+function StepTimingList({ steps, now, canEdit, isHead, title, onDone }: { steps: TrkStep[]; now: number; canEdit: boolean; isHead: boolean; title: string; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   const [fo, setFo] = useState('all');
   const all = [...steps].sort((x, y) => x.stepId.localeCompare(y.stepId)).map((s) => stepTiming(s, now));
   const list = all.filter((t) => fo === 'all' || t.s.fo === fo);

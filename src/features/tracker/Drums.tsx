@@ -13,14 +13,14 @@ const fmt = (n: number) => n.toLocaleString('en-US');
 const dayLabel = (d: string, s: 'D' | 'N') => `${kwDay(`${d}T12:00:00+03:00`)} ${s === 'D' ? 'day' : 'night'}`;
 const METHODS: QtyMethod[] = ['vacuum', 'free_fall', 'cone', 'other'];
 
-function useRun(onDone: (msg: string) => void) {
+function useRun(onDone: (msg: string, undo?: () => Promise<unknown>) => void) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const run = async (f: () => Promise<void>, msg: string, after?: () => void) => { setBusy(true); setErr(null); try { await f(); after?.(); onDone(msg); } catch (e) { setErr(e); } finally { setBusy(false); } };
   return { busy, err, run };
 }
 
 export function DrumPanel({ scope, entries, estimates, activities, settings, now, canEdit, isHead, me, onDone }: {
-  scope: TrkQtyScope; entries: TrkQtyEntry[]; estimates: TrkQtyEstimate[]; activities: TrkActivity[]; settings: TrkSettings; now: number; canEdit: boolean; isHead: boolean; me: string | null; onDone: (msg: string) => void;
+  scope: TrkQtyScope; entries: TrkQtyEntry[]; estimates: TrkQtyEstimate[]; activities: TrkActivity[]; settings: TrkSettings; now: number; canEdit: boolean; isHead: boolean; me: string | null; onDone: (msg: string, undo?: () => Promise<unknown>) => void;
 }) {
   const { busy, err, run } = useRun(onDone);
   const [fix, setFix] = useState<string | null>(null); const [fixQty, setFixQty] = useState(''); const [fixWhy, setFixWhy] = useState('');
@@ -111,7 +111,7 @@ export function DrumPanel({ scope, entries, estimates, activities, settings, now
 
 /** The shift's drum entry, two ways: the drums dumped this shift, or the total dumped so far (the shift's drums are
  *  the difference from what is already recorded). One entry per shift and method; a second person verifies it. */
-export function DrumEntry({ scope, entries, now, onDone, autoFocus = false }: { scope: TrkQtyScope; entries: TrkQtyEntry[]; now: number; onDone: (msg: string) => void; autoFocus?: boolean }) {
+export function DrumEntry({ scope, entries, now, onDone, autoFocus = false }: { scope: TrkQtyScope; entries: TrkQtyEntry[]; now: number; onDone: (msg: string, undo?: () => Promise<unknown>) => void; autoFocus?: boolean }) {
   const { busy, err, run } = useRun(onDone);
   const shifts = recentShifts(now);
   const lastMethod = [...entries].reverse().find((e) => e.kind === 'removal')?.method ?? (scope.key === 'R-12-205' ? 'vacuum' : 'free_fall');
@@ -148,7 +148,7 @@ export function DrumEntry({ scope, entries, now, onDone, autoFocus = false }: { 
 }
 
 /** The drums of a reactor in one sheet, from the equipment list: progress and the shift entry, nothing else. */
-export function DrumQuick({ scope, entries, now, canEdit, onOpen, onDone }: { scope: TrkQtyScope; entries: TrkQtyEntry[]; now: number; canEdit: boolean; onOpen: () => void; onDone: (msg: string) => void }) {
+export function DrumQuick({ scope, entries, now, canEdit, onOpen, onDone }: { scope: TrkQtyScope; entries: TrkQtyEntry[]; now: number; canEdit: boolean; onOpen: () => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   const p = qtyProgress({ working: scope.working, initial: scope.initial, completeAt: scope.completeAt }, entries);
   const last = [...entries].reverse().find((e) => e.kind !== 'transfer' && e.verify !== 'rejected');
   return (
@@ -162,7 +162,7 @@ export function DrumQuick({ scope, entries, now, canEdit, onOpen, onDone }: { sc
 }
 
 /** The quick update of any item: nothing changed this shift, or a delay with its reason and the new expected date. */
-export function ItemUpdate({ trackerId, itemKey, updates, canEdit, onDone }: { trackerId: string; itemKey: string; updates: TrkUpdate[]; canEdit: boolean; onDone: (msg: string) => void }) {
+export function ItemUpdate({ trackerId, itemKey, updates, canEdit, onDone }: { trackerId: string; itemKey: string; updates: TrkUpdate[]; canEdit: boolean; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   const { busy, err, run } = useRun(onDone);
   const [delay, setDelay] = useState(false); const [why, setWhy] = useState(''); const [exp, setExp] = useState('');
   const last = updates.find((u) => u.key === itemKey && (u.kind === 'no_change' || u.kind === 'delay'));

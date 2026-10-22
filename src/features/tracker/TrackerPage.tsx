@@ -1,7 +1,7 @@
 // Shutdown progress (U-12 TR-2 tracker v1): five tabs, all on screen (Today · Isolation · Equipment, with its Timing
 // view · Sequence, with its Map view · IATs), the WhatsApp report and the Admin (Section Head) as sheets from the header. The controllers update steps and equipment in a few taps; the status, the "needs me" list, plan vs actual and
 // the shift report are worked out from the rows (src/core/tracker). Reloads every 30 s and when the page comes back.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
 import { blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
@@ -53,7 +53,9 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const [trackers, setTrackers] = useState<Tracker[] | null>(null);
   const [data, setData] = useState<TrackerData | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [flash, setFlash] = useState<string | null>(null);
+  // the message of the last update, over everything (sheets too), with Undo for a routine start / finish
+  const [flash, setFlash] = useState<{ msg: string; undo?: () => Promise<unknown> } | null>(null);
+  const flashTimer = useRef<number | undefined>(undefined);
   const [focus, setFocus] = useState<string | null>(null);
   const [isoKind, setIsoKind] = useState<'blind' | 'neut' | undefined>(undefined); const [lateFirst, setLateFirst] = useState(false);
   const [sheet, setSheet] = useState<{ kind: 'step'; id: string } | { kind: 'eq'; tag: string } | null>(null);
@@ -78,7 +80,9 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const eqs = useMemo(() => (data && steps ? equipViews(data, now, steps) : null), [data, now, steps]);
 
   // a step sheet closes after its action, the equipment sheet stays open (several actions in a row) and refreshes
-  const done = (msg: string, keep = false) => { if (!keep) setSheet(null); setFlash(msg); load(); window.setTimeout(() => setFlash(null), 3000); };
+  const done = (msg: string, keep = false, undo?: () => Promise<unknown>) => { if (!keep) setSheet(null); setFlash({ msg, undo }); load();
+    window.clearTimeout(flashTimer.current); flashTimer.current = window.setTimeout(() => setFlash(null), undo ? 7000 : 3000); };
+  const undoLast = async () => { const u = flash?.undo; if (!u) return; setFlash(null); try { await u(); done('Undone.', true); } catch (e) { setFlash({ msg: e instanceof Error ? e.message : 'Not undone' }); } };
   if (error) return <ErrorBox error={error} />;
   if (!trackers) return <Spinner />;
   if (!tracker) return <div className="p-4 text-sm text-slate-600">No shutdown is being tracked yet.</div>;
@@ -123,12 +127,15 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {VIEWS[MAIN[tab]] && <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-slate-200/60 p-1 print:hidden">
         {VIEWS[MAIN[tab]]!.map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={cx('min-h-10 rounded-lg text-sm font-semibold', tab === k ? 'bg-white text-[#004080] shadow-sm' : 'text-slate-600')}>{l}</button>)}
       </div>}
-      {flash && <div role="status" className="mb-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{flash}</div>}
+      {flash && <div role="status" className="fixed inset-x-3 bottom-24 z-[70] mx-auto flex max-w-md items-center gap-2 rounded-xl bg-[#0d2a5e] px-3 py-2.5 text-sm text-white shadow-xl">
+        <span className="min-w-0 flex-1">{flash.msg}</span>
+        {flash.undo && <button type="button" onClick={undoLast} className="shrink-0 rounded-lg bg-white/15 px-3 py-1.5 text-xs font-bold">↶ Undo</button>}
+      </div>}
       {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} now={now} onOpen={open} onNav={nav} />}
-      {tab === 'isolation' && <IsolationTab key={`iso-${isoKind}`} trackerId={tracker.id} initialKind={isoKind} activities={data.activities} points={points} pointSteps={data.pointSteps} lineup={data.lineup} iats={data.iats} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} focus={focus} onFocus={setFocus} onItem={(tag) => setSheet({ kind: 'eq', tag })} onStep={(id) => setSheet({ kind: 'step', id })} onDone={done} />}
+      {tab === 'isolation' && <IsolationTab key={`iso-${isoKind}`} trackerId={tracker.id} initialKind={isoKind} activities={data.activities} points={points} pointSteps={data.pointSteps} lineup={data.lineup} iats={data.iats} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} focus={focus} onFocus={setFocus} onItem={(tag) => setSheet({ kind: 'eq', tag })} onStep={(id) => setSheet({ kind: 'step', id })} onDone={(m, u) => done(m, false, u)} />}
       {tab === 'guideline' && <SequenceTab steps={steps} auto={auto} onOpen={(id) => setSheet({ kind: 'step', id })} />}
-      {tab === 'equipment' && <EquipmentTab key={`eq-${lateFirst}`} initialLateFirst={lateFirst} eqs={eqs} activities={data.activities} points={points} now={now} spare={spare} canEdit={canEdit} engine={data.engine} onDone={(m) => done(m, true)} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
-      {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={done} />}
+      {tab === 'equipment' && <EquipmentTab key={`eq-${lateFirst}`} initialLateFirst={lateFirst} eqs={eqs} activities={data.activities} points={points} now={now} spare={spare} canEdit={canEdit} engine={data.engine} onDone={(m, u) => done(m, true, u)} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
+      {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={(m, u) => done(m, false, u)} />}
       {tab === 'iats' && <IatsTab iats={data.iats} tags={data.equipment.map((e) => e.tag)} lineup={data.lineup} lineupEq={data.lineupEq} points={points} onItem={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {sheetTab === 'report' && <BottomSheet open onClose={closeSheetTab} title="💬 Shift report"><ReportTab data={data} now={now} canEdit={canEdit} by={profile.display_name} onSaved={() => load()} /></BottomSheet>}
@@ -137,9 +144,9 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
           {other.map((o) => <Link key={o.id} to={`/progress/${o.id}`} className="font-bold text-[#0850A0]">{o.mode === 'live' ? 'Live' : 'Test copy'} ›</Link>)}</div>}
         <TrackerAdmin data={data} eqs={eqs} onDone={done} /></BottomSheet>}
       {openStep && <StepSheet v={openStep} isHead={isHead} canEdit={canEdit} points={points.filter((p) => p.stepId === openStep.step.stepId)} items={eqs.filter((e) => e.eq.hoStep === openStep.step.stepId && e.eq.tracked)}
-        onIsolation={() => toIsolation(null)} onClose={() => setSheet(null)} onDone={done} />}
+        onIsolation={() => toIsolation(null)} onClose={() => setSheet(null)} onDone={(m, u) => done(m, false, u)} />}
       {openEq && <EquipSheet twins={openEq.eq.combine ? eqs.filter((x) => x.eq.combine === openEq.eq.combine).map((x) => x.eq.tag) : []} onTwin={(tag) => setSheet({ kind: 'eq', tag })} v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={data.activities.filter((a) => a.key === (openEq.eq.barchartKey ?? openEq.eq.tag))} now={now}
-        iso={isolationOf(openEq.eq.tag, points)} points={points} engine={data.engine} settings={data.settings} me={profile.auth_user_id} onIsolation={() => toIsolation(openEq.eq.tag)} onNeut={() => toIsolation(openEq.eq.tag, 'neut')} onClose={() => setSheet(null)} onDone={(m) => done(m, true)} />}
+        iso={isolationOf(openEq.eq.tag, points)} points={points} engine={data.engine} settings={data.settings} me={profile.auth_user_id} onIsolation={() => toIsolation(openEq.eq.tag)} onNeut={() => toIsolation(openEq.eq.tag, 'neut')} onClose={() => setSheet(null)} onDone={(m, u) => done(m, true, u)} />}
     </div>
   );
 }
@@ -203,7 +210,7 @@ function SequenceTab({ steps, auto, onOpen }: { steps: Map<string, StepView>; au
  *  step), the status and the plan difference. "All" groups the items under their group; "Late first" puts the late,
  *  pending and IAT items on top. */
 const ISO_BG = { red: 'bg-[#E02028]', grey: 'bg-slate-300', amber: 'bg-amber-500', teal: 'bg-teal-500', blue: 'bg-[#0850A0]' } as const;
-function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, spare = new Map(), canEdit = false, engine, onDone, onOpen }: { initialLateFirst?: boolean; engine?: TrackerData['engine']; eqs: EquipView[]; activities: TrackerData['activities']; points: TrkPoint[]; now: number; spare?: Map<string, number>; canEdit?: boolean; onDone?: (msg: string) => void; onOpen: (tag: string) => void }) {
+function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, spare = new Map(), canEdit = false, engine, onDone, onOpen }: { initialLateFirst?: boolean; engine?: TrackerData['engine']; eqs: EquipView[]; activities: TrackerData['activities']; points: TrkPoint[]; now: number; spare?: Map<string, number>; canEdit?: boolean; onDone?: (msg: string, undo?: () => Promise<unknown>) => void; onOpen: (tag: string) => void }) {
   const lineOf = (e: EquipView): { text: string; tone: 'run' | 'muted' | 'red' } | null => {
     const key = e.eq.barchartKey ?? e.eq.tag;
     const xs = sortActs(activities.filter((a) => a.tracked && !a.detail && a.key === key));
@@ -299,7 +306,7 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
       </span>
       {dm && (!st || (st.finish && dm.activityIds.includes(st.a.activityId)))
         ? <button type="button" aria-label={`Drums ${e.eq.tag}`} onClick={(x) => { x.stopPropagation(); setDrumKey(dm.key); }} className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-400 text-base shadow-sm active:bg-amber-500">🛢</button>
-        : st ? <StepButton key={st.a.id} a={st.a} also={st.also} finish={st.finish} more={st.more} eq={e.eq} onDone={(m) => onDone?.(m)} /> : <span className="w-8" />}
+        : st ? <StepButton key={st.a.id} a={st.a} also={st.also} finish={st.finish} more={st.more} eq={e.eq} onDone={(m, u) => onDone?.(m, u)} /> : <span className="w-8" />}
     </div>); };
   return (
     <div className="space-y-2">
@@ -418,35 +425,33 @@ function ReportTab({ data, now, canEdit, by, onSaved }: { data: TrackerData; now
 }
 
 
-/** The one-tap step button of an equipment row: ▶ starts the next step, ✓ finishes the running one. A first tap
- *  arms it (shows "Start?" / "Finish?" for 4 s), the second tap saves, so a stray touch changes nothing. The time is
- *  now; a different time or an undo is done in the item. */
-function StepButton({ a, also = [], finish, more, eq, onDone }: { a: TrackerData['activities'][number]; also?: TrackerData['activities']; finish: boolean; more: number; eq: EquipView['eq']; onDone: (msg: string) => void }) {
-  const [armed, setArmed] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null);
-  useEffect(() => { if (!armed) return; const t = window.setTimeout(() => setArmed(false), 4000); return () => window.clearTimeout(t); }, [armed]);
+/** The step button of an equipment row: ▶ starts the next step, ✓ finishes the running one, one tap, now. The message
+ *  that follows offers Undo (the step goes back as it was, the waiting note too); other times are set in the item. */
+function StepButton({ a, also = [], finish, more, eq, onDone }: { a: TrackerData['activities'][number]; also?: TrackerData['activities']; finish: boolean; more: number; eq: EquipView['eq']; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null);
   const go = async (x: React.MouseEvent) => {
-    x.stopPropagation();
-    if (!armed) { setArmed(true); setErr(null); return; }
-    setBusy(true);
+    x.stopPropagation(); setBusy(true); setErr(null);
     try {
-      const at = new Date().toISOString();
+      const at = new Date().toISOString(); const all = [a, ...also];
+      const before = all.map((y) => ({ id: y.id, actual_start: y.actualStart ?? null, actual_finish: y.actualFinish ?? null }));
       // the same step of the items worked with it (E-12-216A/B) moves with it, each keeps its own line
-      for (const x of [a, ...also]) await setActivity(x.id, finish ? { actual_finish: at, ...(x.actualStart ? {} : { actual_start: a.actualStart ?? at }) } : { actual_start: at });
+      for (const y of all) await setActivity(y.id, finish ? { actual_finish: at, ...(y.actualStart ? {} : { actual_start: a.actualStart ?? at }) } : { actual_start: at });
       // starting a step ends the item's waiting note (it was waiting for this work to begin)
-      const cleared = !finish && !!eq.pendingReason;
+      const was = eq.pendingReason; const cleared = !finish && !!was;
       if (cleared) await setEquipment(eq.id, { pending_reason: null });
-      onDone(`${[a.key, ...also.map((x) => x.key)].join(' + ')}: ${a.activity} ${finish ? 'finished' : 'started'}.${cleared ? ` Waiting note "${eq.pendingReason}" cleared.` : ''}`);
+      onDone(`${all.map((y) => y.key).join(' + ')}: ${a.activity} ${finish ? 'finished' : 'started'}.${cleared ? ` Hold "${was}" ended.` : ''}`,
+        async () => { for (const b of before) await setActivity(b.id, { actual_start: b.actual_start, actual_finish: b.actual_finish }); if (cleared) await setEquipment(eq.id, { pending_reason: was ?? null }); });
     }
-    catch (e) { setErr(e instanceof Error ? e.message : 'Not saved'); } finally { setBusy(false); setArmed(false); }
+    catch (e) { setErr(e instanceof Error ? e.message : 'Not saved'); } finally { setBusy(false); }
   };
   return (
     <span className="flex flex-col items-end">
       <button type="button" disabled={busy} onClick={go} title={`${finish ? 'Finish' : 'Start'}: ${a.activity}`} aria-label={`${finish ? 'Finish' : 'Start'} ${a.activity}`}
-        className={cx('flex h-8 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm disabled:opacity-50', armed ? 'px-2.5' : 'w-8',
+        className={cx('flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm disabled:opacity-50',
           finish ? 'bg-[#08A048] active:bg-green-700' : 'bg-[#0d2a5e] active:bg-[#0850A0]')}>
-        {armed ? (finish ? 'Finish?' : 'Start?') : finish ? '✓' : '▶'}
+        {finish ? '✓' : '▶'}
       </button>
-      {more > 0 && !armed && <span className="text-[9.5px] font-semibold text-slate-500">+{more} running</span>}
+      {more > 0 && <span className="text-[9.5px] font-semibold text-slate-500">+{more} running</span>}
       {err && <span className="max-w-[7rem] text-right text-[9.5px] text-red-700">{err}</span>}
     </span>
   );
