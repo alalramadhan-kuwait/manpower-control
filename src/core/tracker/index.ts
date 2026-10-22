@@ -126,7 +126,9 @@ export function blindLink(a: Pick<TrkActivity, 'activity' | 'stage'>): 6 | null 
   return /blind/i.test(a.activity) && a.stage === 6 ? 6 : null;
 }
 /** An item's blind line installed by M & I (stage 1 in the bar chart; not the operations steps that mention blinds). */
-export const equipBlind = (a: Pick<TrkActivity, 'activity' | 'stage' | 'tracked' | 'group'>) => a.tracked && a.stage === 1 && a.group !== 'Operations' && /blind/i.test(a.activity) && !/deblind|de-blind|remove blind/i.test(a.activity);
+/** Valves and PSVs taken out with their own steps (control valves, check valves, PSVs): not in the blind list. */
+export const VALVE_KEY = /^12-(PSV|VC|HV|LV|FV|TV|PV|PCV|FCV|XV)-/i;
+export const equipBlind = (a: Pick<TrkActivity, 'activity' | 'stage' | 'tracked' | 'group' | 'key'>) => a.tracked && a.stage === 1 && a.group !== 'Operations' && !VALVE_KEY.test(a.key) && /blind/i.test(a.activity) && !/deblind|de-blind|remove blind/i.test(a.activity);
 /** The order of an item's work steps: the operations steps of its handover procedure first (in their order), then the
  *  bar chart by planned start. */
 export function actOrder(x: Pick<TrkActivity, 'group' | 'activityId' | 'start'>, y: Pick<TrkActivity, 'group' | 'activityId' | 'start'>): number {

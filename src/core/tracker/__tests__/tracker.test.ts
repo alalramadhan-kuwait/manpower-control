@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { miWeighted, neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { equipBlind, miWeighted, neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -422,5 +422,13 @@ describe('M & I progress, forecast and the controlling item', () => {
     expect([w.controlling?.tag, w.controlling?.small, w.estEnd, w.impactD]).toEqual(['12-PSV-0519', true, at('2026-11-11 07:00'), 4]);
     expect(w.delays.map((i) => [i.tag, i.spareD])).toEqual([['12-PSV-0519', -4]]);
     expect([w.main.physPct, w.small.physPct, w.small.items]).toEqual([100, 0, 1]);
+  });
+});
+
+describe('equipment blind list', () => {
+  const a = (key: string, activity = 'Blind') => ({ key, activity, stage: 1, tracked: true, group: 'Mech' });
+  it('keeps equipment blinds, leaves out control valves, check valves and PSVs', () => {
+    expect(['V-12-209', 'C-12-201-TK-03', '12-HV-0534', '12-LV-0553B', '12-VC-0105', '12-PSV-0519'].map((k) => equipBlind(a(k)))).toEqual([true, true, false, false, false, false]);
+    expect(equipBlind(a('V-12-209', 'Deblind'))).toBe(false);
   });
 });
