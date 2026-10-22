@@ -448,7 +448,7 @@ function StepButton({ a, also = [], finish, more, eq, onDone }: { a: TrackerData
     <span className="flex flex-col items-end">
       <button type="button" disabled={busy} onClick={go} title={`${finish ? 'Finish' : 'Start'}: ${a.activity}`} aria-label={`${finish ? 'Finish' : 'Start'} ${a.activity}`}
         className={cx('flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm disabled:opacity-50',
-          finish ? 'bg-[#08A048] active:bg-green-700' : 'bg-[#0d2a5e] active:bg-[#0850A0]')}>
+          finish ? 'bg-white !text-[#0d2a5e] ring-2 ring-[#0d2a5e] active:bg-slate-100' : 'bg-[#0d2a5e] active:bg-[#0850A0]')}>
         {finish ? '✓' : '▶'}
       </button>
       {more > 0 && <span className="text-[9.5px] font-semibold text-slate-500">+{more} running</span>}

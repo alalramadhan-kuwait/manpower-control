@@ -42,7 +42,7 @@ export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, n
     : !free ? null
     // one tap, now; the message offers Undo
     : !a.actualStart ? <RowBtn disabled={busy} onClick={() => run({ actual_start: new Date().toISOString() }, `${a.key}: ${a.activity} started.`, undefined, () => setActivity(a.id, { actual_start: null }))}>▶ Start</RowBtn>
-    : !a.actualFinish ? <RowBtn tone="green" disabled={busy} onClick={() => run({ actual_finish: new Date().toISOString() }, `${a.key}: ${a.activity} finished.`, undefined, () => setActivity(a.id, { actual_finish: null }))}>✓ Finish</RowBtn>
+    : !a.actualFinish ? <RowBtn tone="ghost" disabled={busy} onClick={() => run({ actual_finish: new Date().toISOString() }, `${a.key}: ${a.activity} finished.`, undefined, () => setActivity(a.id, { actual_finish: null }))}>✓ Finish</RowBtn>
     : <span className="shrink-0 text-[11px] font-bold text-[#08A048]">Done</span>;
   const menu = canEdit && a.tracked ? (close: () => void) => (
     <>

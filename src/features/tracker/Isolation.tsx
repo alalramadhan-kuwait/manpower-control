@@ -99,7 +99,7 @@ function RoundBtn({ kind, label, disabled, onClick }: { kind: 'start' | 'finish'
   return (
     <span className="flex shrink-0 flex-col items-center">
       <button type="button" disabled={disabled} onClick={onClick} aria-label={label} title={label}
-        className={cx('flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold shadow-sm disabled:opacity-60', kind === 'lock' ? 'bg-slate-200 text-slate-500' : kind === 'finish' ? 'bg-[#08A048] text-white' : 'bg-[#0d2a5e] text-white')}>
+        className={cx('flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold shadow-sm disabled:opacity-60', kind === 'lock' ? 'bg-slate-200 text-slate-500' : kind === 'finish' ? 'bg-white text-[#0d2a5e] ring-2 ring-[#0d2a5e]' : 'bg-[#0d2a5e] text-white')}>
         {kind === 'lock' ? '🔒' : kind === 'finish' ? '✓' : '▶'}
       </button>
       <span className="mt-0.5 text-[9.5px] font-semibold text-slate-500">{label}</span>
@@ -139,7 +139,7 @@ function JobButton({ c, busy, onStart, onFinish }: { c: TrkPointStep; busy: bool
   const finish = !!c.startAt;
   return (
     <button type="button" disabled={busy} aria-label={`${finish ? 'Finish' : 'Start'} step ${c.seq}`} onClick={finish ? onFinish : onStart}
-      className={cx('mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white disabled:opacity-50', finish ? 'bg-[#08A048]' : 'bg-[#0d2a5e]')}>
+      className={cx('mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold disabled:opacity-50', finish ? 'bg-white text-[#0d2a5e] ring-2 ring-[#0d2a5e]' : 'bg-[#0d2a5e] text-white')}>
       {finish ? '✓' : '▶'}
     </button>
   );
