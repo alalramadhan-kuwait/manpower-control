@@ -70,9 +70,9 @@ export function CRow({ dot, title, sub, extra, action, menu, onTitle, faded }: {
   );
 }
 /** The small action button of a row. */
-export const RowBtn = ({ children, onClick, disabled, tone = 'navy' }: { children: ReactNode; onClick: () => void; disabled?: boolean; tone?: 'navy' | 'green' | 'ghost' }) => (
+export const RowBtn = ({ children, onClick, disabled, tone = 'navy' }: { children: ReactNode; onClick: () => void; disabled?: boolean; tone?: 'navy' | 'green' | 'ghost' | 'amber' }) => (
   <button type="button" onClick={onClick} disabled={disabled} className={cx('shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-bold disabled:opacity-50',
-    tone === 'green' ? 'bg-[#08A048] text-white' : tone === 'ghost' ? 'bg-white text-[#0d2a5e] ring-1 ring-slate-300' : 'bg-[#0d2a5e] text-white')}>{children}</button>
+    tone === 'green' ? 'bg-[#08A048] text-white' : tone === 'amber' ? 'bg-amber-400 text-slate-900' : tone === 'ghost' ? 'bg-white text-[#0d2a5e] ring-1 ring-slate-300' : 'bg-[#0d2a5e] text-white')}>{children}</button>
 );
 /** A small action inside the ⋯ menu. */
 export const MenuBtn = ({ children, onClick, disabled, danger }: { children: ReactNode; onClick: () => void; disabled?: boolean; danger?: boolean }) => (
