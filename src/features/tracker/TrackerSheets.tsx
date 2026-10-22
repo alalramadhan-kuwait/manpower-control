@@ -1,7 +1,7 @@
 // The two input sheets of the controllers: a guideline step (Start · Done · Pending) and an equipment item (stage,
 // blinded = handed over, IATs, pending). Big buttons, the time and the name are stamped by the database.
 import { useState } from 'react';
-import { connectionsOf, iatsOf, type LuEquip, type LuStream, type TrkIat, PENDING_REASONS, neutLabel, neutName, partsOf, waitingSteps, isoState, missingBlinds, STAGES, kwDay, kwTime, pointComplete, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint, type TrkEngine, type TrkSettings } from '@/core/tracker';
+import { connectionsOf, iatsOf, type LuEquip, type LuStream, type TrkIat, PENDING_REASONS, neutLabel, neutName, partsOf, waitingSteps, isoState, missingBlinds, STAGES, kwDay, kwTime, pointComplete, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint, type TrkEngine, type TrkSettings, type MiItem } from '@/core/tracker';
 import { EquipActivities, StepTimes } from './Timing';
 import { DrumPanel, ItemUpdate } from './Drums';
 import { addIat, closeIat, setEquipment, setStep } from '@/data/tracker';
@@ -87,7 +87,7 @@ export function StepSheet({ v, isHead, canEdit, points = [], items = [], onIsola
 // a spray that waits for work steps, in a few words (the reactor body spray waits for the catalyst dumping)
 const waitAfter = (steps: string[]) => (!steps.length ? [] : [steps.every((x) => /dump/i.test(x)) ? 'after dumping' : steps.length === 1 ? `after ${steps[0]}` : `after ${steps.length} steps`]);
 
-export function EquipSheet({ allIats = [], lineup = [], lineupEq = [], tags = [], v, trackerId, canEdit, isHead, activities, now, iso = null, points = [], engine, settings = {}, me = null, twins = [], onTwin, onIsolation, onNeut, onClose, onDone }: { allIats?: TrkIat[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; tags?: string[]; twins?: string[]; onTwin?: (tag: string) => void; v: EquipView; trackerId: string; canEdit: boolean; isHead: boolean; activities: TrkActivity[]; now: number; iso?: Isolation | null; points?: TrkPoint[]; engine?: TrkEngine; settings?: TrkSettings; me?: string | null; onIsolation?: () => void; onNeut?: () => void; onClose: () => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
+export function EquipSheet({ mi, allIats = [], lineup = [], lineupEq = [], tags = [], v, trackerId, canEdit, isHead, activities, now, iso = null, points = [], engine, settings = {}, me = null, twins = [], onTwin, onIsolation, onNeut, onClose, onDone }: { mi?: MiItem; allIats?: TrkIat[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; tags?: string[]; twins?: string[]; onTwin?: (tag: string) => void; v: EquipView; trackerId: string; canEdit: boolean; isHead: boolean; activities: TrkActivity[]; now: number; iso?: Isolation | null; points?: TrkPoint[]; engine?: TrkEngine; settings?: TrkSettings; me?: string | null; onIsolation?: () => void; onNeut?: () => void; onClose: () => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   // the neutralization the soda-ash lines stand for: the item's own soda ash first, else its loop
   // the item's bar-chart steps by stage (what moves the stage), the field-detail steps left out
   const stageLines = activities.filter((a) => a.tracked && !a.detail && a.group !== 'Operations' && a.stage !== null);
@@ -109,6 +109,7 @@ export function EquipSheet({ allIats = [], lineup = [], lineupEq = [], tags = []
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600"><FlagChip flag={v.flag} />{v.plan && <PlanChip variance={v.plan.variance} days={v.plan.days} />}{e.critical && <span className="font-bold text-[#E02028]">★ Critical</span>}<span>{e.description}</span></div>
         {v.reason && <div className="flex items-center gap-2 rounded-lg bg-[#FFC7CE] px-2.5 py-1.5 text-sm text-red-900"><span className="min-w-0 flex-1">⏸ On hold: {v.reason}</span>
           {canEdit && e.pendingReason && <button type="button" disabled={busy} onClick={() => { const was = e.pendingReason; run(() => setEquipment(e.id, { pending_reason: null }), `${e.tag}: resumed.`, () => setEquipment(e.id, { pending_reason: was })); }} className="shrink-0 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-[#0d2a5e] ring-1 ring-red-200">▶ Resume</button>}</div>}
+        {mi && <MiLine i={mi} />}
         <EquipActivities trackerId={trackerId} itemKey={e.barchartKey ?? e.tag} activities={activities} now={now} canEdit={canEdit} isHead={isHead} neutCovered={!!iso?.neut.length} neutLabel={soda ? `${neutName(soda)} · ${neutLabel(soda)}` : undefined} onNeut={onNeut} onDone={onDone} />
         {engine && (() => { const key = e.barchartKey ?? e.tag; const sc = engine.scopes.find((x) => x.key === key && x.scope === 'removal' && x.unit);
           return <>
@@ -184,5 +185,24 @@ export function EquipSheet({ allIats = [], lineup = [], lineupEq = [], tags = []
         )}
       </div>
     </BottomSheet>
+  );
+}
+
+/** The item's three indicators: physical progress, schedule variance (vs P6) and its float / delay to the shutdown end. */
+function MiLine({ i }: { i: MiItem }) {
+  const [why, setWhy] = useState(false);
+  const pct = i.physHiPct > i.physPct ? `${i.physPct}–${i.physHiPct}%` : `${i.physPct}%`;
+  const done = i.done >= i.lines;
+  return (
+    <div className="rounded-lg bg-slate-50 px-2.5 py-1.5 text-[12px] text-slate-700 ring-1 ring-slate-200">
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+        <span>Physical <b className="text-slate-900">{pct}</b> / plan {i.planPct}%</span>
+        <span>vs P6 <b className={i.svD < 0 ? 'text-[#E02028]' : 'text-[#08A048]'}>{i.svD > 0 ? '+' : ''}{i.svD} d</b></span>
+        {!done && <span>{i.spareD < 0 ? <b className="text-[#E02028]">delays shutdown {i.impactD} d</b> : <>Float <b className="text-slate-900">{i.spareD} d</b></>}</span>}
+      </div>
+      <div className="text-[11px] text-slate-500">{done ? `Finished ${kwDay(i.forecast)} ${kwTime(i.forecast)}` : `Forecast ${kwDay(i.forecast)} ${kwTime(i.forecast)} · ${i.remainingD} d left · P6 ${kwDay(i.p6Finish)} ${kwTime(i.p6Finish)}`}
+        {!done && i.unverified.length > 0 && <button type="button" onClick={() => setWhy((x) => !x)} className="ml-1 font-semibold text-amber-700">· unverified {why ? '▾' : '▸'}</button>}</div>
+      {why && <ul className="mt-0.5 list-disc pl-4 text-[11px] text-amber-800">{i.unverified.map((u) => <li key={u}>{u}</li>)}</ul>}
+    </div>
   );
 }

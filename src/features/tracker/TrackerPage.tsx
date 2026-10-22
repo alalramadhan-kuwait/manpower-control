@@ -108,7 +108,8 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   // the Isolation badge: blinds not in and neutralizations before handover not done (finished work drops off)
   const isoOpen = points.filter((p) => (p.kind === 'blind' || p.beforeHo) && !pointComplete(p)).length;
   // spare time before the shutdown end, for the items with bar-chart work left
-  const spare = new Map((phases(data, now, steps).mi.weighted?.items ?? []).filter((i) => i.done < i.lines).map((i) => [i.tag, i.spareD]));
+  const miItems = new Map((phases(data, now, steps).mi.weighted?.items ?? []).map((i) => [i.tag, i]));
+  const spare = new Map([...miItems.values()].filter((i) => i.done < i.lines).map((i) => [i.tag, i.spareD]));
   const open = (a: { kind: 'step' | 'equipment'; ref: string }) => setSheet(a.kind === 'step' ? { kind: 'step', id: a.ref } : { kind: 'eq', tag: a.ref });
 
   return (
@@ -154,7 +155,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
         <TrackerAdmin data={data} eqs={eqs} onDone={done} /></BottomSheet>}
       {openStep && <StepSheet v={openStep} isHead={isHead} canEdit={canEdit} points={points.filter((p) => p.stepId === openStep.step.stepId)} items={eqs.filter((e) => e.eq.hoStep === openStep.step.stepId && e.eq.tracked)}
         onIsolation={() => toIsolation(null)} onClose={() => setSheet(null)} onDone={(m, u) => done(m, false, u)} />}
-      {openEq && <EquipSheet allIats={data.iats} lineup={data.lineup} lineupEq={data.lineupEq} tags={data.equipment.map((e) => e.tag)} twins={openEq.eq.combine ? eqs.filter((x) => x.eq.combine === openEq.eq.combine).map((x) => x.eq.tag) : []} onTwin={(tag) => setSheet({ kind: 'eq', tag })} v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={data.activities.filter((a) => a.key === (openEq.eq.barchartKey ?? openEq.eq.tag))} now={now}
+      {openEq && <EquipSheet mi={miItems.get(openEq.eq.tag)} allIats={data.iats} lineup={data.lineup} lineupEq={data.lineupEq} tags={data.equipment.map((e) => e.tag)} twins={openEq.eq.combine ? eqs.filter((x) => x.eq.combine === openEq.eq.combine).map((x) => x.eq.tag) : []} onTwin={(tag) => setSheet({ kind: 'eq', tag })} v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={data.activities.filter((a) => a.key === (openEq.eq.barchartKey ?? openEq.eq.tag))} now={now}
         iso={isolationOf(openEq.eq.tag, points)} points={points} engine={data.engine} settings={data.settings} me={profile.auth_user_id} onIsolation={() => toIsolation(openEq.eq.tag)} onNeut={() => toIsolation(openEq.eq.tag, 'neut')} onClose={() => setSheet(null)} onDone={(m, u) => done(m, true, u)} />}
     </div>
   );
@@ -306,7 +307,7 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
           {iso(e) && iso(e)!.state !== 'ho' && <IsoChip state={iso(e)!.state}>{ISO_LABEL[iso(e)!.state]}</IsoChip>}
           <span className={cx('whitespace-nowrap rounded px-1 py-px text-[9.5px] font-bold', FLAG_STYLE[e.flag].cls)}>{FLAG_STYLE[e.flag].label}{e.late ? ` ${hoursText(e.lateBy)}` : ''}{e.iatsOpen.length && e.flag !== 'IAT_OPEN' ? ` · IAT ${e.iatsOpen.length}` : ''}</span>
           {e.plan && e.stage < 6 && e.plan.variance !== 0 && <PlanChip variance={e.plan.variance} days={e.plan.days} short />}
-          {sp !== undefined && sp <= 7 && <span className={cx('rounded px-1 text-[9.5px] font-bold', sp < 0 ? 'bg-red-600 text-white' : sp <= 3 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{sp < 0 ? `delays ${-sp} d` : `${sp} d spare`}</span>}
+          {sp !== undefined && sp <= 7 && <span className={cx('rounded px-1 text-[9.5px] font-bold', sp < 0 ? 'bg-red-600 text-white' : sp <= 3 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{sp < 0 ? `delays ${-sp} d` : `${sp} d float`}</span>}
         </span>
         {e.eq.group === 'PSVs' && e.eq.description && <span className="block truncate text-[11.5px] text-slate-600">📍 {e.eq.description.split(' · ')[0].replace(/^PSV on /, 'On ')}</span>}
         <span className="mt-0.5 flex items-center gap-2">

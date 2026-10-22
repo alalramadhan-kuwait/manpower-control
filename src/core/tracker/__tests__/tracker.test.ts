@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { miWeighted, spareWeight, neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { miWeighted, neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -384,35 +384,43 @@ describe('WhatsApp report in the plant format', () => {
   });
 });
 
-describe('M & I progress against time', () => {
-  const act = (key: string, id: string, start: string, finish: string, h: number, done = false) => ({ id: key + id, activityId: id, group: 'Mech', key, activity: id, durationH: h, start: kw(start), finish: kw(finish), stage: 2, tracked: true, actualStart: done ? kw(start) : null, actualFinish: done ? kw(finish) : null }) as never;
-  const ev = (tag: string, stage = 1, hoAt: string | null = kw('2026-10-20 07:00')) => ({ eq: { tag, barchartKey: tag, tracked: true }, stage, hoAt }) as never;
-  const d = { settings: { miEnd: kw('2026-11-07 07:00') }, activities: [
-    act('R-12-205', 'A1', '2026-10-20 07:00', '2026-10-25 07:00', 120, true), act('R-12-205', 'A2', '2026-10-25 07:00', '2026-11-07 07:00', 312),
-    act('V-12-206', 'B1', '2026-10-20 07:00', '2026-10-22 07:00', 48),
-    act('Electrical', 'E1', '2026-10-20 07:00', '2026-11-04 07:00', 360) ] } as unknown as TrkData;
-  it('weights the critical item, flags the delay, keeps support jobs apart', () => {
-    expect([spareWeight(0.5), spareWeight(2), spareWeight(5), spareWeight(10)]).toEqual([3, 2, 1.5, 1]);
-    const w = miWeighted(d, Date.parse(kw('2026-10-25 07:00')), [ev('R-12-205'), ev('V-12-206')])!;
-    expect(w.items.map((i) => [i.tag, i.spareD, i.weight])).toEqual([['R-12-205', 0, 3], ['V-12-206', 11, 1]]);
-    // V-206 not started 5 days after its plan: its finish moves 5 days (11 d spare left)
-    // plan: R-205 120 h × 3 + V-206 48 h; actual: R-205 120 h × 3 (V-206 not done)
-    expect([w.planPct, w.actualPct, w.state]).toEqual([Math.round((360 + 48) / (1296 + 48) * 100), Math.round(360 / 1344 * 100), 'BEHIND']);
-    expect(w.critical.map((i) => i.tag)).toEqual(['R-12-205']);
-    expect(w.support).toEqual([0, 1]);
-    // R-205's next line not started a day after its plan: the end moves, the shutdown is delayed
-    const late = miWeighted(d, Date.parse(kw('2026-10-26 07:00')), [ev('R-12-205'), ev('V-12-206')])!;
-    expect(late.delays.map((i) => [i.tag, i.spareD])).toEqual([['R-12-205', -1]]);
+describe('M & I progress, forecast and the controlling item', () => {
+  const act = (key: string, id: string, start: string, finish: string, h: number, as: string | null = null, af: string | null = null) => ({ id: key + id, activityId: id, group: 'Mech', key, activity: id, durationH: h, start: kw(start), finish: kw(finish), stage: 2, tracked: true, actualStart: as && kw(as), actualFinish: af && kw(af) }) as never;
+  const ev = (tag: string, group = 'Reactors') => ({ eq: { tag, barchartKey: tag, tracked: true, group }, stage: 1, hoAt: kw('2026-10-20 07:00') }) as never;
+  const data = (activities: unknown[], engine?: unknown) => ({ settings: { miEnd: kw('2026-11-07 07:00'), fcMin: 3, fcWindow: 4 }, activities, engine }) as unknown as TrkData;
+  const at = (x: string) => Date.parse(kw(x));
+  it('a task finished early saves its days for the item: 9 days planned, done in 5', () => {
+    const d = data([act('R-12-205', 'DUMP', '2026-10-20 07:00', '2026-10-29 07:00', 216, '2026-10-20 07:00', '2026-10-25 07:00'), act('R-12-205', 'CLEAN', '2026-10-29 07:00', '2026-11-01 07:00', 72)]);
+    const i = miWeighted(d, at('2026-10-25 07:00'), [ev('R-12-205')])!.items[0];
+    expect([i.physPct, i.forecast, i.svD, i.spareD, i.impactD]).toEqual([75, at('2026-10-28 07:00'), 4, 10, 0]);
   });
-  it('a PSV is planned in windows: waiting inside a window moves nothing, a window missed delays it', () => {
-    const psv = { settings: { miEnd: kw('2026-11-07 07:00') }, activities: [
-      act('12-PSV-0519', 'P1', '2026-10-20 07:00', '2026-10-25 07:00', 120), act('12-PSV-0519', 'P2', '2026-10-25 07:00', '2026-11-04 07:00', 240)] } as unknown as TrkData;
-    const pv = ({ eq: { tag: '12-PSV-0519', barchartKey: '12-PSV-0519', tracked: true, group: 'PSVs' }, stage: 0, hoAt: null }) as never;
-    // not started 1.5 days into its removal window: still 3 d spare (4 Nov to 7 Nov), not critical
-    const w = miWeighted(psv, Date.parse(kw('2026-10-21 19:00')), [pv])!;
-    expect(w.items[0].spareD).toBe(3); expect(w.critical.length).toBe(1);
-    expect(miWeighted(psv, Date.parse(kw('2026-10-24 07:00')), [pv])!.items[0].spareD).toBe(3);
-    // the removal window (25 Oct) missed by 2 days: the finish moves 2 days
-    expect(miWeighted(psv, Date.parse(kw('2026-10-27 07:00')), [pv])!.items[0].spareD).toBe(1);
+  it('a late line in parallel with float does not move the item; behind its own plan is not a shutdown delay', () => {
+    const d = data([act('V-12-209', 'LONG', '2026-10-20 07:00', '2026-10-30 07:00', 240, '2026-10-20 07:00'), act('V-12-209', 'SHORT', '2026-10-20 07:00', '2026-10-21 07:00', 24),
+      act('E-12-204', 'A', '2026-10-20 07:00', '2026-10-22 07:00', 48), act('Electrical', 'E1', '2026-10-20 07:00', '2026-11-04 07:00', 360)]);
+    const w = miWeighted(d, at('2026-10-24 07:00'), [ev('V-12-209', 'Vessels'), ev('E-12-204', 'Exchangers')])!;
+    const v = w.items.find((i) => i.tag === 'V-12-209')!, e = w.items.find((i) => i.tag === 'E-12-204')!;
+    // SHORT not started 4 days late, but LONG (running, not measured) still sets the finish
+    expect([v.forecast, v.physPct, v.physHiPct]).toEqual([at('2026-10-30 07:00'), 0, 91]);
+    expect(v.unverified).toEqual(['SHORT: P6 start passed, no start recorded', 'LONG: running, not measured']);
+    // E-204 not started: 2 days of work from now, 4 days behind its P6 finish, still 12 days of float
+    expect([e.svD, e.spareD, e.impactD]).toEqual([-4, 12, 0]);
+    expect(w.support).toEqual([0, 1]);
+  });
+  it('running drums count by the drums removed and finish at the measured rate', () => {
+    const shifts = [['2026-10-21', 'D', 200], ['2026-10-21', 'N', 200], ['2026-10-22', 'D', 200]] as const;
+    const engine = { scopes: [{ id: 's', key: 'R-12-205', scope: 'removal', unit: 'drums', working: 2400, initial: 2400, activityIds: ['DUMP'], completeAt: null }],
+      entries: shifts.map(([shiftDate, shift, qty], n) => ({ id: `e${n}`, scopeId: 's', shiftDate, shift, kind: 'removal', method: 'vacuum', qty, verify: 'verified' })), estimates: [], updates: [] };
+    const d = data([act('R-12-205', 'DUMP', '2026-10-21 07:00', '2026-10-26 07:00', 120, '2026-10-21 07:00'), act('R-12-205', 'LOAD', '2026-10-26 07:00', '2026-10-28 07:00', 48)], engine);
+    const i = miWeighted(d, at('2026-10-22 19:00'), [ev('R-12-205')])!.items[0];
+    // 600 of 2,400 drums = 25% of the dumping line; 1,800 left at 200 a shift = 9 shifts = 4.5 days, then 2 days of loading
+    expect([i.physPct, i.forecast, i.unverified]).toEqual([18, at('2026-10-29 07:00'), []]);
+  });
+  it('any item can control the end, a PSV too', () => {
+    const d = data([act('R-12-205', 'A', '2026-10-20 07:00', '2026-11-03 07:00', 336, '2026-10-20 07:00', '2026-10-30 07:00'),
+      act('12-PSV-0519', 'P1', '2026-10-20 07:00', '2026-10-25 07:00', 120), act('12-PSV-0519', 'P2', '2026-10-25 07:00', '2026-11-04 07:00', 240)]);
+    const w = miWeighted(d, at('2026-10-27 07:00'), [ev('R-12-205'), ev('12-PSV-0519', 'PSVs')])!;
+    expect([w.controlling?.tag, w.controlling?.small, w.estEnd, w.impactD]).toEqual(['12-PSV-0519', true, at('2026-11-11 07:00'), 4]);
+    expect(w.delays.map((i) => [i.tag, i.spareD])).toEqual([['12-PSV-0519', -4]]);
+    expect([w.main.physPct, w.small.physPct, w.small.items]).toEqual([100, 0, 1]);
   });
 });

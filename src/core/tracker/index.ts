@@ -37,7 +37,7 @@ export interface TrkActivity {
   seq?: number | null; detail?: boolean;
 }
 export interface TrkLog { kind: 'step' | 'equipment' | 'iat' | 'activity' | 'point'; ref: string; field: string; oldValue: string | null; newValue: string | null; byName: string | null; at: string }
-import { qtyProgress, type TrkEngine } from './qty';
+import { qtyForecast, qtyProgress, type TrkEngine } from './qty';
 export * from './qty';
 export interface TrkSettings { hoTarget?: string; end?: string; workOrder?: string; whatsapp?: string; opsStart?: string; miStart?: string; miEnd?: string;
   /** the progress engine (drums, updates) on this tracker, and its forecast window / freshness rules */
@@ -579,10 +579,10 @@ export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string }
   if (r.notes.trim()) out.push('', '*Notes*', r.notes.trim());
   const res = r.results, b = r.blinds, mi = r.mi.banner, w = r.mi.weighted;
   const blindsIn = b.segregation[0] + b.hp[0], blindsAll = b.segregation[1] + b.hp[1];
-  out.push('', `📊 Handover ${res ? `${res.ho[0]}/${res.ho[1]}` : `${r.totals.hoDone}/${r.totals.ho}`}${res ? ` · Neutralized ${res.neut[0]}/${res.neut[1]}` : ''}${blindsAll ? ` · Blinds ${blindsIn}/${blindsAll}` : ''}${w ? ` · M&I ${w.actualPct}% (plan ${w.planPct}%)` : mi && mi.items ? ` · M&I ${mi.state === 'BEHIND' ? `behind${mi.days ? ` ${mi.days} d` : ''}` : mi.state === 'AHEAD' ? `ahead${mi.days ? ` ${mi.days} d` : ''}` : 'on plan'}` : ''}`);
-  // the critical path: the item with the least spare time, late = the shutdown end moves
-  const cp = w?.items.find((i) => i.done < i.lines);
-  if (cp) out.push(`⏱ Critical path: ${short(cp.tag)} ${cp.spareD < 0 ? `late ${hoursText(-cp.spareD * DAY)} (delays shutdown)` : `on time (${cp.spareD} d spare)`}${w!.delays.length > 1 ? ` · ${w!.delays.length} items past the end` : ''}`);
+  out.push('', `📊 Handover ${res ? `${res.ho[0]}/${res.ho[1]}` : `${r.totals.hoDone}/${r.totals.ho}`}${res ? ` · Neutralized ${res.neut[0]}/${res.neut[1]}` : ''}${blindsAll ? ` · Blinds ${blindsIn}/${blindsAll}` : ''}${w ? ` · M&I ${w.actualPct}%${w.actualHiPct > w.actualPct ? `–${w.actualHiPct}%` : ''} (plan ${w.planPct}%)` : mi && mi.items ? ` · M&I ${mi.state === 'BEHIND' ? `behind${mi.days ? ` ${mi.days} d` : ''}` : mi.state === 'AHEAD' ? `ahead${mi.days ? ` ${mi.days} d` : ''}` : 'on plan'}` : ''}`);
+  // the controlling item: the latest forecast against the M & I end (unverified: P6 links not imported)
+  const cp = w?.controlling;
+  if (cp) out.push(`⏱ Controlling: ${short(cp.tag)} · forecast ${kwDay(cp.forecast)} ${kwTime(cp.forecast)} · ${cp.spareD < 0 ? `${-cp.spareD} d past the end (delays shutdown)` : `${cp.spareD} d float`}${w!.delays.length > 1 ? ` · ${w!.delays.length} items past the end` : ''} (unverified)`);
   if (opts.by) out.push(`— ${opts.by}`);
   return out.join('\n');
 }
@@ -663,48 +663,98 @@ export interface MiPhase {
 }
 export interface Phases { ops: OpsProgress | null; mi: MiPhase }
 
-/** M & I progress against time: every bar-chart line counts by its hours, and more when its item has little spare time
- *  before the shutdown end (an item finishing early cannot delay the shutdown). Lines not on an item (Electrical, workshop,
- *  steam flushing …) are support jobs, counted apart. */
-export interface MiItem { tag: string; key: string; spareD: number; forecast: number; weight: number; done: number; lines: number; next: string | null }
-export interface MiWeighted { planPct: number; actualPct: number; state: Banner['state']; end: number; items: MiItem[]; critical: MiItem[]; delays: MiItem[]; support: [number, number] }
-/** the weight of an item by its spare time (days) before the shutdown end */
-export const spareWeight = (d: number) => (d <= 1 ? 3 : d <= 3 ? 2 : d <= 7 ? 1.5 : 1);
+/** M & I progress, forecast and the controlling item, from the bar chart (P6 baseline, never changed).
+ *  - Physical progress: each line weighted by its P6 hours (provisional until approved weights exist). A finished line
+ *    counts 100%, a running line its measured share (drums), a running line with no measure is "not measured" and only
+ *    widens the range (up to), never counted as done or as 0.
+ *  - Forecast: the item's remaining work laid forward. A line follows the line(s) whose P6 finish is its P6 start (the
+ *    order of the P6 dates: the P6 links are not imported); lines in parallel overlap; a late line moves only what
+ *    follows it. Running drums use the measured removal rate, everything else its P6 duration (never invented).
+ *  - Three indicators per item: physical % (vs plan %), schedule variance (P6 finish − forecast, days, + ahead),
+ *    float to the M & I end and the shutdown impact (days past it). Every item can control the end, PSVs included.
+ *  Lines not on an item (Electrical, workshop …) are support jobs, counted apart. */
+export interface MiItem { tag: string; key: string; group: string; small: boolean;
+  /** physical progress: measured, and up to (with the running lines not measured counted done) · plan by the P6 dates */
+  physPct: number; physHiPct: number; planPct: number;
+  p6Finish: number; forecast: number; remainingD: number; svD: number; spareD: number; impactD: number;
+  done: number; lines: number; next: string | null; driving: string | null;
+  /** why the forecast is not verified (beyond the P6 logic not imported) */
+  unverified: string[] }
+export interface MiPart { items: number; physPct: number; physHiPct: number; planPct: number }
+export interface MiWeighted { planPct: number; actualPct: number; actualHiPct: number; state: Banner['state']; end: number; items: MiItem[];
+  /** the main equipment (the headline %) and the small jobs (PSVs, CV shells, piping …), kept apart */
+  main: MiPart; small: MiPart;
+  /** the item with the latest forecast (any group), its forecast and the days past the M & I end */
+  controlling: MiItem | null; estEnd: number; impactD: number;
+  critical: MiItem[]; delays: MiItem[]; support: [number, number] }
 export const CRITICAL_SPARE_D = 3;
 export function miWeighted(d: TrkData, now: number, eqs: EquipView[]): MiWeighted | null {
   const end = ms(d.settings.miEnd ?? d.settings.end);
   if (Number.isNaN(end)) return null;
   const byKey = new Map(eqs.filter((e) => e.eq.tracked).map((e) => [e.eq.barchartKey ?? e.eq.tag, e]));
-  const lines = d.activities.filter((a) => a.tracked && !a.detail && a.group !== 'Operations' && a.start);
-  const fin = (a: TrkActivity) => (a.finish ? ms(a.finish) : ms(a.start) + (a.durationH ?? 0) * H);
+  const lines = d.activities.filter((a) => a.tracked && !a.detail && a.group !== 'Operations' && a.start && a.finish);
   const support = lines.filter((a) => !byKey.has(a.key));
   const keys = [...new Set(lines.map((a) => a.key))].filter((k) => byKey.has(k));
   if (!keys.length) return null;
-  let wp = 0, wa = 0, wt = 0;
+  const eng = d.engine;
   const items = keys.map((key): MiItem => {
     const e = byKey.get(key)!, xs = sortActs(lines.filter((a) => a.key === key));
-    const first = Math.min(...xs.map((a) => ms(a.start))), last = Math.max(...xs.map(fin));
-    // the plan moves with the handover (or with today while the item is not handed over yet), then with the next line not started in time
-    const shift = e.stage >= 1 && e.hoAt ? ms(e.hoAt) - first : Math.max(0, now - first);
-    const open = xs.filter((a) => !a.actualFinish);
-    const nx = [...open].sort((a, b) => ms(a.start) - ms(b.start))[0];
-    const extra = nx && !nx.actualStart ? Math.max(0, now - (ms(nx.start) + shift)) : 0;
-    // a PSV's bar-chart lines are windows (out to the shop by …, back in by …), not hours of work: waiting inside a
-    // window moves nothing, only a window already over with its line not done delays it, by as much as it is over
-    const window = e.eq.group === 'PSVs';
-    const overdue = window ? Math.max(0, ...open.filter((a) => fin(a) < now).map((a) => now - fin(a))) : 0;
-    const forecast = !open.length ? Math.max(...xs.map((a) => ms(a.actualFinish)))
-      : window ? Math.max(now, last + overdue) : Math.max(now, last + shift + extra);
-    const spareD = r1((end - forecast) / DAY), weight = spareWeight(spareD);
-    for (const a of xs) {
-      const h = Math.max(1, a.durationH ?? (fin(a) - ms(a.start)) / H) * weight, len = fin(a) - ms(a.start);
-      wt += h; wp += h * Math.min(1, Math.max(0, len > 0 ? (now - ms(a.start)) / len : now >= ms(a.start) ? 1 : 0)); wa += h * (a.actualFinish ? 1 : a.actualStart ? 0.5 : 0);
+    const hours = (a: TrkActivity) => Math.max(0, a.durationH ?? (ms(a.finish) - ms(a.start)) / H);
+    const unverified: string[] = [];
+    // the measured work (drums): share done and the finish from the removal rate (the progress engine's rules)
+    const measure = (a: TrkActivity): { p: number; finish: number | null } | null => {
+      const sc = eng?.scopes.find((x) => x.key === key && x.scope === 'removal' && x.activityIds.includes(a.activityId));
+      if (!sc || !sc.working) return null;
+      const es = eng!.entries.filter((x) => x.scopeId === sc.id);
+      const pr = qtyProgress({ working: sc.working, initial: sc.initial, completeAt: sc.completeAt }, es);
+      const fc = qtyForecast(es, pr.remaining, now, { window: d.settings.fcWindow, min: d.settings.fcMin });
+      if (fc.status !== 'ok') unverified.push(`${a.activity}: rate not yet known (${fc.reason}), P6 duration used`);
+      return { p: (pr.actualPct ?? 0) / 100, finish: fc.status === 'ok' ? fc.finish : null };
+    };
+    const fc = new Map<TrkActivity, number>();
+    let w = 0, got = 0, open = 0, plan = 0;
+    for (const a of [...xs].sort((x, y) => ms(x.start) - ms(y.start) || ms(x.finish) - ms(y.finish))) {
+      const h = hours(a), s0 = ms(a.start), f0 = ms(a.finish);
+      w += h; plan += h * (f0 > s0 ? Math.min(1, Math.max(0, (now - s0) / (f0 - s0))) : now >= s0 ? 1 : 0);
+      const preds = xs.filter((p) => p !== a && ms(p.finish) === s0 && fc.has(p));
+      let f: number;
+      if (a.actualFinish) { f = ms(a.actualFinish); got += h; }
+      else if (a.actualStart) {
+        const m = measure(a);
+        if (m) { got += h * m.p; f = m.finish ?? now + h * (1 - m.p) * H; }
+        else {
+          open += h; f = Math.max(ms(a.actualStart) + h * H, now);
+          unverified.push(ms(a.actualStart) + h * H < now ? `${a.activity}: running past its P6 duration, remaining not known` : `${a.activity}: running, not measured`);
+        }
+      } else {
+        if (!preds.length && s0 < now) unverified.push(`${a.activity}: P6 start passed, no start recorded`);
+        f = (preds.length ? Math.max(now, ...preds.map((p) => fc.get(p)!)) : Math.max(s0, now)) + h * H;
+      }
+      fc.set(a, f);
     }
-    return { tag: e.eq.tag, key, spareD, forecast, weight, done: xs.length - open.length, lines: xs.length, next: open[0]?.activity ?? null };
+    const p6Finish = Math.max(...xs.map((a) => ms(a.finish)));
+    const left = xs.filter((a) => !a.actualFinish);
+    const forecast = Math.max(...fc.values());
+    const drv = left.length ? [...left].sort((a, b) => fc.get(b)! - fc.get(a)!)[0] : null;
+    const pct = (x: number) => (w > 0 ? Math.round(x / w * 100) : 0);
+    return { tag: e.eq.tag, key, group: e.eq.group, small: isMisc(e.eq.group), physPct: pct(got), physHiPct: pct(got + open), planPct: pct(plan),
+      p6Finish, forecast, remainingD: r1(Math.max(0, forecast - now) / DAY), svD: r1((p6Finish - forecast) / DAY), spareD: r1((end - forecast) / DAY),
+      impactD: r1(Math.max(0, forecast - end) / DAY), done: xs.length - left.length, lines: xs.length, next: left[0]?.activity ?? null, driving: drv?.activity ?? null, unverified };
   }).sort((a, b) => a.spareD - b.spareD || a.tag.localeCompare(b.tag));
-  const planPct = Math.round(wp / wt * 100), actualPct = Math.round(wa / wt * 100);
-  return { planPct, actualPct, state: actualPct >= planPct + 2 ? 'AHEAD' : actualPct < planPct - 2 ? 'BEHIND' : 'ON_PLAN', end, items,
-    critical: items.filter((i) => i.spareD <= CRITICAL_SPARE_D && i.done < i.lines), delays: items.filter((i) => i.spareD < 0),
+  // the parts: physical % weighted by the lines' hours
+  const hoursOf = (key: string) => lines.filter((a) => a.key === key).reduce((t, a) => t + Math.max(0, a.durationH ?? (ms(a.finish) - ms(a.start)) / H), 0);
+  const part = (xs: MiItem[]): MiPart => {
+    const ws = xs.map((i) => hoursOf(i.key)), W = ws.reduce((t, x) => t + x, 0) || 1;
+    const f = (k: 'physPct' | 'physHiPct' | 'planPct') => Math.round(xs.reduce((t, i, n) => t + i[k] * ws[n], 0) / W);
+    return { items: xs.length, physPct: f('physPct'), physHiPct: f('physHiPct'), planPct: f('planPct') };
+  };
+  const main = part(items.filter((i) => !i.small)), small = part(items.filter((i) => i.small));
+  const openItems = items.filter((i) => i.done < i.lines);
+  const controlling = openItems.length ? openItems.reduce((a, b) => (b.forecast > a.forecast ? b : a)) : null;
+  const estEnd = Math.max(...items.map((i) => i.forecast));
+  return { planPct: main.planPct, actualPct: main.physPct, actualHiPct: main.physHiPct, state: main.physPct >= main.planPct + 2 ? 'AHEAD' : main.physHiPct < main.planPct - 2 ? 'BEHIND' : 'ON_PLAN',
+    end, items, main, small, controlling, estEnd, impactD: r1(Math.max(0, estEnd - end) / DAY),
+    critical: openItems.filter((i) => i.spareD <= CRITICAL_SPARE_D), delays: items.filter((i) => i.spareD < 0),
     support: [support.filter((a) => a.actualFinish).length, support.length] };
 }
 
@@ -766,6 +816,6 @@ export function phases(d: TrkData, now: number, steps = stepViews(d, now)): Phas
   return {
     ops: opsProgress(steps, d.settings, now, started, opsResults(d, equipViews(d, now, steps))),
     mi: { planned, actualStart: started, delayH: started !== null && !Number.isNaN(planned) ? r1(delay / H) : null, critical: ho.critical, banner: bn,
-      plannedEnd, estEnd: Number.isNaN(plannedEnd) ? null : w && w.items.length ? Math.max(...w.items.map((i) => i.forecast)) : plannedEnd + delay, weighted: w },
+      plannedEnd, estEnd: Number.isNaN(plannedEnd) ? null : w ? w.estEnd : plannedEnd + delay, weighted: w },
   };
 }

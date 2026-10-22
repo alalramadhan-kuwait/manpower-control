@@ -2,7 +2,7 @@
 // handover · M & I: the bar chart and the blinds it installs) with their planned and actual dates, and the late /
 // pending / IAT counts. Each card opens its detail; every line in it opens the step, item or page behind it.
 import { useMemo, useState } from 'react';
-import { CRITICAL_SPARE_D, type MiItem, FO_NAMES, isMisc, attention, focusList, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, neutLabel,
+import { CRITICAL_SPARE_D, type MiItem, type MiPart, type MiWeighted, FO_NAMES, isMisc, attention, focusList, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, neutLabel,
   type Attention, type Banner, type Focus, type NextStep, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import type { TrackerData } from '@/data/tracker';
 import { BottomSheet, cx } from '@/ui/components';
@@ -98,13 +98,11 @@ export function TodayTab({ steps, eqs, data, now, onOpen, onNav }: { steps: Map<
         <Dates plan={[mi.planned, mi.plannedEnd]} actual={[mi.actualStart, mi.actualStart !== null ? mi.estEnd : null, true]} />
         {mi.weighted && (
           <div className="pt-1.5">
-            <span className="flex justify-between text-[13px] text-slate-700"><span>Done <span className="text-[11px] text-slate-500">(by hours, critical × more)</span></span><span><b className="text-slate-900">{mi.weighted.actualPct}%</b> <span className="font-semibold text-slate-500">/ plan {mi.weighted.planPct}%</span></span></span>
-            <span className="relative mt-1 block h-2 rounded-full bg-slate-200">
-              <span className={cx('block h-full rounded-full', mi.weighted.state === 'BEHIND' ? 'bg-[#E02028]' : 'bg-[#08A048]')} style={{ width: `${mi.weighted.actualPct}%` }} />
-              <span className="absolute -top-1 h-4 w-0.5 bg-slate-900" style={{ left: `${mi.weighted.planPct}%` }} />
-            </span>
+            <PhysBar label="Main equipment" p={mi.weighted.main} state={mi.weighted.state} />
+            {mi.weighted.small.items > 0 && <PhysBar label="Small jobs (PSVs, CVs, piping)" p={mi.weighted.small} />}
+            {mi.weighted.controlling && <Controlling i={mi.weighted.controlling} onClick={() => onOpen({ kind: 'equipment', ref: mi.weighted!.controlling!.tag })} />}
             {mi.weighted.critical.length > 0 && <>
-              <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">Critical path · {CRITICAL_SPARE_D} d spare or less</p>
+              <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">Near critical · {CRITICAL_SPARE_D} d float or less</p>
               <div className="mt-1 space-y-1">{mi.weighted.critical.slice(0, 4).map((i) => <SpareRow key={i.key} i={i} onClick={() => onOpen({ kind: 'equipment', ref: i.tag })} />)}</div>
               {mi.weighted.critical.length > 4 && <p className="mt-1 text-[11px] text-slate-500">+ {mi.weighted.critical.length - 4} more in the M &amp; I sheet</p>}
             </>}
@@ -209,13 +207,42 @@ function OpsSheet({ data, eqs, plan, finished, badge, onOpen, onNav, onClose }: 
   );
 }
 
-/** An item on the critical path: steps done, spare time before the shutdown end, its next step. */
+const pctText = (lo: number, hi: number) => (hi > lo ? `${lo}–${hi}%` : `${lo}%`);
+const days = (x: number) => `${x > 0 ? '+' : ''}${x} d`;
+/** Physical progress against the plan: measured, up to (running work not measured), the plan marker. */
+function PhysBar({ label, p, state }: { label: string; p: MiPart; state?: MiWeighted['state'] }) {
+  const tone = (state ?? (p.physPct >= p.planPct + 2 ? 'AHEAD' : p.physHiPct < p.planPct - 2 ? 'BEHIND' : 'ON_PLAN')) === 'BEHIND' ? 'bg-[#E02028]' : 'bg-[#08A048]';
+  return (
+    <div className="mb-2">
+      <span className="flex justify-between text-[13px] text-slate-700"><span>{label}</span><span><b className="text-slate-900">{pctText(p.physPct, p.physHiPct)}</b> <span className="font-semibold text-slate-500">/ plan {p.planPct}%</span></span></span>
+      <span className="relative mt-1 block h-2 rounded-full bg-slate-200">
+        <span className={cx('absolute left-0 top-0 block h-full rounded-full opacity-30', tone)} style={{ width: `${p.physHiPct}%` }} />
+        <span className={cx('absolute left-0 top-0 block h-full rounded-full', tone)} style={{ width: `${p.physPct}%` }} />
+        <span className="absolute -top-1 h-4 w-0.5 bg-slate-900" style={{ left: `${p.planPct}%` }} />
+      </span>
+    </div>
+  );
+}
+/** The item that sets the end now: the latest forecast. */
+function Controlling({ i, onClick }: { i: MiItem; onClick: () => void }) {
+  const late = i.impactD > 0;
+  return (
+    <button type="button" onClick={(x) => { x.stopPropagation(); onClick(); }} className={cx('mt-1 block w-full rounded-lg px-2.5 py-2 text-left ring-1', late ? 'bg-red-50 ring-red-200' : 'bg-slate-50 ring-slate-200')}>
+      <span className="block text-[11px] font-bold uppercase tracking-wide text-slate-500">Controlling the end <span className="font-semibold normal-case tracking-normal text-amber-700">· unverified</span></span>
+      <span className="flex items-baseline justify-between gap-2"><b className="text-[14px]">{i.tag}</b>
+        <span className={cx('text-[12px] font-bold', late ? 'text-[#E02028]' : 'text-slate-700')}>{late ? `delays end ${i.impactD} d` : `${i.spareD} d float`}</span></span>
+      <span className="block text-[12px] text-slate-600">Forecast {kwDay(i.forecast)} {kwTime(i.forecast)} · {i.remainingD} d left · {pctText(i.physPct, i.physHiPct)} / plan {i.planPct}% · {days(i.svD)} vs P6</span>
+      {i.driving && <span className="block truncate text-[11px] text-slate-500">Driving: {i.driving}</span>}
+    </button>
+  );
+}
+/** An item near the critical path: physical vs plan, schedule variance, float (or the days it delays the end). */
 function SpareRow({ i, onClick }: { i: MiItem; onClick: () => void }) {
   return (
     <button type="button" onClick={(x) => { x.stopPropagation(); onClick(); }} className="flex w-full items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5 text-left ring-1 ring-slate-200">
-      <span className="min-w-0 flex-1"><b className="text-[13px]">{i.tag}</b> <span className="text-[11px] text-slate-500">{i.done}/{i.lines} steps</span>
-        {i.next && <span className="block truncate text-[11px] text-slate-600">Next: {i.next}</span>}</span>
-      <span className={cx('shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold', i.spareD < 0 ? 'bg-red-600 text-white' : i.spareD <= 1 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{i.spareD < 0 ? `🔴 delays ${-i.spareD} d` : `${i.spareD} d spare`}</span>
+      <span className="min-w-0 flex-1"><b className="text-[13px]">{i.tag}</b> <span className="text-[11px] text-slate-500">{pctText(i.physPct, i.physHiPct)} / plan {i.planPct}% · <span className={i.svD < 0 ? 'text-[#E02028]' : 'text-[#08A048]'}>{days(i.svD)}</span></span>{i.unverified.length > 0 && <span title="unverified" className="font-bold text-amber-600">*</span>}
+        <span className="block truncate text-[11px] text-slate-600">Forecast {kwDay(i.forecast)} {kwTime(i.forecast)}{i.driving ? ` · ${i.driving}` : ''}</span></span>
+      <span className={cx('shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold', i.spareD < 0 ? 'bg-red-600 text-white' : i.spareD <= 1 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{i.spareD < 0 ? `🔴 delays ${i.impactD} d` : `${i.spareD} d float`}</span>
     </button>
   );
 }
@@ -246,11 +273,16 @@ function MiSheet({ data, steps, now, mi, behind, onOpen, onNav, onClose }: { dat
           </table>
         )}
         {mi.weighted && mi.weighted.critical.length > 0 && <>
-          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Critical path · {CRITICAL_SPARE_D} d spare or less</p>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Near critical · {CRITICAL_SPARE_D} d float or less</p>
           <div className="space-y-1">{mi.weighted.critical.map((i) => <SpareRow key={i.key} i={i} onClick={() => onOpen({ kind: 'equipment', ref: i.tag })} />)}</div>
         </>}
         {mi.weighted && mi.weighted.support[1] > 0 && <p className="text-xs text-slate-600">Support jobs (not on an item, not in the %): <b>{mi.weighted.support[0]}/{mi.weighted.support[1]}</b> done</p>}
-        <p className="text-[11px] text-slate-500">Done % counts every bar-chart line by its hours, × 3 when its item has 1 day spare or less before the shutdown end, × 2 up to 3 days, × 1.5 up to 7 days. Spare time moves with the handover and with steps not started in time.</p>
+        {mi.weighted && <MiItems items={mi.weighted.items} onOpen={(tag) => onOpen({ kind: 'equipment', ref: tag })} />}
+        <div className="space-y-1 text-[11px] text-slate-500">
+          <p><b>Physical %</b>: finished lines 100%, running drums by the drums removed, running work with no measure only in the "up to" range. Weight = P6 hours (provisional until weights are approved).</p>
+          <p><b>Forecast</b>: the remaining lines laid forward from now — drums at the measured rate, the rest at their P6 duration; parallel lines overlap and a late line moves only what follows it. <b>Variance</b> = P6 finish − forecast. <b>Float</b> = M &amp; I end − forecast; below 0 it delays the shutdown.</p>
+          <p className="text-amber-700">Unverified: the P6 links and float are not imported, so the order is taken from the P6 dates.</p>
+        </div>
         <table className="w-full text-[13px]">
           <thead><tr><Th>Blinds installed</Th><Th>In</Th><Th>Open</Th><Th>Out</Th></tr></thead>
           <tbody>{rows.map(([l, i, t, o]) => <tr key={l} className="border-t border-slate-100"><td className="py-1.5 font-bold">{l}</td><td className={cx('text-right tabular-nums', t > 0 && i === 0 && 'font-bold text-[#E02028]')}>{i}/{t}</td><td className="text-right tabular-nums">{t - i}</td><td className="text-right tabular-nums">{o}</td></tr>)}</tbody>
@@ -267,3 +299,28 @@ function MiSheet({ data, steps, now, mi, behind, onOpen, onNav, onClose }: { dat
 }
 
 
+
+/** Every item: the three indicators, latest forecast first; small jobs behind a toggle. */
+function MiItems({ items, onOpen }: { items: MiItem[]; onOpen: (tag: string) => void }) {
+  const [small, setSmall] = useState(false);
+  const xs = items.filter((i) => i.done < i.lines && (small || !i.small)).sort((a, b) => b.forecast - a.forecast);
+  return (
+    <div>
+      <div className="flex items-center justify-between"><p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Equipment · latest forecast first</p>
+        <button type="button" onClick={() => setSmall((x) => !x)} className="text-[11px] font-semibold text-[#0850A0]">{small ? 'Main only' : '+ small jobs'}</button></div>
+      <table className="mt-1 w-full whitespace-nowrap text-[12px]">
+        <thead><tr className="text-[10.5px] text-slate-500"><th className="text-left font-semibold">Item</th><th className="text-right font-semibold">Physical / plan</th><th className="text-right font-semibold">vs P6</th><th className="text-right font-semibold">Forecast</th><th className="text-right font-semibold">Float</th></tr></thead>
+        <tbody>{xs.map((i) => (
+          <tr key={i.key} onClick={() => onOpen(i.tag)} className="cursor-pointer border-t border-slate-100">
+            <td className="whitespace-normal py-1 font-bold">{i.tag}{i.unverified.length > 0 && <span title={i.unverified.join('\n')} className="ml-0.5 text-amber-600">*</span>}</td>
+            <td className="text-right tabular-nums">{pctText(i.physPct, i.physHiPct)} / {i.planPct}%</td>
+            <td className={cx('pl-2 text-right tabular-nums', i.svD < 0 ? 'text-[#E02028]' : 'text-[#08A048]')}>{days(i.svD)}</td>
+            <td className="pl-2 text-right tabular-nums">{kwDay(i.forecast).replace(/^\w+,? /, '')} {kwTime(i.forecast)}</td>
+            <td className={cx('pl-2 text-right font-bold tabular-nums', i.spareD < 0 ? 'text-[#E02028]' : i.spareD <= CRITICAL_SPARE_D ? 'text-amber-700' : 'text-slate-600')}>{i.spareD < 0 ? `−${i.impactD}` : i.spareD}</td>
+          </tr>))}
+        </tbody>
+      </table>
+      <p className="mt-1 text-[10.5px] text-slate-500">* unverified: work running with no measure, or a P6 start passed with no start recorded (open the item).</p>
+    </div>
+  );
+}
