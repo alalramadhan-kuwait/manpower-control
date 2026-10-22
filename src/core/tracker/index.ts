@@ -56,13 +56,17 @@ export interface TrkPoint {
   beforeHo: boolean; sort: number; status: PointStatus;
   inAt: string | null; outAt: string | null; fillAt: string | null; soakAt: string | null; drainAt: string | null; doneAt: string | null;
   soakH: number | null; remark: string | null; updatedBy: string | null; updatedAt: string | null;
+  /** on hold, with its reason (resumed = null) */
+  holdReason?: string | null; holdAt?: string | null;
 }
 /** A main field step of a neutralization (from its SOP): before filling, while filling, or after. */
 export interface TrkPointStep { id: string; pointId: string; seq: number; phase: 'before' | 'fill' | 'after'; text: string; source: string | null; doneAt: string | null; doneBy: string | null;
   /** a critical step that needs a crane (control valves dropped) */
   crane: boolean;
   /** a timed field job (crane, blinding, elbows / spools): started and finished; the rest are ticks */
-  kind: 'check' | 'step'; startAt: string | null; startBy: string | null }
+  kind: 'check' | 'step'; startAt: string | null; startBy: string | null;
+  /** the equipment work steps this field step is (same physical work): its state is theirs */
+  linkActs?: string[] }
 export interface TrkData { engine?: TrkEngine; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
 
 /** The main equipment groups; the rest (control valve shells, PSVs, check valves, RTJ & injection points, piping, OPR

@@ -10,7 +10,7 @@ import { FlagChip, IsoChip, PlanChip, StageBar, StateChip } from './ui';
 
 const when = (iso: string | null) => (iso ? `${kwDay(iso)} ${kwTime(iso)}` : '');
 
-function PendingForm({ initial, onSave, busy }: { initial: string | null; onSave: (reason: string) => void; busy: boolean }) {
+export function PendingForm({ initial, onSave, busy }: { initial: string | null; onSave: (reason: string) => void; busy: boolean }) {
   const [reason, setReason] = useState(PENDING_REASONS.find((r) => initial?.startsWith(r)) ?? '');
   const [note, setNote] = useState(initial && !PENDING_REASONS.some((r) => initial === r) ? initial.replace(/^[^–]*–\s*/, '') : '');
   return (

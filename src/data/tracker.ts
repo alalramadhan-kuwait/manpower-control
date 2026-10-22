@@ -25,7 +25,7 @@ interface EqRow { id: string; tag: string; grp: string; description: string | nu
 interface IatRow { id: string; tag: string; iat_no: string; job_text: string | null; discipline: string | null; issued_at: string; status: 'open' | 'closed'; closed_at: string | null; wo?: string | null; line?: string | null; sheet_status?: string | null; remark?: string | null;
   finding?: string | null; recommendation?: string | null; line_class?: string | null; material?: string | null; checks?: Record<string, string> | null; painting?: Record<string, string> | null; action_by?: string | null }
 interface ActRow { id: string; activity_id: string; grp: string | null; equipment_key: string; activity: string; duration_h: number | null; planned_start: string | null; planned_finish: string | null; stage: number | null; tracked: boolean; baseline: number; actual_start: string | null; actual_finish: string | null; actual_note: string | null; disabled_reason: string | null; seq?: number | null; detail?: boolean | null; updated_by_name: string | null; updated_at: string | null }
-interface PointRow { id: string; kind: TrkPoint['kind']; grp: TrkPoint['grp']; ref: string; name: string; detail: string | null; fo: string | null; step_id: string | null; items: string[] | null; requires?: string[] | null; method?: string | null; part_of?: string[] | null; after_acts?: string[] | null; before_ho: boolean; sort: number; status: PointStatus;
+interface PointRow { hold_reason?: string | null; hold_at?: string | null; id: string; kind: TrkPoint['kind']; grp: TrkPoint['grp']; ref: string; name: string; detail: string | null; fo: string | null; step_id: string | null; items: string[] | null; requires?: string[] | null; method?: string | null; part_of?: string[] | null; after_acts?: string[] | null; before_ho: boolean; sort: number; status: PointStatus;
   in_at: string | null; out_at: string | null; fill_at: string | null; soak_at: string | null; drain_at: string | null; done_at: string | null; soak_h: number | null; remark: string | null; updated_by_name: string | null; updated_at: string | null }
 interface LogRow { kind: TrkLog['kind']; ref: string; field: string; old_value: string | null; new_value: string | null; by_name: string | null; at: string }
 export interface ShiftLog { id: string; shiftDate: string; shift: 'D' | 'N'; notes: string | null; temps: Record<string, string>; updatedBy: string | null }
@@ -48,14 +48,14 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
   const [lu, le, ps] = await Promise.all([supabase.from('lu_streams').select('id,frm,to_tag,fluid,line,line_nos,sheets,size,conf').limit(2000),
     supabase.from('lu_equipment').select('tag,plant_tag,name,data,primary_sheet').limit(2000),
     // the SOP field steps of each neutralization: optional as well
-    supabase.from('trk_point_step').select('id,point_id,seq,phase,text,source,done_at,done_by_name,crane,kind,start_at,start_by_name').eq('tracker_id', id).order('seq').limit(2000)]);
+    supabase.from('trk_point_step').select('id,point_id,seq,phase,text,source,done_at,done_by_name,crane,kind,start_at,start_by_name,link_acts').eq('tracker_id', id).order('seq').limit(2000)]);
   const err = [t, s, e, i, a, l, sl, pt].find((r) => r.error)?.error; if (err) throw err;
   const engine = (t.data as unknown as TrackerRow).settings?.progressV2 ? await fetchEngine(id) : undefined;
   const acts = a.data as ActRow[]; const base = Math.max(0, ...acts.map((x) => x.baseline));
   return {
     engine,
-    pointSteps: ps.error ? [] : (ps.data as { id: string; point_id: string; seq: number; phase: TrkPointStep['phase']; text: string; source: string | null; done_at: string | null; done_by_name: string | null; crane: boolean | null; kind: string | null; start_at: string | null; start_by_name: string | null }[])
-      .map((r): TrkPointStep => ({ id: r.id, pointId: r.point_id, seq: r.seq, phase: r.phase, text: r.text, source: r.source, doneAt: r.done_at, doneBy: r.done_by_name, crane: !!r.crane, kind: r.kind === 'step' ? 'step' : 'check', startAt: r.start_at, startBy: r.start_by_name })),
+    pointSteps: ps.error ? [] : (ps.data as { id: string; point_id: string; seq: number; phase: TrkPointStep['phase']; text: string; source: string | null; done_at: string | null; done_by_name: string | null; crane: boolean | null; kind: string | null; start_at: string | null; start_by_name: string | null; link_acts: string[] | null }[])
+      .map((r): TrkPointStep => ({ id: r.id, pointId: r.point_id, seq: r.seq, phase: r.phase, text: r.text, source: r.source, doneAt: r.done_at, doneBy: r.done_by_name, crane: !!r.crane, kind: r.kind === 'step' ? 'step' : 'check', startAt: r.start_at, startBy: r.start_by_name, linkActs: r.link_acts ?? [] })),
     lineupEq: le.error ? [] : (le.data as { tag: string; plant_tag: string | null; name: string | null; data: string | null; primary_sheet: string | null }[])
       .map((r): LuEquip => ({ tag: r.tag, plantTag: r.plant_tag, name: r.name, data: r.data, sheet: r.primary_sheet })),
     lineup: lu.error ? [] : (lu.data as { id: string; frm: string; to_tag: string; fluid: string | null; line: string | null; line_nos: string[]; sheets: string[]; size: string | null; conf: string | null }[])
@@ -77,7 +77,7 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
       .map((r) => ({ id: r.id, shiftDate: r.shift_date, shift: r.shift, notes: r.notes, temps: r.temps ?? {}, updatedBy: r.updated_by_name })),
     settings: (t.data as unknown as TrackerRow).settings ?? {},
     points: (pt.data as PointRow[]).map((r): TrkPoint => ({ id: r.id, kind: r.kind, grp: r.grp ?? null, ref: r.ref, name: r.name, detail: r.detail, fo: r.fo, stepId: r.step_id, items: r.items ?? [], requires: r.requires ?? [], partOf: r.part_of ?? [], afterActs: r.after_acts ?? [], method: r.method === 'spray' ? 'spray' : 'soak', beforeHo: r.before_ho, sort: r.sort, status: r.status,
-      inAt: r.in_at, outAt: r.out_at, fillAt: r.fill_at, soakAt: r.soak_at, drainAt: r.drain_at, doneAt: r.done_at, soakH: r.soak_h, remark: r.remark, updatedBy: r.updated_by_name, updatedAt: r.updated_at })),
+      inAt: r.in_at, outAt: r.out_at, fillAt: r.fill_at, soakAt: r.soak_at, drainAt: r.drain_at, doneAt: r.done_at, soakH: r.soak_h, remark: r.remark, updatedBy: r.updated_by_name, updatedAt: r.updated_at, holdReason: r.hold_reason ?? null, holdAt: r.hold_at ?? null })),
   };
 }
 
@@ -102,7 +102,7 @@ export async function addPointStep(r: { tracker_id: string; point_id: string; se
   const { error } = await supabase.from('trk_point_step').insert({ ...r, source: 'Added on site' }); if (error) throw error;
 }
 export const setPointStepTime = (id: string, patch: Partial<{ start_at: string | null; done_at: string | null }>) => upd('trk_point_step', id, patch);
-export const setPoint = (id: string, patch: Partial<{ status: PointStatus; in_at: string | null; out_at: string | null; fill_at: string | null; soak_at: string | null; drain_at: string | null; done_at: string | null; remark: string | null }>) => upd('trk_points', id, patch);
+export const setPoint = (id: string, patch: Partial<{ hold_reason: string | null; status: PointStatus; in_at: string | null; out_at: string | null; fill_at: string | null; soak_at: string | null; drain_at: string | null; done_at: string | null; remark: string | null }>) => upd('trk_points', id, patch);
 export async function addIat(trackerId: string, v: { tag: string; iatNo: string; jobText: string; discipline: string }) {
   const { error } = await supabase.from('trk_iat').insert({ tracker_id: trackerId, tag: v.tag, iat_no: v.iatNo, job_text: v.jobText || null, discipline: v.discipline || null });
   if (error) throw error;

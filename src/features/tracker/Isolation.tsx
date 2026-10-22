@@ -6,6 +6,16 @@ import { NEUT_FLOW, NEUT_LABEL, neutLabel, equipBlind, loopLines, missingBlinds,
 import { addPointStep, setActivity, setPoint, setPointStep, setPointStepTime } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, cx } from '@/ui/components';
 import { CRow, IsoChip, MenuBtn, RowBtn, RowList, Tile } from './ui';
+import { PendingForm } from './TrackerSheets';
+
+/** A field step linked to equipment work steps (the same physical work) takes their state: started when one is,
+ *  done when all are; otherwise its own. */
+const linked = (c: TrkPointStep, acts: TrkActivity[]): TrkPointStep => {
+  const la = acts.filter((a) => (c.linkActs ?? []).includes(a.id)); if (!la.length) return c;
+  const st = la.map((a) => a.actualStart).filter(Boolean).sort()[0] ?? null;
+  const fin = la.every((a) => a.actualFinish) ? la.map((a) => a.actualFinish!).sort().slice(-1)[0] : null;
+  return { ...c, startAt: st, doneAt: fin, doneBy: fin ? la.find((a) => a.actualFinish === fin)?.updatedBy ?? null : null, startBy: null };
+};
 
 const when = (iso: string | null) => (iso ? `${kwDay(iso)} ${kwTime(iso)}` : '');
 const BLIND_LABEL: Record<string, string> = { open: 'Not blinded', in: 'Blinded', out: 'Deblinded' };
@@ -14,11 +24,12 @@ const NEXT: Record<string, [PointStatus, string] | undefined> = {
   open: ['filling', '▶ Fill'], filling: ['soaking', 'Soaking'], soaking: ['draining', 'Draining'], draining: ['done', '✓ Done'],
 };
 
-function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], checks = [], trackerId, isHead, now, canEdit, onItem, onStep, onDone }: { p: TrkPoint; points: TrkPoint[]; acts?: TrkActivity[]; lineup?: LuStream[]; iats?: TrkIat[]; steps?: TrkStep[]; checks?: TrkPointStep[]; trackerId?: string; isHead: boolean; now: number; canEdit: boolean; onItem: (tag: string) => void; onStep?: (id: string) => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
+function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], checks: raw = [], trackerId, isHead, now, canEdit, onItem, onStep, onDone }: { p: TrkPoint; points: TrkPoint[]; acts?: TrkActivity[]; lineup?: LuStream[]; iats?: TrkIat[]; steps?: TrkStep[]; checks?: TrkPointStep[]; trackerId?: string; isHead: boolean; now: number; canEdit: boolean; onItem: (tag: string) => void; onStep?: (id: string) => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   const [force, setForce] = useState(false); const [sheet, setSheet] = useState(false);
+  const checks = raw.map((c) => linked(c, acts));
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [note, setNote] = useState(p.remark ?? '');
-  async function run(patch: Parameters<typeof setPoint>[1], msg: string, close?: () => void) { setBusy(true); setErr(null); try { await setPoint(p.id, patch); close?.(); onDone(msg); } catch (e) { setErr(e); } finally { setBusy(false); } }
+  async function run(patch: Parameters<typeof setPoint>[1], msg: string, close?: () => void, undo?: Parameters<typeof setPoint>[1]) { setBusy(true); setErr(null); try { await setPoint(p.id, patch); close?.(); onDone(msg, undo ? () => setPoint(p.id, undo) : undefined); } catch (e) { setErr(e); } finally { setBusy(false); } }
   const blind = p.kind === 'blind';
   const left = soakLeft(p, now);
   const back = blind ? (p.status === 'out' ? 'in' : 'open') : p.method === 'spray' ? (p.status === 'done' ? 'filling' : 'open') : NEUT_FLOW[Math.max(0, NEUT_FLOW.indexOf(p.status as typeof NEUT_FLOW[number]) - 1)];
@@ -40,7 +51,7 @@ function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], ch
   const sub = blind
     ? (p.status === 'open' ? items || '—' : `✓ In ${when(p.inAt)}${p.outAt ? ` · out ${when(p.outAt)}` : ''}${p.updatedBy ? ` · ${p.updatedBy}` : ''}`)
     : locked ? <b className="text-red-800">🔒 {missing.length ? `Needs blinds: ${missing.map((r) => `${r} ${reqName(r)}`.trim()).join(', ')}` : waiting.length ? `After: ${waiting.every((x) => /dump/i.test(x)) ? 'catalyst dumping' : waiting.join(', ')}` : `Needs ${jobs.length} job${jobs.length > 1 ? 's' : ''} done: ${jobs.map((c) => c.text.split(',')[0]).join(' · ')}`}</b>
-    : <>{(p.requires ?? []).length > 0 && p.status === 'open' ? 'Blinds ready ✓ · ' : ''}{neutLabel(p)}{left !== null ? <b className={left > 0 ? 'text-amber-800' : 'text-green-800'}> · {left > 0 ? `${hoursText(left)} left` : 'soak reached'}</b> : null}{p.status === 'done' && p.doneAt ? ` ${when(p.doneAt)}` : ''}</>;
+    : <>{p.holdReason ? <b className="text-red-800">⏸ On hold: {p.holdReason} · </b> : null}{(p.requires ?? []).length > 0 && p.status === 'open' ? 'Blinds ready ✓ · ' : ''}{neutLabel(p)}{left !== null ? <b className={left > 0 ? 'text-amber-800' : 'text-green-800'}> · {left > 0 ? `${hoursText(left)} left` : 'soak reached'}</b> : null}{p.status === 'done' && p.doneAt ? ` ${when(p.doneAt)}` : ''}</>;
   const extra = blind ? null : <>
     {locked && (p.requires ?? []).map((r) => <IsoChip key={r} state={missing.includes(r) ? 'blind' : 'ready'}>{r} {missing.includes(r) ? '✗' : '✓'}</IsoChip>)}
     {p.items.map((t) => <IsoChip key={t} state={loopState}>{t}</IsoChip>)}
@@ -52,14 +63,16 @@ function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], ch
   const action = !canEdit ? null
     : blind ? (p.status === 'open' ? <RowBtn disabled={busy} onClick={() => run({ status: 'in' }, `${p.ref} blinded.`)}>Blinded</RowBtn>
       : p.status === 'in' ? <RowBtn tone="ghost" disabled={busy} onClick={() => run({ status: 'out' }, `${p.ref} deblinded.`)}>Deblinded</RowBtn> : <span className="shrink-0 text-[11px] font-bold text-[#004080]">Out</span>)
-    : locked && !force ? (isHead ? <RowBtn tone="ghost" disabled={busy} onClick={() => setForce(true)}>🔒 {spray ? 'Spray' : 'Fill'}</RowBtn> : <span className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-500">🔒 {spray ? 'Spray' : 'Fill'}</span>)
-    : next ? <RowBtn tone={next[0] === 'done' ? 'green' : 'navy'} disabled={busy} onClick={() => run({ status: next[0] }, `${p.ref}: ${(next[0] === 'filling' && spray ? 'spraying' : NEUT_LABEL[next[0]].toLowerCase())}.`)}>{next[1]}</RowBtn>
-    : <span className="shrink-0 text-[11px] font-bold text-[#08A048]">Done</span>;
+    : locked && !force ? <RoundBtn kind="lock" label={spray ? 'Spray' : 'Fill'} disabled={busy || !isHead} onClick={() => setForce(true)} />
+    : next ? <RoundBtn kind={p.status === 'open' ? 'start' : 'finish'} label={next[1].replace(/^[▶✓]\s*/, '')} disabled={busy}
+        onClick={() => run({ status: next[0], ...(p.holdReason ? { hold_reason: null } : {}) }, `${p.ref}: ${(next[0] === 'filling' && spray ? 'spraying' : NEUT_LABEL[next[0]].toLowerCase())}.${p.holdReason ? ' Hold ended.' : ''}`, undefined,
+          { status: p.status, ...(p.holdReason ? { hold_reason: p.holdReason } : {}) })} />
+    : <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100 text-sm font-bold text-[#08A048]">✓</span>;
   return (
     <>
       {force && locked && <div className="mx-2.5 mt-1 rounded-lg bg-red-50 p-2 text-xs text-red-900">Start {p.ref} {missing.length ? `without ${missing.join(', ')}` : waiting.length ? `before ${waiting.join(', ')}` : `before ${jobs.length} job${jobs.length > 1 ? 's are' : ' is'} finished`}? It is logged as a Section Head override.
         <div className="mt-1.5 flex gap-1.5"><RowBtn tone="navy" disabled={busy} onClick={() => run({ status: 'filling' }, `${p.ref}: ${spray ? 'spraying' : 'filling'} (override).`, () => setForce(false))}>Start anyway</RowBtn><RowBtn tone="ghost" onClick={() => setForce(false)}>Cancel</RowBtn></div></div>}
-      <CRow dot={dot} extra={extra} title={<>{p.ref}{name ? ` · ${name}` : ''}{p.remark ? <span className="font-normal text-slate-500"> · 📝</span> : null}</>} sub={sub} action={action}
+      <CRow dot={dot} extra={extra} title={<>{p.ref}{name ? ` · ${name}` : ''}{p.remark ? <span className="font-normal text-slate-500"> · 📝</span> : null}</>} sub={blind ? sub : <span className="flex items-center gap-2"><PhaseDots p={p} /><span className="min-w-0 truncate">{sub}</span></span>} action={action}
         onTitle={!blind ? () => setSheet(true) : p.items.length === 1 ? () => onItem(p.items[0]) : undefined}
         menu={(close) => (
           <>
@@ -75,10 +88,29 @@ function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], ch
           </>
         )} />
       {err != null && <ErrorBox error={err} />}
-      {sheet && <LoopSheet p={p} points={points} lineup={lineup} iats={iats} steps={steps} checks={checks} canEdit={canEdit} isHead={isHead} trackerId={trackerId} onDone={onDone} now={now} missing={missing} waiting={waiting} action={action} err={err}
+      {sheet && <LoopSheet acts={acts} p={p} points={points} lineup={lineup} iats={iats} steps={steps} checks={checks} canEdit={canEdit} isHead={isHead} trackerId={trackerId} onDone={onDone} now={now} missing={missing} waiting={waiting} action={action} err={err}
         onClose={() => setSheet(false)} onItem={(t) => { setSheet(false); onItem(t); }} onStep={onStep ? (id) => { setSheet(false); onStep(id); } : undefined} />}
     </>
   );
+}
+
+/** The round step button of the rows (as on the equipment list): ▶ starts, ✓ finishes the phase, 🔒 waits. */
+function RoundBtn({ kind, label, disabled, onClick }: { kind: 'start' | 'finish' | 'lock'; label: string; disabled?: boolean; onClick: () => void }) {
+  return (
+    <span className="flex shrink-0 flex-col items-center">
+      <button type="button" disabled={disabled} onClick={onClick} aria-label={label} title={label}
+        className={cx('flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold shadow-sm disabled:opacity-60', kind === 'lock' ? 'bg-slate-200 text-slate-500' : kind === 'finish' ? 'bg-[#08A048] text-white' : 'bg-[#0d2a5e] text-white')}>
+        {kind === 'lock' ? '🔒' : kind === 'finish' ? '✓' : '▶'}
+      </button>
+      <span className="mt-0.5 text-[9.5px] font-semibold text-slate-500">{label}</span>
+    </span>
+  );
+}
+/** A loop's phases as dots (like the equipment stage bar): fill, soak, drain, done (spray: spray, done). */
+function PhaseDots({ p }: { p: TrkPoint }) {
+  const n = p.method === 'spray' ? 2 : 4;
+  const at = p.status === 'done' ? n : p.method === 'spray' ? (p.status === 'open' ? 0 : 1) : Math.max(0, NEUT_FLOW.indexOf(p.status as typeof NEUT_FLOW[number]));
+  return <span className="flex shrink-0 gap-0.5">{Array.from({ length: n }, (_, i) => <span key={i} className={cx('h-1.5 w-3 rounded-full', i < at ? 'bg-[#08A048]' : i === at && p.status !== 'open' ? 'bg-amber-400' : 'bg-slate-200')} />)}</span>;
 }
 
 /** The Section Head adds a field job to a loop (scaffolding and the like): a timed step, before the fill unless said. */
@@ -114,23 +146,37 @@ function JobButton({ c, busy, onStart, onFinish }: { c: TrkPointStep; busy: bool
 }
 
 /** A neutralization opened: its procedure (the guideline step), the steps of the loop with their times, and the next action. */
-function LoopSheet({ p, points, lineup, iats, steps, checks, canEdit, isHead, trackerId, onDone, now, missing, waiting, action, err, onClose, onItem, onStep }: { p: TrkPoint; points: TrkPoint[]; lineup: LuStream[]; iats: TrkIat[]; steps: TrkStep[]; checks: TrkPointStep[]; canEdit: boolean; isHead: boolean; trackerId?: string; onDone: (msg: string, undo?: () => Promise<unknown>) => void; now: number;
-  missing: string[]; waiting: string[]; action: ReactNode; err: unknown; onClose: () => void; onItem: (tag: string) => void; onStep?: (id: string) => void }) {
+function LoopSheet({ acts = [], p, points, lineup, iats, steps, checks, canEdit, isHead, trackerId, onDone, now, missing, waiting, action, err, onClose, onItem, onStep }: { p: TrkPoint; points: TrkPoint[]; lineup: LuStream[]; iats: TrkIat[]; steps: TrkStep[]; checks: TrkPointStep[]; canEdit: boolean; isHead: boolean; trackerId?: string; onDone: (msg: string, undo?: () => Promise<unknown>) => void; now: number;
+  missing: string[]; waiting: string[]; action: ReactNode; err: unknown; acts?: TrkActivity[]; onClose: () => void; onItem: (tag: string) => void; onStep?: (id: string) => void }) {
   const spray = p.method === 'spray';
   const step = p.stepId ? steps.find((x) => x.stepId === p.stepId) : undefined;
   const left = soakLeft(p, now);
   const at = NEUT_FLOW.indexOf(p.status as typeof NEUT_FLOW[number]);
   const dur = (a: string | null, b: string | null) => (a && b ? ` · ${hoursText(Date.parse(b) - Date.parse(a))}` : '');
   type Row = { label: string; done: boolean; now?: boolean; info?: string; check?: TrkPointStep };
-  const [busy, setBusy] = useState<string | null>(null); const [cErr, setCErr] = useState<unknown>(null);
-  const tick = async (c: TrkPointStep) => { setBusy(c.id); setCErr(null); try { await setPointStep(c.id, !c.doneAt); onDone(`${p.ref}: step ${c.seq} ${c.doneAt ? 'undone' : 'done'}.`); } catch (e) { setCErr(e); } finally { setBusy(null); } };
+  const [busy, setBusy] = useState<string | null>(null); const [cErr, setCErr] = useState<unknown>(null); const [hold, setHold] = useState(false);
+  const tick = async (c: TrkPointStep) => { if ((c.linkActs ?? []).length) return time(c, { done_at: c.doneAt ? null : new Date().toISOString() }, `step ${c.seq} ${c.doneAt ? 'undone' : 'done'}`); setBusy(c.id); setCErr(null); try { await setPointStep(c.id, !c.doneAt); onDone(`${p.ref}: step ${c.seq} ${c.doneAt ? 'undone' : 'done'}.`); } catch (e) { setCErr(e); } finally { setBusy(null); } };
   const stepInfo = (c: TrkPointStep) => c.doneAt ? `${c.startAt ? `${when(c.startAt)} → ` : ''}${when(c.doneAt)}${dur(c.startAt, c.doneAt)}${c.doneBy ? ` · ${c.doneBy}` : ''}`
     : c.startAt ? `started ${when(c.startAt)} · ${hoursText(now - Date.parse(c.startAt))} so far${c.startBy ? ` · ${c.startBy}` : ''}` : undefined;
   const sop = (ph: TrkPointStep['phase']): Row[] => checks.filter((c) => c.phase === ph).map((c) => ({ label: c.text, done: !!c.doneAt, now: c.kind === 'step' && !!c.startAt && !c.doneAt,
     info: c.kind === 'step' ? stepInfo(c) : c.doneAt ? `${when(c.doneAt)}${c.doneBy ? ` · ${c.doneBy}` : ''}` : undefined, check: c }));
   const time = async (c: TrkPointStep, patch: Parameters<typeof setPointStepTime>[1], msg: string) => { setBusy(c.id); setCErr(null);
-    const back = { start_at: c.startAt ?? null, done_at: c.doneAt ?? null };
-    try { await setPointStepTime(c.id, patch); onDone(`${p.ref}: ${msg}`, () => setPointStepTime(c.id, back)); } catch (e) { setCErr(e); } finally { setBusy(null); } };
+    try {
+      const la = acts.filter((a) => (c.linkActs ?? []).includes(a.id));
+      if (la.length) {
+        // the same work as the equipment steps: the update goes to them (one record, both views)
+        const before = la.map((a) => ({ id: a.id, actual_start: a.actualStart ?? null, actual_finish: a.actualFinish ?? null }));
+        const at = new Date().toISOString();
+        for (const a of la) {
+          if (patch.done_at !== undefined) await setActivity(a.id, patch.done_at ? (a.actualFinish ? {} : { actual_finish: at, ...(a.actualStart ? {} : { actual_start: at }) }) : { actual_finish: null });
+          else if (patch.start_at !== undefined) await setActivity(a.id, patch.start_at ? (a.actualStart ? {} : { actual_start: at }) : { actual_start: null, actual_finish: null });
+        }
+        onDone(`${p.ref}: ${msg} (${[...new Set(la.map((a) => a.key))].join(', ')})`, async () => { for (const b of before) await setActivity(b.id, { actual_start: b.actual_start, actual_finish: b.actual_finish }); });
+      } else {
+        const back = { start_at: c.startAt ?? null, done_at: c.doneAt ?? null };
+        await setPointStepTime(c.id, patch); onDone(`${p.ref}: ${msg}`, () => setPointStepTime(c.id, back));
+      }
+    } catch (e) { setCErr(e); } finally { setBusy(null); } };
   const rows: Row[] = [
     ...(p.requires ?? []).map((r) => { const b = points.find((x) => x.kind === 'blind' && x.ref === r); const ok = !missing.includes(r);
       return { label: `Blind ${r}${b?.name ? ` · ${b.name}` : ''}`, done: ok, info: ok ? (b?.inAt ? `in ${when(b.inAt)}` : 'in') : 'not in yet' }; }),
@@ -178,6 +224,7 @@ function LoopSheet({ p, points, lineup, iats, steps, checks, canEdit, isHead, tr
                 : <span className={cx('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold', x.done ? 'bg-[#08A048] text-white' : x.now ? 'bg-amber-400 text-white' : 'bg-slate-200 text-slate-500')}>{x.done ? '✓' : i + 1}</span>}
               <span className="min-w-0 flex-1"><span className={cx('block', x.check ? 'text-[12.5px] font-medium' : 'font-semibold', x.done ? 'text-slate-900' : x.now ? 'text-amber-900' : 'text-slate-600')}>{x.check?.crane && <span className={cx('mr-1 rounded px-1 text-[10px] font-bold', x.done ? 'bg-slate-200 text-slate-600' : 'bg-[#E02028] text-white')}>🏗 CRANE · CRITICAL</span>}{x.label}{x.now ? ' · now' : ''}</span>
                 {x.info && <span className="block text-[11.5px] text-slate-500">{x.info}</span>}
+                {(x.check?.linkActs ?? []).length > 0 && <span className="block text-[11px] font-semibold text-[#0850A0]">= {acts.filter((a) => x.check!.linkActs!.includes(a.id)).map((a) => `${a.key.replace('-12-', '-')}: ${a.activity}${a.actualFinish ? ' ✓' : a.actualStart ? ' ▶' : ''}`).join(' · ')}</span>}
                 {x.check?.kind === 'step' && canEdit && (x.check.startAt || x.check.doneAt) && <button type="button" disabled={busy === x.check.id} className="text-[11px] font-semibold text-slate-400"
                   onClick={() => time(x.check!, x.check!.doneAt ? { done_at: null } : { start_at: null }, `step ${x.check!.seq} ${x.check!.doneAt ? 'finish' : 'start'} undone.`)}>↶ undo {x.check.doneAt ? 'finish' : 'start'}</button>}</span>
             </li>)}
@@ -187,7 +234,10 @@ function LoopSheet({ p, points, lineup, iats, steps, checks, canEdit, isHead, tr
         {isHead && trackerId && <AddJob onAdd={(text, crane, after) => { const seqs = checks.map((c) => c.seq);
           return addPointStep({ tracker_id: trackerId, point_id: p.id, seq: after ? Math.max(0, ...seqs) + 1 : Math.min(1, ...seqs) - 1, phase: after ? 'after' : 'before', text, kind: 'step', crane }).then(() => onDone(`${p.ref}: ${text} added.`)); }} />}
         {cErr != null && <ErrorBox error={cErr} />}
-        {action && <div className="flex justify-end">{action}</div>}
+        {p.holdReason && <div className="flex items-center gap-2 rounded-lg bg-[#FFC7CE] px-2.5 py-1.5 text-sm text-red-900"><span className="min-w-0 flex-1">⏸ On hold: {p.holdReason}</span>
+          {canEdit && <button type="button" onClick={async () => { const was = p.holdReason!; try { await setPoint(p.id, { hold_reason: null }); onDone(`${p.ref}: resumed.`, () => setPoint(p.id, { hold_reason: was })); } catch (e) { setCErr(e); } }} className="shrink-0 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-[#0d2a5e] ring-1 ring-red-200">▶ Resume</button>}</div>}
+        {action && <div className="flex items-center justify-end gap-2">{canEdit && !p.holdReason && !pointComplete(p) && !hold && <button type="button" onClick={() => setHold(true)} className="text-xs font-semibold text-slate-500">⏸ Hold</button>}{action}</div>}
+        {hold && <PendingForm initial={null} busy={false} onSave={async (r) => { try { await setPoint(p.id, { hold_reason: r }); setHold(false); onDone(`${p.ref}: on hold.`); } catch (e) { setCErr(e); } }} />}
         {err != null && <ErrorBox error={err} />}
         {p.items.length > 0 && <section>
           <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Items{(p.partOf ?? []).length ? ` · part of ${p.partOf!.join(', ')}` : ''}</h3>
