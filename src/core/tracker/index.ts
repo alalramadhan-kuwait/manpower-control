@@ -26,7 +26,9 @@ export interface TrkIat { id: string; tag: string; iatNo: string; jobText: strin
   wo?: string | null; line?: string | null; sheetStatus?: string | null; remark?: string | null;
   finding?: string | null; recommendation?: string | null; lineClass?: string | null; material?: string | null; checks?: Record<string, string>; painting?: Record<string, string>; actionBy?: string | null;
   /** ticked by a person: Operations action needed, handover needed */
-  opsAction?: boolean; hoRequired?: boolean }
+  opsAction?: boolean; hoRequired?: boolean;
+  /** no action from Operations · spool drop only (no handover procedure, no blind list) */
+  opsNone?: boolean; spoolOnly?: boolean }
 export interface TrkActivity {
   id: string; activityId: string; group: string | null; key: string; activity: string; durationH: number | null; start: string | null; finish: string | null; stage: number | null; tracked: boolean;
   /** the mechanical activity as it went (kept for future shutdowns) */

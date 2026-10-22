@@ -133,7 +133,8 @@ export function EquipSheet({ allIats = [], lineup = [], lineupEq = [], tags = []
             <span className="text-xs font-semibold text-[#0850A0]">Open ›</span>
           </button>
         )}
-        <Field label={`IAT · ${rel.filter((x) => x.status === 'open').length} open${rel.some((x) => x.status === 'open' && x.opsAction) ? ` · ${rel.filter((x) => x.status === 'open' && x.opsAction).length} need Operations` : ''}`}>
+        <section>
+          <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">{`IAT · ${rel.filter((x) => x.status === 'open').length} open${rel.some((x) => x.status === 'open' && x.opsAction) ? ` · ${rel.filter((x) => x.status === 'open' && x.opsAction).length} need Operations` : ''}`}</h3>
           <div className="space-y-1.5">
             {rel.filter((x) => x.status === 'open').map((i) => <div key={i.id} className="rounded-lg bg-[#FFF4CC] px-2.5 py-1.5 text-[12.5px] ring-1 ring-amber-200">
               <button type="button" onClick={() => setIatOpen(i)} className="flex w-full items-baseline gap-1.5 text-left"><b>{i.iatNo}</b><span className="min-w-0 flex-1 truncate">{i.jobText}</span>
@@ -150,7 +151,7 @@ export function EquipSheet({ allIats = [], lineup = [], lineupEq = [], tags = []
               <Button className="w-full" disabled={busy || !iatNo.trim()} onClick={() => run(() => addIat(trackerId, { tag: e.tag, iatNo: iatNo.trim(), jobText: job.trim(), discipline: disc.trim() }), `${e.tag}: IAT ${iatNo.trim()} open.`)}>Add IAT</Button>
             </div>}
           </div>
-        </Field>
+        </section>
         <Field label={`Stage · ${STAGES[v.stage]}`}>
           <div className="space-y-1.5">
             <StageBar stage={v.stage} />

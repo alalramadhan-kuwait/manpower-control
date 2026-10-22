@@ -32,8 +32,7 @@ export function IatsTab({ iats, tags, lineup = [], lineupEq = [], points = [], c
         <span className="mt-1 flex flex-wrap gap-1">{iatChecks(i).map((c) => <span key={c.key} className={cx('rounded px-1.5 text-[10.5px] font-bold', c.optional ? 'border border-dashed border-slate-300 text-slate-500' : 'bg-slate-100 text-slate-600')}>{c.label}{c.optional ? ' if req.' : ''}</span>)}
           {i.painting?.ref && <span className="rounded bg-slate-100 px-1.5 text-[10.5px] font-bold text-slate-600">Painting IAT {i.painting.ref}</span>}
           {i.material && <span className="rounded bg-slate-100 px-1.5 text-[10.5px] font-bold text-slate-600">Material</span>}
-          {i.opsAction && <span className="rounded bg-[#D6E6F5] px-1.5 text-[10.5px] font-bold text-[#004080]">✓ Operations action</span>}
-          {i.hoRequired && <span className="rounded bg-[#D6E6F5] px-1.5 text-[10.5px] font-bold text-[#004080]">✓ Handover</span>}</span>
+          {tickChips(i)}</span>
       </button>); };
   if (!iats.length) return <p className="py-6 text-center text-sm text-slate-500">No IATs yet: they come from the daily IAT tracking sheet.</p>;
   return (
@@ -87,19 +86,35 @@ export function IatDetail({ i, items, lineup, lineupEq, points, canEdit = false,
   );
 }
 
-/** The two Operations ticks of an IAT, set by a person: Operations action needed, handover needed (logged). */
+type Tick = 'ops_action' | 'ho_required' | 'ops_none' | 'spool_only';
+const TICKS: { k: Tick; label: string; on: string }[] = [
+  { k: 'ops_none', label: 'No action from Operations', on: 'bg-green-100 text-green-800 ring-green-300' },
+  { k: 'spool_only', label: 'Spool drop only', on: 'bg-amber-100 text-amber-900 ring-amber-300' },
+  { k: 'ops_action', label: 'Operations action', on: 'bg-[#D6E6F5] text-[#004080] ring-[#9DC3E6]' },
+  { k: 'ho_required', label: 'Handover needed', on: 'bg-[#D6E6F5] text-[#004080] ring-[#9DC3E6]' },
+];
+// a tick that rules others out: none clears the rest, spool only means no handover, an action or handover clears none
+const CLEARS: Record<Tick, Tick[]> = { ops_none: ['ops_action', 'ho_required', 'spool_only'], spool_only: ['ops_none', 'ho_required'], ops_action: ['ops_none'], ho_required: ['ops_none', 'spool_only'] };
+const val = (i: TrkIat, k: Tick) => !!(k === 'ops_action' ? i.opsAction : k === 'ho_required' ? i.hoRequired : k === 'ops_none' ? i.opsNone : i.spoolOnly);
+/** The ticks of an IAT as chips (for the lists): only those ticked. */
+export const tickChips = (i: TrkIat) => TICKS.filter((t) => val(i, t.k)).map((t) => <span key={t.k} className={cx('rounded px-1.5 text-[10.5px] font-bold ring-1', t.on)}>✓ {t.label}</span>);
+
+/** The Operations ticks of an IAT, set by a person (logged): no action, spool drop only, Operations action, handover. */
 export function OpsTicks({ i, canEdit, onDone, compact = false }: { i: TrkIat; canEdit: boolean; onDone?: (msg: string) => void; compact?: boolean }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   // shown at once, put back if the save fails
-  const [now, setNow] = useState<{ ops_action?: boolean; ho_required?: boolean }>({});
-  const flip = async (k: 'ops_action' | 'ho_required', v: boolean, label: string) => { setBusy(true); setErr(null); setNow((x) => ({ ...x, [k]: v }));
-    try { await setIatTicks(i.id, { [k]: v }); onDone?.(`IAT ${i.iatNo}: ${label} ${v ? 'ticked' : 'cleared'}.`); } catch (e) { setErr(e); setNow((x) => ({ ...x, [k]: !v })); } finally { setBusy(false); } };
-  const box = (k: 'ops_action' | 'ho_required', on: boolean, label: string) => (
-    <label className={cx('flex items-center gap-1.5', compact ? 'text-[11.5px]' : 'text-[12.5px]', on ? 'font-semibold text-[#004080]' : 'text-slate-600')}>
-      <input type="checkbox" className="h-4 w-4" checked={on} disabled={!canEdit || busy} onChange={(e) => flip(k, e.target.checked, label)} />{label}</label>);
+  const [now, setNow] = useState<Partial<Record<Tick, boolean>>>({});
+  const cur = (k: Tick) => now[k] ?? val(i, k);
+  const flip = async (k: Tick, v: boolean, label: string) => {
+    const patch: Partial<Record<Tick, boolean>> = { [k]: v }; if (v) for (const c of CLEARS[k]) if (cur(c)) patch[c] = false;
+    const back = Object.fromEntries(Object.keys(patch).map((x) => [x, cur(x as Tick)]));
+    setBusy(true); setErr(null); setNow((x) => ({ ...x, ...patch }));
+    try { await setIatTicks(i.id, patch); onDone?.(`IAT ${i.iatNo}: ${label} ${v ? 'ticked' : 'cleared'}.`); } catch (e) { setErr(e); setNow((x) => ({ ...x, ...back })); } finally { setBusy(false); } };
   return (
-    <div className={cx('flex flex-wrap gap-x-4 gap-y-1', !compact && 'rounded-lg bg-slate-50 px-2.5 py-2')}>
-      {box('ops_action', now.ops_action ?? !!i.opsAction, 'Operations action')}{box('ho_required', now.ho_required ?? !!i.hoRequired, 'Handover needed')}
+    <div className={cx('flex flex-wrap gap-1.5', !compact && 'rounded-lg bg-slate-50 px-2 py-2')}>
+      {TICKS.map((t) => { const on = cur(t.k);
+        return <label key={t.k} className={cx('flex items-center gap-1.5 rounded-full px-2 py-1 ring-1', compact ? 'text-[11px]' : 'text-[12px]', on ? `font-semibold ${t.on}` : 'bg-white text-slate-600 ring-slate-200')}>
+          <input type="checkbox" className="h-3.5 w-3.5" checked={on} disabled={!canEdit || busy} onChange={(e) => flip(t.k, e.target.checked, t.label)} />{t.label}</label>; })}
       {err != null && <ErrorBox error={err} />}
     </div>
   );
