@@ -8,6 +8,10 @@ import { BottomSheet, Button, ErrorBox, cx } from '@/ui/components';
 import { CRow, IsoChip, MenuBtn, RowBtn, RowList, Tile } from './ui';
 import { PendingForm } from './TrackerSheets';
 
+/** The SOP lines the Section Head follows: the timed field jobs (crane, blinds, elbows, scaffolding) and the lab pH.
+ *  The others (hoses, valves closed, draining, clear soda ash at the vents) are the procedure, shown for reference. */
+export const followed = (c: TrkPointStep) => c.kind === 'step' || /\bpH\b/.test(c.text);
+
 /** A field step linked to equipment work steps (the same physical work) takes their state: started when one is,
  *  done when all are; otherwise its own. */
 const linked = (c: TrkPointStep, acts: TrkActivity[]): TrkPointStep => {
@@ -57,7 +61,7 @@ function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], ch
     {p.items.map((t) => <IsoChip key={t} state={loopState}>{t}</IsoChip>)}
     {checks.some((c) => c.kind === 'step' && c.startAt && !c.doneAt) && <span className="rounded bg-[#004080] px-1 text-[10.5px] font-bold text-white">▶ {checks.filter((c) => c.kind === 'step' && c.startAt && !c.doneAt).length} running</span>}
     {checks.some((c) => c.crane && !c.doneAt) && <span className="rounded bg-[#E02028] px-1 text-[10.5px] font-bold text-white">🏗 Crane</span>}
-    {checks.length > 0 && <span className={cx('rounded px-1 text-[10.5px] font-bold', checks.every((c) => c.doneAt) ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-600')}>📋 {checks.filter((c) => c.doneAt).length}/{checks.length}</span>}
+    {checks.some(followed) && <span className={cx('rounded px-1 text-[10.5px] font-bold', checks.filter(followed).every((c) => c.doneAt) ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-600')}>📋 {checks.filter(followed).filter((c) => c.doneAt).length}/{checks.filter(followed).length}</span>}
     {(p.partOf ?? []).length > 0 && <span className="text-[10.5px] font-semibold text-slate-500">part of {p.partOf!.map((t) => t.replace('-12-', '-')).join(', ')} · on its own</span>}
   </>;
   const action = !canEdit ? null
@@ -154,11 +158,11 @@ function LoopSheet({ acts = [], p, points, lineup, iats, steps, checks, canEdit,
   const at = NEUT_FLOW.indexOf(p.status as typeof NEUT_FLOW[number]);
   const dur = (a: string | null, b: string | null) => (a && b ? ` · ${hoursText(Date.parse(b) - Date.parse(a))}` : '');
   type Row = { label: string; done: boolean; now?: boolean; info?: string; check?: TrkPointStep };
-  const [busy, setBusy] = useState<string | null>(null); const [cErr, setCErr] = useState<unknown>(null); const [hold, setHold] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null); const [cErr, setCErr] = useState<unknown>(null); const [hold, setHold] = useState(false); const [ref, setRef] = useState(false);
   const tick = async (c: TrkPointStep) => { if ((c.linkActs ?? []).length) return time(c, { done_at: c.doneAt ? null : new Date().toISOString() }, `step ${c.seq} ${c.doneAt ? 'undone' : 'done'}`); setBusy(c.id); setCErr(null); try { await setPointStep(c.id, !c.doneAt); onDone(`${p.ref}: step ${c.seq} ${c.doneAt ? 'undone' : 'done'}.`); } catch (e) { setCErr(e); } finally { setBusy(null); } };
   const stepInfo = (c: TrkPointStep) => c.doneAt ? `${c.startAt ? `${when(c.startAt)} → ` : ''}${when(c.doneAt)}${dur(c.startAt, c.doneAt)}${c.doneBy ? ` · ${c.doneBy}` : ''}`
     : c.startAt ? `started ${when(c.startAt)} · ${hoursText(now - Date.parse(c.startAt))} so far${c.startBy ? ` · ${c.startBy}` : ''}` : undefined;
-  const sop = (ph: TrkPointStep['phase']): Row[] => checks.filter((c) => c.phase === ph).map((c) => ({ label: c.text, done: !!c.doneAt, now: c.kind === 'step' && !!c.startAt && !c.doneAt,
+  const sop = (ph: TrkPointStep['phase']): Row[] => checks.filter((c) => c.phase === ph && followed(c)).map((c) => ({ label: c.text, done: !!c.doneAt, now: c.kind === 'step' && !!c.startAt && !c.doneAt,
     info: c.kind === 'step' ? stepInfo(c) : c.doneAt ? `${when(c.doneAt)}${c.doneBy ? ` · ${c.doneBy}` : ''}` : undefined, check: c }));
   const time = async (c: TrkPointStep, patch: Parameters<typeof setPointStepTime>[1], msg: string) => { setBusy(c.id); setCErr(null);
     try {
@@ -203,12 +207,16 @@ function LoopSheet({ acts = [], p, points, lineup, iats, steps, checks, canEdit,
           <span className="text-slate-500">{doneN}/{total} steps{p.beforeHo ? ' · needed for the handover' : ' · after the handover'}</span>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-slate-200"><div className="h-full bg-[#08A048]" style={{ width: `${(doneN / Math.max(total, 1)) * 100}%` }} /></div>
-        {(step || (p.detail && p.detail !== p.name)) && <section className="rounded-xl bg-slate-50 p-2.5">
+        {(step || (p.detail && p.detail !== p.name) || checks.some((c) => !followed(c))) && <section className="rounded-xl bg-slate-50 p-2.5">
           <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Procedure</h3>
           {step && <p className="mt-0.5 font-semibold text-slate-900">{step.stepId} · {step.shortName}{step.procedure ? <span className="font-normal text-slate-500"> · {step.procedure}</span> : null}</p>}
           {step?.text && <p className="mt-0.5 whitespace-pre-line text-[12.5px] text-slate-700">{step.text}</p>}
           {p.detail && p.detail !== p.name && p.detail !== step?.text && <p className="mt-0.5 text-[12.5px] text-slate-700">{p.detail}</p>}
           {step && onStep && <button type="button" onClick={() => onStep(step.stepId)} className="mt-1 text-xs font-semibold text-[#0850A0]">Open step {step.stepId} ›</button>}
+          {checks.some((c) => !followed(c)) && <>
+            <button type="button" onClick={() => setRef((x) => !x)} className="mt-1 block text-xs font-semibold text-slate-600">{ref ? '▾' : '▸'} Field procedure ({checks.filter((c) => !followed(c)).length} line{checks.filter((c) => !followed(c)).length > 1 ? "s" : ""}, reference)</button>
+            {ref && <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-[12px] text-slate-600">{checks.filter((c) => !followed(c)).map((c) => <li key={c.id}>{c.phase === 'fill' ? <i>While filling: </i> : c.phase === 'after' ? <i>After: </i> : null}{c.text}</li>)}</ol>}
+          </>}
         </section>}
         <section>
           <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Steps</h3>
@@ -230,7 +238,7 @@ function LoopSheet({ acts = [], p, points, lineup, iats, steps, checks, canEdit,
             </li>)}
           </ol>
         </section>
-        {checks.length > 0 && <p className="-mt-2 text-[10.5px] text-slate-400">Field steps from {checks.find((c) => c.source && c.source !== 'Added on site')?.source ?? 'site'}. ▶ starts and ✓ finishes a job (crane, blinds, elbows), the boxes are ticks.</p>}
+        {checks.length > 0 && <p className="-mt-2 text-[10.5px] text-slate-400">Jobs from {checks.find((c) => c.source && c.source !== 'Added on site')?.source ?? 'site'}: ▶ starts, ✓ finishes. The rest of the procedure is under Procedure, for reference.</p>}
         {isHead && trackerId && <AddJob onAdd={(text, crane, after) => { const seqs = checks.map((c) => c.seq);
           return addPointStep({ tracker_id: trackerId, point_id: p.id, seq: after ? Math.max(0, ...seqs) + 1 : Math.min(1, ...seqs) - 1, phase: after ? 'after' : 'before', text, kind: 'step', crane }).then(() => onDone(`${p.ref}: ${text} added.`)); }} />}
         {cErr != null && <ErrorBox error={cErr} />}
