@@ -2,7 +2,7 @@
 // once here. The database moves the rest: the items (handed over when all their blinds are in and the neutralization
 // before handover is done), the guideline step of each row and the soda-ash bar-chart lines.
 import { useEffect, useState, type ReactNode } from 'react';
-import { withReactor, NEUT_FLOW, NEUT_LABEL, neutLabel, equipBlind, loopLines, missingBlinds, waitingSteps, type LuStream, type TrkIat, hoursText, kwDay, kwTime, pointComplete, soakLeft, type PointStatus, type TrkActivity, type TrkPoint, type TrkPointStep, type TrkStep } from '@/core/tracker';
+import { linkedStep, withReactor, NEUT_FLOW, NEUT_LABEL, neutLabel, equipBlind, loopLines, missingBlinds, waitingSteps, type LuStream, type TrkIat, hoursText, kwDay, kwTime, pointComplete, soakLeft, type PointStatus, type TrkActivity, type TrkPoint, type TrkPointStep, type TrkStep } from '@/core/tracker';
 import { addPointStep, setActivity, setPoint, setPointStep, setPointStepTime } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, cx } from '@/ui/components';
 import { CRow, IsoChip, MenuBtn, RowBtn, RowList, Tile } from './ui';
@@ -11,15 +11,6 @@ import { PendingForm } from './TrackerSheets';
 /** The SOP lines the Section Head follows: the timed field jobs (crane, blinds, elbows, scaffolding) and the lab pH.
  *  The others (hoses, valves closed, draining, clear soda ash at the vents) are the procedure, shown for reference. */
 export const followed = (c: TrkPointStep) => c.kind === 'step' || /\bpH\b/.test(c.text);
-
-/** A field step linked to equipment work steps (the same physical work) takes their state: started when one is,
- *  done when all are; otherwise its own. */
-const linked = (c: TrkPointStep, acts: TrkActivity[]): TrkPointStep => {
-  const la = acts.filter((a) => (c.linkActs ?? []).includes(a.id)); if (!la.length) return c;
-  const st = la.map((a) => a.actualStart).filter(Boolean).sort()[0] ?? null;
-  const fin = la.every((a) => a.actualFinish) ? la.map((a) => a.actualFinish!).sort().slice(-1)[0] : null;
-  return { ...c, startAt: st, doneAt: fin, doneBy: fin ? la.find((a) => a.actualFinish === fin)?.updatedBy ?? null : null, startBy: null };
-};
 
 const when = (iso: string | null) => (iso ? `${kwDay(iso)} ${kwTime(iso)}` : '');
 const BLIND_LABEL: Record<string, string> = { open: 'Not blinded', in: 'Blinded', out: 'Deblinded' };
@@ -30,7 +21,7 @@ const NEXT: Record<string, [PointStatus, string] | undefined> = {
 
 function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], checks: raw = [], trackerId, isHead, now, canEdit, onItem, onStep, onDone }: { p: TrkPoint; points: TrkPoint[]; acts?: TrkActivity[]; lineup?: LuStream[]; iats?: TrkIat[]; steps?: TrkStep[]; checks?: TrkPointStep[]; trackerId?: string; isHead: boolean; now: number; canEdit: boolean; onItem: (tag: string) => void; onStep?: (id: string) => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   const [force, setForce] = useState(false); const [sheet, setSheet] = useState(false);
-  const checks = raw.map((c) => linked(c, acts));
+  const checks = raw.map((c) => linkedStep(c, acts));
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [note, setNote] = useState(p.remark ?? '');
   useEffect(() => { setBusy(false); }, [p.status, p.holdReason, p.remark, p.inAt, p.outAt]);

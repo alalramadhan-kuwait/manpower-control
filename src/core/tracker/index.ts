@@ -126,6 +126,14 @@ export function blindLink(a: Pick<TrkActivity, 'activity' | 'stage'>): 6 | null 
   return /blind/i.test(a.activity) && a.stage === 6 ? 6 : null;
 }
 /** An item's blind line installed by M & I (stage 1 in the bar chart; not the operations steps that mention blinds). */
+/** A field step linked to work steps (the same physical work, e.g. a control valve dropped in two procedures) takes
+ *  their state: started when one is, done when all are; otherwise its own. */
+export function linkedStep(c: TrkPointStep, acts: TrkActivity[]): TrkPointStep {
+  const la = acts.filter((a) => (c.linkActs ?? []).includes(a.id)); if (!la.length) return c;
+  const st = la.map((a) => a.actualStart).filter(Boolean).sort()[0] ?? null;
+  const fin = la.every((a) => a.actualFinish) ? la.map((a) => a.actualFinish!).sort().slice(-1)[0] : null;
+  return { ...c, startAt: st, doneAt: fin, doneBy: fin ? la.find((a) => a.actualFinish === fin)?.updatedBy ?? null : null, startBy: null };
+}
 /** Valves and PSVs taken out with their own steps (control valves, check valves, PSVs): not in the blind list. */
 export const VALVE_KEY = /^12-(PSV|VC|HV|LV|FV|TV|PV|PCV|FCV|XV)-/i;
 export const equipBlind = (a: Pick<TrkActivity, 'activity' | 'stage' | 'tracked' | 'group' | 'key'>) => a.tracked && a.stage === 1 && a.group !== 'Operations' && !VALVE_KEY.test(a.key) && /blind/i.test(a.activity) && !/deblind|de-blind|remove blind/i.test(a.activity);
@@ -504,7 +512,7 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
     loops: (d.points ?? []).filter((p) => p.kind === 'neut' && !withReactor(p) && (p.stepId || (!p.items.includes(p.ref) && (p.method !== 'spray' || p.status !== 'open'))) && (!pointComplete(p) || (!!p.doneAt && ms(p.doneAt) >= sh.from))).sort((a, b) => a.sort - b.sort).map((p) => {
       const m = p.status === 'open' ? missingBlinds(p, d.points) : []; const left = soakLeft(p, now); const done = pointComplete(p);
       // its field jobs (crane lifts, blinding): those running, and those finished this shift
-      const jobs = (d.pointSteps ?? []).filter((c) => c.pointId === p.id && c.kind === 'step');
+      const jobs = (d.pointSteps ?? []).filter((c) => c.pointId === p.id && c.kind === 'step').map((c) => linkedStep(c, d.activities));
       const jobName = (c: TrkPointStep) => `${c.crane ? '🏗 ' : ''}${c.text.split(/,|:/)[0].replace(/\s*\(.*?\)/g, '').trim()}`;
       const jobLines = done ? [] : [...jobs.filter((c) => c.startAt && !c.doneAt).map((c) => `${jobName(c)} I/P (${hoursText(now - ms(c.startAt!))})`),
         ...jobs.filter((c) => c.doneAt && ms(c.doneAt) >= sh.from && ms(c.doneAt) < sh.to).map((c) => `${jobName(c)} ✓`)];

@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { equipBlind, miWeighted, neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { equipBlind, linkedStep, miWeighted, neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -430,5 +430,16 @@ describe('equipment blind list', () => {
   it('keeps equipment blinds, leaves out control valves, check valves and PSVs', () => {
     expect(['V-12-209', 'C-12-201-TK-03', '12-HV-0534', '12-LV-0553B', '12-VC-0105', '12-PSV-0519'].map((k) => equipBlind(a(k)))).toEqual([true, true, false, false, false, false]);
     expect(equipBlind(a('V-12-209', 'Deblind'))).toBe(false);
+  });
+});
+
+describe('a control valve dropped in two procedures', () => {
+  const act = (id: string, s: string | null, f: string | null) => ({ id, activityId: id, group: 'Operations', key: id, activity: id, durationH: null, start: null, finish: null, stage: null, tracked: true, actualStart: s, actualFinish: f }) as never;
+  const step = (linkActs: string[]) => ({ id: 's', pointId: 'p', seq: 1, phase: 'before', text: '', source: null, doneAt: null, doneBy: null, crane: true, kind: 'step', startAt: null, startBy: null, linkActs }) as never;
+  it('one record shows in every step: done when all its valves are, running when one is', () => {
+    const acts = [act('FV-548', kw('2026-10-22 09:04'), kw('2026-10-22 13:49')), act('FV-1427', kw('2026-10-22 09:04'), null), act('FV-1426', kw('2026-10-22 09:04'), kw('2026-10-22 13:49'))];
+    expect(linkedStep(step(['FV-1426']), acts).doneAt).toBe(kw('2026-10-22 13:49'));
+    const both = linkedStep(step(['FV-548', 'FV-1427']), acts);
+    expect([both.startAt, both.doneAt]).toEqual([kw('2026-10-22 09:04'), null]);
   });
 });
