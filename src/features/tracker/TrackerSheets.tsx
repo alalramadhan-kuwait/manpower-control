@@ -1,12 +1,13 @@
 // The two input sheets of the controllers: a guideline step (Start · Done · Pending) and an equipment item (stage,
 // blinded = handed over, IATs, pending). Big buttons, the time and the name are stamped by the database.
 import { useState } from 'react';
-import { PENDING_REASONS, neutLabel, neutName, partsOf, waitingSteps, isoState, missingBlinds, STAGES, kwDay, kwTime, pointComplete, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint, type TrkEngine, type TrkSettings } from '@/core/tracker';
+import { iatsOf, type LuEquip, type LuStream, type TrkIat, PENDING_REASONS, neutLabel, neutName, partsOf, waitingSteps, isoState, missingBlinds, STAGES, kwDay, kwTime, pointComplete, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint, type TrkEngine, type TrkSettings } from '@/core/tracker';
 import { EquipActivities, StepTimes } from './Timing';
 import { DrumPanel, ItemUpdate } from './Drums';
 import { addIat, closeIat, setEquipment, setStep } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, Field, cx } from '@/ui/components';
 import { FlagChip, IsoChip, PlanChip, StageBar, StateChip } from './ui';
+import { IatDetail, OpsTicks } from './Iats';
 
 const when = (iso: string | null) => (iso ? `${kwDay(iso)} ${kwTime(iso)}` : '');
 
@@ -86,7 +87,7 @@ export function StepSheet({ v, isHead, canEdit, points = [], items = [], onIsola
 // a spray that waits for work steps, in a few words (the reactor body spray waits for the catalyst dumping)
 const waitAfter = (steps: string[]) => (!steps.length ? [] : [steps.every((x) => /dump/i.test(x)) ? 'after dumping' : steps.length === 1 ? `after ${steps[0]}` : `after ${steps.length} steps`]);
 
-export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso = null, points = [], engine, settings = {}, me = null, twins = [], onTwin, onIsolation, onNeut, onClose, onDone }: { twins?: string[]; onTwin?: (tag: string) => void; v: EquipView; trackerId: string; canEdit: boolean; isHead: boolean; activities: TrkActivity[]; now: number; iso?: Isolation | null; points?: TrkPoint[]; engine?: TrkEngine; settings?: TrkSettings; me?: string | null; onIsolation?: () => void; onNeut?: () => void; onClose: () => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
+export function EquipSheet({ allIats = [], lineup = [], lineupEq = [], tags = [], v, trackerId, canEdit, isHead, activities, now, iso = null, points = [], engine, settings = {}, me = null, twins = [], onTwin, onIsolation, onNeut, onClose, onDone }: { allIats?: TrkIat[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; tags?: string[]; twins?: string[]; onTwin?: (tag: string) => void; v: EquipView; trackerId: string; canEdit: boolean; isHead: boolean; activities: TrkActivity[]; now: number; iso?: Isolation | null; points?: TrkPoint[]; engine?: TrkEngine; settings?: TrkSettings; me?: string | null; onIsolation?: () => void; onNeut?: () => void; onClose: () => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   // the neutralization the soda-ash lines stand for: the item's own soda ash first, else its loop
   // the item's bar-chart steps by stage (what moves the stage), the field-detail steps left out
   const stageLines = activities.filter((a) => a.tracked && !a.detail && a.group !== 'Operations' && a.stage !== null);
@@ -98,7 +99,9 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso
   const [pending, setPending] = useState(false); const [iat, setIat] = useState(false); const [details, setDetails] = useState(false); const [fixStage, setFixStage] = useState(false);
   const [iatNo, setIatNo] = useState(''); const [job, setJob] = useState(''); const [disc, setDisc] = useState('');
   async function run(f: () => Promise<void>, msg: string, undo?: () => Promise<unknown>) { setBusy(true); setErr(null); try { await f(); setPending(false); setIat(false); setIatNo(''); setJob(''); setDisc(''); onDone(msg, undo); } catch (x) { setErr(x); } finally { setBusy(false); } }
-  const iats = v.iatsOpen;
+  // its IATs: its own and those on a line to or from it (P&ID lineup)
+  const rel = iatsOf(e.tag, allIats.length ? allIats : v.iatsOpen, lineup);
+  const [iatOpen, setIatOpen] = useState<TrkIat | null>(null);
   return (
     <BottomSheet open onClose={onClose} title={e.tag}>
       <div className="space-y-3">
@@ -130,9 +133,16 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso
             <span className="text-xs font-semibold text-[#0850A0]">Open ›</span>
           </button>
         )}
-        <Field label={`IAT · ${iats.length} open`}>
+        <Field label={`IAT · ${rel.filter((x) => x.status === 'open').length} open${rel.some((x) => x.status === 'open' && x.opsAction) ? ` · ${rel.filter((x) => x.status === 'open' && x.opsAction).length} need Operations` : ''}`}>
           <div className="space-y-1.5">
-            {iats.map((i) => <div key={i.id} className="flex items-center justify-between gap-2 rounded-lg bg-[#FFE699] px-2.5 py-1.5 text-sm"><span><b>{i.iatNo}</b> {i.jobText}{i.sheetStatus ? ` · ${i.sheetStatus}` : i.discipline ? ` · ${i.discipline}` : ''}</span>{canEdit && <Button variant="secondary" className="min-h-8 px-2 text-xs" disabled={busy} onClick={() => run(() => closeIat(i.id), `${i.iatNo} closed.`)}>Close IAT</Button>}</div>)}
+            {rel.filter((x) => x.status === 'open').map((i) => <div key={i.id} className="rounded-lg bg-[#FFF4CC] px-2.5 py-1.5 text-[12.5px] ring-1 ring-amber-200">
+              <button type="button" onClick={() => setIatOpen(i)} className="flex w-full items-baseline gap-1.5 text-left"><b>{i.iatNo}</b><span className="min-w-0 flex-1 truncate">{i.jobText}</span>
+                <span className="shrink-0 text-[11px] font-semibold text-slate-600">{i.sheetStatus ?? 'open'}</span><span className="shrink-0 text-xs font-semibold text-[#0850A0]">›</span></button>
+              {i.tag !== e.tag && <span className="block text-[11px] text-slate-500">on line {i.line ?? i.tag}</span>}
+              <div className="mt-1 flex items-center gap-2"><span className="min-w-0 flex-1"><OpsTicks i={i} canEdit={canEdit} compact onDone={(m) => onDone(m)} /></span>
+                {canEdit && <button type="button" disabled={busy} onClick={() => run(() => closeIat(i.id), `${i.iatNo} closed.`)} className="shrink-0 text-[11px] font-semibold text-slate-500">Close IAT</button>}</div>
+            </div>)}
+            {!rel.some((x) => x.status === 'open') && <p className="text-xs text-slate-500">No open IAT.</p>}
             {canEdit && !iat && <Button variant="secondary" className="w-full" onClick={() => setIat(true)}>+ IAT</Button>}
             {iat && <div className="space-y-1.5 rounded-xl bg-slate-50 p-2 ring-1 ring-slate-200">
               <div className="grid grid-cols-2 gap-1.5"><input className="input" placeholder="IAT no." value={iatNo} onChange={(x) => setIatNo(x.target.value)} /><input className="input" placeholder="Discipline" value={disc} onChange={(x) => setDisc(x.target.value)} /></div>
@@ -155,6 +165,7 @@ export function EquipSheet({ v, trackerId, canEdit, isHead, activities, now, iso
         </Field>
         {canEdit && !e.pendingReason && !pending && <Button variant="secondary" className="w-full" disabled={busy} onClick={() => setPending(true)}>⏸ Hold (with reason)</Button>}
         {pending && <PendingForm initial={e.pendingReason} busy={busy} onSave={(r) => run(() => setEquipment(e.id, { pending_reason: r }), `${e.tag}: on hold.`)} />}
+        {iatOpen && <IatDetail i={allIats.find((x) => x.id === iatOpen.id) ?? iatOpen} items={new Set(tags)} lineup={lineup} lineupEq={lineupEq} points={points} canEdit={canEdit} onDone={(m) => onDone(m)} onItem={() => setIatOpen(null)} onClose={() => setIatOpen(null)} />}
         {err != null && <ErrorBox error={err} />}
         <button type="button" onClick={() => setDetails((x) => !x)} className="text-xs font-semibold text-slate-600">{details ? '▾' : '▸'} Details</button>
         {details && (

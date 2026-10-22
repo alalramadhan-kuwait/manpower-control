@@ -24,7 +24,9 @@ export interface TrkEquipment {
 export interface TrkIat { id: string; tag: string; iatNo: string; jobText: string | null; discipline: string | null; issuedAt: string; status: 'open' | 'closed'; closedAt: string | null;
   /** from the daily IAT tracking sheet: work order, the line it is on, the status as written in the sheet, a remark */
   wo?: string | null; line?: string | null; sheetStatus?: string | null; remark?: string | null;
-  finding?: string | null; recommendation?: string | null; lineClass?: string | null; material?: string | null; checks?: Record<string, string>; painting?: Record<string, string>; actionBy?: string | null }
+  finding?: string | null; recommendation?: string | null; lineClass?: string | null; material?: string | null; checks?: Record<string, string>; painting?: Record<string, string>; actionBy?: string | null;
+  /** ticked by a person: Operations action needed, handover needed */
+  opsAction?: boolean; hoRequired?: boolean }
 export interface TrkActivity {
   id: string; activityId: string; group: string | null; key: string; activity: string; durationH: number | null; start: string | null; finish: string | null; stage: number | null; tracked: boolean;
   /** the mechanical activity as it went (kept for future shutdowns) */
@@ -353,6 +355,10 @@ export function lineOnEquipment(line: string | null | undefined, eqs: LuEquip[] 
 export const lineStreams = (line: string | null | undefined, lu: LuStream[] = []) => (line ? lu.filter((s) => s.lineNos.includes(line)) : []);
 /** The tracker items at either end of a connection. */
 export const streamItems = (s: LuStream, tags: string[]) => tags.filter((t) => sameTag(s.from, t) || sameTag(s.to, t));
+/** The IATs of an item: its own, and those on a line that runs to or from it (P&ID lineup); open first. */
+export const iatsOf = (tag: string, iats: TrkIat[], lu: LuStream[] = []) => iats
+  .filter((i) => i.tag === tag || lineStreams(i.line, lu).some((s) => streamItems(s, [tag]).length > 0))
+  .sort((a, b) => Number(b.status === 'open') - Number(a.status === 'open') || a.iatNo.localeCompare(b.iatNo));
 /** The lineup lines a neutralization loop covers: the connections between two of its equipment (an item named
  *  "R-205 to E-229" counts both ends), the line numbers on them. */
 export function loopLines(p: Pick<TrkPoint, 'items' | 'name'>, lu: LuStream[] = []): { lines: string[]; streams: LuStream[] } {

@@ -3,13 +3,14 @@
 // the whole IAT: where, finding, recommendation, inspection checks, painting IAT, work order and material.
 import { Fragment, useState } from 'react';
 import { iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, streamItems, type LuEquip, type LuStream, type TrkIat, type TrkPoint } from '@/core/tracker';
-import { BottomSheet, cx } from '@/ui/components';
+import { BottomSheet, ErrorBox, cx } from '@/ui/components';
+import { setIatTicks } from '@/data/tracker';
 
 const CLS: Record<string, string> = { 'In progress': 'bg-blue-100 text-blue-800', 'To start': 'bg-amber-100 text-amber-800', 'New IAT': 'bg-slate-100 text-slate-700', Hold: 'bg-red-100 text-red-800', Completed: 'bg-green-100 text-green-800', Cancelled: 'bg-slate-100 text-slate-500' };
 const TILES = ['In progress', 'To start', 'New IAT', 'Completed'] as const;
 type Filter = 'open' | 'items' | 'lines' | 'material' | 'all';
 
-export function IatsTab({ iats, tags, lineup = [], lineupEq = [], points = [], onItem }: { iats: TrkIat[]; tags: string[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; points?: TrkPoint[]; onItem: (tag: string) => void }) {
+export function IatsTab({ iats, tags, lineup = [], lineupEq = [], points = [], canEdit = false, onDone, onItem }: { iats: TrkIat[]; tags: string[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; points?: TrkPoint[]; canEdit?: boolean; onDone?: (msg: string) => void; onItem: (tag: string) => void }) {
   const [q, setQ] = useState(''); const [f, setF] = useState<Filter>('open'); const [done, setDone] = useState(false); const [open, setOpen] = useState<TrkIat | null>(null);
   const items = new Set(tags);
   const onItemTag = (i: TrkIat) => items.has(i.tag);
@@ -30,7 +31,9 @@ export function IatsTab({ iats, tags, lineup = [], lineupEq = [], points = [], o
         <span className="mt-0.5 block truncate text-[11px] text-slate-500">📍 {[w, i.line, i.lineClass].filter(Boolean).join(' · ') || '—'}</span>
         <span className="mt-1 flex flex-wrap gap-1">{iatChecks(i).map((c) => <span key={c.key} className={cx('rounded px-1.5 text-[10.5px] font-bold', c.optional ? 'border border-dashed border-slate-300 text-slate-500' : 'bg-slate-100 text-slate-600')}>{c.label}{c.optional ? ' if req.' : ''}</span>)}
           {i.painting?.ref && <span className="rounded bg-slate-100 px-1.5 text-[10.5px] font-bold text-slate-600">Painting IAT {i.painting.ref}</span>}
-          {i.material && <span className="rounded bg-slate-100 px-1.5 text-[10.5px] font-bold text-slate-600">Material</span>}</span>
+          {i.material && <span className="rounded bg-slate-100 px-1.5 text-[10.5px] font-bold text-slate-600">Material</span>}
+          {i.opsAction && <span className="rounded bg-[#D6E6F5] px-1.5 text-[10.5px] font-bold text-[#004080]">✓ Operations action</span>}
+          {i.hoRequired && <span className="rounded bg-[#D6E6F5] px-1.5 text-[10.5px] font-bold text-[#004080]">✓ Handover</span>}</span>
       </button>); };
   if (!iats.length) return <p className="py-6 text-center text-sm text-slate-500">No IATs yet: they come from the daily IAT tracking sheet.</p>;
   return (
@@ -44,12 +47,12 @@ export function IatsTab({ iats, tags, lineup = [], lineupEq = [], points = [], o
       {closed.length > 0 && <button type="button" onClick={() => setDone((x) => !x)} className="text-sm font-semibold text-[#08A048]">{done ? '▾' : '▸'} ✓ Completed ({closed.length})</button>}
       {done && <div className="space-y-1.5 opacity-80">{closed.map(card)}</div>}
       <p className="text-[11px] text-slate-500">Updated from the daily IAT tracking sheet. Tap an IAT for the full details.</p>
-      {open && <IatDetail i={open} items={items} lineup={lineup} lineupEq={lineupEq} points={points} onItem={(t) => { setOpen(null); onItem(t); }} onClose={() => setOpen(null)} />}
+      {open && <IatDetail i={iats.find((x) => x.id === open.id) ?? open} canEdit={canEdit} onDone={onDone} items={items} lineup={lineup} lineupEq={lineupEq} points={points} onItem={(t) => { setOpen(null); onItem(t); }} onClose={() => setOpen(null)} />}
     </div>
   );
 }
 
-function IatDetail({ i, items, lineup, lineupEq, points, onItem, onClose }: { i: TrkIat; items: Set<string>; lineup: LuStream[]; lineupEq: LuEquip[]; points: TrkPoint[]; onItem: (tag: string) => void; onClose: () => void }) {
+export function IatDetail({ i, items, lineup, lineupEq, points, canEdit = false, onDone, onItem, onClose }: { i: TrkIat; items: Set<string>; lineup: LuStream[]; lineupEq: LuEquip[]; points: TrkPoint[]; canEdit?: boolean; onDone?: (msg: string) => void; onItem: (tag: string) => void; onClose: () => void }) {
   const st = iatStatus(i); const streams = lineStreams(i.line, lineup); const onEq = streams.length ? [] : lineOnEquipment(i.line, lineupEq);
   const ends = [...new Set([...streams.flatMap((s) => streamItems(s, [...items])), ...onEq.map((x) => x.eq.plantTag ?? '').filter((t) => items.has(t)), ...(items.has(i.tag) ? [i.tag] : [])])];
   const loop = points.find((p) => p.kind === 'neut' && i.line && loopLines(p, lineup).lines.includes(i.line));
@@ -59,6 +62,7 @@ function IatDetail({ i, items, lineup, lineupEq, points, onItem, onClose }: { i:
     <BottomSheet open onClose={onClose} title={`IAT ${i.iatNo}`}>
       <div className="space-y-2.5">
         <div><span className={cx('rounded px-1.5 py-px text-[11px] font-bold', CLS[st] ?? CLS['New IAT'])}>{st}</span> <b className="text-sm">{i.jobText}</b></div>
+        <OpsTicks i={i} canEdit={canEdit} onDone={onDone} />
         <Sec t="Where"><div className="grid grid-cols-[5.5rem_1fr] gap-x-2 gap-y-1">
           <Row k="Line">{i.line ?? '—'}{i.lineClass ? ` · ${i.lineClass}` : ''}</Row>
           {streams.map((s) => <Row key={s.id} k="From → To">{s.from} → {s.to}{s.fluid ? ` · ${s.fluid}` : ''}</Row>)}
@@ -77,8 +81,26 @@ function IatDetail({ i, items, lineup, lineupEq, points, onItem, onClose }: { i:
         <Sec t="Work"><div className="grid grid-cols-[5.5rem_1fr] gap-x-2 gap-y-1">
           <Row k="WO">{i.wo ?? '—'}</Row><Row k="Material">{i.material ?? '—'}</Row><Row k="Action by">{i.actionBy ?? '—'}</Row><Row k="Remark">{i.remark ?? '—'}</Row>
         </div></Sec>
-        <p className="text-[11px] text-slate-500">From the daily IAT tracking sheet, read only here.</p>
+        <p className="text-[11px] text-slate-500">From the daily IAT tracking sheet, read only here (the two Operations ticks are set here).</p>
       </div>
     </BottomSheet>
+  );
+}
+
+/** The two Operations ticks of an IAT, set by a person: Operations action needed, handover needed (logged). */
+export function OpsTicks({ i, canEdit, onDone, compact = false }: { i: TrkIat; canEdit: boolean; onDone?: (msg: string) => void; compact?: boolean }) {
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  // shown at once, put back if the save fails
+  const [now, setNow] = useState<{ ops_action?: boolean; ho_required?: boolean }>({});
+  const flip = async (k: 'ops_action' | 'ho_required', v: boolean, label: string) => { setBusy(true); setErr(null); setNow((x) => ({ ...x, [k]: v }));
+    try { await setIatTicks(i.id, { [k]: v }); onDone?.(`IAT ${i.iatNo}: ${label} ${v ? 'ticked' : 'cleared'}.`); } catch (e) { setErr(e); setNow((x) => ({ ...x, [k]: !v })); } finally { setBusy(false); } };
+  const box = (k: 'ops_action' | 'ho_required', on: boolean, label: string) => (
+    <label className={cx('flex items-center gap-1.5', compact ? 'text-[11.5px]' : 'text-[12.5px]', on ? 'font-semibold text-[#004080]' : 'text-slate-600')}>
+      <input type="checkbox" className="h-4 w-4" checked={on} disabled={!canEdit || busy} onChange={(e) => flip(k, e.target.checked, label)} />{label}</label>);
+  return (
+    <div className={cx('flex flex-wrap gap-x-4 gap-y-1', !compact && 'rounded-lg bg-slate-50 px-2.5 py-2')}>
+      {box('ops_action', now.ops_action ?? !!i.opsAction, 'Operations action')}{box('ho_required', now.ho_required ?? !!i.hoRequired, 'Handover needed')}
+      {err != null && <ErrorBox error={err} />}
+    </div>
   );
 }
