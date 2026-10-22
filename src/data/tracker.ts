@@ -1,7 +1,7 @@
 // Shutdown progress tracker: the trackers of the calendar shutdowns (template / test / live), their steps, equipment,
 // IATs, bar chart, shift log and change log. Who and when are stamped by the database on every change.
 import { supabase } from './supabase';
-import type { QtyKind, QtyMethod, Shift, TrkEngine, TrkQtyEntry, TrkUpdate, PointStatus, StepStatus, TrkActivity, TrkData, TrkEquipment, TrkIat, TrkLog, LuEquip, LuStream, TrkPoint, TrkPointStep, TrkSettings, TrkStep } from '@/core/tracker';
+import type { QtyKind, QtyMethod, Shift, TrkEngine, TrkQtyEntry, TrkUpdate, PointStatus, StepStatus, TrkActivity, TrkData, TrkEquipment, TrkIat, TrkLog, LuEquip, LuStream, TrkPoint, TrkPointStep, TrkEvent, TrkSettings, TrkStep } from '@/core/tracker';
 
 export interface Tracker { id: string; eventId: string | null; title: string; mode: 'template' | 'test' | 'live'; settings: TrkSettings; status: 'active' | 'closed'; eventStart: string | null; eventEnd: string | null; eventTitle: string | null }
 interface TrackerRow { id: string; event_id: string | null; title: string; mode: Tracker['mode']; settings: TrkSettings | null; status: Tracker['status']; unit_events?: { start_date: string; end_date: string; unit: string | null; title: string | null } | null }
@@ -44,7 +44,9 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
   const engineP = fetchEngine(id).catch(() => undefined);
   const extraP = Promise.all([lineupOnce,
     // the SOP field steps of each neutralization: optional as well
-    supabase.from('trk_point_step').select('id,point_id,seq,phase,text,source,done_at,done_by_name,crane,kind,start_at,start_by_name,link_acts').eq('tracker_id', id).order('seq').limit(2000)]);
+    supabase.from('trk_point_step').select('id,point_id,seq,phase,text,source,done_at,done_by_name,crane,kind,start_at,start_by_name,link_acts').eq('tracker_id', id).order('seq').limit(2000),
+    // the shutdown's events (nitrogen, reactors): optional too
+    supabase.from('trk_event').select('id,category,text,started_at,ended_at,by_name,ended_by_name').eq('tracker_id', id).order('started_at', { ascending: false }).limit(300)]);
   const [t, s, e, i, a, l, sl, pt] = await Promise.all([
     supabase.from('trk_trackers').select('id,event_id,title,mode,settings,status,unit_events(start_date,end_date,unit,title)').eq('id', id).single(),
     supabase.from('trk_steps').select('*').eq('tracker_id', id).order('step_id'),
@@ -56,12 +58,14 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     supabase.from('trk_points').select('*').eq('tracker_id', id).eq('removed', false).order('sort'),
   ]);
   // the U-12 process lineup (P&ID streams): optional, the tracker works without it
-  const [[lu, le], ps] = await extraP;
+  const [[lu, le], ps, ev] = await extraP;
   const err = [t, s, e, i, a, l, sl, pt].find((r) => r.error)?.error; if (err) throw err;
   const engine = (t.data as unknown as TrackerRow).settings?.progressV2 ? await engineP : undefined;
   const acts = a.data as ActRow[]; const base = Math.max(0, ...acts.map((x) => x.baseline));
   return {
     engine,
+    events: ev.error ? [] : (ev.data as { id: string; category: TrkEvent['category']; text: string; started_at: string; ended_at: string | null; by_name: string | null; ended_by_name: string | null }[])
+      .map((r): TrkEvent => ({ id: r.id, category: r.category, text: r.text, startedAt: r.started_at, endedAt: r.ended_at, by: r.by_name, endedBy: r.ended_by_name })),
     pointSteps: ps.error ? [] : (ps.data as { id: string; point_id: string; seq: number; phase: TrkPointStep['phase']; text: string; source: string | null; done_at: string | null; done_by_name: string | null; crane: boolean | null; kind: string | null; start_at: string | null; start_by_name: string | null; link_acts: string[] | null }[])
       .map((r): TrkPointStep => ({ id: r.id, pointId: r.point_id, seq: r.seq, phase: r.phase, text: r.text, source: r.source, doneAt: r.done_at, doneBy: r.done_by_name, crane: !!r.crane, kind: r.kind === 'step' ? 'step' : 'check', startAt: r.start_at, startBy: r.start_by_name, linkActs: r.link_acts ?? [] })),
     lineupEq: le.error ? [] : (le.data as { tag: string; plant_tag: string | null; name: string | null; data: string | null; primary_sheet: string | null }[])
@@ -117,6 +121,9 @@ export async function addIat(trackerId: string, v: { tag: string; iatNo: string;
 }
 /** The two Operations ticks of an IAT (logged). */
 export const setIatTicks = (id: string, patch: Partial<{ ops_action: boolean; ho_required: boolean }>) => upd('trk_iat', id, patch);
+/** A shutdown event (nitrogen, reactors, other): recorded now, ended later (logged). */
+export async function addEvent(trackerId: string, category: string, text: string) { const { error } = await supabase.from('trk_event').insert({ tracker_id: trackerId, category, text, started_at: new Date().toISOString() }); if (error) throw error; }
+export const endEvent = (id: string, ended: boolean) => upd('trk_event', id, { ended_at: ended ? new Date().toISOString() : null });
 export const closeIat = (id: string) => upd('trk_iat', id, { status: 'closed', closed_at: new Date().toISOString() });
 export async function saveShiftLog(trackerId: string, shiftDate: string, shift: 'D' | 'N', v: { notes: string; temps: Record<string, string> }) {
   const { error } = await supabase.from('trk_shift_log').upsert({ tracker_id: trackerId, shift_date: shiftDate, shift, notes: v.notes || null, temps: v.temps }, { onConflict: 'tracker_id,shift_date,shift' });

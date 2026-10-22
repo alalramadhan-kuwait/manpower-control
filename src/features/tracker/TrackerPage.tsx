@@ -9,6 +9,7 @@ import { setActivity, setEquipment, currentTracker, fetchTrackerData, fetchTrack
 import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Spinner, cx } from '@/ui/components';
 import { DrumQuick } from './Drums';
+import { EventsCard } from './Events';
 import { EquipSheet, StepSheet } from './TrackerSheets';
 import { TrackerAdmin, clockKey } from './TrackerAdmin';
 import { TimingTab } from './Timing';
@@ -142,7 +143,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} now={now} onOpen={open} onNav={nav} />}
       {tab === 'isolation' && <IsolationTab key={`iso-${isoKind}`} trackerId={tracker.id} initialKind={isoKind} activities={data.activities} points={points} pointSteps={data.pointSteps} lineup={data.lineup} iats={data.iats} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} focus={focus} onFocus={setFocus} onItem={(tag) => setSheet({ kind: 'eq', tag })} onStep={(id) => setSheet({ kind: 'step', id })} onDone={(m, u) => done(m, false, u)} />}
       {tab === 'guideline' && <SequenceTab steps={steps} auto={auto} onOpen={(id) => setSheet({ kind: 'step', id })} />}
-      {tab === 'equipment' && <EquipmentTab key={`eq-${lateFirst}`} initialLateFirst={lateFirst} eqs={eqs} activities={data.activities} points={points} now={now} spare={spare} canEdit={canEdit} engine={data.engine} onDone={(m, u) => done(m, true, u)} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
+      {tab === 'equipment' && <EquipmentTab key={`eq-${lateFirst}`} initialLateFirst={lateFirst} eqs={eqs} activities={data.activities} points={points} now={now} spare={spare} canEdit={canEdit} engine={data.engine} events={data.events} trackerId={tracker.id} onDone={(m, u) => done(m, true, u)} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={(m, u) => done(m, false, u)} />}
       {tab === 'iats' && <IatsTab iats={data.iats} tags={data.equipment.map((e) => e.tag)} lineup={data.lineup} lineupEq={data.lineupEq} points={points} canEdit={canEdit} onDone={(m) => done(m, true)} onItem={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
@@ -218,7 +219,7 @@ function SequenceTab({ steps, auto, onOpen }: { steps: Map<string, StepView>; au
  *  step), the status and the plan difference. "All" groups the items under their group; "Late first" puts the late,
  *  pending and IAT items on top. */
 const ISO_BG = { red: 'bg-[#E02028]', grey: 'bg-slate-300', amber: 'bg-amber-500', teal: 'bg-teal-500', blue: 'bg-[#0850A0]' } as const;
-function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, spare = new Map(), canEdit = false, engine, onDone, onOpen }: { initialLateFirst?: boolean; engine?: TrackerData['engine']; eqs: EquipView[]; activities: TrackerData['activities']; points: TrkPoint[]; now: number; spare?: Map<string, number>; canEdit?: boolean; onDone?: (msg: string, undo?: () => Promise<unknown>) => void; onOpen: (tag: string) => void }) {
+function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, spare = new Map(), canEdit = false, engine, events = [], trackerId, onDone, onOpen }: { initialLateFirst?: boolean; engine?: TrackerData['engine']; events?: TrackerData['events']; trackerId?: string; eqs: EquipView[]; activities: TrackerData['activities']; points: TrkPoint[]; now: number; spare?: Map<string, number>; canEdit?: boolean; onDone?: (msg: string, undo?: () => Promise<unknown>) => void; onOpen: (tag: string) => void }) {
   const lineOf = (e: EquipView): { text: string; tone: 'run' | 'muted' | 'red' } | null => {
     const key = e.eq.barchartKey ?? e.eq.tag;
     const xs = sortActs(activities.filter((a) => a.tracked && !a.detail && a.key === key));
@@ -307,6 +308,7 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
           {e.plan && e.stage < 6 && e.plan.variance !== 0 && <PlanChip variance={e.plan.variance} days={e.plan.days} short />}
           {sp !== undefined && sp <= 7 && <span className={cx('rounded px-1 text-[9.5px] font-bold', sp < 0 ? 'bg-red-600 text-white' : sp <= 3 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{sp < 0 ? `delays ${-sp} d` : `${sp} d spare`}</span>}
         </span>
+        {e.eq.group === 'PSVs' && e.eq.description && <span className="block truncate text-[11.5px] text-slate-600">📍 {e.eq.description.split(' · ')[0].replace(/^PSV on /, 'On ')}</span>}
         <span className="mt-0.5 flex items-center gap-2">
           <StageBar stage={stage} className="w-14 shrink-0" />
           {l && <span className={cx('min-w-0 truncate text-[11.5px]', l.tone === 'run' ? 'text-[#004080]' : l.tone === 'red' ? 'text-red-800' : 'text-slate-600')}>{st && !st.finish && l.text.startsWith('Next:') ? `Next: ${st.a.activity}` : st && !st.finish && l.tone === 'red' ? `${l.text} · next ${st.a.activity}` : l.text}{dm ? drumText(dm.key) : ''}</span>}
@@ -324,6 +326,7 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
         <label className="flex items-center gap-2"><input type="checkbox" checked={onlyOps} onChange={(e) => setOnlyOps(e.target.checked)} />Operations items only</label>
         <span className="ml-auto flex rounded-lg bg-slate-200/70 p-0.5">{([[false, 'Group'], [true, 'Late first']] as const).map(([v, l]) => <button key={l} type="button" onClick={() => setLateFirst(v)} className={cx('rounded-md px-2 py-1 font-semibold', lateFirst === v ? 'bg-white text-[#004080] shadow-sm' : 'text-slate-600')}>{l}</button>)}</span>
       </div>
+      {trackerId && (g === 'All' || g === 'Reactors') && <EventsCard events={events ?? []} trackerId={trackerId} canEdit={canEdit} now={now} onDone={(m, u) => onDone?.(m, u)} />}
       {sections.map(([name, xs]) => (
         <section key={name || 'list'}>
           {name && <h3 className="mb-1 mt-2 flex justify-between px-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-500"><span>{name}</span><span>{xs.length} · {xs.filter((e) => e.stage >= 1).length} HO</span></h3>}

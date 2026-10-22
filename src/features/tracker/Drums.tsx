@@ -4,7 +4,7 @@
 // provisional and say so.
 import { useState } from 'react';
 import { METHOD_LABEL, kwDay, kwTime, plannedPct, qtyForecast, qtyProgress, recentShifts, variancePts, type QtyMethod, type TrkActivity, type TrkQtyEntry, type TrkQtyEstimate, type TrkQtyScope, type TrkSettings, type TrkUpdate } from '@/core/tracker';
-import { addQtyEntry, addUpdate, confirmEmpty, reviseEstimate, setActivity, verifyQtyEntry } from '@/data/tracker';
+import { addQtyEntry, addUpdate, confirmEmpty, reviseEstimate, setActivity } from '@/data/tracker';
 import { ErrorBox, cx } from '@/ui/components';
 import { RowBtn } from './ui';
 
@@ -19,7 +19,7 @@ function useRun(onDone: (msg: string, undo?: () => Promise<unknown>) => void) {
   return { busy, err, run };
 }
 
-export function DrumPanel({ scope, entries, estimates, activities, settings, now, canEdit, isHead, me, onDone }: {
+export function DrumPanel({ scope, entries, estimates, activities, settings, now, canEdit, isHead, onDone }: {
   scope: TrkQtyScope; entries: TrkQtyEntry[]; estimates: TrkQtyEstimate[]; activities: TrkActivity[]; settings: TrkSettings; now: number; canEdit: boolean; isHead: boolean; me: string | null; onDone: (msg: string, undo?: () => Promise<unknown>) => void;
 }) {
   const { busy, err, run } = useRun(onDone);
@@ -54,13 +54,13 @@ export function DrumPanel({ scope, entries, estimates, activities, settings, now
         <div className="rounded-lg bg-slate-50 py-1.5"><b className={cx('block text-lg tabular-nums', variance !== null && variance < 0 ? 'text-[#E02028]' : 'text-slate-900')}>{variance === null ? '—' : `${variance > 0 ? '+' : ''}${variance}`}</b><span className="text-[10.5px] text-slate-500">pts vs plan</span></div>
       </div>
       <div className="space-y-0.5 text-[12px] text-slate-700">
-        <p>Remaining <b>{p.remaining === null ? '—' : fmt(p.remaining)}</b> drums{p.pending ? <> · <span className="text-amber-800">{fmt(p.pending)} awaiting verification</span></> : null}</p>
+        <p>Remaining <b>{p.remaining === null ? '—' : fmt(p.remaining)}</b> drums</p>
         <p>Estimate {scope.working ? fmt(scope.working) : '—'}{scope.low && scope.high ? ` (range ${fmt(scope.low)}–${fmt(scope.high)})` : ''}{scope.initial && scope.initial !== scope.working ? ` · first estimate ${fmt(scope.initial)}` : ''}{estimates.length > 1 ? ` · revised ${estimates.length - 1}×` : ''}</p>
         {planEnd && <p>Plan finish {when(new Date(planEnd).toISOString())}</p>}
         {fc && (fc.status === 'ok'
           ? <p>Forecast* <b>{when(new Date(fc.finish).toISOString())}</b> · {fmt(fc.ratePerShift)} drums/shift over {fc.shifts} {METHOD_LABEL[fc.method].toLowerCase()} shifts{fc.availability < 1 ? ` · ${Math.round(fc.availability * 100)}% of shifts productive` : ''}</p>
           : <p className="text-slate-500">Forecast unavailable: {fc.reason}.</p>)}
-        <p className="text-[10.5px] text-slate-400">* Provisional: planned % is a straight line over the baseline dumping dates (no production targets yet); the forecast uses verified shifts only.</p>
+        <p className="text-[10.5px] text-slate-400">* Provisional: planned % is a straight line over the baseline dumping dates (no production targets yet); the forecast uses the recorded shifts.</p>
       </div>
 
       {canEdit && !scope.completeAt && !started && toStart && (
@@ -72,16 +72,13 @@ export function DrumPanel({ scope, entries, estimates, activities, settings, now
       {canEdit && !scope.completeAt && started && <DrumEntry scope={scope} entries={entries} now={now} onDone={onDone} />}
 
       {shown.length > 0 && <div className="space-y-1">
-        {(all ? shown : shown.slice(0, 4)).map((e) => { const mine = !!me && e.enteredBy === me;
+        {(all ? shown : shown.slice(0, 4)).map((e) => {
           return (
             <div key={e.id} className={cx('rounded-lg px-2 py-1.5 text-[12px] ring-1', e.verify === 'rejected' ? 'bg-slate-50 text-slate-400 ring-slate-200 line-through' : 'bg-white ring-slate-200')}>
               <div className="flex items-center gap-2">
                 <span className="min-w-0 flex-1"><b className="tabular-nums">{e.qty > 0 && e.kind === 'correction' ? '+' : ''}{fmt(e.qty)}</b> {e.kind === 'removal' ? '' : e.kind === 'transfer' ? 'transfer · ' : 'correction · '}{METHOD_LABEL[e.method].toLowerCase()} · {dayLabel(e.shiftDate, e.shift)}
-                  <span className="block text-[11px] text-slate-500">{e.stoppage ? `Stopped: ${e.stoppage} · ` : ''}{e.remark ? `${e.remark} · ` : ''}by {e.enteredByName ?? '—'}{e.verify !== 'pending' ? ` · ${e.verify} by ${e.verifiedByName ?? '—'}` : ''}</span></span>
-                {e.verify === 'pending' ? (canEdit && (!mine || isHead)
-                  ? <span className="flex shrink-0 gap-1"><RowBtn tone="green" disabled={busy} onClick={() => run(() => verifyQtyEntry(e.id, 'verified'), `${fmt(e.qty)} drums verified.`)}>Verify</RowBtn><RowBtn tone="ghost" disabled={busy} onClick={() => run(() => verifyQtyEntry(e.id, 'rejected'), 'Entry rejected.')}>✕</RowBtn></span>
-                  : <span className="shrink-0 rounded bg-amber-100 px-1.5 text-[10.5px] font-bold text-amber-900">{mine ? 'awaiting a 2nd person' : 'pending'}</span>)
-                  : e.verify === 'verified' && canEdit && e.kind !== 'correction' && !scope.completeAt ? <button type="button" className="shrink-0 text-[11px] font-semibold text-[#0850A0]" onClick={() => { setFix(fix === e.id ? null : e.id); setFixQty(''); setFixWhy(''); }}>Correct</button> : null}
+                  <span className="block text-[11px] text-slate-500">{e.stoppage ? `Stopped: ${e.stoppage} · ` : ''}{e.remark ? `${e.remark} · ` : ''}by {e.enteredByName ?? '—'}</span></span>
+                {e.verify !== 'rejected' && canEdit && e.kind !== 'correction' && !scope.completeAt ? <button type="button" className="shrink-0 text-[11px] font-semibold text-[#0850A0]" onClick={() => { setFix(fix === e.id ? null : e.id); setFixQty(''); setFixWhy(''); }}>Correct</button> : null}
               </div>
               {fix === e.id && <div className="mt-1.5 grid grid-cols-[5.5rem_minmax(0,1fr)_auto] gap-1.5">
                 <input className="input" inputMode="numeric" aria-label="Correction (+/−)" placeholder="−10" value={fixQty} onChange={(x) => setFixQty(x.target.value.replace(/[^0-9-]/g, ''))} />
@@ -118,7 +115,7 @@ export function DrumEntry({ scope, entries, now, onDone, autoFocus = false }: { 
   const [sh, setSh] = useState(0); const [method, setMethod] = useState<QtyMethod>(lastMethod);
   const [mode, setMode] = useState<'shift' | 'total'>('shift');
   const [qty, setQty] = useState(''); const [stop, setStop] = useState(''); const [remark, setRemark] = useState(''); const [transfer, setTransfer] = useState(false);
-  // recorded so far: every counting entry not rejected (verified and awaiting verification)
+  // recorded so far: every counting entry (entries count when entered)
   const recorded = entries.filter((e) => e.kind !== 'transfer' && e.verify !== 'rejected').reduce((t, e) => t + e.qty, 0);
   const typed = Number(qty);
   const n = mode === 'total' ? typed - recorded : typed;
@@ -127,7 +124,7 @@ export function DrumEntry({ scope, entries, now, onDone, autoFocus = false }: { 
   const save = () => { const s = shifts[sh]; const tr = mode === 'shift' && transfer;
     const note = [mode === 'total' ? `total reported ${fmt(typed)}` : '', remark, tr ? 'transfer of drums already counted' : ''].filter(Boolean).join(' · ') || null;
     run(() => addQtyEntry(scope.id, { shiftDate: s.date, shift: s.shift, kind: tr ? 'transfer' : 'removal', method, qty: n, stoppage: n === 0 ? stop : null, remark: note }),
-      `${scope.key}: ${fmt(n)} drums ${tr ? 'transfer ' : ''}entered for ${dayLabel(s.date, s.shift)}${mode === 'total' ? ` (total ${fmt(typed)})` : ''}, awaiting verification.`,
+      `${scope.key}: ${fmt(n)} drums ${tr ? 'transfer ' : ''}entered for ${dayLabel(s.date, s.shift)}${mode === 'total' ? ` (total ${fmt(typed)})` : ''}.`,
       () => { setQty(''); setStop(''); setRemark(''); setTransfer(false); }); };
   return (
     <div className="space-y-1.5 rounded-lg bg-amber-50 p-2">
@@ -153,10 +150,10 @@ export function DrumQuick({ scope, entries, now, canEdit, onOpen, onDone }: { sc
   const last = [...entries].reverse().find((e) => e.kind !== 'transfer' && e.verify !== 'rejected');
   return (
     <div className="space-y-2">
-      <p className="text-[13px] text-slate-800"><b className="tabular-nums">{fmt(p.verified)}</b> of {scope.working ? fmt(scope.working) : '—'} drums verified{p.actualPct !== null ? ` · ${p.actualPct}%` : ''}{p.pending ? <span className="text-amber-800"> · {fmt(p.pending)} awaiting verification</span> : null}</p>
-      {last && <p className="text-[11.5px] text-slate-500">Last entry: {fmt(last.qty)} · {dayLabel(last.shiftDate, last.shift)} · {METHOD_LABEL[last.method].toLowerCase()} · {last.verify}</p>}
+      <p className="text-[13px] text-slate-800"><b className="tabular-nums">{fmt(p.verified)}</b> of {scope.working ? fmt(scope.working) : '—'} drums{p.actualPct !== null ? ` · ${p.actualPct}%` : ''}{p.pending ? <span className="text-amber-800"> · {fmt(p.pending)} awaiting verification</span> : null}</p>
+      {last && <p className="text-[11.5px] text-slate-500">Last entry: {fmt(last.qty)} · {dayLabel(last.shiftDate, last.shift)} · {METHOD_LABEL[last.method].toLowerCase()}</p>}
       {canEdit && !scope.completeAt && <DrumEntry scope={scope} entries={entries} now={now} onDone={onDone} />}
-      <button type="button" onClick={onOpen} className="text-xs font-semibold text-[#0850A0]">Open {scope.key} (verify, correct, vessel empty) ›</button>
+      <button type="button" onClick={onOpen} className="text-xs font-semibold text-[#0850A0]">Open {scope.key} (correct, vessel empty) ›</button>
     </div>
   );
 }

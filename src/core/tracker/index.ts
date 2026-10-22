@@ -69,7 +69,10 @@ export interface TrkPointStep { id: string; pointId: string; seq: number; phase:
   kind: 'check' | 'step'; startAt: string | null; startBy: string | null;
   /** the equipment work steps this field step is (same physical work): its state is theirs */
   linkActs?: string[] }
-export interface TrkData { engine?: TrkEngine; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
+/** An event of the shutdown not tied to one item: nitrogen supply, an issue common to the reactors, other. */
+export interface TrkEvent { id: string; category: 'nitrogen' | 'reactors' | 'other'; text: string; startedAt: string; endedAt: string | null; by: string | null; endedBy: string | null }
+export const EVENT_LABEL: Record<TrkEvent['category'], string> = { nitrogen: 'N₂ supply', reactors: 'Reactors', other: 'Other' };
+export interface TrkData { events?: TrkEvent[]; engine?: TrkEngine; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
 
 /** The main equipment groups; the rest (control valve shells, PSVs, check valves, RTJ & injection points, piping, OPR
  *  list, PMRs …) is miscellaneous, shown after them. */
@@ -357,6 +360,10 @@ export function lineOnEquipment(line: string | null | undefined, eqs: LuEquip[] 
 export const lineStreams = (line: string | null | undefined, lu: LuStream[] = []) => (line ? lu.filter((s) => s.lineNos.includes(line)) : []);
 /** The tracker items at either end of a connection. */
 export const streamItems = (s: LuStream, tags: string[]) => tags.filter((t) => sameTag(s.from, t) || sameTag(s.to, t));
+/** An item's connections in the P&ID lineup (the unit map): what comes in, what goes out, with fluid and line. */
+export const connectionsOf = (tag: string, lu: LuStream[] = []) => ({
+  from: lu.filter((x) => sameTag(x.to, tag)).map((x) => ({ other: x.from, fluid: x.fluid, line: x.lineNos[0] ?? x.line })),
+  to: lu.filter((x) => sameTag(x.from, tag)).map((x) => ({ other: x.to, fluid: x.fluid, line: x.lineNos[0] ?? x.line })) });
 /** The IATs of an item: its own, and those on a line that runs to or from it (P&ID lineup); open first. */
 export const iatsOf = (tag: string, iats: TrkIat[], lu: LuStream[] = []) => iats
   .filter((i) => i.tag === tag || lineStreams(i.line, lu).some((s) => streamItems(s, [tag]).length > 0))
@@ -418,6 +425,8 @@ export interface ShiftReport {
   drums: { key: string; verified: number; working: number | null; pct: number | null; shift: number; pending: number; empty: boolean }[];
   /** PSVs: removed / installed of all, and what moved this shift or runs now */
   psvs: { total: number; removed: number; installed: number; lines: string[] };
+  /** the shutdown's events (nitrogen, reactors): open ones, and those ended this shift */
+  events: { category: string; text: string; open: boolean; hours: number }[];
 }
 export type ReportSection = 'Reactors' | 'Heaters' | 'Exchangers' | 'Vessels' | 'Others';
 export interface ReportItem { tag: string; section: ReportSection; line: string }
@@ -506,6 +515,8 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
       const shiftQty = es.filter((e) => e.verify !== 'rejected' && e.shiftDate === sh.date && e.shift === sh.shift).reduce((t, e) => t + e.qty, 0);
       return [{ key: sc.key, verified: p.verified, working: sc.working, pct: p.actualPct, shift: shiftQty, pending: es.filter((e) => e.verify === 'pending').length, empty: !!sc.completeAt }];
     }),
+    events: (d.events ?? []).filter((e) => !e.endedAt || (ms(e.endedAt) >= sh.from && ms(e.endedAt) < sh.to))
+      .map((e) => ({ category: EVENT_LABEL[e.category], text: e.text, open: !e.endedAt, hours: Math.round(((e.endedAt ? ms(e.endedAt) : now) - ms(e.startedAt)) / H * 10) / 10 })),
     psvs: (() => {
       const tags = d.equipment.filter((e) => e.group === 'PSVs' && e.tracked).map((e) => e.barchartKey ?? e.tag);
       const acts = (k: string) => d.activities.filter((a) => a.key === k && a.tracked);
@@ -516,7 +527,8 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
         const say = (x: string) => (REMOVED.test(x) ? 'removed to shop' : /^install blind|blind on flange/i.test(x) ? 'blind installed' : /^remove blind/i.test(x) ? 'blind removed' : INSTALLED.test(x) ? 'PSV installed' : x.toLowerCase());
         const run = acts(k).filter((a) => a.actualStart && !a.actualFinish).map((a) => `${say(a.activity)} I/P`);
         const now_ = acts(k).filter((a) => a.actualFinish && ms(a.actualFinish) >= sh.from && ms(a.actualFinish) < sh.to).map((a) => `${say(a.activity)} ✓`);
-        return run.length || now_.length ? [`${k.replace(/^12-/, '')}: ${[...now_, ...run].join(' · ')}`] : [];
+        const loc = d.equipment.find((e) => (e.barchartKey ?? e.tag) === k)?.description?.split(' · ')[0].replace(/^PSV on /, 'on ');
+        return run.length || now_.length ? [`${k.replace(/^12-/, '')}${loc ? ` (${loc})` : ''}: ${[...now_, ...run].join(' · ')}`] : [];
       });
       return { total: tags.length, removed: tags.filter((k) => fin(k, REMOVED)).length, installed: tags.filter((k) => fin(k, INSTALLED)).length, lines };
     })(),
@@ -549,6 +561,7 @@ export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string }
   const merged = (sec: ReportSection) => { const by = new Map<string, string[]>(); for (const x of r.items.filter((i) => i.section === sec)) by.set(x.line, [...(by.get(x.line) ?? []), x.tag]);
     return [...by.entries()].map(([line, tags]) => `${joinTags(tags)}: ${line}`); };
   const rx = r.items.filter((i) => i.section === 'Reactors').sort((a, b) => Number(b.tag === 'R-12-205') - Number(a.tag === 'R-12-205') || a.tag.localeCompare(b.tag));
+  section('Events', r.events.map((e) => `${e.category}: ${e.text}${e.open ? ` (since ${e.hours} h)` : ` · ended (${e.hours} h)`}`));
   section('Reactors', rx.map((x) => `${short(x.tag)}: ${x.line}`));
   const bo = r.blindsOpen;
   const bIn = r.pointsDone.filter((x) => x.kind === 'blind').map((x) => x.ref);

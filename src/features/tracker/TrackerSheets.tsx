@@ -1,7 +1,7 @@
 // The two input sheets of the controllers: a guideline step (Start · Done · Pending) and an equipment item (stage,
 // blinded = handed over, IATs, pending). Big buttons, the time and the name are stamped by the database.
 import { useState } from 'react';
-import { iatsOf, type LuEquip, type LuStream, type TrkIat, PENDING_REASONS, neutLabel, neutName, partsOf, waitingSteps, isoState, missingBlinds, STAGES, kwDay, kwTime, pointComplete, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint, type TrkEngine, type TrkSettings } from '@/core/tracker';
+import { connectionsOf, iatsOf, type LuEquip, type LuStream, type TrkIat, PENDING_REASONS, neutLabel, neutName, partsOf, waitingSteps, isoState, missingBlinds, STAGES, kwDay, kwTime, pointComplete, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint, type TrkEngine, type TrkSettings } from '@/core/tracker';
 import { EquipActivities, StepTimes } from './Timing';
 import { DrumPanel, ItemUpdate } from './Drums';
 import { addIat, closeIat, setEquipment, setStep } from '@/data/tracker';
@@ -175,6 +175,9 @@ export function EquipSheet({ allIats = [], lineup = [], lineupEq = [], tags = []
             {(e.plannedHo || e.plannedFinish) && <div><dt className="font-semibold">Plan</dt><dd>{e.plannedHo ? `HO ${when(e.plannedHo)}` : ''}{e.plannedFinish ? ` · finish ${when(e.plannedFinish)}` : ''}</dd></div>}
             {v.plan && <div><dt className="font-semibold">Bar chart</dt><dd>Plan stage {v.plan.planned} ({STAGES[v.plan.planned]}), actual {v.stage}</dd></div>}
             {e.remark && <div><dt className="font-semibold">Remark</dt><dd>{e.remark}</dd></div>}
+            {(() => { const c = connectionsOf(e.tag, lineup); if (!c.from.length && !c.to.length) return null;
+              const li = (x: { other: string; fluid: string | null; line: string | null }, dir: string) => <li key={dir + x.other + x.line}>{dir} <b>{x.other}</b>{x.fluid ? ` · ${x.fluid}` : ''}{x.line ? <span className="text-slate-500"> · {x.line}</span> : null}</li>;
+              return <div><dt className="font-semibold">Connected (P&amp;ID lineup)</dt><dd><ul className="space-y-0.5">{c.from.map((x) => li(x, '← from'))}{c.to.map((x) => li(x, '→ to'))}</ul></dd></div>; })()}
             {e.updatedAt && <div><dt className="font-semibold">Last change</dt><dd>{e.updatedBy} {when(e.updatedAt)}</dd></div>}
           </dl>
         )}
