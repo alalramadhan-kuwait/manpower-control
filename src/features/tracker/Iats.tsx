@@ -1,16 +1,16 @@
-// The IATs of the shutdown, from the daily IAT tracking sheet (the sheet stays the master: read only here). Status
-// tiles, search, filters, one card per IAT with where its line runs (P&ID lineup) and the checks it needs; a tap opens
-// the whole IAT: where, finding, recommendation, inspection checks, painting IAT, work order and material.
+// The IATs of the shutdown, from the daily IAT tracking sheet; the status and remark are kept up to date here (logged).
+// Status tiles, search, filters, one card per IAT with where its line runs (P&ID lineup) and the checks it needs; a tap
+// opens the whole IAT: status, where, finding, recommendation, inspection checks, painting IAT, work order and material.
 import { Fragment, useState } from 'react';
-import { iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, streamItems, type LuEquip, type LuStream, type TrkIat, type TrkPoint } from '@/core/tracker';
+import { IAT_STATUSES, iatClosedBy, kwDay, kwTime, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, streamItems, type LuEquip, type LuStream, type TrkIat, type TrkPoint } from '@/core/tracker';
 import { BottomSheet, ErrorBox, cx } from '@/ui/components';
-import { setIatTicks } from '@/data/tracker';
+import { restoreIat, setIatStatus, setIatTicks } from '@/data/tracker';
 
 const CLS: Record<string, string> = { 'In progress': 'bg-blue-100 text-blue-800', 'To start': 'bg-amber-100 text-amber-800', 'New IAT': 'bg-slate-100 text-slate-700', Hold: 'bg-red-100 text-red-800', Completed: 'bg-green-100 text-green-800', Cancelled: 'bg-slate-100 text-slate-500' };
 const TILES = ['In progress', 'To start', 'New IAT', 'Completed'] as const;
 type Filter = 'open' | 'items' | 'lines' | 'material' | 'all';
 
-export function IatsTab({ iats, tags, lineup = [], lineupEq = [], points = [], canEdit = false, onDone, onItem }: { iats: TrkIat[]; tags: string[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; points?: TrkPoint[]; canEdit?: boolean; onDone?: (msg: string) => void; onItem: (tag: string) => void }) {
+export function IatsTab({ iats, tags, lineup = [], lineupEq = [], points = [], canEdit = false, onDone, onItem }: { iats: TrkIat[]; tags: string[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; points?: TrkPoint[]; canEdit?: boolean; onDone?: (msg: string, undo?: () => Promise<unknown>) => void; onItem: (tag: string) => void }) {
   const [q, setQ] = useState(''); const [f, setF] = useState<Filter>('open'); const [done, setDone] = useState(false); const [open, setOpen] = useState<TrkIat | null>(null);
   const items = new Set(tags);
   const onItemTag = (i: TrkIat) => items.has(i.tag);
@@ -51,7 +51,7 @@ export function IatsTab({ iats, tags, lineup = [], lineupEq = [], points = [], c
   );
 }
 
-export function IatDetail({ i, items, lineup, lineupEq, points, canEdit = false, onDone, onItem, onClose }: { i: TrkIat; items: Set<string>; lineup: LuStream[]; lineupEq: LuEquip[]; points: TrkPoint[]; canEdit?: boolean; onDone?: (msg: string) => void; onItem: (tag: string) => void; onClose: () => void }) {
+export function IatDetail({ i, items, lineup, lineupEq, points, canEdit = false, onDone, onItem, onClose }: { i: TrkIat; items: Set<string>; lineup: LuStream[]; lineupEq: LuEquip[]; points: TrkPoint[]; canEdit?: boolean; onDone?: (msg: string, undo?: () => Promise<unknown>) => void; onItem: (tag: string) => void; onClose: () => void }) {
   const st = iatStatus(i); const streams = lineStreams(i.line, lineup); const onEq = streams.length ? [] : lineOnEquipment(i.line, lineupEq);
   const ends = [...new Set([...streams.flatMap((s) => streamItems(s, [...items])), ...onEq.map((x) => x.eq.plantTag ?? '').filter((t) => items.has(t)), ...(items.has(i.tag) ? [i.tag] : [])])];
   const loop = points.find((p) => p.kind === 'neut' && i.line && loopLines(p, lineup).lines.includes(i.line));
@@ -61,6 +61,7 @@ export function IatDetail({ i, items, lineup, lineupEq, points, canEdit = false,
     <BottomSheet open onClose={onClose} title={`IAT ${i.iatNo}`}>
       <div className="space-y-2.5">
         <div><span className={cx('rounded px-1.5 py-px text-[11px] font-bold', CLS[st] ?? CLS['New IAT'])}>{st}</span> <b className="text-sm">{i.jobText}</b></div>
+        {canEdit && <IatStatus key={`${i.id}|${i.sheetStatus ?? ''}|${i.remark ?? ''}`} i={i} onDone={onDone} />}
         <OpsTicks i={i} canEdit={canEdit} onDone={onDone} />
         <Sec t="Where"><div className="grid grid-cols-[5.5rem_1fr] gap-x-2 gap-y-1">
           <Row k="Line">{i.line ?? '—'}{i.lineClass ? ` · ${i.lineClass}` : ''}</Row>
@@ -80,9 +81,42 @@ export function IatDetail({ i, items, lineup, lineupEq, points, canEdit = false,
         <Sec t="Work"><div className="grid grid-cols-[5.5rem_1fr] gap-x-2 gap-y-1">
           <Row k="WO">{i.wo ?? '—'}</Row><Row k="Material">{i.material ?? '—'}</Row><Row k="Action by">{i.actionBy ?? '—'}</Row><Row k="Remark">{i.remark ?? '—'}</Row>
         </div></Sec>
-        <p className="text-[11px] text-slate-500">From the daily IAT tracking sheet, read only here (the two Operations ticks are set here).</p>
+        <p className="text-[11px] text-slate-500">From the daily IAT tracking sheet. The status, remark and Operations ticks are set here.</p>
       </div>
     </BottomSheet>
+  );
+}
+
+/** The IAT status (as in the tracking sheet) and its remark: one tap saves, with undo; Completed / Cancelled close it. */
+function IatStatus({ i, onDone }: { i: TrkIat; onDone?: (msg: string, undo?: () => Promise<unknown>) => void }) {
+  const st = iatStatus(i);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const [shown, setShown] = useState<string | null>(null);
+  const [remark, setRemark] = useState(i.remark ?? '');
+  const was = { sheetStatus: i.sheetStatus ?? null, status: i.status, closedAt: i.closedAt, remark: i.remark ?? null };
+  const cur = shown ?? st;
+  async function save(next: string, rm?: string | null) {
+    setBusy(true); setErr(null); if (next !== st) setShown(next);
+    try {
+      await setIatStatus(i.id, next, iatClosedBy(next), rm);
+      onDone?.(`IAT ${i.iatNo}: ${rm !== undefined && next === st ? 'remark saved' : next}.`, () => restoreIat(i.id, was));
+    } catch (e) { setErr(e); setShown(null); } finally { setBusy(false); }
+  }
+  const dirty = remark.trim() !== (i.remark ?? '').trim();
+  return (
+    <section className="rounded-xl bg-slate-50 p-2.5 ring-1 ring-slate-200">
+      <h3 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">Status</h3>
+      <div className="flex flex-wrap gap-1.5">{IAT_STATUSES.map((s) => (
+        <button key={s} type="button" disabled={busy || s === cur} onClick={() => save(s)} aria-pressed={s === cur}
+          className={cx('min-h-9 rounded-full px-3 text-xs font-bold', s === cur ? cx(CLS[s], 'ring-2 ring-slate-900/20') : 'bg-white text-slate-600 ring-1 ring-slate-200 active:bg-slate-100')}>{s === 'New IAT' ? 'New' : s}</button>))}
+      </div>
+      <div className="mt-2 flex gap-1.5">
+        <input className="input min-w-0 flex-1" placeholder="Remark (e.g. spool dropped, waiting material)" value={remark} onChange={(e) => setRemark(e.target.value)} />
+        {dirty && <button type="button" disabled={busy} onClick={() => save(cur, remark.trim() || null)} className="shrink-0 rounded-lg bg-[#0d2a5e] px-3 text-xs font-bold text-white">Save</button>}
+      </div>
+      {i.updatedAt && <p className="mt-1 text-[11px] text-slate-500">Last update {kwDay(i.updatedAt)} {kwTime(i.updatedAt)}{i.updatedBy ? ` · ${i.updatedBy}` : ''}</p>}
+      {err != null && <div className="mt-1.5"><ErrorBox error={err} /></div>}
+    </section>
   );
 }
 

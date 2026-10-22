@@ -167,7 +167,7 @@ export function EquipSheet({ mi, allIats = [], lineup = [], lineupEq = [], tags 
         </Field>
         {canEdit && !e.pendingReason && !pending && <Button variant="secondary" className="w-full" disabled={busy} onClick={() => setPending(true)}>⏸ Hold (with reason)</Button>}
         {pending && <PendingForm initial={e.pendingReason} busy={busy} onSave={(r) => run(() => setEquipment(e.id, { pending_reason: r }), `${e.tag}: on hold.`)} />}
-        {iatOpen && <IatDetail i={allIats.find((x) => x.id === iatOpen.id) ?? iatOpen} items={new Set(tags)} lineup={lineup} lineupEq={lineupEq} points={points} canEdit={canEdit} onDone={(m) => onDone(m)} onItem={() => setIatOpen(null)} onClose={() => setIatOpen(null)} />}
+        {iatOpen && <IatDetail i={allIats.find((x) => x.id === iatOpen.id) ?? iatOpen} items={new Set(tags)} lineup={lineup} lineupEq={lineupEq} points={points} canEdit={canEdit} onDone={(m, u) => onDone(m, u)} onItem={() => setIatOpen(null)} onClose={() => setIatOpen(null)} />}
         {err != null && <ErrorBox error={err} />}
         <button type="button" onClick={() => setDetails((x) => !x)} className="text-xs font-semibold text-slate-600">{details ? '▾' : '▸'} Details</button>
         {details && (

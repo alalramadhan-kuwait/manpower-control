@@ -207,3 +207,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261022104118_shutdown_progress_iat_ops_ticks` | `trk_iat.ops_action` / `ho_required`: two ticks on each IAT set by a person (Operations action needed, handover needed), logged (`trk_iat_ops_log`) |
 | `20261022115147_shutdown_progress_drums_no_verify_events` | Drum entries count when entered (`verify_state` default verified, no second-person check). `trk_event`: nitrogen supply and common reactor events recorded above the reactors, open until ended, logged (`trk_event_stamp`) |
 | `20261022120022_shutdown_progress_iat_ops_none_spool` | Two more IAT ticks: `ops_none` (no action from Operations) and `spool_only` (spool drop only, no handover procedure or blind list), logged |
+| `20261022195115_shutdown_progress_iat_status_log` | IAT status set in the app (New, To start, In progress, Hold, Completed, Cancelled) and its remark logged to `trk_log` with who and when |

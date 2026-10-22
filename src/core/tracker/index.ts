@@ -28,7 +28,12 @@ export interface TrkIat { id: string; tag: string; iatNo: string; jobText: strin
   /** ticked by a person: Operations action needed, handover needed */
   opsAction?: boolean; hoRequired?: boolean;
   /** no action from Operations · spool drop only (no handover procedure, no blind list) */
-  opsNone?: boolean; spoolOnly?: boolean }
+  opsNone?: boolean; spoolOnly?: boolean;
+  /** the last change to the row: who, when */
+  updatedBy?: string | null; updatedAt?: string | null }
+/** The IAT statuses of the tracking sheet, set in the app; Completed and Cancelled close the IAT. */
+export const IAT_STATUSES = ['New IAT', 'To start', 'In progress', 'Hold', 'Completed', 'Cancelled'] as const;
+export const iatClosedBy = (s: string) => s === 'Completed' || s === 'Cancelled';
 export interface TrkActivity {
   id: string; activityId: string; group: string | null; key: string; activity: string; durationH: number | null; start: string | null; finish: string | null; stage: number | null; tracked: boolean;
   /** the mechanical activity as it went (kept for future shutdowns) */
@@ -334,7 +339,6 @@ export function iatChecks(i: Pick<TrkIat, 'checks' | 'recommendation'>): { key: 
     return { key: k, label: k === 'hydro' && p ? `Hydro ${p} psig` : label, mark: raw.replace(/\d{2,5}/, '').trim() || 'REQ', optional: /if\s*req/i.test(raw) };
   });
 }
-export const IAT_STATUSES = ['In progress', 'To start', 'New IAT', 'Hold', 'Completed', 'Cancelled'] as const;
 export const iatStatus = (i: Pick<TrkIat, 'sheetStatus' | 'status'>) => i.sheetStatus ?? (i.status === 'open' ? 'New IAT' : 'Completed');
 
 // ── Process lineup (P&ID) ──────────────────────────────────────────────────────────────────────────────────────
