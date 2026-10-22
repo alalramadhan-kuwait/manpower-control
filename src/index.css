@@ -62,3 +62,6 @@ input[type="date"].input { min-width: 0; -webkit-appearance: none; appearance: n
 
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* the thin bar shown while the tracker refreshes after an update */
+@keyframes trkbar { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }

@@ -32,8 +32,19 @@ export interface ShiftLog { id: string; shiftDate: string; shift: 'D' | 'N'; not
 
 export interface TrackerData extends TrkData { tracker: Tracker; shiftLogs: ShiftLog[] }
 
+// the U-12 process lineup (P&ID streams) does not change during a session: fetched once
+let lineupOnce: ReturnType<typeof fetchLineup> | null = null;
+const fetchLineup = () => Promise.all([supabase.from('lu_streams').select('id,frm,to_tag,fluid,line,line_nos,sheets,size,conf').limit(2000),
+  supabase.from('lu_equipment').select('tag,plant_tag,name,data,primary_sheet').limit(2000)]);
+
 export async function fetchTrackerData(id: string): Promise<TrackerData> {
   const since = new Date(Date.now() - 4 * 864e5).toISOString();
+  // everything in one round: the tracker, its lists, the lineup (cached), the SOP field steps and the drum records
+  if (!lineupOnce) lineupOnce = fetchLineup().then((x) => { if (x.some((y) => y.error)) lineupOnce = null; return x; });
+  const engineP = fetchEngine(id).catch(() => undefined);
+  const extraP = Promise.all([lineupOnce,
+    // the SOP field steps of each neutralization: optional as well
+    supabase.from('trk_point_step').select('id,point_id,seq,phase,text,source,done_at,done_by_name,crane,kind,start_at,start_by_name,link_acts').eq('tracker_id', id).order('seq').limit(2000)]);
   const [t, s, e, i, a, l, sl, pt] = await Promise.all([
     supabase.from('trk_trackers').select('id,event_id,title,mode,settings,status,unit_events(start_date,end_date,unit,title)').eq('id', id).single(),
     supabase.from('trk_steps').select('*').eq('tracker_id', id).order('step_id'),
@@ -45,12 +56,9 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     supabase.from('trk_points').select('*').eq('tracker_id', id).eq('removed', false).order('sort'),
   ]);
   // the U-12 process lineup (P&ID streams): optional, the tracker works without it
-  const [lu, le, ps] = await Promise.all([supabase.from('lu_streams').select('id,frm,to_tag,fluid,line,line_nos,sheets,size,conf').limit(2000),
-    supabase.from('lu_equipment').select('tag,plant_tag,name,data,primary_sheet').limit(2000),
-    // the SOP field steps of each neutralization: optional as well
-    supabase.from('trk_point_step').select('id,point_id,seq,phase,text,source,done_at,done_by_name,crane,kind,start_at,start_by_name,link_acts').eq('tracker_id', id).order('seq').limit(2000)]);
+  const [[lu, le], ps] = await extraP;
   const err = [t, s, e, i, a, l, sl, pt].find((r) => r.error)?.error; if (err) throw err;
-  const engine = (t.data as unknown as TrackerRow).settings?.progressV2 ? await fetchEngine(id) : undefined;
+  const engine = (t.data as unknown as TrackerRow).settings?.progressV2 ? await engineP : undefined;
   const acts = a.data as ActRow[]; const base = Math.max(0, ...acts.map((x) => x.baseline));
   return {
     engine,

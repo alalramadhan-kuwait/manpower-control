@@ -25,7 +25,9 @@ export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, n
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [s, setS] = useState(local(a.actualStart)); const [f, setF] = useState(local(a.actualFinish)); const [note, setNote] = useState(a.actualNote ?? '');
   const [ps, setPs] = useState(local(a.start)); const [pf, setPf] = useState(local(a.finish));
-  async function run(patch: Parameters<typeof setActivity>[1], msg: string, close?: () => void, undo?: () => Promise<unknown>) { setBusy(true); setErr(null); try { await setActivity(a.id, patch); close?.(); onDone(msg, undo); } catch (e) { setErr(e); } finally { setBusy(false); } }
+  // saved: the button waits for the refreshed step (8 s at most) so it does not flash back
+  useEffect(() => { setBusy(false); }, [a.actualStart, a.actualFinish, a.tracked, a.actualNote, a.start, a.finish]);
+  async function run(patch: Parameters<typeof setActivity>[1], msg: string, close?: () => void, undo?: () => Promise<unknown>) { setBusy(true); setErr(null); try { await setActivity(a.id, patch); close?.(); onDone(msg, undo); window.setTimeout(() => setBusy(false), 8000); } catch (e) { setErr(e); setBusy(false); } }
   const late = t.lateStart || t.lateFinish;
   const dot = !a.tracked ? 'grey' : t.state === 'FINISHED' ? 'green' : late ? 'red' : t.state === 'RUNNING' ? 'blue' : 'grey';
   const sub = !a.tracked ? 'Not required'

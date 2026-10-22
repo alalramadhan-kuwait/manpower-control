@@ -64,14 +64,21 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   // a link to a tracker no longer active (e.g. the test copy after going live) opens the current one
   const tracker = useMemo(() => (trackers ? (id ? trackers.find((t) => t.id === id) : undefined) ?? currentTracker(trackers, today()) : null), [trackers, id]);
 
-  const load = useCallback(async () => {
-    try { const list = await fetchTrackers(); setTrackers(list); const t = (id ? list.find((x) => x.id === id) : undefined) ?? currentTracker(list, today()); if (t) setData(await fetchTrackerData(t.id)); setError(null); }
-    catch (e) { setError(e); }
+  // after an update only the tracker's data is fetched again (the list of trackers stays), with a bar on top meanwhile
+  const shown = useRef<string | null>(null); const [refreshing, setRefreshing] = useState(false);
+  const load = useCallback(async (refresh = false) => {
+    if (refresh) setRefreshing(true);
+    try {
+      if (refresh && shown.current) { setData(await fetchTrackerData(shown.current)); setError(null); return; }
+      const list = await fetchTrackers(); setTrackers(list); const t = (id ? list.find((x) => x.id === id) : undefined) ?? currentTracker(list, today());
+      if (t) { shown.current = t.id; setData(await fetchTrackerData(t.id)); } setError(null);
+    }
+    catch (e) { setError(e); } finally { if (refresh) setRefreshing(false); }
   }, [id]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    const i = window.setInterval(() => { if (document.visibilityState === 'visible') load(); }, 30_000);
-    const v = () => { if (document.visibilityState === 'visible') load(); };
+    const i = window.setInterval(() => { if (document.visibilityState === 'visible') load(true); }, 30_000);
+    const v = () => { if (document.visibilityState === 'visible') load(true); };
     document.addEventListener('visibilitychange', v);
     return () => { window.clearInterval(i); document.removeEventListener('visibilitychange', v); };
   }, [load]);
@@ -80,7 +87,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const eqs = useMemo(() => (data && steps ? equipViews(data, now, steps) : null), [data, now, steps]);
 
   // a step sheet closes after its action, the equipment sheet stays open (several actions in a row) and refreshes
-  const done = (msg: string, keep = false, undo?: () => Promise<unknown>) => { if (!keep) setSheet(null); setFlash({ msg, undo }); load();
+  const done = (msg: string, keep = false, undo?: () => Promise<unknown>) => { if (!keep) setSheet(null); setFlash({ msg, undo }); load(true);
     window.clearTimeout(flashTimer.current); flashTimer.current = window.setTimeout(() => setFlash(null), undo ? 7000 : 3000); };
   const undoLast = async () => { const u = flash?.undo; if (!u) return; setFlash(null); try { await u(); done('Undone.', true); } catch (e) { setFlash({ msg: e instanceof Error ? e.message : 'Not undone' }); } };
   if (error) return <ErrorBox error={error} />;
@@ -127,6 +134,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {VIEWS[MAIN[tab]] && <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-slate-200/60 p-1 print:hidden">
         {VIEWS[MAIN[tab]]!.map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={cx('min-h-10 rounded-lg text-sm font-semibold', tab === k ? 'bg-white text-[#004080] shadow-sm' : 'text-slate-600')}>{l}</button>)}
       </div>}
+      {refreshing && <div aria-hidden className="fixed inset-x-0 top-0 z-[80] h-1 overflow-hidden bg-[#D6E6F5]"><div className="h-full w-1/3 animate-[trkbar_1s_ease-in-out_infinite] bg-[#0850A0]" /></div>}
       {flash && <div role="status" className="fixed inset-x-3 bottom-24 z-[70] mx-auto flex max-w-md items-center gap-2 rounded-xl bg-[#0d2a5e] px-3 py-2.5 text-sm text-white shadow-xl">
         <span className="min-w-0 flex-1">{flash.msg}</span>
         {flash.undo && <button type="button" onClick={undoLast} className="shrink-0 rounded-lg bg-white/15 px-3 py-1.5 text-xs font-bold">↶ Undo</button>}
@@ -138,7 +146,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={(m, u) => done(m, false, u)} />}
       {tab === 'iats' && <IatsTab iats={data.iats} tags={data.equipment.map((e) => e.tag)} lineup={data.lineup} lineupEq={data.lineupEq} points={points} canEdit={canEdit} onDone={(m) => done(m, true)} onItem={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
-      {sheetTab === 'report' && <BottomSheet open onClose={closeSheetTab} title="💬 Shift report"><ReportTab data={data} now={now} canEdit={canEdit} by={profile.display_name} onSaved={() => load()} /></BottomSheet>}
+      {sheetTab === 'report' && <BottomSheet open onClose={closeSheetTab} title="💬 Shift report"><ReportTab data={data} now={now} canEdit={canEdit} by={profile.display_name} onSaved={() => load(true)} /></BottomSheet>}
       {sheetTab === 'admin' && isHead && <BottomSheet open onClose={closeSheetTab} title="⚙️ Admin · Section Head">
         {other.length > 0 && <div className="mb-3 flex items-center justify-between rounded-xl bg-white px-3 py-2.5 text-sm ring-1 ring-slate-200"><span><b className={test ? 'text-amber-800' : 'text-[#0850A0]'}>{test ? 'TEST' : 'LIVE'}</b> · {test ? 'a copy for trying' : 'this is the real tracker'}</span>
           {other.map((o) => <Link key={o.id} to={`/progress/${o.id}`} className="font-bold text-[#0850A0]">{o.mode === 'live' ? 'Live' : 'Test copy'} ›</Link>)}</div>}
@@ -429,8 +437,10 @@ function ReportTab({ data, now, canEdit, by, onSaved }: { data: TrackerData; now
  *  that follows offers Undo (the step goes back as it was, the waiting note too); other times are set in the item. */
 function StepButton({ a, also = [], finish, more, eq, onDone }: { a: TrackerData['activities'][number]; also?: TrackerData['activities']; finish: boolean; more: number; eq: EquipView['eq']; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null);
+  // saved: the spinner stays until the refreshed step arrives (no flash back to the old state)
+  useEffect(() => { setBusy(false); }, [a.id, a.actualStart, a.actualFinish]);
   const go = async (x: React.MouseEvent) => {
-    x.stopPropagation(); setBusy(true); setErr(null);
+    x.stopPropagation(); if (busy) return; setBusy(true); setErr(null);
     try {
       const at = new Date().toISOString(); const all = [a, ...also];
       const before = all.map((y) => ({ id: y.id, actual_start: y.actualStart ?? null, actual_finish: y.actualFinish ?? null }));
@@ -442,14 +452,14 @@ function StepButton({ a, also = [], finish, more, eq, onDone }: { a: TrackerData
       onDone(`${all.map((y) => y.key).join(' + ')}: ${a.activity} ${finish ? 'finished' : 'started'}.${cleared ? ` Hold "${was}" ended.` : ''}`,
         async () => { for (const b of before) await setActivity(b.id, { actual_start: b.actual_start, actual_finish: b.actual_finish }); if (cleared) await setEquipment(eq.id, { pending_reason: was ?? null }); });
     }
-    catch (e) { setErr(e instanceof Error ? e.message : 'Not saved'); } finally { setBusy(false); }
+    catch (e) { setErr(e instanceof Error ? e.message : 'Not saved'); setBusy(false); }
   };
   return (
     <span className="flex flex-col items-end">
       <button type="button" disabled={busy} onClick={go} title={`${finish ? 'Finish' : 'Start'}: ${a.activity}`} aria-label={`${finish ? 'Finish' : 'Start'} ${a.activity}`}
         className={cx('flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm disabled:opacity-50',
           finish ? 'bg-amber-400 !text-slate-900 ring-1 ring-amber-500 active:bg-amber-500' : 'bg-[#0d2a5e] active:bg-[#0850A0]')}>
-        {finish ? '✓' : '▶'}
+        {busy ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" /> : finish ? '✓' : '▶'}
       </button>
       {more > 0 && <span className="text-[9.5px] font-semibold text-slate-500">+{more} running</span>}
       {err && <span className="max-w-[7rem] text-right text-[9.5px] text-red-700">{err}</span>}

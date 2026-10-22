@@ -1,7 +1,7 @@
 // Isolation & neutralization: the critical blinds (segregation points) and the neutralization loops and items, entered
 // once here. The database moves the rest: the items (handed over when all their blinds are in and the neutralization
 // before handover is done), the guideline step of each row and the soda-ash bar-chart lines.
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { withReactor, NEUT_FLOW, NEUT_LABEL, neutLabel, equipBlind, loopLines, missingBlinds, waitingSteps, type LuStream, type TrkIat, hoursText, kwDay, kwTime, pointComplete, soakLeft, type PointStatus, type TrkActivity, type TrkPoint, type TrkPointStep, type TrkStep } from '@/core/tracker';
 import { addPointStep, setActivity, setPoint, setPointStep, setPointStepTime } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, cx } from '@/ui/components';
@@ -33,7 +33,8 @@ function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], ch
   const checks = raw.map((c) => linked(c, acts));
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [note, setNote] = useState(p.remark ?? '');
-  async function run(patch: Parameters<typeof setPoint>[1], msg: string, close?: () => void, undo?: Parameters<typeof setPoint>[1]) { setBusy(true); setErr(null); try { await setPoint(p.id, patch); close?.(); onDone(msg, undo ? () => setPoint(p.id, undo) : undefined); } catch (e) { setErr(e); } finally { setBusy(false); } }
+  useEffect(() => { setBusy(false); }, [p.status, p.holdReason, p.remark, p.inAt, p.outAt]);
+  async function run(patch: Parameters<typeof setPoint>[1], msg: string, close?: () => void, undo?: Parameters<typeof setPoint>[1]) { setBusy(true); setErr(null); try { await setPoint(p.id, patch); close?.(); onDone(msg, undo ? () => setPoint(p.id, undo) : undefined); window.setTimeout(() => setBusy(false), 8000); } catch (e) { setErr(e); setBusy(false); } }
   const blind = p.kind === 'blind';
   const left = soakLeft(p, now);
   const back = blind ? (p.status === 'out' ? 'in' : 'open') : p.method === 'spray' ? (p.status === 'done' ? 'filling' : 'open') : NEUT_FLOW[Math.max(0, NEUT_FLOW.indexOf(p.status as typeof NEUT_FLOW[number]) - 1)];
