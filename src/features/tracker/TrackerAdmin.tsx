@@ -1,11 +1,12 @@
 // Admin of the progress tracker (Section Head): the bar chart (import, items and activities on / off), the step
-// pre-requisites and targets, the WhatsApp number, the TEST clock, Reset test and Publish.
+// pre-requisites and targets, the WhatsApp number, the TEST clock, Reset test and Publish, the engineer links.
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { STAGES, type EquipView } from '@/core/tracker';
 import { barchartRows, parseCsv } from '@/core/tracker/csv';
 import { importBarchart, publishTracker, resetTest, setActivity, setEquipment, setStep, setTrackerSettings, type TrackerData } from '@/data/tracker';
 import { Button, ErrorBox, Field, cx } from '@/ui/components';
+import { EngineerLinks } from './EngineerLinks';
 
 export const clockKey = (id: string) => `trk-clock-${id}`;
 const local = (iso: string | null) => (iso ? new Date(Date.parse(iso) + 3 * 36e5).toISOString().slice(0, 16) : '');
@@ -16,7 +17,7 @@ function Section({ title, children, open: initial = false }: { title: string; ch
   return <section className="rounded-2xl bg-white p-3 ring-1 ring-slate-200"><button type="button" onClick={() => setOpen((x) => !x)} className="flex w-full items-center justify-between text-sm font-bold text-[#004080]"><span>{title}</span><span>{open ? '▾' : '▸'}</span></button>{open && <div className="mt-2 space-y-2">{children}</div>}</section>;
 }
 
-export function TrackerAdmin({ data, eqs, onDone }: { data: TrackerData; eqs: EquipView[]; onDone: (msg: string) => void }) {
+export function TrackerAdmin({ data, eqs, by = 'Section Head', onDone }: { data: TrackerData; eqs: EquipView[]; by?: string; onDone: (msg: string) => void }) {
   const t = data.tracker; const nav = useNavigate();
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [wa, setWa] = useState(t.settings.whatsapp ?? '');
@@ -33,6 +34,7 @@ export function TrackerAdmin({ data, eqs, onDone }: { data: TrackerData; eqs: Eq
   return (
     <div className="space-y-3">
       {err != null && <ErrorBox error={err} />}
+      <Section title="Engineer links (update without login)" open><EngineerLinks trackerId={t.id} by={by} /></Section>
       <Section title={`${t.mode === 'test' ? 'TEST' : 'LIVE'} · reset and publish`} open>
         {t.mode === 'test' ? <>
           <Field label="Clock for trying the scenarios (this device only)">

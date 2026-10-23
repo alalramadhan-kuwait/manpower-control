@@ -18,9 +18,15 @@ import RequestPage from '@/features/requests/RequestPage';
 import { Shell } from './Shell';
 import { Button } from '@/ui/components';
 import { SplashScreen } from '@/ui/brand';
-import { supabase } from '@/data/supabase';
+import { engineerLink, supabase } from '@/data/supabase';
+import EngineerApp from '@/features/engineer/EngineerApp';
 
+/** An engineer's personal link (?sd=…) or one already opened on this device: the shutdown tracker only, no login. */
 export default function App() {
+  return new URLSearchParams(window.location.search).has('sd') || engineerLink() ? <EngineerApp /> : <MainApp />;
+}
+
+function MainApp() {
   const { loading, session, profile, profileError, access } = useSession();
   if (loading) return <SplashScreen />;
   if (!session) return <LoginPage />;

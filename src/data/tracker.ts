@@ -183,3 +183,22 @@ export async function addUpdate(trackerId: string, v: { key: string; kind: TrkUp
   const { error } = await supabase.from('trk_update').insert({ tracker_id: trackerId, equipment_key: v.key, kind: v.kind, reason: v.reason || null, expected_finish: v.expectedFinish || null });
   if (error) throw new Error(error.message);
 }
+
+// ── Engineer links: a personal link (hidden key) + an ID updates the tracker without an app login ─────────────────
+export interface TrkAccess { id: string; loginId: string; active: boolean; createdAt: string; createdBy: string | null; lastSeenAt: string | null }
+export async function fetchAccess(trackerId: string): Promise<TrkAccess[]> {
+  const { data, error } = await supabase.from('trk_access').select('id,login_id,active,created_at,created_by_name,last_seen_at').eq('tracker_id', trackerId).order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data as { id: string; login_id: string; active: boolean; created_at: string; created_by_name: string | null; last_seen_at: string | null }[])
+    .map((r) => ({ id: r.id, loginId: r.login_id, active: r.active, createdAt: r.created_at, createdBy: r.created_by_name, lastSeenAt: r.last_seen_at }));
+}
+/** A new link for an ID: the key is made here and only its hash is stored; the link is shown once. */
+export async function createAccess(trackerId: string, loginId: string, by: string): Promise<string> {
+  const raw = crypto.getRandomValues(new Uint8Array(24));
+  const key = btoa(String.fromCharCode(...raw)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key)))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const { error } = await supabase.from('trk_access').insert({ tracker_id: trackerId, login_id: loginId, key_hash: hash, created_by_name: by });
+  if (error) throw error;
+  return `${window.location.origin}${import.meta.env.BASE_URL}?sd=${key}`;
+}
+export const setAccessActive = (id: string, active: boolean) => upd('trk_access', id, { active });
