@@ -10,6 +10,7 @@ import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Spinner, cx } from '@/ui/components';
 import { AskUpdates } from './Ask';
 import { DrumQuick } from './Drums';
+import { EngineerView } from '@/features/engineer/EngineerApp';
 import { EventsCard } from './Events';
 import { EquipSheet, StepSheet } from './TrackerSheets';
 import { TrackerAdmin, clockKey } from './TrackerAdmin';
@@ -49,6 +50,9 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   // report / admin (old links, the Today report card) open their sheet over the page
   const sheetTab = raw === 'report' || raw === 'admin' ? raw : null;
   const [lastTab, setLastTab] = useState<Tab>('today');
+  // the engineer view of the same tracker (remembered on this device until switched back)
+  const [eng, setEng] = useState(() => { try { return localStorage.getItem('trk-view') === 'engineer'; } catch { return false; } });
+  const toEng = (on: boolean) => { setEng(on); try { if (on) localStorage.setItem('trk-view', 'engineer'); else localStorage.removeItem('trk-view'); } catch { /* storage blocked */ } window.scrollTo(0, 0); };
   const tab: Tab = sheetTab ? lastTab : raw in MAIN ? raw : 'today';
   const setTab = (t: Tab) => { if (t !== 'report' && t !== 'admin') setLastTab(t); setSearch(t === 'today' ? {} : { tab: t }, { replace: true }); };
   const closeSheetTab = () => setTab(lastTab);
@@ -115,6 +119,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const spare = new Map([...miItems.values()].filter((i) => i.done < i.lines).map((i) => [i.tag, i.spareD]));
   const open = (a: { kind: 'step' | 'equipment'; ref: string }) => setSheet(a.kind === 'step' ? { kind: 'step', id: a.ref } : { kind: 'eq', tag: a.ref });
 
+  if (eng) return <div className="fixed inset-0 z-[60] overflow-y-auto bg-[#f4f6fa]"><EngineerView trackerId={tracker.id} name={profile.display_name} title={tracker.title} onExit={() => toEng(false)} /></div>;
   return (
     <div className="mx-auto max-w-3xl pb-24">
       {test && <div className="mb-2 rounded-lg bg-[#FFE699] px-3 py-1.5 text-center text-xs font-bold tracking-wide text-amber-950">TEST · a copy for trying; nothing here is live{now !== Date.now() && Math.abs(now - Date.now()) > 120_000 ? ` · clock ${kwDay(now)} ${kwTime(now)}` : ''}{other.filter((o) => o.mode === 'live').map((o) => <Link key={o.id} to={`/progress/${o.id}`} className="ml-2 underline">Live ›</Link>)}</div>}
@@ -124,6 +129,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
           <p className="text-xs text-slate-500">{tracker.eventTitle ?? ''}{tracker.settings.workOrder ? ` · WO ${tracker.settings.workOrder}` : ''}</p>
         </div>
         <div className="flex shrink-0 gap-1.5">
+          <button type="button" onClick={() => toEng(true)} title="Engineer view" className="flex min-h-11 flex-col items-center justify-center rounded-xl bg-white px-2 text-[10px] font-bold leading-tight text-[#0d2a5e] ring-1 ring-slate-200 active:bg-slate-50"><span className="text-base">👷</span>Engineer</button>
           <button type="button" onClick={() => setTab('report')} className="flex min-h-11 items-center gap-1 rounded-xl bg-[#08A048] px-3 text-sm font-bold text-white shadow-sm active:bg-green-700">💬 Report</button>
           {isHead && <button type="button" aria-label="Admin" onClick={() => setTab('admin')} className="min-h-11 min-w-11 rounded-xl bg-white text-lg ring-1 ring-slate-200 active:bg-slate-50">⚙️</button>}
         </div>

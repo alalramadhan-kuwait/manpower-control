@@ -53,8 +53,14 @@ function Frame({ title, sub, right, children }: { title: string; sub: string; ri
   );
 }
 
-function Tracker() {
-  const [me, setMe] = useState<{ login_id: string; tracker_id: string; title: string } | null | 'off'>(null);
+/** The engineer view for someone signed in to the app (the Section Head trying it, or working from it): their own
+ *  login instead of a link, a button back to the full tracker. */
+export function EngineerView({ trackerId, name, title, onExit }: { trackerId: string; name: string; title: string; onExit: () => void }) {
+  return <Tracker preset={{ login_id: name, tracker_id: trackerId, title }} onExit={onExit} />;
+}
+
+function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: string; title: string }; onExit?: () => void } = {}) {
+  const [me, setMe] = useState<{ login_id: string; tracker_id: string; title: string } | null | 'off'>(preset ?? null);
   const [data, setData] = useState<TrackerData | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const [tab, setTab] = useState<Tab>('dash');
@@ -63,13 +69,14 @@ function Tracker() {
   const load = useCallback(async (trackerId: string) => { try { setData(await fetchTrackerData(trackerId)); setNow(Date.now()); setErr(null); } catch (e) { setErr(e); } }, []);
   useEffect(() => {
     void (async () => {
+      if (preset) { await load(preset.tracker_id); return; }
       const { data: r, error } = await supabase.rpc('trk_access_me');
       if (error) { setErr(error); return; }
       const row = (r as { login_id: string; tracker_id: string; title: string }[] | null)?.[0];
       if (!row) { setMe('off'); return; }
       setMe(row); await load(row.tracker_id);
     })();
-  }, [load]);
+  }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { const i = window.setInterval(() => { if (me && me !== 'off' && document.visibilityState === 'visible') void load(me.tracker_id); }, 120000); return () => window.clearInterval(i); }, [me, load]);
   useEffect(() => { if (!flash) return; const t = window.setTimeout(() => setFlash(null), 7000); return () => window.clearTimeout(t); }, [flash]);
   if (me === 'off') return (
@@ -86,7 +93,8 @@ function Tracker() {
   const props = { d: data, now, done };
   return (
     <Frame title={`Hi ${me.login_id}`} sub={`${kwDay(now)} · ${sh.shift === 'D' ? 'Day' : 'Night'} shift · ${data.tracker.title}`}
-      right={<button type="button" aria-label="Refresh" onClick={() => void load(me.tracker_id)} className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-semibold">↻</button>}>
+      right={<>{onExit && <button type="button" onClick={onExit} className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-[#0d2a5e]">Section Head view</button>}
+        <button type="button" aria-label="Refresh" onClick={() => void load(me.tracker_id)} className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-semibold">↻</button></>}>
       <main className="mx-auto max-w-xl px-3 pt-3">
         {err != null && <div className="mb-2"><ErrorBox error={err} /></div>}
         {tab === 'dash' && <Dashboard {...props} />}
