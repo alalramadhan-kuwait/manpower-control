@@ -502,6 +502,7 @@ export const SHIFT_CLS = {
   A: { head: 'bg-orange-300 text-orange-950', body: 'bg-orange-50/70', line: 'border-orange-300' },
   N: { head: 'bg-indigo-300 text-indigo-950', body: 'bg-indigo-50/70', line: 'border-indigo-300' }
 } as const;
+const SHIFT_PILL = { M: 'bg-amber-500 text-white', A: 'bg-orange-600 text-white', N: 'bg-indigo-600 text-white' } as const;
 const nth = (duty: string) => (duty.endsWith('1') ? '1st' : '2nd');
 const nb = (name: string) => name.replace(/-/g, '‑');
 
@@ -518,12 +519,26 @@ function inCharge(c: CrewDay): { name: string | null; note: string } {
  *  day duty in the morning, and the crew's result. The full "who counts" detail opens under it. */
 function ShiftBoard({ result, leave, date, needFor }: { result: DayResult; leave: Map<string, OnLeave>; date: string; needFor: (crew: string) => CoverageNeed | undefined }) {
   const [open, setOpen] = useState(false);
+  // two shifts at a time, so the names have room: Morning | Afternoon, then › Afternoon | Night
+  const [at, setAt] = useState(0);
   const working = result.crews.filter((c) => c.working);
   if (!working.length) return null;
+  const from = Math.min(at, Math.max(0, working.length - 2)), shown = working.slice(from, from + 2);
+  const last = Math.max(0, working.length - 2);
   return (
     <section className="mb-2">
-      <div className="grid overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200" style={{ gridTemplateColumns: `repeat(${working.length}, minmax(0, 1fr))` }}>
-        {working.map((c, i) => <ShiftColumn key={c.crew} c={c} first={i === 0} result={result} leave={leave} date={date} need={needFor(c.crew)} />)}
+      {working.length > 2 && (
+        <div className="mb-1.5 flex items-center gap-1.5">
+          <button type="button" aria-label="Earlier shifts" disabled={from === 0} onClick={() => setAt(from - 1)} className="flex h-8 w-9 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-slate-300 disabled:opacity-35"><ChevronLeft className="h-4 w-4" /></button>
+          <div className="flex flex-1 justify-center gap-1.5">
+            {working.map((c, i) => { const on = i >= from && i < from + 2;
+              return <button key={c.crew} type="button" onClick={() => setAt(Math.min(i, last))} className={cx('rounded-full px-2.5 py-0.5 text-[11.5px] font-bold', on ? SHIFT_PILL[c.state as 'M' | 'A' | 'N'] : 'bg-white text-slate-600 ring-1 ring-slate-200')}>{c.shift}</button>; })}
+          </div>
+          <button type="button" aria-label="Later shifts" disabled={from >= last} onClick={() => setAt(from + 1)} className="flex h-8 w-9 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-slate-300 disabled:opacity-35"><ChevronRight className="h-4 w-4" /></button>
+        </div>
+      )}
+      <div className="grid overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200" style={{ gridTemplateColumns: `repeat(${shown.length}, minmax(0, 1fr))` }}>
+        {shown.map((c, i) => <ShiftColumn key={c.crew} c={c} first={i === 0} result={result} leave={leave} date={date} need={needFor(c.crew)} />)}
       </div>
       <button type="button" onClick={() => setOpen(!open)} className="mt-1 flex min-h-8 w-full items-center justify-center gap-1 rounded-xl text-xs font-medium text-brand-700">
         {open ? <>Hide who counts <ChevronUp className="h-4 w-4" /></> : <>Who counts · details <ChevronDown className="h-4 w-4" /></>}
@@ -543,29 +558,29 @@ function ShiftColumn({ c, first, result, leave, date, need }: { c: CrewDay; firs
   const final = c.finalStatus;
   const Group = ({ label, pos, people, notes }: { label: string; pos: PositionResult; people: MpPerson[]; notes: Note[] }) => (
     <div className="mt-1.5">
-      <b className={cx('text-[12px]', pos.count < pos.min && 'text-status-red')}>{label} {people.length}</b>
-      {people.map((p) => <Link key={p.id} to={`/employees/${p.id}`} className="block truncate text-[11.5px] tracking-[-0.3px] text-slate-800">{nb(p.name)}</Link>)}
+      <b className={cx('text-[13px]', pos.count < pos.min && 'text-status-red')}>{label} {people.length}</b>
+      {people.map((p) => <Link key={p.id} to={`/employees/${p.id}`} className="block truncate text-slate-800">{nb(p.name)}</Link>)}
       {notes.map((n) => <span key={n.text} className={cx('mt-0.5 block rounded px-1 text-[10.5px] font-medium leading-tight', NOTE_CLS[n.tone])}>{n.text}</span>)}
     </div>
   );
   return (
-    <div className={cx('min-w-0 overflow-hidden text-[12px] leading-[1.5]', cls.body, !first && 'border-l border-white')}>
-      <div className={cx('flex items-center gap-1 whitespace-nowrap px-1.5 py-1 text-[10px] font-extrabold uppercase', cls.head)}>
-        <span className={cx('inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] text-white', CREW_IDENTITY[c.crew].bg)}>{c.crew}</span><span>{c.shift}</span>
-        <span className="ml-auto rounded bg-white/80 px-1 text-[10px] normal-case">{nth(c.duty)}</span>
+    <div className={cx('min-w-0 overflow-hidden text-[13px] leading-[1.55]', cls.body, !first && 'border-l-2 border-white')}>
+      <div className={cx('flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1.5 text-[11.5px] font-extrabold uppercase', cls.head)}>
+        <span className={cx('inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full text-[10px] text-white', CREW_IDENTITY[c.crew].bg)}>{c.crew}</span><span>{c.shift}</span>
+        <span className="ml-auto rounded bg-white/80 px-1.5 text-[11px] normal-case">{nth(c.duty)}</span>
       </div>
-      <div className="px-1.5 pb-2 pt-1">
-        {who.name ? <b className="block truncate text-[11.5px] font-extrabold tracking-[-0.4px] text-brand-800">{nb(who.name)}</b> : <b className="block text-[12px] text-status-red">No Controller</b>}
-        <span className="block truncate text-[10.5px] text-slate-500">in charge{who.note ? ` · ${who.note}` : ''}</span>
+      <div className="px-2.5 pb-2.5 pt-1.5">
+        {who.name ? <b className="block truncate text-[14px] font-extrabold text-brand-800">{nb(who.name)}</b> : <b className="block text-[12px] text-status-red">No Controller</b>}
+        <span className="block truncate text-[11.5px] text-slate-500">in charge{who.note ? ` · ${who.note}` : ''}</span>
         {ctlNotes.map((n) => n.to ? <Link key={n.text} to={n.to} className={cx('mt-0.5 block rounded px-1 text-[10.5px] font-medium leading-tight', NOTE_CLS[n.tone])}>{n.text} · {n.link} ›</Link>
           : <span key={n.text} className={cx('mt-0.5 block rounded px-1 text-[10.5px] font-medium leading-tight', NOTE_CLS[n.tone])}>{n.text}</span>)}
         <Group label="Panel" pos={c.panel} people={panel} notes={notesFor(c, 'panel', leave, date)} />
         <Group label="Field" pos={c.field} people={field} notes={notesFor(c, 'field', leave, date)} />
         {morning.length > 0 && (
           <div className={cx('mt-1.5 border-t border-dashed pt-1', cls.line)}>
-            <b className="text-[12px]">Day duty</b> <span className="text-[10.5px] text-slate-500">Sun–Thu</span>
+            <b className="text-[13px]">Day duty</b> <span className="text-[11.5px] text-slate-500">Sun–Thu</span>
             {[...morning].sort((a, b) => bySeniority(a.person, b.person)).map((s) => { const l = leave.get(s.person.id);
-              return <Link key={s.person.id} to={`/employees/${s.person.id}`} className="block truncate text-[11.5px] tracking-[-0.3px] text-slate-800">{nb(s.person.name)}{s.absence ? <span className="block text-[10.5px] text-slate-500">{l?.typeShort ?? s.absence.typeShort ?? 'Leave'}</span> : !s.working ? <span className="block text-[10.5px] text-slate-500">off today</span> : null}</Link>; })}
+              return <Link key={s.person.id} to={`/employees/${s.person.id}`} className="block truncate text-slate-800">{nb(s.person.name)}{s.absence ? <span className="block text-[10.5px] text-slate-500">{l?.typeShort ?? s.absence.typeShort ?? 'Leave'}</span> : !s.working ? <span className="block text-[10.5px] text-slate-500">off today</span> : null}</Link>; })}
           </div>
         )}
         <div className="mt-1.5 flex flex-wrap gap-1">
