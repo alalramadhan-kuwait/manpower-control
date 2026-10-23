@@ -4,10 +4,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
-import { blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
+import { blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, shiftOf, shiftReport, staleItems, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import { setActivity, setEquipment, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Spinner, cx } from '@/ui/components';
+import { AskUpdates } from './Ask';
 import { DrumQuick } from './Drums';
 import { EventsCard } from './Events';
 import { EquipSheet, StepSheet } from './TrackerSheets';
@@ -86,6 +87,8 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const now = useClock(tracker);
   const steps = useMemo(() => (data ? stepViews(data, now) : null), [data, now]);
   const eqs = useMemo(() => (data && steps ? equipViews(data, now, steps) : null), [data, now, steps]);
+  // hours without an update, for the items with work running or due (Ask for updates)
+  const stale = useMemo(() => new Map(data ? staleItems(data, now).map((i) => [i.key, i.ageH]) : []), [data, now]);
 
   // a step sheet closes after its action, the equipment sheet stays open (several actions in a row) and refreshes
   const done = (msg: string, keep = false, undo?: () => Promise<unknown>) => { if (!keep) setSheet(null); setFlash({ msg, undo }); load(true);
@@ -144,7 +147,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} now={now} onOpen={open} onNav={nav} />}
       {tab === 'isolation' && <IsolationTab key={`iso-${isoKind}`} trackerId={tracker.id} initialKind={isoKind} activities={data.activities} points={points} pointSteps={data.pointSteps} lineup={data.lineup} iats={data.iats} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} focus={focus} onFocus={setFocus} onItem={(tag) => setSheet({ kind: 'eq', tag })} onStep={(id) => setSheet({ kind: 'step', id })} onDone={(m, u) => done(m, false, u)} />}
       {tab === 'guideline' && <SequenceTab steps={steps} auto={auto} onOpen={(id) => setSheet({ kind: 'step', id })} />}
-      {tab === 'equipment' && <EquipmentTab key={`eq-${lateFirst}`} initialLateFirst={lateFirst} eqs={eqs} activities={data.activities} points={points} now={now} spare={spare} canEdit={canEdit} engine={data.engine} events={data.events} trackerId={tracker.id} onDone={(m, u) => done(m, true, u)} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
+      {tab === 'equipment' && <EquipmentTab key={`eq-${lateFirst}`} initialLateFirst={lateFirst} eqs={eqs} activities={data.activities} points={points} now={now} spare={spare} stale={stale} canEdit={canEdit} engine={data.engine} events={data.events} trackerId={tracker.id} onDone={(m, u) => done(m, true, u)} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={(m, u) => done(m, false, u)} />}
       {tab === 'iats' && <IatsTab iats={data.iats} tags={data.equipment.map((e) => e.tag)} lineup={data.lineup} lineupEq={data.lineupEq} points={points} canEdit={canEdit} onDone={(m, u) => done(m, true, u)} onItem={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
@@ -220,7 +223,7 @@ function SequenceTab({ steps, auto, onOpen }: { steps: Map<string, StepView>; au
  *  step), the status and the plan difference. "All" groups the items under their group; "Late first" puts the late,
  *  pending and IAT items on top. */
 const ISO_BG = { red: 'bg-[#E02028]', grey: 'bg-slate-300', amber: 'bg-amber-500', teal: 'bg-teal-500', blue: 'bg-[#0850A0]' } as const;
-function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, spare = new Map(), canEdit = false, engine, events = [], trackerId, onDone, onOpen }: { initialLateFirst?: boolean; engine?: TrackerData['engine']; events?: TrackerData['events']; trackerId?: string; eqs: EquipView[]; activities: TrackerData['activities']; points: TrkPoint[]; now: number; spare?: Map<string, number>; canEdit?: boolean; onDone?: (msg: string, undo?: () => Promise<unknown>) => void; onOpen: (tag: string) => void }) {
+function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, spare = new Map(), stale = new Map(), canEdit = false, engine, events = [], trackerId, onDone, onOpen }: { initialLateFirst?: boolean; engine?: TrackerData['engine']; events?: TrackerData['events']; trackerId?: string; eqs: EquipView[]; activities: TrackerData['activities']; points: TrkPoint[]; now: number; spare?: Map<string, number>; stale?: Map<string, number>; canEdit?: boolean; onDone?: (msg: string, undo?: () => Promise<unknown>) => void; onOpen: (tag: string) => void }) {
   const lineOf = (e: EquipView): { text: string; tone: 'run' | 'muted' | 'red' } | null => {
     const key = e.eq.barchartKey ?? e.eq.tag;
     const xs = sortActs(activities.filter((a) => a.tracked && !a.detail && a.key === key));
@@ -295,7 +298,7 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
     // the same step on the others: running or next (a finish brings a member not started yet along, from the same start)
     const also = each.filter((x) => x && x !== lead && x.a.activity === lead.a.activity && (x.finish === lead.finish || lead.finish)).map((x) => x!.a);
     return { ...lead, also }; };
-  const row = (e: EquipView) => { const l = lineOfSet(e); const st = canEdit ? stepOfSet(e) : null; const sp = spare.get(e.eq.tag); const dm = dumping(e);
+  const row = (e: EquipView) => { const l = lineOfSet(e); const st = canEdit ? stepOfSet(e) : null; const sp = spare.get(e.eq.tag); const ageH = stale.get(e.eq.barchartKey ?? e.eq.tag); const dm = dumping(e);
     const set = setOf(e); const name = set.length > 1 ? e.eq.combine! : e.eq.tag; const stage = Math.min(...set.map((m) => m.stage));
     return (
     <div key={e.eq.tag} role="button" tabIndex={0} onClick={() => onOpen(e.eq.tag)} onKeyDown={(x) => x.key === 'Enter' && onOpen(e.eq.tag)}
@@ -307,6 +310,7 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
           {iso(e) && iso(e)!.state !== 'ho' && <IsoChip state={iso(e)!.state}>{ISO_LABEL[iso(e)!.state]}</IsoChip>}
           <span className={cx('whitespace-nowrap rounded px-1 py-px text-[9.5px] font-bold', FLAG_STYLE[e.flag].cls)}>{FLAG_STYLE[e.flag].label}{e.late ? ` ${hoursText(e.lateBy)}` : ''}{e.iatsOpen.length && e.flag !== 'IAT_OPEN' ? ` · IAT ${e.iatsOpen.length}` : ''}</span>
           {e.plan && e.stage < 6 && e.plan.variance !== 0 && <PlanChip variance={e.plan.variance} days={e.plan.days} short />}
+          {ageH !== undefined && <span className="rounded bg-slate-100 px-1 text-[9.5px] font-bold text-slate-700">⏰ {ageH} h no update</span>}
           {sp !== undefined && sp <= 7 && <span className={cx('rounded px-1 text-[9.5px] font-bold', sp < 0 ? 'bg-red-600 text-white' : sp <= 3 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{sp < 0 ? `delays ${-sp} d` : `${sp} d float`}</span>}
         </span>
         {e.eq.group === 'PSVs' && e.eq.description && <span className="block truncate text-[11.5px] text-slate-600">📍 {e.eq.description.split(' · ')[0].replace(/^PSV on /, 'On ')}</span>}
@@ -372,7 +376,21 @@ function MapTab({ steps, onOpen }: { steps: Map<string, StepView>; onOpen: (id: 
   );
 }
 
-function ReportTab({ data, now, canEdit, by, onSaved }: { data: TrackerData; now: number; canEdit: boolean; by: string; onSaved: () => void }) {
+function ReportTab(p: { data: TrackerData; now: number; canEdit: boolean; by: string; onSaved: () => void }) {
+  const [ask, setAsk] = useState(false);
+  const n = useMemo(() => staleItems(p.data, p.now).length, [p.data, p.now]);
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-200/70 p-1 print:hidden">
+        {([[false, 'Shift report'], [true, `Ask for updates${n ? ` (${n})` : ''}`]] as const).map(([v, l]) => (
+          <button key={l} type="button" onClick={() => setAsk(v)} className={cx('min-h-10 rounded-xl text-sm font-semibold', ask === v ? 'bg-white text-[#0d2a5e] shadow-sm' : 'text-slate-600')}>{l}</button>))}
+      </div>
+      {ask ? <AskUpdates data={p.data} now={p.now} by={p.by} /> : <ShiftReportView {...p} />}
+    </div>
+  );
+}
+
+function ShiftReportView({ data, now, canEdit, by, onSaved }: { data: TrackerData; now: number; canEdit: boolean; by: string; onSaved: () => void }) {
   const sh = shiftOf(now);
   const saved = data.shiftLogs.find((l) => l.shiftDate === sh.date && l.shift === sh.shift) ?? null;
   const [notes, setNotes] = useState(saved?.notes ?? '');

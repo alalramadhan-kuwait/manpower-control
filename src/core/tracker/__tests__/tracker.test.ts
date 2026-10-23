@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { equipBlind, linkedStep, miWeighted, neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { askText, staleItems, equipBlind, linkedStep, miWeighted, neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -441,5 +441,26 @@ describe('a control valve dropped in two procedures', () => {
     expect(linkedStep(step(['FV-1426']), acts).doneAt).toBe(kw('2026-10-22 13:49'));
     const both = linkedStep(step(['FV-548', 'FV-1427']), acts);
     expect([both.startAt, both.doneAt]).toEqual([kw('2026-10-22 09:04'), null]);
+  });
+});
+
+describe('ask for updates', () => {
+  const eqp = (tag: string, group: string, extra = {}) => ({ id: tag, tag, group, description: null, fo: null, hoStep: null, procedure: null, barchartKey: tag, opsItem: false, critical: false, tracked: true, disabledReason: null,
+    plannedHo: null, plannedFinish: null, sort: 0, stage: 2, pendingReason: null, remark: null, blindsIn: null, blindsOut: null, updatedBy: null, updatedAt: null, ...extra });
+  const act = (key: string, id: string, start: string, finish: string, as: string | null, af: string | null = null) => ({ id: key + id, activityId: id, group: 'Mech', key, activity: id, durationH: 24, start: kw(start), finish: kw(finish), stage: 2, tracked: true, actualStart: as && kw(as), actualFinish: af && kw(af) });
+  const d = { settings: { miEnd: kw('2026-11-07 07:00') }, steps: [], iats: [], log: [], points: [],
+    equipment: [eqp('V-12-209', 'Vessels'), eqp('E-12-207', 'Exchangers'), eqp('12-PSV-0537', 'PSVs'), eqp('12-PSV-0601', 'PSVs'), eqp('V-12-212', 'Vessels', { pendingReason: 'Waiting gas test' }), eqp('V-12-201', 'Vessels')],
+    activities: [act('V-12-209', 'Hydrojet', '2026-10-21 07:00', '2026-10-22 07:00', '2026-10-21 08:00'),
+      act('E-12-207', 'Hydroblast', '2026-10-21 07:00', '2026-10-22 07:00', '2026-10-22 20:00'),
+      act('12-PSV-0537', 'Remove PSV', '2026-10-20 07:00', '2026-10-25 07:00', '2026-10-21 09:00'), act('12-PSV-0601', 'Remove PSV', '2026-10-20 07:00', '2026-10-25 07:00', '2026-10-21 10:00'),
+      act('V-12-212', 'Open manway', '2026-10-21 07:00', '2026-10-21 19:00', null),
+      act('V-12-201', 'Box-up', '2026-10-21 07:00', '2026-10-21 19:00', null)] } as unknown as TrkData;
+  it('asks about running or due work with no update past its limit; on hold, recent or finished items are left out', () => {
+    const xs = staleItems(d, Date.parse(kw('2026-10-23 07:00')));
+    // V-209 46 h (> 12 h), PSVs 46/45 h (> 24 h), V-201 box-up due since 21 Oct 07:00 not started; E-207 updated 11 h ago, V-212 on hold
+    expect(xs.map((x) => [x.tag, x.question])).toEqual([['V-12-201', 'Started?'], ['V-12-209', 'Done?'], ['12-PSV-0537', 'Done?'], ['12-PSV-0601', 'Done?']]);
+    const text = askText(xs, Date.parse(kw('2026-10-23 07:00')), { name: 'U-12 TR-2 SD' });
+    expect(text).toContain('*Vessels*\n- V-201: Box-up due since');
+    expect(text).toContain('*PSVs*\n- PSV-0537/0601: Remove PSV I/P since Wed 21 Oct 09:00 (46 h no update). Done?');
   });
 });

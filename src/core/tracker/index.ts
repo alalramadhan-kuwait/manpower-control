@@ -833,3 +833,74 @@ export function phases(d: TrkData, now: number, steps = stepViews(d, now)): Phas
       plannedEnd, estEnd: Number.isNaN(plannedEnd) ? null : w ? w.estEnd : plannedEnd + delay, weighted: w },
   };
 }
+
+// ── Ask for updates: the items whose work has had no update for a while, as a WhatsApp request ─────────────────
+/** No update for this long asks for one: critical-path items sooner, small jobs (PSVs, CV shells …) later. */
+export const STALE_H = { normal: 12, critical: 6, small: 24 } as const;
+export interface StaleItem { tag: string; key: string; section: string; critical: boolean; small: boolean;
+  /** the last thing heard about it, its age in hours, the limit it passed */
+  lastAt: number; ageH: number; limitH: number;
+  /** what we know (e.g. "tray removal I/P since Thu 15:28") and what we ask ("Done?") */
+  status: string; question: string }
+const askWhen = (t: number) => `${kwDay(t)} ${kwTime(t)}`;
+const askName = (x: string) => { const t = x.replace(/\s+/g, ' ').trim(); return t.length > 48 ? `${t.slice(0, 46).trim()}…` : t; };
+/** The request's sections: the equipment groups, main equipment first, PSVs last. */
+const ASK_ORDER = ['Reactors', 'Heaters', 'Exchangers', 'Air coolers', 'Vessels', 'Filters', 'Compressor', 'Pumps / LO'];
+const ASK_NAME: Record<string, string> = { 'CV shells': 'Control valves', 'Pumps / LO': 'Pumps / lube oil' };
+/** The tracked items with work running (or due and not started) and no update for longer than their limit: their
+ *  steps' times, the item's own changes (remark, hold, stage) and drum entries all count as an update. Items on hold,
+ *  finished or not yet due are not asked. Latest-first is the oldest update first. */
+export function staleItems(d: TrkData, now: number, limits: { normal?: number; critical?: number; small?: number } = {}): StaleItem[] {
+  const lim = { ...STALE_H, normal: d.settings.staleH ?? STALE_H.normal, ...limits };
+  const w = miWeighted(d, now, equipViews(d, now));
+  const spare = new Map((w?.items ?? []).map((i) => [i.key, i.spareD]));
+  const seen = new Set<string>(); const out: StaleItem[] = [];
+  for (const e of d.equipment) {
+    if (!e.tracked || e.pendingReason) continue;
+    const key = e.barchartKey ?? e.tag;
+    if (e.combine) { if (seen.has(e.combine)) continue; seen.add(e.combine); }
+    const keys = e.combine ? d.equipment.filter((x) => x.combine === e.combine).map((x) => x.barchartKey ?? x.tag) : [key];
+    const acts = sortActs(d.activities.filter((a) => keys.includes(a.key) && a.tracked && !a.detail && a.group !== 'Operations'));
+    const open = acts.filter((a) => !a.actualFinish);
+    if (!acts.length || !open.length) continue;
+    const running = open.filter((a) => a.actualStart);
+    const next = open.find((a) => !a.actualStart);
+    const due = !running.length && next?.start && ms(next.start) < now ? next : null;
+    if (!running.length && !due) continue;
+    const scope = (d.engine?.scopes ?? []).find((s) => keys.includes(s.key) && s.scope === 'removal' && !s.completeAt);
+    const entries = scope ? (d.engine?.entries ?? []).filter((x) => x.scopeId === scope.id && x.kind !== 'transfer') : [];
+    const times = [...acts.flatMap((a) => [a.actualStart, a.actualFinish, a.updatedAt]), ...d.equipment.filter((x) => keys.includes(x.barchartKey ?? x.tag)).map((x) => x.updatedAt), ...entries.map((x) => x.enteredAt)]
+      .filter((x): x is string => !!x).map(ms).filter((x) => !Number.isNaN(x) && x <= now);
+    const lastAt = times.length ? Math.max(...times) : due ? ms(due.start) : now;
+    const small = isMisc(e.group), critical = e.critical || (spare.get(key) ?? Infinity) <= CRITICAL_SPARE_D;
+    const limitH = critical ? lim.critical : small ? lim.small : lim.normal;
+    const ageH = Math.round((now - lastAt) / H);
+    if (ageH < limitH) continue;
+    const dumping = scope && running.some((a) => scope.activityIds.includes(a.activityId));
+    const drums = entries.reduce((t, x) => t + x.qty, 0);
+    const r = running[0];
+    const status = dumping ? `${drums.toLocaleString('en-US')} drums at ${askWhen(lastAt)}` : r ? `${askName(r.activity)} I/P since ${askWhen(ms(r.actualStart))}` : `${askName(due!.activity)} due since ${askWhen(ms(due!.start))}`;
+    const question = dumping ? 'Drums now?' : r ? 'Done?' : 'Started?';
+    out.push({ tag: e.combine ?? e.tag, key, section: e.group, critical, small, lastAt, ageH, limitH, status, question });
+  }
+  return out.sort((a, b) => a.lastAt - b.lastAt);
+}
+/** The request as WhatsApp text: by section, critical items marked, the same question on several items on one line. */
+export function askText(items: StaleItem[], now: number, opts: { name?: string; test?: boolean; by?: string } = {}): string {
+  const sh = shiftOf(now);
+  const out = [`*${opts.test ? '[TEST] ' : ''}${opts.name ?? 'Shutdown'} · Update request*`, `_${kwDay(now)} · ${sh.shift === 'D' ? 'Day' : 'Night'} shift · ${kwTime(now)}_`, 'Please reply with the status of:'];
+  const rank = (g: string) => (ASK_ORDER.includes(g) ? ASK_ORDER.indexOf(g) : g === 'PSVs' ? 99 : 50);
+  for (const sec of [...new Set(items.map((i) => i.section))].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))) {
+    const xs = items.filter((i) => i.section === sec); if (!xs.length) continue;
+    // the same work with the same question on several items (PSVs out to the shop) shares a line
+    const by = new Map<string, StaleItem[]>();
+    for (const x of xs) { const k = `${x.status.replace(/ since .*| at .*/, '')}|${x.question}`; by.set(k, [...(by.get(k) ?? []), x]); }
+    out.push('', `*${ASK_NAME[sec] ?? sec}*`, ...[...by.values()].map((g) => {
+      const old = g[0]; const s = g.length > 1 ? old.status.replace(/ since .*/, ` since ${askWhen(Math.min(...g.map((x) => x.lastAt)))}`) : old.status;
+      return `- ${g.some((x) => x.critical) ? '⏱ ' : ''}${joinTags(g.map((x) => x.tag.replace(/^12-/, '')))}: ${s} (${old.ageH} h no update). ${old.question}`;
+    }));
+  }
+  out.push('', 'Thank you.');
+  if (opts.by) out.push(`— ${opts.by}`);
+  return out.join('\n');
+}
