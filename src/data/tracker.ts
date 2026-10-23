@@ -138,6 +138,7 @@ export const setIatTicks = (id: string, patch: Partial<{ ops_action: boolean; ho
 /** An event of the shutdown, or a problem on one item (key). */
 export async function addEvent(trackerId: string, category: string, text: string, key: string | null = null) { const { error } = await supabase.from('trk_event').insert({ tracker_id: trackerId, category, text, equipment_key: key, started_at: new Date().toISOString() }); if (error) throw error; }
 export const endEvent = (id: string, ended: boolean) => upd('trk_event', id, { ended_at: ended ? new Date().toISOString() : null });
+export const setEventText = (id: string, text: string) => upd('trk_event', id, { text });
 export const closeIat = (id: string) => upd('trk_iat', id, { status: 'closed', closed_at: new Date().toISOString(), sheet_status: 'Completed' });
 /** The IAT status as in the tracking sheet (Completed / Cancelled close it) and its remark. */
 export const setIatStatus = (id: string, sheetStatus: string, closed: boolean, remark?: string | null) =>

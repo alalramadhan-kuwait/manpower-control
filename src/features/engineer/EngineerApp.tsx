@@ -3,16 +3,19 @@
 // reactors' issues and temperatures), Isolation (neutralization and blinds), Small jobs & IATs. Every change is
 // stamped with the ID; Undo for a few seconds after each one.
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { IAT_STATUSES, iatClosedBy, reportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
-  type MiItem, type PointStatus, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
-import { addEngStep, addEvent, addQtyEntry, confirmEmpty, endEvent, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
+import { EVENT_LABEL, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
+  type MiItem, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
+import { addEngStep, addEvent, addQtyEntry, confirmEmpty, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
 import { BottomSheet, ErrorBox, Spinner, cx } from '@/ui/components';
-import { EventsCard } from '@/features/tracker/Events';
 
-type Tab = 'dash' | 'equip' | 'iso' | 'small';
+type Tab = 'dash' | 'equip' | 'ho' | 'scope' | 'hot';
 type Done = (msg: string, undo?: () => Promise<unknown>) => void;
-const TABS: [Tab, string, string][] = [['dash', '📊', 'Dashboard'], ['equip', '🔧', 'Equipment'], ['iso', '🔒', 'Isolation'], ['small', '🧩', 'Small & IATs']];
+const TABS: [Tab, string, string][] = [['dash', '📊', 'Dashboard'], ['equip', '🔧', 'Equipment'], ['ho', '🤝', 'Handover'], ['scope', '📋', 'SD scope'], ['hot', '🔥', 'Hot work']];
+/** Small jobs followed with the main equipment (Section Head, 23 Oct): they stay small jobs in the M & I %. */
+const WITH_EQUIP = ['Pumps / LO', 'PSVs'];
+/** The SD scope lists by discipline; PMRs are hot work. */
+const SCOPE: [string, string[]][] = [['Operations', ['OPR list']], ['Instrument', ['CV shells']], ['Inspection', ['Check valves', 'Process piping']]];
 const H = 36e5;
 const short = (t: string) => t.replace(/^([A-Z]{1,3})-12-/, '$1-').replace(/^12-/, '');
 const when = (iso: string | number | null | undefined) => (iso ? `${kwDay(iso)} ${kwTime(iso)}` : '');
@@ -101,15 +104,16 @@ function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: 
         {err != null && <div className="mb-2"><ErrorBox error={err} /></div>}
         {tab === 'dash' && <Dashboard {...props} />}
         {tab === 'equip' && <Equipment {...props} f={eqf} setF={setEqf} />}
-        {tab === 'iso' && <Isolation {...props} />}
-        {tab === 'small' && <Small {...props} />}
+        {tab === 'ho' && <Handover {...props} />}
+        {tab === 'scope' && <Scope {...props} />}
+        {tab === 'hot' && <HotWork {...props} />}
       </main>
       {flash && <div className="fixed inset-x-3 bottom-24 z-[70] mx-auto flex max-w-xl items-center gap-3 rounded-2xl bg-[#0d2a5e] px-4 py-3 text-sm text-white shadow-lg">
         <span className="min-w-0 flex-1">{flash.msg}</span>
         {flash.undo && <button type="button" className="shrink-0 font-bold" onClick={async () => { const u = flash.undo!; setFlash(null); try { await u(); done('Undone.'); } catch (e) { setErr(e); } }}>↶ Undo</button>}
       </div>}
       <nav className="fixed inset-x-0 bottom-0 z-40 flex border-t border-slate-200 bg-white pb-[max(10px,env(safe-area-inset-bottom))] pt-2">
-        {TABS.map(([k, ic, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={cx('flex-1 text-center text-[11px] font-bold', tab === k ? 'text-[#0d2a5e]' : 'text-slate-400')}><span className="block text-xl">{ic}</span>{l}</button>)}
+        {TABS.map(([k, ic, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={cx('flex-1 text-center text-[10.5px] font-bold', tab === k ? 'text-[#0d2a5e]' : 'text-slate-400')}><span className="block text-xl">{ic}</span>{l}</button>)}
       </nav>
     </Frame>
   );
@@ -132,7 +136,7 @@ const GroupRow = ({ label, act, plan, onClick }: { label: string; act: number; p
     <span className="whitespace-nowrap text-right font-semibold tabular-nums text-slate-600">{act}% / {plan}%</span><span className="text-slate-400">›</span></button>);
 
 // ── Dashboard ───────────────────────────────────────────────────────────────────────────────────────────────────────
-function Dashboard({ d, now, go, by }: P) {
+function Dashboard({ d, now, go, by, done }: P) {
   const [report, setReport] = useState(false);
   const mi = useMemo(() => phases(d, now).mi, [d, now]);
   const w = mi.weighted;
@@ -155,6 +159,7 @@ function Dashboard({ d, now, go, by }: P) {
       <p className="text-xs text-slate-600">{late ? 'forecast past the plan' : `${cp?.spareD ?? 0} days spare`} · forecast {when(w.estEnd)} · plan {kwDay(w.end)}</p>
       {cp && <p className="mt-1.5 text-xs text-slate-600">Sets the end: <b>{short(cp.tag)}</b>{cp.driving ? ` · ${cp.driving}` : ''}</p>}
     </Card>
+    <Issues d={d} done={done} />
     <Card>
       <p className="text-[11px] font-bold text-slate-500">MAIN EQUIPMENT DONE</p>
       <p className="flex items-baseline gap-2"><span className="text-[28px] font-extrabold text-[#0d2a5e]">{w.main.physPct}%</span>
@@ -165,10 +170,9 @@ function Dashboard({ d, now, go, by }: P) {
     <Card>
       <p className="mb-1 text-[11px] font-bold text-slate-500">BY GROUP · done / plan <span className="font-normal">· tap to open</span></p>
       {groups.map((x) => <GroupRow key={x.g} label={x.g} act={x.act} plan={x.plan} onClick={() => go('equip', x.g)} />)}
-      <GroupRow label="Small jobs" act={w.small.physPct} plan={w.small.planPct} onClick={() => go('small')} />
+      <GroupRow label="Small jobs" act={w.small.physPct} plan={w.small.planPct} onClick={() => go('scope')} />
       <p className="mt-1.5 text-[11px] text-slate-500">Black line = where the plan is today</p>
     </Card>
-    {(d.events ?? []).filter((e) => !e.endedAt).length > 0 && <Card><p className="mb-1 text-[11px] font-bold text-slate-500">OPEN ISSUES</p>{(d.events ?? []).filter((e) => !e.endedAt).map((e) => <p key={e.id} className="text-[13px]">• {e.text} <span className="text-xs text-slate-500">since {when(e.startedAt)}</span></p>)}</Card>}
   </>);
 }
 
@@ -215,9 +219,9 @@ function ItemRow({ d, e, now, ageH, mi, onOpen }: { d: TrackerData; e: TrkEquipm
 }
 function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string) => void }) {
   const [open, setOpen] = useState<TrkEquipment | null>(null);
-  const stale = useMemo(() => new Map(staleItems(d, now).filter((i) => !i.small).map((i) => [i.key, i.ageH])), [d, now]);
+  const stale = useMemo(() => new Map(staleItems(d, now).filter((i) => !i.small || WITH_EQUIP.includes(i.section)).map((i) => [i.key, i.ageH])), [d, now]);
   const mi = useMemo(() => new Map((phases(d, now).mi.weighted?.items ?? []).map((i) => [i.key, i])), [d, now]);
-  const main = d.equipment.filter((e) => e.tracked && !isSmallJob(e.group) && lines(d, [keyOf(e)]).length && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e));
+  const main = d.equipment.filter((e) => e.tracked && (!isSmallJob(e.group) || WITH_EQUIP.includes(e.group)) && lines(d, [keyOf(e)]).length && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e));
   const all = [...new Set(main.map((e) => e.group))];
   const todo = main.filter((e) => stale.has(keyOf(e)));
   const shown = f === 'todo' ? todo : f === 'all' ? main : main.filter((e) => e.group === f);
@@ -241,8 +245,7 @@ function Reactors({ d, now, done }: Pick<P, 'd' | 'now' | 'done'>) {
   const [temps, setTemps] = useState<Record<string, string>>(saved?.temps ?? {});
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   return (<>
-    <EventsCard events={d.events ?? []} trackerId={d.tracker.id} canEdit now={now} onDone={(m, u) => done(m, u)} />
-    <Card className="mt-2.5">
+    <Card>
       <p className="text-[13px] font-bold">Max bed temperature °F <span className="font-normal text-slate-500">· this shift</span></p>
       <div className="mt-2 grid grid-cols-5 gap-1.5">{REACTORS.map((k) => <label key={k} className="text-center text-[11px] font-bold text-slate-500">{k.replace('R', 'R-')}
         <input inputMode="decimal" className="input mt-0.5 px-1 text-center text-sm" value={temps[k] ?? ''} onChange={(e) => setTemps((t) => ({ ...t, [k]: e.target.value.replace(/[^\d.]/g, '') }))} /></label>)}</div>
@@ -262,7 +265,6 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
   const [note, setNote] = useState('');
   const [stage, setStage] = useState<number | null>(null);
   const [steps, setSteps] = useState(false);
-  const [prob, setProb] = useState<string | null>(null);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const scope = (d.engine?.scopes ?? []).find((s) => keys.includes(s.key) && s.scope === 'removal' && !s.completeAt);
   const entries = scope ? (d.engine?.entries ?? []).filter((x) => x.scopeId === scope.id && x.kind !== 'transfer') : [];
@@ -295,19 +297,7 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
           <p className="pt-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Stage</p>
           <div className="flex flex-wrap gap-1.5">{STAGE_SHORT.map((l, i) => <button key={l} type="button" onClick={() => setStage(i)} className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', (stage ?? e.stage) === i ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{l}</button>)}</div></>
           : !run.length && !next && <p className="rounded-xl bg-green-50 p-2 text-sm font-semibold text-green-800">✓ All steps done</p>}
-        {(() => { const open = (d.events ?? []).filter((x) => !x.endedAt && x.key && keys.includes(x.key));
-          return <div className="rounded-2xl bg-red-50/60 p-2.5 ring-1 ring-red-100">
-            <div className="flex items-center justify-between"><p className="text-[11px] font-extrabold uppercase tracking-wider text-red-800">⚠ Problems{open.length ? ` · ${open.length} open` : ''}</p>
-              {prob === null && <button type="button" onClick={() => setProb('')} className="rounded-full bg-white px-2.5 py-1 text-[12px] font-bold text-red-800 ring-1 ring-red-200">+ Problem</button>}</div>
-            {open.map((x) => <div key={x.id} className="mt-1.5 flex items-start gap-2 text-[13px]"><span className="min-w-0 flex-1">{x.text}<span className="block text-[11px] text-slate-500">since {when(x.startedAt)}{x.by ? ` · ${x.by}` : ''}</span></span>
-              <button type="button" disabled={busy} onClick={() => run1(() => endEvent(x.id, true), `${short(e.tag)}: problem ended.`, () => endEvent(x.id, false))} className="shrink-0 rounded-lg bg-white px-2 py-1 text-[12px] font-bold text-green-800 ring-1 ring-green-300">✓ Ended</button></div>)}
-            {prob !== null && <div className="mt-1.5 space-y-1.5">
-              <textarea autoFocus className="input min-h-14 text-[14px]" placeholder="e.g. High temp in one bed: N2 flow increased, soda ash raised (vendor)" value={prob} onChange={(x) => setProb(x.target.value)} />
-              <div className="flex gap-2"><button type="button" onClick={() => setProb(null)} className="min-h-10 flex-1 rounded-xl bg-white font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button>
-                <button type="button" disabled={busy || !prob.trim()} onClick={() => run1(() => addEvent(d.tracker.id, e.group === 'Reactors' ? 'reactors' : 'other', prob.trim(), keyOf(e)), `${short(e.tag)}: problem recorded.`)} className="min-h-10 flex-1 rounded-xl bg-[#e02028] font-bold text-white disabled:opacity-50">Record problem</button></div>
-              <p className="text-[11px] text-slate-500">Shown under Issues in the report until it is ended.</p></div>}
-            {!open.length && prob === null && <p className="mt-1 text-[12px] text-slate-500">None open.</p>}
-          </div>; })()}
+        <Issues d={d} done={done} item={e} keys={keys} />
         {scope && <div className="rounded-2xl bg-slate-50 p-2.5 ring-1 ring-slate-200">
           <p className="text-xs font-bold text-slate-500">TOTAL DRUMS NOW <span className="font-normal">· so far {total.toLocaleString('en-US')}</span></p>
           <div className="mt-1 flex gap-2"><input inputMode="numeric" className="input text-center text-lg font-extrabold" placeholder={String(total)} value={drums} onChange={(x) => setDrums(x.target.value.replace(/\D/g, ''))} /></div>
@@ -319,7 +309,7 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
           return <button key={l} type="button" onClick={() => setHold(r)} className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', on ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{l}</button>; })}</div>
         <input className="input text-[14px]" placeholder="Status now, e.g. Bolt removal I/P" value={note} onChange={(x) => setNote(x.target.value)} />
         {(() => { const n = note.trim().split(/\s+/).filter(Boolean).length;
-          return <p className={cx('-mt-1.5 text-[11px]', n > 10 ? 'font-semibold text-amber-700' : 'text-slate-500')}>{n > 10 ? `${n} words: keep it to the status (about 8 words); a problem goes under ⚠ Problems.` : 'Status only: what · I/P / done / stopped. Waiting? use Status above.'}</p>; })()}
+          return <p className={cx('-mt-1.5 text-[11px]', n > 10 ? 'font-semibold text-amber-700' : 'text-slate-500')}>{n > 10 ? `${n} words: keep it to the status (about 8 words); a problem goes under ⚠ Issues.` : 'Status only: what · I/P / done / stopped. Waiting? use Status above.'}</p>; })()}
         <button type="button" disabled={busy || (hold === undefined && !note.trim() && !drums.trim() && (stage === null || stage === e.stage))} onClick={save} className="min-h-11 w-full rounded-xl bg-[#08a048] text-[15px] font-bold text-white disabled:opacity-50">Save</button>
         {err != null && <ErrorBox error={err} />}
       </div>
@@ -440,29 +430,102 @@ function ReportSheet({ d, now, by, onClose }: { d: TrackerData; now: number; by:
   );
 }
 
+/** The problems: open ones with Edit and ✓ Resolved, a new one, the resolved ones with Reopen. On the dashboard all
+ *  of them (the shutdown's N2 / reactors events and every item's problems); on an item, its own. */
+function Issues({ d, done, item, keys }: { d: TrackerData; done: Done; item?: TrkEquipment; keys?: string[] }) {
+  const all = (d.events ?? []).filter((x) => !item || (x.key && keys!.includes(x.key)));
+  const open = all.filter((x) => !x.endedAt), past = all.filter((x) => x.endedAt);
+  const [add, setAdd] = useState<{ text: string; cat: TrkEvent['category'] } | null>(null);
+  const [edit, setEdit] = useState<{ id: string; text: string } | null>(null);
+  const [showPast, setShowPast] = useState(false);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  async function run(f: () => Promise<unknown>, msg: string, undo?: () => Promise<unknown>) { setBusy(true); setErr(null); try { await f(); setAdd(null); setEdit(null); done(msg, undo); } catch (x) { setErr(x); } finally { setBusy(false); } }
+  const who = (x: TrkEvent) => (x.key ? short(d.equipment.find((e) => keyOf(e) === x.key)?.tag ?? x.key) : EVENT_LABEL[x.category]);
+  const row = (x: TrkEvent) => (
+    <div key={x.id} className={cx('border-t border-red-100 py-2 first:border-t-0', x.endedAt && 'opacity-75')}>
+      {edit?.id === x.id ? <div className="space-y-1.5">
+        <textarea autoFocus className="input min-h-14 text-[14px]" value={edit.text} onChange={(v) => setEdit({ ...edit, text: v.target.value })} />
+        <div className="flex gap-2"><button type="button" onClick={() => setEdit(null)} className="min-h-9 flex-1 rounded-xl bg-white text-[13px] font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button>
+          <button type="button" disabled={busy || !edit.text.trim() || edit.text.trim() === x.text} onClick={() => run(() => setEventText(x.id, edit.text.trim()), 'Issue updated.', () => setEventText(x.id, x.text))} className="min-h-9 flex-1 rounded-xl bg-[#08a048] text-[13px] font-bold text-white disabled:opacity-50">Save</button></div>
+      </div> : <>
+        <p className="text-[13px] leading-snug">{!item && <b>{who(x)}: </b>}{x.text}</p>
+        <p className="text-[11px] text-slate-500">{x.endedAt ? `${when(x.startedAt)} → resolved ${when(x.endedAt)}` : `since ${when(x.startedAt)}`}{x.by ? ` · ${x.by}` : ''}</p>
+        <div className="mt-1.5 flex gap-1.5">
+          {x.endedAt ? <button type="button" disabled={busy} onClick={() => run(() => endEvent(x.id, false), 'Issue reopened.', () => endEvent(x.id, true))} className="min-h-8 rounded-lg bg-white px-2.5 text-[12px] font-bold text-slate-700 ring-1 ring-slate-300">↺ Reopen</button>
+            : <><button type="button" disabled={busy} onClick={() => setEdit({ id: x.id, text: x.text })} className="min-h-8 rounded-lg bg-white px-2.5 text-[12px] font-bold text-[#0d2a5e] ring-1 ring-slate-300">✎ Edit</button>
+              <button type="button" disabled={busy} onClick={() => run(() => endEvent(x.id, true), 'Issue resolved.', () => endEvent(x.id, false))} className="min-h-8 rounded-lg bg-white px-2.5 text-[12px] font-bold text-green-800 ring-1 ring-green-300">✓ Resolved</button></>}
+        </div></>}
+    </div>);
+  return (
+    <section className="mb-2.5 rounded-2xl bg-red-50/60 p-3 ring-1 ring-red-100">
+      <div className="flex items-center justify-between"><p className="text-[11px] font-extrabold uppercase tracking-wider text-red-800">⚠ Issues{open.length ? ` · ${open.length} open` : ''}</p>
+        {!add && <button type="button" onClick={() => setAdd({ text: '', cat: item ? (item.group === 'Reactors' ? 'reactors' : 'other') : 'nitrogen' })} className="rounded-full bg-white px-2.5 py-1 text-[12px] font-bold text-red-800 ring-1 ring-red-200">+ Issue</button>}</div>
+      {add && <div className="mt-2 space-y-1.5">
+        {!item && <div className="flex gap-1">{(Object.keys(EVENT_LABEL) as TrkEvent['category'][]).map((k) => <button key={k} type="button" onClick={() => setAdd({ ...add, cat: k })} className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', add.cat === k ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{EVENT_LABEL[k]}</button>)}</div>}
+        <textarea autoFocus className="input min-h-14 text-[14px]" placeholder={item ? 'e.g. High temp in one bed: N2 flow increased (vendor)' : 'e.g. N2 trailer empty, waiting next trailer'} value={add.text} onChange={(v) => setAdd({ ...add, text: v.target.value })} />
+        <div className="flex gap-2"><button type="button" onClick={() => setAdd(null)} className="min-h-10 flex-1 rounded-xl bg-white font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button>
+          <button type="button" disabled={busy || !add.text.trim()} onClick={() => run(() => addEvent(d.tracker.id, add.cat, add.text.trim(), item ? keyOf(item) : null), 'Issue recorded.')} className="min-h-10 flex-1 rounded-xl bg-[#e02028] font-bold text-white disabled:opacity-50">Record</button></div>
+        {!item && <p className="text-[11px] text-slate-500">A problem on one item: record it from the item (Equipment).</p>}
+      </div>}
+      {open.length > 0 ? <div className="mt-1">{open.map(row)}</div> : !add && <p className="mt-1 text-[12px] text-slate-500">None open.</p>}
+      {past.length > 0 && <button type="button" onClick={() => setShowPast((v) => !v)} className="mt-1 text-[11.5px] font-semibold text-slate-500">{showPast ? '▾' : '▸'} Resolved ({past.length})</button>}
+      {showPast && <div className="mt-1">{past.slice(0, 15).map(row)}</div>}
+      {err != null && <ErrorBox error={err} />}
+    </section>
+  );
+}
+
 // ── Isolation ───────────────────────────────────────────────────────────────────────────────────────────────────────
 const NEXT: Partial<Record<PointStatus, [PointStatus, string, 'fill_at' | 'soak_at' | 'drain_at' | 'done_at']>> = { open: ['filling', '▶ Fill', 'fill_at'], filling: ['soaking', '▶ Soak', 'soak_at'], soaking: ['draining', '▶ Drain', 'drain_at'], draining: ['done', '✓ Neutralized', 'done_at'] };
 const SPRAY: Partial<Record<PointStatus, [PointStatus, string, 'fill_at' | 'done_at']>> = { open: ['filling', '▶ Spray', 'fill_at'], filling: ['done', '✓ Done', 'done_at'] };
-function Isolation({ d, now, done }: P) {
-  const [v, setV] = useState<'neut' | 'blind'>('neut');
+/** Handover: what holds each item from being handed over (blinds, neutralization) with the chain behind it, the
+ *  loops, the blinds, and at the end the return (de-blinding). */
+function Handover({ d, now, done }: P) {
   const pts = d.points ?? [];
   const loops = pts.filter((p) => p.kind === 'neut' && !withReactor(p) && (p.stepId || (!p.items.includes(p.ref) && (p.method !== 'spray' || p.status !== 'open'))));
   const blinds = pts.filter((p) => p.kind === 'blind');
   const openL = loops.filter((p) => !pointComplete(p)), openB = blinds.filter((p) => !pointComplete(p));
+  const waiting = d.equipment.filter((e) => e.tracked && e.stage === 0 && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e))
+    .map((e) => ({ e, iso: isoState(e.tag, 0, pts) })).filter((x): x is { e: TrkEquipment; iso: NonNullable<ReturnType<typeof isoState>> } => !!x.iso && x.iso.state !== 'ho');
+  const blocked = waiting.filter((x) => x.iso.state !== 'ready'), ready = waiting.filter((x) => x.iso.state === 'ready');
+  const back = blinds.filter((b) => b.status === 'in');
+  const [v, setV] = useState<'block' | 'neut' | 'blind' | 'back'>(() => (blocked.length || openB.length || openL.length ? 'block' : 'back'));
+  const [showDone, setShowDone] = useState(false);
+  const rank = (p: TrkPoint) => (p.status !== 'open' ? 0 : missingBlinds(p, pts).length ? 2 : 1);
   return (<>
-    <Seg v={v} set={setV} opts={[['neut', `Neutralization (${openL.length})`], ['blind', `Blinds (${openB.length})`]]} />
-    {v === 'neut' ? <>
-      {openL.map((p) => <Loop key={p.id} d={d} p={p} now={now} done={done} />)}
+    <div className="-mx-3 mb-2.5 flex gap-1.5 overflow-x-auto px-3 [scrollbar-width:none]">{([['block', `Blocking ${blocked.length}`], ['neut', `Neutralization ${openL.length}`], ['blind', `Blinds ${openB.length}`], ['back', `Return ${back.length}`]] as const).map(([k, l]) =>
+      <button key={k} type="button" onClick={() => setV(k)} className={cx('min-h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-[12px] font-bold', v === k ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>)}</div>
+    {v === 'block' && <>
+      <p className="mx-1 mb-2 text-[11.5px] text-slate-500">Items not handed over yet, and what each one waits for. Tap a line to update it.</p>
+      {blocked.map(({ e, iso }) => { const loopsOpen = iso.loops.filter((p) => !pointComplete(p));
+        return <Card key={e.id}>
+          <div className="flex items-center gap-2"><b className="min-w-0 flex-1 text-[14px]">{short(e.combine ?? e.tag)}</b>
+            <span className={cx('rounded-md px-1.5 py-0.5 text-[11px] font-bold', iso.state === 'neut' ? 'bg-amber-100 text-amber-900' : 'bg-red-100 text-red-800')}>{iso.state === 'neut' ? 'Neutralizing' : iso.state === 'blind' ? 'Waits blinds' : 'Not started'}</span></div>
+          {iso.missing.map((r) => { const b = blinds.find((x) => x.ref === r); const job = b && (d.pointSteps ?? []).find((c) => (c.linkPoints ?? []).includes(b.id) && c.startAt && !c.doneAt);
+            return <button key={r} type="button" onClick={() => setV('blind')} className="mt-1 block w-full text-left text-[12.5px] text-slate-700">└ 🔒 <b>{r}</b> not in{job ? ` · ${job.crane ? '🏗 ' : ''}${job.text.split(/,|:/)[0]} I/P` : ''}</button>; })}
+          {loopsOpen.map((p) => { const left = soakLeft(p, now);
+            return <button key={p.id} type="button" onClick={() => setV('neut')} className="mt-1 block w-full text-left text-[12.5px] text-slate-700">└ 💧 <b>{p.ref}</b> {p.holdReason ? `on hold · ${p.holdReason}` : neutLabel(p).toLowerCase()}{p.status === 'soaking' && left !== null ? ` · ${left > 0 ? `${hoursText(left)} left` : 'soak time reached'}` : ''}</button>; })}
+        </Card>; })}
+      {ready.length > 0 && <><Sec>Ready to hand over · {ready.length}</Sec>{ready.map(({ e, iso }) => <div key={e.id} className="mb-2 rounded-2xl bg-white px-3 py-2 ring-1 ring-green-200"><b className="text-[14px]">{short(e.combine ?? e.tag)}</b><span className="block text-[12px] text-green-800">{iso.why}</span></div>)}</>}
+      {!blocked.length && !ready.length && <Card><p className="text-sm font-semibold text-green-800">✓ Everything is handed over.</p></Card>}
+    </>}
+    {v === 'neut' && <>
+      {[...openL].sort((a, b) => rank(a) - rank(b) || a.sort - b.sort).map((p) => <Loop key={p.id} d={d} p={p} now={now} done={done} />)}
       {!openL.length && <Card><p className="text-sm font-semibold text-green-800">✓ All loops neutralized.</p></Card>}
-      <Sec>Done</Sec>{loops.filter(pointComplete).map((p) => <div key={p.id} className="mb-2 flex items-center gap-2 rounded-2xl bg-white px-3 py-2 ring-1 ring-slate-200"><span className="min-w-0 flex-1 text-[13px]"><b>{p.ref} · {p.name}</b><span className="block text-xs text-slate-500">Neutralized {when(p.doneAt)}</span></span><span className="rounded-md bg-green-100 px-1.5 text-[11px] font-bold text-green-800">✓</span></div>)}
-    </> : <>
-      {(['segregation', 'hp_critical'] as const).map((g) => { const xs = blinds.filter((b) => (g === 'hp_critical') === (b.grp === 'hp_critical')); if (!xs.length) return null;
-        return <div key={g}><Sec>{g === 'hp_critical' ? 'HP critical loop' : 'Segregation'} · {xs.filter(pointComplete).length}/{xs.length} in</Sec>
-          {[...xs].sort((a, b) => Number(pointComplete(a)) - Number(pointComplete(b))).map((b) => <BlindRow key={b.id} b={b} done={done} />)}</div>; })}
+      <button type="button" onClick={() => setShowDone((x) => !x)} className="mx-1 mt-1 text-[12px] font-semibold text-slate-500">{showDone ? '▾' : '▸'} Neutralized ({loops.length - openL.length})</button>
+      {showDone && loops.filter(pointComplete).map((p) => <div key={p.id} className="mt-2 flex items-center gap-2 rounded-2xl bg-white px-3 py-2 ring-1 ring-slate-200"><span className="min-w-0 flex-1 text-[13px]"><b>{p.ref} · {p.name}</b><span className="block text-xs text-slate-500">Neutralized {when(p.doneAt)}</span></span><span className="rounded-md bg-green-100 px-1.5 text-[11px] font-bold text-green-800">✓</span></div>)}
+    </>}
+    {v === 'blind' && (['segregation', 'hp_critical'] as const).map((g) => { const xs = blinds.filter((b) => (g === 'hp_critical') === (b.grp === 'hp_critical')); if (!xs.length) return null;
+      return <div key={g}><Sec>{g === 'hp_critical' ? 'HP critical loop' : 'Segregation'} · {xs.filter(pointComplete).length}/{xs.length} in</Sec>
+        {[...xs].sort((a, b) => Number(pointComplete(a)) - Number(pointComplete(b))).map((b) => <BlindRow key={b.id} b={b} done={done} />)}</div>; })}
+    {v === 'back' && <>
+      <p className="mx-1 mb-2 text-[11.5px] text-slate-500">End of the shutdown: take the blinds out as each item is boxed up. {blinds.filter((b) => b.status === 'out').length}/{blinds.length} out.</p>
+      {back.map((b) => <BlindRow key={b.id} b={b} done={done} out />)}
+      {!back.length && <Card><p className="text-sm text-slate-600">No blind in.</p></Card>}
     </>}
   </>);
 }
-function BlindRow({ b, done }: { b: TrkPoint; done: Done }) {
+function BlindRow({ b, done, out = false }: { b: TrkPoint; done: Done; out?: boolean }) {
   const [busy, setBusy] = useState(false);
   const back = { status: b.status, in_at: b.inAt ?? null, out_at: b.outAt ?? null };
   const go = async (patch: Parameters<typeof setPoint>[1], msg: string) => { setBusy(true); try { await setPoint(b.id, patch); done(msg, () => setPoint(b.id, back)); } finally { setBusy(false); } };
@@ -471,7 +534,7 @@ function BlindRow({ b, done }: { b: TrkPoint; done: Done }) {
     <div className="mb-2 flex items-center gap-2 rounded-2xl bg-white px-3 py-2 ring-1 ring-slate-200">
       <span className="min-w-0 flex-1"><b className="text-[14px]">{b.ref}</b><span className="block text-[12.5px] text-slate-600">{b.name}{b.inAt ? ` · in ${when(b.inAt)}` : ''}</span></span>
       {b.status === 'open' ? <button type="button" disabled={busy} onClick={() => go({ status: 'in', in_at: at }, `${b.ref} in.`)} className="min-h-8 rounded-lg bg-[#0d2a5e] px-3 text-[12.5px] font-bold text-white">✓ In</button>
-        : b.status === 'in' ? <><span className="rounded-md bg-green-100 px-1.5 py-0.5 text-[11px] font-bold text-green-800">✓ In</span><button type="button" disabled={busy} onClick={() => go({ status: 'out', out_at: at }, `${b.ref} out (de-blinded).`)} className="min-h-9 rounded-xl px-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-300">Out</button></>
+        : b.status === 'in' ? <><span className="rounded-md bg-green-100 px-1.5 py-0.5 text-[11px] font-bold text-green-800">✓ In</span>{out && <button type="button" disabled={busy} onClick={() => go({ status: 'out', out_at: at }, `${b.ref} out (de-blinded).`)} className="min-h-9 rounded-xl px-3 text-xs font-bold text-[#0d2a5e] ring-1 ring-slate-300">Out</button>}</>
         : <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-600">Out</span>}
     </div>
   );
@@ -511,28 +574,44 @@ function Loop({ d, p, now, done }: { d: TrackerData; p: TrkPoint; now: number; d
   );
 }
 
-// ── Small jobs & IATs ───────────────────────────────────────────────────────────────────────────────────────────────
-function Small({ d, now, done }: P) {
-  const [v, setV] = useState<'small' | 'iat'>('small');
+// ── SD scope & Hot work ───────────────────────────────────────────────────────────────────────────────────────────
+/** A list of small items (followed by steps, or by stage only); finished = all steps done (or returned). */
+const smallItems = (d: TrackerData) => d.equipment.filter((e) => e.tracked && isSmallJob(e.group) && !WITH_EQUIP.includes(e.group) && (lines(d, [keyOf(e)]).length || !e.hoStep));
+const finishedOf = (d: TrackerData) => (e: TrkEquipment) => { const ls = lines(d, [keyOf(e)]); return ls.length ? ls.every((a) => a.actualFinish) : e.stage >= STAGE_SHORT.length - 1; };
+function Scope({ d, now, done }: P) {
   const [group, setGroup] = useState<string | null>(null);
-  // with bar-chart steps, or followed by stage only (the PMRs); the isolation items (RTJ, injection) are on Isolation
-  const items = d.equipment.filter((e) => e.tracked && isSmallJob(e.group) && (lines(d, [keyOf(e)]).length || !e.hoStep));
-  const groups = [...new Set(items.map((e) => e.group))];
+  const items = smallItems(d).filter((e) => e.group !== 'PMRs');
   const stale = useMemo(() => new Map(staleItems(d, now).filter((i) => i.small).map((i) => [i.key, i.ageH])), [d, now]);
-  const finished = (e: TrkEquipment) => { const ls = lines(d, [keyOf(e)]); return ls.length ? ls.every((a) => a.actualFinish) : e.stage >= STAGE_SHORT.length - 1; };
+  const finished = finishedOf(d);
+  const listed = SCOPE.flatMap(([, gs]) => gs), other = [...new Set(items.map((e) => e.group))].filter((g) => !listed.includes(g));
+  if (group) return <SmallGroup d={d} now={now} items={items.filter((e) => e.group === group)} stale={stale} done={done} onBack={() => setGroup(null)} back="SD scope" />;
+  return (<>{[...SCOPE, ...(other.length ? [['Other', other] as [string, string[]]] : [])].map(([disc, gs]) => { const groups = gs.filter((g) => items.some((e) => e.group === g)); if (!groups.length) return null;
+    return <div key={disc}><Sec>{disc}</Sec>{groups.map((g) => { const xs = items.filter((e) => e.group === g); const n = xs.filter(finished).length; const late = xs.filter((e) => stale.has(keyOf(e))).length;
+      const one = xs.length === 1 ? lines(d, [keyOf(xs[0])]) : [];
+      return <button key={g} type="button" onClick={() => setGroup(g)} className="mb-2 flex w-full items-center gap-2 rounded-2xl bg-white px-3 py-3 text-left ring-1 ring-slate-200 active:bg-slate-50">
+        <span className="min-w-0 flex-1"><b className="block text-[14px]">{g === 'CV shells' ? 'Control valves' : g}</b><span className="text-[12.5px] text-slate-600">{one.length ? `${one.filter((a) => a.actualFinish).length}/${one.length} jobs done` : `${xs.length} items${late ? ` · ${late} need an update` : ''}`}</span></span>
+        <span className={cx('rounded-md px-1.5 py-0.5 text-[12px] font-bold', n === xs.length ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-900')}>{one.length ? `${one.filter((a) => a.actualFinish).length}/${one.length}` : `${n}/${xs.length}`}</span></button>; })}</div>; })}</>);
+}
+function HotWork({ d, now, done }: P) {
+  const [v, setV] = useState<'iat' | 'pmr'>('iat');
+  const pmrs = smallItems(d).filter((e) => e.group === 'PMRs');
+  const stale = useMemo(() => new Map(staleItems(d, now).filter((i) => i.small).map((i) => [i.key, i.ageH])), [d, now]);
+  const st = d.iats.map(iatStatus), count = (x: string) => st.filter((y) => y === x).length;
+  const pDone = pmrs.filter(finishedOf(d)).length;
   return (<>
-    <Seg v={v} set={setV} opts={[['small', 'Small jobs'], ['iat', `IATs (${d.iats.length})`]]} />
-    {v === 'iat' ? (d.iats.length ? d.iats.map((i) => <IatCard key={i.id} d={d} i={i} done={done} />) : <Card><p className="text-sm text-slate-600">No IATs on this shutdown yet.</p></Card>) : group ? <SmallGroup d={d} now={now} items={items.filter((e) => e.group === group)} stale={stale} done={done} onBack={() => setGroup(null)} />
-      : groups.map((g) => { const xs = items.filter((e) => e.group === g); const n = xs.filter(finished).length; const late = xs.filter((e) => stale.has(keyOf(e))).length;
-        const sub = xs.length === 1 && lines(d, [keyOf(xs[0])]).length ? `${lines(d, [keyOf(xs[0])]).filter((a) => a.actualFinish).length}/${lines(d, [keyOf(xs[0])]).length} jobs done` : `${xs.length} items${late ? ` · ${late} need an update` : ''}`;
-        return <button key={g} type="button" onClick={() => setGroup(g)} className="mb-2 flex w-full items-center gap-2 rounded-2xl bg-white px-3 py-3 text-left ring-1 ring-slate-200 active:bg-slate-50">
-          <span className="min-w-0 flex-1"><b className="block text-[14px]">{g === 'CV shells' ? 'Control valves' : g}</b><span className="text-[12.5px] text-slate-600">{sub}</span></span>
-          <span className={cx('rounded-md px-1.5 py-0.5 text-[12px] font-bold', n === xs.length ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-900')}>{xs.length === 1 && lines(d, [keyOf(xs[0])]).length ? `${lines(d, [keyOf(xs[0])]).filter((a) => a.actualFinish).length}/${lines(d, [keyOf(xs[0])]).length}` : `${n}/${xs.length}`}</span></button>; })}
+    <Seg v={v} set={setV} opts={[['iat', `IATs ${d.iats.length}`], ['pmr', `PMRs ${pmrs.length}`]]} />
+    {v === 'iat' ? <>
+      {d.iats.length > 0 && <p className="mx-1 mb-2 text-[12px] text-slate-600">In progress <b>{count('In progress')}</b> · to start <b>{count('To start') + count('New IAT')}</b> · hold <b>{count('Hold')}</b> · completed <b>{count('Completed')}</b></p>}
+      {d.iats.length ? d.iats.map((i) => <IatCard key={i.id} d={d} i={i} done={done} />) : <Card><p className="text-sm text-slate-600">No IATs on this shutdown yet.</p></Card>}
+    </> : <>
+      <p className="mx-1 mb-2 text-[12px] text-slate-600">{pDone}/{pmrs.length} returned · tap one to set its stage, status or an issue</p>
+      {pmrs.length ? <SmallGroup d={d} now={now} items={pmrs} stale={stale} done={done} /> : <Card><p className="text-sm text-slate-600">No PMRs on this shutdown.</p></Card>}
+    </>}
   </>);
 }
 /** A small-jobs group: its items with their next step; tick several and finish the next step for all in one tap. One
  *  item with many jobs (the OPR list) is a checklist of its jobs. */
-function SmallGroup({ d, now, items, stale, done, onBack }: { d: TrackerData; now: number; items: TrkEquipment[]; stale: Map<string, number>; done: Done; onBack: () => void }) {
+function SmallGroup({ d, now, items, stale, done, onBack, back = 'Back' }: { d: TrackerData; now: number; items: TrkEquipment[]; stale: Map<string, number>; done: Done; onBack?: () => void; back?: string }) {
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<TrkEquipment | null>(null);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
@@ -547,7 +626,7 @@ function SmallGroup({ d, now, items, stale, done, onBack }: { d: TrackerData; no
     const ls = lines(d, [keyOf(one)]), tap = (a: TrkActivity) => { const at = new Date().toISOString(), back = { actual_start: a.actualStart ?? null, actual_finish: a.actualFinish ?? null };
       void (async () => { try { await setActivity(a.id, a.actualStart ? { actual_finish: a.actualFinish ? null : at } : { actual_start: at }); done(`${a.activity.slice(0, 40)}: ${a.actualStart ? (a.actualFinish ? 'reopened' : 'done') : 'started'}.`, () => setActivity(a.id, back)); } catch (x) { setErr(x); } })(); };
     return (<>
-      <button type="button" onClick={onBack} className="mb-2 text-sm font-semibold text-[#0850A0]">‹ Small jobs</button>
+      {onBack && <button type="button" onClick={onBack} className="mb-2 text-sm font-semibold text-[#0850A0]">‹ {back}</button>}
       <p className="mx-1 mb-2 text-[13px] text-slate-600"><b className="text-slate-900">{one.tag}</b> · {ls.filter((a) => a.actualFinish).length}/{ls.length} done · tap the box: ▶ started, again ✓ done</p>
       {ls.map((a) => <button key={a.id} type="button" onClick={() => tap(a)} className="mb-2 flex w-full items-start gap-2.5 rounded-2xl bg-white px-3 py-2.5 text-left ring-1 ring-slate-200">
         <span className={cx('mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-sm font-extrabold', a.actualFinish ? 'bg-[#08a048] text-white' : a.actualStart ? 'bg-[#ffc000]' : 'ring-2 ring-slate-300')}>{a.actualFinish ? '✓' : a.actualStart ? '▶' : ''}</span>
@@ -558,7 +637,7 @@ function SmallGroup({ d, now, items, stale, done, onBack }: { d: TrackerData; no
   const picked = items.filter((e) => sel.has(e.id)).map(nextOf).filter((a): a is TrkActivity => !!a);
   const same = picked.length > 0 && picked.every((a) => a.activity === picked[0].activity);
   return (<>
-    <button type="button" onClick={onBack} className="mb-2 text-sm font-semibold text-[#0850A0]">‹ Small jobs</button>
+    {onBack && <button type="button" onClick={onBack} className="mb-2 text-sm font-semibold text-[#0850A0]">‹ {back}</button>}
     {items.map((e) => { const n = nextOf(e), ls = lines(d, [keyOf(e)]);
       return <div key={e.id} className="mb-2 flex items-center gap-2.5 rounded-2xl bg-white px-3 py-2 ring-1 ring-slate-200">
         {ls.length ? <input type="checkbox" className="h-5 w-5 shrink-0" disabled={!n} checked={sel.has(e.id)} onChange={() => tick(e.id)} /> : null}

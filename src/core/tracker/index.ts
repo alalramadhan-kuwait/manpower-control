@@ -624,7 +624,7 @@ export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string }
   section('Reactors', rx.map((x) => `${short(x.tag)}: ${x.line}`));
   // the problems open (on an item, or the shutdown's N2 / reactors events), and those ended this shift
   const sinceT = (iso: string) => (shiftOf(ms(iso)).date === r.shift.date ? kwTime(iso) : `${kwDay(iso).replace(/^\w+,\s*/, '')} ${kwTime(iso)}`);
-  section('Issues', [...r.events].sort((a, b) => Number(b.open) - Number(a.open)).map((e) => `${e.tag ? short(e.tag) : e.category}: ${e.text}${e.open ? ` (since ${sinceT(e.since)})` : ` · ended (${e.hours} h)`}`));
+  section('Issues', [...r.events].sort((a, b) => Number(b.open) - Number(a.open)).map((e) => `${e.tag ? short(e.tag) : e.category}: ${e.text}${e.open ? ` (since ${sinceT(e.since)})` : ` · resolved (${e.hours} h)`}`));
   const bo = r.blindsOpen;
   const bIn = r.pointsDone.filter((x) => x.kind === 'blind').map((x) => x.ref);
   section('Segregation blinding', [bo.length ? `${bo.length} blind${bo.length > 1 ? 's' : ''} pending${bo.length <= 6 ? `: ${bo.map((b) => b.ref).join(', ')}` : ''}` : 'All segregation blinds in ✓', ...(bIn.length ? [`In this shift: ${bIn.join(', ')}`] : [])]);

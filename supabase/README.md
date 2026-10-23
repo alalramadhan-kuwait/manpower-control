@@ -219,3 +219,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261023100638_shutdown_progress_engineer_steps` | Engineers rename, order and add work steps: `p6_activity` keeps a renamed P6 line's text, added steps (`ENG-…`, no planned dates) by link, stamp on insert |
 | `20261023100840_shutdown_progress_engineer_steps_guard_fix` | `trk_stamp()`: the P6-text capture in its own block (it read `new.activity` on every table) |
 | `20261023102146_shutdown_progress_item_issues` | `trk_event.equipment_key`: a problem on an item (listed under Issues in the report until ended) |
+| `20261023103141_shutdown_progress_notes_cleanup` | Live notes normalized (status only): problems to Issues (R-205, V-209), waits to the status, P-205 lineup note to its description; update times kept |
