@@ -21,7 +21,10 @@ export const builtLabel = (iso: string) => (iso ? new Date(iso).toLocaleString('
  * page or script is used, and the page itself is fetched past the browser's cache. (The plain service-worker update can
  * stay stuck on a phone; this cannot.)
  */
-export async function hardUpdate(toVersion?: string): Promise<void> {
+export async function hardUpdate(toVersion?: string): Promise<boolean> {
+  // only with a working connection: without the service worker and its copy, an app opened from the Home Screen with
+  // no signal has nothing to show ("the network connection was lost")
+  try { const r = await fetch(`${import.meta.env.BASE_URL}index.html?t=${Date.now()}`, { cache: 'no-store' }); if (!r.ok) return false; } catch { return false; }
   try {
     const regs = (await navigator.serviceWorker?.getRegistrations?.()) ?? [];
     await Promise.all(regs.map((r) => r.unregister()));
@@ -33,4 +36,5 @@ export async function hardUpdate(toVersion?: string): Promise<void> {
   const u = new URL(window.location.href);
   u.searchParams.set('v', toVersion ?? String(Date.now()));
   window.location.replace(u.toString());
+  return true;
 }

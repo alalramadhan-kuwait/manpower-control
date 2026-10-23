@@ -26,13 +26,27 @@ const when = (iso: string | number | null | undefined) => (iso ? `${kwDay(iso)} 
 const lines = (d: TrackerData, keys: string[]) => sortActs(d.activities.filter((a) => keys.includes(a.key) && a.tracked && !a.detail && a.group !== 'Operations'));
 const keyOf = (e: TrkEquipment) => e.barchartKey ?? e.tag;
 
+/** On an engineer page, "Add to Home Screen" saves this page's own address (with the link) and its own name: the app's
+ *  manifest would send the icon to the main sign-in page instead. */
+function useEngineerHomeScreen() {
+  useEffect(() => {
+    document.querySelector('link[rel="manifest"]')?.remove();
+    document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute('content', 'U-12 SD');
+    document.title = 'U-12 Shutdown';
+    const key = engineerLink()?.key;
+    if (key && !new URLSearchParams(window.location.search).get('sd')) window.history.replaceState(null, '', `${window.location.pathname}?sd=${encodeURIComponent(key)}`);
+  }, []);
+}
+
 /** The link page: the key from the link, the ID typed once; then the tracker. */
 export default function EngineerApp() {
+  useEngineerHomeScreen();
   const urlKey = new URLSearchParams(window.location.search).get('sd');
   const link = engineerLink();
   const [id, setId] = useState('');
   if (urlKey && (!link || link.key !== urlKey)) {
-    const open = () => { if (!id.trim()) return; setEngineerLink({ key: urlKey, id: id.trim() }); window.location.replace(window.location.pathname); };
+    // the address keeps the link: a Home Screen app saved from here opens with it (it has its own storage on iPhone)
+    const open = () => { if (!id.trim()) return; setEngineerLink({ key: urlKey, id: id.trim() }); window.location.replace(`${window.location.pathname}?sd=${encodeURIComponent(urlKey)}`); };
     return (
       <Frame title="U-12 Shutdown" sub="Progress update">
         <div className="mx-auto max-w-sm px-4 pt-16 text-center">
