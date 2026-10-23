@@ -224,3 +224,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261023112837_shutdown_progress_engineer_team_today` | `trk_sd_team(date)`: the shutdown team of a date (plan, teams, members, names, counted leave) for the engineer view; tracker readers only |
 | `20261023114535_shutdown_progress_log_every_edit` | Change log: item notes, steps renamed / added / off, issue text edits, shift temperatures and notes |
 | `20261023135144_user_activity` | `app_activity` (pages opened, by login or engineer link; Section Head reads), `app_visit()`, `user_activity_summary(days)` |
+| `20261023143624_shutdown_progress_h201_pigging_passes` | H-201 pigging (96 h) split into 4 × 24 h passes in the P6 window; pass 1 done, pass 2 running; field pass steps off |
