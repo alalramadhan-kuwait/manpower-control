@@ -239,21 +239,32 @@ function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string)
 }
 
 /** Reactor issues (nitrogen, temperature …) and this shift's max bed temperatures. */
+/** Max bed temperatures, followed while a reactor's catalyst is being dumped: open with the reactors dumping (removal
+ *  started, vessel not yet empty); folded when none is, one tap shows all five. */
 function Reactors({ d, now, done }: Pick<P, 'd' | 'now' | 'done'>) {
   const sh = shiftOf(now);
   const saved = d.shiftLogs.find((l) => l.shiftDate === sh.date && l.shift === sh.shift);
   const [temps, setTemps] = useState<Record<string, string>>(saved?.temps ?? {});
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  return (<>
+  const tagOf = (k: string) => `R-12-${k.slice(1)}`;
+  const dumping = REACTORS.filter((k) => (d.engine?.scopes ?? []).some((sc) => sc.key === tagOf(k) && sc.scope === 'removal' && !sc.completeAt
+    && ((d.engine?.entries ?? []).some((x) => x.scopeId === sc.id) || d.activities.some((a) => a.key === sc.key && sc.activityIds.includes(a.activityId) && a.actualStart))));
+  const [open, setOpen] = useState(dumping.length > 0);
+  const shown = dumping.length ? dumping : [...REACTORS];
+  return (
     <Card>
-      <p className="text-[13px] font-bold">Max bed temperature °F <span className="font-normal text-slate-500">· this shift</span></p>
-      <div className="mt-2 grid grid-cols-5 gap-1.5">{REACTORS.map((k) => <label key={k} className="text-center text-[11px] font-bold text-slate-500">{k.replace('R', 'R-')}
-        <input inputMode="decimal" className="input mt-0.5 px-1 text-center text-sm" value={temps[k] ?? ''} onChange={(e) => setTemps((t) => ({ ...t, [k]: e.target.value.replace(/[^\d.]/g, '') }))} /></label>)}</div>
-      <button type="button" disabled={busy} onClick={async () => { setBusy(true); setErr(null); try { await saveShiftLog(d.tracker.id, sh.date, sh.shift, { notes: saved?.notes ?? '', temps }); done('Temperatures saved.'); } catch (e) { setErr(e); } finally { setBusy(false); } }}
-        className="mt-2 min-h-10 w-full rounded-xl bg-[#08a048] text-[14px] font-bold text-white disabled:opacity-60">Save temperatures</button>
-      {err != null && <ErrorBox error={err} />}
+      <button type="button" onClick={() => setOpen((x) => !x)} className="flex w-full items-center justify-between text-left">
+        <span className="text-[13px] font-bold">Max bed temperature °F <span className="font-normal text-slate-500">· {dumping.length ? `dumping ${dumping.map((k) => k.replace('R', 'R-')).join(', ')}` : 'no reactor dumping'}</span></span>
+        <span className="text-slate-400">{open ? '▾' : '▸'}</span></button>
+      {open && <>
+        <div className={cx('mt-2 grid gap-1.5', shown.length >= 5 ? 'grid-cols-5' : shown.length === 4 ? 'grid-cols-4' : 'grid-cols-3')}>{shown.map((k) => <label key={k} className="text-center text-[11px] font-bold text-slate-500">{k.replace('R', 'R-')}
+          <input inputMode="decimal" className="input mt-0.5 px-1 text-center text-sm" value={temps[k] ?? ''} onChange={(e) => setTemps((t) => ({ ...t, [k]: e.target.value.replace(/[^\d.]/g, '') }))} /></label>)}</div>
+        <button type="button" disabled={busy} onClick={async () => { setBusy(true); setErr(null); try { await saveShiftLog(d.tracker.id, sh.date, sh.shift, { notes: saved?.notes ?? '', temps }); done('Temperatures saved.'); } catch (e) { setErr(e); } finally { setBusy(false); } }}
+          className="mt-2 min-h-10 w-full rounded-xl bg-[#08a048] text-[14px] font-bold text-white disabled:opacity-60">Save temperatures</button>
+        {err != null && <ErrorBox error={err} />}
+      </>}
     </Card>
-  </>);
+  );
 }
 
 const HOLDS: [string, string | null][] = [['In progress', null], ['Waiting gas test', 'Waiting permit / gas test'], ['Waiting crane', 'Waiting crane / equipment'], ['Waiting material', 'Waiting material'], ['Waiting manpower', 'Waiting manpower'], ['Stopped', 'Other']];
