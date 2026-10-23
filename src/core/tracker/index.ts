@@ -846,7 +846,7 @@ export interface StaleItem { tag: string; key: string; section: string; critical
   /** the latest update in the plant's words (its remark, else the running step) */
   status: string }
 const askWhen = (t: number) => `${new Date(t + KW).getUTCDate()} ${new Date(t + KW).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })} ${kwTime(t)}`;
-const askName = (x: string) => { const t = x.replace(/\s+/g, ' ').split(/,|\s\(|\s-\s/)[0].trim(); return t.length > 40 ? `${t.slice(0, 38).trim()}…` : t; };
+const askName = (x: string) => { const t = x.replace(/\s+/g, ' ').split(/,|\s\(|\s-\s/)[0].trim(); return t.length > 28 ? `${t.slice(0, 26).trim()}…` : t; };
 /** The request's sections: the equipment groups, main equipment first, PSVs last. */
 const ASK_ORDER = ['Reactors', 'Heaters', 'Exchangers', 'Air coolers', 'Vessels', 'Filters', 'Compressor', 'Pumps / LO'];
 const ASK_NAME: Record<string, string> = { 'CV shells': 'Control valves', 'Pumps / LO': 'Pumps / lube oil' };
@@ -884,7 +884,7 @@ export function staleItems(d: TrkData, now: number, limits: { normal?: number; c
     const r = running[0];
     // the latest update in the plant's words: the item's remark, else its running step, else the step due
     const remark = d.equipment.find((x) => keys.includes(x.barchartKey ?? x.tag) && x.remark?.trim())?.remark?.trim();
-    const status = remark ? remark : dumping ? `Dumping I/P: ${drums.toLocaleString('en-US')} drums` : r ? `${askName(r.activity)} I/P` : `${askName(due!.activity)} not started`;
+    const status = remark ? remark : dumping ? `Dumping I/P: ${drums.toLocaleString('en-US')} drums` : r ? `${askName(r.activity)} I/P` : '';
     out.push({ tag: e.combine ?? e.tag, key, section: e.group, critical, small, lastAt, ageH, limitH, status });
   }
   return out.sort((a, b) => a.lastAt - b.lastAt);
@@ -896,7 +896,10 @@ export function askText(items: StaleItem[], now: number, opts: { name?: string; 
   const rank = (g: string) => (ASK_ORDER.includes(g) ? ASK_ORDER.indexOf(g) : g === 'PSVs' ? 99 : 50);
   for (const sec of [...new Set(items.map((i) => i.section))].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))) {
     // one item per line, so each can be answered on its own
-    out.push('', `*${ASK_NAME[sec] ?? sec}*`, ...items.filter((i) => i.section === sec).sort((a, b) => a.tag.localeCompare(b.tag, 'en', { numeric: true })).map((x) => `- ${short(x.tag.replace(/^12-/, ''))}: ${x.status} (${askWhen(x.lastAt)}):`));
+    // short: "no activity since 19 Oct", "Pigging I/P since 21 Oct", "Gas test OK (22 Oct)"; today's updates by the hour
+    const day = (t: number) => (Math.floor((t + KW) / DAY) === Math.floor((now + KW) / DAY) ? kwTime(t) : askWhen(t).replace(/ \d\d:\d\d$/, ''));
+    out.push('', `*${ASK_NAME[sec] ?? sec}*`, ...items.filter((i) => i.section === sec).sort((a, b) => a.tag.localeCompare(b.tag, 'en', { numeric: true }))
+      .map((x) => `- ${short(x.tag.replace(/^12-/, ''))}: ${!x.status ? `no activity since ${day(x.lastAt)}` : / I\/P$/.test(x.status) ? `${x.status} since ${day(x.lastAt)}` : `${x.status} (${day(x.lastAt)})`}:`));
   }
   if (opts.by) out.push('', `— ${opts.by}`);
   return out.join('\n');

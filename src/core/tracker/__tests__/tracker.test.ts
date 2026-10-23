@@ -458,10 +458,10 @@ describe('ask for updates', () => {
   it('asks about running or due work with no update past its limit; on hold, recent or finished items are left out', () => {
     const xs = staleItems(d, Date.parse(kw('2026-10-23 07:00')));
     // V-209 46 h (> 12 h), PSVs 46/45 h (> 24 h), V-201 box-up due since 21 Oct 07:00 not started; E-207 updated 11 h ago, V-212 on hold
-    expect(xs.map((x) => [x.tag, x.status])).toEqual([['V-12-201', 'Box-up not started'], ['V-12-209', 'Hydrojet I/P'], ['12-PSV-0537', 'Remove PSV I/P'], ['12-PSV-0601', 'Remove PSV I/P']]);
+    expect(xs.map((x) => [x.tag, x.status])).toEqual([['V-12-201', ''], ['V-12-209', 'Hydrojet I/P'], ['12-PSV-0537', 'Remove PSV I/P'], ['12-PSV-0601', 'Remove PSV I/P']]);
     const text = askText(xs, Date.parse(kw('2026-10-23 07:00')), { name: 'U-12 TR-2 SD' });
-    expect(text).toContain('*Vessels*\n- V-201: Box-up not started (21 Oct 07:00):\n- V-209: Hydrojet I/P (21 Oct 08:00):');
-    expect(text).toContain('*PSVs*\n- PSV-0537: Remove PSV I/P (21 Oct 09:00):\n- PSV-0601: Remove PSV I/P (21 Oct 10:00):');
+    expect(text).toContain('*Vessels*\n- V-201: no activity since 21 Oct:\n- V-209: Hydrojet I/P since 21 Oct:');
+    expect(text).toContain('*PSVs*\n- PSV-0537: Remove PSV I/P since 21 Oct:\n- PSV-0601: Remove PSV I/P since 21 Oct:');
     expect(text).not.toContain('?');
   });
 });

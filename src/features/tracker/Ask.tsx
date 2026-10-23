@@ -36,7 +36,7 @@ export function AskUpdates({ data, now, by }: { data: TrackerData; now: number; 
           <li key={i.key}><label className="flex cursor-pointer items-start gap-2.5 px-3 py-2">
             <input type="checkbox" className="mt-1 h-4 w-4" checked={!off.has(i.key)} onChange={() => setOff((s) => { const n = new Set(s); if (n.has(i.key)) n.delete(i.key); else n.add(i.key); return n; })} />
             <span className="min-w-0 flex-1 text-[13px]"><b>{i.critical && '⏱ '}{i.tag}</b> <span className="text-slate-500">· {i.section}</span>
-              <span className="block text-[12px] text-slate-600">{i.status}</span></span>
+              <span className="block text-[12px] text-slate-600">{i.status || `No activity`}</span></span>
             <span className={cx('shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold', i.ageH >= i.limitH * 2 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{i.ageH} h</span>
           </label></li>))}
         </ul>
