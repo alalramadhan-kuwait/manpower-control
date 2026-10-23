@@ -385,7 +385,7 @@ function ReportTab(p: { data: TrackerData; now: number; canEdit: boolean; by: st
         {([[false, 'Shift report'], [true, `Ask for updates${n ? ` (${n})` : ''}`]] as const).map(([v, l]) => (
           <button key={l} type="button" onClick={() => setAsk(v)} className={cx('min-h-10 rounded-xl text-sm font-semibold', ask === v ? 'bg-white text-[#0d2a5e] shadow-sm' : 'text-slate-600')}>{l}</button>))}
       </div>
-      {ask ? <AskUpdates data={p.data} now={p.now} by={p.by} canEdit={p.canEdit} onSent={p.onSaved} /> : <ShiftReportView {...p} />}
+      {ask ? <AskUpdates data={p.data} now={p.now} by={p.by} /> : <ShiftReportView {...p} />}
     </div>
   );
 }

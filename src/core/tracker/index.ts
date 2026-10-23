@@ -79,8 +79,7 @@ export interface TrkPointStep { id: string; pointId: string; seq: number; phase:
 /** An event of the shutdown not tied to one item: nitrogen supply, an issue common to the reactors, other. */
 export interface TrkEvent { id: string; category: 'nitrogen' | 'reactors' | 'other'; text: string; startedAt: string; endedAt: string | null; by: string | null; endedBy: string | null }
 export const EVENT_LABEL: Record<TrkEvent['category'], string> = { nitrogen: 'N₂ supply', reactors: 'Reactors', other: 'Other' };
-export interface TrkAsk { key: string; at: string; by: string | null }
-export interface TrkData { asks?: TrkAsk[]; events?: TrkEvent[]; engine?: TrkEngine; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
+export interface TrkData { events?: TrkEvent[]; engine?: TrkEngine; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
 
 /** The main equipment groups; the rest (control valve shells, PSVs, check valves, RTJ & injection points, piping, OPR
  *  list, PMRs …) is miscellaneous, shown after them. */
@@ -845,11 +844,8 @@ export interface StaleItem { tag: string; key: string; section: string; critical
   /** the last thing heard about it, its age in hours, the limit it passed */
   lastAt: number; ageH: number; limitH: number;
   /** the latest update in the plant's words (its remark, else the running step) */
-  status: string;
-  /** the requests already sent since its last update (0 = first time), the last of them */
-  asked: number; askedAt: number | null }
+  status: string }
 const askWhen = (t: number) => `${new Date(t + KW).getUTCDate()} ${new Date(t + KW).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })} ${kwTime(t)}`;
-const ordinal = (n: number) => `${n}${n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th'}`;
 const askName = (x: string) => { const t = x.replace(/\s+/g, ' ').split(/,|\s\(|\s-\s/)[0].trim(); return t.length > 40 ? `${t.slice(0, 38).trim()}…` : t; };
 /** The request's sections: the equipment groups, main equipment first, PSVs last. */
 const ASK_ORDER = ['Reactors', 'Heaters', 'Exchangers', 'Air coolers', 'Vessels', 'Filters', 'Compressor', 'Pumps / LO'];
@@ -889,8 +885,7 @@ export function staleItems(d: TrkData, now: number, limits: { normal?: number; c
     // the latest update in the plant's words: the item's remark, else its running step, else the step due
     const remark = d.equipment.find((x) => keys.includes(x.barchartKey ?? x.tag) && x.remark?.trim())?.remark?.trim();
     const status = remark ? remark : dumping ? `Dumping I/P: ${drums.toLocaleString('en-US')} drums` : r ? `${askName(r.activity)} I/P` : `${askName(due!.activity)} not started`;
-    const asks = (d.asks ?? []).filter((x) => x.key === key && ms(x.at) > lastAt).map((x) => ms(x.at));
-    out.push({ tag: e.combine ?? e.tag, key, section: e.group, critical, small, lastAt, ageH, limitH, status, asked: asks.length, askedAt: asks.length ? Math.max(...asks) : null });
+    out.push({ tag: e.combine ?? e.tag, key, section: e.group, critical, small, lastAt, ageH, limitH, status });
   }
   return out.sort((a, b) => a.lastAt - b.lastAt);
 }
@@ -903,10 +898,9 @@ export function askText(items: StaleItem[], now: number, opts: { name?: string; 
     const xs = items.filter((i) => i.section === sec);
     // several items with the same latest update share a line (PSVs out to the shop)
     const by = new Map<string, StaleItem[]>();
-    for (const x of xs) { const k = `${x.status}|${x.asked > 0}`; by.set(k, [...(by.get(k) ?? []), x]); }
+    for (const x of xs) { const k = x.status; by.set(k, [...(by.get(k) ?? []), x]); }
     out.push('', `*${ASK_NAME[sec] ?? sec}*`, ...[...by.values()].map((g) => {
-      const n = Math.max(...g.map((x) => x.asked)) + 1;
-      return `- ${joinTags(g.map((x) => x.tag.replace(/^12-/, '')))}: ${g[0].status} (${askWhen(Math.min(...g.map((x) => x.lastAt)))})${n > 1 ? ` · ${ordinal(n)} request` : ''}:`;
+      return `- ${joinTags(g.map((x) => x.tag.replace(/^12-/, '')))}: ${g[0].status} (${askWhen(Math.min(...g.map((x) => x.lastAt)))}):`;
     }));
   }
   if (opts.by) out.push('', `— ${opts.by}`);

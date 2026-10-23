@@ -464,11 +464,4 @@ describe('ask for updates', () => {
     expect(text).toContain('*PSVs*\n- PSV-0537/0601: Remove PSV I/P (21 Oct 09:00):');
     expect(text).not.toContain('?');
   });
-  it('a request already sent and not answered is marked as the 2nd; an update since clears it', () => {
-    const now = Date.parse(kw('2026-10-23 07:00'));
-    const asked = { ...d, asks: [{ key: 'V-12-209', at: kw('2026-10-22 19:00'), by: 'Section Head' }, { key: 'V-12-201', at: kw('2026-10-20 07:00'), by: 'Section Head' }] } as TrkData;
-    const xs = staleItems(asked, now);
-    expect(xs.map((x) => [x.tag, x.asked])).toEqual([['V-12-201', 0], ['V-12-209', 1], ['12-PSV-0537', 0], ['12-PSV-0601', 0]]);
-    expect(askText(xs, now)).toContain('- V-209: Hydrojet I/P (21 Oct 08:00) · 2nd request:');
-  });
 });
