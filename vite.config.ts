@@ -11,7 +11,7 @@ const sha = (() => { try { return (process.env.GITHUB_SHA ?? execSync('git rev-p
 const built = new Date().toISOString();
 const versionFile = { name: 'version-file', generateBundle() { (this as any).emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ version: sha, built }) }); } };
 
-// VITE_BASE is '/manpower-control/' for GitHub Pages (set in CI); '/' everywhere else.
+// VITE_BASE: '/' (the app is served at the root of its own domain); set in CI.
 export default defineConfig({
   base: process.env.VITE_BASE || '/',
   define: { __APP_VERSION__: JSON.stringify(sha), __APP_BUILT__: JSON.stringify(built) },

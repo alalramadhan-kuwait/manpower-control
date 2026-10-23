@@ -17,7 +17,7 @@ jobs:
       - run: npm test
       - run: npm run build
         env:
-          VITE_BASE: /manpower-control/
+          VITE_BASE: /
           VITE_SUPABASE_URL: https://fhnqaurtryfmmomvzrpl.supabase.co
           VITE_SUPABASE_ANON_KEY: sb_publishable_K-qSRqHDFTKHOEGPaz9RdA_o3gISiKZ
       # GitHub Pages serves 404.html for unknown paths; the app then routes them itself, so deep links work
@@ -26,7 +26,7 @@ jobs:
         with:
           path: dist
 
-  # Publishes main to https://alalramadhan-kuwait.github.io/manpower-control/ — the same way Time Keeper is
+  # Publishes main to https://ops12ards.com (GitHub Pages custom domain; the old github.io address redirects there) — the same way Time Keeper is
   # published. Requires Settings → Pages → Source: GitHub Actions. The site is program code only; all data
   # stays in Supabase behind login and row-level security.
   deploy:
