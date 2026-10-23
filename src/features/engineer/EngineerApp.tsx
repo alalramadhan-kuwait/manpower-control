@@ -159,7 +159,6 @@ function Dashboard({ d, now, go, by, done }: P) {
       <p className="text-xs text-slate-600">{late ? 'forecast past the plan' : `${cp?.spareD ?? 0} days spare`} · forecast {when(w.estEnd)} · plan {kwDay(w.end)}</p>
       {cp && <p className="mt-1.5 text-xs text-slate-600">Sets the end: <b>{short(cp.tag)}</b>{cp.driving ? ` · ${cp.driving}` : ''}</p>}
     </Card>
-    <Issues d={d} done={done} />
     <Card>
       <p className="text-[11px] font-bold text-slate-500">MAIN EQUIPMENT DONE</p>
       <p className="flex items-baseline gap-2"><span className="text-[28px] font-extrabold text-[#0d2a5e]">{w.main.physPct}%</span>
@@ -173,6 +172,7 @@ function Dashboard({ d, now, go, by, done }: P) {
       <GroupRow label="Small jobs" act={w.small.physPct} plan={w.small.planPct} onClick={() => go('scope')} />
       <p className="mt-1.5 text-[11px] text-slate-500">Black line = where the plan is today</p>
     </Card>
+    <Issues d={d} done={done} />
   </>);
 }
 
