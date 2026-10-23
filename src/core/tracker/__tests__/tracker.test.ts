@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { relatedWork, askText, staleItems, equipBlind, linkedStep, miWeighted, neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { tidyStep, noteCurrent, relatedWork, askText, staleItems, equipBlind, linkedStep, miWeighted, neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -171,6 +171,29 @@ describe('mechanical activity timing', () => {
     const text = reportText(shiftReport(d, at('2026-10-23 12:00'), null));
     expect(text).toContain('*Catalyst removal (drums)*');
     expect(text).toContain('- R-205: 150/2,600 drums (5.8%) · this shift +170 · 1 awaiting verification');
+  });
+});
+
+describe('report wording', () => {
+  it('a problem on an item is listed under Issues with its start time, apart from the note', () => {
+    const d = seed();
+    d.events = [{ id: 'x', category: 'reactors', text: 'High temp in one bed', startedAt: '2026-10-23T11:40:00+03:00', endedAt: null, by: 'Eng', endedBy: null, key: 'R-12-205' }];
+    const text = reportText(shiftReport(d, at('2026-10-23 13:00'), null));
+    expect(text).toContain('*Issues*\n- R-205: High temp in one bed (since 11:40)');
+    expect(text.indexOf('*Issues*')).toBeGreaterThan(text.indexOf('*Reactors*'));
+  });
+  it('bar-chart steps read in sentence case, short forms spelled out, tags kept', () => {
+    expect(tidyStep('Pump Suc Line & Suc Stainer Cleaning')).toBe('Pump suction line & suction strainer cleaning');
+    expect(tidyStep('Dump Catalyst by Double Vacuum')).toBe('Dump catalyst by double vacuum');
+    expect(tidyStep('Hydro blasting for shell internal')).toBe('Hydro blasting for shell internal');
+    expect(tidyStep('Check The N2 Pre-Charge Pressure In Bladder Accumulator')).toBe('Check the N2 Pre-Charge pressure in bladder accumulator');
+  });
+  it('a note older than the item\'s latest step start or finish gives way to the steps', () => {
+    const d = seed(); const e = d.equipment.find((x) => x.tag === 'R-12-205')!;
+    Object.assign(e, { remark: 'Parts removal I/P', updatedAt: '2026-10-23T08:00:00+03:00' });
+    expect(noteCurrent(e, d, at('2026-10-23 12:00'))).toBe(true);
+    Object.assign(d.activities.find((a) => a.key === 'R-12-205')!, { actualStart: '2026-10-23T09:00:00+03:00' });
+    expect(noteCurrent(e, d, at('2026-10-23 12:00'))).toBe(false);
   });
 });
 

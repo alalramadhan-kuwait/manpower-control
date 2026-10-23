@@ -81,7 +81,9 @@ export interface TrkPointStep { id: string; pointId: string; seq: number; phase:
   /** segregation blinds it is the same work as ("Blinds in: …"): done when they are all in */
   linkPoints?: string[] }
 /** An event of the shutdown not tied to one item: nitrogen supply, an issue common to the reactors, other. */
-export interface TrkEvent { id: string; category: 'nitrogen' | 'reactors' | 'other'; text: string; startedAt: string; endedAt: string | null; by: string | null; endedBy: string | null }
+export interface TrkEvent { id: string; category: 'nitrogen' | 'reactors' | 'other'; text: string; startedAt: string; endedAt: string | null; by: string | null; endedBy: string | null;
+  /** the item a problem is on (its bar-chart key); none for an event of the shutdown */
+  key?: string | null }
 export const EVENT_LABEL: Record<TrkEvent['category'], string> = { nitrogen: 'N₂ supply', reactors: 'Reactors', other: 'Other' };
 export interface TrkData { events?: TrkEvent[]; engine?: TrkEngine; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
 
@@ -459,7 +461,7 @@ export interface ShiftReport {
   /** PSVs: removed / installed of all, and what moved this shift or runs now */
   psvs: { total: number; removed: number; installed: number; lines: string[] };
   /** the shutdown's events (nitrogen, reactors): open ones, and those ended this shift */
-  events: { category: string; text: string; open: boolean; hours: number }[];
+  events: { category: string; text: string; open: boolean; hours: number; tag: string | null; since: string }[];
 }
 export type ReportSection = 'Reactors' | 'Heaters' | 'Exchangers' | 'Vessels' | 'Others';
 export interface ReportItem { tag: string; section: ReportSection; line: string }
@@ -468,10 +470,32 @@ const STAGE_WORDS = ['Not handed over', 'Handed over', 'Opened / cleaning', 'Und
 const NEUT_WORDS: Record<string, string> = { filling: 'Soda ash filling I/P', soaking: 'Under soaking', draining: 'Soda ash draining I/P' };
 /** An item's status in the plant's words: the logbook remark of the last day, else what runs now, else its own
  *  neutralization, else its isolation state or stage; a pending reason is added when the line does not say it. */
+/** A bar-chart step in the plant's words: Title Case P6 text in sentence case (tags, codes and units kept) and the
+ *  P6 short forms spelled out. */
+const P6_WORDS: Record<string, string> = { suc: 'suction', disch: 'discharge', stainer: 'strainer', comp: 'compressor', exch: 'exchanger', insp: 'inspection' };
+export function tidyStep(text: string): string {
+  const ws = text.trim().split(/\s+/), words = ws.filter((w) => /^[A-Za-z]{3,}$/.test(w));
+  const title = words.length >= 2 && words.filter((w) => /^[A-Z][a-z]/.test(w)).length >= words.length * 0.6;
+  return ws.map((w, i) => {
+    const bare = w.replace(/[^A-Za-z]/g, '').toLowerCase(); const full = P6_WORDS[bare];
+    if (full) return w.replace(/[A-Za-z]+/, i === 0 ? full[0].toUpperCase() + full.slice(1) : full);
+    // a tag, a code or an abbreviation (V-209, N2, I/P, PSV) stays as written
+    if (!title || i === 0 || /[\d\-/]/.test(w) || /^[A-Z]{2,}[^a-z]*$/.test(w)) return w;
+    return w.toLowerCase();
+  }).join(' ');
+}
+/** An item's note still says how it is: set in the last day and not older than its latest step start / finish. */
+export function noteCurrent(e: TrkEquipment, d: TrkData, now: number): boolean {
+  if (!e.remark?.trim() || !e.updatedAt) return false;
+  const at = ms(e.updatedAt); if (now - at >= DAY) return false;
+  const key = e.barchartKey ?? e.tag;
+  const steps = d.activities.filter((a) => a.key === key && a.tracked && !a.detail).flatMap((a) => [ms(a.actualStart), ms(a.actualFinish)]).filter((x) => !Number.isNaN(x) && x <= now);
+  return !steps.length || Math.max(...steps) <= at + 10 * 60000;
+}
 export function itemStatusLine(e: EquipView, d: TrkData, now: number): string {
   const key = e.eq.barchartKey ?? e.eq.tag; const pts = d.points ?? [];
-  const recent = !!e.eq.remark?.trim() && !!e.eq.updatedAt && now - ms(e.eq.updatedAt) < DAY;
-  const running = sortActs(d.activities.filter((a) => a.key === key && a.tracked && !a.detail && a.actualStart && !a.actualFinish && !(a.group === 'Operations' && /neutrali|soak/i.test(a.activity)))).map((a) => a.activity);
+  const recent = noteCurrent(e.eq, d, now);
+  const running = sortActs(d.activities.filter((a) => a.key === key && a.tracked && !a.detail && a.actualStart && !a.actualFinish && !(a.group === 'Operations' && /neutrali|soak/i.test(a.activity)))).map((a) => tidyStep(a.activity));
   const own = pts.find((p) => p.kind === 'neut' && !p.stepId && p.items.includes(e.eq.tag) && p.status !== 'open' && !pointComplete(p));
   const iso = e.stage === 0 ? isoState(e.eq.tag, 0, pts) : null;
   let line = recent ? e.eq.remark!.trim()
@@ -518,7 +542,7 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
     at: now,
     items: (() => { const tags = eqs.map((e) => e.eq.tag); const part = (t: string) => tags.some((p) => p !== t && (t.startsWith(`${p}-`) || t.startsWith(`${p} `)));
       return eqs.filter((e) => e.eq.tracked && SECTION[e.eq.group] && e.stage < 6).flatMap((e) => {
-        const recent = !!e.eq.remark?.trim() && !!e.eq.updatedAt && now - ms(e.eq.updatedAt) < DAY;
+        const recent = noteCurrent(e.eq, d, now);
         const running = d.activities.some((a) => a.key === (e.eq.barchartKey ?? e.eq.tag) && a.tracked && !a.detail && a.actualStart && !a.actualFinish && !(a.group === 'Operations' && /neutrali|soak/i.test(a.activity)));
         const iso = e.stage === 0 ? isoState(e.eq.tag, 0, d.points ?? []) : null;
         const show = e.eq.group === 'Reactors' || recent || ((running || !!e.eq.pendingReason || e.stage >= 2 || (iso && iso.state !== 'idle' && iso.state !== 'ho')) && !part(e.eq.tag));
@@ -549,7 +573,8 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
       return [{ key: sc.key, verified: p.verified, working: sc.working, pct: p.actualPct, shift: shiftQty, pending: es.filter((e) => e.verify === 'pending').length, empty: !!sc.completeAt }];
     }),
     events: (d.events ?? []).filter((e) => !e.endedAt || (ms(e.endedAt) >= sh.from && ms(e.endedAt) < sh.to))
-      .map((e) => ({ category: EVENT_LABEL[e.category], text: e.text, open: !e.endedAt, hours: Math.round(((e.endedAt ? ms(e.endedAt) : now) - ms(e.startedAt)) / H * 10) / 10 })),
+      .map((e) => ({ category: EVENT_LABEL[e.category], text: e.text, open: !e.endedAt, hours: Math.round(((e.endedAt ? ms(e.endedAt) : now) - ms(e.startedAt)) / H * 10) / 10,
+        tag: e.key ? d.equipment.find((x) => (x.barchartKey ?? x.tag) === e.key)?.tag ?? e.key : null, since: e.startedAt })),
     psvs: (() => {
       const tags = d.equipment.filter((e) => e.group === 'PSVs' && e.tracked).map((e) => e.barchartKey ?? e.tag);
       const acts = (k: string) => d.activities.filter((a) => a.key === k && a.tracked);
@@ -560,7 +585,9 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
         const say = (x: string) => (REMOVED.test(x) ? 'removed to shop' : /^install blind|blind on flange/i.test(x) ? 'blind installed' : /^remove blind/i.test(x) ? 'blind removed' : INSTALLED.test(x) ? 'PSV installed' : x.toLowerCase());
         const run = acts(k).filter((a) => a.actualStart && !a.actualFinish).map((a) => `${say(a.activity)} I/P`);
         const now_ = acts(k).filter((a) => a.actualFinish && ms(a.actualFinish) >= sh.from && ms(a.actualFinish) < sh.to).map((a) => `${say(a.activity)} ✓`);
-        const loc = d.equipment.find((e) => (e.barchartKey ?? e.tag) === k)?.description?.split(' · ')[0].replace(/^PSV on /, 'on ');
+        // where it is, short: the tags without the unit number, a spare as "V-209 spare"
+        const loc = d.equipment.find((e) => (e.barchartKey ?? e.tag) === k)?.description?.split(' · ')[0].replace(/\b([A-Z]{1,3})-12-/g, '$1-')
+          .replace(/^Spare PSV on (\S+).*$/i, '$1 spare').replace(/\s*\(duty [^)]*\)/i, '').replace(/^PSV on /, 'on ');
         return run.length || now_.length ? [`${k.replace(/^12-/, '')}${loc ? ` (${loc})` : ''}: ${[...now_, ...run].join(' · ')}`] : [];
       });
       return { total: tags.length, removed: tags.filter((k) => fin(k, REMOVED)).length, installed: tags.filter((k) => fin(k, INSTALLED)).length, lines };
@@ -594,8 +621,10 @@ export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string }
   const merged = (sec: ReportSection) => { const by = new Map<string, string[]>(); for (const x of r.items.filter((i) => i.section === sec)) by.set(x.line, [...(by.get(x.line) ?? []), x.tag]);
     return [...by.entries()].map(([line, tags]) => `${joinTags(tags)}: ${line}`); };
   const rx = r.items.filter((i) => i.section === 'Reactors').sort((a, b) => Number(b.tag === 'R-12-205') - Number(a.tag === 'R-12-205') || a.tag.localeCompare(b.tag));
-  section('Events', r.events.map((e) => `${e.category}: ${e.text}${e.open ? ` (since ${e.hours} h)` : ` · ended (${e.hours} h)`}`));
   section('Reactors', rx.map((x) => `${short(x.tag)}: ${x.line}`));
+  // the problems open (on an item, or the shutdown's N2 / reactors events), and those ended this shift
+  const sinceT = (iso: string) => (shiftOf(ms(iso)).date === r.shift.date ? kwTime(iso) : `${kwDay(iso).replace(/^\w+,\s*/, '')} ${kwTime(iso)}`);
+  section('Issues', [...r.events].sort((a, b) => Number(b.open) - Number(a.open)).map((e) => `${e.tag ? short(e.tag) : e.category}: ${e.text}${e.open ? ` (since ${sinceT(e.since)})` : ` · ended (${e.hours} h)`}`));
   const bo = r.blindsOpen;
   const bIn = r.pointsDone.filter((x) => x.kind === 'blind').map((x) => x.ref);
   section('Segregation blinding', [bo.length ? `${bo.length} blind${bo.length > 1 ? 's' : ''} pending${bo.length <= 6 ? `: ${bo.map((b) => b.ref).join(', ')}` : ''}` : 'All segregation blinds in ✓', ...(bIn.length ? [`In this shift: ${bIn.join(', ')}`] : [])]);

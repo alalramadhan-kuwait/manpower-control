@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { IAT_STATUSES, iatClosedBy, reportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, type PointStatus, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
-import { addEngStep, addQtyEntry, confirmEmpty, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
+import { addEngStep, addEvent, addQtyEntry, confirmEmpty, endEvent, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
 import { BottomSheet, ErrorBox, Spinner, cx } from '@/ui/components';
 import { EventsCard } from '@/features/tracker/Events';
@@ -203,10 +203,11 @@ function VsPlan({ mi }: { mi?: MiItem }) {
 function ItemRow({ d, e, now, ageH, mi, onOpen }: { d: TrackerData; e: TrkEquipment; now: number; ageH?: number; mi?: MiItem; onOpen: () => void }) {
   const keys = e.combine ? d.equipment.filter((x) => x.combine === e.combine).map(keyOf) : [keyOf(e)];
   const t = lastUpdate(d, keys);
+  const probs = (d.events ?? []).filter((x) => !x.endedAt && x.key && keys.includes(x.key)).length;
   return (
     <button type="button" onClick={onOpen} className="mb-2 flex w-full items-center gap-2.5 rounded-2xl bg-white px-3 py-2.5 text-left ring-1 ring-slate-200 active:bg-slate-50">
       <span className={cx('h-2.5 w-2.5 shrink-0 rounded-full', e.pendingReason ? 'bg-[#e02028]' : mi && mi.done >= mi.lines ? 'bg-[#08a048]' : 'bg-[#ffc000]')} />
-      <span className="min-w-0 flex-1"><b className="block text-[14px]">{short(e.combine ?? e.tag)}</b><span className="block truncate text-[12px] text-slate-600">{itemLine(d, e)}</span>
+      <span className="min-w-0 flex-1"><b className="block text-[14px]">{short(e.combine ?? e.tag)}{probs > 0 && <span className="ml-1.5 rounded-md bg-red-100 px-1.5 text-[11px] font-bold text-red-800">⚠ {probs}</span>}</b><span className="block truncate text-[12px] text-slate-600">{itemLine(d, e)}</span>
         <span className={cx('block text-[11px]', ageH !== undefined ? 'font-bold text-amber-700' : 'text-slate-500')}>{t ? `Updated ${when(t)} · ${ago(t, now)}` : 'No update yet'}</span></span>
       <VsPlan mi={mi} />
     </button>
@@ -261,6 +262,7 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
   const [note, setNote] = useState('');
   const [stage, setStage] = useState<number | null>(null);
   const [steps, setSteps] = useState(false);
+  const [prob, setProb] = useState<string | null>(null);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const scope = (d.engine?.scopes ?? []).find((s) => keys.includes(s.key) && s.scope === 'removal' && !s.completeAt);
   const entries = scope ? (d.engine?.entries ?? []).filter((x) => x.scopeId === scope.id && x.kind !== 'transfer') : [];
@@ -293,6 +295,19 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
           <p className="pt-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Stage</p>
           <div className="flex flex-wrap gap-1.5">{STAGE_SHORT.map((l, i) => <button key={l} type="button" onClick={() => setStage(i)} className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', (stage ?? e.stage) === i ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{l}</button>)}</div></>
           : !run.length && !next && <p className="rounded-xl bg-green-50 p-2 text-sm font-semibold text-green-800">✓ All steps done</p>}
+        {(() => { const open = (d.events ?? []).filter((x) => !x.endedAt && x.key && keys.includes(x.key));
+          return <div className="rounded-2xl bg-red-50/60 p-2.5 ring-1 ring-red-100">
+            <div className="flex items-center justify-between"><p className="text-[11px] font-extrabold uppercase tracking-wider text-red-800">⚠ Problems{open.length ? ` · ${open.length} open` : ''}</p>
+              {prob === null && <button type="button" onClick={() => setProb('')} className="rounded-full bg-white px-2.5 py-1 text-[12px] font-bold text-red-800 ring-1 ring-red-200">+ Problem</button>}</div>
+            {open.map((x) => <div key={x.id} className="mt-1.5 flex items-start gap-2 text-[13px]"><span className="min-w-0 flex-1">{x.text}<span className="block text-[11px] text-slate-500">since {when(x.startedAt)}{x.by ? ` · ${x.by}` : ''}</span></span>
+              <button type="button" disabled={busy} onClick={() => run1(() => endEvent(x.id, true), `${short(e.tag)}: problem ended.`, () => endEvent(x.id, false))} className="shrink-0 rounded-lg bg-white px-2 py-1 text-[12px] font-bold text-green-800 ring-1 ring-green-300">✓ Ended</button></div>)}
+            {prob !== null && <div className="mt-1.5 space-y-1.5">
+              <textarea autoFocus className="input min-h-14 text-[14px]" placeholder="e.g. High temp in one bed: N2 flow increased, soda ash raised (vendor)" value={prob} onChange={(x) => setProb(x.target.value)} />
+              <div className="flex gap-2"><button type="button" onClick={() => setProb(null)} className="min-h-10 flex-1 rounded-xl bg-white font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button>
+                <button type="button" disabled={busy || !prob.trim()} onClick={() => run1(() => addEvent(d.tracker.id, e.group === 'Reactors' ? 'reactors' : 'other', prob.trim(), keyOf(e)), `${short(e.tag)}: problem recorded.`)} className="min-h-10 flex-1 rounded-xl bg-[#e02028] font-bold text-white disabled:opacity-50">Record problem</button></div>
+              <p className="text-[11px] text-slate-500">Shown under Issues in the report until it is ended.</p></div>}
+            {!open.length && prob === null && <p className="mt-1 text-[12px] text-slate-500">None open.</p>}
+          </div>; })()}
         {scope && <div className="rounded-2xl bg-slate-50 p-2.5 ring-1 ring-slate-200">
           <p className="text-xs font-bold text-slate-500">TOTAL DRUMS NOW <span className="font-normal">· so far {total.toLocaleString('en-US')}</span></p>
           <div className="mt-1 flex gap-2"><input inputMode="numeric" className="input text-center text-lg font-extrabold" placeholder={String(total)} value={drums} onChange={(x) => setDrums(x.target.value.replace(/\D/g, ''))} /></div>
@@ -302,7 +317,9 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
         <p className="pt-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Status</p>
         <div className="flex flex-wrap gap-1.5">{HOLDS.map(([l, r]) => { const on = hold === undefined ? (r === null ? !e.pendingReason : e.pendingReason === r) : hold === r;
           return <button key={l} type="button" onClick={() => setHold(r)} className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', on ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{l}</button>; })}</div>
-        <input className="input text-[14px]" placeholder="Short note (optional)" value={note} onChange={(x) => setNote(x.target.value)} />
+        <input className="input text-[14px]" placeholder="Status now, e.g. Bolt removal I/P" value={note} onChange={(x) => setNote(x.target.value)} />
+        {(() => { const n = note.trim().split(/\s+/).filter(Boolean).length;
+          return <p className={cx('-mt-1.5 text-[11px]', n > 10 ? 'font-semibold text-amber-700' : 'text-slate-500')}>{n > 10 ? `${n} words: keep it to the status (about 8 words); a problem goes under ⚠ Problems.` : 'Status only: what · I/P / done / stopped. Waiting? use Status above.'}</p>; })()}
         <button type="button" disabled={busy || (hold === undefined && !note.trim() && !drums.trim() && (stage === null || stage === e.stage))} onClick={save} className="min-h-11 w-full rounded-xl bg-[#08a048] text-[15px] font-bold text-white disabled:opacity-50">Save</button>
         {err != null && <ErrorBox error={err} />}
       </div>

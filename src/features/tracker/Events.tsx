@@ -18,7 +18,7 @@ export function EventsCard({ events, trackerId, canEdit, now, onDone }: { events
   const row = (e: TrkEvent) => (
     <div key={e.id} className={cx('flex items-start gap-2 px-2.5 py-1.5', e.endedAt && 'opacity-70')}>
       <span className={cx('mt-0.5 shrink-0 rounded px-1.5 text-[10.5px] font-bold', CAT_CLS[e.category])}>{EVENT_LABEL[e.category]}</span>
-      <span className="min-w-0 flex-1 text-[12.5px] text-slate-800">{e.text}
+      <span className="min-w-0 flex-1 text-[12.5px] text-slate-800">{e.key && <b>{e.key.replace(/^([A-Z]{1,3})-12-/, '$1-')}: </b>}{e.text}
         <span className="block text-[11px] text-slate-500">{when(e.startedAt)}{e.endedAt ? ` → ${when(e.endedAt)} · ${hoursText(Date.parse(e.endedAt) - Date.parse(e.startedAt))}` : ` · ${hoursText(now - Date.parse(e.startedAt))} so far`}{e.by ? ` · ${e.by}` : ''}</span></span>
       {canEdit && !e.endedAt && <RowBtn tone="ghost" disabled={busy} onClick={() => run(() => endEvent(e.id, true), `${EVENT_LABEL[e.category]}: ended.`, () => endEvent(e.id, false))}>End</RowBtn>}
     </div>);

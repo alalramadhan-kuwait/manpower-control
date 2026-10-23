@@ -46,7 +46,7 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     // the SOP field steps of each neutralization: optional as well
     supabase.from('trk_point_step').select('id,point_id,seq,phase,text,source,done_at,done_by_name,crane,kind,start_at,start_by_name,link_acts,link_points').eq('tracker_id', id).order('seq').limit(2000),
     // the shutdown's events (nitrogen, reactors): optional too
-    supabase.from('trk_event').select('id,category,text,started_at,ended_at,by_name,ended_by_name').eq('tracker_id', id).order('started_at', { ascending: false }).limit(300)]);
+    supabase.from('trk_event').select('id,category,text,started_at,ended_at,by_name,ended_by_name,equipment_key').eq('tracker_id', id).order('started_at', { ascending: false }).limit(300)]);
   const [t, s, e, i, a, l, sl, pt] = await Promise.all([
     supabase.from('trk_trackers').select('id,event_id,title,mode,settings,status,unit_events(start_date,end_date,unit,title)').eq('id', id).single(),
     supabase.from('trk_steps').select('*').eq('tracker_id', id).order('step_id'),
@@ -64,8 +64,8 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
   const acts = a.data as ActRow[]; const base = Math.max(0, ...acts.map((x) => x.baseline));
   return {
     engine,
-    events: ev.error ? [] : (ev.data as { id: string; category: TrkEvent['category']; text: string; started_at: string; ended_at: string | null; by_name: string | null; ended_by_name: string | null }[])
-      .map((r): TrkEvent => ({ id: r.id, category: r.category, text: r.text, startedAt: r.started_at, endedAt: r.ended_at, by: r.by_name, endedBy: r.ended_by_name })),
+    events: ev.error ? [] : (ev.data as { id: string; category: TrkEvent['category']; text: string; started_at: string; ended_at: string | null; by_name: string | null; ended_by_name: string | null; equipment_key: string | null }[])
+      .map((r): TrkEvent => ({ id: r.id, category: r.category, text: r.text, startedAt: r.started_at, endedAt: r.ended_at, by: r.by_name, endedBy: r.ended_by_name, key: r.equipment_key })),
     pointSteps: ps.error ? [] : (ps.data as { id: string; point_id: string; seq: number; phase: TrkPointStep['phase']; text: string; source: string | null; done_at: string | null; done_by_name: string | null; crane: boolean | null; kind: string | null; start_at: string | null; start_by_name: string | null; link_acts: string[] | null; link_points: string[] | null }[])
       .map((r): TrkPointStep => ({ id: r.id, pointId: r.point_id, seq: r.seq, phase: r.phase, text: r.text, source: r.source, doneAt: r.done_at, doneBy: r.done_by_name, crane: !!r.crane, kind: r.kind === 'step' ? 'step' : 'check', startAt: r.start_at, startBy: r.start_by_name, linkActs: r.link_acts ?? [], linkPoints: r.link_points ?? [] })),
     lineupEq: le.error ? [] : (le.data as { tag: string; plant_tag: string | null; name: string | null; data: string | null; primary_sheet: string | null }[])
@@ -135,7 +135,8 @@ export async function addIat(trackerId: string, v: { tag: string; iatNo: string;
 /** The two Operations ticks of an IAT (logged). */
 export const setIatTicks = (id: string, patch: Partial<{ ops_action: boolean; ho_required: boolean; ops_none: boolean; spool_only: boolean }>) => upd('trk_iat', id, patch);
 /** A shutdown event (nitrogen, reactors, other): recorded now, ended later (logged). */
-export async function addEvent(trackerId: string, category: string, text: string) { const { error } = await supabase.from('trk_event').insert({ tracker_id: trackerId, category, text, started_at: new Date().toISOString() }); if (error) throw error; }
+/** An event of the shutdown, or a problem on one item (key). */
+export async function addEvent(trackerId: string, category: string, text: string, key: string | null = null) { const { error } = await supabase.from('trk_event').insert({ tracker_id: trackerId, category, text, equipment_key: key, started_at: new Date().toISOString() }); if (error) throw error; }
 export const endEvent = (id: string, ended: boolean) => upd('trk_event', id, { ended_at: ended ? new Date().toISOString() : null });
 export const closeIat = (id: string) => upd('trk_iat', id, { status: 'closed', closed_at: new Date().toISOString(), sheet_status: 'Completed' });
 /** The IAT status as in the tracking sheet (Completed / Cancelled close it) and its remark. */
