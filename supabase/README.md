@@ -222,3 +222,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261023103141_shutdown_progress_notes_cleanup` | Live notes normalized (status only): problems to Issues (R-205, V-209), waits to the status, P-205 lineup note to its description; update times kept |
 | `20261023104658_shutdown_progress_iat_ops_label` | `trk_iat.ops_label` (painting · spool to drop · ready for HO · ops in progress), shown in colour; logged |
 | `20261023112837_shutdown_progress_engineer_team_today` | `trk_sd_team(date)`: the shutdown team of a date (plan, teams, members, names, counted leave) for the engineer view; tracker readers only |
+| `20261023114535_shutdown_progress_log_every_edit` | Change log: item notes, steps renamed / added / off, issue text edits, shift temperatures and notes |

@@ -47,7 +47,7 @@ export interface TrkActivity {
   /** the P6 text of a bar-chart line renamed in the field */
   p6Activity?: string | null;
 }
-export interface TrkLog { kind: 'step' | 'equipment' | 'iat' | 'activity' | 'point'; ref: string; field: string; oldValue: string | null; newValue: string | null; byName: string | null; at: string }
+export interface TrkLog { kind: 'step' | 'equipment' | 'iat' | 'activity' | 'point' | 'event' | 'qty' | 'shift'; ref: string; field: string; oldValue: string | null; newValue: string | null; byName: string | null; at: string }
 import { qtyForecast, qtyProgress, type TrkEngine } from './qty';
 export * from './qty';
 export interface TrkSettings { hoTarget?: string; end?: string; workOrder?: string; whatsapp?: string; opsStart?: string; miStart?: string; miEnd?: string;
@@ -950,4 +950,67 @@ export function askText(items: StaleItem[], now: number, opts: { name?: string; 
   }
   if (opts.by) out.push('', `— ${opts.by}`);
   return out.join('\n');
+}
+
+
+// ── Change log in words: who changed what (Section Head) ────────────────────────────────────────────────────────
+const tagShort = (t: string) => t.replace(/^([A-Z]{1,3})-12-/, '$1-').replace(/^12-/, '');
+const STEP_WORDS: Record<string, string> = { not_started: 'not started', in_progress: 'in progress', done: 'done', na: 'not needed', pending: 'pending' };
+/** One change as a short line: the item, then what happened. Times inside the values are shown in Kuwait time. */
+export function logText(l: TrkLog, acts: TrkActivity[] = []): { item: string; what: string } {
+  const t = (v: string | null) => (v && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(v) ? `${kwDay(v)} ${kwTime(v)}` : v);
+  const q = (v: string | null) => (v ? `"${v}"` : '—');
+  if (l.kind === 'activity') {
+    const [key, id] = l.ref.split(' · ');
+    const name = acts.find((a) => a.key === key && a.activityId === id)?.activity ?? id ?? '';
+    const item = tagShort(key);
+    if (l.field === 'actual_start') return { item, what: l.newValue ? `▶ started ${name}` : `↶ start undone · ${name}` };
+    if (l.field === 'actual_finish') return { item, what: l.newValue ? `✓ finished ${name}` : `↶ finish undone · ${name}` };
+    if (l.field === 'renamed') return { item, what: `✎ step renamed ${q(l.oldValue)} → ${q(l.newValue)}` };
+    if (l.field === 'step added') return { item, what: `+ step added ${q(l.newValue)}` };
+    if (l.field === 'step off' || l.field === 'step on') return { item, what: `${l.field === 'step off' ? '🗑 step removed' : '+ step back'} ${q(l.newValue)}` };
+    if (l.field === 'order') return { item, what: '↕ steps reordered' };
+    return { item, what: `${l.field}: ${t(l.oldValue) ?? '—'} → ${t(l.newValue) ?? '—'}` };
+  }
+  if (l.kind === 'equipment') {
+    const item = tagShort(l.ref);
+    if (l.field === 'stage') return { item, what: `stage ${STAGE_SHORT[Number(l.oldValue)] ?? l.oldValue} → ${STAGE_SHORT[Number(l.newValue)] ?? l.newValue}` };
+    if (l.field === 'pending') return { item, what: l.newValue ? `⏸ on hold · ${l.newValue}` : '▶ back in progress' };
+    if (l.field === 'note') return { item, what: `📝 note ${q(l.newValue)}` };
+    if (l.field === 'blinds_in') return { item, what: l.newValue ? `🔒 blinds in ${t(l.newValue)}` : 'blinds in undone' };
+    if (l.field === 'blinds_out') return { item, what: l.newValue ? `🔓 blinds out ${t(l.newValue)}` : 'blinds out undone' };
+    if (l.field === 'tracked') return { item, what: l.newValue === 'true' ? 'followed again' : 'taken off the tracker' };
+  }
+  if (l.kind === 'step') {
+    if (l.field === 'status') return { item: l.ref, what: `${STEP_WORDS[l.oldValue ?? ''] ?? l.oldValue ?? '—'} → ${STEP_WORDS[l.newValue ?? ''] ?? l.newValue ?? '—'}` };
+    if (l.field === 'pending') return { item: l.ref, what: l.newValue ? `⏸ ${l.newValue}` : '▶ resumed' };
+  }
+  if (l.kind === 'point') {
+    if (l.field === 'blind') return { item: l.ref, what: `blind ${l.oldValue ?? '—'} → ${l.newValue ?? '—'}` };
+    if (l.field === 'neut') return { item: l.ref, what: `neutralization ${l.oldValue ?? '—'} → ${l.newValue ?? '—'}` };
+    if (/^step /.test(l.field)) return { item: l.ref, what: `${l.field}${l.newValue && !/^\d{4}-/.test(l.newValue) ? ` · ${l.newValue}` : ''}` };
+    if (l.field === 'hold' || l.field === 'resumed') return { item: l.ref, what: l.field === 'hold' ? `⏸ on hold · ${l.newValue ?? ''}` : '▶ resumed' };
+  }
+  if (l.kind === 'iat') {
+    if (l.field === 'iat') return { item: tagShort(l.ref), what: `IAT ${l.newValue ?? ''}` };
+    return { item: `IAT ${l.ref}`, what: `${l.field}: ${l.newValue ?? 'cleared'}` };
+  }
+  if (l.kind === 'event') {
+    const item = /-12-|^\d/.test(l.ref) ? tagShort(l.ref) : l.ref === 'nitrogen' ? 'N₂' : l.ref === 'reactors' ? 'Reactors' : 'Other';
+    const verb = l.field === 'event' ? '⚠ issue' : l.field === 'event ended' ? '✓ issue resolved' : l.field === 'event reopened' ? '↺ issue reopened' : '✎ issue edited';
+    return { item, what: `${verb} ${q(l.newValue)}` };
+  }
+  if (l.kind === 'qty') {
+    const [key, , date, sh] = l.ref.split(' ');
+    const n = l.newValue?.split(' ')[0];
+    if (l.field === 'removal') return { item: tagShort(key), what: `🛢 ${n} drums (${date ?? ''} ${sh ?? ''})` };
+    if (l.field === 'correction') return { item: tagShort(key), what: `🛢 drums corrected ${n}` };
+    if (l.field === 'complete') return { item: tagShort(key), what: '✓ reactor empty' };
+    return { item: tagShort(key), what: `drums ${l.field}: ${l.newValue ?? ''}` };
+  }
+  if (l.kind === 'shift') {
+    if (l.field === 'temperatures') { let v = l.newValue ?? ''; try { v = Object.entries(JSON.parse(v) as Record<string, string>).filter(([, x]) => x).map(([k, x]) => `R-${k.slice(1)} ${x}°F`).join(' · '); } catch { /* as written */ } return { item: 'Shift', what: `🌡 ${v}` }; }
+    return { item: 'Shift', what: `📝 notes ${q(l.newValue)}` };
+  }
+  return { item: l.ref, what: `${l.field}: ${t(l.oldValue) ?? '—'} → ${t(l.newValue) ?? '—'}` };
 }

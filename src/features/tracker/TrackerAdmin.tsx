@@ -1,5 +1,5 @@
 // Admin of the progress tracker (Section Head): the bar chart (import, items and activities on / off), the step
-// pre-requisites and targets, the WhatsApp number, the TEST clock, Reset test and Publish, the engineer links.
+// pre-requisites and targets, the WhatsApp number, the TEST clock, Reset test and Publish, the engineer links, the change log.
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { STAGES, type EquipView } from '@/core/tracker';
@@ -7,6 +7,7 @@ import { barchartRows, parseCsv } from '@/core/tracker/csv';
 import { importBarchart, publishTracker, resetTest, setActivity, setEquipment, setStep, setTrackerSettings, type TrackerData } from '@/data/tracker';
 import { Button, ErrorBox, Field, cx } from '@/ui/components';
 import { EngineerLinks } from './EngineerLinks';
+import { ChangeLog } from './ChangeLog';
 
 export const clockKey = (id: string) => `trk-clock-${id}`;
 const local = (iso: string | null) => (iso ? new Date(Date.parse(iso) + 3 * 36e5).toISOString().slice(0, 16) : '');
@@ -34,6 +35,7 @@ export function TrackerAdmin({ data, eqs, by = 'Section Head', onDone }: { data:
   return (
     <div className="space-y-3">
       {err != null && <ErrorBox error={err} />}
+      <Section title="Change log · who edited what" open><ChangeLog trackerId={t.id} acts={data.activities} /></Section>
       <Section title="Engineer links (update without login)" open><EngineerLinks trackerId={t.id} by={by} /></Section>
       <Section title={`${t.mode === 'test' ? 'TEST' : 'LIVE'} · reset and publish`} open>
         {t.mode === 'test' ? <>

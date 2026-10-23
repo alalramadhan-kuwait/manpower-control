@@ -139,6 +139,14 @@ export const setIatTicks = (id: string, patch: Partial<{ ops_action: boolean; ho
 /** An event of the shutdown, or a problem on one item (key). */
 export async function addEvent(trackerId: string, category: string, text: string, key: string | null = null) { const { error } = await supabase.from('trk_event').insert({ tracker_id: trackerId, category, text, equipment_key: key, started_at: new Date().toISOString() }); if (error) throw error; }
 export const endEvent = (id: string, ended: boolean) => upd('trk_event', id, { ended_at: ended ? new Date().toISOString() : null });
+/** The change log of the last days (newest first), for the Section Head's log page. */
+export async function fetchChangeLog(trackerId: string, days: number): Promise<TrkLog[]> {
+  const { data, error } = await supabase.from('trk_log').select('kind,ref,field,old_value,new_value,by_name,at').eq('tracker_id', trackerId)
+    .gte('at', new Date(Date.now() - days * 864e5).toISOString()).order('at', { ascending: false }).limit(3000);
+  if (error) throw error;
+  return (data as { kind: TrkLog['kind']; ref: string; field: string; old_value: string | null; new_value: string | null; by_name: string | null; at: string }[])
+    .map((r) => ({ kind: r.kind, ref: r.ref, field: r.field, oldValue: r.old_value, newValue: r.new_value, byName: r.by_name, at: r.at }));
+}
 export const setEventText = (id: string, text: string) => upd('trk_event', id, { text });
 export const closeIat = (id: string) => upd('trk_iat', id, { status: 'closed', closed_at: new Date().toISOString(), sheet_status: 'Completed' });
 /** The IAT status as in the tracking sheet (Completed / Cancelled close it) and its remark. */
