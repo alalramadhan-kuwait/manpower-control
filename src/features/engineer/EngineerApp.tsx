@@ -109,7 +109,7 @@ type P = { d: TrackerData; now: number; done: Done };
 const Card = ({ children, className }: { children: React.ReactNode; className?: string }) => <section className={cx('mb-2.5 rounded-2xl bg-white p-3 ring-1 ring-slate-200', className)}>{children}</section>;
 const Sec = ({ children }: { children: React.ReactNode }) => <p className="mx-1 mb-1.5 mt-3 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">{children}</p>;
 const Seg = <T extends string>({ v, set, opts }: { v: T; set: (x: T) => void; opts: [T, string][] }) => (
-  <div className="mb-2.5 flex gap-1.5">{opts.map(([k, l]) => <button key={k} type="button" onClick={() => set(k)} className={cx('min-h-10 flex-1 rounded-full text-[13px] font-bold', v === k ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>)}</div>);
+  <div className="mb-2.5 flex gap-1.5">{opts.map(([k, l]) => <button key={k} type="button" onClick={() => set(k)} className={cx('min-h-9 flex-1 rounded-full px-2 text-[12px] font-bold', v === k ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>)}</div>);
 const Bar = ({ act, plan, tone }: { act: number; plan: number; tone: string }) => (
   <span className="relative block h-3 flex-1 rounded-full bg-slate-200"><span className={cx('absolute inset-y-0 left-0 rounded-full', tone)} style={{ width: `${Math.min(100, act)}%` }} /><span className="absolute -top-1 h-5 w-[3px] rounded bg-slate-900" style={{ left: `${Math.min(100, plan)}%` }} /></span>);
 const tone = (act: number, plan: number) => (act >= plan ? 'bg-[#08a048]' : act >= plan - 10 ? 'bg-[#ffc000]' : 'bg-[#e02028]');
@@ -132,13 +132,13 @@ function Dashboard({ d, now }: P) {
   return (<>
     <Card className={cx('border-l-[6px]', late ? 'border-l-[#e02028]' : (cp?.spareD ?? 9) <= 1 ? 'border-l-[#ffc000]' : 'border-l-[#08a048]')}>
       <p className="text-[11px] font-bold text-slate-500">END DATE</p>
-      <p className={cx('text-[34px] font-extrabold leading-tight', late ? 'text-[#e02028]' : 'text-[#0d2a5e]')}>{late ? `Behind ${w.impactD} d` : 'On time'}</p>
+      <p className={cx('text-[28px] font-extrabold leading-tight', late ? 'text-[#e02028]' : 'text-[#0d2a5e]')}>{late ? `Behind ${w.impactD} d` : 'On time'}</p>
       <p className="text-xs text-slate-600">{late ? 'forecast past the plan' : `${cp?.spareD ?? 0} days spare`} · forecast {when(w.estEnd)} · plan {kwDay(w.end)}</p>
       {cp && <p className="mt-1.5 text-xs text-slate-600">Sets the end: <b>{short(cp.tag)}</b>{cp.driving ? ` · ${cp.driving}` : ''}</p>}
     </Card>
     <Card>
       <p className="text-[11px] font-bold text-slate-500">MAIN EQUIPMENT DONE</p>
-      <p className="flex items-baseline gap-2"><span className="text-[34px] font-extrabold text-[#0d2a5e]">{w.main.physPct}%</span>
+      <p className="flex items-baseline gap-2"><span className="text-[28px] font-extrabold text-[#0d2a5e]">{w.main.physPct}%</span>
         <span className="text-xs text-slate-600">plan {w.main.planPct}% · <b className={w.main.physPct >= w.main.planPct ? 'text-[#08a048]' : 'text-[#e02028]'}>{w.main.physPct >= w.main.planPct ? 'ahead' : `behind ${w.main.planPct - w.main.physPct} pts`}</b></span></p>
       <div className="flex"><Bar act={w.main.physPct} plan={w.main.planPct} tone={tone(w.main.physPct, w.main.planPct)} /></div>
       <p className="mt-1.5 text-xs text-slate-600">Small jobs {w.small.physPct}% · plan {w.small.planPct}%</p>
@@ -186,7 +186,7 @@ function ItemRow({ d, e, now, ageH, mi, onOpen }: { d: TrackerData; e: TrkEquipm
   return (
     <button type="button" onClick={onOpen} className="mb-2 flex w-full items-center gap-2.5 rounded-2xl bg-white px-3 py-2.5 text-left ring-1 ring-slate-200 active:bg-slate-50">
       <span className={cx('h-2.5 w-2.5 shrink-0 rounded-full', e.pendingReason ? 'bg-[#e02028]' : mi && mi.done >= mi.lines ? 'bg-[#08a048]' : 'bg-[#ffc000]')} />
-      <span className="min-w-0 flex-1"><b className="block text-[15px]">{short(e.combine ?? e.tag)}</b><span className="block truncate text-[12.5px] text-slate-600">{itemLine(d, e)}</span>
+      <span className="min-w-0 flex-1"><b className="block text-[14px]">{short(e.combine ?? e.tag)}</b><span className="block truncate text-[12px] text-slate-600">{itemLine(d, e)}</span>
         <span className={cx('block text-[11px]', ageH !== undefined ? 'font-bold text-amber-700' : 'text-slate-500')}>{t ? `Updated ${when(t)} · ${ago(t, now)}` : 'No update yet'}</span></span>
       <VsPlan mi={mi} />
     </button>
@@ -222,7 +222,7 @@ function Reactors({ d, now, done }: P) {
       <div className="mt-2 grid grid-cols-5 gap-1.5">{REACTORS.map((k) => <label key={k} className="text-center text-[11px] font-bold text-slate-500">{k.replace('R', 'R-')}
         <input inputMode="decimal" className="input mt-0.5 px-1 text-center text-sm" value={temps[k] ?? ''} onChange={(e) => setTemps((t) => ({ ...t, [k]: e.target.value.replace(/[^\d.]/g, '') }))} /></label>)}</div>
       <button type="button" disabled={busy} onClick={async () => { setBusy(true); setErr(null); try { await saveShiftLog(d.tracker.id, sh.date, sh.shift, { notes: saved?.notes ?? '', temps }); done('Temperatures saved.'); } catch (e) { setErr(e); } finally { setBusy(false); } }}
-        className="mt-2 min-h-11 w-full rounded-xl bg-[#08a048] font-bold text-white disabled:opacity-60">Save temperatures</button>
+        className="mt-2 min-h-10 w-full rounded-xl bg-[#08a048] text-[14px] font-bold text-white disabled:opacity-60">Save temperatures</button>
       {err != null && <ErrorBox error={err} />}
     </Card>
   </>);
@@ -257,21 +257,21 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
   return (
     <BottomSheet open onClose={onClose} title={short(e.tag)}>
       <div className="space-y-2.5">
-        <p className="text-xs text-slate-600">Last: {itemLine(d, e)}{e.updatedAt ? ` · ${when(e.updatedAt)}` : ''}</p>
-        {run.map((a) => <button key={a.id} type="button" disabled={busy} onClick={() => step(a, true)} className="min-h-12 w-full rounded-2xl bg-[#ffc000] px-3 text-left text-[15px] font-bold text-[#3b2a00]">✓ Finish: {a.activity}</button>)}
-        {next && <button type="button" disabled={busy} onClick={() => step(next, false)} className="min-h-12 w-full rounded-2xl bg-[#0d2a5e] px-3 text-left text-[15px] font-bold text-white">▶ Start: {next.activity}</button>}
+        <p className="text-xs text-slate-600">Last: {e.pendingReason ? `On hold · ${e.pendingReason}` : e.remark?.trim() || (() => { const f = [...ls].filter((a) => a.actualFinish).sort((a, b) => Date.parse(b.actualFinish!) - Date.parse(a.actualFinish!))[0]; return f ? `${f.activity} done` : 'nothing recorded yet'; })()}{e.updatedAt ? ` · ${when(e.updatedAt)}` : ''}</p>
+        {run.map((a) => <button key={a.id} type="button" disabled={busy} onClick={() => step(a, true)} className="w-full rounded-xl bg-[#ffc000] px-3 py-2 text-left text-[#3b2a00]"><span className="block text-[11px] font-bold uppercase tracking-wide opacity-80">✓ Finish</span><span className="line-clamp-2 text-[13.5px] font-semibold leading-snug">{a.activity}</span></button>)}
+        {next && <button type="button" disabled={busy} onClick={() => step(next, false)} className="w-full rounded-xl bg-[#0d2a5e] px-3 py-2 text-left text-white"><span className="block text-[11px] font-bold uppercase tracking-wide opacity-80">▶ Start</span><span className="line-clamp-2 text-[13.5px] font-semibold leading-snug">{next.activity}</span></button>}
         {!run.length && !next && <p className="rounded-xl bg-green-50 p-2 text-sm font-semibold text-green-800">✓ All steps done</p>}
         {scope && <div className="rounded-2xl bg-slate-50 p-2.5 ring-1 ring-slate-200">
           <p className="text-xs font-bold text-slate-500">TOTAL DRUMS NOW <span className="font-normal">· so far {total.toLocaleString('en-US')}</span></p>
-          <div className="mt-1 flex gap-2"><input inputMode="numeric" className="input text-center text-xl font-extrabold" placeholder={String(total)} value={drums} onChange={(x) => setDrums(x.target.value.replace(/\D/g, ''))} /></div>
+          <div className="mt-1 flex gap-2"><input inputMode="numeric" className="input text-center text-lg font-extrabold" placeholder={String(total)} value={drums} onChange={(x) => setDrums(x.target.value.replace(/\D/g, ''))} /></div>
           {drums && Number(drums) > total && <p className="mt-1 text-xs text-slate-600">= {Number(drums) - total} drums since the last entry</p>}
           <button type="button" disabled={busy} onClick={() => run1(() => confirmEmpty(scope.id), `${short(e.tag)}: reactor empty.`)} className="mt-2 min-h-10 w-full rounded-xl bg-white text-sm font-bold text-[#08a048] ring-1 ring-green-300">Reactor empty ✓</button>
         </div>}
         <p className="pt-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Status</p>
         <div className="flex flex-wrap gap-1.5">{HOLDS.map(([l, r]) => { const on = hold === undefined ? (r === null ? !e.pendingReason : e.pendingReason === r) : hold === r;
-          return <button key={l} type="button" onClick={() => setHold(r)} className={cx('min-h-9 rounded-full px-3 text-[13px] font-semibold', on ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{l}</button>; })}</div>
-        <input className="input" placeholder="Short note (optional)" value={note} onChange={(x) => setNote(x.target.value)} />
-        <button type="button" disabled={busy || (hold === undefined && !note.trim() && !drums.trim())} onClick={save} className="min-h-12 w-full rounded-2xl bg-[#08a048] text-base font-bold text-white disabled:opacity-50">Save</button>
+          return <button key={l} type="button" onClick={() => setHold(r)} className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', on ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{l}</button>; })}</div>
+        <input className="input text-[14px]" placeholder="Short note (optional)" value={note} onChange={(x) => setNote(x.target.value)} />
+        <button type="button" disabled={busy || (hold === undefined && !note.trim() && !drums.trim())} onClick={save} className="min-h-11 w-full rounded-xl bg-[#08a048] text-[15px] font-bold text-white disabled:opacity-50">Save</button>
         {err != null && <ErrorBox error={err} />}
       </div>
     </BottomSheet>
@@ -308,7 +308,7 @@ function BlindRow({ b, done }: { b: TrkPoint; done: Done }) {
   return (
     <div className="mb-2 flex items-center gap-2 rounded-2xl bg-white px-3 py-2 ring-1 ring-slate-200">
       <span className="min-w-0 flex-1"><b className="text-[14px]">{b.ref}</b><span className="block text-[12.5px] text-slate-600">{b.name}{b.inAt ? ` · in ${when(b.inAt)}` : ''}</span></span>
-      {b.status === 'open' ? <button type="button" disabled={busy} onClick={() => go({ status: 'in', in_at: at }, `${b.ref} in.`)} className="min-h-9 rounded-xl bg-[#0d2a5e] px-3 text-sm font-bold text-white">✓ In</button>
+      {b.status === 'open' ? <button type="button" disabled={busy} onClick={() => go({ status: 'in', in_at: at }, `${b.ref} in.`)} className="min-h-8 rounded-lg bg-[#0d2a5e] px-3 text-[12.5px] font-bold text-white">✓ In</button>
         : b.status === 'in' ? <><span className="rounded-md bg-green-100 px-1.5 py-0.5 text-[11px] font-bold text-green-800">✓ In</span><button type="button" disabled={busy} onClick={() => go({ status: 'out', out_at: at }, `${b.ref} out (de-blinded).`)} className="min-h-9 rounded-xl px-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-300">Out</button></>
         : <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-600">Out</span>}
     </div>
@@ -334,15 +334,15 @@ function Loop({ d, p, now, done }: { d: TrackerData; p: TrkPoint; now: number; d
   };
   return (
     <Card>
-      <div className="flex items-start justify-between gap-2"><b className="text-[15px]">{p.ref} · {p.name}</b><span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold', p.status === 'open' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{p.holdReason ? 'On hold' : neutLabel(p)}</span></div>
+      <div className="flex items-start justify-between gap-2"><b className="text-[14px] leading-snug">{p.ref} · {p.name}</b><span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold', p.status === 'open' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{p.holdReason ? 'On hold' : neutLabel(p)}</span></div>
       {p.holdReason && <p className="text-xs font-semibold text-red-700">⏸ {p.holdReason}</p>}
       {missing.length > 0 && <p className="mt-1 text-xs text-slate-600">Waiting blinds: {missing.join(', ')}</p>}
       {jobs.length > 0 && <p className="mt-1 text-xs text-slate-600">Jobs {jobs.filter((c) => c.doneAt).length}/{jobs.length}{job ? ` · next: ${job.crane ? '🏗 ' : ''}${job.text.split(/,|:/)[0]}` : ''}</p>}
       {p.status === 'soaking' && p.soakAt && <p className="mt-1 text-xs text-slate-600">Soaking since {when(p.soakAt)} ({Math.round((now - Date.parse(p.soakAt)) / H)} h)</p>}
       <div className="mt-2 flex gap-1.5">
-        {job && <button type="button" disabled={busy} onClick={() => jobTap(job)} className={cx('min-h-10 flex-1 rounded-xl px-2 text-sm font-bold', job.startAt ? 'bg-[#ffc000] text-[#3b2a00]' : 'bg-white text-[#0d2a5e] ring-1 ring-slate-300')}>{job.startAt ? '✓ Job done' : '▶ Start job'}</button>}
-        {nx && !missing.length && !before && <button type="button" disabled={busy} onClick={() => run(() => setPoint(p.id, { status: nx[0], [nx[2]]: new Date().toISOString() }), `${p.ref}: ${nx[1].replace(/^[▶✓] /, '')}.`, () => setPoint(p.id, { status: p.status, [nx[2]]: null }))} className="min-h-10 flex-1 rounded-xl bg-[#0d2a5e] text-sm font-bold text-white">{nx[1]}</button>}
-        <button type="button" disabled={busy} onClick={() => run(() => setPoint(p.id, { hold_reason: p.holdReason ? null : 'Waiting (engineer)' }), `${p.ref}: ${p.holdReason ? 'resumed' : 'on hold'}.`, () => setPoint(p.id, { hold_reason: p.holdReason ?? null }))} className="min-h-10 rounded-xl px-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-300">{p.holdReason ? 'Resume' : 'Hold'}</button>
+        {job && <button type="button" disabled={busy} onClick={() => jobTap(job)} className={cx('min-h-9 flex-1 rounded-xl px-2 text-[12.5px] font-bold', job.startAt ? 'bg-[#ffc000] text-[#3b2a00]' : 'bg-white text-[#0d2a5e] ring-1 ring-slate-300')}>{job.startAt ? '✓ Job done' : '▶ Start job'}</button>}
+        {nx && !missing.length && !before && <button type="button" disabled={busy} onClick={() => run(() => setPoint(p.id, { status: nx[0], [nx[2]]: new Date().toISOString() }), `${p.ref}: ${nx[1].replace(/^[▶✓] /, '')}.`, () => setPoint(p.id, { status: p.status, [nx[2]]: null }))} className="min-h-9 flex-1 rounded-xl bg-[#0d2a5e] px-2 text-[12.5px] font-bold text-white">{nx[1]}</button>}
+        <button type="button" disabled={busy} onClick={() => run(() => setPoint(p.id, { hold_reason: p.holdReason ? null : 'Waiting (engineer)' }), `${p.ref}: ${p.holdReason ? 'resumed' : 'on hold'}.`, () => setPoint(p.id, { hold_reason: p.holdReason ?? null }))} className="min-h-9 rounded-xl px-3 text-[12.5px] font-semibold text-slate-700 ring-1 ring-slate-300">{p.holdReason ? 'Resume' : 'Hold'}</button>
       </div>
       {err != null && <ErrorBox error={err} />}
     </Card>
@@ -359,11 +359,11 @@ function Small({ d, now, done }: P) {
   const finished = (e: TrkEquipment) => lines(d, [keyOf(e)]).every((a) => a.actualFinish);
   return (<>
     <Seg v={v} set={setV} opts={[['small', 'Small jobs'], ['iat', `IATs (${d.iats.length})`]]} />
-    {v === 'iat' ? d.iats.map((i) => <IatCard key={i.id} i={i} done={done} />) : group ? <SmallGroup d={d} now={now} items={items.filter((e) => e.group === group)} stale={stale} done={done} onBack={() => setGroup(null)} />
+    {v === 'iat' ? (d.iats.length ? d.iats.map((i) => <IatCard key={i.id} i={i} done={done} />) : <Card><p className="text-sm text-slate-600">No IATs on this shutdown yet.</p></Card>) : group ? <SmallGroup d={d} now={now} items={items.filter((e) => e.group === group)} stale={stale} done={done} onBack={() => setGroup(null)} />
       : groups.map((g) => { const xs = items.filter((e) => e.group === g); const n = xs.filter(finished).length; const late = xs.filter((e) => stale.has(keyOf(e))).length;
         const sub = xs.length === 1 ? `${lines(d, [keyOf(xs[0])]).filter((a) => a.actualFinish).length}/${lines(d, [keyOf(xs[0])]).length} jobs done` : `${xs.length} items${late ? ` · ${late} need an update` : ''}`;
         return <button key={g} type="button" onClick={() => setGroup(g)} className="mb-2 flex w-full items-center gap-2 rounded-2xl bg-white px-3 py-3 text-left ring-1 ring-slate-200 active:bg-slate-50">
-          <span className="min-w-0 flex-1"><b className="block text-[15px]">{g === 'CV shells' ? 'Control valves' : g}</b><span className="text-[12.5px] text-slate-600">{sub}</span></span>
+          <span className="min-w-0 flex-1"><b className="block text-[14px]">{g === 'CV shells' ? 'Control valves' : g}</b><span className="text-[12.5px] text-slate-600">{sub}</span></span>
           <span className={cx('rounded-md px-1.5 py-0.5 text-[12px] font-bold', n === xs.length ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-900')}>{xs.length === 1 ? `${lines(d, [keyOf(xs[0])]).filter((a) => a.actualFinish).length}/${lines(d, [keyOf(xs[0])]).length}` : `${n}/${xs.length}`}</span></button>; })}
   </>);
 }
@@ -406,7 +406,7 @@ function SmallGroup({ d, now, items, stale, done, onBack }: { d: TrackerData; no
       </div>; })}
     {picked.length > 0 && <div className="sticky bottom-20 rounded-2xl bg-white p-3 shadow-lg ring-1 ring-slate-200">
       <p className="text-sm"><b className="text-[#0d2a5e]">{picked.length} selected</b> <span className="text-slate-500">{items.filter((e) => sel.has(e.id)).map((e) => short(e.tag)).join(', ')}</span></p>
-      <button type="button" disabled={busy} onClick={() => finishAll(picked, `${picked.length} items: ${same ? picked[0].activity : 'next step'} done.`)} className="mt-2 min-h-12 w-full rounded-2xl bg-[#ffc000] font-bold text-[#3b2a00]">✓ {same ? picked[0].activity : 'Next step'} done for all {picked.length}</button>
+      <button type="button" disabled={busy} onClick={() => finishAll(picked, `${picked.length} items: ${same ? picked[0].activity : 'next step'} done.`)} className="mt-2 min-h-11 w-full rounded-xl bg-[#ffc000] px-2 text-[13.5px] font-bold text-[#3b2a00]">✓ {same ? picked[0].activity : 'Next step'} done for all {picked.length}</button>
     </div>}
     {err != null && <ErrorBox error={err} />}
     {open && <ItemSheet d={d} e={open} done={done} onClose={() => setOpen(null)} />}
@@ -421,7 +421,7 @@ function IatCard({ i, done }: { i: TrkIat; done: Done }) {
       <p><b className="text-[15px]">{i.iatNo}</b> <span className="text-xs text-slate-500">· {short(i.tag)}{i.line ? ` · ${i.line}` : ''}</span></p>
       <p className="mb-2 text-[12.5px] text-slate-600">{i.jobText}{i.remark ? ` · ${i.remark}` : ''}</p>
       <div className="flex flex-wrap gap-1.5">{IAT_STATUSES.filter((s) => s !== 'Cancelled').map((s) => <button key={s} type="button" disabled={busy || s === st} onClick={async () => { setBusy(true); setErr(null); try { await setIatStatus(i.id, s, iatClosedBy(s)); done(`IAT ${i.iatNo}: ${s}.`, () => restoreIat(i.id, was)); } catch (x) { setErr(x); } finally { setBusy(false); } }}
-        className={cx('min-h-9 rounded-full px-3 text-[13px] font-semibold', s === st ? IAT_CLS[s] : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{s === 'New IAT' ? 'New' : s === 'Completed' ? 'Done' : s}</button>)}</div>
+        className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', s === st ? IAT_CLS[s] : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{s === 'New IAT' ? 'New' : s === 'Completed' ? 'Done' : s}</button>)}</div>
       {err != null && <ErrorBox error={err} />}
     </Card>
   );
