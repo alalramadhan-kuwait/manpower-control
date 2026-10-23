@@ -461,7 +461,7 @@ describe('ask for updates', () => {
     expect(xs.map((x) => [x.tag, x.status])).toEqual([['V-12-201', 'Box-up not started'], ['V-12-209', 'Hydrojet I/P'], ['12-PSV-0537', 'Remove PSV I/P'], ['12-PSV-0601', 'Remove PSV I/P']]);
     const text = askText(xs, Date.parse(kw('2026-10-23 07:00')), { name: 'U-12 TR-2 SD' });
     expect(text).toContain('*Vessels*\n- V-201: Box-up not started (21 Oct 07:00):\n- V-209: Hydrojet I/P (21 Oct 08:00):');
-    expect(text).toContain('*PSVs*\n- PSV-0537/0601: Remove PSV I/P (21 Oct 09:00):');
+    expect(text).toContain('*PSVs*\n- PSV-0537: Remove PSV I/P (21 Oct 09:00):\n- PSV-0601: Remove PSV I/P (21 Oct 10:00):');
     expect(text).not.toContain('?');
   });
 });

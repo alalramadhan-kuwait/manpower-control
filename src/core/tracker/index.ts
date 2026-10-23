@@ -889,19 +889,14 @@ export function staleItems(d: TrkData, now: number, limits: { normal?: number; c
   }
   return out.sort((a, b) => a.lastAt - b.lastAt);
 }
-/** The request as WhatsApp text: by equipment group, each item with its latest update and when, the reply after the colon. */
+/** The request as WhatsApp text: by equipment group, one item per line with its latest update and when, the reply after the colon. */
 export function askText(items: StaleItem[], now: number, opts: { name?: string; test?: boolean; by?: string } = {}): string {
   // short, like the shift report: the item, its latest update and when; the reply is written after the colon
   const out = [`*${opts.test ? '[TEST] ' : ''}${opts.name ?? 'Shutdown'} · Update request*`, `_${askWhen(now)} · latest update shown, please reply with the status_`];
   const rank = (g: string) => (ASK_ORDER.includes(g) ? ASK_ORDER.indexOf(g) : g === 'PSVs' ? 99 : 50);
   for (const sec of [...new Set(items.map((i) => i.section))].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))) {
-    const xs = items.filter((i) => i.section === sec);
-    // several items with the same latest update share a line (PSVs out to the shop)
-    const by = new Map<string, StaleItem[]>();
-    for (const x of xs) { const k = x.status; by.set(k, [...(by.get(k) ?? []), x]); }
-    out.push('', `*${ASK_NAME[sec] ?? sec}*`, ...[...by.values()].map((g) => {
-      return `- ${joinTags(g.map((x) => x.tag.replace(/^12-/, '')))}: ${g[0].status} (${askWhen(Math.min(...g.map((x) => x.lastAt)))}):`;
-    }));
+    // one item per line, so each can be answered on its own
+    out.push('', `*${ASK_NAME[sec] ?? sec}*`, ...items.filter((i) => i.section === sec).sort((a, b) => a.tag.localeCompare(b.tag, 'en', { numeric: true })).map((x) => `- ${short(x.tag.replace(/^12-/, ''))}: ${x.status} (${askWhen(x.lastAt)}):`));
   }
   if (opts.by) out.push('', `— ${opts.by}`);
   return out.join('\n');
