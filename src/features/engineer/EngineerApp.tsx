@@ -4,7 +4,7 @@
 // stamped with the ID; Undo for a few seconds after each one.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { IAT_STATUSES, iatClosedBy, iatStatus, isSmallJob, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, staleItems, withReactor,
-  type PointStatus, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
+  type MiItem, type PointStatus, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { addQtyEntry, confirmEmpty, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
 import { BottomSheet, ErrorBox, Spinner, cx } from '@/ui/components';
@@ -159,13 +159,36 @@ function itemLine(d: TrackerData, e: TrkEquipment): string {
   const ls = lines(d, [keyOf(e)]); const r = ls.find((a) => a.actualStart && !a.actualFinish), n = ls.find((a) => !a.actualStart);
   return r ? `${r.activity} I/P` : n ? `Next: ${n.activity}` : ls.length ? 'All steps done' : '—';
 }
-function ItemRow({ d, e, ageH, onOpen }: { d: TrackerData; e: TrkEquipment; ageH?: number; onOpen: () => void }) {
-  const ls = lines(d, [keyOf(e)]); const all = ls.length > 0 && ls.every((a) => a.actualFinish);
+/** When the item was last updated: its steps, its remark / hold, its drums. */
+function lastUpdate(d: TrackerData, keys: string[]): number | null {
+  const scopes = (d.engine?.scopes ?? []).filter((s) => keys.includes(s.key)).map((s) => s.id);
+  const ts = [...d.activities.filter((a) => keys.includes(a.key) && a.tracked && !a.detail).flatMap((a) => [a.actualStart, a.actualFinish, a.updatedAt]),
+    ...d.equipment.filter((x) => keys.includes(keyOf(x))).map((x) => x.updatedAt), ...(d.engine?.entries ?? []).filter((x) => scopes.includes(x.scopeId)).map((x) => x.enteredAt)]
+    .filter((x): x is string => !!x).map((x) => Date.parse(x)).filter((x) => !Number.isNaN(x));
+  return ts.length ? Math.max(...ts) : null;
+}
+const ago = (t: number, now: number) => { const h = Math.round((now - t) / H); return h < 1 ? 'just now' : h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`; };
+/** Against the bar chart: the item's forecast finish vs its P6 finish (+ ahead, − behind), done vs plan. */
+function VsPlan({ mi }: { mi?: MiItem }) {
+  if (!mi) return null;
+  const v = mi.svD, done = mi.done >= mi.lines;
+  return (
+    <span className="shrink-0 text-right">
+      <span className={cx('block rounded-md px-1.5 py-0.5 text-[11px] font-bold', done ? 'bg-green-100 text-green-800' : v >= 0.5 ? 'bg-green-100 text-green-800' : v > -0.5 ? 'bg-slate-100 text-slate-700' : 'bg-red-100 text-red-800')}>
+        {done ? '✓ done' : v >= 0.5 ? `${v} d ahead` : v > -0.5 ? 'on plan' : `${-v} d behind`}</span>
+      <span className="mt-0.5 block text-[10.5px] text-slate-500">{mi.physPct}% / plan {mi.planPct}%</span>
+    </span>
+  );
+}
+function ItemRow({ d, e, now, ageH, mi, onOpen }: { d: TrackerData; e: TrkEquipment; now: number; ageH?: number; mi?: MiItem; onOpen: () => void }) {
+  const keys = e.combine ? d.equipment.filter((x) => x.combine === e.combine).map(keyOf) : [keyOf(e)];
+  const t = lastUpdate(d, keys);
   return (
     <button type="button" onClick={onOpen} className="mb-2 flex w-full items-center gap-2.5 rounded-2xl bg-white px-3 py-2.5 text-left ring-1 ring-slate-200 active:bg-slate-50">
-      <span className={cx('h-2.5 w-2.5 shrink-0 rounded-full', e.pendingReason ? 'bg-[#e02028]' : all ? 'bg-[#08a048]' : 'bg-[#ffc000]')} />
-      <span className="min-w-0 flex-1"><b className="block text-[15px]">{short(e.tag)}</b><span className="block truncate text-[12.5px] text-slate-600">{itemLine(d, e)}</span></span>
-      {ageH !== undefined ? age(ageH) : all ? <span className="rounded-md bg-green-100 px-1.5 text-[11px] font-bold text-green-800">✓</span> : null}
+      <span className={cx('h-2.5 w-2.5 shrink-0 rounded-full', e.pendingReason ? 'bg-[#e02028]' : mi && mi.done >= mi.lines ? 'bg-[#08a048]' : 'bg-[#ffc000]')} />
+      <span className="min-w-0 flex-1"><b className="block text-[15px]">{short(e.combine ?? e.tag)}</b><span className="block truncate text-[12.5px] text-slate-600">{itemLine(d, e)}</span>
+        <span className={cx('block text-[11px]', ageH !== undefined ? 'font-bold text-amber-700' : 'text-slate-500')}>{t ? `Updated ${when(t)} · ${ago(t, now)}` : 'No update yet'}</span></span>
+      <VsPlan mi={mi} />
     </button>
   );
 }
@@ -173,13 +196,14 @@ function Equipment({ d, now, done }: P) {
   const [v, setV] = useState<'todo' | 'all'>('todo');
   const [open, setOpen] = useState<TrkEquipment | null>(null);
   const stale = useMemo(() => new Map(staleItems(d, now).filter((i) => !i.small).map((i) => [i.key, i.ageH])), [d, now]);
+  const mi = useMemo(() => new Map((phases(d, now).mi.weighted?.items ?? []).map((i) => [i.key, i])), [d, now]);
   const main = d.equipment.filter((e) => e.tracked && !isSmallJob(e.group) && lines(d, [keyOf(e)]).length && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e));
   const shown = v === 'todo' ? main.filter((e) => stale.has(keyOf(e))) : main;
   const groups = [...new Set(shown.map((e) => e.group))];
   return (<>
     <Seg v={v} set={setV} opts={[['todo', `To update (${stale.size})`], ['all', `All (${main.length})`]]} />
     {(v === 'all' || groups.includes('Reactors')) && <Reactors d={d} now={now} done={done} />}
-    {groups.map((g) => <div key={g}><Sec>{g}</Sec>{shown.filter((e) => e.group === g).map((e) => <ItemRow key={e.id} d={d} e={e} ageH={stale.get(keyOf(e))} onOpen={() => setOpen(e)} />)}</div>)}
+    {groups.map((g) => <div key={g}><Sec>{g}</Sec>{shown.filter((e) => e.group === g).map((e) => <ItemRow key={e.id} d={d} e={e} now={now} ageH={stale.get(keyOf(e))} mi={mi.get(keyOf(e))} onOpen={() => setOpen(e)} />)}</div>)}
     {!shown.length && <Card><p className="text-sm font-semibold text-green-800">✓ Everything has a recent update.</p></Card>}
     {open && <ItemSheet d={d} e={open} done={done} onClose={() => setOpen(null)} />}
   </>);
@@ -335,7 +359,7 @@ function Small({ d, now, done }: P) {
   const finished = (e: TrkEquipment) => lines(d, [keyOf(e)]).every((a) => a.actualFinish);
   return (<>
     <Seg v={v} set={setV} opts={[['small', 'Small jobs'], ['iat', `IATs (${d.iats.length})`]]} />
-    {v === 'iat' ? d.iats.map((i) => <IatCard key={i.id} i={i} done={done} />) : group ? <SmallGroup d={d} items={items.filter((e) => e.group === group)} stale={stale} done={done} onBack={() => setGroup(null)} />
+    {v === 'iat' ? d.iats.map((i) => <IatCard key={i.id} i={i} done={done} />) : group ? <SmallGroup d={d} now={now} items={items.filter((e) => e.group === group)} stale={stale} done={done} onBack={() => setGroup(null)} />
       : groups.map((g) => { const xs = items.filter((e) => e.group === g); const n = xs.filter(finished).length; const late = xs.filter((e) => stale.has(keyOf(e))).length;
         const sub = xs.length === 1 ? `${lines(d, [keyOf(xs[0])]).filter((a) => a.actualFinish).length}/${lines(d, [keyOf(xs[0])]).length} jobs done` : `${xs.length} items${late ? ` · ${late} need an update` : ''}`;
         return <button key={g} type="button" onClick={() => setGroup(g)} className="mb-2 flex w-full items-center gap-2 rounded-2xl bg-white px-3 py-3 text-left ring-1 ring-slate-200 active:bg-slate-50">
@@ -345,7 +369,7 @@ function Small({ d, now, done }: P) {
 }
 /** A small-jobs group: its items with their next step; tick several and finish the next step for all in one tap. One
  *  item with many jobs (the OPR list) is a checklist of its jobs. */
-function SmallGroup({ d, items, stale, done, onBack }: { d: TrackerData; items: TrkEquipment[]; stale: Map<string, number>; done: Done; onBack: () => void }) {
+function SmallGroup({ d, now, items, stale, done, onBack }: { d: TrackerData; now: number; items: TrkEquipment[]; stale: Map<string, number>; done: Done; onBack: () => void }) {
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<TrkEquipment | null>(null);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
@@ -376,7 +400,8 @@ function SmallGroup({ d, items, stale, done, onBack }: { d: TrackerData; items: 
       return <div key={e.id} className="mb-2 flex items-center gap-2.5 rounded-2xl bg-white px-3 py-2 ring-1 ring-slate-200">
         <input type="checkbox" className="h-5 w-5 shrink-0" disabled={!n} checked={sel.has(e.id)} onChange={() => tick(e.id)} />
         <button type="button" onClick={() => setOpen(e)} className="min-w-0 flex-1 text-left"><b className="block text-[14px]">{short(e.tag)}</b>
-          <span className="block truncate text-[12.5px] text-slate-600">{e.remark?.trim() ? `${e.remark.trim()} · ` : ''}{n ? `${n.actualStart ? '▶ ' : 'Next: '}${n.activity}` : '✓ all done'}</span></button>
+          <span className="block truncate text-[12.5px] text-slate-600">{e.remark?.trim() ? `${e.remark.trim()} · ` : ''}{n ? `${n.actualStart ? '▶ ' : 'Next: '}${n.activity}` : '✓ all done'}</span>
+          {(() => { const t = lastUpdate(d, [keyOf(e)]); return <span className={cx('block text-[11px]', stale.has(keyOf(e)) ? 'font-bold text-amber-700' : 'text-slate-500')}>{t ? `Updated ${when(t)} · ${ago(t, now)}` : 'No update yet'}</span>; })()}</button>
         {stale.has(keyOf(e)) ? age(stale.get(keyOf(e))!, 24) : <span className="rounded-md bg-slate-100 px-1.5 text-[11px] font-bold text-slate-600">{ls.filter((a) => a.actualFinish).length}/{ls.length}</span>}
       </div>; })}
     {picked.length > 0 && <div className="sticky bottom-20 rounded-2xl bg-white p-3 shadow-lg ring-1 ring-slate-200">
