@@ -231,27 +231,26 @@ function lastUpdate(d: TrackerData, keys: string[]): number | null {
   return ts.length ? Math.max(...ts) : null;
 }
 const ago = (t: number, now: number) => { const h = Math.round((now - t) / H); return h < 1 ? 'just now' : h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`; };
-/** Against the bar chart: the item's forecast finish vs its P6 finish (+ ahead, − behind), done vs plan. */
+/** Against the bar chart: the item's forecast finish vs its P6 finish (+ ahead, − behind). */
 function VsPlan({ mi }: { mi?: MiItem }) {
   if (!mi) return null;
   const v = mi.svD, done = mi.done >= mi.lines;
   return (
-    <span className="shrink-0 text-right">
-      <span className={cx('block rounded-md px-1.5 py-0.5 text-[11px] font-bold', done ? 'bg-green-100 text-green-800' : v >= 0.5 ? 'bg-green-100 text-green-800' : v > -0.5 ? 'bg-slate-100 text-slate-700' : 'bg-red-100 text-red-800')}>
-        {done ? '✓ done' : v >= 0.5 ? `${v} d ahead` : v > -0.5 ? 'on plan' : `${-v} d behind`}</span>
-      <span className="mt-0.5 block text-[10.5px] text-slate-500">{mi.physPct}% / plan {mi.planPct}%</span>
-    </span>
+    <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold', done ? 'bg-green-100 text-green-800' : v >= 0.5 ? 'bg-green-100 text-green-800' : v > -0.5 ? 'bg-slate-100 text-slate-700' : 'bg-red-100 text-red-800')}>
+      {done ? '✓ done' : v >= 0.5 ? `${v} d ahead` : v > -0.5 ? 'on plan' : `${-v} d behind`}</span>
   );
 }
+/** One item in two lines: tag, what is happening; done / plan and when it was last updated (orange when overdue). */
 function ItemRow({ d, e, now, ageH, mi, onOpen }: { d: TrackerData; e: TrkEquipment; now: number; ageH?: number; mi?: MiItem; onOpen: () => void }) {
   const keys = e.combine ? d.equipment.filter((x) => x.combine === e.combine).map(keyOf) : [keyOf(e)];
   const t = lastUpdate(d, keys);
   const probs = (d.events ?? []).filter((x) => !x.endedAt && x.key && keys.includes(x.key)).length;
   return (
-    <button type="button" onClick={onOpen} className="mb-2 flex w-full items-center gap-2.5 rounded-2xl bg-white px-3 py-2.5 text-left ring-1 ring-slate-200 active:bg-slate-50">
-      <span className={cx('h-2.5 w-2.5 shrink-0 rounded-full', e.pendingReason ? 'bg-[#e02028]' : mi && mi.done >= mi.lines ? 'bg-[#08a048]' : 'bg-[#ffc000]')} />
-      <span className="min-w-0 flex-1"><b className="block text-[14px]">{short(e.combine ?? e.tag)}{probs > 0 && <span className="ml-1.5 rounded-md bg-red-100 px-1.5 text-[11px] font-bold text-red-800">⚠ {probs}</span>}</b><span className="block truncate text-[12px] text-slate-600">{itemLine(d, e)}</span>
-        <span className={cx('block text-[11px]', ageH !== undefined ? 'font-bold text-amber-700' : 'text-slate-500')}>{t ? `Updated ${when(t)} · ${ago(t, now)}` : 'No update yet'}</span></span>
+    <button type="button" onClick={onOpen} className="flex w-full items-center gap-2 border-b border-slate-100 px-2.5 py-1.5 text-left last:border-b-0 active:bg-slate-50">
+      <span className={cx('h-2 w-2 shrink-0 rounded-full', e.pendingReason ? 'bg-[#e02028]' : mi && mi.done >= mi.lines ? 'bg-[#08a048]' : 'bg-[#ffc000]')} />
+      <b className="min-w-[52px] shrink-0 whitespace-nowrap text-[13.5px] leading-tight">{short(e.combine ?? e.tag)}{probs > 0 && <span className="mt-0.5 block w-fit rounded bg-red-100 px-1 text-[10px] font-bold text-red-800">⚠ {probs}</span>}</b>
+      <span className="min-w-0 flex-1"><span className="block truncate text-[13px] text-slate-700">{itemLine(d, e)}</span>
+        <span className="block truncate text-[11px] text-slate-500">{mi ? `${mi.physPct}% / plan ${mi.planPct}% · ` : ''}<span className={ageH !== undefined ? 'font-bold text-amber-700' : ''}>{t ? ago(t, now) : 'no update yet'}</span></span></span>
       <VsPlan mi={mi} />
     </button>
   );
@@ -271,7 +270,7 @@ function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string)
       className={cx('min-h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-[12px] font-bold', f === k ? 'bg-[#0d2a5e] text-white' : k === 'todo' && todo.length ? 'bg-amber-50 text-amber-900 ring-1 ring-amber-300' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>)}</div>
     {f === 'todo' && <p className="mx-1 mb-2 text-[11.5px] text-slate-500">Work running (or due to start) with no update for {'>'}12 h · critical {'>'}6 h. Any step, note, status or drum entry counts as an update.</p>}
     {(f === 'all' || f === 'Reactors') && <Reactors d={d} now={now} done={done} />}
-    {groups.map((g) => <div key={g}><Sec>{g}</Sec>{shown.filter((e) => e.group === g).map((e) => <ItemRow key={e.id} d={d} e={e} now={now} ageH={stale.get(keyOf(e))} mi={mi.get(keyOf(e))} onOpen={() => setOpen(e)} />)}</div>)}
+    {groups.map((g) => <div key={g}><Sec>{g}</Sec><div className="mb-2 overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200">{shown.filter((e) => e.group === g).map((e) => <ItemRow key={e.id} d={d} e={e} now={now} ageH={stale.get(keyOf(e))} mi={mi.get(keyOf(e))} onOpen={() => setOpen(e)} />)}</div></div>)}
     {!shown.length && <Card><p className="text-sm font-semibold text-green-800">{f === 'todo' ? '✓ Everything has a recent update.' : 'Nothing here.'}</p></Card>}
     {open && <ItemSheet d={d} e={open} done={done} onClose={() => setOpen(null)} />}
   </>);
