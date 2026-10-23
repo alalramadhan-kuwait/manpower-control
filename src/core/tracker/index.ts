@@ -86,6 +86,9 @@ export interface TrkData { asks?: TrkAsk[]; events?: TrkEvent[]; engine?: TrkEng
  *  list, PMRs …) is miscellaneous, shown after them. */
 export const MAIN_GROUPS = ['Reactors', 'Heaters', 'Exchangers', 'Vessels', 'Filters', 'Compressor', 'Pumps / LO'] as const;
 export const isMisc = (group: string) => !(MAIN_GROUPS as readonly string[]).includes(group);
+/** Small jobs in the M & I progress: the miscellaneous groups and the pumps' lube oil work (short jobs that the bar
+ *  chart plans as long windows, Section Head decision 23 Oct), counted apart from the main equipment. */
+export const isSmallJob = (group: string) => isMisc(group) || group === 'Pumps / LO';
 export const STAGES = ['Not handed over', 'Handed over', 'Opened / cleaning', 'Inspection', 'Repair', 'Box-up', 'Deblinded / returned'] as const;
 export const STAGE_SHORT = ['Not HO', 'HO', 'Cleaning', 'Inspection', 'Repair', 'Box-up', 'Returned'] as const;
 export const PENDING_REASONS = ['Stuck / seized bolts', 'Waiting material', 'Waiting manpower', 'Waiting scaffolding', 'Waiting permit / gas test', 'Waiting inspection (IAT)',
@@ -752,7 +755,7 @@ export function miWeighted(d: TrkData, now: number, eqs: EquipView[]): MiWeighte
     const forecast = Math.max(...fc.values());
     const drv = left.length ? [...left].sort((a, b) => fc.get(b)! - fc.get(a)!)[0] : null;
     const pct = (x: number) => (w > 0 ? Math.round(x / w * 100) : 0);
-    return { tag: e.eq.tag, key, group: e.eq.group, small: isMisc(e.eq.group), physPct: pct(got), physHiPct: pct(got + open), planPct: pct(plan),
+    return { tag: e.eq.tag, key, group: e.eq.group, small: isSmallJob(e.eq.group), physPct: pct(got), physHiPct: pct(got + open), planPct: pct(plan),
       p6Finish, forecast, remainingD: r1(Math.max(0, forecast - now) / DAY), svD: r1((p6Finish - forecast) / DAY), spareD: r1((end - forecast) / DAY),
       impactD: r1(Math.max(0, forecast - end) / DAY), done: xs.length - left.length, lines: xs.length, next: left[0]?.activity ?? null, driving: drv?.activity ?? null, unverified };
   }).sort((a, b) => a.spareD - b.spareD || a.tag.localeCompare(b.tag));
@@ -876,7 +879,7 @@ export function staleItems(d: TrkData, now: number, limits: { normal?: number; c
     const times = [...acts.flatMap((a) => [a.actualStart, a.actualFinish, a.updatedAt]), ...d.equipment.filter((x) => keys.includes(x.barchartKey ?? x.tag)).map((x) => x.updatedAt), ...entries.map((x) => x.enteredAt)]
       .filter((x): x is string => !!x).map(ms).filter((x) => !Number.isNaN(x) && x <= now);
     const lastAt = times.length ? Math.max(...times) : due ? ms(due.start) : now;
-    const small = isMisc(e.group), critical = e.critical || (spare.get(key) ?? Infinity) <= CRITICAL_SPARE_D;
+    const small = isSmallJob(e.group), critical = e.critical || (spare.get(key) ?? Infinity) <= CRITICAL_SPARE_D;
     const limitH = critical ? lim.critical : small ? lim.small : lim.normal;
     const ageH = Math.round((now - lastAt) / H);
     if (ageH < limitH) continue;

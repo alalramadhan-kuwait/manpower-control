@@ -99,7 +99,7 @@ export function TodayTab({ steps, eqs, data, now, onOpen, onNav }: { steps: Map<
         {mi.weighted && (
           <div className="pt-1.5">
             <PhysBar label="Main equipment" p={mi.weighted.main} state={mi.weighted.state} />
-            {mi.weighted.small.items > 0 && <PhysBar label="Small jobs (PSVs, CVs, piping)" p={mi.weighted.small} />}
+            {mi.weighted.small.items > 0 && <PhysBar label="Small jobs (PSVs, CVs, pumps &amp; lube oil, piping)" p={mi.weighted.small} />}
             {mi.weighted.controlling && <Controlling i={mi.weighted.controlling} onClick={() => onOpen({ kind: 'equipment', ref: mi.weighted!.controlling!.tag })} />}
             {mi.weighted.critical.length > 0 && <>
               <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">Near critical · {CRITICAL_SPARE_D} d float or less</p>
