@@ -216,3 +216,5 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261023083836_shutdown_progress_engineer_links_grants` | `app_current_role()` / `app_is_section_head()` executable by anon (null / false without a login) so a link's requests pass the policies |
 | `20261023084046_shutdown_progress_stamp_guard_fix` | `trk_stamp()` setup guard per table (it failed for any non-Section-Head update) |
 | `20261023095118_shutdown_progress_compressor_turbine_steps` | C-12-201 compressor and turbine: the 360 h overhaul line split into 9 steps (pre-steps, workshop, fixing back) in the same window |
+| `20261023100638_shutdown_progress_engineer_steps` | Engineers rename, order and add work steps: `p6_activity` keeps a renamed P6 line's text, added steps (`ENG-…`, no planned dates) by link, stamp on insert |
+| `20261023100840_shutdown_progress_engineer_steps_guard_fix` | `trk_stamp()`: the P6-text capture in its own block (it read `new.activity` on every table) |

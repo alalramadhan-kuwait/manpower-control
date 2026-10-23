@@ -40,6 +40,8 @@ export interface TrkActivity {
   actualStart?: string | null; actualFinish?: string | null; actualNote?: string | null; updatedBy?: string | null; updatedAt?: string | null;
   /** the place set by hand in the item's list (null = the plan order) · a field-operator detail step, hidden for the Section Head */
   seq?: number | null; detail?: boolean;
+  /** the P6 text of a bar-chart line renamed in the field */
+  p6Activity?: string | null;
 }
 export interface TrkLog { kind: 'step' | 'equipment' | 'iat' | 'activity' | 'point'; ref: string; field: string; oldValue: string | null; newValue: string | null; byName: string | null; at: string }
 import { qtyForecast, qtyProgress, type TrkEngine } from './qty';

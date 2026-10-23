@@ -3,9 +3,9 @@
 // reactors' issues and temperatures), Isolation (neutralization and blinds), Small jobs & IATs. Every change is
 // stamped with the ID; Undo for a few seconds after each one.
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { IAT_STATUSES, iatClosedBy, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
+import { IAT_STATUSES, iatClosedBy, reportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, type PointStatus, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
-import { addQtyEntry, confirmEmpty, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
+import { addEngStep, addQtyEntry, confirmEmpty, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
 import { BottomSheet, ErrorBox, Spinner, cx } from '@/ui/components';
 import { EventsCard } from '@/features/tracker/Events';
@@ -92,7 +92,7 @@ function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: 
   const sh = shiftOf(now);
   const done: Done = (msg, undo) => { setFlash({ msg, undo }); void load(me.tracker_id); };
   const go = (t: Tab, g?: string) => { setTab(t); if (g) setEqf(g); window.scrollTo(0, 0); };
-  const props = { d: data, now, done, go };
+  const props = { d: data, now, done, go, by: me.login_id };
   return (
     <Frame title={`Hi ${me.login_id}`} sub={`${kwDay(now)} · ${sh.shift === 'D' ? 'Day' : 'Night'} shift · ${data.tracker.title}`}
       right={<>{onExit && <button type="button" onClick={onExit} className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-[#0d2a5e]">Section Head view</button>}
@@ -115,7 +115,7 @@ function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: 
   );
 }
 
-type P = { d: TrackerData; now: number; done: Done; go: (t: Tab, group?: string) => void };
+type P = { d: TrackerData; now: number; done: Done; go: (t: Tab, group?: string) => void; by: string };
 const Card = ({ children, className }: { children: React.ReactNode; className?: string }) => <section className={cx('mb-2.5 rounded-2xl bg-white p-3 ring-1 ring-slate-200', className)}>{children}</section>;
 const Sec = ({ children }: { children: React.ReactNode }) => <p className="mx-1 mb-1.5 mt-3 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">{children}</p>;
 const Seg = <T extends string>({ v, set, opts }: { v: T; set: (x: T) => void; opts: [T, string][] }) => (
@@ -132,7 +132,8 @@ const GroupRow = ({ label, act, plan, onClick }: { label: string; act: number; p
     <span className="whitespace-nowrap text-right font-semibold tabular-nums text-slate-600">{act}% / {plan}%</span><span className="text-slate-400">›</span></button>);
 
 // ── Dashboard ───────────────────────────────────────────────────────────────────────────────────────────────────────
-function Dashboard({ d, now, go }: P) {
+function Dashboard({ d, now, go, by }: P) {
+  const [report, setReport] = useState(false);
   const mi = useMemo(() => phases(d, now).mi, [d, now]);
   const w = mi.weighted;
   // done / plan by equipment group, each item weighed by its hours (as the main %)
@@ -146,6 +147,8 @@ function Dashboard({ d, now, go }: P) {
   if (!w) return <Card><p className="text-sm text-slate-600">M &amp; I has not started yet.</p></Card>;
   const late = w.impactD > 0, cp = w.controlling;
   return (<>
+    <button type="button" onClick={() => setReport(true)} className="mb-2.5 flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-[#25D366] text-[14px] font-bold text-white active:opacity-90">💬 WhatsApp report</button>
+    {report && <ReportSheet d={d} now={now} by={by} onClose={() => setReport(false)} />}
     <Card className={cx('border-l-[6px]', late ? 'border-l-[#e02028]' : (cp?.spareD ?? 9) <= 1 ? 'border-l-[#ffc000]' : 'border-l-[#08a048]')}>
       <p className="text-[11px] font-bold text-slate-500">END DATE</p>
       <p className={cx('text-[28px] font-extrabold leading-tight', late ? 'text-[#e02028]' : 'text-[#0d2a5e]')}>{late ? `Behind ${w.impactD} d` : 'On time'}</p>
@@ -231,7 +234,7 @@ function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string)
 }
 
 /** Reactor issues (nitrogen, temperature …) and this shift's max bed temperatures. */
-function Reactors({ d, now, done }: Omit<P, 'go'>) {
+function Reactors({ d, now, done }: Pick<P, 'd' | 'now' | 'done'>) {
   const sh = shiftOf(now);
   const saved = d.shiftLogs.find((l) => l.shiftDate === sh.date && l.shift === sh.shift);
   const [temps, setTemps] = useState<Record<string, string>>(saved?.temps ?? {});
@@ -257,6 +260,7 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
   const [hold, setHold] = useState<string | null | undefined>(undefined);
   const [note, setNote] = useState('');
   const [stage, setStage] = useState<number | null>(null);
+  const [steps, setSteps] = useState(false);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const scope = (d.engine?.scopes ?? []).find((s) => keys.includes(s.key) && s.scope === 'removal' && !s.completeAt);
   const entries = scope ? (d.engine?.entries ?? []).filter((x) => x.scopeId === scope.id && x.kind !== 'transfer') : [];
@@ -276,9 +280,12 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
       await addQtyEntry(scope.id, { shiftDate: sh.date, shift: sh.shift, kind: mine ? 'correction' : 'removal', method, qty: Number(drums) - total, corrects: mine?.id ?? null, remark: 'Engineer update (total)' });
     }
   }, `${short(e.tag)} saved.`, async () => { for (const t of twins) await setEquipment(t.id, { pending_reason: t.pendingReason, remark: t.remark, stage: t.stage }); });
+  if (steps) return <StepsPage d={d} e={e} keys={keys} done={done} onClose={() => setSteps(false)} />;
   return (
     <BottomSheet open onClose={onClose} title={short(e.tag)}>
       <div className="space-y-2.5">
+        <button type="button" onClick={() => setSteps(true)} className="flex min-h-10 w-full items-center justify-between rounded-xl bg-slate-50 px-3 text-[13px] font-bold text-[#0d2a5e] ring-1 ring-slate-200">
+          <span>📋 All steps · view, edit, add, order</span><span className="text-slate-500">{ls.filter((a) => a.actualFinish).length}/{ls.length} ›</span></button>
         <p className="text-xs text-slate-600">Last: {e.pendingReason ? `On hold · ${e.pendingReason}` : e.remark?.trim() || (() => { const f = [...ls].filter((a) => a.actualFinish).sort((a, b) => Date.parse(b.actualFinish!) - Date.parse(a.actualFinish!))[0]; return f ? `${f.activity} done` : 'nothing recorded yet'; })()}{e.updatedAt ? ` · ${when(e.updatedAt)}` : ''}</p>
         {run.map((a) => <button key={a.id} type="button" disabled={busy} onClick={() => step(a, true)} className="w-full rounded-xl bg-[#ffc000] px-3 py-2 text-left text-[#3b2a00]"><span className="block text-[11px] font-bold uppercase tracking-wide opacity-80">✓ Finish</span><span className="line-clamp-2 text-[13.5px] font-semibold leading-snug">{a.activity}</span></button>)}
         {next && <button type="button" disabled={busy} onClick={() => step(next, false)} className="w-full rounded-xl bg-[#0d2a5e] px-3 py-2 text-left text-white"><span className="block text-[11px] font-bold uppercase tracking-wide opacity-80">▶ Start</span><span className="line-clamp-2 text-[13.5px] font-semibold leading-snug">{next.activity}</span></button>}
@@ -297,6 +304,119 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
           return <button key={l} type="button" onClick={() => setHold(r)} className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', on ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{l}</button>; })}</div>
         <input className="input text-[14px]" placeholder="Short note (optional)" value={note} onChange={(x) => setNote(x.target.value)} />
         <button type="button" disabled={busy || (hold === undefined && !note.trim() && !drums.trim() && (stage === null || stage === e.stage))} onClick={save} className="min-h-11 w-full rounded-xl bg-[#08a048] text-[15px] font-bold text-white disabled:opacity-50">Save</button>
+        {err != null && <ErrorBox error={err} />}
+      </div>
+    </BottomSheet>
+  );
+}
+
+/** All the work steps of an item, full screen: start / finish / undo, rename, put in order, add a step, take off a
+ *  step added here. The P6 lines keep their dates and their P6 text (shown when renamed); added steps have no planned
+ *  time, so they change neither the % nor the forecast. */
+function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipment; keys: string[]; done: Done; onClose: () => void }) {
+  const [order, setOrd] = useState<{ key: string; ids: string[] } | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [edit, setEdit] = useState<{ id: string; text: string } | null>(null);
+  const [add, setAdd] = useState<{ key: string; text: string; after: string | null } | null>(null);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  async function act(f: () => Promise<unknown>, msg: string, undo?: () => Promise<unknown>) { setBusy(true); setErr(null); try { await f(); done(msg, undo); setEdit(null); setAdd(null); setOrd(null); } catch (x) { setErr(x); } finally { setBusy(false); } }
+  // every step of the item in its order (the hidden field steps too, so a saved order keeps their place)
+  const allOf = (k: string) => sortActs(d.activities.filter((a) => a.key === k && a.tracked));
+  const ld = (iso: string | null | undefined) => (iso ? when(iso) : '');
+  const hrs = (a: TrkActivity) => a.durationH ?? (a.start && a.finish ? Math.round((Date.parse(a.finish) - Date.parse(a.start)) / H) : null);
+  const step = (a: TrkActivity, to: 'start' | 'finish' | 'undo') => {
+    const at = new Date().toISOString(), back = { actual_start: a.actualStart ?? null, actual_finish: a.actualFinish ?? null };
+    const patch = to === 'start' ? { actual_start: at } : to === 'finish' ? { actual_finish: at, ...(a.actualStart ? {} : { actual_start: at }) } : a.actualFinish ? { actual_finish: null } : { actual_start: null };
+    return act(() => setActivity(a.id, patch), `${a.activity}: ${to === 'undo' ? 'undone' : to === 'start' ? 'started' : 'finished'}.`, () => setActivity(a.id, back));
+  };
+  return (
+    <div className="fixed inset-0 z-[60] overflow-y-auto bg-[#f4f6fa] pb-28">
+      <header className="sticky top-0 z-10 flex items-center gap-2 bg-[#0d2a5e] px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white">
+        <button type="button" onClick={onClose} className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-bold">‹ Back</button>
+        <p className="min-w-0 flex-1 truncate text-[16px] font-bold">{short(e.combine ?? e.tag)} · steps</p>
+      </header>
+      <main className="mx-auto max-w-xl px-3 pt-3">
+        {err != null && <div className="mb-2"><ErrorBox error={err} /></div>}
+        {keys.map((k) => { const all = allOf(k), ls = lines(d, [k]);
+          const ids = order?.key === k ? order.ids : null;
+          const shown = ids ? ids.map((id) => all.find((a) => a.id === id)!).filter((a) => a && !a.detail && a.group !== 'Operations') : ls;
+          const move = (id: string, by: number) => { if (!ids) return; const vis = shown.map((a) => a.id); const i = vis.indexOf(id), j = i + by; if (j < 0 || j >= vis.length) return;
+            [vis[i], vis[j]] = [vis[j], vis[i]]; let n = 0; setOrd({ key: k, ids: ids.map((x) => (vis.includes(x) ? vis[n++] : x)) }); };
+          const running = ls.find((a) => a.actualStart && !a.actualFinish), lastDone = [...ls].reverse().find((a) => a.actualFinish);
+          return <section key={k} className="mb-4">
+            <div className="mx-1 mb-1.5 flex items-center gap-2">
+              <p className="min-w-0 flex-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">{keys.length > 1 ? `${short(k)} · ` : ''}{ls.filter((a) => a.actualFinish).length}/{ls.length} done</p>
+              {!ids && ls.length > 1 && <button type="button" disabled={busy} onClick={() => setOrd({ key: k, ids: all.map((a) => a.id) })} className="rounded-full bg-white px-2.5 py-1 text-[12px] font-bold text-[#0d2a5e] ring-1 ring-slate-200">↕ Order</button>}
+              {!ids && <button type="button" disabled={busy} onClick={() => setAdd({ key: k, text: '', after: (running ?? lastDone)?.id ?? null })} className="rounded-full bg-[#0d2a5e] px-2.5 py-1 text-[12px] font-bold text-white">+ Add step</button>}
+            </div>
+            {ids && <p className="mx-1 mb-1.5 text-[11.5px] text-slate-500">Move with ↑ ↓, then save. The plan dates do not change.</p>}
+            {add?.key === k && <div className="mb-2 space-y-2 rounded-2xl bg-white p-3 ring-2 ring-[#0d2a5e]">
+              <input autoFocus className="input text-[14px]" placeholder="New step (e.g. Gas test for entry)" value={add.text} onChange={(x) => setAdd({ ...add, text: x.target.value })} />
+              <label className="block text-[11px] font-bold text-slate-500">PLACE AFTER
+                <select className="input mt-0.5 text-[13px]" value={add.after ?? ''} onChange={(x) => setAdd({ ...add, after: x.target.value || null })}>
+                  <option value="">At the end</option>{ls.map((a, i) => <option key={a.id} value={a.id}>{i + 1}. {a.activity}</option>)}</select></label>
+              <div className="flex gap-2"><button type="button" onClick={() => setAdd(null)} className="min-h-10 flex-1 rounded-xl bg-white font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button>
+                <button type="button" disabled={busy || !add.text.trim()} onClick={() => act(() => addEngStep(d.tracker.id, k, add.text.trim(), all.map((a) => a.id), add.after), `${short(k)}: step added.`)} className="min-h-10 flex-1 rounded-xl bg-[#08a048] font-bold text-white disabled:opacity-50">Add</button></div>
+              <p className="text-[11px] text-slate-500">An added step has no plan time: it does not change the % or the end date.</p>
+            </div>}
+            {shown.map((a, i) => { const eng = a.activityId.startsWith('ENG-'), h = hrs(a), on = open === a.id && !ids;
+              return <div key={a.id} className={cx('mb-1.5 rounded-2xl bg-white ring-1', on ? 'ring-[#0d2a5e]' : 'ring-slate-200')}>
+                <div className="flex items-center gap-2.5 px-3 py-2.5">
+                  <span className={cx('flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold', a.actualFinish ? 'bg-[#08a048] text-white' : a.actualStart ? 'bg-[#ffc000] text-[#3b2a00]' : 'bg-slate-100 text-slate-600')}>{a.actualFinish ? '✓' : a.actualStart ? '▶' : i + 1}</span>
+                  <button type="button" disabled={!!ids} onClick={() => { setOpen(on ? null : a.id); setEdit(null); }} className="min-w-0 flex-1 text-left">
+                    <span className="block text-[13.5px] font-semibold leading-snug">{a.activity}</span>
+                    <span className="block text-[11px] text-slate-500">{a.actualFinish ? `Done ${ld(a.actualFinish)}` : a.actualStart ? `Started ${ld(a.actualStart)}` : eng ? 'Added step · no plan time' : a.start ? `Plan ${ld(a.start)}${h ? ` · ${h} h` : ''}` : 'No plan time'}{a.updatedBy && (a.actualStart || eng) ? ` · ${a.updatedBy}` : ''}</span>
+                    {a.p6Activity && <span className="block text-[11px] italic text-slate-400">P6: {a.p6Activity}</span>}
+                  </button>
+                  {ids && <span className="flex shrink-0 gap-1"><button type="button" aria-label="Up" disabled={i === 0} onClick={() => move(a.id, -1)} className="h-9 w-9 rounded-lg bg-slate-100 text-lg font-bold disabled:opacity-30">↑</button>
+                    <button type="button" aria-label="Down" disabled={i === shown.length - 1} onClick={() => move(a.id, 1)} className="h-9 w-9 rounded-lg bg-slate-100 text-lg font-bold disabled:opacity-30">↓</button></span>}
+                </div>
+                {on && <div className="space-y-2 border-t border-slate-100 px-3 py-2.5">
+                  {edit?.id === a.id ? <>
+                    <textarea autoFocus className="input min-h-16 text-[14px]" value={edit.text} onChange={(x) => setEdit({ ...edit, text: x.target.value })} />
+                    <div className="flex gap-2"><button type="button" onClick={() => setEdit(null)} className="min-h-10 flex-1 rounded-xl bg-white font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button>
+                      <button type="button" disabled={busy || !edit.text.trim() || edit.text.trim() === a.activity} onClick={() => act(() => setActivity(a.id, { activity: edit.text.trim() }), 'Step renamed.', () => setActivity(a.id, { activity: a.activity }))} className="min-h-10 flex-1 rounded-xl bg-[#08a048] font-bold text-white disabled:opacity-50">Save</button></div>
+                  </> : <div className="grid grid-cols-2 gap-1.5">
+                    {!a.actualStart && <button type="button" disabled={busy} onClick={() => step(a, 'start')} className="min-h-10 rounded-xl bg-[#0d2a5e] text-[13px] font-bold text-white">▶ Start</button>}
+                    {!a.actualFinish && <button type="button" disabled={busy} onClick={() => step(a, 'finish')} className="min-h-10 rounded-xl bg-[#ffc000] text-[13px] font-bold text-[#3b2a00]">✓ Finish</button>}
+                    {a.actualStart && <button type="button" disabled={busy} onClick={() => step(a, 'undo')} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-slate-700 ring-1 ring-slate-300">↶ Undo {a.actualFinish ? 'finish' : 'start'}</button>}
+                    <button type="button" disabled={busy} onClick={() => setEdit({ id: a.id, text: a.activity })} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-[#0d2a5e] ring-1 ring-slate-300">✎ Edit name</button>
+                    {eng && <button type="button" disabled={busy} onClick={() => { if (window.confirm(`Remove "${a.activity}"?`)) void act(() => setActivity(a.id, { tracked: false, disabled_reason: 'removed' }), 'Step removed.', () => setActivity(a.id, { tracked: true, disabled_reason: null })); }} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-red-700 ring-1 ring-red-200">🗑 Remove</button>}
+                  </div>}
+                  {!eng && !edit && <p className="text-[11px] text-slate-500">Bar-chart step: its plan dates stay as in P6.</p>}
+                </div>}
+              </div>; })}
+            {!shown.length && <Card><p className="text-sm text-slate-600">No steps yet. Add the first one.</p></Card>}
+            {ids && <div className="sticky bottom-3 mt-2 flex gap-2 rounded-2xl bg-white p-2 shadow-lg ring-1 ring-slate-200">
+              <button type="button" onClick={() => setOrd(null)} className="min-h-11 flex-1 rounded-xl bg-white font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button>
+              <button type="button" disabled={busy} onClick={() => { const was = all.some((a) => a.seq != null) ? all.map((a) => a.id) : []; void act(() => setOrder(d.tracker.id, k, ids), `${short(k)}: order saved.`, () => setOrder(d.tracker.id, k, was)); }} className="min-h-11 flex-1 rounded-xl bg-[#08a048] font-bold text-white">✓ Save order</button></div>}
+          </section>; })}
+      </main>
+    </div>
+  );
+}
+
+/** The shutdown progress report for WhatsApp, in the plant's format, from what is in the tracker now; a note for the
+ *  shift can be added (saved with the shift). */
+function ReportSheet({ d, now, by, onClose }: { d: TrackerData; now: number; by: string; onClose: () => void }) {
+  const sh = shiftOf(now);
+  const saved = d.shiftLogs.find((l) => l.shiftDate === sh.date && l.shift === sh.shift) ?? null;
+  const [notes, setNotes] = useState(saved?.notes ?? '');
+  const [copied, setCopied] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const text = reportText(shiftReport(d, now, { notes, temps: saved?.temps ?? {} }, d.tracker.title), { test: d.tracker.mode === 'test', by });
+  const wa = (d.settings.whatsapp ?? '').replace(/\D/g, '');
+  const keep = async () => { if ((saved?.notes ?? '') !== notes) { try { await saveShiftLog(d.tracker.id, sh.date, sh.shift, { notes, temps: saved?.temps ?? {} }); } catch (x) { setErr(x); } } };
+  async function share() { await keep(); try { if (navigator.share) { await navigator.share({ text }); return; } } catch { return; } window.open(`https://wa.me/${wa}?text=${encodeURIComponent(text)}`, '_blank'); }
+  return (
+    <BottomSheet open onClose={onClose} title="WhatsApp report">
+      <div className="space-y-2.5">
+        <textarea className="input min-h-14 text-[14px]" placeholder="Note for this shift (optional)" value={notes} onChange={(x) => setNotes(x.target.value)} />
+        <pre className="max-h-[45vh] overflow-y-auto whitespace-pre-wrap rounded-xl bg-[#e7f8e9] p-3 font-sans text-[12.5px] leading-snug text-slate-800 ring-1 ring-green-200">{text}</pre>
+        <div className="grid grid-cols-3 gap-1.5">
+          <a href={`https://wa.me/${wa}?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer" onClick={() => void keep()} className="flex min-h-11 items-center justify-center rounded-xl bg-[#25D366] text-[13px] font-bold text-white">WhatsApp</a>
+          <button type="button" onClick={() => void share()} className="min-h-11 rounded-xl bg-[#0d2a5e] text-[13px] font-bold text-white">Share</button>
+          <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(text); setCopied(true); window.setTimeout(() => setCopied(false), 2000); } catch { /* blocked */ } }} className="min-h-11 rounded-xl bg-white text-[13px] font-bold text-slate-700 ring-1 ring-slate-300">{copied ? 'Copied' : 'Copy'}</button>
+        </div>
         {err != null && <ErrorBox error={err} />}
       </div>
     </BottomSheet>

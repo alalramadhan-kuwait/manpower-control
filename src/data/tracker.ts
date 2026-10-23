@@ -24,7 +24,7 @@ interface StepRow { id: string; step_id: string; fo: string; gate: number; gate_
 interface EqRow { id: string; tag: string; grp: string; description: string | null; fo: string | null; ho_step: string | null; procedure: string | null; barchart_key: string | null; ops_item: boolean; critical: boolean; tracked: boolean; disabled_reason: string | null; planned_ho: string | null; planned_finish: string | null; sort: number; stage: number; pending_reason: string | null; remark: string | null; blinds_in_at: string | null; blinds_out_at: string | null; updated_by_name: string | null; updated_at: string | null; combine?: string | null }
 interface IatRow { updated_by_name?: string | null; updated_at?: string | null; ops_none?: boolean | null; spool_only?: boolean | null; ops_action?: boolean | null; ho_required?: boolean | null; id: string; tag: string; iat_no: string; job_text: string | null; discipline: string | null; issued_at: string; status: 'open' | 'closed'; closed_at: string | null; wo?: string | null; line?: string | null; sheet_status?: string | null; remark?: string | null;
   finding?: string | null; recommendation?: string | null; line_class?: string | null; material?: string | null; checks?: Record<string, string> | null; painting?: Record<string, string> | null; action_by?: string | null }
-interface ActRow { id: string; activity_id: string; grp: string | null; equipment_key: string; activity: string; duration_h: number | null; planned_start: string | null; planned_finish: string | null; stage: number | null; tracked: boolean; baseline: number; actual_start: string | null; actual_finish: string | null; actual_note: string | null; disabled_reason: string | null; seq?: number | null; detail?: boolean | null; updated_by_name: string | null; updated_at: string | null }
+interface ActRow { id: string; activity_id: string; grp: string | null; equipment_key: string; activity: string; duration_h: number | null; planned_start: string | null; planned_finish: string | null; stage: number | null; tracked: boolean; baseline: number; actual_start: string | null; actual_finish: string | null; actual_note: string | null; disabled_reason: string | null; seq?: number | null; detail?: boolean | null; p6_activity?: string | null; updated_by_name: string | null; updated_at: string | null }
 interface PointRow { hold_reason?: string | null; hold_at?: string | null; id: string; kind: TrkPoint['kind']; grp: TrkPoint['grp']; ref: string; name: string; detail: string | null; fo: string | null; step_id: string | null; items: string[] | null; requires?: string[] | null; method?: string | null; part_of?: string[] | null; after_acts?: string[] | null; before_ho: boolean; sort: number; status: PointStatus;
   in_at: string | null; out_at: string | null; fill_at: string | null; soak_at: string | null; drain_at: string | null; done_at: string | null; soak_h: number | null; remark: string | null; updated_by_name: string | null; updated_at: string | null }
 interface LogRow { kind: TrkLog['kind']; ref: string; field: string; old_value: string | null; new_value: string | null; by_name: string | null; at: string }
@@ -52,7 +52,7 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     supabase.from('trk_steps').select('*').eq('tracker_id', id).order('step_id'),
     supabase.from('trk_equipment').select('*').eq('tracker_id', id).order('sort'),
     supabase.from('trk_iat').select('*').eq('tracker_id', id).order('issued_at'),
-    supabase.from('trk_activities').select('id,activity_id,grp,equipment_key,activity,duration_h,planned_start,planned_finish,stage,tracked,baseline,actual_start,actual_finish,actual_note,disabled_reason,seq,detail,updated_by_name,updated_at').eq('tracker_id', id).limit(5000),
+    supabase.from('trk_activities').select('id,activity_id,grp,equipment_key,activity,duration_h,planned_start,planned_finish,stage,tracked,baseline,actual_start,actual_finish,actual_note,disabled_reason,seq,detail,p6_activity,updated_by_name,updated_at').eq('tracker_id', id).limit(5000),
     supabase.from('trk_log').select('kind,ref,field,old_value,new_value,by_name,at').eq('tracker_id', id).gte('at', since).order('at').limit(5000),
     supabase.from('trk_shift_log').select('*').eq('tracker_id', id).order('shift_date', { ascending: false }).limit(20),
     supabase.from('trk_points').select('*').eq('tracker_id', id).eq('removed', false).order('sort'),
@@ -83,7 +83,7 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     // a combined bar-chart line split into its jobs (the database keeps it, off) is not shown: its parts are
     activities: acts.filter((x) => x.baseline === base && !['split', 'removed', 'unit'].includes(x.disabled_reason ?? '')).map((r): TrkActivity => ({ id: r.id, activityId: r.activity_id, group: r.grp, key: r.equipment_key, activity: r.activity, durationH: r.duration_h,
       start: r.planned_start, finish: r.planned_finish, stage: r.stage, tracked: r.tracked,
-      actualStart: r.actual_start, actualFinish: r.actual_finish, actualNote: r.actual_note, seq: r.seq ?? null, detail: !!r.detail, updatedBy: r.updated_by_name, updatedAt: r.updated_at })),
+      actualStart: r.actual_start, actualFinish: r.actual_finish, actualNote: r.actual_note, seq: r.seq ?? null, detail: !!r.detail, p6Activity: r.p6_activity ?? null, updatedBy: r.updated_by_name, updatedAt: r.updated_at })),
     log: (l.data as LogRow[]).map((r): TrkLog => ({ kind: r.kind, ref: r.ref, field: r.field, oldValue: r.old_value, newValue: r.new_value, byName: r.by_name, at: r.at })),
     shiftLogs: (sl.data as { id: string; shift_date: string; shift: 'D' | 'N'; notes: string | null; temps: Record<string, string> | null; updated_by_name: string | null }[])
       .map((r) => ({ id: r.id, shiftDate: r.shift_date, shift: r.shift, notes: r.notes, temps: r.temps ?? {}, updatedBy: r.updated_by_name })),
@@ -96,7 +96,7 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
 const upd = async (table: string, id: string, patch: Record<string, unknown>) => { const { error } = await supabase.from(table).update(patch).eq('id', id); if (error) throw error; };
 export const setStep = (id: string, patch: Partial<{ status: StepStatus; pending_reason: string | null; remark: string | null; prereq: string[]; target_at: string | null; started_at: string | null; done_at: string | null; est_hours: number | null }>) => upd('trk_steps', id, patch);
 export const setEquipment = (id: string, patch: Partial<{ stage: number; pending_reason: string | null; remark: string | null; blinds_in_at: string | null; blinds_out_at: string | null; tracked: boolean; disabled_reason: string | null; critical: boolean; planned_ho: string | null; planned_finish: string | null }>) => upd('trk_equipment', id, patch);
-export const setActivity = (id: string, patch: Partial<{ planned_start: string | null; planned_finish: string | null; duration_h: number | null; tracked: boolean; disabled_reason: string | null; stage: number | null; actual_start: string | null; actual_finish: string | null; actual_note: string | null }>) => upd('trk_activities', id, patch);
+export const setActivity = (id: string, patch: Partial<{ activity: string; planned_start: string | null; planned_finish: string | null; duration_h: number | null; tracked: boolean; disabled_reason: string | null; stage: number | null; actual_start: string | null; actual_finish: string | null; actual_note: string | null }>) => upd('trk_activities', id, patch);
 /** A procedure activity the bar chart does not list, on an item (Section Head); in the bar chart's current baseline. */
 export async function addActivity(trackerId: string, v: { key: string; activity: string; start: string | null; hours: number | null; stage: number | null }) {
   const { data: b, error: e0 } = await supabase.from('trk_activities').select('baseline').eq('tracker_id', trackerId).order('baseline', { ascending: false }).limit(1);
@@ -105,6 +105,19 @@ export async function addActivity(trackerId: string, v: { key: string; activity:
   const { error } = await supabase.from('trk_activities').insert({ tracker_id: trackerId, activity_id: `P-${Date.now().toString(36).toUpperCase()}`, grp: 'Procedure', equipment_key: v.key, activity: v.activity,
     duration_h: v.hours, planned_start: v.start, planned_finish: finish, stage: v.stage, tracked: true, baseline: (b as { baseline: number }[])[0]?.baseline ?? 1 });
   if (error) throw error;
+}
+/** A work step added by an engineer (or anyone who updates the tracker): no planned dates, so it counts in neither
+ *  the M & I % nor the forecast; placed after a step of the item (null = at the end). Returns its id. */
+export async function addEngStep(trackerId: string, key: string, activity: string, order: string[], after: string | null): Promise<string> {
+  const { data: b, error: e0 } = await supabase.from('trk_activities').select('baseline').eq('tracker_id', trackerId).order('baseline', { ascending: false }).limit(1);
+  if (e0) throw e0;
+  const id = crypto.randomUUID();
+  const { error } = await supabase.from('trk_activities').insert({ id, tracker_id: trackerId, activity_id: `ENG-${Date.now().toString(36).toUpperCase()}`, grp: 'Procedure', equipment_key: key, activity,
+    tracked: true, baseline: (b as { baseline: number }[])[0]?.baseline ?? 1 });
+  if (error) throw error;
+  const at = after ? order.indexOf(after) + 1 : order.length;
+  await setOrder(trackerId, key, [...order.slice(0, at), id, ...order.slice(at)]);
+  return id;
 }
 /** A blind or neutralization: its state (the time of each state is stamped, a time can be corrected) or a remark. */
 export const setPointStep = (id: string, done: boolean) => upd('trk_point_step', id, { done_at: done ? new Date().toISOString() : null });
