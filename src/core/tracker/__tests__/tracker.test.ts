@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { askText, staleItems, equipBlind, linkedStep, miWeighted, neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { relatedWork, askText, staleItems, equipBlind, linkedStep, miWeighted, neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -463,5 +463,22 @@ describe('ask for updates', () => {
     expect(text).toContain('*Vessels*\n- V-201: no activity since 21 Oct:\n- V-209: Hydrojet I/P since 21 Oct:');
     expect(text).toContain('*PSVs*\n- PSV-0537: Remove PSV I/P since 21 Oct:\n- PSV-0601: Remove PSV I/P since 21 Oct:');
     expect(text).not.toContain('?');
+  });
+});
+
+describe('the same work in two places', () => {
+  const step = (o: object) => ({ id: 's', pointId: 'p', seq: 1, phase: 'before', text: 'Blinds in: E-202 S/S O/L and TV-667 U/S', source: null, doneAt: null, doneBy: null, crane: false, kind: 'step', startAt: null, startBy: null, linkActs: [], ...o }) as never;
+  const blind = (id: string, status: string, inAt: string | null) => ({ id, kind: 'blind', ref: id, name: id, status, inAt, updatedBy: 'Section Head' }) as never;
+  it('a procedure step follows its segregation blinds: done when all are in', () => {
+    const pts = [blind('SEG-06', 'in', kw('2026-10-20 09:00')), blind('SEG-07', 'open', null)];
+    expect(linkedStep(step({ linkPoints: ['SEG-06', 'SEG-07'] }), [], pts).doneAt).toBeNull();
+    pts[1] = blind('SEG-07', 'in', kw('2026-10-21 10:00'));
+    expect(linkedStep(step({ linkPoints: ['SEG-06', 'SEG-07'] }), [], pts).doneAt).toBe(kw('2026-10-21 10:00'));
+  });
+  it('the work of other lists on the same tag', () => {
+    const a = (key: string, activity: string) => ({ id: key + activity, activityId: 'x', group: 'Mech', key, activity, durationH: null, start: null, finish: null, stage: null, tracked: true }) as never;
+    const acts = [a('OPR list', 'OPlist-1014 FV-1426 Down stream check valve servicing'), a('OPR list', 'OPlist-1035 LV 553B Passing to be attended'), a('OPR list', 'OPlist-1099 FV-14260 other'), a('FV-1426', 'Drop control valve FV-1426')];
+    expect(relatedWork('FV-1426 d/s', 'FV-1426 d/s', acts).map((x: { activity: string }) => x.activity)).toEqual(['OPlist-1014 FV-1426 Down stream check valve servicing', 'Drop control valve FV-1426']);
+    expect(relatedWork('12-LV-0553B', '12-LV-0553B', acts).length).toBe(1);
   });
 });

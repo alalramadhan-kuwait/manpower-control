@@ -75,7 +75,9 @@ export interface TrkPointStep { id: string; pointId: string; seq: number; phase:
   /** a timed field job (crane, blinding, elbows / spools): started and finished; the rest are ticks */
   kind: 'check' | 'step'; startAt: string | null; startBy: string | null;
   /** the equipment work steps this field step is (same physical work): its state is theirs */
-  linkActs?: string[] }
+  linkActs?: string[];
+  /** segregation blinds it is the same work as ("Blinds in: …"): done when they are all in */
+  linkPoints?: string[] }
 /** An event of the shutdown not tied to one item: nitrogen supply, an issue common to the reactors, other. */
 export interface TrkEvent { id: string; category: 'nitrogen' | 'reactors' | 'other'; text: string; startedAt: string; endedAt: string | null; by: string | null; endedBy: string | null }
 export const EVENT_LABEL: Record<TrkEvent['category'], string> = { nitrogen: 'N₂ supply', reactors: 'Reactors', other: 'Other' };
@@ -129,13 +131,23 @@ export function blindLink(a: Pick<TrkActivity, 'activity' | 'stage'>): 6 | null 
   return /blind/i.test(a.activity) && a.stage === 6 ? 6 : null;
 }
 /** An item's blind line installed by M & I (stage 1 in the bar chart; not the operations steps that mention blinds). */
-/** A field step linked to work steps (the same physical work, e.g. a control valve dropped in two procedures) takes
- *  their state: started when one is, done when all are; otherwise its own. */
-export function linkedStep(c: TrkPointStep, acts: TrkActivity[]): TrkPointStep {
-  const la = acts.filter((a) => (c.linkActs ?? []).includes(a.id)); if (!la.length) return c;
-  const st = la.map((a) => a.actualStart).filter(Boolean).sort()[0] ?? null;
-  const fin = la.every((a) => a.actualFinish) ? la.map((a) => a.actualFinish!).sort().slice(-1)[0] : null;
-  return { ...c, startAt: st, doneAt: fin, doneBy: fin ? la.find((a) => a.actualFinish === fin)?.updatedBy ?? null : null, startBy: null };
+/** A field step linked to work steps or blinds (the same physical work, e.g. a control valve dropped in two procedures,
+ *  a blind also in the segregation list) takes their state: started when one is, done when all are; otherwise its own. */
+export function linkedStep(c: TrkPointStep, acts: TrkActivity[], points: TrkPoint[] = []): TrkPointStep {
+  const la = acts.filter((a) => (c.linkActs ?? []).includes(a.id)), lp = points.filter((p) => (c.linkPoints ?? []).includes(p.id));
+  if (!la.length && !lp.length) return c;
+  const ends = [...la.map((a) => a.actualFinish ?? null), ...lp.map((p) => (p.status === 'in' || p.status === 'out' ? p.inAt ?? p.updatedAt ?? '' : null))];
+  const fin = ends.every(Boolean) ? (ends as string[]).sort().slice(-1)[0] || null : null;
+  const st = [...la.map((a) => a.actualStart), ...lp.map((p) => p.inAt), c.startAt].filter(Boolean).sort()[0] ?? null;
+  const by = fin ? la.find((a) => a.actualFinish === fin)?.updatedBy ?? lp.find((p) => p.inAt === fin)?.updatedBy ?? null : null;
+  return { ...c, startAt: st, doneAt: fin, doneBy: by, startBy: null };
+}
+/** Other lists' work on the same tag (the OPR list's "FV-1426 d/s check valve servicing" on the FV-1426 d/s item, the
+ *  LV-553B passing on the LV-0553B control valve): shown on the item, each keeping its own status. */
+export function relatedWork(tag: string, key: string, acts: TrkActivity[]): TrkActivity[] {
+  const m = tag.replace(/^12-/, '').match(/^([A-Z]{1,4})-0*(\d{2,4}[A-Z]?)\b/); if (!m) return [];
+  const re = new RegExp(`\\b${m[1]}[- ]?(12-)?0*${m[2]}(?![0-9A-Z])`, 'i');
+  return acts.filter((a) => a.key !== key && a.tracked && !a.detail && re.test(`${a.key} ${a.activity}`));
 }
 /** Valves and PSVs taken out with their own steps (control valves, check valves, PSVs): not in the blind list. */
 export const VALVE_KEY = /^12-(PSV|VC|HV|LV|FV|TV|PV|PCV|FCV|XV)-/i;
@@ -515,7 +527,7 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
     loops: (d.points ?? []).filter((p) => p.kind === 'neut' && !withReactor(p) && (p.stepId || (!p.items.includes(p.ref) && (p.method !== 'spray' || p.status !== 'open'))) && (!pointComplete(p) || (!!p.doneAt && ms(p.doneAt) >= sh.from))).sort((a, b) => a.sort - b.sort).map((p) => {
       const m = p.status === 'open' ? missingBlinds(p, d.points) : []; const left = soakLeft(p, now); const done = pointComplete(p);
       // its field jobs (crane lifts, blinding): those running, and those finished this shift
-      const jobs = (d.pointSteps ?? []).filter((c) => c.pointId === p.id && c.kind === 'step').map((c) => linkedStep(c, d.activities));
+      const jobs = (d.pointSteps ?? []).filter((c) => c.pointId === p.id && c.kind === 'step').map((c) => linkedStep(c, d.activities, d.points ?? []));
       const jobName = (c: TrkPointStep) => `${c.crane ? '🏗 ' : ''}${c.text.split(/,|:/)[0].replace(/\s*\(.*?\)/g, '').trim()}`;
       const jobLines = done ? [] : [...jobs.filter((c) => c.startAt && !c.doneAt).map((c) => `${jobName(c)} I/P (${hoursText(now - ms(c.startAt!))})`),
         ...jobs.filter((c) => c.doneAt && ms(c.doneAt) >= sh.from && ms(c.doneAt) < sh.to).map((c) => `${jobName(c)} ✓`)];

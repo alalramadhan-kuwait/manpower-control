@@ -87,7 +87,7 @@ export function StepSheet({ v, isHead, canEdit, points = [], items = [], onIsola
 // a spray that waits for work steps, in a few words (the reactor body spray waits for the catalyst dumping)
 const waitAfter = (steps: string[]) => (!steps.length ? [] : [steps.every((x) => /dump/i.test(x)) ? 'after dumping' : steps.length === 1 ? `after ${steps[0]}` : `after ${steps.length} steps`]);
 
-export function EquipSheet({ mi, allIats = [], lineup = [], lineupEq = [], tags = [], v, trackerId, canEdit, isHead, activities, now, iso = null, points = [], engine, settings = {}, me = null, twins = [], onTwin, onIsolation, onNeut, onClose, onDone }: { mi?: MiItem; allIats?: TrkIat[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; tags?: string[]; twins?: string[]; onTwin?: (tag: string) => void; v: EquipView; trackerId: string; canEdit: boolean; isHead: boolean; activities: TrkActivity[]; now: number; iso?: Isolation | null; points?: TrkPoint[]; engine?: TrkEngine; settings?: TrkSettings; me?: string | null; onIsolation?: () => void; onNeut?: () => void; onClose: () => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
+export function EquipSheet({ mi, related = [], allIats = [], lineup = [], lineupEq = [], tags = [], v, trackerId, canEdit, isHead, activities, now, iso = null, points = [], engine, settings = {}, me = null, twins = [], onTwin, onIsolation, onNeut, onClose, onDone }: { mi?: MiItem; related?: TrkActivity[]; allIats?: TrkIat[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; tags?: string[]; twins?: string[]; onTwin?: (tag: string) => void; v: EquipView; trackerId: string; canEdit: boolean; isHead: boolean; activities: TrkActivity[]; now: number; iso?: Isolation | null; points?: TrkPoint[]; engine?: TrkEngine; settings?: TrkSettings; me?: string | null; onIsolation?: () => void; onNeut?: () => void; onClose: () => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   // the neutralization the soda-ash lines stand for: the item's own soda ash first, else its loop
   // the item's bar-chart steps by stage (what moves the stage), the field-detail steps left out
   const stageLines = activities.filter((a) => a.tracked && !a.detail && a.group !== 'Operations' && a.stage !== null);
@@ -110,6 +110,7 @@ export function EquipSheet({ mi, allIats = [], lineup = [], lineupEq = [], tags 
         {v.reason && <div className="flex items-center gap-2 rounded-lg bg-[#FFC7CE] px-2.5 py-1.5 text-sm text-red-900"><span className="min-w-0 flex-1">⏸ On hold: {v.reason}</span>
           {canEdit && e.pendingReason && <button type="button" disabled={busy} onClick={() => { const was = e.pendingReason; run(() => setEquipment(e.id, { pending_reason: null }), `${e.tag}: resumed.`, () => setEquipment(e.id, { pending_reason: was })); }} className="shrink-0 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-[#0d2a5e] ring-1 ring-red-200">▶ Resume</button>}</div>}
         {mi && <MiLine i={mi} />}
+        {related.length > 0 && <Related acts={related} />}
         <EquipActivities trackerId={trackerId} itemKey={e.barchartKey ?? e.tag} activities={activities} now={now} canEdit={canEdit} isHead={isHead} neutCovered={!!iso?.neut.length} neutLabel={soda ? `${neutName(soda)} · ${neutLabel(soda)}` : undefined} onNeut={onNeut} onDone={onDone} />
         {engine && (() => { const key = e.barchartKey ?? e.tag; const sc = engine.scopes.find((x) => x.key === key && x.scope === 'removal' && x.unit);
           return <>
@@ -204,5 +205,20 @@ function MiLine({ i }: { i: MiItem }) {
         {!done && i.unverified.length > 0 && <button type="button" onClick={() => setWhy((x) => !x)} className="ml-1 font-semibold text-amber-700">· unverified {why ? '▾' : '▸'}</button>}</div>
       {why && <ul className="mt-0.5 list-disc pl-4 text-[11px] text-amber-800">{i.unverified.map((u) => <li key={u}>{u}</li>)}</ul>}
     </div>
+  );
+}
+
+/** The same tag's work in other lists (OPR list, valve drops in the procedures): each with its own status. */
+function Related({ acts }: { acts: TrkActivity[] }) {
+  return (
+    <section className="rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200">
+      <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Also in other lists</h3>
+      <ul className="mt-0.5 space-y-0.5">{acts.map((a) => (
+        <li key={a.id} className="flex items-start gap-2 text-[12px] text-slate-700">
+          <span className="min-w-0 flex-1"><b className="text-slate-500">{a.key.startsWith('OPR') ? 'OPR list' : a.key}:</b> {a.activity.replace(/^OPlist-\d+\s*/, '')}</span>
+          <span className={cx('shrink-0 rounded px-1.5 text-[10.5px] font-bold', a.actualFinish ? 'bg-green-100 text-green-800' : a.actualStart ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-600')}>{a.actualFinish ? '✓ done' : a.actualStart ? 'I/P' : 'not started'}</span>
+        </li>))}
+      </ul>
+    </section>
   );
 }

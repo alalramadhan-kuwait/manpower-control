@@ -21,7 +21,7 @@ const NEXT: Record<string, [PointStatus, string] | undefined> = {
 
 function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], checks: raw = [], trackerId, isHead, now, canEdit, onItem, onStep, onDone }: { p: TrkPoint; points: TrkPoint[]; acts?: TrkActivity[]; lineup?: LuStream[]; iats?: TrkIat[]; steps?: TrkStep[]; checks?: TrkPointStep[]; trackerId?: string; isHead: boolean; now: number; canEdit: boolean; onItem: (tag: string) => void; onStep?: (id: string) => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   const [force, setForce] = useState(false); const [sheet, setSheet] = useState(false);
-  const checks = raw.map((c) => linkedStep(c, acts));
+  const checks = raw.map((c) => linkedStep(c, acts, points));
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [note, setNote] = useState(p.remark ?? '');
   useEffect(() => { setBusy(false); }, [p.status, p.holdReason, p.remark, p.inAt, p.outAt]);
@@ -151,7 +151,7 @@ function LoopSheet({ acts = [], p, points, lineup, iats, steps, checks, canEdit,
   const dur = (a: string | null, b: string | null) => (a && b ? ` · ${hoursText(Date.parse(b) - Date.parse(a))}` : '');
   type Row = { label: string; done: boolean; now?: boolean; info?: string; check?: TrkPointStep };
   const [busy, setBusy] = useState<string | null>(null); const [cErr, setCErr] = useState<unknown>(null); const [hold, setHold] = useState(false); const [ref, setRef] = useState(false);
-  const tick = async (c: TrkPointStep) => { if ((c.linkActs ?? []).length) return time(c, { done_at: c.doneAt ? null : new Date().toISOString() }, `step ${c.seq} ${c.doneAt ? 'undone' : 'done'}`); setBusy(c.id); setCErr(null); try { await setPointStep(c.id, !c.doneAt); onDone(`${p.ref}: step ${c.seq} ${c.doneAt ? 'undone' : 'done'}.`); } catch (e) { setCErr(e); } finally { setBusy(null); } };
+  const tick = async (c: TrkPointStep) => { if ((c.linkActs ?? []).length || (c.linkPoints ?? []).length) return time(c, { done_at: c.doneAt ? null : new Date().toISOString() }, `step ${c.seq} ${c.doneAt ? 'undone' : 'done'}`); setBusy(c.id); setCErr(null); try { await setPointStep(c.id, !c.doneAt); onDone(`${p.ref}: step ${c.seq} ${c.doneAt ? 'undone' : 'done'}.`); } catch (e) { setCErr(e); } finally { setBusy(null); } };
   const stepInfo = (c: TrkPointStep) => c.doneAt ? `${c.startAt ? `${when(c.startAt)} → ` : ''}${when(c.doneAt)}${dur(c.startAt, c.doneAt)}${c.doneBy ? ` · ${c.doneBy}` : ''}`
     : c.startAt ? `started ${when(c.startAt)} · ${hoursText(now - Date.parse(c.startAt))} so far${c.startBy ? ` · ${c.startBy}` : ''}` : undefined;
   const sop = (ph: TrkPointStep['phase']): Row[] => checks.filter((c) => c.phase === ph && followed(c)).map((c) => ({ label: c.text, done: !!c.doneAt, now: c.kind === 'step' && !!c.startAt && !c.doneAt,
@@ -159,7 +159,17 @@ function LoopSheet({ acts = [], p, points, lineup, iats, steps, checks, canEdit,
   const time = async (c: TrkPointStep, patch: Parameters<typeof setPointStepTime>[1], msg: string) => { setBusy(c.id); setCErr(null);
     try {
       const la = acts.filter((a) => (c.linkActs ?? []).includes(a.id));
-      if (la.length) {
+      const lp = points.filter((x) => (c.linkPoints ?? []).includes(x.id));
+      if (lp.length && patch.done_at !== undefined) {
+        // the same blinds as the segregation list: the update goes to them (one record, both views)
+        const before = lp.map((x) => ({ id: x.id, status: x.status, in_at: x.inAt ?? null }));
+        const at = new Date().toISOString();
+        for (const x of lp) {
+          if (patch.done_at && x.status === 'open') await setPoint(x.id, { status: 'in', in_at: at });
+          else if (!patch.done_at && x.status === 'in') await setPoint(x.id, { status: 'open', in_at: null });
+        }
+        onDone(`${p.ref}: ${msg} (${lp.map((x) => x.ref).join(', ')})`, async () => { for (const b of before) await setPoint(b.id, { status: b.status, in_at: b.in_at }); });
+      } else if (la.length) {
         // the same work as the equipment steps: the update goes to them (one record, both views)
         const before = la.map((a) => ({ id: a.id, actual_start: a.actualStart ?? null, actual_finish: a.actualFinish ?? null }));
         const at = new Date().toISOString();
@@ -225,6 +235,7 @@ function LoopSheet({ acts = [], p, points, lineup, iats, steps, checks, canEdit,
               <span className="min-w-0 flex-1"><span className={cx('block', x.check ? 'text-[12.5px] font-medium' : 'font-semibold', x.done ? 'text-slate-900' : x.now ? 'text-amber-900' : 'text-slate-600')}>{x.check?.crane && <span className={cx('mr-1 rounded px-1 text-[10px] font-bold', x.done ? 'bg-slate-200 text-slate-600' : 'bg-[#E02028] text-white')}>🏗 CRANE · CRITICAL</span>}{x.label}{x.now ? ' · now' : ''}</span>
                 {x.info && <span className="block text-[11.5px] text-slate-500">{x.info}</span>}
                 {(x.check?.linkActs ?? []).length > 0 && <span className="block text-[11px] font-semibold text-[#0850A0]">= {acts.filter((a) => x.check!.linkActs!.includes(a.id)).map((a) => `${a.key.replace('-12-', '-')}: ${a.activity}${a.actualFinish ? ' ✓' : a.actualStart ? ' ▶' : ''}`).join(' · ')}</span>}
+                {(x.check?.linkPoints ?? []).length > 0 && <span className="block text-[11px] font-semibold text-[#0850A0]">= {points.filter((b) => x.check!.linkPoints!.includes(b.id)).map((b) => `${b.ref} ${b.name}${b.status === 'in' || b.status === 'out' ? ' ✓' : ''}`).join(' · ')}</span>}
                 {x.check?.kind === 'step' && canEdit && (x.check.startAt || x.check.doneAt) && <button type="button" disabled={busy === x.check.id} className="text-[11px] font-semibold text-slate-400"
                   onClick={() => time(x.check!, x.check!.doneAt ? { done_at: null } : { start_at: null }, `step ${x.check!.seq} ${x.check!.doneAt ? 'finish' : 'start'} undone.`)}>↶ undo {x.check.doneAt ? 'finish' : 'start'}</button>}</span>
             </li>)}
