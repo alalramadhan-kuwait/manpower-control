@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { APP_VERSION, fetchRemoteVersion, hardUpdate, type RemoteVersion } from './version';
 
-const RECHECK_ON_RETURN = 5 * 60 * 1000;
+const RECHECK_ON_RETURN = 60 * 1000;
 const RECHECK_WHILE_OPEN = 15 * 60 * 1000;
 
 /**
