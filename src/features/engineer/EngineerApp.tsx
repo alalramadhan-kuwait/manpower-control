@@ -86,6 +86,8 @@ function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: 
   const [data, setData] = useState<TrackerData | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const [tab, setTab] = useState<Tab>('dash');
+  // with the other hooks, before any early return (a hook after one breaks the page once the data loads)
+  useEffect(() => { if (!preset) recordVisit(`/engineer/${tab}`); }, [tab, preset]);
   const [eqf, setEqf] = useState('all');
   const [now, setNow] = useState(Date.now());
   const [flash, setFlash] = useState<{ msg: string; undo?: () => Promise<unknown> } | null>(null);
@@ -113,7 +115,6 @@ function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: 
   if (!me || !data) return <Frame title="U-12 Shutdown" sub="Loading…"><div className="p-10"><Spinner /></div></Frame>;
   const sh = shiftOf(now);
   const done: Done = (msg, undo) => { setFlash({ msg, undo }); void load(me.tracker_id); };
-  useEffect(() => { if (!preset) recordVisit(`/engineer/${tab}`); }, [tab, preset]);
   const go = (t: Tab, g?: string) => { setTab(t); if (g) setEqf(g); window.scrollTo(0, 0); };
   const props = { d: data, now, done, go, by: me.login_id };
   return (
