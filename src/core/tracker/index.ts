@@ -152,11 +152,16 @@ export function linkedStep(c: TrkPointStep, acts: TrkActivity[], points: TrkPoin
 }
 /** Other lists' work on the same tag (the OPR list's "FV-1426 d/s check valve servicing" on the FV-1426 d/s item, the
  *  LV-553B passing on the LV-0553B control valve): shown on the item, each keeping its own status. */
+const OWN_ITEM = /^([A-Z]{1,4}-12-\d|12-[A-Z]{1,4}-\d)/i;
 export function relatedWork(tag: string, key: string, acts: TrkActivity[]): TrkActivity[] {
   // the unit number is not the item number: V-12-201 is V-201 (12-PSV-0519 is PSV-0519)
-  const m = tag.replace(/^12-/, '').replace(/^([A-Z]{1,4})-12-/i, '$1-').match(/^([A-Z]{1,4})-0*(\d{2,4}[A-Z]?)\b/); if (!m) return [];
-  const re = new RegExp(`\\b${m[1]}[- ]?(12-)?0*${m[2]}(?![0-9A-Z])`, 'i');
-  return acts.filter((a) => a.key !== key && a.tracked && !a.detail && re.test(`${a.key} ${a.activity}`));
+  // a part keeps its part (P-12-203-E-01A is P-203-E-01A, not the pump)
+  const m = tag.replace(/^12-/, '').replace(/^([A-Z]{1,4})-12-/i, '$1-').match(/^([A-Z]{1,4})-0*(\d{2,4}[A-Z]?)((?:-[A-Z0-9]+)*)(?![0-9A-Z])/i); if (!m) return [];
+  const re = new RegExp(`\\b${m[1]}[- ]?(12-)?0*${m[2]}${m[3]}(?![0-9A-Z]|-[A-Z]{1,3}-?\\d)`, 'i');
+  // only the work in the lists (OPR list, PMRs, site services …) whose own words name the item: another piece of
+  // equipment (V-12-202, C-12-201-ST, R-12-205) has its own sheet, and a list named after several items
+  // (P-203/205 HT motors) is not all about this one
+  return acts.filter((a) => a.key !== key && a.tracked && !a.detail && !OWN_ITEM.test(a.key) && re.test(a.activity));
 }
 /** Valves and PSVs taken out with their own steps (control valves, check valves, PSVs): not in the blind list. */
 export const VALVE_KEY = /^12-(PSV|VC|HV|LV|FV|TV|PV|PCV|FCV|XV)-/i;

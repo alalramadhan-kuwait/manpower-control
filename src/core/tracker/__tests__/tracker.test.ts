@@ -518,6 +518,12 @@ describe('the same work in two places', () => {
     expect(relatedWork('12-LV-0553B', '12-LV-0553B', acts).length).toBe(1);
     // the unit number (12) is not the item: V-12-201 does not pull in V-12-202 or V-12-206
     const vs = [a('V-12-202', 'Box-up'), a('V-12-206', 'Blind'), a('OPR list', 'OPlist-1050 V-12-201 drain valve to be serviced')];
+    vs.push(a('C-12-201-ST', 'Shift to workshop'), a('R-12-205', 'Dump catalyst'), a('C-12-201', 'Shift to workshop'));
+    expect(relatedWork('C-12-201', 'C-12-201', vs).length).toBe(0);
+    // a list named after several items is not all about one of them; a part is not its pump
+    const ms = [a('P-203/205 HT motors', 'functional test'), a('P-203/205 HT motors', 'P-12-203 P1 B-M'), a('OPR list', 'OPlist-1030 P-203 seal flushing line strainer')];
+    expect(relatedWork('P-12-203', 'P-12-203', ms).length).toBe(2);
+    expect(relatedWork('P-12-203-E-01A', 'P-12-203-E-01A', ms).length).toBe(0);
     expect(relatedWork('V-12-201', 'V-12-201', vs).map((x: { activity: string }) => x.activity)).toEqual(['OPlist-1050 V-12-201 drain valve to be serviced']);
   });
 });
