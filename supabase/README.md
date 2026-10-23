@@ -225,3 +225,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261023114535_shutdown_progress_log_every_edit` | Change log: item notes, steps renamed / added / off, issue text edits, shift temperatures and notes |
 | `20261023135144_user_activity` | `app_activity` (pages opened, by login or engineer link; Section Head reads), `app_visit()`, `user_activity_summary(days)` |
 | `20261023143624_shutdown_progress_h201_pigging_passes` | H-201 pigging (96 h) split into 4 × 24 h passes in the P6 window; pass 1 done, pass 2 running; field pass steps off |
+| `20261023161647_shutdown_progress_dsr_23oct` | Live tracker progress from the 23 Oct status report (text + DSR sheet, the more advanced of each): 27 steps done, 5 started, status lines, PSVs 8/9 dropped, PMRs handed over, drums R-203 1256 / R-205 988 |
