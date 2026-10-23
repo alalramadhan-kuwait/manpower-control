@@ -1,14 +1,14 @@
 // Today page: who is on duty on each shutdown team on the date. Shown only on the dates of an active shutdown.
-import { ChevronDown, ChevronUp, Wrench } from 'lucide-react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { MpPerson } from '@/core/manpower';
 import type { OnLeave } from '@/core/leave';
-import { planDates, SD_SLOT_LABEL, type SdMember, type SdPlan, type SdTeam } from '@/core/shutdown';
+import { planDates, type SdMember, type SdPlan, type SdTeam } from '@/core/shutdown';
 import { memberDuty } from '@/core/shutdown/v2';
 import { addDaysIso } from '@/core/roster';
 import { fetchSdPlan, fetchSdPlans } from '@/data/shutdown';
-import { Card, cx } from '@/ui/components';
+import { cx } from '@/ui/components';
 import { shortDate } from '@/ui/leave';
 
 type Loaded = { plan: SdPlan; teams: SdTeam[]; members: SdMember[] };
@@ -42,24 +42,21 @@ export function PlanCard({ x, date, people, leave, link = true }: { x: Loaded; d
   const name = useMemo(() => { const m = new Map(people.map((p) => [p.id, p.name])); return (id: string) => m.get(id) ?? 'Employee'; }, [people]);
   const dates = planDates(plan);
   const dayNo = dates.indexOf(date) + 1;
+  const ts = [...teams].sort((a, b) => a.sort - b.sort);
   return (
-    <Card className="mb-3 ring-2 ring-teal-600">
-      <div className="flex items-center gap-2">
-        <Wrench className="h-4 w-4 shrink-0 text-teal-700" />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold text-teal-900">{plan.title}</div>
-          <div className="text-[11px] text-slate-500">Day {dayNo} of {dates.length} · {shortDate(plan.start)} – {shortDate(plan.end)}</div>
-        </div>
+    <section className="mb-2">
+      <div className="mx-1 mb-1 flex items-baseline gap-2">
+        <h2 className="min-w-0 flex-1 truncate text-[11px] font-bold uppercase tracking-wide text-slate-500">{plan.title} team <span className="font-normal normal-case">· day {dayNo} of {dates.length}</span></h2>
         {link && <Link to={`/shutdown/${plan.id}`} className="shrink-0 text-xs font-semibold text-brand-700">Plan ›</Link>}
       </div>
-      <div className="mt-2 space-y-2">
-        {[...teams].sort((a, b) => a.sort - b.sort).map((t) => <TeamBlock key={t.id} plan={plan} team={t} members={members.filter((m) => m.teamId === t.id && m.start <= date && date <= m.end)} date={date} name={name} leave={leave} />)}
+      <div className="grid overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200" style={{ gridTemplateColumns: `repeat(${Math.max(1, ts.length)}, minmax(0, 1fr))` }}>
+        {ts.map((t, i) => <TeamBlock key={t.id} edge={i > 0} plan={plan} team={t} members={members.filter((m) => m.teamId === t.id && m.start <= date && date <= m.end)} date={date} name={name} leave={leave} />)}
       </div>
-    </Card>
+    </section>
   );
 }
 
-function TeamBlock({ plan, team, members, date, name, leave }: { plan: SdPlan; team: SdTeam; members: SdMember[]; date: string; name: (id: string) => string; leave: Map<string, OnLeave> }) {
+function TeamBlock({ edge, plan, team, members, date, name, leave }: { edge: boolean; plan: SdPlan; team: SdTeam; members: SdMember[]; date: string; name: (id: string) => string; leave: Map<string, OnLeave> }) {
   const [open, setOpen] = useState(false);
   const night = team.shiftCode === 'N';
   const rows = members.map((m) => ({ m, duty: memberDuty(plan, team, m, date), away: leave.get(m.employeeId) ?? null }))
@@ -67,39 +64,30 @@ function TeamBlock({ plan, team, members, date, name, leave }: { plan: SdPlan; t
   const on = rows.filter((r) => r.duty && !r.away);
   const off = rows.filter((r) => !r.duty || r.away);
   const first = on.find((r) => r.duty)?.duty;
-  const hours = first ? `${hhmm(first.start)} – ${hhmm(first.end)}${night ? ' (next day)' : ''}` : team.hoursLabel ?? '';
   const ctl = on.filter((r) => r.m.slot === 'controller').length;
+  const ctls = on.filter((r) => r.m.slot === 'controller'), rest = on.filter((r) => r.m.slot !== 'controller');
+  // the Day team in the Morning colour, the Night team in the Night colour (as the shifts on the Today page)
   return (
-    <div className={cx('rounded-xl p-2 ring-1', night ? 'bg-slate-100 ring-slate-300' : 'bg-sky-50 ring-sky-200')}>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">{team.name} team · {hours}</span>
-        <span className={cx('shrink-0 text-[11px] font-semibold', ctl ? 'text-slate-600' : 'text-status-red')}>{on.length} on duty{ctl ? '' : ' · no Controller'}</span>
+    <div className={cx('min-w-0 overflow-hidden text-[12.5px] leading-[1.45]', night ? 'bg-indigo-50/70' : 'bg-amber-50/70', edge && 'border-l border-white')}>
+      <div className={cx('flex items-center gap-1 whitespace-nowrap px-2 py-1 text-[10.5px] font-extrabold uppercase', night ? 'bg-indigo-300 text-indigo-950' : 'bg-amber-200 text-amber-950')}>
+        <span className="truncate">{night ? '☾' : '☀'} {team.name} {first ? `${hhmm(first.start).slice(0, 2)}–${hhmm(first.end).slice(0, 2)}` : team.hoursLabel ?? ''}</span><span className="ml-auto normal-case">{on.length} on</span>
       </div>
-      {on.length ? (
-        <ul className="mt-1 space-y-0.5">
-          {on.map(({ m, duty }) => (
-            <li key={m.id} className="flex items-center justify-between gap-2 text-sm">
-              <span className="min-w-0 truncate font-medium text-slate-800">{name(m.employeeId)}</span>
-              <span className="shrink-0 text-[11px] text-slate-600">
-                {m.slot === 'controller' && m.controllerRole ? `${m.controllerRole === 'primary' ? 'Primary' : 'Assistant'} ` : ''}{SD_SLOT_LABEL[m.slot] ?? m.slot}
-                {duty && duty.hours < plan.shiftHours ? <span className="ml-1 font-semibold text-amber-700">{duty.hours} h</span> : null}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : <p className="mt-1 text-sm text-status-red">Nobody on duty</p>}
-      {off.length > 0 && (
-        <>
-          <button type="button" onClick={() => setOpen((v) => !v)} className="mt-1 flex items-center gap-1 text-[11px] font-medium text-slate-500">
-            {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}Off today · {off.length}
-          </button>
-          {open && (
-            <ul className="mt-0.5 space-y-0.5 text-xs text-slate-600">
-              {off.map(({ m, away }) => <li key={m.id} className="flex justify-between gap-2"><span className="truncate">{name(m.employeeId)}</span><span className="shrink-0">{away ? `${away.typeShort ?? 'Leave'} · back ${shortDate(away.returnOn)}` : 'Off'}</span></li>)}
-            </ul>
-          )}
-        </>
-      )}
+      <div className="px-2 pb-2 pt-1">
+        {ctl ? <><b className="block truncate font-extrabold text-brand-800">{ctls[0] && name(ctls[0].m.employeeId)}</b>{ctls.slice(1).map((r) => <span key={r.m.id} className="block truncate text-[11.5px] text-slate-500">+ {name(r.m.employeeId)}</span>)}</>
+          : <b className="block text-status-red">No Controller</b>}
+        <div className="mt-1">
+          {rest.map(({ m, duty }) => <span key={m.id} className="block truncate text-slate-800">{name(m.employeeId)}{duty && duty.hours < plan.shiftHours ? <span className="ml-1 text-[11px] font-semibold text-amber-700">{duty.hours} h</span> : null}</span>)}
+          {!on.length && <span className="text-status-red">Nobody on duty</span>}
+        </div>
+        {off.length > 0 && (
+          <>
+            <button type="button" onClick={() => setOpen((v) => !v)} className="mt-1 flex items-center gap-1 text-[11px] font-medium text-slate-500">
+              {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}Off today · {off.length}
+            </button>
+            {open && <ul className="mt-0.5 space-y-0.5 text-[11px] text-slate-600">{off.map(({ m, away }) => <li key={m.id} className="truncate">{name(m.employeeId)} · {away ? `${away.typeShort ?? 'Leave'} · back ${shortDate(away.returnOn)}` : 'off'}</li>)}</ul>}
+          </>
+        )}
+      </div>
     </div>
   );
 }

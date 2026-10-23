@@ -5,14 +5,14 @@ import { t } from '@/i18n';
 import { loadNotices } from '@/data/notifications';
 import { issueLevel, type Notice } from '@/core/notifications';
 import { evaluateDay } from '@/core/manpower';
-import { minimumsText, periodOn, unitsOn } from '@/core/modes';
+import { minimumsText, periodOn } from '@/core/modes';
 import type { CrewDay, DayResult, Finding, MpAbsence, MpPerson, PositionResult, Status } from '@/core/manpower';
 import { addDaysIso, isValidIsoDate } from '@/core/roster';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { fetchCalendarInfo, type Holiday, type UnitEvent } from '@/data/calendar';
 import { EVENT_ICON } from '@/ui/calendar';
 import { Card, ErrorBox, InfoButton, Spinner, cx, fmtDate } from '@/ui/components';
-import { CREW_IDENTITY, CrewBadge, DayDutyBadge, crewEdge } from '@/ui/crew';
+import { CREW_IDENTITY, CrewBadge, crewEdge } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { bySeniority } from '@/ui/positions';
 import { onLeaveOn, type OnLeave } from '@/core/leave';
@@ -84,8 +84,6 @@ export default function DayOverviewPage() {
 
   const result = useMemo(() => (inputs ? evaluateDay(date, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments) : null), [date, inputs]);
   const period = useMemo(() => (inputs ? periodOn(date, inputs.plan) : null), [date, inputs]);
-  // unit sections down on the date (the minimums follow them unless a manual period overrides)
-  const unitsDown = useMemo(() => (inputs ? unitsOn(date, inputs.plan).filter((s) => s.down) : []), [date, inputs]);
   // holiday and unit events on this date (calendar information)
   const [info, setInfo] = useState<{ date: string; holidays: Holiday[]; events: UnitEvent[] } | null>(null);
   useEffect(() => { let live = true; fetchCalendarInfo(date, date).then((r) => live && setInfo({ date, ...r })).catch(() => live && setInfo(null)); return () => { live = false; }; }, [date]);
@@ -114,22 +112,18 @@ export default function DayOverviewPage() {
         <button aria-label="Next day" onClick={() => setDate(addDaysIso(date, 1))} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-300 active:bg-slate-50"><ChevronRight className="h-5 w-5" /></button>
       </div>
 
-      <div className="mb-3">
-        <h1 className="text-xl font-semibold text-brand-800">{weekday(date)}, {fmtDate(date)}</h1>
-        <p className="flex items-center gap-1 text-xs text-slate-500">
-          {result ? <span>{result.rules.modeCode !== 'full_operation' ? `${result.rules.modeLabel} · ` : ''}Min per crew: C {result.rules.controllerMin} · P {result.rules.panelMin} · F {result.rules.fieldMin}</span> : '\u00a0'}
-          <InfoButton title="How to read this" className="h-5 w-5"><p>{result ? `${result.rules.modeLabel}: ${minimumsText(result.rules)} per crew.` : ''}</p><LegendBody /></InfoButton>
-        </p>
-        {info?.date === date && (info.holidays.length > 0 || info.events.length > 0) && (
+      <div className="mb-2">
+        <div className="flex items-baseline gap-2">
+          <h1 className="text-xl font-semibold text-brand-800">{weekday(date).slice(0, 3)} {fmtDate(date).replace(/ \d{4}$/, '')}</h1>
+          <p className="ml-auto flex items-center gap-1 text-[11px] text-slate-500">
+            {result ? <span>min C{result.rules.controllerMin} · P{result.rules.panelMin} · F{result.rules.fieldMin}</span> : '\u00a0'}
+            <InfoButton title="How to read this" className="h-5 w-5"><p>{result ? `${result.rules.modeLabel}: ${minimumsText(result.rules)} per crew.` : ''}</p><LegendBody /></InfoButton>
+          </p>
+        </div>
+        {info?.date === date && info.holidays.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {info.holidays.map((h) => <Link key={h.id} to={`/calendar?month=${date.slice(0, 7)}`} className="inline-flex items-center gap-1 rounded-full bg-pink-50 px-2.5 py-1 text-[11px] font-semibold text-pink-800 ring-1 ring-pink-300"><Star className="h-3 w-3 fill-pink-500 text-pink-600" />{h.name}{h.expected ? ' (expected)' : ''}</Link>)}
-            {info.events.map((e) => { const Icon = EVENT_ICON[e.category]; return <Link key={e.id} to={`/calendar?month=${date.slice(0, 7)}`} className="inline-flex max-w-full items-center gap-1 rounded-full bg-teal-700 px-2.5 py-1 text-[11px] font-semibold text-white"><Icon className="h-3 w-3 shrink-0" /><span className="truncate">{e.unit ? `${e.unit} ` : ''}{e.title} · {e.start === e.end ? shortDate(e.start) : `${shortDate(e.start)} – ${shortDate(e.end)}`}</span></Link>; })}
           </div>
-        )}
-        {!period && result && unitsDown.length > 0 && (
-          <Link to="/shutdown?tab=modes" className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-status-red px-2.5 py-1 text-[11px] font-semibold text-white">
-            <span className="truncate">{unitsDown.map((s) => `${s.unit.label} down to ${shortDate(s.down!.end)}`).join(' · ')} · min P {result.rules.panelMin} · F {result.rules.fieldMin}</span>
-          </Link>
         )}
         {period && result && (
           <Link to="/shutdown?tab=modes" className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-brand-700 px-2.5 py-1 text-[11px] font-semibold text-white">
@@ -143,19 +137,17 @@ export default function DayOverviewPage() {
           {moved && <p role="status" className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-700">{t('That page has moved. Everything is now under Today, Calendar, Requests, Employees and More.')}</p>}
           <OverallBanner result={result} />
           <TodaySummary result={result} date={date} today={today} />
-          <TrackerTodayCard date={date} />
-          {inputs && <ShutdownToday date={date} people={inputs.people} leave={leave} tick={tick} />}
+          <EventsCard date={date} events={info?.date === date ? info.events : []} />
           {tcPending > 0 && (
             <Link to="/data-quality?tab=take-charge" className="mb-3 flex items-start gap-2 rounded-xl bg-slate-50 p-3 text-xs text-slate-700 ring-1 ring-slate-300">
               <Info className="mt-0.5 h-4 w-4 shrink-0" />
               <span><span className="font-semibold">{tcPending} Take-Charge to confirm</span> · Field not final <span className="font-semibold text-brand-700">›</span></span>
             </Link>
           )}
-          <div className="space-y-3">
-            {result.crews.map((c) => <div key={c.crew} id={`crew-${c.crew}`} className="scroll-mt-20"><CrewCard crew={c} leave={leave} date={date} need={needFor(c.crew)} /></div>)}
-          </div>
-          <DayStaffCard result={result} leave={leave} date={date} />
-          <DayDutyCard result={result} leave={leave} />
+          <ShiftBoard result={result} leave={leave} date={date} needFor={needFor} />
+          {inputs && <ShutdownToday date={date} people={inputs.people} leave={leave} tick={tick} />}
+          <AwayToday result={result} leave={leave} />
+          <OffToday result={result} leave={leave} date={date} />
         </>
       )}
     </div>
@@ -170,12 +162,12 @@ function OverallBanner({ result }: { result: DayResult }) {
   const headlineCls = final ? STATUS_TEXT_CLS[final] : 'text-slate-700';
   const reds = result.crews.filter((c) => c.confirmedShortage);
   return (
-    <div className={cx('mb-3 rounded-2xl bg-white p-4 shadow-sm ring-2', ring)}>
+    <div className={cx('mb-2 rounded-2xl bg-white px-3 py-2 ring-2', ring)}>
       <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className={cx('text-2xl font-bold leading-tight', headlineCls)}>{headline}</div>
-          <div className="text-xs text-slate-600">
-            {reds.length ? <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">{reds.map((c) => <span key={c.crew} className="inline-flex items-center gap-1"><CrewBadge crew={c.crew} size="sm" /> {c.shift}</span>)} confirmed short</span> : final ? `${result.crews.filter((c) => c.working).length} crews on duty` : `Provisional result once resolved: ${STATUS_TEXT[result.provisionalStatus]}`}
+        <div className="flex min-w-0 items-baseline gap-2">
+          <div className={cx('shrink-0 text-xl font-bold leading-tight', headlineCls)}>{final === 'green' ? '✓ ' : ''}{headline}</div>
+          <div className="min-w-0 text-[13px] text-slate-600">
+            {reds.length ? <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">{reds.map((c) => <span key={c.crew} className="inline-flex items-center gap-1"><CrewBadge crew={c.crew} size="sm" /> {c.shift}</span>)} confirmed short</span> : final ? `${result.crews.filter((c) => c.working).length} crews on duty · ${gapCount(result)} gap${gapCount(result) === 1 ? '' : 's'}` : `Provisional result once resolved: ${STATUS_TEXT[result.provisionalStatus]}`}
           </div>
         </div>
       </div>
@@ -435,74 +427,6 @@ function Tag({ children, brand }: { children: React.ReactNode; brand?: boolean }
   );
 }
 
-/** Crew members on day duty (Stage G movement to 'DAY'): out of every crew, day shift Sunday to Thursday. */
-function DayDutyCard({ result, leave }: { result: DayResult; leave: Map<string, OnLeave> }) {
-  if (!result.dayDuty.length) return null;
-  const weekend = !result.dayDuty[0].working;
-  return (
-    <Card className="mt-3">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="flex items-center gap-1.5 text-xs font-semibold text-slate-900"><DayDutyBadge size="sm" /> Day duty <span className="font-normal text-slate-500">· {result.dayDuty.length}</span></h3>
-        <span className="flex items-center gap-1 text-[11px] text-slate-500">{weekend ? 'Weekend: off today' : <>Counted in <CrewBadge crew={result.dayDuty[0].countedIn!} size="sm" /> Morning</>}</span>
-      </div>
-      <ul className="mt-1 divide-y divide-slate-100">
-        {[...result.dayDuty].sort((a, b) => bySeniority(a.person, b.person)).map((s) => {
-          const l = leave.get(s.person.id);
-          return (
-            <li key={s.person.id} className="flex items-center justify-between gap-2 py-1">
-              <Link to={`/employees/${s.person.id}`} className="min-w-0 truncate text-sm font-medium text-slate-900">{s.person.name}</Link>
-              <span className="flex shrink-0 items-center gap-1 text-[11px] text-slate-500">
-                {s.person.movedFrom && <>from <CrewBadge crew={s.person.movedFrom} size="sm" /></>}
-                {s.absence ? <><Tag>{l?.typeShort ?? s.absence.typeShort ?? 'Leave'}</Tag>{l && <>back {shortDate(l.returnOn)}</>}</> : <Tag>{s.working ? 'On duty' : 'Off'}</Tag>}
-                {s.unresolved && <Tag>Unresolved</Tag>}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </Card>
-  );
-}
-
-function DayStaffCard({ result, leave, date }: { result: DayResult; leave: Map<string, OnLeave>; date: string }) {
-  if (!result.dayStaff.length) return null;
-  const label = (s: DayResult['dayStaff'][number]) =>
-    s.morningPost ? `Morning Controller${s.assignment?.kind === 'morning_rotation' ? ` (rotation until ${shortDate(s.assignment.end)})` : ''}`
-      : s.person.role === 'vr_controller' ? 'Vacation Relief Controller' : s.person.role === 'morning_controller' ? 'Morning Controller (post on rotation)' : 'Shift Controller';
-  const needing = result.crews.filter((c) => c.pending.includes('coverage_required'));
-  return (
-    <Card className="mt-3">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">VR & Morning Controllers</div>
-      <ul className="mt-1 space-y-1 text-sm">
-        {result.dayStaff.map((s) => (
-          <li key={s.person.id} className="flex justify-between gap-2">
-            <span className="min-w-0"><span className="block truncate font-medium text-slate-800">{s.person.name}</span><span className="block text-xs text-slate-500">{label(s)}</span></span>
-            <span className="shrink-0 text-right text-xs">
-              {s.absence ? <span className="block text-status-red">{leave.get(s.person.id) ? leaveShort(leave.get(s.person.id)!) : s.absence.typeShort ?? 'On leave'}</span>
-                : s.assignment?.kind === 'shift_cover' && s.assignment.crew ? <span className="inline-flex items-center gap-1 font-medium text-slate-700"><CrewBadge crew={s.assignment.crew} size="sm" /> Covering until {shortDate(s.assignment.end)}</span>
-                : s.assignment?.kind === 'sd_team' ? <span className="block font-medium text-slate-700">SD team until {shortDate(s.assignment.end)}</span>
-                : <span className="block text-status-green">{s.morningPost ? 'On duty' : 'Available'}</span>}
-              {s.unresolved ? <span className="block text-status-amber">Unresolved absence (warning only)</span> : null}
-            </span>
-          </li>
-        ))}
-      </ul>
-      {result.morningPost.status === 'coverage_required' && (
-        <p className={cx('mt-2 rounded-lg p-2 text-[11px] ring-1', CATEGORY.coverage_required.box)}>
-          <span className="font-semibold">Morning post empty</span> · Morning Controller on {result.morningPost.away?.crew} Shift{' '}
-          <Link to={`/requests?view=entry&card=controller&kind=morning&from=${date}`} className="font-semibold text-brand-700 underline">Assign ›</Link>
-        </p>
-      )}
-      {needing.length > 0 && (
-        <p className={cx('mt-2 rounded-lg p-2 text-[11px] ring-1', CATEGORY.coverage_required.box)}>
-          Cover needed: {needing.map((c) => <span key={c.crew} className="mr-1 inline-flex items-center gap-1 align-middle"><CrewBadge crew={c.crew} size="sm" /> {c.shift}</span>)}{' '}
-          <Link to="/controllers" className="font-semibold text-brand-700 underline">Assign ›</Link>
-        </p>
-      )}
-    </Card>
-  );
-}
-
 const POS: { key: 'controller' | 'panel' | 'field'; label: string; roles: string[] }[] = [
   { key: 'controller', label: 'Controller', roles: ['controller', 'vr_controller', 'morning_controller'] },
   { key: 'panel', label: 'Panel', roles: ['panel_operator'] },
@@ -528,13 +452,8 @@ function TodaySummary({ result, date, today }: { result: DayResult; date: string
     const why = r.finding === 'data_incomplete' ? t('qualification not confirmed yet') : r.finding === 'coverage_required' ? t('Controller away, no cover recorded') : away.length ? `${t('away')}: ${away.join(', ')}` : t('not enough qualified people on the crew');
     return { crew: c.crew, shift: c.shift, label: p.label, count: r.count, min: r.min, why, red: r.finding === 'shortage' };
   }));
-  const ctlOk = working.filter((c) => c.controller.count >= c.controller.min).length;
   return (
-    <section aria-label={t('Today at a glance')} className="mb-3 space-y-2">
-      <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200"><div className="text-[11px] uppercase tracking-wide text-slate-500">{t('Controllers on duty')}</div><div className={cx('text-lg font-bold tabular-nums', ctlOk === working.length ? 'text-status-green' : 'text-status-red')}>{ctlOk} / {working.length} {t('crews')}</div></div>
-        <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200"><div className="text-[11px] uppercase tracking-wide text-slate-500">{t('Gaps')}</div><div className={cx('text-lg font-bold tabular-nums', gaps.some((g) => g.red) ? 'text-status-red' : gaps.length ? 'text-status-amber' : 'text-status-green')}>{gaps.length === 0 ? `0 ✓` : gaps.length}</div></div>
-      </div>
+    <section aria-label={t('Today at a glance')} className={cx('space-y-2', (gaps.length > 0 || (urgent?.length ?? 0) > 0) && 'mb-2')}>
       {gaps.length > 0 && (
         <ul className="divide-y divide-slate-100 rounded-xl bg-white ring-1 ring-slate-200">
           {gaps.map((g) => (
@@ -552,6 +471,177 @@ function TodaySummary({ result, date, today }: { result: DayResult; date: string
           <span className="min-w-0 flex-1"><b>{urgent.length} {t('critical')}</b> · {urgent.slice(0, 2).map((n) => n.title).join(' · ')}{urgent.length > 2 ? ' …' : ''}</span>
           <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 rtl:rotate-180" />
         </Link>
+      )}
+    </section>
+  );
+}
+
+const isGap = (r: PositionResult) => r.count < r.min || r.finding === 'shortage' || r.finding === 'coverage_required' || r.finding === 'data_incomplete';
+const gapCount = (result: DayResult) => result.crews.filter((c) => c.working).reduce((n, c) => n + POS.filter((p) => isGap(c[p.key])).length, 0);
+
+/** The unit events of the date (shutdowns and the rest) in one card, with the shutdown progress under them. */
+function EventsCard({ date, events }: { date: string; events: UnitEvent[] }) {
+  if (!events.length) return <TrackerTodayCard date={date} />;
+  return (
+    <div className="mb-2 overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200">
+      {events.map((e) => { const Icon = EVENT_ICON[e.category];
+        return <Link key={e.id} to={`/calendar?month=${date.slice(0, 7)}`} className="flex items-center gap-2 border-b border-slate-100 px-3 py-1.5 text-[13px]">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal-700 text-white"><Icon className="h-3.5 w-3.5" /></span>
+          <span className="min-w-0 flex-1 truncate text-slate-800">{e.unit ? `${e.unit} ` : ''}{e.title}{e.start <= date && date <= e.end && e.start !== e.end ? <span className="text-slate-500"> · day {dayIndex(e.start, date)} of {dayIndex(e.start, e.end)}</span> : null}</span>
+          <span className="shrink-0 text-[11.5px] text-slate-500">{e.start === e.end ? shortDate(e.start) : `to ${shortDate(e.end)}`}</span>
+        </Link>; })}
+      <TrackerTodayCard date={date} embedded />
+    </div>
+  );
+}
+const dayIndex = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 864e5) + 1;
+
+/** Each shift's colour: Morning yellow, Afternoon orange, Night blue (the shutdown teams: Day as Morning, Night as Night). */
+export const SHIFT_CLS = {
+  M: { head: 'bg-amber-200 text-amber-950', body: 'bg-amber-50/70', line: 'border-amber-300' },
+  A: { head: 'bg-orange-300 text-orange-950', body: 'bg-orange-50/70', line: 'border-orange-300' },
+  N: { head: 'bg-indigo-300 text-indigo-950', body: 'bg-indigo-50/70', line: 'border-indigo-300' }
+} as const;
+const nth = (duty: string) => (duty.endsWith('1') ? '1st' : '2nd');
+const nb = (name: string) => name.replace(/-/g, '‑');
+
+/** Who is in charge of a crew today: the counted cover, the Acting Controller or the crew Controller. */
+function inCharge(c: CrewDay): { name: string | null; note: string } {
+  const p = c.controller;
+  if (p.cover?.counted) return { name: p.cover.person.name, note: p.cover.assignment.kind === 'sd_team' ? 'SD cover' : `${p.cover.person.role === 'vr_controller' ? 'VR' : ''} cover`.trim() };
+  if (p.acting) return { name: p.acting.name, note: 'acting' };
+  const x = [...p.counted].sort(bySeniority)[0];
+  return { name: x?.name ?? null, note: '' };
+}
+
+/** The shifts of the day side by side (Morning | Afternoon | Night): who is in charge, the Panel and Field names, the
+ *  day duty in the morning, and the crew's result. The full "who counts" detail opens under it. */
+function ShiftBoard({ result, leave, date, needFor }: { result: DayResult; leave: Map<string, OnLeave>; date: string; needFor: (crew: string) => CoverageNeed | undefined }) {
+  const [open, setOpen] = useState(false);
+  const working = result.crews.filter((c) => c.working);
+  if (!working.length) return null;
+  return (
+    <section className="mb-2">
+      <div className="grid overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200" style={{ gridTemplateColumns: `repeat(${working.length}, minmax(0, 1fr))` }}>
+        {working.map((c, i) => <ShiftColumn key={c.crew} c={c} first={i === 0} result={result} leave={leave} date={date} need={needFor(c.crew)} />)}
+      </div>
+      <button type="button" onClick={() => setOpen(!open)} className="mt-1 flex min-h-8 w-full items-center justify-center gap-1 rounded-xl text-xs font-medium text-brand-700">
+        {open ? <>Hide who counts <ChevronUp className="h-4 w-4" /></> : <>Who counts · details <ChevronDown className="h-4 w-4" /></>}
+      </button>
+      {open && <div className="mt-1 space-y-3">{working.map((c) => <div key={c.crew} id={`crew-${c.crew}`} className="scroll-mt-20"><CrewCard crew={c} leave={leave} date={date} need={needFor(c.crew)} /></div>)}</div>}
+    </section>
+  );
+}
+
+function ShiftColumn({ c, first, result, leave, date, need }: { c: CrewDay; first: boolean; result: DayResult; leave: Map<string, OnLeave>; date: string; need?: CoverageNeed }) {
+  const cls = SHIFT_CLS[c.state as 'M' | 'A' | 'N'] ?? SHIFT_CLS.M;
+  const who = inCharge(c);
+  const ctlNotes = notesFor(c, 'controller', leave, date, need).filter((n) => !/^(Acting|Cover):/.test(n.text));
+  const names = (xs: MpPerson[]) => [...xs].filter((p) => !p.dayDuty).sort(bySeniority);
+  const panel = names(c.panel.counted), field = names(c.field.counted).filter((p) => !panel.includes(p));
+  const morning = c.state === 'M' ? result.dayDuty : [];
+  const final = c.finalStatus;
+  const Group = ({ label, pos, people, notes }: { label: string; pos: PositionResult; people: MpPerson[]; notes: Note[] }) => (
+    <div className="mt-1.5">
+      <b className={cx('text-[12px]', pos.count < pos.min && 'text-status-red')}>{label} {people.length}</b>
+      {people.map((p) => <Link key={p.id} to={`/employees/${p.id}`} className="block truncate text-[11.5px] tracking-[-0.3px] text-slate-800">{nb(p.name)}</Link>)}
+      {notes.map((n) => <span key={n.text} className={cx('mt-0.5 block rounded px-1 text-[10.5px] font-medium leading-tight', NOTE_CLS[n.tone])}>{n.text}</span>)}
+    </div>
+  );
+  return (
+    <div className={cx('min-w-0 overflow-hidden text-[12px] leading-[1.5]', cls.body, !first && 'border-l border-white')}>
+      <div className={cx('flex items-center gap-1 whitespace-nowrap px-1.5 py-1 text-[10px] font-extrabold uppercase', cls.head)}>
+        <span className={cx('inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] text-white', CREW_IDENTITY[c.crew].bg)}>{c.crew}</span><span>{c.shift}</span>
+        <span className="ml-auto rounded bg-white/80 px-1 text-[10px] normal-case">{nth(c.duty)}</span>
+      </div>
+      <div className="px-1.5 pb-2 pt-1">
+        {who.name ? <b className="block truncate text-[11.5px] font-extrabold tracking-[-0.4px] text-brand-800">{nb(who.name)}</b> : <b className="block text-[12px] text-status-red">No Controller</b>}
+        <span className="block truncate text-[10.5px] text-slate-500">in charge{who.note ? ` · ${who.note}` : ''}</span>
+        {ctlNotes.map((n) => n.to ? <Link key={n.text} to={n.to} className={cx('mt-0.5 block rounded px-1 text-[10.5px] font-medium leading-tight', NOTE_CLS[n.tone])}>{n.text} · {n.link} ›</Link>
+          : <span key={n.text} className={cx('mt-0.5 block rounded px-1 text-[10.5px] font-medium leading-tight', NOTE_CLS[n.tone])}>{n.text}</span>)}
+        <Group label="Panel" pos={c.panel} people={panel} notes={notesFor(c, 'panel', leave, date)} />
+        <Group label="Field" pos={c.field} people={field} notes={notesFor(c, 'field', leave, date)} />
+        {morning.length > 0 && (
+          <div className={cx('mt-1.5 border-t border-dashed pt-1', cls.line)}>
+            <b className="text-[12px]">Day duty</b> <span className="text-[10.5px] text-slate-500">Sun–Thu</span>
+            {[...morning].sort((a, b) => bySeniority(a.person, b.person)).map((s) => { const l = leave.get(s.person.id);
+              return <Link key={s.person.id} to={`/employees/${s.person.id}`} className="block truncate text-[11.5px] tracking-[-0.3px] text-slate-800">{nb(s.person.name)}{s.absence ? <span className="block text-[10.5px] text-slate-500">{l?.typeShort ?? s.absence.typeShort ?? 'Leave'}</span> : !s.working ? <span className="block text-[10.5px] text-slate-500">off today</span> : null}</Link>; })}
+          </div>
+        )}
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {final ? <span className={cx('rounded-md px-1.5 text-[10.5px] font-bold', final === 'green' ? 'bg-green-100 text-green-800' : final === 'amber' ? 'bg-amber-100 text-amber-900' : 'bg-red-100 text-red-800')}>{STATUS_HINT[final] === 'Safe' ? 'OK' : STATUS_HINT[final]}</span> : null}
+          {c.pending.map((k) => <span key={k} className="rounded-md bg-slate-200 px-1.5 text-[10.5px] font-bold text-slate-700">{k === 'coverage_required' ? 'Cover needed' : 'Data to confirm'}</span>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Everyone away today, by crew: the leave type and the day they are back (tap a name for the profile). */
+function AwayToday({ result, leave }: { result: DayResult; leave: Map<string, OnLeave> }) {
+  const rows = result.crews.map((c) => ({ crew: c.crew, xs: [...c.absences].sort((a, b) => bySeniority(a.person, b.person)) })).filter((r) => r.xs.length);
+  const listed = new Set(rows.flatMap((r) => r.xs.map((a) => a.person.id)));
+  const staff = result.dayStaff.filter((s) => s.absence && !listed.has(s.person.id));
+  const n = rows.reduce((t, r) => t + r.xs.length, 0) + staff.length;
+  if (!n) return null;
+  const back = (id: string, a: MpAbsence) => { const l = leave.get(id); return `${l?.typeShort ?? a.typeShort ?? 'Leave'}${l ? ` · back ${shortDate(l.returnOn)}` : ''}`; };
+  return (
+    <section className="mb-2">
+      <h2 className="mx-1 mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Away today · {n}</h2>
+      <div className="overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200">
+        {rows.map((r) => (
+          <div key={r.crew} className="flex items-center gap-2 border-b border-slate-100 px-3 py-1.5 last:border-b-0">
+            <CrewBadge crew={r.crew} size="sm" />
+            <div className="min-w-0 flex-1 text-[13px]">
+              {r.xs.map((a) => <Link key={a.person.id} to={`/employees/${a.person.id}`} className="flex items-baseline justify-between gap-2"><span className="flex min-w-0 items-center gap-1 truncate text-slate-900"><OracleDot status={leave.get(a.person.id)?.oracle ?? a.absence.oracle} />{a.person.name}</span><span className="shrink-0 text-[11.5px] text-slate-500">{back(a.person.id, a.absence)}</span></Link>)}
+            </div>
+          </div>
+        ))}
+        {staff.length > 0 && (
+          <div className="flex items-center gap-2 px-3 py-1.5">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-500 text-[10px] font-bold text-white">VR</span>
+            <div className="min-w-0 flex-1 text-[13px]">{staff.map((s) => <Link key={s.person.id} to={`/employees/${s.person.id}`} className="flex items-baseline justify-between gap-2"><span className="truncate text-slate-900">{s.person.name}</span><span className="shrink-0 text-[11.5px] text-slate-500">{back(s.person.id, s.absence!)}</span></Link>)}</div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** The crews off today, the VR and Morning Controllers, and what needs assigning. */
+function OffToday({ result, date }: { result: DayResult; leave: Map<string, OnLeave>; date: string }) {
+  const off = result.crews.filter((c) => !c.working);
+  const staff = result.dayStaff.filter((s) => !s.absence);
+  const needing = result.crews.filter((c) => c.pending.includes('coverage_required'));
+  const what = (s: DayResult['dayStaff'][number]) => s.assignment?.kind === 'shift_cover' && s.assignment.crew ? `covering ${s.assignment.crew} to ${shortDate(s.assignment.end)}`
+    : s.assignment?.kind === 'sd_team' ? `SD team to ${shortDate(s.assignment.end)}` : s.morningPost ? 'Morning post' : 'available';
+  const role = (s: DayResult['dayStaff'][number]) => (s.person.role === 'vr_controller' ? 'VR' : s.person.role === 'morning_controller' ? 'Morning Ctl' : 'Controller');
+  return (
+    <section className="mb-2 overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200">
+      {off.map((c) => (
+        <div key={c.crew} className="flex items-center gap-2 border-b border-slate-100 px-3 py-1.5 text-[13px] last:border-b-0">
+          <span className="w-16 shrink-0 text-[11px] font-bold text-slate-500">Off today</span><CrewBadge crew={c.crew} size="sm" />
+          <span className="min-w-0 flex-1 text-slate-800">{c.crew} Shift · {c.duty.endsWith('1') ? '1st' : '2nd'} off day</span>
+        </div>
+      ))}
+      {staff.map((s) => (
+        <Link key={s.person.id} to={`/employees/${s.person.id}`} className="flex items-center gap-2 border-b border-slate-100 px-3 py-1.5 text-[13px] last:border-b-0">
+          <span className="w-16 shrink-0 text-[11px] font-bold text-slate-500">{role(s)}</span>
+          <span className="min-w-0 flex-1 truncate text-slate-800">{s.person.name}</span>
+          <span className={cx('shrink-0 text-[11.5px]', what(s) === 'available' ? 'text-status-green' : 'text-slate-500')}>{what(s)}</span>
+        </Link>
+      ))}
+      {result.morningPost.status === 'coverage_required' && (
+        <p className={cx('m-2 rounded-lg p-2 text-[11px] ring-1', CATEGORY.coverage_required.box)}>
+          <span className="font-semibold">Morning post empty</span> · Morning Controller on {result.morningPost.away?.crew} Shift{' '}
+          <Link to={`/requests?view=entry&card=controller&kind=morning&from=${date}`} className="font-semibold text-brand-700 underline">Assign ›</Link>
+        </p>
+      )}
+      {needing.length > 0 && (
+        <p className={cx('m-2 rounded-lg p-2 text-[11px] ring-1', CATEGORY.coverage_required.box)}>
+          Cover needed: {needing.map((c) => <span key={c.crew} className="mr-1 inline-flex items-center gap-1 align-middle"><CrewBadge crew={c.crew} size="sm" /> {c.shift}</span>)}{' '}
+          <Link to="/controllers" className="font-semibold text-brand-700 underline">Assign ›</Link>
+        </p>
       )}
     </section>
   );
