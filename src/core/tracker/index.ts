@@ -29,8 +29,12 @@ export interface TrkIat { id: string; tag: string; iatNo: string; jobText: strin
   opsAction?: boolean; hoRequired?: boolean;
   /** no action from Operations · spool drop only (no handover procedure, no blind list) */
   opsNone?: boolean; spoolOnly?: boolean;
+  /** the operations label, shown in colour: painting (nothing needed) · spool to drop · ready for handover · ops in progress */
+  opsLabel?: IatLabel | null;
   /** the last change to the row: who, when */
   updatedBy?: string | null; updatedAt?: string | null }
+export type IatLabel = 'painting' | 'spool' | 'ready' | 'progress';
+export const IAT_LABELS: [IatLabel, string][] = [['painting', '🎨 Painting'], ['spool', '🔧 Spool to drop'], ['ready', '✅ Ready for HO'], ['progress', '▶ Ops I/P']];
 /** The IAT statuses of the tracking sheet, set in the app; Completed and Cancelled close the IAT. */
 export const IAT_STATUSES = ['New IAT', 'To start', 'In progress', 'Hold', 'Completed', 'Cancelled'] as const;
 export const iatClosedBy = (s: string) => s === 'Completed' || s === 'Cancelled';

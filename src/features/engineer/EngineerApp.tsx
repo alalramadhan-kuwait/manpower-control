@@ -3,9 +3,9 @@
 // reactors' issues and temperatures), Isolation (neutralization and blinds), Small jobs & IATs. Every change is
 // stamped with the ID; Undo for a few seconds after each one.
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { EVENT_LABEL, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
+import { EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
-import { addEngStep, addEvent, addQtyEntry, confirmEmpty, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
+import { addEngStep, addEvent, addQtyEntry, confirmEmpty, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatLabel, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
 import { BottomSheet, ErrorBox, Spinner, cx } from '@/ui/components';
 
@@ -594,6 +594,7 @@ function Scope({ d, now, done }: P) {
 }
 function HotWork({ d, now, done }: P) {
   const [v, setV] = useState<'iat' | 'pmr'>('iat');
+  const [lf, setLf] = useState<IatLabel | 'none' | 'all'>('all');
   const pmrs = smallItems(d).filter((e) => e.group === 'PMRs');
   const stale = useMemo(() => new Map(staleItems(d, now).filter((i) => i.small).map((i) => [i.key, i.ageH])), [d, now]);
   const st = d.iats.map(iatStatus), count = (x: string) => st.filter((y) => y === x).length;
@@ -602,7 +603,9 @@ function HotWork({ d, now, done }: P) {
     <Seg v={v} set={setV} opts={[['iat', `IATs ${d.iats.length}`], ['pmr', `PMRs ${pmrs.length}`]]} />
     {v === 'iat' ? <>
       {d.iats.length > 0 && <p className="mx-1 mb-2 text-[12px] text-slate-600">In progress <b>{count('In progress')}</b> · to start <b>{count('To start') + count('New IAT')}</b> · hold <b>{count('Hold')}</b> · completed <b>{count('Completed')}</b></p>}
-      {d.iats.length ? d.iats.map((i) => <IatCard key={i.id} d={d} i={i} done={done} />) : <Card><p className="text-sm text-slate-600">No IATs on this shutdown yet.</p></Card>}
+      {d.iats.length > 0 && <div className="-mx-3 mb-2.5 flex gap-1.5 overflow-x-auto px-3 [scrollbar-width:none]">{([['all', `All ${d.iats.length}`], ...IAT_LABELS.map(([k, l]) => [k, `${l} ${d.iats.filter((i) => i.opsLabel === k).length}`]), ['none', `Not set ${d.iats.filter((i) => !i.opsLabel).length}`]] as [IatLabel | 'none' | 'all', string][]).map(([k, l]) =>
+        <button key={k} type="button" onClick={() => setLf(k)} className={cx('min-h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-[12px] font-bold', lf === k ? 'bg-[#0d2a5e] text-white' : k !== 'all' && k !== 'none' ? LABEL_CLS[k].chip : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>)}</div>}
+      {d.iats.length ? d.iats.filter((i) => lf === 'all' || (lf === 'none' ? !i.opsLabel : i.opsLabel === lf)).map((i) => <IatCard key={i.id} d={d} i={i} done={done} />) : <Card><p className="text-sm text-slate-600">No IATs on this shutdown yet.</p></Card>}
     </> : <>
       <p className="mx-1 mb-2 text-[12px] text-slate-600">{pDone}/{pmrs.length} returned · tap one to set its stage, status or an issue</p>
       {pmrs.length ? <SmallGroup d={d} now={now} items={pmrs} stale={stale} done={done} /> : <Card><p className="text-sm text-slate-600">No PMRs on this shutdown.</p></Card>}
@@ -655,6 +658,10 @@ function SmallGroup({ d, now, items, stale, done, onBack, back = 'Back' }: { d: 
   </>);
 }
 const IAT_CLS: Record<string, string> = { 'In progress': 'bg-blue-100 text-blue-800', 'To start': 'bg-amber-100 text-amber-800', 'New IAT': 'bg-slate-100 text-slate-700', Hold: 'bg-red-100 text-red-800', Completed: 'bg-green-100 text-green-800', Cancelled: 'bg-slate-100 text-slate-500' };
+/** The operations label's colour: the card's edge and its chip. */
+const LABEL_CLS: Record<IatLabel, { edge: string; chip: string }> = {
+  painting: { edge: 'border-l-[#8b5cf6]', chip: 'bg-violet-100 text-violet-800' }, spool: { edge: 'border-l-[#f97316]', chip: 'bg-orange-100 text-orange-800' },
+  ready: { edge: 'border-l-[#08a048]', chip: 'bg-green-100 text-green-800' }, progress: { edge: 'border-l-[#0850A0]', chip: 'bg-blue-100 text-blue-800' } };
 function IatCard({ d, i, done }: { d: TrackerData; i: TrkIat; done: Done }) {
   const st = iatStatus(i); const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null); const [more, setMore] = useState(false);
   const was = { sheetStatus: i.sheetStatus ?? null, status: i.status, closedAt: i.closedAt, remark: i.remark ?? null };
@@ -663,10 +670,12 @@ function IatCard({ d, i, done }: { d: TrackerData; i: TrkIat; done: Done }) {
   const item = d.equipment.find((e) => e.tag === i.tag);
   const where = streams.length ? streams.map((x) => `${x.from} → ${x.to}`).join(' · ') : onEq.length ? onEq.map((x) => `On ${x.eq.tag}${x.eq.name ? ` (${x.eq.name.toLowerCase()})` : ''}`).join(' · ') : item ? `${short(item.tag)}${item.description ? ` · ${item.description}` : ''}` : short(i.tag);
   const service = streams[0]?.fluid ?? null;
+  const lab = i.opsLabel ?? null;
+  const setLab = async (x: IatLabel | null) => { setBusy(true); setErr(null); try { await setIatLabel(i.id, x); done(`IAT ${i.iatNo}: ${x ? IAT_LABELS.find(([k]) => k === x)![1].replace(/^\S+ /, '') : 'label cleared'}.`, () => setIatLabel(i.id, lab)); } catch (e) { setErr(e); } finally { setBusy(false); } };
   return (
-    <Card>
+    <Card className={cx(lab && `border-l-[6px] ${LABEL_CLS[lab].edge}`)}>
       <button type="button" onClick={() => setMore((x) => !x)} className="block w-full text-left">
-        <p className="flex items-baseline justify-between gap-2"><b className="text-[14px]">{i.iatNo}</b><span className="text-[11px] font-semibold text-[#0850A0]">{more ? 'Less ▴' : 'Details ▾'}</span></p>
+        <p className="flex items-baseline justify-between gap-2"><span className="flex items-center gap-1.5"><b className="text-[14px]">{i.iatNo}</b>{lab && <span className={cx('rounded-md px-1.5 py-0.5 text-[11px] font-bold', LABEL_CLS[lab].chip)}>{IAT_LABELS.find(([k]) => k === lab)![1]}</span>}</span><span className="text-[11px] font-semibold text-[#0850A0]">{more ? 'Less ▴' : 'Details ▾'}</span></p>
         <p className="mt-0.5 text-[13px] font-semibold text-slate-900">📍 {where}</p>
         {service && <p className="text-[12px] text-slate-600">{service}</p>}
         <p className="mt-0.5 text-[12px] text-slate-600">{i.jobText}{i.remark ? <> · <b className="text-slate-800">{i.remark}</b></> : ''}</p>
@@ -678,7 +687,9 @@ function IatCard({ d, i, done }: { d: TrackerData; i: TrkIat; done: Done }) {
         {i.material && <p><b className="text-slate-500">Material: </b>{i.material}</p>}
         <p><b className="text-slate-500">WO: </b>{i.wo ?? '—'}{streams[0]?.sheets[0] ? <> · <b className="text-slate-500">P&amp;ID </b>{streams[0].sheets[0]}</> : null}</p>
       </div>}
-      <div className="mt-2 flex flex-wrap gap-1.5">{IAT_STATUSES.filter((x) => x !== 'Cancelled').map((x) => <button key={x} type="button" disabled={busy || x === st} onClick={async () => { setBusy(true); setErr(null); try { await setIatStatus(i.id, x, iatClosedBy(x)); done(`IAT ${i.iatNo}: ${x}.`, () => restoreIat(i.id, was)); } catch (e) { setErr(e); } finally { setBusy(false); } }}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5"><span className="text-[10.5px] font-extrabold uppercase tracking-wider text-slate-400">Ops</span>
+        {IAT_LABELS.map(([k, l]) => <button key={k} type="button" disabled={busy} onClick={() => void setLab(lab === k ? null : k)} className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', lab === k ? LABEL_CLS[k].chip + ' ring-2 ring-current' : 'bg-white text-slate-600 ring-1 ring-slate-300')}>{l}</button>)}</div>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">{IAT_STATUSES.filter((x) => x !== 'Cancelled').map((x) => <button key={x} type="button" disabled={busy || x === st} onClick={async () => { setBusy(true); setErr(null); try { await setIatStatus(i.id, x, iatClosedBy(x)); done(`IAT ${i.iatNo}: ${x}.`, () => restoreIat(i.id, was)); } catch (e) { setErr(e); } finally { setBusy(false); } }}
         className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', x === st ? IAT_CLS[x] : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{x === 'New IAT' ? 'New' : x === 'Completed' ? 'Done' : x}</button>)}</div>
       {err != null && <ErrorBox error={err} />}
     </Card>

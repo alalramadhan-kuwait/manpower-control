@@ -2,7 +2,7 @@
 // Status tiles, search, filters, one card per IAT with where its line runs (P&ID lineup) and the checks it needs; a tap
 // opens the whole IAT: status, where, finding, recommendation, inspection checks, painting IAT, work order and material.
 import { Fragment, useState } from 'react';
-import { IAT_STATUSES, iatClosedBy, kwDay, kwTime, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, streamItems, type LuEquip, type LuStream, type TrkIat, type TrkPoint } from '@/core/tracker';
+import { IAT_LABELS, IAT_STATUSES, iatClosedBy, kwDay, kwTime, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, streamItems, type LuEquip, type LuStream, type TrkIat, type TrkPoint } from '@/core/tracker';
 import { BottomSheet, ErrorBox, cx } from '@/ui/components';
 import { restoreIat, setIatStatus, setIatTicks } from '@/data/tracker';
 
@@ -25,7 +25,7 @@ export function IatsTab({ iats, tags, lineup = [], lineupEq = [], points = [], c
   const card = (i: TrkIat) => { const w = where(i); const st = iatStatus(i);
     return (
       <button key={i.id} type="button" onClick={() => setOpen(i)} className="w-full rounded-xl bg-white p-2.5 text-left ring-1 ring-slate-200 active:bg-slate-50">
-        <span className="flex items-center gap-2"><b className="text-[13.5px]">{i.iatNo}</b><span className={cx('whitespace-nowrap rounded px-1.5 py-px text-[10.5px] font-bold', CLS[st] ?? CLS['New IAT'])}>{st}</span>
+        <span className="flex items-center gap-2"><b className="text-[13.5px]">{i.iatNo}</b>{i.opsLabel && <span className={cx('whitespace-nowrap rounded px-1.5 py-px text-[10.5px] font-bold', { painting: 'bg-violet-100 text-violet-800', spool: 'bg-orange-100 text-orange-800', ready: 'bg-green-100 text-green-800', progress: 'bg-blue-100 text-blue-800' }[i.opsLabel])}>{IAT_LABELS.find(([k]) => k === i.opsLabel)?.[1]}</span>}<span className={cx('whitespace-nowrap rounded px-1.5 py-px text-[10.5px] font-bold', CLS[st] ?? CLS['New IAT'])}>{st}</span>
           {onItemTag(i) ? <span className="ml-auto text-xs font-bold text-[#0850A0]">{i.tag} ›</span> : <span className="ml-auto text-[11px] text-slate-500">line</span>}</span>
         <span className="mt-0.5 block text-[12.5px] text-slate-700">{i.jobText}</span>
         <span className="mt-0.5 block truncate text-[11px] text-slate-500">📍 {[w, i.line, i.lineClass].filter(Boolean).join(' · ') || '—'}</span>
