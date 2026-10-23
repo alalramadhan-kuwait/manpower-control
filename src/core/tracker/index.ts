@@ -153,7 +153,8 @@ export function linkedStep(c: TrkPointStep, acts: TrkActivity[], points: TrkPoin
 /** Other lists' work on the same tag (the OPR list's "FV-1426 d/s check valve servicing" on the FV-1426 d/s item, the
  *  LV-553B passing on the LV-0553B control valve): shown on the item, each keeping its own status. */
 export function relatedWork(tag: string, key: string, acts: TrkActivity[]): TrkActivity[] {
-  const m = tag.replace(/^12-/, '').match(/^([A-Z]{1,4})-0*(\d{2,4}[A-Z]?)\b/); if (!m) return [];
+  // the unit number is not the item number: V-12-201 is V-201 (12-PSV-0519 is PSV-0519)
+  const m = tag.replace(/^12-/, '').replace(/^([A-Z]{1,4})-12-/i, '$1-').match(/^([A-Z]{1,4})-0*(\d{2,4}[A-Z]?)\b/); if (!m) return [];
   const re = new RegExp(`\\b${m[1]}[- ]?(12-)?0*${m[2]}(?![0-9A-Z])`, 'i');
   return acts.filter((a) => a.key !== key && a.tracked && !a.detail && re.test(`${a.key} ${a.activity}`));
 }

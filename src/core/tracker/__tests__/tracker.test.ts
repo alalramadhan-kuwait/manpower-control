@@ -516,6 +516,9 @@ describe('the same work in two places', () => {
     const acts = [a('OPR list', 'OPlist-1014 FV-1426 Down stream check valve servicing'), a('OPR list', 'OPlist-1035 LV 553B Passing to be attended'), a('OPR list', 'OPlist-1099 FV-14260 other'), a('FV-1426', 'Drop control valve FV-1426')];
     expect(relatedWork('FV-1426 d/s', 'FV-1426 d/s', acts).map((x: { activity: string }) => x.activity)).toEqual(['OPlist-1014 FV-1426 Down stream check valve servicing', 'Drop control valve FV-1426']);
     expect(relatedWork('12-LV-0553B', '12-LV-0553B', acts).length).toBe(1);
+    // the unit number (12) is not the item: V-12-201 does not pull in V-12-202 or V-12-206
+    const vs = [a('V-12-202', 'Box-up'), a('V-12-206', 'Blind'), a('OPR list', 'OPlist-1050 V-12-201 drain valve to be serviced')];
+    expect(relatedWork('V-12-201', 'V-12-201', vs).map((x: { activity: string }) => x.activity)).toEqual(['OPlist-1050 V-12-201 drain valve to be serviced']);
   });
 });
 
