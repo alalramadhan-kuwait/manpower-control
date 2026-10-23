@@ -36,7 +36,8 @@ export function ShutdownToday({ date, people, leave, tick = 0 }: { date: string;
   return <>{plans.map((x) => <PlanCard key={x.plan.id} x={x} date={date} people={people} leave={leave} />)}</>;
 }
 
-function PlanCard({ x, date, people, leave }: { x: Loaded; date: string; people: MpPerson[]; leave: Map<string, OnLeave> }) {
+/** One shutdown's teams on the date. Without `link` (the engineer view, outside the app's pages) there is no Plan link. */
+export function PlanCard({ x, date, people, leave, link = true }: { x: Loaded; date: string; people: { id: string; name: string }[]; leave: Map<string, OnLeave>; link?: boolean }) {
   const { plan, teams, members } = x;
   const name = useMemo(() => { const m = new Map(people.map((p) => [p.id, p.name])); return (id: string) => m.get(id) ?? 'Employee'; }, [people]);
   const dates = planDates(plan);
@@ -49,7 +50,7 @@ function PlanCard({ x, date, people, leave }: { x: Loaded; date: string; people:
           <div className="truncate text-sm font-semibold text-teal-900">{plan.title}</div>
           <div className="text-[11px] text-slate-500">Day {dayNo} of {dates.length} · {shortDate(plan.start)} – {shortDate(plan.end)}</div>
         </div>
-        <Link to={`/shutdown/${plan.id}`} className="shrink-0 text-xs font-semibold text-brand-700">Plan ›</Link>
+        {link && <Link to={`/shutdown/${plan.id}`} className="shrink-0 text-xs font-semibold text-brand-700">Plan ›</Link>}
       </div>
       <div className="mt-2 space-y-2">
         {[...teams].sort((a, b) => a.sort - b.sort).map((t) => <TeamBlock key={t.id} plan={plan} team={t} members={members.filter((m) => m.teamId === t.id && m.start <= date && date <= m.end)} date={date} name={name} leave={leave} />)}

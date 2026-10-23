@@ -8,6 +8,10 @@ import { EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, 
 import { addEngStep, addEvent, addQtyEntry, confirmEmpty, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatLabel, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
 import { BottomSheet, ErrorBox, Spinner, cx } from '@/ui/components';
+import { fetchSdTeamOn } from '@/data/shutdown';
+import { OPEN_END, onLeaveOn } from '@/core/leave';
+import { lapsedLeave, type OracleStatus } from '@/core/oracle';
+import { PlanCard } from '@/features/day/ShutdownToday';
 
 type Tab = 'dash' | 'equip' | 'ho' | 'scope' | 'hot';
 type Done = (msg: string, undo?: () => Promise<unknown>) => void;
@@ -173,7 +177,25 @@ function Dashboard({ d, now, go, by, done }: P) {
       <p className="mt-1.5 text-[11px] text-slate-500">Black line = where the plan is today</p>
     </Card>
     <Issues d={d} done={done} />
+    <TeamToday now={now} />
   </>);
+}
+
+/** The shutdown team on duty this shift (the same card as the Section Head's Today page). */
+function TeamToday({ now }: { now: number }) {
+  const date = shiftOf(now).date;
+  const [r, setR] = useState<Awaited<ReturnType<typeof fetchSdTeamOn>> | null>(null);
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => { let live = true; fetchSdTeamOn(date).then((x) => live && setR(x)).catch((e) => live && setErr(e)); return () => { live = false; }; }, [date]);
+  const leave = useMemo(() => {
+    if (!r) return new Map();
+    const crewOf = new Map(r.people.map((p) => [p.id, p.crew]));
+    return onLeaveOn(date, r.leave.filter((l) => !lapsedLeave({ typeCode: l.absence_type_code, oracle: l.oracle_status as OracleStatus | null, start: l.start_date }, date))
+      .map((l) => ({ employeeId: l.employee_id, start: l.start_date, end: l.end_date ?? OPEN_END, status: l.status, inCurrentPlan: l.in_current_plan, typeLabel: l.label, typeShort: l.short_code, oracle: l.oracle_status as OracleStatus | null })), (id) => crewOf.get(id) ?? null);
+  }, [r, date]);
+  if (err) return null;
+  if (!r) return <Card><p className="text-[12px] text-slate-500">Loading the shutdown team…</p></Card>;
+  return <>{r.plans.map((x) => <PlanCard key={x.plan.id} x={x} date={date} people={r.people} leave={leave} link={false} />)}</>;
 }
 
 // ── Equipment (main) ────────────────────────────────────────────────────────────────────────────────────────────────

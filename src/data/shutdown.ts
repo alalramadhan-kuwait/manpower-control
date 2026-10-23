@@ -53,6 +53,19 @@ export async function fetchSdPlan(id: string): Promise<{ plan: SdPlan; teams: Sd
   return { plan: toPlan(p.data as PlanRow), teams: (t.data as TeamRow[]).map(toTeam), members, phases: (ph.data as PhaseRow[]).map(toPhase), signatures: (p.data as PlanRow).signatures ?? [], memo: (p.data as PlanRow).memo ?? {} };
 }
 
+/** The shutdown teams of a date for the engineer view (a link cannot read the staff tables): the plans active on the
+ *  date with their teams and members, the members' names and crews, and their counted leave around the date. */
+export async function fetchSdTeamOn(date: string): Promise<{ plans: { plan: SdPlan; teams: SdTeam[]; members: SdMember[] }[]; people: { id: string; name: string; crew: Crew | null }[];
+  leave: { employee_id: string; start_date: string; end_date: string | null; status: string; in_current_plan: boolean; oracle_status: string | null; absence_type_code: string | null; label: string | null; short_code: string | null }[] }> {
+  const { data, error } = await supabase.rpc('trk_sd_team', { p_date: date });
+  if (error) throw error;
+  const r = data as { plans: PlanRow[]; teams: TeamRow[]; members: MemberRow[]; days: { member_id: string; work_date: string; works: boolean; hours: number | null }[]; people: { id: string; name: string; crew: Crew | null }[]; leave: never[] };
+  const members = r.members.map(toMember); const by = new Map(members.map((x) => [x.id, x]));
+  for (const d of r.days) { const m = by.get(d.member_id); if (m) (m.days ??= {})[d.work_date] = { works: d.works, hours: d.hours == null ? null : Number(d.hours) }; }
+  const teams = r.teams.map(toTeam);
+  return { plans: r.plans.map(toPlan).map((plan) => ({ plan, teams: teams.filter((t) => t.planId === plan.id), members: members.filter((m) => m.planId === plan.id) })), people: r.people, leave: r.leave };
+}
+
 /** Active shutdown team members overlapping [from, to] (plans not cancelled), for the manpower engine. */
 export async function fetchSdMembers(from: string, to: string): Promise<SdMember[]> {
   const { data, error } = await supabase.from('sd_members').select('*, sd_plans!inner(status)').eq('status', 'active').eq('sd_plans.status', 'active').lte('start_date', addDaysIso(to, 14)).gte('end_date', addDaysIso(from, -14));
