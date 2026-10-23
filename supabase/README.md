@@ -215,3 +215,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261023083125_shutdown_progress_engineer_links` | Engineer links: `trk_access` (ID + hashed key, Section Head manages); `trk_access_id()` from the request headers; tracker read policies use `trk_can_read()`, `trk_can_update()` and `trk_who()` accept a link; `trk_access_me()`; reactor-empty update by tracker editors |
 | `20261023083836_shutdown_progress_engineer_links_grants` | `app_current_role()` / `app_is_section_head()` executable by anon (null / false without a login) so a link's requests pass the policies |
 | `20261023084046_shutdown_progress_stamp_guard_fix` | `trk_stamp()` setup guard per table (it failed for any non-Section-Head update) |
+| `20261023095118_shutdown_progress_compressor_turbine_steps` | C-12-201 compressor and turbine: the 360 h overhaul line split into 9 steps (pre-steps, workshop, fixing back) in the same window |
