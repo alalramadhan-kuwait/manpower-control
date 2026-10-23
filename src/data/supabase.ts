@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { trackedFetch } from './busy';
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -21,5 +22,6 @@ const link = engineerLink();
 /** The one Supabase client for the app. Project: area4-manpower-control (never a Time Keeper project). */
 export const supabase = createClient(url, key, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
-  ...(link ? { global: { headers: { 'x-trk-key': link.key, 'x-trk-id': link.id } } } : {}),
+  // every request is counted, so the app can show it is saving or loading (src/app/BusyIndicator)
+  global: { fetch: trackedFetch, ...(link ? { headers: { 'x-trk-key': link.key, 'x-trk-id': link.id } } : {}) },
 });
