@@ -9,6 +9,7 @@ import { addEngStep, addEvent, addQtyEntry, confirmEmpty, endEvent, setEventText
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
 import { BottomSheet, ErrorBox, Spinner, cx } from '@/ui/components';
 import { fetchSdTeamOn } from '@/data/shutdown';
+import { recordVisit } from '@/data/activity';
 import { OPEN_END, onLeaveOn } from '@/core/leave';
 import { lapsedLeave, type OracleStatus } from '@/core/oracle';
 import { PlanCard } from '@/features/day/ShutdownToday';
@@ -112,6 +113,7 @@ function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: 
   if (!me || !data) return <Frame title="U-12 Shutdown" sub="Loading…"><div className="p-10"><Spinner /></div></Frame>;
   const sh = shiftOf(now);
   const done: Done = (msg, undo) => { setFlash({ msg, undo }); void load(me.tracker_id); };
+  useEffect(() => { if (!preset) recordVisit(`/engineer/${tab}`); }, [tab, preset]);
   const go = (t: Tab, g?: string) => { setTab(t); if (g) setEqf(g); window.scrollTo(0, 0); };
   const props = { d: data, now, done, go, by: me.login_id };
   return (

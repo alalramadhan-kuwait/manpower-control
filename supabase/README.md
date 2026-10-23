@@ -223,3 +223,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261023104658_shutdown_progress_iat_ops_label` | `trk_iat.ops_label` (painting · spool to drop · ready for HO · ops in progress), shown in colour; logged |
 | `20261023112837_shutdown_progress_engineer_team_today` | `trk_sd_team(date)`: the shutdown team of a date (plan, teams, members, names, counted leave) for the engineer view; tracker readers only |
 | `20261023114535_shutdown_progress_log_every_edit` | Change log: item notes, steps renamed / added / off, issue text edits, shift temperatures and notes |
+| `20261023135144_user_activity` | `app_activity` (pages opened, by login or engineer link; Section Head reads), `app_visit()`, `user_activity_summary(days)` |

@@ -1,4 +1,6 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { recordVisit } from '@/data/activity';
 import { useSession } from '@/features/auth/useSession';
 import LoginPage from '@/features/auth/LoginPage';
 import DayOverviewPage from '@/features/day/DayOverviewPage';
@@ -68,6 +70,7 @@ function MainApp() {
   }
   return (
     <Shell profile={profile}>
+      <VisitRecorder />
       <div className="sm:pl-44 lg:pl-0 print:pl-0">
         <Routes>
           <Route path="/" element={<DayOverviewPage />} />
@@ -97,4 +100,12 @@ function MainApp() {
       </div>
     </Shell>
   );
+}
+
+/** Records the page each time it changes (for the Section Head's User activity). */
+function VisitRecorder() {
+  const { pathname, search } = useLocation();
+  const tab = new URLSearchParams(search).get('tab');
+  useEffect(() => { recordVisit(`${pathname}${tab ? `?tab=${tab}` : ''}`); }, [pathname, tab]);
+  return null;
 }

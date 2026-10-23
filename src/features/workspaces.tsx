@@ -9,6 +9,7 @@ import ImportCenterPage from '@/features/imports/ImportCenterPage';
 import ImportHistoryPage from '@/features/imports/ImportHistoryPage';
 import UsersPage from '@/features/users/UsersPage';
 import AuditPage from '@/features/audit/AuditPage';
+import UserActivityPage from '@/features/audit/UserActivityPage';
 import OperationPage from '@/features/operation/OperationPage';
 import ShutdownListPage from '@/features/shutdown/ShutdownListPage';
 import FoLevelsPage from '@/features/shutdown/FoLevelsPage';
@@ -60,5 +61,6 @@ export function ImportWorkspace({ profile }: { profile: UserProfile }) {
 export function AdminWorkspace({ profile }: { profile: UserProfile }) {
   return <Workspace title="Administration" tabs={[
     { key: 'users', label: 'Users & access', el: <UsersPage profile={profile} />, hidden: !head(profile) },
+    { key: 'activity', label: 'User activity', el: <UserActivityPage />, hidden: !head(profile) },
     { key: 'audit', label: 'Audit history', el: <AuditPage /> }]} />;
 }
