@@ -458,16 +458,17 @@ describe('ask for updates', () => {
   it('asks about running or due work with no update past its limit; on hold, recent or finished items are left out', () => {
     const xs = staleItems(d, Date.parse(kw('2026-10-23 07:00')));
     // V-209 46 h (> 12 h), PSVs 46/45 h (> 24 h), V-201 box-up due since 21 Oct 07:00 not started; E-207 updated 11 h ago, V-212 on hold
-    expect(xs.map((x) => [x.tag, x.question])).toEqual([['V-12-201', 'Started?'], ['V-12-209', 'Done?'], ['12-PSV-0537', 'Done?'], ['12-PSV-0601', 'Done?']]);
+    expect(xs.map((x) => [x.tag, x.status])).toEqual([['V-12-201', 'Box-up not started'], ['V-12-209', 'Hydrojet I/P'], ['12-PSV-0537', 'Remove PSV I/P'], ['12-PSV-0601', 'Remove PSV I/P']]);
     const text = askText(xs, Date.parse(kw('2026-10-23 07:00')), { name: 'U-12 TR-2 SD' });
-    expect(text).toContain('*Vessels*\n- V-201: Box-up due since');
-    expect(text).toContain('*PSVs*\n- PSV-0537/0601: Remove PSV I/P since Wed 21 Oct 09:00 (46 h no update). Done?');
+    expect(text).toContain('*Vessels*\n- V-201: Box-up not started (21 Oct 07:00):\n- V-209: Hydrojet I/P (21 Oct 08:00):');
+    expect(text).toContain('*PSVs*\n- PSV-0537/0601: Remove PSV I/P (21 Oct 09:00):');
+    expect(text).not.toContain('?');
   });
   it('a request already sent and not answered is marked as the 2nd; an update since clears it', () => {
     const now = Date.parse(kw('2026-10-23 07:00'));
     const asked = { ...d, asks: [{ key: 'V-12-209', at: kw('2026-10-22 19:00'), by: 'Section Head' }, { key: 'V-12-201', at: kw('2026-10-20 07:00'), by: 'Section Head' }] } as TrkData;
     const xs = staleItems(asked, now);
     expect(xs.map((x) => [x.tag, x.asked])).toEqual([['V-12-201', 0], ['V-12-209', 1], ['12-PSV-0537', 0], ['12-PSV-0601', 0]]);
-    expect(askText(xs, now)).toContain('- V-209: Hydrojet I/P since Wed 21 Oct 08:00 (47 h no update). Done? _(2nd request)_');
+    expect(askText(xs, now)).toContain('- V-209: Hydrojet I/P (21 Oct 08:00) · 2nd request:');
   });
 });
