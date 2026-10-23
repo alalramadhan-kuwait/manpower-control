@@ -3,7 +3,7 @@
 // reactors' issues and temperatures), Isolation (neutralization and blinds), Small jobs & IATs. Every change is
 // stamped with the ID; Undo for a few seconds after each one.
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { IAT_STATUSES, iatClosedBy, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, staleItems, withReactor,
+import { IAT_STATUSES, iatClosedBy, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, type PointStatus, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { addQtyEntry, confirmEmpty, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -64,6 +64,7 @@ function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: 
   const [data, setData] = useState<TrackerData | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const [tab, setTab] = useState<Tab>('dash');
+  const [eqf, setEqf] = useState('all');
   const [now, setNow] = useState(Date.now());
   const [flash, setFlash] = useState<{ msg: string; undo?: () => Promise<unknown> } | null>(null);
   const load = useCallback(async (trackerId: string) => { try { setData(await fetchTrackerData(trackerId)); setNow(Date.now()); setErr(null); } catch (e) { setErr(e); } }, []);
@@ -90,7 +91,8 @@ function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: 
   if (!me || !data) return <Frame title="U-12 Shutdown" sub="Loading…"><div className="p-10"><Spinner /></div></Frame>;
   const sh = shiftOf(now);
   const done: Done = (msg, undo) => { setFlash({ msg, undo }); void load(me.tracker_id); };
-  const props = { d: data, now, done };
+  const go = (t: Tab, g?: string) => { setTab(t); if (g) setEqf(g); window.scrollTo(0, 0); };
+  const props = { d: data, now, done, go };
   return (
     <Frame title={`Hi ${me.login_id}`} sub={`${kwDay(now)} · ${sh.shift === 'D' ? 'Day' : 'Night'} shift · ${data.tracker.title}`}
       right={<>{onExit && <button type="button" onClick={onExit} className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-[#0d2a5e]">Section Head view</button>}
@@ -98,7 +100,7 @@ function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: 
       <main className="mx-auto max-w-xl px-3 pt-3">
         {err != null && <div className="mb-2"><ErrorBox error={err} /></div>}
         {tab === 'dash' && <Dashboard {...props} />}
-        {tab === 'equip' && <Equipment {...props} />}
+        {tab === 'equip' && <Equipment {...props} f={eqf} setF={setEqf} />}
         {tab === 'iso' && <Isolation {...props} />}
         {tab === 'small' && <Small {...props} />}
       </main>
@@ -113,7 +115,7 @@ function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: 
   );
 }
 
-type P = { d: TrackerData; now: number; done: Done };
+type P = { d: TrackerData; now: number; done: Done; go: (t: Tab, group?: string) => void };
 const Card = ({ children, className }: { children: React.ReactNode; className?: string }) => <section className={cx('mb-2.5 rounded-2xl bg-white p-3 ring-1 ring-slate-200', className)}>{children}</section>;
 const Sec = ({ children }: { children: React.ReactNode }) => <p className="mx-1 mb-1.5 mt-3 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">{children}</p>;
 const Seg = <T extends string>({ v, set, opts }: { v: T; set: (x: T) => void; opts: [T, string][] }) => (
@@ -123,8 +125,14 @@ const Bar = ({ act, plan, tone }: { act: number; plan: number; tone: string }) =
 const tone = (act: number, plan: number) => (act >= plan ? 'bg-[#08a048]' : act >= plan - 10 ? 'bg-[#ffc000]' : 'bg-[#e02028]');
 const age = (h: number, lim = 12) => <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold', h >= lim * 1.5 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{h} h</span>;
 
+/** One group on the dashboard: name, bar, done / plan on one line, the whole row opens the group. */
+const GroupRow = ({ label, act, plan, onClick }: { label: string; act: number; plan: number; onClick: () => void }) => (
+  <button type="button" onClick={onClick} className="grid min-h-10 w-full grid-cols-[92px_1fr_68px_10px] items-center gap-2 border-t border-slate-100 text-left text-[12.5px] first-of-type:border-t-0 active:bg-slate-50">
+    <span className="truncate font-bold">{label}</span><Bar act={act} plan={plan} tone={tone(act, plan)} />
+    <span className="whitespace-nowrap text-right font-semibold tabular-nums text-slate-600">{act}% / {plan}%</span><span className="text-slate-400">›</span></button>);
+
 // ── Dashboard ───────────────────────────────────────────────────────────────────────────────────────────────────────
-function Dashboard({ d, now }: P) {
+function Dashboard({ d, now, go }: P) {
   const mi = useMemo(() => phases(d, now).mi, [d, now]);
   const w = mi.weighted;
   // done / plan by equipment group, each item weighed by its hours (as the main %)
@@ -152,9 +160,10 @@ function Dashboard({ d, now }: P) {
       <p className="mt-1.5 text-xs text-slate-600">Small jobs {w.small.physPct}% · plan {w.small.planPct}%</p>
     </Card>
     <Card>
-      <p className="mb-1 text-[11px] font-bold text-slate-500">BY GROUP · done / plan</p>
-      {groups.map((x) => <div key={x.g} className="my-2 flex items-center gap-2 text-[12.5px]"><span className="w-24 font-bold">{x.g}</span><Bar act={x.act} plan={x.plan} tone={tone(x.act, x.plan)} /><span className="w-16 text-right font-semibold text-slate-600">{x.act}% / {x.plan}%</span></div>)}
-      <p className="mt-1 text-[11px] text-slate-500">Black line = where the plan is today</p>
+      <p className="mb-1 text-[11px] font-bold text-slate-500">BY GROUP · done / plan <span className="font-normal">· tap to open</span></p>
+      {groups.map((x) => <GroupRow key={x.g} label={x.g} act={x.act} plan={x.plan} onClick={() => go('equip', x.g)} />)}
+      <GroupRow label="Small jobs" act={w.small.physPct} plan={w.small.planPct} onClick={() => go('small')} />
+      <p className="mt-1.5 text-[11px] text-slate-500">Black line = where the plan is today</p>
     </Card>
     {(d.events ?? []).filter((e) => !e.endedAt).length > 0 && <Card><p className="mb-1 text-[11px] font-bold text-slate-500">OPEN ISSUES</p>{(d.events ?? []).filter((e) => !e.endedAt).map((e) => <p key={e.id} className="text-[13px]">• {e.text} <span className="text-xs text-slate-500">since {when(e.startedAt)}</span></p>)}</Card>}
   </>);
@@ -200,25 +209,29 @@ function ItemRow({ d, e, now, ageH, mi, onOpen }: { d: TrackerData; e: TrkEquipm
     </button>
   );
 }
-function Equipment({ d, now, done }: P) {
-  const [v, setV] = useState<'todo' | 'all'>('todo');
+function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string) => void }) {
   const [open, setOpen] = useState<TrkEquipment | null>(null);
   const stale = useMemo(() => new Map(staleItems(d, now).filter((i) => !i.small).map((i) => [i.key, i.ageH])), [d, now]);
   const mi = useMemo(() => new Map((phases(d, now).mi.weighted?.items ?? []).map((i) => [i.key, i])), [d, now]);
   const main = d.equipment.filter((e) => e.tracked && !isSmallJob(e.group) && lines(d, [keyOf(e)]).length && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e));
-  const shown = v === 'todo' ? main.filter((e) => stale.has(keyOf(e))) : main;
+  const all = [...new Set(main.map((e) => e.group))];
+  const todo = main.filter((e) => stale.has(keyOf(e)));
+  const shown = f === 'todo' ? todo : f === 'all' ? main : main.filter((e) => e.group === f);
   const groups = [...new Set(shown.map((e) => e.group))];
+  const chips: [string, string][] = [['all', `All ${main.length}`], ['todo', `To update ${todo.length}`], ...all.map((g): [string, string] => [g, `${g} ${main.filter((e) => e.group === g).length}`])];
   return (<>
-    <Seg v={v} set={setV} opts={[['todo', `To update (${stale.size})`], ['all', `All (${main.length})`]]} />
-    {(v === 'all' || groups.includes('Reactors')) && <Reactors d={d} now={now} done={done} />}
+    <div className="-mx-3 mb-2.5 flex gap-1.5 overflow-x-auto px-3 pb-0.5 [scrollbar-width:none]">{chips.map(([k, l]) => <button key={k} type="button" onClick={() => setF(k)} ref={(el) => { if (el && f === k && f !== 'all') el.scrollIntoView({ inline: 'center', block: 'nearest' }); }}
+      className={cx('min-h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-[12px] font-bold', f === k ? 'bg-[#0d2a5e] text-white' : k === 'todo' && todo.length ? 'bg-amber-50 text-amber-900 ring-1 ring-amber-300' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>)}</div>
+    {f === 'todo' && <p className="mx-1 mb-2 text-[11.5px] text-slate-500">Work running (or due to start) with no update for {'>'}12 h · critical {'>'}6 h. Any step, note, status or drum entry counts as an update.</p>}
+    {(f === 'all' || f === 'Reactors') && <Reactors d={d} now={now} done={done} />}
     {groups.map((g) => <div key={g}><Sec>{g}</Sec>{shown.filter((e) => e.group === g).map((e) => <ItemRow key={e.id} d={d} e={e} now={now} ageH={stale.get(keyOf(e))} mi={mi.get(keyOf(e))} onOpen={() => setOpen(e)} />)}</div>)}
-    {!shown.length && <Card><p className="text-sm font-semibold text-green-800">✓ Everything has a recent update.</p></Card>}
+    {!shown.length && <Card><p className="text-sm font-semibold text-green-800">{f === 'todo' ? '✓ Everything has a recent update.' : 'Nothing here.'}</p></Card>}
     {open && <ItemSheet d={d} e={open} done={done} onClose={() => setOpen(null)} />}
   </>);
 }
 
 /** Reactor issues (nitrogen, temperature …) and this shift's max bed temperatures. */
-function Reactors({ d, now, done }: P) {
+function Reactors({ d, now, done }: Omit<P, 'go'>) {
   const sh = shiftOf(now);
   const saved = d.shiftLogs.find((l) => l.shiftDate === sh.date && l.shift === sh.shift);
   const [temps, setTemps] = useState<Record<string, string>>(saved?.temps ?? {});
@@ -243,6 +256,7 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
   const ls = lines(d, keys); const run = ls.filter((a) => a.actualStart && !a.actualFinish); const next = ls.find((a) => !a.actualStart);
   const [hold, setHold] = useState<string | null | undefined>(undefined);
   const [note, setNote] = useState('');
+  const [stage, setStage] = useState<number | null>(null);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const scope = (d.engine?.scopes ?? []).find((s) => keys.includes(s.key) && s.scope === 'removal' && !s.completeAt);
   const entries = scope ? (d.engine?.entries ?? []).filter((x) => x.scopeId === scope.id && x.kind !== 'transfer') : [];
@@ -255,20 +269,23 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
     return run1(() => setActivity(a.id, finish ? { actual_finish: at, ...(a.actualStart ? {} : { actual_start: at }) } : { actual_start: at }), `${short(e.tag)}: ${a.activity} ${finish ? 'finished' : 'started'}.`, () => setActivity(a.id, back));
   };
   const save = () => run1(async () => {
-    for (const t of twins) await setEquipment(t.id, { ...(hold !== undefined ? { pending_reason: hold } : {}), ...(note.trim() ? { remark: note.trim() } : {}) });
+    for (const t of twins) await setEquipment(t.id, { ...(hold !== undefined ? { pending_reason: hold } : {}), ...(note.trim() ? { remark: note.trim() } : {}), ...(stage !== null ? { stage } : {}) });
     if (scope && drums.trim() && Number(drums) !== total) {
       const sh = shiftOf(Date.now()), method = [...entries].reverse().find((x) => x.kind === 'removal')?.method ?? 'free_fall';
       const mine = entries.find((x) => x.kind === 'removal' && x.shiftDate === sh.date && x.shift === sh.shift && x.method === method);
       await addQtyEntry(scope.id, { shiftDate: sh.date, shift: sh.shift, kind: mine ? 'correction' : 'removal', method, qty: Number(drums) - total, corrects: mine?.id ?? null, remark: 'Engineer update (total)' });
     }
-  }, `${short(e.tag)} saved.`, async () => { for (const t of twins) await setEquipment(t.id, { pending_reason: t.pendingReason, remark: t.remark }); });
+  }, `${short(e.tag)} saved.`, async () => { for (const t of twins) await setEquipment(t.id, { pending_reason: t.pendingReason, remark: t.remark, stage: t.stage }); });
   return (
     <BottomSheet open onClose={onClose} title={short(e.tag)}>
       <div className="space-y-2.5">
         <p className="text-xs text-slate-600">Last: {e.pendingReason ? `On hold · ${e.pendingReason}` : e.remark?.trim() || (() => { const f = [...ls].filter((a) => a.actualFinish).sort((a, b) => Date.parse(b.actualFinish!) - Date.parse(a.actualFinish!))[0]; return f ? `${f.activity} done` : 'nothing recorded yet'; })()}{e.updatedAt ? ` · ${when(e.updatedAt)}` : ''}</p>
         {run.map((a) => <button key={a.id} type="button" disabled={busy} onClick={() => step(a, true)} className="w-full rounded-xl bg-[#ffc000] px-3 py-2 text-left text-[#3b2a00]"><span className="block text-[11px] font-bold uppercase tracking-wide opacity-80">✓ Finish</span><span className="line-clamp-2 text-[13.5px] font-semibold leading-snug">{a.activity}</span></button>)}
         {next && <button type="button" disabled={busy} onClick={() => step(next, false)} className="w-full rounded-xl bg-[#0d2a5e] px-3 py-2 text-left text-white"><span className="block text-[11px] font-bold uppercase tracking-wide opacity-80">▶ Start</span><span className="line-clamp-2 text-[13.5px] font-semibold leading-snug">{next.activity}</span></button>}
-        {!run.length && !next && <p className="rounded-xl bg-green-50 p-2 text-sm font-semibold text-green-800">✓ All steps done</p>}
+        {!ls.length ? <>{e.description && <p className="text-[13px] font-semibold">{e.description}</p>}
+          <p className="pt-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Stage</p>
+          <div className="flex flex-wrap gap-1.5">{STAGE_SHORT.map((l, i) => <button key={l} type="button" onClick={() => setStage(i)} className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', (stage ?? e.stage) === i ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{l}</button>)}</div></>
+          : !run.length && !next && <p className="rounded-xl bg-green-50 p-2 text-sm font-semibold text-green-800">✓ All steps done</p>}
         {scope && <div className="rounded-2xl bg-slate-50 p-2.5 ring-1 ring-slate-200">
           <p className="text-xs font-bold text-slate-500">TOTAL DRUMS NOW <span className="font-normal">· so far {total.toLocaleString('en-US')}</span></p>
           <div className="mt-1 flex gap-2"><input inputMode="numeric" className="input text-center text-lg font-extrabold" placeholder={String(total)} value={drums} onChange={(x) => setDrums(x.target.value.replace(/\D/g, ''))} /></div>
@@ -279,7 +296,7 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
         <div className="flex flex-wrap gap-1.5">{HOLDS.map(([l, r]) => { const on = hold === undefined ? (r === null ? !e.pendingReason : e.pendingReason === r) : hold === r;
           return <button key={l} type="button" onClick={() => setHold(r)} className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', on ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{l}</button>; })}</div>
         <input className="input text-[14px]" placeholder="Short note (optional)" value={note} onChange={(x) => setNote(x.target.value)} />
-        <button type="button" disabled={busy || (hold === undefined && !note.trim() && !drums.trim())} onClick={save} className="min-h-11 w-full rounded-xl bg-[#08a048] text-[15px] font-bold text-white disabled:opacity-50">Save</button>
+        <button type="button" disabled={busy || (hold === undefined && !note.trim() && !drums.trim() && (stage === null || stage === e.stage))} onClick={save} className="min-h-11 w-full rounded-xl bg-[#08a048] text-[15px] font-bold text-white disabled:opacity-50">Save</button>
         {err != null && <ErrorBox error={err} />}
       </div>
     </BottomSheet>
@@ -361,18 +378,19 @@ function Loop({ d, p, now, done }: { d: TrackerData; p: TrkPoint; now: number; d
 function Small({ d, now, done }: P) {
   const [v, setV] = useState<'small' | 'iat'>('small');
   const [group, setGroup] = useState<string | null>(null);
-  const items = d.equipment.filter((e) => e.tracked && isSmallJob(e.group) && lines(d, [keyOf(e)]).length);
+  // with bar-chart steps, or followed by stage only (the PMRs); the isolation items (RTJ, injection) are on Isolation
+  const items = d.equipment.filter((e) => e.tracked && isSmallJob(e.group) && (lines(d, [keyOf(e)]).length || !e.hoStep));
   const groups = [...new Set(items.map((e) => e.group))];
   const stale = useMemo(() => new Map(staleItems(d, now).filter((i) => i.small).map((i) => [i.key, i.ageH])), [d, now]);
-  const finished = (e: TrkEquipment) => lines(d, [keyOf(e)]).every((a) => a.actualFinish);
+  const finished = (e: TrkEquipment) => { const ls = lines(d, [keyOf(e)]); return ls.length ? ls.every((a) => a.actualFinish) : e.stage >= STAGE_SHORT.length - 1; };
   return (<>
     <Seg v={v} set={setV} opts={[['small', 'Small jobs'], ['iat', `IATs (${d.iats.length})`]]} />
     {v === 'iat' ? (d.iats.length ? d.iats.map((i) => <IatCard key={i.id} d={d} i={i} done={done} />) : <Card><p className="text-sm text-slate-600">No IATs on this shutdown yet.</p></Card>) : group ? <SmallGroup d={d} now={now} items={items.filter((e) => e.group === group)} stale={stale} done={done} onBack={() => setGroup(null)} />
       : groups.map((g) => { const xs = items.filter((e) => e.group === g); const n = xs.filter(finished).length; const late = xs.filter((e) => stale.has(keyOf(e))).length;
-        const sub = xs.length === 1 ? `${lines(d, [keyOf(xs[0])]).filter((a) => a.actualFinish).length}/${lines(d, [keyOf(xs[0])]).length} jobs done` : `${xs.length} items${late ? ` · ${late} need an update` : ''}`;
+        const sub = xs.length === 1 && lines(d, [keyOf(xs[0])]).length ? `${lines(d, [keyOf(xs[0])]).filter((a) => a.actualFinish).length}/${lines(d, [keyOf(xs[0])]).length} jobs done` : `${xs.length} items${late ? ` · ${late} need an update` : ''}`;
         return <button key={g} type="button" onClick={() => setGroup(g)} className="mb-2 flex w-full items-center gap-2 rounded-2xl bg-white px-3 py-3 text-left ring-1 ring-slate-200 active:bg-slate-50">
           <span className="min-w-0 flex-1"><b className="block text-[14px]">{g === 'CV shells' ? 'Control valves' : g}</b><span className="text-[12.5px] text-slate-600">{sub}</span></span>
-          <span className={cx('rounded-md px-1.5 py-0.5 text-[12px] font-bold', n === xs.length ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-900')}>{xs.length === 1 ? `${lines(d, [keyOf(xs[0])]).filter((a) => a.actualFinish).length}/${lines(d, [keyOf(xs[0])]).length}` : `${n}/${xs.length}`}</span></button>; })}
+          <span className={cx('rounded-md px-1.5 py-0.5 text-[12px] font-bold', n === xs.length ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-900')}>{xs.length === 1 && lines(d, [keyOf(xs[0])]).length ? `${lines(d, [keyOf(xs[0])]).filter((a) => a.actualFinish).length}/${lines(d, [keyOf(xs[0])]).length}` : `${n}/${xs.length}`}</span></button>; })}
   </>);
 }
 /** A small-jobs group: its items with their next step; tick several and finish the next step for all in one tap. One
@@ -387,7 +405,7 @@ function SmallGroup({ d, now, items, stale, done, onBack }: { d: TrackerData; no
     setBusy(true); setErr(null); const at = new Date().toISOString(), before = acts.map((a) => ({ id: a.id, s: a.actualStart ?? null, f: a.actualFinish ?? null }));
     try { for (const a of acts) await setActivity(a.id, { actual_finish: at, ...(a.actualStart ? {} : { actual_start: at }) }); setSel(new Set()); done(label, async () => { for (const b of before) await setActivity(b.id, { actual_start: b.s, actual_finish: b.f }); }); } catch (x) { setErr(x); } finally { setBusy(false); }
   }
-  const one = items.length === 1 ? items[0] : null;
+  const one = items.length === 1 && lines(d, [keyOf(items[0])]).length ? items[0] : null;
   if (one) {
     const ls = lines(d, [keyOf(one)]), tap = (a: TrkActivity) => { const at = new Date().toISOString(), back = { actual_start: a.actualStart ?? null, actual_finish: a.actualFinish ?? null };
       void (async () => { try { await setActivity(a.id, a.actualStart ? { actual_finish: a.actualFinish ? null : at } : { actual_start: at }); done(`${a.activity.slice(0, 40)}: ${a.actualStart ? (a.actualFinish ? 'reopened' : 'done') : 'started'}.`, () => setActivity(a.id, back)); } catch (x) { setErr(x); } })(); };
@@ -406,11 +424,11 @@ function SmallGroup({ d, now, items, stale, done, onBack }: { d: TrackerData; no
     <button type="button" onClick={onBack} className="mb-2 text-sm font-semibold text-[#0850A0]">‹ Small jobs</button>
     {items.map((e) => { const n = nextOf(e), ls = lines(d, [keyOf(e)]);
       return <div key={e.id} className="mb-2 flex items-center gap-2.5 rounded-2xl bg-white px-3 py-2 ring-1 ring-slate-200">
-        <input type="checkbox" className="h-5 w-5 shrink-0" disabled={!n} checked={sel.has(e.id)} onChange={() => tick(e.id)} />
+        {ls.length ? <input type="checkbox" className="h-5 w-5 shrink-0" disabled={!n} checked={sel.has(e.id)} onChange={() => tick(e.id)} /> : null}
         <button type="button" onClick={() => setOpen(e)} className="min-w-0 flex-1 text-left"><b className="block text-[14px]">{short(e.tag)}</b>
-          <span className="block truncate text-[12.5px] text-slate-600">{e.remark?.trim() ? `${e.remark.trim()} · ` : ''}{n ? `${n.actualStart ? '▶ ' : 'Next: '}${n.activity}` : '✓ all done'}</span>
+          <span className="block truncate text-[12.5px] text-slate-600">{e.description && !ls.length ? `${e.description} · ` : ''}{e.remark?.trim() ? `${e.remark.trim()} · ` : ''}{!ls.length ? STAGE_SHORT[e.stage] : n ? `${n.actualStart ? '▶ ' : 'Next: '}${n.activity}` : '✓ all done'}</span>
           {(() => { const t = lastUpdate(d, [keyOf(e)]); return <span className={cx('block text-[11px]', stale.has(keyOf(e)) ? 'font-bold text-amber-700' : 'text-slate-500')}>{t ? `Updated ${when(t)} · ${ago(t, now)}` : 'No update yet'}</span>; })()}</button>
-        {stale.has(keyOf(e)) ? age(stale.get(keyOf(e))!, 24) : <span className="rounded-md bg-slate-100 px-1.5 text-[11px] font-bold text-slate-600">{ls.filter((a) => a.actualFinish).length}/{ls.length}</span>}
+        {stale.has(keyOf(e)) ? age(stale.get(keyOf(e))!, 24) : <span className="rounded-md bg-slate-100 px-1.5 text-[11px] font-bold text-slate-600">{ls.length ? `${ls.filter((a) => a.actualFinish).length}/${ls.length}` : STAGE_SHORT[e.stage]}</span>}
       </div>; })}
     {picked.length > 0 && <div className="sticky bottom-20 rounded-2xl bg-white p-3 shadow-lg ring-1 ring-slate-200">
       <p className="text-sm"><b className="text-[#0d2a5e]">{picked.length} selected</b> <span className="text-slate-500">{items.filter((e) => sel.has(e.id)).map((e) => short(e.tag)).join(', ')}</span></p>
