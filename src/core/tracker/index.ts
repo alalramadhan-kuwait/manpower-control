@@ -489,6 +489,17 @@ export function tidyStep(text: string): string {
   }).join(' ');
 }
 /** An item's note still says how it is: set in the last day and not older than its latest step start / finish. */
+/** How long a step took (or has been running), in words: "45 min", "6 h", "1 d 3 h"; '' when start and finish
+ *  are under 10 minutes apart (ticked straight to done, so no real time was recorded). */
+export function spanText(start: string | null | undefined, end: string | null | undefined): string {
+  if (!start || !end) return '';
+  const m = Math.round((Date.parse(end) - Date.parse(start)) / 60000);
+  if (m < 10) return '';
+  if (m < 60) return `${m} min`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `${h} h` : `${Math.floor(h / 24)} d${h % 24 ? ` ${h % 24} h` : ''}`;
+}
+
 export function noteCurrent(e: TrkEquipment, d: TrkData, now: number): boolean {
   if (!e.remark?.trim() || !e.updatedAt) return false;
   const at = ms(e.updatedAt); if (now - at >= DAY) return false;

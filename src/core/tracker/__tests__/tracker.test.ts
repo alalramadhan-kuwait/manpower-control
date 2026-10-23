@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { logText, tidyStep, noteCurrent, relatedWork, askText, staleItems, equipBlind, linkedStep, miWeighted, neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { logText, spanText, tidyStep, noteCurrent, relatedWork, askText, staleItems, equipBlind, linkedStep, miWeighted, neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -516,5 +516,18 @@ describe('the same work in two places', () => {
     const acts = [a('OPR list', 'OPlist-1014 FV-1426 Down stream check valve servicing'), a('OPR list', 'OPlist-1035 LV 553B Passing to be attended'), a('OPR list', 'OPlist-1099 FV-14260 other'), a('FV-1426', 'Drop control valve FV-1426')];
     expect(relatedWork('FV-1426 d/s', 'FV-1426 d/s', acts).map((x: { activity: string }) => x.activity)).toEqual(['OPlist-1014 FV-1426 Down stream check valve servicing', 'Drop control valve FV-1426']);
     expect(relatedWork('12-LV-0553B', '12-LV-0553B', acts).length).toBe(1);
+  });
+});
+
+describe('spanText', () => {
+  const t = (h: number) => new Date(Date.parse('2026-10-20T10:00:00Z') + h * 36e5).toISOString();
+  it('says how long a step took', () => {
+    expect(spanText(t(0), t(0))).toBe('');
+    expect(spanText(t(0), t(0.1))).toBe('');
+    expect(spanText(t(0), t(0.5))).toBe('30 min');
+    expect(spanText(t(0), t(6))).toBe('6 h');
+    expect(spanText(t(0), t(51))).toBe('2 d 3 h');
+    expect(spanText(t(0), t(72))).toBe('3 d');
+    expect(spanText(null, t(5))).toBe('');
   });
 });
