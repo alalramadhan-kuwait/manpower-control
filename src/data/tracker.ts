@@ -46,7 +46,9 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     // the SOP field steps of each neutralization: optional as well
     supabase.from('trk_point_step').select('id,point_id,seq,phase,text,source,done_at,done_by_name,crane,kind,start_at,start_by_name,link_acts').eq('tracker_id', id).order('seq').limit(2000),
     // the shutdown's events (nitrogen, reactors): optional too
-    supabase.from('trk_event').select('id,category,text,started_at,ended_at,by_name,ended_by_name').eq('tracker_id', id).order('started_at', { ascending: false }).limit(300)]);
+    supabase.from('trk_event').select('id,category,text,started_at,ended_at,by_name,ended_by_name').eq('tracker_id', id).order('started_at', { ascending: false }).limit(300),
+    // the update requests sent (Ask for updates): optional
+    supabase.from('trk_ask').select('item_key,asked_at,by_name').eq('tracker_id', id).gte('asked_at', since).order('asked_at').limit(3000)]);
   const [t, s, e, i, a, l, sl, pt] = await Promise.all([
     supabase.from('trk_trackers').select('id,event_id,title,mode,settings,status,unit_events(start_date,end_date,unit,title)').eq('id', id).single(),
     supabase.from('trk_steps').select('*').eq('tracker_id', id).order('step_id'),
@@ -58,12 +60,13 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     supabase.from('trk_points').select('*').eq('tracker_id', id).eq('removed', false).order('sort'),
   ]);
   // the U-12 process lineup (P&ID streams): optional, the tracker works without it
-  const [[lu, le], ps, ev] = await extraP;
+  const [[lu, le], ps, ev, ak] = await extraP;
   const err = [t, s, e, i, a, l, sl, pt].find((r) => r.error)?.error; if (err) throw err;
   const engine = (t.data as unknown as TrackerRow).settings?.progressV2 ? await engineP : undefined;
   const acts = a.data as ActRow[]; const base = Math.max(0, ...acts.map((x) => x.baseline));
   return {
     engine,
+    asks: ak.error ? [] : (ak.data as { item_key: string; asked_at: string; by_name: string | null }[]).map((r) => ({ key: r.item_key, at: r.asked_at, by: r.by_name })),
     events: ev.error ? [] : (ev.data as { id: string; category: TrkEvent['category']; text: string; started_at: string; ended_at: string | null; by_name: string | null; ended_by_name: string | null }[])
       .map((r): TrkEvent => ({ id: r.id, category: r.category, text: r.text, startedAt: r.started_at, endedAt: r.ended_at, by: r.by_name, endedBy: r.ended_by_name })),
     pointSteps: ps.error ? [] : (ps.data as { id: string; point_id: string; seq: number; phase: TrkPointStep['phase']; text: string; source: string | null; done_at: string | null; done_by_name: string | null; crane: boolean | null; kind: string | null; start_at: string | null; start_by_name: string | null; link_acts: string[] | null }[])
@@ -123,6 +126,8 @@ export async function addIat(trackerId: string, v: { tag: string; iatNo: string;
 export const setIatTicks = (id: string, patch: Partial<{ ops_action: boolean; ho_required: boolean; ops_none: boolean; spool_only: boolean }>) => upd('trk_iat', id, patch);
 /** A shutdown event (nitrogen, reactors, other): recorded now, ended later (logged). */
 export async function addEvent(trackerId: string, category: string, text: string) { const { error } = await supabase.from('trk_event').insert({ tracker_id: trackerId, category, text, started_at: new Date().toISOString() }); if (error) throw error; }
+/** The items put in an update request (one row each), so the next request can say "2nd request". */
+export async function addAsks(trackerId: string, keys: string[]) { if (!keys.length) return; const { error } = await supabase.from('trk_ask').insert(keys.map((k) => ({ tracker_id: trackerId, item_key: k }))); if (error) throw error; }
 export const endEvent = (id: string, ended: boolean) => upd('trk_event', id, { ended_at: ended ? new Date().toISOString() : null });
 export const closeIat = (id: string) => upd('trk_iat', id, { status: 'closed', closed_at: new Date().toISOString(), sheet_status: 'Completed' });
 /** The IAT status as in the tracking sheet (Completed / Cancelled close it) and its remark. */
