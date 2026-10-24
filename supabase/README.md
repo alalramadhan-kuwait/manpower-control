@@ -235,3 +235,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261024054815_leave_decision_reason_and_fix` | `declined_reason`, `fix_note / fix_sent_at / fix_sent_by_name`; `leave_decline(ids, decline, reason)`, `leave_send_fix(ids, note, send)` (send to the Manpower Coordinator to fix the dates); approving clears a refusal or a note to fix |
 | `20261024060006_shutdown_progress_report_24oct` | Live tracker progress from the 24 Oct status report (the more advanced of report and tracker): R-203 dumping done and emptied, E-216A shell out, trays / bundle cleaning started on R-201, R-204, E-204, E-205, status lines, drums R-202 68 / R-205 1104 |
 | `20261024060314_shutdown_progress_v209_gas_test_ok` | Live tracker: the V-209 "last gas test failed" issue resolved (gas test OK on 24 Oct) |
+| `20261024062036_shutdown_progress_c201_shifted` | Live tracker: C-201 compressor and turbine shifted to the workshop; both overhauls running, due 4 Nov |
