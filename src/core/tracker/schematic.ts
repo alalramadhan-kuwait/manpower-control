@@ -334,8 +334,9 @@ export function schematicCheck(s: Schematic): string[] {
 
 /** The schematic as an SVG sheet (white, left-to-right, readable when fitted to a phone and zoomed) and the
  *  automatic quality check (topology + drawing: overlapping labels, clipped text). */
-export function renderSchematic(s: Schematic, generatedAt: string): { svg: string; issues: string[] } {
-  const issues = schematicCheck(s);
+export interface SchematicInfo { sections: { title: string; lines: { text: string; sub?: string }[] }[]; meta: [string, string][] }
+export function renderSchematic(s: Schematic, generatedAt: string, opts: { compact?: boolean } = {}): { svg: string; issues: string[]; info: SchematicInfo } {
+  const issues = schematicCheck(s); const compact = !!opts.compact;
   const COLW = 210, ROWH = 150;
   // columns: longest path from the starts (left = where the records start the flow); several items in one column stack
   const col = new Map<string, number>(s.nodes.map((n) => [n.key, 0]));
@@ -373,12 +374,38 @@ export function renderSchematic(s: Schematic, generatedAt: string): { svg: strin
     }
   }
   const rowsR = roles ? Math.max(1, ...[...rowOf.values()].map((r) => r + 1)) : rows;
-  byCol.forEach((ks, c) => ks.forEach((k, r) => pos.set(k, { x: X0 + c * COLW, y: TOP + (roles ? rowOf.get(k)! : r + (rows - ks.length) / 2) * ROWH })));
+  const rowIdx = (k: string, c: number) => (roles ? rowOf.get(k)! : byCol[c].indexOf(k) + (rows - byCol[c].length) / 2);
+  // compact: every column as wide as its widest item plus the gap its pipe labels need; every row as tall as its
+  // tallest item; the margins fitted to the drawing (fixed 210 × 150 grid otherwise)
+  const nodeW = (n: SNode) => n.kind === 'junction' ? (n.state === 'known' ? 120 : 118) : Math.max(2 * HW[n.kind] + 10, n.tag.length * 8.2,
+    n.state === 'closed' || n.state === 'standby' || n.state === 'open' ? (n.state === 'standby' ? 20 : 8) * 5.4 + (n.stateSource?.length ?? 0) * 5.4 : 0, (n.label?.length ?? 0) * 5.2);
+  // height down to the last text line under the symbol: tag +72, via +86, state +98, label +110
+  const nodeH = (n: SNode) => { if (n.kind === 'junction') return 70; const st = n.state === 'closed' || n.state === 'standby' || n.state === 'open';
+    return n.label ? 114 : st ? 102 : n.via.some((v) => !/inlet|feed lines/i.test(v)) ? 90 : 78; };
+  const xs: number[] = [], rowY: number[] = [];
+  let TOPc = TOP, Wc = W;
+  if (compact) {
+    const labelOf = (l: SLink) => [l.lines.slice(0, 2).join(', '), l.role === 'bypass' ? 'bypass' : '', l.conflict ? '⚠ direction conflict' : ''].filter(Boolean).join(' · ');
+    const w = byCol.map((ks) => Math.max(60, ...ks.map((k) => nodeW(s.nodes.find((n) => n.key === k)!))));
+    const gap = byCol.map((_, c) => { const out = s.links.filter((l) => col.get(l.a) === c && col.get(l.b) === c + 1);
+      const into = new Map<string, number>(); for (const l of s.links.filter((x) => col.get(x.a) === c)) into.set(l.b, (into.get(l.b) ?? 0) + 1);
+      return Math.max(56, ...out.map((l) => labelOf(l).length * 6 + 24), 40 + 16 * [...into.values()].filter((v) => v > 1).length); });
+    let x = 24; byCol.forEach((_, c) => { x += w[c] / 2; xs[c] = x; x += w[c] / 2 + gap[c]; });
+    const skipsN = s.links.filter((l) => { const a = col.get(l.a)!, b = col.get(l.b)!; return b - a > 1 && s.nodes.some((o) => col.get(o.key)! > a && col.get(o.key)! < b); }).length;
+    TOPc = 88 + head.length * 22 - 22 + (skipsN ? 30 + skipsN * 10 : 14);
+    const nRows = roles ? rowsR : rows; const rh = Array.from({ length: Math.ceil(nRows) + 1 }, (): number => (roles ? 70 : 0));
+    for (const n of s.nodes) { const c = col.get(n.key)!; const r = Math.floor(rowIdx(n.key, c)); rh[r] = Math.max(rh[r], nodeH(n) + 12); }
+    if (!roles) rh.fill(Math.max(...rh));
+    let yy = TOPc; rh.forEach((h, r) => { rowY[r] = yy; yy += h; });
+    Wc = Math.max(x - (gap[cols - 1] ?? 0) + 24, head[0].length * 10.5 + 48, 700);
+  }
+  const yOf = (rf: number) => { if (!compact) return TOP + rf * ROWH; const r = Math.floor(rf), f = rf - r; return rowY[r] + f * ((rowY[r + 1] ?? rowY[r] + 100) - rowY[r]); };
+  byCol.forEach((ks, c) => ks.forEach((k) => pos.set(k, { x: compact ? xs[c] : X0 + c * COLW, y: yOf(rowIdx(k, c)) })));
   const node = new Map(s.nodes.map((n) => [n.key, n]));
   const parts: string[] = []; const boxes: Box[] = [];
   const t = (x: number, y: number, txt: string, o = '') => `<text x="${x}" y="${y}" ${o}>${esc(txt)}</text>`;
-  const banner = SCHEMATIC_LABEL.toUpperCase();
-  parts.push(`<rect x="0" y="0" width="${W}" height="32" fill="#b91c1c"/>`, t(W / 2, 21, banner, 'text-anchor="middle" fill="#fff" font-size="13.5" font-weight="800" letter-spacing="0.4"'));
+  const banner = SCHEMATIC_LABEL.toUpperCase(); const WW = compact ? Wc : W;
+  parts.push(`<rect x="0" y="0" width="${WW}" height="32" fill="#b91c1c"/>`, t(WW / 2, 21, banner, 'text-anchor="middle" fill="#fff" font-size="13.5" font-weight="800" letter-spacing="0.4"'));
   head.forEach((h, i) => parts.push(t(24, 62 + i * 22, h, 'font-size="18" font-weight="800" fill="#0f172a"')));
   parts.push(t(24, 62 + head.length * 22, `${s.type} · Status: ${s.status} · Rev auto-${s.revision} · ${generatedAt}`, 'font-size="11" fill="#475569"'));
   parts.push(`<defs>${[...Object.entries(LINK_STYLE), ...Object.entries(ROLE_STYLE).map(([k, v]) => [`r-${k}`, v] as const)].map(([k, v]) => `<marker id="ar-${k}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${v.color}"/></marker>`).join('')}</defs>`);
@@ -386,7 +413,10 @@ export function renderSchematic(s: Schematic, generatedAt: string): { svg: strin
   const look = (l: SLink) => { const st = LINK_STYLE[l.basis]; const r = l.role ? ROLE_STYLE[l.role] : null;
     return { color: r?.color ?? st.color, width: r?.width ?? st.width, dash: st.dash, marker: r ? `r-${l.role}` : l.basis }; };
   // item boxes (symbol + tag) first, so labels can avoid them
-  for (const n of s.nodes) { const p = pos.get(n.key)!; boxes.push({ x: p.x - Math.max(HW[n.kind], n.tag.length * 4.2), y: p.y - 6, w: 2 * Math.max(HW[n.kind], n.tag.length * 4.2), h: 104 }); }
+  for (const n of s.nodes) { const p = pos.get(n.key)!;
+    if (compact) { const tw = Math.max(HW[n.kind], n.tag.length * 4.2);   // the symbol, and the text under it, as two boxes
+      boxes.push({ x: p.x - HW[n.kind] - 4, y: p.y - 6, w: 2 * HW[n.kind] + 8, h: 62 }, { x: p.x - tw, y: p.y + 58, w: 2 * tw, h: nodeH(n) - 56 }); }
+    else boxes.push({ x: p.x - Math.max(HW[n.kind], n.tag.length * 4.2), y: p.y - 6, w: 2 * Math.max(HW[n.kind], n.tag.length * 4.2), h: 104 }); }
   // ports: pipes meet a symbol at its side; a vapour outlet leaves from the top part (skill §6), drawing only
   const port = (k: string, out: boolean, side?: string | null, fromY?: number) => { const p = pos.get(k)!, n = node.get(k)!;
     if (!out && fromY !== undefined && tall.has(k)) return { x: p.x - HW[n.kind], y: fromY };   // a multi-pass heater: each pass enters on its own line
@@ -406,10 +436,12 @@ export function renderSchematic(s: Schematic, generatedAt: string): { svg: strin
     for (const [k, ls] of m) if (ls.length > 1) { const c = col.get(k)!; const i = per.get(c) ?? 0; per.set(c, i + 1); o.set(k, 16 + i * 16); } return o; };
   for (const l of fwd) gapN.set(col.get(l.a)!, (gapN.get(col.get(l.a)!) ?? 0) + 1);
   const so = offs(outN), jo = offs(inN);
+  // compact: a split header never runs through its own item's name (a long name under a small symbol)
+  if (compact) for (const [k, o] of so) { const n = node.get(k)!; so.set(k, Math.max(o, n.tag.length * 4.2 - HW[n.kind] + 10)); }
   const dots: string[] = []; const labels: string[] = []; const geo: { l: SLink; ax: number; ay: number; by: number; mx: number; mxIn: number; over: boolean; bx: number }[] = []; let skips = 0;
   const place = (txt: string, x: number, y: number, color: string, italic: boolean, tries: number[]) => {
     const w = txt.length * 6 + 8;
-    for (const dy of tries) for (const dx of [0, 14, 28, -14]) { const b = { x: x + dx - w / 2, y: y + dy - 11, w, h: 14 }; if (!boxes.some((o) => hit(o, b))) { boxes.push(b);
+    for (const dy of tries) for (const dx of [0, 14, 28, 42, 56, -14, -28]) { const b = { x: x + dx - w / 2, y: y + dy - 11, w, h: 14 }; if (!boxes.some((o) => hit(o, b))) { boxes.push(b);
       labels.push(`<rect x="${b.x}" y="${b.y}" width="${w}" height="14" fill="#fff"/>`, t(x + dx, y + dy, txt, `text-anchor="middle" font-size="10" fill="${color}"${italic ? ' font-style="italic"' : ''}`)); return; } }
     issues.push(`label "${txt}" overlaps`); labels.push(t(x, y + tries[0], txt, `text-anchor="middle" font-size="10" fill="${color}"`));
   };
@@ -462,7 +494,9 @@ export function renderSchematic(s: Schematic, generatedAt: string): { svg: strin
     const p = pos.get(n.key)!; const c = n.state === 'standby' ? '#94a3b8' : n.user && !roles ? '#6d28d9' : '#0f172a';
     if (n.kind === 'junction' && n.state === 'known') {   // a recorded point on a line (a tie-in): a plain junction with its name
       parts.push(`<circle cx="${p.x}" cy="${p.y + 26}" r="5" fill="#0f172a"/>`);
-      wrap(n.label ?? n.tag.slice(2), 22).forEach((w, i) => parts.push(t(p.x, p.y + 48 + i * 12, w, 'text-anchor="middle" font-size="10" font-weight="600" fill="#0f172a"'))); continue; }
+      const jl = wrap(n.label ?? n.tag.slice(2), 22);
+      parts.push(`<rect x="${p.x - 62}" y="${p.y + 38}" width="124" height="${jl.length * 12 + 4}" fill="#fff"/>`);   // the name sits on white, never on a pipe
+      jl.forEach((w, i) => parts.push(t(p.x, p.y + 48 + i * 12, w, 'text-anchor="middle" font-size="10" font-weight="600" fill="#0f172a"'))); continue; }
     const tl = tall.get(n.key);
     if (tl) { const zig = Array.from({ length: Math.max(2, Math.floor((tl.bot - tl.top - 20) / 14)) }, (_, i) => `${p.x + (i % 2 ? 14 : -14)},${tl.top + 10 + i * 14}`).join(' ');
       parts.push(`<rect x="${p.x - 28}" y="${tl.top}" width="56" height="${tl.bot - tl.top}" fill="#fff" stroke="${c}" stroke-width="2"/><rect x="${p.x - 7}" y="${tl.top - 10}" width="14" height="10" fill="#fff" stroke="${c}" stroke-width="2"/><polyline points="${zig}" fill="none" stroke="${c}" stroke-width="1.4"/>`,
@@ -483,7 +517,40 @@ export function renderSchematic(s: Schematic, generatedAt: string): { svg: strin
     if (n.user && !n.state && !roles) parts.push(t(p.x, p.y + 98, `added by ${n.user}`, 'text-anchor="middle" font-size="9" fill="#6d28d9"'));
   }
   parts.push(...dots, ...labels);
-  if (!s.nodes.length) parts.push(t(W / 2, TOP + 40, 'Route not available — no equipment is named in the loop record', 'text-anchor="middle" font-size="14" font-weight="700" fill="#b45309"'));
+  if (!s.nodes.length) parts.push(t(WW / 2, (compact ? TOPc : TOP) + 40, 'Route not available — no equipment is named in the loop record', 'text-anchor="middle" font-size="14" font-weight="700" fill="#b45309"'));
+  // the lists, metadata and check also go to the viewer's Details panel
+  const info: SchematicInfo = { sections: [], meta: [] };
+  const equip0 = s.nodes.filter((n) => n.kind !== 'junction').map((n) => n.tag).join(', ') || '—';
+  if (s.extra.length) info.sections.push({ title: 'Also in this loop — place on the route not recorded', lines: s.extra.map((e) => ({ text: e })) });
+  for (const k of ['before', 'blind', 'isolation', 'fill', 'vent', 'drain'] as MarkKind[]) { const ms = s.marks.filter((m) => m.kind === k);
+    if (ms.length) info.sections.push({ title: MARK_STYLE[k].title, lines: ms.map((m) => ({ text: m.text, sub: `${m.source}${m.verifiedSheet ? ` · checked on ${m.verifiedSheet}` : m.user ? ' · not checked on a P&ID' : ''}` })) }); }
+  if (s.notes.length) info.sections.push({ title: 'After / notes', lines: s.notes.map((n) => ({ text: n })) });
+  info.sections.push({ title: 'Unknown / unresolved — not in the records', lines: s.unknown.map((u) => ({ text: u })) });
+  info.meta.push(['Diagram', `${s.ref} loop schematic`], ['Type', s.type], ['Loop ID', s.ref], ['Equipment', equip0], ['Generated', generatedAt],
+    ['Diagram revision', `auto-${s.revision} (generated; changes when the data changes — not a P&ID revision)`], ['Generator', GENERATOR_VERSION], ['Sources', s.sources.join(' · ')],
+    ['Verification', `${s.status} — ${s.counts.verified} verified, ${s.counts.unverified} unverified connection${s.counts.unverified === 1 ? '' : 's'}, ${s.counts.unknown} unknown / unresolved item${s.counts.unknown === 1 ? '' : 's'}`]);
+  if (compact) {
+    // compact sheet: drawing, one line pointing to Details, a short legend, the warning — fitted to the content
+    let y = Math.max(...s.nodes.map((n) => pos.get(n.key)!.y + nodeH(n)), ...[...tall.values()].map((v) => v.bot + 40), (compact ? TOPc : TOP) + 60) + (s.links.some((l) => !fwd.includes(l)) ? 40 : 6);
+    const usedR = [...new Set(s.links.map((l) => l.role).filter(Boolean))] as Role[]; const usedB = [...new Set(s.links.map((l) => l.basis))];
+    const ents: { icon: (x: number, y: number) => string; text: string }[] = [
+      ...usedR.map((r) => ({ icon: (x: number, yy: number) => `<line x1="${x}" y1="${yy}" x2="${x + 30}" y2="${yy}" stroke="${ROLE_STYLE[r].color}" stroke-width="${ROLE_STYLE[r].width}"/>`, text: ROLE_STYLE[r].label.replace(/ \(not part of the active loop\)/, '') })),
+      ...usedB.map((b) => ({ icon: (x: number, yy: number) => `<line x1="${x}" y1="${yy}" x2="${x + 30}" y2="${yy}" stroke="${usedR.length ? '#475569' : LINK_STYLE[b].color}" stroke-width="2.2"${LINK_STYLE[b].dash ? ` stroke-dasharray="${LINK_STYLE[b].dash}"` : ''}/>`, text: LINK_STYLE[b].label })),
+      ...(s.nodes.some((n) => n.state === 'closed') ? [{ icon: (x: number, yy: number) => `<polygon points="${x + 5},${yy - 6} ${x + 5},${yy + 6} ${x + 15},${yy} ${x + 25},${yy - 6} ${x + 25},${yy + 6} ${x + 15},${yy}" fill="#0f172a"/>`, text: 'Closed per the procedure step named' }] : []),
+      ...(dots.length ? [{ icon: (x: number, yy: number) => `<circle cx="${x + 15}" cy="${yy}" r="3.6" fill="#0f172a"/>`, text: 'Junction' }] : []),
+      ...(s.nodes.some((n) => n.kind === 'junction' && n.state !== 'known') ? [{ icon: (x: number, yy: number) => `<circle cx="${x + 15}" cy="${yy}" r="6" fill="#fff" stroke="#b45309" stroke-width="2" stroke-dasharray="3 2"/>`, text: 'Not recorded' }] : [])];
+    parts.push(`<line x1="24" y1="${y}" x2="${WW - 24}" y2="${y}" stroke="#e2e8f0"/>`); y += 20;
+    let lx = 24;
+    for (const e of ents) { const w = 40 + e.text.length * 5.7 + 22; if (lx + w > WW - 24) { lx = 24; y += 18; } parts.push(e.icon(lx, y - 4), t(lx + 38, y, e.text, 'font-size="10.5" fill="#334155"')); lx += w; }
+    y += 20;
+    const det = `Details (procedure points, notes, ${s.unknown.length} unknown / unresolved, sources, revision): Details panel below the drawing.${issues.length ? `  ⚠ Layout check: ${issues.length} issue${issues.length > 1 ? 's' : ''}` : ''}`;
+    parts.push(t(24, y, det, `font-size="10.5" fill="${issues.length ? '#b91c1c' : '#64748b'}"`)); y += 14;
+    const warn = 'REFERENCE ONLY — NOT AN AUTHORIZATION FOR ISOLATION, LINE-UP, VALVE OPERATION OR CHEMICAL WORK';
+    parts.push(`<rect x="0" y="${y}" width="${WW}" height="24" fill="#b91c1c"/>`, t(WW / 2, y + 16, warn, 'text-anchor="middle" fill="#fff" font-size="10" font-weight="800"'));
+    const H = y + 24;
+    info.meta.push(['Automatic check', issues.length ? issues.join('; ') : 'passed (connections, junctions, labels)']);
+    return { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${WW} ${H}" width="${WW}" height="${H}" font-family="Inter, Arial, sans-serif"><rect width="${WW}" height="${H}" fill="#fff"/>${parts.join('')}</svg>`, issues, info };
+  }
   // lists below the drawing
   let y = TOP + (roles ? rowsR : rows) * ROWH + (s.links.some((l) => !fwd.includes(l)) ? 40 : 0) + Math.max(0, ...[...tall.values()].map((v) => v.bot + 50 - TOP - (roles ? rowsR : rows) * ROWH));
   const block = (title: string, color: string, lines: { icon?: string; text: string; sub?: string }[]) => {
@@ -527,7 +594,7 @@ export function renderSchematic(s: Schematic, generatedAt: string): { svg: strin
   parts.push(`<rect x="0" y="${y}" width="${W}" height="26" fill="#b91c1c"/>`, t(W / 2, y + 17, 'REFERENCE ONLY — NOT AN AUTHORIZATION FOR ISOLATION, BLINDING, VALVE OPERATION, NEUTRALIZATION, ENTRY, STARTUP OR HANDOVER', 'text-anchor="middle" fill="#fff" font-size="10" font-weight="800"'));
   const H = y + 26;
   parts[qcAt] = t(24, y - 13, 'Automatic check', 'font-size="10.5" font-weight="700" fill="#334155"') + t(150, y - 13, qc().slice(0, Math.floor(CH - 30)), `font-size="10.5" fill="${issues.length ? '#b91c1c' : '#15803d'}"`);
-  return { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="Inter, Arial, sans-serif"><rect width="${W}" height="${H}" fill="#fff"/>${parts.join('')}</svg>`, issues };
+  return { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="Inter, Arial, sans-serif"><rect width="${W}" height="${H}" fill="#fff"/>${parts.join('')}</svg>`, issues, info };
 }
 export const schematicSvg = (s: Schematic, generatedAt: string) => renderSchematic(s, generatedAt).svg;
 /** the list icon, placed at the left of the current line (the y is filled in per line) */

@@ -1,7 +1,7 @@
 // Loop diagram in the loop sheet: the verified drawing excerpt(s) attached to the loop, a full-screen viewer with
 // pinch / drag / double-tap zoom, revisions kept, and attach / withdraw for the Section Head, Coordinators and
 // Engineers. The app never draws a connection itself: no verified drawing → "Drawing not available".
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { DRAWING_SOURCES, DRAWING_TYPES, REFERENCE_NOTE, drawingLabel, drawingProblem, isPdf, loopDrawings, type TrkDrawing } from '@/core/tracker/drawings';
 import { SCHEMATIC_LABEL } from '@/core/tracker/schematic';
@@ -94,10 +94,11 @@ function AttachForm({ trackerId, loop, prev, onCancel, onDone }: { trackerId: st
 
 /** Full screen, outside the sheet (its drag-to-close must not take the pinch). Images: pinch, drag, double-tap, ± and
  *  Fit. PDFs: shown in the browser's own viewer, with Open for a separate tab. */
-export function DrawingViewer({ d, title, canWithdraw, onClose, onWithdrawn, svg, onRegenerate }: { d: TrkDrawing; title: string; canWithdraw: boolean; onClose: () => void; onWithdrawn: () => void;
-  /** an auto-generated schematic: shown from this SVG instead of a stored file */ svg?: string; onRegenerate?: () => void }) {
+export function DrawingViewer({ d, title, canWithdraw, onClose, onWithdrawn, svg, onRegenerate, details }: { d: TrkDrawing; title: string; canWithdraw: boolean; onClose: () => void; onWithdrawn: () => void;
+  /** an auto-generated schematic: shown from this SVG instead of a stored file */ svg?: string; onRegenerate?: () => void;
+  /** information kept off the drawing (procedure points, unknowns, sources, revision), opened on request */ details?: ReactNode }) {
   const [url, setUrl] = useState<string | null>(null); const [err, setErr] = useState<unknown>(null);
-  const [t, setT] = useState({ s: 1, x: 0, y: 0 }); const [why, setWhy] = useState<string | null>(null); const [busy, setBusy] = useState(false);
+  const [t, setT] = useState({ s: 1, x: 0, y: 0 }); const [info, setInfo] = useState(false); const [why, setWhy] = useState<string | null>(null); const [busy, setBusy] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const pts = useRef(new Map<number, { x: number; y: number }>()); const g = useRef<{ d: number; s: number; cx: number; cy: number; x: number; y: number } | null>(null); const tap = useRef<{ x: number; y: number; at: number } | null>(null); const press = useRef<{ x: number; y: number; at: number } | null>(null);
   useEffect(() => { let u: string | null = null;
@@ -162,10 +163,12 @@ export function DrawingViewer({ d, title, canWithdraw, onClose, onWithdrawn, svg
       <div className="space-y-1 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 text-[11px] text-white/80">
         <p>{svg !== undefined ? 'Rebuilt each time it is opened from the loop record, procedure, blind list and P&ID line-up.' : `Linked: ${[title, ...d.items].join(', ')}${d.note ? ` · ${d.note}` : ''}`}</p>
         <div className="flex items-center gap-3">
+          {details && <button type="button" onClick={() => setInfo((x) => !x)} className="font-bold text-sky-300">{info ? '▾' : '▸'} Details</button>}
           {onRegenerate && <button type="button" onClick={onRegenerate} className="font-bold text-sky-300">↻ Rebuild from the latest data</button>}
           {url && isPdf(d) && <a href={url} target="_blank" rel="noreferrer" className="font-bold text-sky-300">Open PDF in a new tab</a>}
           {canWithdraw && why === null && <button type="button" onClick={() => setWhy('')} className="font-semibold text-white/70">Withdraw this drawing…</button>}
         </div>
+        {details && info && <div className="max-h-[40vh] overflow-y-auto rounded-lg bg-white/10 p-2 text-[12px] text-white/90">{details}</div>}
         {why !== null && <div className="flex gap-1.5"><input autoFocus className="input min-h-10 flex-1 text-[13px] text-slate-900" placeholder="Why (wrong sheet, not approved…)" value={why} onChange={(e) => setWhy(e.target.value)} />
           <button type="button" disabled={busy || !why.trim()} onClick={withdraw} className="min-h-10 rounded-lg bg-red-600 px-3 text-[13px] font-bold disabled:opacity-50">Withdraw</button>
           <button type="button" onClick={() => setWhy(null)} className="min-h-10 rounded-lg bg-white/15 px-3 text-[13px] font-bold">Cancel</button></div>}

@@ -1,7 +1,7 @@
 // The auto-generated loop schematic: built from the records when opened (src/core/tracker/schematic), shown in the
 // drawing viewer, corrected by the Section Head, Coordinators and Engineers with recorded edits (trk_loop_fix).
-import { useEffect, useMemo, useState } from 'react';
-import { buildSchematic, LINK_STYLE, schematicSvg, type LoopFix, type LoopItem, type MarkKind, type Schematic } from '@/core/tracker/schematic';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { buildSchematic, LINK_STYLE, renderSchematic, type LoopFix, type LoopItem, type MarkKind, type Schematic, type SchematicInfo } from '@/core/tracker/schematic';
 import type { LuStream, TrkPoint, TrkPointStep } from '@/core/tracker';
 import type { TrkDrawing } from '@/core/tracker/drawings';
 import { addLoopFix, fetchLoopFixes, fetchLoopItems, withdrawLoopFix } from '@/data/drawings';
@@ -26,8 +26,20 @@ const asDrawing = (loop: Loop, at: number): TrkDrawing => ({ id: `auto-${loop.id
 
 function Viewer({ loop, data, fixes, items, reload, onClose }: { loop: Loop; data: SchematicData; fixes: LoopFix[]; items: LoopItem[]; reload: () => void; onClose: () => void }) {
   const [at, setAt] = useState(() => Date.now());
-  const svg = useMemo(() => schematicSvg(buildSchematic(loop, { ...data, fixes, items }), when(at)), [loop, data, fixes, items, at]);
-  return <DrawingViewer d={asDrawing(loop, at)} title={loop.ref} svg={svg} canWithdraw={false} onClose={onClose} onWithdrawn={onClose} onRegenerate={() => { reload(); setAt(Date.now()); }} />;
+  const r = useMemo(() => renderSchematic(buildSchematic(loop, { ...data, fixes, items }), when(at), { compact: COMPACT.has(loop.ref) }), [loop, data, fixes, items, at]);
+  return <DrawingViewer d={asDrawing(loop, at)} title={loop.ref} svg={r.svg} details={<Details info={r.info} />} canWithdraw={false} onClose={onClose} onWithdrawn={onClose} onRegenerate={() => { reload(); setAt(Date.now()); }} />;
+}
+
+/** loops drawn with the compact layout (trial on FT-681 before it applies to all) */
+const COMPACT = new Set(['FT-681']);
+
+/** what the compact sheet keeps off the drawing: procedure points, notes, unknowns, sources and revision */
+function Details({ info }: { info: SchematicInfo }) {
+  return <div className="space-y-2">
+    {info.sections.map((sec) => <section key={sec.title}><h4 className="font-bold text-amber-200">{sec.title}</h4>
+      <ul className="mt-0.5 space-y-0.5">{sec.lines.map((l, i) => <li key={i}>{l.text}{l.sub && <span className="block text-[11px] text-white/60">{l.sub}</span>}</li>)}</ul></section>)}
+    <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 border-t border-white/20 pt-1.5">{info.meta.map(([k, v]) => <Fragment key={k}><dt className="font-semibold text-white/70">{k}</dt><dd>{v}</dd></Fragment>)}</dl>
+  </div>;
 }
 
 /** The field card's entry when no verified drawing is attached. */
