@@ -109,3 +109,12 @@ functionality (plans and untested code count as 0), plus an overall estimate.
 - No personal names in code, migrations or commits.
 - Replies short; Arabic when the user writes Arabic. Mock-ups before building a new screen or visible layout change.
 - Commits end with the session's co-author and session trailers. Push to the working branch and `main`.
+
+## Development board
+
+All development tasks live on the Development Board artifact (https://claude.ai/artifact/9XpC5tuUjDMNWPBNSFNh8v;
+data in its `tasks` and `history` collections, written with the ArtifactData tool). It is not part of the app.
+- A newly requested feature is added to the board **before** implementation starts.
+- After finishing any task: update its row (status, progress, next action) and add a `history` entry; record the
+  user's decisions there too; then update `docs/APP_KNOWLEDGE.md`.
+- No duplicate rows: update the existing task instead of adding a new one.

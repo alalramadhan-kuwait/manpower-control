@@ -288,4 +288,5 @@ Estimate ~88 % (verified functionality). Recommendation: **ready for operational
 | 24 Oct 2026 | No approval for earlier times: Engineers / links correct any past time with a reason and full history |
 | 24 Oct 2026 | Manpower assignment = manpower and leave work only; administrative data by role (Head, Engineer, Coordinator) |
 | 24 Oct 2026 | C-201-ST: blinded, handover not recorded — flagged for operational verification only, not changed |
+| 24 Oct 2026 | Development tasks tracked on the Development Board artifact (outside the app), updated after every task; schematic development paused after S318 |
 | 24 Oct 2026 | Offline: indicator and saving off only, no queue; P6 forecast stays unverified until real relationships; R-205 / reactor setup kept for this shutdown |

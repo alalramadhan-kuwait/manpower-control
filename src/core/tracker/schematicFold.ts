@@ -7,7 +7,7 @@
 //   · labels are placed after all pipes, never on a pipe, a symbol or another label
 import { checkRules, DRAWING_RULES } from './drawingRules';
 import { serpentine } from './schematicSerpentine';
-import { esc, HW, LINK_STYLE, ROLE_STYLE, SCHEMATIC_LABEL, schematicCheck, schematicInfo, symbol, wrap, type Role, type Schematic, type SchematicInfo, type SLink, type SNode } from './schematic';
+import { esc, HW, LINK_STYLE, MARK_STYLE, ROLE_STYLE, SCHEMATIC_LABEL, schematicCheck, schematicInfo, symbol, wrap, type Role, type Schematic, type SchematicInfo, type SLink, type SNode } from './schematic';
 
 export type Pt = { x: number; y: number };
 export type Box = { x: number; y: number; w: number; h: number };
@@ -27,12 +27,13 @@ export function columns(s: Schematic) {
   return col;
 }
 
-interface Laid { parts: string[]; W: number; H: number; issues: string[]; crossings: number; conts: number; dots: number; marksDrawn: number; pipe: number; notes: string[]; name: string; hops: number }
+interface Laid { parts: string[]; W: number; H: number; issues: string[]; crossings: number; conts: number; dots: number; marksDrawn: number; pipe: number; notes: string[]; name: string; hops: number; protDrawn: number }
 
 /** Positions and pipe routes of one arrangement (before drawing). */
 export interface Geo { pos: Map<string, Pt>; paths: { l: SLink; pts: Pt[]; arrow: boolean }[]; tall: Map<string, { top: number; bot: number }>; contParts: string[]; contBoxes: Box[];
   joinsBelow: Set<string>; issues: string[]; W: number; H: number; bandLines: number[]; conts: number; notes?: string[]; name?: string;
-  /** items a block draws itself (a fired heater, plain junction dots) */ bare?: Set<string>; /** crossings a block cannot avoid, drawn with a break in the lesser line */ hops?: Pt[] }
+  /** items a block draws itself (a fired heater, plain junction dots) */ bare?: Set<string>; /** crossings a block cannot avoid, drawn with a break in the lesser line */ hops?: Pt[];
+  /** where marks attach to an item a block draws itself (below the fired heater's name) */ anchors?: Map<string, Pt> }
 const look = (l: SLink) => { const st = LINK_STYLE[l.basis]; const r = l.role ? ROLE_STYLE[l.role] : null;
   return { color: r?.color ?? st.color, width: r?.width ?? st.width, dash: st.dash, marker: r ? `r-${l.role}` : l.basis }; };
 function layout(s: Schematic, col0: Map<string, number>, cuts: number[], top: number, flip: boolean, turns = false): Laid { return finish(s, geometry(s, col0, cuts, top, flip, turns)); }
@@ -208,6 +209,17 @@ export function finish(s: Schematic, g: Geo): Laid {
   const markParts: string[] = []; let marksDrawn = 0;
   for (const m of s.marks.filter((x) => x.on && (x.kind === 'drain' || x.kind === 'vent' || x.kind === 'fill'))) {
     let at: Pt | null = null;
+    // R18: the item is known but not its nozzle or line — an outline marker with a dashed leader to the item(s), marked unverified
+    if (m.on!.at === 'near') { const ps = [m.on!.a, m.on!.b].filter(Boolean).map((k) => pos.get(k!)).filter(Boolean) as Pt[]; if (!ps.length) { issues.push(`${m.kind} point "${m.text}" could not be placed on its line`); continue; }
+      const c = '#b45309', y0 = Math.min(...ps.map((p) => p.y)) - 4, x0 = Math.min(...ps.map((p) => p.x)), x1 = Math.max(...ps.map((p) => p.x)), xm = (x0 + x1) / 2, sg = m.kind === 'drain' ? 1 : -1;
+      const yb = m.kind === 'drain' ? Math.max(...ps.map((p) => p.y)) + 60 : y0, ym = yb + sg * 18;
+      markParts.push(...ps.map((p) => `<line x1="${p.x}" y1="${m.kind === 'drain' ? p.y + 50 : p.y + 4}" x2="${p.x}" y2="${yb}" stroke="${c}" stroke-width="1.2" stroke-dasharray="3 3"/>`),
+        ps.length > 1 ? `<line x1="${x0}" y1="${yb}" x2="${x1}" y2="${yb}" stroke="${c}" stroke-width="1.2" stroke-dasharray="3 3"/>` : '',
+        `<line x1="${xm}" y1="${yb}" x2="${xm}" y2="${ym}" stroke="${c}" stroke-width="1.2" stroke-dasharray="3 3"/>`,
+        `<polygon points="${xm - 5},${ym} ${xm + 5},${ym} ${xm},${ym + sg * 6} ${xm - 5},${ym + sg * 12} ${xm + 5},${ym + sg * 12} ${xm},${ym + sg * 6}" fill="#fff" stroke="${c}" stroke-width="1.4" stroke-dasharray="2 1.5"/>`);
+      boxes.push({ x: x0 - 4, y: Math.min(yb, ym + sg * 12) - 2, w: x1 - x0 + 8, h: Math.abs(ym + sg * 12 - yb) + 4 }); marksDrawn++;
+      const tag = m.text.split(/[ ,(]/)[0]; const side = /tube ?side/i.test(m.text) ? 'tube side' : /shell ?side/i.test(m.text) ? 'shell side' : '';
+      labelsLater.push(() => place(`${m.kind === 'drain' ? 'D' : m.kind === 'vent' ? 'V' : 'F'}: ${tag}${side ? ` · ${side}` : ''} · connection UNVERIFIED`, xm, ym + sg * 24 + (sg > 0 ? 4 : 0), c)); continue; }
     if (m.on!.at === 'node') { const p = pos.get(m.on!.a); const n = node.get(m.on!.a); if (p && n) { const tw = (n.tag.length * 8.4) / 2;
       at = { x: p.x + Math.max(10, HW[n.kind] - 6), y: m.kind === 'drain' ? p.y + 52 : p.y + 2 };
       // a drain under an item with a long name: taken out to the side so it does not run through the name (R10)
@@ -234,6 +246,27 @@ export function finish(s: Schematic, g: Geo): Laid {
     if (l.bSide && /^pass/.test(l.bSide)) small(l.bSide.replace(/ inlet$/, ''), p.pts[0].x + 4, p.pts[0].y - 6, 'start');
     else if (l.aSide && outCount(l.a) < 2) small(l.aSide, p.pts[0].x + 4, p.pts[0].y + 14, 'start'); }
   for (const f of labelsLater) f();
+  // R20: protection — trip instruments (bubble with its tag) and interlocks (diamond with its number) on the item they act
+  // on, joined to it by a dashed signal leader; placed in free space after everything else, never left out
+  let protDrawn = 0;
+  for (const m of s.marks.filter((x) => x.kind === 'protection' && x.on)) {
+    const n = node.get(m.on!.a); const p = g.anchors?.get(m.on!.a) ?? (pos.get(m.on!.a) ? { x: pos.get(m.on!.a)!.x, y: pos.get(m.on!.a)!.y + 26 } : null);
+    if (!n || !p) { issues.push(`protection "${m.text}" could not be placed on its item`); continue; }
+    const tag = m.text.match(/^([A-Z]{1,5}-\d{2,4}[A-Z]?)\b/)?.[1]; const w = (tag ? 40 : 0) + (m.group ? 30 : 0), h = 36;
+    const c = MARK_STYLE.protection.color, dash = m.verifiedSheet ? '' : ' stroke-dasharray="3 2"';
+    const start = g.anchors?.has(m.on!.a) ? 0 : 24; let done = false;
+    for (const r of [64, 88, 116, 150, 190]) { for (const a of [-90, -50, -130, 0, 180, -20, -160, 40, 140, 90]) {
+      const cx = p.x + r * Math.cos((a * Math.PI) / 180), cy = p.y + r * Math.sin((a * Math.PI) / 180);
+      const b = { x: cx - (tag ? 20 : 16), y: cy - h / 2, w: tag ? w : 32, h };
+      if (boxes.some((o) => hit(o, b)) || pipeBoxes.some((o) => hit(o, b))) continue;
+      boxes.push(b); done = true; protDrawn++;
+      const L = Math.hypot(cx - p.x, cy - p.y), ux = (cx - p.x) / L, uy = (cy - p.y) / L;
+      markParts.push(`<line x1="${p.x + ux * start}" y1="${p.y + uy * start}" x2="${cx - ux * 18}" y2="${cy - uy * 18}" stroke="${c}" stroke-width="1.2" stroke-dasharray="5 3"/>`);
+      if (tag) { const [t1, t2] = tag.split('-'); markParts.push(`<circle cx="${cx}" cy="${cy}" r="17" fill="#fff" stroke="${c}" stroke-width="1.6"${dash}/><line x1="${cx - 17}" y1="${cy}" x2="${cx + 17}" y2="${cy}" stroke="${c}" stroke-width="0.8"/>`,
+        t(cx, cy - 4, t1, `text-anchor="middle" font-size="${t1.length > 3 ? 8 : 9}" font-weight="800" fill="${c}"`), t(cx, cy + 11, t2, `text-anchor="middle" font-size="9" font-weight="700" fill="${c}"`)); }
+      if (m.group) { const dx = cx + (tag ? 34 : 0); markParts.push(`<polygon points="${dx},${cy - 12} ${dx + 14},${cy} ${dx},${cy + 12} ${dx - 14},${cy}" fill="#fff" stroke="${c}" stroke-width="1.6"/>`, t(dx, cy + 3.5, m.group, `text-anchor="middle" font-size="8.5" font-weight="800" fill="${c}"`)); }
+      break; } if (done) break; }
+    if (!done) issues.push(`label "${tag ?? m.group}" (protection) has no free place`); }
   // draw
   const parts: string[] = [];
   const sorted = [...paths].sort((u, v) => Number(u.l.role === 'active') - Number(v.l.role === 'active'));
@@ -266,7 +299,7 @@ export function finish(s: Schematic, g: Geo): Laid {
   parts.push(...dots.map((d) => `<circle cx="${d.x}" cy="${d.y}" r="3.6" fill="#0f172a"/>`), ...labels);
   for (const yl of g.bandLines) parts.push(`<line x1="24" y1="${yl}" x2="${W - 24}" y2="${yl}" stroke="#e2e8f0" stroke-dasharray="4 4"/>`);
   const pipe = segs.reduce((t2, g) => t2 + Math.abs(g.a.x - g.b.x) + Math.abs(g.a.y - g.b.y), 0);   // total pipe length (R11: short pipes)
-  return { parts, W, H: H0, issues, crossings, conts: g.conts, dots: dots.length, marksDrawn, pipe, hops: hops.length, notes: g.notes ?? [], name: g.name ?? (g.conts ? `folded, ${g.conts} continuation${g.conts > 1 ? "s" : ""}` : g.bandLines.length ? `${g.bandLines.length + 1} bands, continuous turns` : "one band") };
+  return { parts, W, H: H0, issues, crossings, conts: g.conts, dots: dots.length, marksDrawn, pipe, hops: hops.length, protDrawn, notes: g.notes ?? [], name: g.name ?? (g.conts ? `folded, ${g.conts} continuation${g.conts > 1 ? "s" : ""}` : g.bandLines.length ? `${g.bandLines.length + 1} bands, continuous turns` : "one band") };
 }
 
 /** Try the arrangements, keep the most compact clean one, and draw the sheet around it. */
@@ -308,6 +341,7 @@ export function renderFolded(s: Schematic, generatedAt: string): { svg: string; 
     ...usedB.map((b) => ({ icon: (x: number, yy: number) => `<line x1="${x}" y1="${yy}" x2="${x + 30}" y2="${yy}" stroke="#475569" stroke-width="2.2"${LINK_STYLE[b].dash ? ` stroke-dasharray="${LINK_STYLE[b].dash}"` : ''}/>`, text: LINK_STYLE[b].label })),
     ...(s.nodes.some((x) => x.state === 'closed') ? [{ icon: (x: number, yy: number) => `<polygon points="${x + 5},${yy - 6} ${x + 5},${yy + 6} ${x + 15},${yy} ${x + 25},${yy - 6} ${x + 25},${yy + 6} ${x + 15},${yy}" fill="#0f172a"/>`, text: 'Closed per the procedure step named' }] : []),
     ...(r.dots ? [{ icon: (x: number, yy: number) => `<circle cx="${x + 15}" cy="${yy}" r="3.6" fill="#0f172a"/>`, text: 'Junction' }] : []),
+    ...(s.marks.some((m) => m.kind === 'protection') ? [{ icon: (x: number, yy: number) => `<line x1="${x}" y1="${yy}" x2="${x + 30}" y2="${yy}" stroke="${MARK_STYLE.protection.color}" stroke-width="1.2" stroke-dasharray="5 3"/><polygon points="${x + 15},${yy - 7} ${x + 23},${yy} ${x + 15},${yy + 7} ${x + 7},${yy}" fill="#fff" stroke="${MARK_STYLE.protection.color}" stroke-width="1.4"/>`, text: 'Trip instrument (bubble) / interlock (diamond) and signal' }] : []),
     ...(r.hops ? [{ icon: (x: number, yy: number) => `<line x1="${x + 15}" y1="${yy - 8}" x2="${x + 15}" y2="${yy - 3}" stroke="#0e7490" stroke-width="2"/><line x1="${x + 15}" y1="${yy + 3}" x2="${x + 15}" y2="${yy + 8}" stroke="#0e7490" stroke-width="2"/><line x1="${x}" y1="${yy}" x2="${x + 30}" y2="${yy}" stroke="#0f172a" stroke-width="3"/>`, text: 'Crossing — not connected' }] : []),
     ...(r.conts ? [{ icon: (x: number, yy: number) => `<polygon points="${x + 3},${yy - 7} ${x + 15},${yy - 7} ${x + 23},${yy} ${x + 15},${yy + 7} ${x + 3},${yy + 7}" fill="#fff" stroke="#0f172a" stroke-width="1.4"/>`, text: 'Continues at the same letter' }] : []),
     ...(s.nodes.some((x) => x.kind === 'junction' && x.state !== 'known') ? [{ icon: (x: number, yy: number) => `<circle cx="${x + 15}" cy="${yy}" r="6" fill="#fff" stroke="#b45309" stroke-width="2" stroke-dasharray="3 2"/>`, text: 'Not recorded' }] : [])];
@@ -317,6 +351,11 @@ export function renderFolded(s: Schematic, generatedAt: string): { svg: string; 
   const fvd = (k: 'fill' | 'vent' | 'drain', name: string) => { const all = s.marks.filter((m) => m.kind === k); const on = all.filter((m) => m.on).length;
     return all.length ? `${name}: ${on} drawn${all.length > on ? `, ${all.length - on} location not recorded` : ''}` : `${name}: not recorded`; };
   parts.push(t(24, y, `${fvd('fill', 'Fill points')} · ${fvd('vent', 'Vents')} · ${fvd('drain', 'Drains')} (D / V / F markers on the drawing; unknown locations in Details)`, 'font-size="10.5" font-weight="700" fill="#334155"')); y += 16;
+  // protection: each interlock as cause → effect, from the records (R20)
+  const pg = [...new Set(s.marks.filter((m) => m.kind === 'protection' && m.group).map((m) => m.group!))];
+  if (pg.length) { parts.push(t(24, y, 'Protection (cause → effect, from the P&ID records; dashed bubbles = tag not on a verified sheet, UNVERIFIED):', `font-size="10.5" font-weight="700" fill="${MARK_STYLE.protection.color}"`)); y += 15;
+    for (const gname of pg) for (const [i, ln] of wrap(`${gname}  ${s.marks.filter((m) => m.kind === 'protection' && m.group === gname).map((m) => m.text).join('  →  ')}`, Math.floor((W - 60) / 5.6)).entries()) {
+      parts.push(t(i ? 52 : 24, y, ln, `font-size="10" fill="#334155"${i ? '' : ' font-weight="600"'}`)); y += 13; } y += 4; }
   parts.push(t(24, y, `Details panel: procedure points, notes, ${s.unknown.length} unknown / unresolved items, sources, revision.${issues.length ? `  ⚠ Layout check: ${issues.length} issue${issues.length > 1 ? 's' : ''}` : ''}`, `font-size="10.5" fill="${issues.length ? '#b91c1c' : '#64748b'}"`)); y += 14;
   parts.push(`<rect x="0" y="${y}" width="${W}" height="24" fill="#b91c1c"/>`, t(W / 2, y + 16, 'REFERENCE ONLY — NOT AN AUTHORIZATION FOR ISOLATION, LINE-UP, VALVE OPERATION OR CHEMICAL WORK', 'text-anchor="middle" fill="#fff" font-size="10" font-weight="800"'));
   const H = y + 24;

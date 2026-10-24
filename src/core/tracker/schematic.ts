@@ -10,8 +10,8 @@ import { renderFolded } from './schematicFold';
 
 export type NodeKind = 'vessel' | 'reactor' | 'exchanger' | 'heater' | 'pump' | 'compressor' | 'column' | 'filter' | 'valve' | 'instrument' | 'pass' | 'junction' | 'item';
 export type Basis = 'verified' | 'unchecked' | 'record' | 'user' | 'user_verified';
-export type MarkKind = 'fill' | 'drain' | 'vent' | 'isolation' | 'blind' | 'before';
-export type Role = 'active' | 'bypass' | 'standby' | 'injection';
+export type MarkKind = 'fill' | 'drain' | 'vent' | 'isolation' | 'blind' | 'before' | 'protection';
+export type Role = 'active' | 'bypass' | 'standby' | 'injection' | 'purge';
 export type ItemState = 'active' | 'standby' | 'closed' | 'open' | 'known' | 'unresolved';
 export interface SNode { key: string; tag: string; kind: NodeKind; via: string[]; user?: string;
   /** set by a correction (trk_loop_node): a label, a state from a named source (valve closed per SOP step 2…) */ label?: string; state?: ItemState; stateSource?: string;
@@ -24,7 +24,9 @@ export interface SLink { key: string; a: string; b: string; basis: Basis; lines:
   /** the line-up's service when it says more than the route (e.g. a bypass) */ service?: string;
   /** set by a correction: active route, bypass, standby (isolated) branch, injection */ role?: Role }
 export interface SMark { key: string; kind: MarkKind; text: string; source: string; user?: string; verifiedSheet?: string;
-  /** where the record puts it: on the pipe a → b (at its start, middle or end) or on an item */ on?: { a: string; b?: string; at: 'start' | 'mid' | 'end' | 'node' } }
+  /** protection: the interlock it belongs to (I-1 …), shared by its cause and its effects */ group?: string;
+  /** where the record puts it: on the pipe a → b (at its start, middle or end), on an item, or 'near': on the item(s) a (/ b)
+   *  but its nozzle or line is not recorded (drawn with a dashed, unverified leader — R18) */ on?: { a: string; b?: string; at: 'start' | 'mid' | 'end' | 'node' | 'near' } }
 export type Verification = 'Verified' | 'Unverified' | 'Unknown';
 export interface Schematic { ref: string; title: string; nodes: SNode[]; links: SLink[]; extra: string[]; marks: SMark[]; notes: string[]; unknown: string[]; sources: string[]; removed: number;
   /** diagram type (skill §3) */ type: 'Neutralization loop diagram';
@@ -47,6 +49,7 @@ export const tagKey = (t: string) => t.trim().toUpperCase().replace(/^([A-Z]{1,3
 const kindOf = (tag: string): NodeKind => {
   if (tag.startsWith('J:')) return 'junction';
   if (/^B\/V\b/.test(tag)) return 'valve';
+  if (/^FT\/FV-/.test(tag)) return 'pass';   // flow element + control valve on a heater pass: the approved pass symbol
   const p = tag.split('-')[0];
   if (/^(MOV|XV|KV|FV|LV|TV|PV|HV|SDV|NRV)$/.test(p)) return 'valve';
   if (/^(FT|FE|PT|TT|LT|PDT)/.test(p) || p.includes('/')) return 'instrument';
@@ -230,9 +233,9 @@ export function buildSchematic(p: Pick<TrkPoint, 'id' | 'ref' | 'name' | 'detail
   // corrections to the points and notes
   for (const f of fixes) {
     if (f.op === 'remove' && f.target && f.target.startsWith('mark:')) { const n0 = marks.length; marks = marks.filter((m) => m.key !== f.target); removed += n0 - marks.length; }
-    if (f.op === 'add_mark' && f.kind && f.text) { const at = f.target?.startsWith('at:') ? f.target.slice(3) as 'start' | 'mid' | 'end' | 'node' : null;
+    if (f.op === 'add_mark' && f.kind && f.text) { const at = f.target?.startsWith('at:') ? f.target.slice(3) as 'start' | 'mid' | 'end' | 'node' | 'near' : null;
       const key = (x: string) => (x.startsWith('J:') ? x : /\s/.test(x) ? tagKey(x) : tagKey(x));
-      marks.push({ key: `fix:${f.id}`, kind: f.kind, text: f.text, source: f.reason ?? `Correction by ${f.by ?? 'user'}`, user: f.by ?? 'user', verifiedSheet: f.sheet ?? undefined,
+      marks.push({ key: `fix:${f.id}`, kind: f.kind, text: f.text, source: f.reason ?? `Correction by ${f.by ?? 'user'}`, user: f.by ?? 'user', verifiedSheet: f.sheet ?? undefined, group: f.line ?? undefined,
         on: at && f.a ? { a: key(f.a), b: f.b ? key(f.b) : undefined, at } : undefined }); }
     if (f.op === 'note' && f.text) notes.push(`${f.text} (${f.by ?? 'user'})`);
   }
@@ -284,6 +287,7 @@ export const ROLE_STYLE: Record<Role, { color: string; width: number; label: str
   bypass: { color: '#1d4ed8', width: 2.2, label: 'Bypass branch', tag: 'bypass' },
   standby: { color: '#94a3b8', width: 1.8, label: 'Standby / isolated branch (not part of the active loop)', tag: 'standby — isolated' },
   injection: { color: '#0e7490', width: 2.2, label: 'Injection water', tag: 'injection water' },
+  purge: { color: '#b91c1c', width: 2.2, label: 'Emergency purge (protective)', tag: 'emergency purge' },
 };
 export const MARK_STYLE: Record<MarkKind, { color: string; title: string }> = {
   before: { color: '#334155', title: 'Procedure steps (before / while filling)' },
@@ -292,6 +296,7 @@ export const MARK_STYLE: Record<MarkKind, { color: string; title: string }> = {
   fill: { color: '#15803d', title: 'Fill / injection points — soda ash in' },
   vent: { color: '#0e7490', title: 'Vent / overflow / clear soda ash check' },
   drain: { color: '#1d4ed8', title: 'Drain points' },
+  protection: { color: '#7c3aed', title: 'Protection: trip instruments, interlocks and protective valves (cause → effect)' },
 };
 export function symbol(k: NodeKind, cx: number, y: number, stroke: string, filled = false): string {
   const s = `fill="${filled ? stroke : '#fff'}" stroke="${stroke}" stroke-width="2"`;

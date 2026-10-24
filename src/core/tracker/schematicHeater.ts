@@ -10,7 +10,7 @@ import { esc, HW, ROLE_STYLE, wrap, type Schematic, type SLink } from './schemat
 
 export type Bx = { x0: number; x1: number; y0: number; y1: number };
 export interface HeaterBlock { pos: Map<string, Pt>; paths: { l: SLink; pts: Pt[]; arrow: boolean }[]; extra: { draw: (T: (p: Pt) => Pt) => string; boxes: Bx[] }[];
-  bare: Set<string>; hops: Pt[]; w: number; boxes: Bx[]; notes: string[] }
+  bare: Set<string>; hops: Pt[]; w: number; boxes: Bx[]; notes: string[]; anchors: Map<string, Pt> }
 
 export function heaterBlock(s: Schematic, keys: Set<string>, T: string): HeaterBlock | null {
   const node = new Map(s.nodes.map((n) => [n.key, n]));
@@ -100,8 +100,10 @@ export function heaterBlock(s: Schematic, keys: Set<string>, T: string): HeaterB
     extra.push({ draw: (T2) => { const q = T2({ x: xm + 12, y: yM + 14 }); return `<text x="${q.x}" y="${q.y}" text-anchor="${anchor(T2, 'start')}" font-size="9.5" font-weight="700" fill="#b45309">${esc(msg)}</text>`; },
       boxes: [{ x0: xm + 8, x1: xm + 16 + msg.length * 5.4, y0: yM + 2, y1: yM + 18 }] });
     notes.push(`${hn.tag}: the injection branches are drawn into the passes in tag order; which branch joins which pass is not recorded (unverified).`); }
+  let yBottomExtra = 0;
   const bare = new Set([heater, ...(O ? [O] : []), ...passes.flatMap((p) => (p.mix ? [p.mix] : []))]);
   const w = (O ? xo + 130 : xr + 20) + 10;
   const yBottom = M ? yM + Math.max(H_(M!), s.marks.some((m) => m.on?.at === 'node' && m.on.a === M) ? 130 : 0) + 20 : bot + 50;
-  return { pos, paths, extra, bare, hops, w, boxes: [{ x0: 0, x1: w, y0: top - 76, y1: Math.max(yBottom, bot + 50) }], notes };
+  if (s.marks.some((m) => m.kind === 'protection' && m.on?.a === heater)) yBottomExtra = 80;
+  return { pos, paths, extra, bare, hops, anchors: new Map([[heater, { x: xc, y: bot + 50 }]]), w, boxes: [{ x0: 0, x1: w, y0: top - 76, y1: Math.max(yBottom, bot + 50 + yBottomExtra) }], notes };
 }

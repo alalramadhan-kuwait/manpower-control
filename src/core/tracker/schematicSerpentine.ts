@@ -13,7 +13,7 @@ type Bx = { x0: number; x1: number; y0: number; y1: number };
 type Path = { l: SLink; pts: Pt[]; arrow: boolean };
 interface Unit { kind: 'single' | 'group' | 'tail'; chain: string[]; w: number; minX: number; boxes: Bx[];
   pos: Map<string, Pt>; dir: Map<string, number>; paths: Path[]; tall: Map<string, { top: number; bot: number }>; joinsBelow: Set<string>; issues: string[];
-  extra: HeaterBlock['extra']; bare: Set<string>; hops: Pt[] }
+  extra: HeaterBlock['extra']; bare: Set<string>; hops: Pt[]; anchors: Map<string, Pt> }
 
 const gapFor = (l?: SLink) => Math.max(70, l ? l.lines.slice(0, 2).join(', ').length * 6.2 + 30 : 0);
 
@@ -71,9 +71,10 @@ export function serpentine(s: Schematic, top: number): Geo[] {
   const portIn = (u: Unit, k: string): Pt => { const p = u.pos.get(k)!, d = u.dir.get(k) ?? 1; return { x: p.x - d * HW[node.get(k)!.kind], y: p.y + 26 }; };
   const portOut = (u: Unit, k: string): Pt => { const p = u.pos.get(k)!, d = u.dir.get(k) ?? 1, n = node.get(k)!; return { x: p.x + d * (HW[n.kind] + (n.kind === 'pump' ? 4 : 0)), y: p.y + (n.kind === 'pump' ? 10 : 26) }; };
   const straight = (a: Pt, b: Pt): Pt[] => (Math.abs(a.y - b.y) < 0.5 ? [a, b] : [a, { x: (a.x + b.x) / 2, y: a.y }, { x: (a.x + b.x) / 2, y: b.y }, b]);
-  const blank = (kind: Unit['kind'], ch: string[]): Unit => ({ kind, chain: ch, w: 0, minX: 0, boxes: [], pos: new Map(), dir: new Map(), paths: [], tall: new Map(), joinsBelow: new Set(), issues: [], extra: [], bare: new Set(), hops: [] });
-  const markOn = (k: string, kind: string) => s.marks.some((m) => m.on?.at === 'node' && m.on.a === k && m.kind === kind);
-  const band = (ks: string[], w: number): Bx => ({ x0: 0, x1: w, y0: ks.some((k) => markOn(k, 'vent')) ? -70 : -24, y1: Math.max(...ks.map((k) => (markOn(k, 'drain') ? 130 : nodeH(node.get(k)!)))) + 10 });
+  const blank = (kind: Unit['kind'], ch: string[]): Unit => ({ kind, chain: ch, w: 0, minX: 0, boxes: [], pos: new Map(), dir: new Map(), paths: [], tall: new Map(), joinsBelow: new Set(), issues: [], extra: [], bare: new Set(), hops: [], anchors: new Map() });
+  const markOn = (k: string, kind: string) => s.marks.some((m) => (m.on?.at === 'node' || m.on?.at === 'near') && (m.on.a === k || m.on.b === k) && m.kind === kind);
+  const prot = (k: string) => s.marks.some((m) => m.kind === 'protection' && m.on?.a === k);
+  const band = (ks: string[], w: number): Bx => ({ x0: 0, x1: w, y0: ks.some((k) => markOn(k, 'vent') || prot(k)) ? -80 : -24, y1: Math.max(...ks.map((k) => (markOn(k, 'drain') ? 130 : nodeH(node.get(k)!)))) + 10 });
   // a branch into a junction of the route: drawn on a row below, behind (flowing forward) or ahead of it (flowing back)
   const addSat = (u: Unit, ahead: boolean) => { for (const sat of sats.filter((x) => u.pos.has(x.at))) {
     const j = u.pos.get(sat.at)!; const yS = Math.max(150, ...u.chain.map((k) => nodeH(node.get(k)!) + 40)); const d = ahead ? -1 : 1;
@@ -103,7 +104,7 @@ export function serpentine(s: Schematic, top: number): Geo[] {
   const tail = (): Unit | null => { const ks = s.nodes.filter((n) => tailSet.has(n.key));
     // a multi-pass fired heater (R17): its own block
     const hb = heaterBlock(s, tailSet, T);
-    if (hb) { const u = blank('tail', [T]); Object.assign(u, { pos: hb.pos, paths: hb.paths, extra: hb.extra, bare: hb.bare, hops: hb.hops, w: hb.w, boxes: hb.boxes });
+    if (hb) { const u = blank('tail', [T]); Object.assign(u, { pos: hb.pos, paths: hb.paths, extra: hb.extra, bare: hb.bare, hops: hb.hops, anchors: hb.anchors, w: hb.w, boxes: hb.boxes });
       for (const n of hb.notes) if (!notes.includes(n)) notes.push(n); return u; }
     const s2: Schematic = { ...s, nodes: ks, links: s.links.filter((l) => tailSet.has(l.a) && tailSet.has(l.b)) };
     const g = geometry(s2, columns(s2), [], 0, true, false); const t = g.pos.get(T)!; const u = blank('tail', [T]);
@@ -154,7 +155,7 @@ export function serpentine(s: Schematic, top: number): Geo[] {
       for (const b of bs) for (const o of placed) if (b.x0 < o.x1 && o.x0 < b.x1) y = Math.max(y, o.y1 + 22 - b.y0);
       ys.push(y); placed.push(...bs.map((b) => ({ ...b, y0: b.y0 + y, y1: b.y1 + y }))); });
     const H = Math.max(...placed.map((b) => b.y1)) + 10;
-    const contParts: string[] = [], contBoxes: { x: number; y: number; w: number; h: number }[] = [], bare = new Set<string>(), hops: Pt[] = [];
+    const contParts: string[] = [], contBoxes: { x: number; y: number; w: number; h: number }[] = [], bare = new Set<string>(), hops: Pt[] = [], anchors = new Map<string, Pt>();
     const pos = new Map<string, Pt>(); const paths: Path[] = []; const tall = new Map<string, { top: number; bot: number }>(); const joinsBelow = new Set<string>(); const issues: string[] = [];
     const gdir = new Map<string, number>(); const rowOf = new Map<string, number>();
     rows.forEach((row, r) => { const d = r % 2 ? -1 : 1, e = ext[r];
@@ -164,7 +165,7 @@ export function serpentine(s: Schematic, top: number): Geo[] {
         for (const p of u.paths) paths.push({ ...p, pts: p.pts.map(T2) });
         for (const [k, v] of u.tall) tall.set(k, { top: ys[r] + v.top, bot: ys[r] + v.bot });
         u.joinsBelow.forEach((k) => joinsBelow.add(k)); issues.push(...u.issues);
-        u.bare.forEach((k) => bare.add(k)); hops.push(...u.hops.map(T2));
+        u.bare.forEach((k) => bare.add(k)); hops.push(...u.hops.map(T2)); for (const [k, a] of u.anchors) anchors.set(k, T2(a));
         for (const e of u.extra) { contParts.push(e.draw(T2)); for (const b of e.boxes) { const a = T2({ x: b.x0, y: b.y0 }), c = T2({ x: b.x1, y: b.y1 });
           contBoxes.push({ x: Math.min(a.x, c.x), y: Math.min(a.y, c.y), w: Math.abs(c.x - a.x), h: Math.abs(c.y - a.y) }); } } } });
     const gIn = (k: string): Pt => { const p = pos.get(k)!; return { x: p.x - gdir.get(k)! * HW[node.get(k)!.kind], y: p.y + 26 }; };
@@ -176,6 +177,6 @@ export function serpentine(s: Schematic, top: number): Geo[] {
       if (ra === rb) { paths.push({ l, pts: straight(p, q), arrow }); continue; }
       const xt = ra % 2 ? Lm - 30 : Rm + 30; paths.push({ l, pts: [p, { x: xt, y: p.y }, { x: xt, y: q.y }, q], arrow }); }
     const n = rows.length; const name = n === 1 ? 'one row (exchanger groups)' : `${n} rows, serpentine (exchanger groups${ahead ? ', standby ahead' : ''})`;
-    return { pos, paths, tall, contParts, contBoxes, joinsBelow, issues, W, H, bandLines: [], conts: 0, notes, name, bare, hops };
+    return { pos, paths, tall, contParts, contBoxes, joinsBelow, issues, W, H, bandLines: [], conts: 0, notes, name, bare, hops, anchors };
   }
 }
