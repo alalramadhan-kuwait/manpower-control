@@ -4,7 +4,7 @@
 // stamped with the ID; Undo for a few seconds after each one.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
-import { isNR, shownGroup, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
+import { isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, addQtyEntry, confirmEmpty, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatLabel, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -21,7 +21,7 @@ const TABS: [Tab, string, string][] = [['dash', '📊', 'Dashboard'], ['equip', 
 /** Small jobs followed with the main equipment (Section Head, 23 Oct): they stay small jobs in the M & I %. */
 const WITH_EQUIP = ['Pumps / LO', 'PSVs'];
 /** The SD scope lists by discipline; PMRs are hot work. */
-const SCOPE: [string, string[]][] = [['Operations', ['OPR list']], ['Instrument', ['CV shells']], ['Inspection', ['Check valves', 'Process piping']]];
+const SCOPE: [string, string[]][] = [['Rotating', [ROTATING]], ['Operations', ['OPR list']], ['Instrument', ['CV shells']], ['Inspection', ['Check valves', 'Process piping']]];
 const H = 36e5;
 const short = (t: string) => t.replace(/^([A-Z]{1,3})-12-/, '$1-').replace(/^12-/, '');
 const when = (iso: string | number | null | undefined) => (iso ? `${kwDay(iso)} ${kwTime(iso)}` : '');
@@ -288,7 +288,7 @@ function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string)
   // items of one machine (a compressor and its accessories) sit under the machine's heading, in one expandable block
   const grpOf = useMemo(() => shownGroup(d.equipment), [d.equipment]);
   const [openSys, setOpenSys] = useState<Set<string>>(new Set());
-  const main = d.equipment.filter((e) => e.tracked && (!isSmallJob(e.group) || WITH_EQUIP.includes(e.group) || !!e.system) && lines(d, [keyOf(e)]).length && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e));
+  const main = d.equipment.filter((e) => e.tracked && !e.list && (!isSmallJob(e.group) || WITH_EQUIP.includes(e.group) || !!e.system) && lines(d, [keyOf(e)]).length && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e));
   const all = [...new Set(main.map(grpOf))];
   const todo = main.filter((e) => stale.has(keyOf(e)));
   const shown = f === 'todo' ? todo : f === 'all' ? main : main.filter((e) => grpOf(e) === f);
@@ -716,17 +716,19 @@ function Loop({ d, p, now, done }: { d: TrackerData; p: TrkPoint; now: number; d
 
 // ── SD scope & Hot work ───────────────────────────────────────────────────────────────────────────────────────────
 /** A list of small items (followed by steps, or by stage only); finished = all steps done (or returned). */
-const smallItems = (d: TrackerData) => d.equipment.filter((e) => e.tracked && isSmallJob(e.group) && !WITH_EQUIP.includes(e.group) && (lines(d, [keyOf(e)]).length || !e.hoStep));
+const smallItems = (d: TrackerData) => d.equipment.filter((e) => e.tracked && (!!e.list || (isSmallJob(e.group) && !WITH_EQUIP.includes(e.group))) && (lines(d, [keyOf(e)]).length || !e.hoStep));
+/** the SD scope heading of a small item: its group, or Rotating scope */
+const scopeOf = (e: TrkEquipment) => (e.list === 'rotating' ? ROTATING : e.group);
 const finishedOf = (d: TrackerData) => (e: TrkEquipment) => { const ls = lines(d, [keyOf(e)]); return ls.length ? ls.every((a) => a.actualFinish) : e.stage >= STAGE_SHORT.length - 1; };
 function Scope({ d, now, done }: P) {
   const [group, setGroup] = useState<string | null>(null);
-  const items = smallItems(d).filter((e) => e.group !== 'PMRs');
+  const items = smallItems(d).filter((e) => scopeOf(e) !== 'PMRs');
   const stale = useMemo(() => new Map(staleItems(d, now).filter((i) => i.small).map((i) => [i.key, i.ageH])), [d, now]);
   const finished = finishedOf(d);
-  const listed = SCOPE.flatMap(([, gs]) => gs), other = [...new Set(items.map((e) => e.group))].filter((g) => !listed.includes(g));
-  if (group) return <SmallGroup d={d} now={now} items={items.filter((e) => e.group === group)} stale={stale} done={done} onBack={() => setGroup(null)} back="SD scope" />;
-  return (<>{[...SCOPE, ...(other.length ? [['Other', other] as [string, string[]]] : [])].map(([disc, gs]) => { const groups = gs.filter((g) => items.some((e) => e.group === g)); if (!groups.length) return null;
-    return <div key={disc}><Sec>{disc}</Sec><List>{groups.map((g) => { const xs = items.filter((e) => e.group === g); const n = xs.filter(finished).length; const late = xs.filter((e) => stale.has(keyOf(e))).length;
+  const listed = SCOPE.flatMap(([, gs]) => gs), other = [...new Set(items.map(scopeOf))].filter((g) => !listed.includes(g));
+  if (group) return <SmallGroup d={d} now={now} items={items.filter((e) => scopeOf(e) === group)} stale={stale} done={done} onBack={() => setGroup(null)} back="SD scope" />;
+  return (<>{[...SCOPE, ...(other.length ? [['Other', other] as [string, string[]]] : [])].map(([disc, gs]) => { const groups = gs.filter((g) => items.some((e) => scopeOf(e) === g)); if (!groups.length) return null;
+    return <div key={disc}><Sec>{disc}</Sec><List>{groups.map((g) => { const xs = items.filter((e) => scopeOf(e) === g); const n = xs.filter(finished).length; const late = xs.filter((e) => stale.has(keyOf(e))).length;
       const one = xs.length === 1 ? lines(d, [keyOf(xs[0])]) : [];
       return <button key={g} type="button" onClick={() => setGroup(g)} className={cx(ROW, 'py-2')}>
         <span className="min-w-0 flex-1"><b className="block text-[13px]">{g === 'CV shells' ? 'Control valves' : g}</b><span className="block text-[11px] text-slate-500">{one.length ? `${one.filter((a) => a.actualFinish).length}/${one.length} jobs done` : `${xs.length} items${late ? ` · ${late} need an update` : ''}`}</span></span>

@@ -1,6 +1,6 @@
 // Equipment scope: out of scope keeps the records and stops counting; grouping by system is display only.
 import { describe, expect, it } from 'vitest';
-import { isOutOfScope, logText, scopeImpact, scopeReasonText, shownGroup, type TrkActivity, type TrkEquipment } from '..';
+import { isOutOfScope, logText, scopeImpact, scopeReasonText, shownGroup, ROTATING, type TrkActivity, type TrkEquipment } from '..';
 
 const eq = (tag: string, group: string, more: Partial<TrkEquipment> = {}): TrkEquipment => ({ id: tag, tag, group, description: null, fo: null, hoStep: null, procedure: null, barchartKey: tag, opsItem: true, critical: false, tracked: true,
   disabledReason: null, plannedHo: null, plannedFinish: null, sort: 0, stage: 0, pendingReason: null, remark: null, blindsIn: null, blindsOut: null, updatedBy: null, updatedAt: null, ...more });
@@ -27,5 +27,16 @@ describe('equipment scope', () => {
     expect(l('scope', null, 'out of scope: spare not installed')).toBe('⊘ out of scope · spare not installed');
     expect(l('scope', 'out of scope: spare not installed', null)).toBe('↺ back in scope');
     expect(l('system', null, 'C-12-201 Recycle gas compressor system')).toContain('system');
+  });
+  it('routine rotating items are listed under Rotating scope; their steps still count as before', () => {
+    const sys = 'C-12-201 Recycle gas compressor system';
+    const items = [eq('C-12-201', 'Compressor', { system: sys }), eq('C-12-201-E-03', 'Exchangers', { system: sys, list: 'rotating' }), eq('C-12-201-TK-03', 'Vessels', { system: sys })];
+    const g = shownGroup(items);
+    expect(g(items[1])).toBe(ROTATING); expect(g(items[2])).toBe('Compressor');
+    const all = scopeImpact({ equipment: items, activities: [act('C-12-201-E-03', 8), act('C-12-201', 40)] });
+    const plain = scopeImpact({ equipment: items.map((e) => ({ ...e, list: null })), activities: [act('C-12-201-E-03', 8), act('C-12-201', 40)] });
+    expect(all).toEqual(plain);
+    const l = (n: string | null) => logText({ id: '1', at: '', kind: 'equipment', ref: 'C-12-201-E-03', field: 'list', oldValue: null, newValue: n, byName: null } as never);
+    expect(JSON.stringify(l('rotating'))).toContain(ROTATING);
   });
 });

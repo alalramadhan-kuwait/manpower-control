@@ -103,7 +103,7 @@ export function EquipSheet({ system = [], groups = [], systems = [], canManage =
   const itemH = activities.filter((a) => !a.detail && a.group !== 'Operations' && (a.tracked || a.outOfScope)).reduce((t, a) => t + (a.durationH ?? 0), 0);
   const impact = { hours: Math.round(itemH), pct: totalH ? Math.round((itemH / totalH) * 1000) / 10 : 0 };
   // editing the name, group and system (Section Head / Engineers)
-  const [edit, setEdit] = useState(false); const [edName, setEdName] = useState(''); const [edGrp, setEdGrp] = useState(''); const [edSys, setEdSys] = useState('');
+  const [edit, setEdit] = useState(false); const [edName, setEdName] = useState(''); const [edGrp, setEdGrp] = useState(''); const [edSys, setEdSys] = useState(''); const [edList, setEdList] = useState<'' | 'rotating'>('');
   // the item's history, read when its section is opened
   const [log, setLog] = useState<TrkLog[] | null>(null); const [logAll, setLogAll] = useState(false);
   const loadLog = () => { if (log === null) fetchItemLog(trackerId, e.tag, e.barchartKey ?? e.tag).then(setLog, () => setLog([])); };
@@ -197,6 +197,7 @@ export function EquipSheet({ system = [], groups = [], systems = [], canManage =
           <dl className="space-y-1 text-xs text-slate-700">
             <div><dt className="font-semibold">Name</dt><dd>{e.description ?? '—'}</dd></div>
             {e.system && <div><dt className="font-semibold">System</dt><dd>{e.system}</dd></div>}
+            {e.list === 'rotating' && <div><dt className="font-semibold">Listed under</dt><dd>Rotating scope — routine work, counted as before</dd></div>}
             <div><dt className="font-semibold">Group</dt><dd>{e.group}{e.fo ? ` · ${e.fo}` : ''}{e.hoStep ? ` · HO step ${e.hoStep}` : ''}</dd></div>
             {e.procedure && <div><dt className="font-semibold">Procedure</dt><dd>{e.procedure}</dd></div>}
             {(e.plannedHo || e.plannedFinish) && <div><dt className="font-semibold">Plan</dt><dd>{e.plannedHo ? `HO ${when(e.plannedHo)}` : ''}{e.plannedFinish ? ` · finish ${when(e.plannedFinish)}` : ''}</dd></div>}
@@ -204,15 +205,16 @@ export function EquipSheet({ system = [], groups = [], systems = [], canManage =
             {e.remark && <div><dt className="font-semibold">Remark</dt><dd>{e.remark}</dd></div>}
             {e.updatedAt && <div><dt className="font-semibold">Last change</dt><dd>{e.updatedBy} {when(e.updatedAt)}</dd></div>}
           </dl>
-          {canManage && !edit && <button type="button" onClick={() => { setEdit(true); setEdName(e.description ?? ''); setEdGrp(e.group); setEdSys(e.system ?? ''); }} className="mt-2 text-xs font-semibold text-brand-500">✎ Edit name, group, system</button>}
+          {canManage && !edit && <button type="button" onClick={() => { setEdit(true); setEdName(e.description ?? ''); setEdGrp(e.group); setEdSys(e.system ?? ''); setEdList(e.list ?? ''); }} className="mt-2 text-xs font-semibold text-brand-500">✎ Edit name, group, system, list</button>}
           {canManage && edit && <div className="mt-2 space-y-1.5">
             <Field label="Name / description"><input className="input" value={edName} onChange={(x) => setEdName(x.target.value)} /></Field>
             <div className="grid grid-cols-2 gap-1.5"><Field label="Group"><input className="input" list="eq-groups" value={edGrp} onChange={(x) => setEdGrp(x.target.value)} /></Field>
               <Field label="System (shown together)"><input className="input" list="eq-systems" value={edSys} placeholder="none" onChange={(x) => setEdSys(x.target.value)} /></Field></div>
+            <Field label="Listed under"><select className="input" value={edList} onChange={(x) => setEdList(x.target.value as '' | 'rotating')}><option value="">Equipment</option><option value="rotating">Rotating scope (routine cleaning / servicing only)</option></select></Field>
             <datalist id="eq-groups">{groups.map((g) => <option key={g} value={g} />)}</datalist><datalist id="eq-systems">{systems.map((g) => <option key={g} value={g} />)}</datalist>
             <div className="flex gap-1.5"><Button variant="secondary" className="flex-1" onClick={() => setEdit(false)}>Cancel</Button>
-              <Button className="flex-1" disabled={busy || !edGrp.trim()} onClick={() => { const was = { description: e.description, grp: e.group, system: e.system ?? null };
-                run(() => setEquipment(e.id, { description: edName.trim() || null, grp: edGrp.trim(), system: edSys.trim() || null }), `${e.tag}: details saved.`, () => setEquipment(e.id, was)).then(() => setEdit(false)); }}>Save</Button></div>
+              <Button className="flex-1" disabled={busy || !edGrp.trim()} onClick={() => { const was = { description: e.description, grp: e.group, system: e.system ?? null, list: e.list ?? null };
+                run(() => setEquipment(e.id, { description: edName.trim() || null, grp: edGrp.trim(), system: edSys.trim() || null, list: edList || null }), `${e.tag}: details saved.`, () => setEquipment(e.id, was)).then(() => setEdit(false)); }}>Save</Button></div>
             <p className="text-[11px] text-slate-500">The tag stays as it is: it links the item to its P6 lines. Group and system change only where the item is listed.</p>
           </div>}
         </Fold>

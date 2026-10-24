@@ -107,11 +107,16 @@ begin
   -- a Controller cannot take an item out of scope or change its details
   begin update public.trk_equipment set tracked = false, disabled_reason = 'out of scope: check' where id = (select id from public.trk_equipment where tracker_id = live and tracked limit 1);
     raise exception 'FAIL: a Controller may take an item out of scope'; exception when insufficient_privilege then ok := ok + 1; end;
+  begin update public.trk_equipment set list = 'rotating' where id = (select id from public.trk_equipment where tracker_id = live and list is null limit 1);
+    raise exception 'FAIL: a Controller may move an item to another list'; exception when insufficient_privilege then ok := ok + 1; end;
 
   -- the Section Head: out of scope needs a reason
   perform set_config('request.jwt.claims', json_build_object('sub', head, 'role', 'authenticated')::text, true);
   begin update public.trk_equipment set tracked = false, disabled_reason = 'out of scope: ' where id = (select id from public.trk_equipment where tracker_id = live and tracked limit 1);
     raise exception 'FAIL: out of scope accepted without a reason'; exception when check_violation then ok := ok + 1; end;
+
+  begin update public.trk_equipment set list = 'other' where id = (select id from public.trk_equipment where tracker_id = live limit 1);
+    raise exception 'FAIL: unknown equipment list accepted'; exception when check_violation then ok := ok + 1; end;
 
   raise exception 'ALL PASS (% checks)', ok;
 end $$;

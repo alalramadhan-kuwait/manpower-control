@@ -23,6 +23,9 @@ export interface TrkEquipment {
   /** display group: items of one machine (a compressor with its turbine, lube oil, suction …) listed together under one
    *  expandable heading; each keeps its own steps, stage, P6 lines and progress — not used in any count */
   system?: string | null;
+  /** where the item is listed: 'rotating' = Rotating scope (routine cleaning / servicing only, no inspection or
+   *  handover of its own) instead of the main Equipment list. Display only: steps, hours and counts unchanged */
+  list?: 'rotating' | null;
 }
 export interface TrkIat { id: string; tag: string; iatNo: string; jobText: string | null; discipline: string | null; issuedAt: string; status: 'open' | 'closed'; closedAt: string | null;
   /** from the daily IAT tracking sheet: work order, the line it is on, the status as written in the sheet, a remark */
@@ -101,12 +104,14 @@ export interface TrkData { events?: TrkEvent[]; engine?: TrkEngine; pointSteps?:
 /** The main equipment groups; the rest (control valve shells, PSVs, check valves, RTJ & injection points, piping, OPR
  *  list, PMRs …) is miscellaneous, shown after them. */
 export const MAIN_GROUPS = ['Reactors', 'Heaters', 'Exchangers', 'Vessels', 'Filters', 'Compressor', 'Pumps / LO'] as const;
+/** Heading of the items on the Rotating scope list (routine rotating work, outside the main Equipment list). */
+export const ROTATING = 'Rotating scope';
 /** The list heading an item is shown under: items of one system go with the system's main item (the one whose tag
  *  starts the system name), so a compressor's filters and lube oil items sit with the compressor. Display only. */
 export function shownGroup(equipment: TrkEquipment[]): (e: TrkEquipment) => string {
   const lead = new Map<string, string>();
-  for (const e of equipment) if (e.system && (!lead.has(e.system) || e.system.startsWith(e.tag + ' '))) lead.set(e.system, e.group);
-  return (e) => (e.system ? lead.get(e.system) ?? e.group : e.group);
+  for (const e of equipment) if (e.system && !e.list && (!lead.has(e.system) || e.system.startsWith(e.tag + ' '))) lead.set(e.system, e.group);
+  return (e) => (e.list === 'rotating' ? ROTATING : e.system ? lead.get(e.system) ?? e.group : e.group);
 }
 // ── Scope: an item out of the shutdown scope keeps its records and P6 activities, which are no longer counted ─────
 export const OUT_OF_SCOPE = 'out of scope';
@@ -1141,6 +1146,7 @@ export function logText(l: TrkLog, acts: TrkActivity[] = []): { item: string; wh
     if (l.field === 'scope') return { item, what: /^out of scope/.test(l.newValue ?? '') ? `⊘ out of scope · ${scopeReasonText(l.newValue)}` : /^out of scope/.test(l.oldValue ?? '') ? '↺ back in scope' : `scope note ${q(l.newValue)}` };
     if (l.field === 'description') return { item, what: `✎ name ${q(l.oldValue)} → ${q(l.newValue)}` };
     if (l.field === 'group') return { item, what: `✎ group ${q(l.oldValue)} → ${q(l.newValue)}` };
+    if (l.field === 'list') return { item, what: `✎ listed under ${l.newValue === 'rotating' ? ROTATING : 'Equipment'}` };
     if (l.field === 'system') return { item, what: `✎ system ${q(l.oldValue)} → ${q(l.newValue)}` };
   }
   if (l.kind === 'step') {
