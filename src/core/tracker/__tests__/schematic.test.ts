@@ -70,4 +70,17 @@ describe('auto-generated loop schematic', () => {
     const c = buildSchematic(ft, { steps: ftSteps, fixes: [fix({ op: 'note', text: 'x' })] });
     expect(a.revision).toBe(b.revision); expect(c.revision).not.toBe(a.revision);
   });
+  it('S318: corrections taken from the line-up remove the conflict and are checked against the line-up themselves', () => {
+    const p = { id: 'L', ref: 'S318', name: 'Charge pump to H-201 passes', detail: 'Charge pump P-203 to H-201 passes: E-216 tube side, E-203 shell side, E-12-229 shell side', items: [], requires: [], method: 'soak' as const };
+    const lineup = [lu('P-203A/B', 'E-203', 'P-12-2014', 'check'), lu('E-203', 'E-216A/B', 'P-12-2052', 'check'), lu('E-216A/B', 'E-229', 'P-12-2029', 'check'), lu('E-229', 'H-201', 'P-12-2303', 'check'),
+      { ...lu('P-203A/B', 'E-216A/B', '', 'check'), lineNos: [], fluid: 'Resid feed - E-12-203 shell bypass' }];
+    expect(buildSchematic(p, { lineup }).links.some((l) => l.conflict)).toBe(true);
+    const fixes = [fix({ id: '1', op: 'remove', target: 'link:E-216>E-203', reason: 'line-up' }), fix({ id: '2', op: 'add_link', a: 'E-203', b: 'E-216', line: 'P-12-2052' }),
+      fix({ id: '3', op: 'add_link', a: 'P-203', b: 'E-203', line: 'P-12-2014' }), fix({ id: '4', op: 'add_link', a: 'E-216', b: 'E-229', line: 'P-12-2029' })];
+    const s = buildSchematic(p, { lineup, fixes });
+    expect(s.links.some((l) => l.conflict)).toBe(false);
+    expect(s.links.find((l) => l.a === 'E-203' && l.b === 'E-216')).toMatchObject({ basis: 'unchecked', lines: ['P-12-2052'], source: 'Correction by Engineer · P&ID line-up' });
+    expect(s.links.find((l) => l.a === 'P-203' && l.b === 'E-216')?.service).toMatch(/bypass/);
+    expect(renderSchematic(s, 'x').issues).toEqual([]);
+  });
 });

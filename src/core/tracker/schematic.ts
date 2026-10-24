@@ -13,7 +13,8 @@ export type MarkKind = 'fill' | 'drain' | 'vent' | 'isolation' | 'blind' | 'befo
 export interface SNode { key: string; tag: string; kind: NodeKind; via: string[]; user?: string }
 export interface SLink { key: string; a: string; b: string; basis: Basis; lines: string[]; sheets: string[]; source: string; user?: string;
   /** the side / nozzle named in the record at each end (T/S, S/S, O/L, I/L, vapour, inlet…) */ aSide?: string | null; bSide?: string | null;
-  /** the line-up gives the opposite direction */ conflict?: string }
+  /** the line-up gives the opposite direction */ conflict?: string;
+  /** the line-up's service when it says more than the route (e.g. a bypass) */ service?: string }
 export interface SMark { key: string; kind: MarkKind; text: string; source: string; user?: string; verifiedSheet?: string }
 export type Verification = 'Verified' | 'Unverified' | 'Unknown';
 export interface Schematic { ref: string; title: string; nodes: SNode[]; links: SLink[]; extra: string[]; marks: SMark[]; notes: string[]; unknown: string[]; sources: string[]; removed: number;
@@ -164,6 +165,21 @@ export function buildSchematic(p: Pick<TrkPoint, 'id' | 'ref' | 'name' | 'detail
   const extra: string[] = [];
   for (const t of uniq(itemTags, tagKey)) { if (nodes.has(tagKey(t)) || nodes.has(luKeys(tagKey(t))[0]) || [...nodes.keys()].some((k) => luKeys(k).includes(tagKey(t)))) continue; if (!links.length) node(t, null); else extra.push(tagKey(t)); }
   for (const i of p.items) if (!tagsIn(i, true).length && !extra.includes(i)) extra.push(i);
+  // corrections to the route come first, so a connection a person adds is checked against the line-up like any other
+  let removed = 0;
+  for (const f of fixes) {
+    if (f.op === 'remove' && f.target && !f.target.startsWith('mark:')) {
+      const n0 = nodes.size + links.length;
+      if (f.target.startsWith('node:')) { const k = f.target.slice(5); nodes.delete(k); links = links.filter((l) => l.a !== k && l.b !== k); }
+      links = links.filter((l) => l.key !== f.target);
+      removed += n0 - (nodes.size + links.length);
+    }
+    if (f.op === 'add_link' && f.a && f.b) {
+      const a = node(f.a, null, f.by ?? 'user'), b = node(f.b, null, f.by ?? 'user');
+      links = links.filter((l) => !(l.a === a && l.b === b));
+      links.push({ key: `link:${a}>${b}`, a, b, basis: f.sheet ? 'user_verified' : 'user', lines: f.line ? [f.line] : [], sheets: f.sheet ? [f.sheet] : [], source: `Correction by ${f.by ?? 'user'}`, user: f.by ?? 'user' });
+    }
+  }
   // line-up: line numbers and how far each connection is checked
   let luHits = 0;
   for (const l of links) {
@@ -171,8 +187,11 @@ export function buildSchematic(p: Pick<TrkPoint, 'id' | 'ref' | 'name' | 'detail
     const back = lu.filter((s) => same(s.from, l.b) && same(s.to, l.a));
     if (!ss.length && back.length && l.basis === 'record') l.conflict = `The loop record gives ${l.a} → ${l.b}; the P&ID line-up gives ${l.b} → ${l.a} (${[...new Set(back.flatMap((s) => s.lineNos))].join(', ') || 'no line no.'}). Shown as recorded: direction to be checked.`;
     if (!ss.length) continue; luHits++;
-    l.basis = ss.some((s) => s.conf === 'ok') ? 'verified' : 'unchecked';
-    l.lines = [...new Set(ss.flatMap((s) => s.lineNos))]; l.sheets = [...new Set(ss.flatMap((s) => s.sheets))]; l.source = 'P&ID line-up';
+    const lb: Basis = ss.some((s) => s.conf === 'ok') ? 'verified' : 'unchecked';
+    if (!(l.basis === 'user_verified' && lb !== 'verified')) l.basis = lb;   // a person's sheet check stands over an unchecked line-up entry
+    l.lines = [...new Set([...l.lines, ...ss.flatMap((s) => s.lineNos)])]; l.sheets = [...new Set([...l.sheets, ...ss.flatMap((s) => s.sheets)])];
+    l.source = l.user ? `Correction by ${l.user} · P&ID line-up` : 'P&ID line-up';
+    const svc = ss.map((s) => s.fluid ?? '').find((f) => /bypass/i.test(f)); if (svc) l.service = svc;
   }
   if (luHits) sources.push(`P&ID line-up (${luHits} connection${luHits > 1 ? 's' : ''})`);
   // fill / drain / vent / boundary points
@@ -181,20 +200,9 @@ export function buildSchematic(p: Pick<TrkPoint, 'id' | 'ref' | 'name' | 'detail
   if (blinds.length) sources.push(`Blind list (${blinds.length})`);
   marks = uniq([...blinds, ...marks], (m) => m.key);
   const notes = steps.filter((s) => s.phase === 'after').map((s) => s.text);
-  // corrections
-  let removed = 0;
+  // corrections to the points and notes
   for (const f of fixes) {
-    if (f.op === 'remove' && f.target) {
-      const n0 = nodes.size + links.length + marks.length;
-      if (f.target.startsWith('node:')) { const k = f.target.slice(5); nodes.delete(k); links = links.filter((l) => l.a !== k && l.b !== k); }
-      links = links.filter((l) => l.key !== f.target); marks = marks.filter((m) => m.key !== f.target);
-      removed += n0 - (nodes.size + links.length + marks.length);
-    }
-    if (f.op === 'add_link' && f.a && f.b) {
-      const a = node(f.a, null, f.by ?? 'user'), b = node(f.b, null, f.by ?? 'user');
-      links = links.filter((l) => !(l.a === a && l.b === b));
-      links.push({ key: `link:${a}>${b}`, a, b, basis: f.sheet ? 'user_verified' : 'user', lines: f.line ? [f.line] : [], sheets: f.sheet ? [f.sheet] : [], source: `Correction by ${f.by ?? 'user'}`, user: f.by ?? 'user' });
-    }
+    if (f.op === 'remove' && f.target && f.target.startsWith('mark:')) { const n0 = marks.length; marks = marks.filter((m) => m.key !== f.target); removed += n0 - marks.length; }
     if (f.op === 'add_mark' && f.kind && f.text) marks.push({ key: `fix:${f.id}`, kind: f.kind, text: f.text, source: `Correction by ${f.by ?? 'user'}`, user: f.by ?? 'user', verifiedSheet: f.sheet ?? undefined });
     if (f.op === 'note' && f.text) notes.push(`${f.text} (${f.by ?? 'user'})`);
   }
@@ -336,7 +344,7 @@ export function renderSchematic(s: Schematic, generatedAt: string): { svg: strin
     for (const [k, ls] of m) if (ls.length > 1) { const c = col.get(k)!; const i = per.get(c) ?? 0; per.set(c, i + 1); o.set(k, 16 + i * 16); } return o; };
   for (const l of fwd) gapN.set(col.get(l.a)!, (gapN.get(col.get(l.a)!) ?? 0) + 1);
   const so = offs(outN), jo = offs(inN);
-  const dots: string[] = []; const labels: string[] = []; const geo: { l: SLink; ax: number; ay: number; by: number; mx: number }[] = [];
+  const dots: string[] = []; const labels: string[] = []; const geo: { l: SLink; ax: number; ay: number; by: number; mx: number; mxIn: number; over: boolean; bx: number }[] = []; let skips = 0;
   const place = (txt: string, x: number, y: number, color: string, italic: boolean, tries: number[]) => {
     const w = txt.length * 6 + 8;
     for (const dy of tries) for (const dx of [0, 14, 28, -14]) { const b = { x: x + dx - w / 2, y: y + dy - 11, w, h: 14 }; if (!boxes.some((o) => hit(o, b))) { boxes.push(b);
@@ -354,12 +362,18 @@ export function renderSchematic(s: Schematic, generatedAt: string): { svg: strin
     // branches from one point share one vertical header (bus); otherwise each connection gets its own vertical
     // the vertical: at the target's merge point when it has one, else at the source's split point, else its own
     const mx = merge ? jx : gather ? jx - 18 : split ? sx : fan ? sx + 18 : Math.min(Math.max((sx + jx) / 2 + (k - (n - 1) / 2) * 12, sx + 10), jx - 10);
-    geo.push({ l, ax: a.x, ay: a.y, by: b.y, mx });
     const dash = st.dash ? ` stroke-dasharray="${st.dash}"` : '';
-    parts.push(`<path d="M ${a.x} ${a.y} H ${mx} V ${b.y} H ${jx}" fill="none" stroke="${st.color}" stroke-width="${st.width}"${dash}${merge || isJ(l.b) ? '' : ` marker-end="url(#ar-${l.basis})"`}/>`);
+    // a connection that skips a column goes over the items between (never through a symbol)
+    const span = col.get(l.b)! - col.get(l.a)!;
+    const mid = span > 1 ? s.nodes.filter((o) => { const c = col.get(o.key)!; return c > col.get(l.a)! && c < col.get(l.b)!; }).map((o) => pos.get(o.key)!.y) : [];
+    let track: number | null = null, x1 = mx, x2 = mx;
+    if (mid.length) { const si = skips++; track = Math.min(...mid) - 18 - si * 10; x1 = a.x + 12 + si * 6; x2 = merge ? jx : jx - 12 - si * 6; }
+    geo.push({ l, ax: a.x, ay: a.y, by: b.y, mx: x1, mxIn: x2, over: track !== null, bx: b.x });
+    const d = track === null ? `M ${a.x} ${a.y} H ${mx} V ${b.y} H ${jx}` : `M ${a.x} ${a.y} H ${x1} V ${track} H ${x2} V ${b.y} H ${jx}`;
+    parts.push(`<path d="${d}" fill="none" stroke="${st.color}" stroke-width="${st.width}"${dash}${merge || isJ(l.b) ? '' : ` marker-end="url(#ar-${l.basis})"`}/>`);
     // line numbers where known (an unknown one is left off the pipe and listed under Unknown); a conflict is flagged
-    const lab = (l.lines.length ? l.lines.slice(0, 2).join(', ') + (l.lines.length > 2 ? ' …' : '') : '') + (l.conflict ? `${l.lines.length ? ' ' : ''}⚠ direction conflict` : '');
-    const onLast = (split || fan) && !merge, lx = onLast ? (mx + jx) / 2 : (a.x + mx) / 2, ly = onLast ? b.y - 8 : a.y - 8;
+    const lab = [l.lines.length ? l.lines.slice(0, 2).join(', ') + (l.lines.length > 2 ? ' …' : '') : '', l.service ? 'bypass' : '', l.conflict ? '⚠ direction conflict' : ''].filter(Boolean).join(' · ');
+    const onLast = (split || fan) && !merge, lx = track !== null ? (x1 + x2) / 2 : onLast ? (mx + jx) / 2 : (a.x + mx) / 2, ly = track !== null ? track - 8 : onLast ? b.y - 8 : a.y - 8;
     if (lab) place(lab, lx, ly, l.conflict ? '#b91c1c' : st.color, false, [0, 26, -14, 40]);
     if (l.aSide && !split && !fan) portLabel(l.aSide, a.x + 4, a.y + 14, 'start');
     if (l.bSide && /^pass/.test(l.bSide)) portLabel(l.bSide.replace(/ inlet$/, ''), a.x + 4, a.y - 6, 'start');
@@ -368,8 +382,9 @@ export function renderSchematic(s: Schematic, generatedAt: string): { svg: strin
   // junction dots exactly where a pipe branches off or joins another (a crossing gets none)
   const dot = (x: number, y: number) => { const d = `<circle cx="${x}" cy="${y}" r="3.6" fill="#0f172a"/>`; if (!dots.includes(d)) dots.push(d); };
   for (const g1 of geo) {
-    const sib = geo.filter((o) => o.l.a === g1.l.a && o.ay === g1.ay); if (sib.length > 1 && sib.filter((o) => o.mx >= g1.mx).length > 1 && g1.by !== g1.ay) dot(g1.mx, g1.ay);
-    const tgt = geo.filter((o) => o.l.b === g1.l.b && o.by === g1.by); if (tgt.length > 1 && tgt.filter((o) => o.mx <= g1.mx).length > 1 && !isJ(g1.l.b)) dot(g1.mx, g1.by);
+    const sib = geo.filter((o) => o.l.a === g1.l.a && o.ay === g1.ay); const reachX = (o: typeof g1) => (o.by === o.ay && !o.over ? o.bx : o.mx);   // how far a pipe runs along its starting row
+    if (sib.length > 1 && sib.filter((o) => reachX(o) >= g1.mx).length > 1 && (g1.by !== g1.ay || g1.over)) dot(g1.mx, g1.ay);
+    const tgt = geo.filter((o) => o.l.b === g1.l.b && o.by === g1.by); if (tgt.length > 1 && tgt.filter((o) => o.mxIn <= g1.mxIn).length > 1 && !isJ(g1.l.b) && (g1.by !== g1.ay || g1.over || tgt.some((o) => o !== g1 && o.mxIn < g1.mxIn))) dot(g1.mxIn, g1.by);
   }
   for (const [k, ls] of inN) if (ls.length > 1) { const b = port(k, false, ls[0].bSide); const weakest = ls.map((x) => x.basis).sort((x, y) => RANK[x] - RANK[y])[0]; const st = LINK_STYLE[weakest]; const x = b.x - 6 - jo.get(k)!;
     parts.push(`<path d="M ${x} ${b.y} H ${b.x}" stroke="${st.color}" stroke-width="${st.width}"${st.dash ? ` stroke-dasharray="${st.dash}"` : ''} marker-end="url(#ar-${weakest})"/>`); dot(x, b.y); }

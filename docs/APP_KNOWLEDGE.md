@@ -239,7 +239,9 @@ Verified / Unverified / Unknown per diagram and per connection (line pattern, no
 long dash = Train-2 line-up unchecked, dotted = record only, dash-dot = added by a person); numbered instrument
 ranges drawn as separate passes with an unresolved split; vapour outlets leave the top of vessels; junction dots only
 where pipes join or split, shared segments drawn in the weakest style; line numbers only where known; record vs
-line-up direction conflicts flagged (S318: E-216 → E-203 in the record, E-203 → E-216 in the line-up); metadata block
+line-up direction conflicts flagged (S318 had E-216 → E-203 in the record, E-203 → E-216 in the line-up: corrected 24 Oct
+from the line-up as logged corrections, route P-203 → E-203 S/S → E-216A/B T/S → E-229 S/S → H-201, with the two bypasses
+the record names; connections a person adds are checked against the line-up too; skipped items are routed over); metadata block
 (diagram, type, loop, equipment, generated, revision auto-<hash of the data>, generator, sources, verification) and
 an automatic check (topology + overlapping labels) on every sheet.
 
