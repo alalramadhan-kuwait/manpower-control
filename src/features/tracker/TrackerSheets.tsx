@@ -132,7 +132,7 @@ export function EquipSheet({ system = [], groups = [], systems = [], canManage =
         <EquipActivities trackerId={trackerId} itemKey={e.barchartKey ?? e.tag} activities={activities} now={now} canEdit={canEdit} isHead={isHead} neutCovered={!!iso?.neut.length} neutLabel={soda ? `${neutName(soda)} · ${neutLabel(soda)}` : undefined} onNeut={onNeut} onDone={onDone} />
         {engine && (() => { const key = e.barchartKey ?? e.tag; const sc = engine.scopes.find((x) => x.key === key && x.scope === 'removal' && x.unit);
           return <>
-            {sc && <DrumPanel scope={sc} entries={engine.entries.filter((x) => x.scopeId === sc.id)} estimates={engine.estimates.filter((x) => x.scopeId === sc.id)} activities={activities} settings={settings} now={now} canEdit={canEdit} isHead={isHead} me={me} onDone={onDone} />}
+            {sc && <DrumPanel scope={sc} entries={engine.entries.filter((x) => x.scopeId === sc.id)} estimates={engine.estimates.filter((x) => x.scopeId === sc.id)} activities={activities} settings={settings} now={now} canEdit={canEdit} isHead={isHead} canEmpty={canManage} me={me} onDone={onDone} />}
             <ItemUpdate trackerId={trackerId} itemKey={key} updates={engine.updates} canEdit={canEdit} onDone={onDone} />
           </>; })()}
         {iso && (

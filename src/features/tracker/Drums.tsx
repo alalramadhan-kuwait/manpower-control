@@ -1,6 +1,6 @@
 // Progress engine, phase 2: the reactor drum account on the equipment sheet, and the quick equipment update (no
 // change · delay). One shift entry per method; a second person verifies; a mistake is corrected by a new entry; the
-// Section Head revises the estimate (with a reason) and confirms the vessel empty. Planned % and the forecast are
+// Section Head revises the estimate (with a reason); the Section Head or an Engineer confirms the vessel empty. Planned % and the forecast are
 // provisional and say so.
 import { useState } from 'react';
 import { METHOD_LABEL, kwDay, kwTime, plannedPct, qtyForecast, qtyProgress, recentShifts, variancePts, type QtyMethod, type TrkActivity, type TrkQtyEntry, type TrkQtyEstimate, type TrkQtyScope, type TrkSettings, type TrkUpdate } from '@/core/tracker';
@@ -19,8 +19,10 @@ function useRun(onDone: (msg: string, undo?: () => Promise<unknown>) => void) {
   return { busy, err, run };
 }
 
-export function DrumPanel({ scope, entries, estimates, activities, settings, now, canEdit, isHead, onDone }: {
-  scope: TrkQtyScope; entries: TrkQtyEntry[]; estimates: TrkQtyEstimate[]; activities: TrkActivity[]; settings: TrkSettings; now: number; canEdit: boolean; isHead: boolean; me: string | null; onDone: (msg: string, undo?: () => Promise<unknown>) => void;
+export function DrumPanel({ scope, entries, estimates, activities, settings, now, canEdit, isHead, canEmpty = isHead, onDone }: {
+  scope: TrkQtyScope; entries: TrkQtyEntry[]; estimates: TrkQtyEstimate[]; activities: TrkActivity[]; settings: TrkSettings; now: number; canEdit: boolean; isHead: boolean;
+  /** confirm the vessel empty: Section Head and Engineers (owner, 24 Oct 2026), not Controllers */
+  canEmpty?: boolean; me: string | null; onDone: (msg: string, undo?: () => Promise<unknown>) => void;
 }) {
   const { busy, err, run } = useRun(onDone);
   const [fix, setFix] = useState<string | null>(null); const [fixQty, setFixQty] = useState(''); const [fixWhy, setFixWhy] = useState('');
@@ -89,10 +91,10 @@ export function DrumPanel({ scope, entries, estimates, activities, settings, now
         {shown.length > 4 && <button type="button" onClick={() => setAll((x) => !x)} className="text-[12px] font-semibold text-slate-500">{all ? 'Show less' : `All ${shown.length} entries`}</button>}
       </div>}
 
-      {isHead && !scope.completeAt && <div className="flex flex-wrap gap-1.5 border-t border-slate-100 pt-2">
-        <button type="button" className="text-[12px] font-semibold text-brand-500" onClick={() => setEst((x) => !x)}>Revise estimate</button>
-        <span className="text-slate-300">·</span>
-        <button type="button" className="text-[12px] font-semibold text-status-green" onClick={() => setEmpty((x) => !x)}>Confirm vessel empty</button>
+      {(isHead || canEmpty) && !scope.completeAt && <div className="flex flex-wrap gap-1.5 border-t border-slate-100 pt-2">
+        {isHead && <><button type="button" className="text-[12px] font-semibold text-brand-500" onClick={() => setEst((x) => !x)}>Revise estimate</button>
+        <span className="text-slate-300">·</span></>}
+        {canEmpty && <button type="button" className="text-[12px] font-semibold text-status-green" onClick={() => setEmpty((x) => !x)}>Confirm vessel empty</button>}
       </div>}
       {est && <div className="grid grid-cols-[5.5rem_minmax(0,1fr)_auto] gap-1.5">
         <input className="input" inputMode="numeric" aria-label="New estimate" placeholder={scope.working ? String(scope.working) : 'Drums'} value={estV} onChange={(x) => setEstV(x.target.value.replace(/[^0-9]/g, ''))} />
