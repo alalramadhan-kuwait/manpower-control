@@ -237,3 +237,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261024060314_shutdown_progress_v209_gas_test_ok` | Live tracker: the V-209 "last gas test failed" issue resolved (gas test OK on 24 Oct) |
 | `20261024062036_shutdown_progress_c201_shifted` | Live tracker: C-201 compressor and turbine shifted to the workshop; both overhauls running, due 4 Nov |
 | `20261024062403_shutdown_progress_c201_dismantle_step` | Live tracker: C-201 / C-201-ST get a 3-day Dismantle step before the overhaul; overhaul re-timed to end 4 Nov |
+| `20261024062516_shutdown_progress_c201_wording_hours` | Live tracker: C-201 / C-201-ST status lines and step notes reworded in hours ("dismantling I/P", 72 h) |
