@@ -10,11 +10,13 @@ const loop = { id: 'L', ref: 'REF', name: 'reference loop', detail: null, items:
 /** the FT-681 reference topology (Section Head, Stage 1 + revision) */
 function reference() {
   const fixes = [fx('P-203', 'J:tie', 'active', 'P-12-2014'), fx('J:tie', 'E-203', 'active'), fx('E-203', 'E-216A', 'active'), fx('E-216A', 'E-216B', 'active'), fx('E-216B', 'E-229', 'active'), fx('E-229', 'J:hdr', 'active'),
-    ...['P1', 'P2', 'P3', 'P4'].flatMap((p) => [fx('J:hdr', `FT/FV-${p}`, 'active'), fx(`FT/FV-${p}`, 'H-201', 'active')]),
+    ...['P1', 'P2', 'P3', 'P4'].flatMap((p, i) => [fx('J:hdr', `FT/FV-${p}`, 'active'), fx(`FT/FV-${p}`, `J:inj ${p}`, 'active'), fx(`J:inj ${p}`, 'H-201', 'active'),
+      fx('Injection water manifold', `FV-69${i + 1}`, 'injection'), fx(`FV-69${i + 1}`, `B/V FV-69${i + 1} D/S`, 'injection'), fx(`B/V FV-69${i + 1} D/S`, `J:inj ${p}`, 'injection')]),
+    fx('H-201', 'J:out', 'active'),
     fx('J:tie', 'HV-548B', 'bypass'), fx('HV-548B', 'E-216A', 'bypass'), fx('E-203', 'HV-546B', 'bypass'), fx('HV-546B', 'E-229', 'bypass'), fx('E-216B', 'HV-863', 'bypass'), fx('HV-863', 'J:hdr', 'bypass'),
     fx('P-103B', 'MOV-501/502', 'standby'), fx('MOV-501/502', 'B/V P-103B', 'standby'), fx('B/V P-103B', 'J:tie', 'standby'),
-    fx('Injection water manifold', 'FV-691', 'injection'), fx('FV-691', 'B/V FV-691 D/S', 'injection'), fx('B/V FV-691 D/S', 'H-201', 'injection')];
-  const items = [it_('P-103B', 'standby'), it_('MOV-501/502', 'closed'), it_('B/V P-103B', 'closed'), it_('B/V FV-691 D/S', 'closed'), it_('J:tie', 'known', 'Tie-in on P-12-2014'), it_('J:hdr', 'unresolved', 'H-201 inlet header'),
+  ];
+  const items = [it_('P-103B', 'standby'), it_('MOV-501/502', 'closed'), it_('B/V P-103B', 'closed'), it_('B/V FV-691 D/S', 'closed'), it_('J:tie', 'known', 'Tie-in on P-12-2014'), it_('J:hdr', 'unresolved', 'H-201 inlet header'), it_('J:out', 'known', 'Outlet header'),
     it_('HV-548B', 'unresolved'), it_('HV-546B', 'unresolved'), it_('HV-863', 'unresolved')];
   const s = buildSchematic(loop, { fixes, items });
   return { s, r: renderSchematic(s, 'x', { compact: true }) };
@@ -40,9 +42,10 @@ describe('approved drawing rules (FT-681 reference)', () => {
     expect(Math.max(W / H, H / W)).toBeLessThan(1.7);
     expect(r.info.meta.find(([k]) => k === 'Layout')?.[1]).toMatch(/serpentine|one row/);
   });
-  it('R2 each bypass has its own route: overlapping bypasses are on opposite sides', () => {
-    const main = xy(r.svg, 'E-203')!.y, a = xy(r.svg, 'HV-548B')!.y, b = xy(r.svg, 'HV-546B')!.y;
-    expect(Math.sign(a - main)).not.toBe(Math.sign(b - main));
+  it('R2 each bypass has its own route: no shared line, each valve over its own exchangers', () => {
+    expect(r.issues.filter((i) => /shared|overlapping/.test(i))).toEqual([]);
+    const a = xy(r.svg, 'HV-548B')!, b = xy(r.svg, 'HV-546B')!; expect(Math.abs(a.x - b.x) + Math.abs(a.y - b.y)).toBeGreaterThan(100);
+    expect(Math.abs(a.x - xy(r.svg, 'E-203')!.x)).toBeLessThan(Math.abs(b.x - xy(r.svg, 'E-203')!.x) + 1);
   });
   it('R3 no control valve is added to a bypass without a record; recorded ones not confirmed are marked unverified', () => {
     const bare = buildSchematic(loop, { fixes: [fx('A-101', 'E-203', 'active'), fx('E-203', 'E-216', 'active'), fx('A-101', 'E-216', 'bypass')] });
@@ -52,11 +55,20 @@ describe('approved drawing rules (FT-681 reference)', () => {
   it('R4 the standby branch shows its state and closed isolation valves', () => {
     expect(r.svg).toContain('STANDBY — ISOLATED (SOP step 2)'); expect(r.svg).toContain('CLOSED (SOP step 2)');
   });
-  it('R6 a tie-in and a pass header are separate junctions', () => { expect(s.nodes.filter((x) => x.kind === 'junction').length).toBe(2); });
+  it('R6 a tie-in and a pass header are separate junctions', () => { expect(s.nodes.filter((x) => x.kind === 'junction' && /tie|hdr/.test(x.key)).length).toBe(2); });
   it('R7 each heater pass enters on its own line', () => {
-    const ends = [...r.svg.matchAll(/<path d="M [^"]*L ([\d.]+) ([\d.]+)"[^>]*marker-end="url\(#ar-r-active\)"/g)].map((m) => `${m[1]}:${m[2]}`);
-    const heaterX = xy(r.svg, 'H-201')!.x; const into = ends.filter((e) => Math.abs(+e.split(':')[0] - (heaterX - 28)) < 1);
-    expect(new Set(into).size).toBe(4);
+    const ends = [...r.svg.matchAll(/<path d="M [^"]*L ([\d.]+) ([\d.]+)"[^>]*marker-end="url\(#ar-r-active\)"/g)].map((m) => ({ x: +m[1], y: +m[2] }));
+    const heaterX = xy(r.svg, 'H-201')!.x; const into = ends.filter((e) => Math.abs(Math.abs(e.x - heaterX) - 75) < 1);
+    expect(new Set(into.map((e) => e.y)).size).toBe(4);
+  });
+  it('R17 multi-pass fired heater: a firebox with one coil per pass, injection joining each pass before the heater, outlets into one header', () => {
+    expect(r.svg).toContain('Fired heater · 4 passes, each through its own coil');
+    expect((r.svg.match(/<polyline points="[^"]*" fill="none" stroke="#0f172a" stroke-width="2"\/>/g) ?? []).length).toBe(4);   // four coils
+    const heaterX = xy(r.svg, 'H-201')!.x;
+    for (const p of ['P1', 'P2', 'P3', 'P4']) expect(xy(r.svg, `FT/FV-${p}`)!.x < heaterX === xy(r.svg, 'FV-691')!.x < heaterX).toBe(true);   // injection on the inlet side
+    expect(r.svg).toContain('UNVERIFIED — which injection branch joins which pass is not recorded');
+    expect(r.svg).not.toMatch(/>pass [1-4]</);   // no pass numbers the records do not give
+    expect(r.info.meta.find(([k]) => k === 'Layout')?.[1]).toMatch(/3 unavoidable crossings drawn with a break/);
   });
   it('R8 shells in series are two shells', () => { expect(xy(r.svg, 'E-216A')).not.toBeNull(); expect(xy(r.svg, 'E-216B')).not.toBeNull(); });
   it('R9 / R10 no crossings, no shared lines, no label collisions', () => {

@@ -27,11 +27,12 @@ export function columns(s: Schematic) {
   return col;
 }
 
-interface Laid { parts: string[]; W: number; H: number; issues: string[]; crossings: number; conts: number; dots: number; marksDrawn: number; pipe: number; notes: string[]; name: string }
+interface Laid { parts: string[]; W: number; H: number; issues: string[]; crossings: number; conts: number; dots: number; marksDrawn: number; pipe: number; notes: string[]; name: string; hops: number }
 
 /** Positions and pipe routes of one arrangement (before drawing). */
 export interface Geo { pos: Map<string, Pt>; paths: { l: SLink; pts: Pt[]; arrow: boolean }[]; tall: Map<string, { top: number; bot: number }>; contParts: string[]; contBoxes: Box[];
-  joinsBelow: Set<string>; issues: string[]; W: number; H: number; bandLines: number[]; conts: number; notes?: string[]; name?: string }
+  joinsBelow: Set<string>; issues: string[]; W: number; H: number; bandLines: number[]; conts: number; notes?: string[]; name?: string;
+  /** items a block draws itself (a fired heater, plain junction dots) */ bare?: Set<string>; /** crossings a block cannot avoid, drawn with a break in the lesser line */ hops?: Pt[] }
 const look = (l: SLink) => { const st = LINK_STYLE[l.basis]; const r = l.role ? ROLE_STYLE[l.role] : null;
   return { color: r?.color ?? st.color, width: r?.width ?? st.width, dash: st.dash, marker: r ? `r-${l.role}` : l.basis }; };
 function layout(s: Schematic, col0: Map<string, number>, cuts: number[], top: number, flip: boolean, turns = false): Laid { return finish(s, geometry(s, col0, cuts, top, flip, turns)); }
@@ -182,13 +183,14 @@ export function finish(s: Schematic, g: Geo): Laid {
     const ov = g.a.y === g.b.y && h.a.y === h.b.y && Math.abs(g.a.y - h.a.y) < 3 ? Math.min(Math.max(g.a.x, g.b.x), Math.max(h.a.x, h.b.x)) - Math.max(Math.min(g.a.x, g.b.x), Math.min(h.a.x, h.b.x))
       : g.a.x === g.b.x && h.a.x === h.b.x && Math.abs(g.a.x - h.a.x) < 3 ? Math.min(Math.max(g.a.y, g.b.y), Math.max(h.a.y, h.b.y)) - Math.max(Math.min(g.a.y, g.b.y), Math.min(h.a.y, h.b.y)) : 0;
     if (ov > 20) issues.push(`shared-looking line: ${L1.a} → ${L1.b} and ${L2.a} → ${L2.b}`); }
-  let crossings = 0;
+  let crossings = 0; const hops = g.hops ?? [];
   const hs = segs.filter((g) => g.a.y === g.b.y), vs = segs.filter((g) => g.a.x === g.b.x);
   for (const h of hs) for (const v of vs) { if (h.i === v.i) continue; const x = v.a.x, y = h.a.y;
+    if (hops.some((q) => Math.abs(q.x - x) < 1 && Math.abs(q.y - y) < 1)) continue;
     if (x > Math.min(h.a.x, h.b.x) + 1 && x < Math.max(h.a.x, h.b.x) - 1 && y > Math.min(v.a.y, v.b.y) + 1 && y < Math.max(v.a.y, v.b.y) - 1 && !dots.some((d) => Math.abs(d.x - x) < 1 && Math.abs(d.y - y) < 1)) crossings++; }
   // collision boxes: symbols, item text, pipes, continuation markers
   const boxes: Box[] = [...contBoxes];
-  for (const n of s.nodes) { const p = pos.get(n.key)!; const tl = tall.get(n.key);
+  for (const n of s.nodes) { const p = pos.get(n.key)!; const tl = tall.get(n.key); if (g.bare?.has(n.key)) continue;
     if (tl) { boxes.push({ x: p.x - 30, y: tl.top - 12, w: 60, h: tl.bot - tl.top + 52 }); continue; }
     if (n.kind === 'junction' && joinsBelow.has(n.key)) { boxes.push({ x: p.x - 134, y: p.y + 36, w: 126, h: 44 }); continue; }
     const tw = n.kind === 'junction' ? 62 : Math.max(HW[n.kind], nodeW(n) / 2 - 6);
@@ -234,10 +236,14 @@ export function finish(s: Schematic, g: Geo): Laid {
   for (const f of labelsLater) f();
   // draw
   const parts: string[] = [];
-  for (const p of [...paths].sort((u, v) => Number(u.l.role === 'active') - Number(v.l.role === 'active'))) { const st = look(p.l);
+  const sorted = [...paths].sort((u, v) => Number(u.l.role === 'active') - Number(v.l.role === 'active'));
+  for (const p of sorted) { const st = look(p.l);
+    // a crossing that cannot be avoided: the lesser line is broken where the active route passes over it
+    if (p.l.role === 'active' && p === sorted.find((q) => q.l.role === 'active')) parts.push(...hops.map((q) => `<rect x="${q.x - 5}" y="${q.y - 8}" width="10" height="16" fill="#fff"/>`));
     parts.push(`<path d="M ${p.pts.map((q) => `${q.x} ${q.y}`).join(' L ')}" fill="none" stroke="${st.color}" stroke-width="${st.width}"${st.dash ? ` stroke-dasharray="${st.dash}"` : ''}${p.arrow ? ` marker-end="url(#ar-${st.marker})"` : ''}/>`); }
   parts.push(...contParts, ...markParts);
   for (const n of s.nodes) {
+    if (g.bare?.has(n.key)) continue;
     const p = pos.get(n.key)!; const c = n.state === 'standby' ? '#94a3b8' : '#0f172a';
     if (n.kind === 'junction' && n.state === 'known') { const jl = wrap(n.label ?? n.tag.slice(2), 22);
       // a branch joining from below: the name goes to the left, clear of that pipe
@@ -260,7 +266,7 @@ export function finish(s: Schematic, g: Geo): Laid {
   parts.push(...dots.map((d) => `<circle cx="${d.x}" cy="${d.y}" r="3.6" fill="#0f172a"/>`), ...labels);
   for (const yl of g.bandLines) parts.push(`<line x1="24" y1="${yl}" x2="${W - 24}" y2="${yl}" stroke="#e2e8f0" stroke-dasharray="4 4"/>`);
   const pipe = segs.reduce((t2, g) => t2 + Math.abs(g.a.x - g.b.x) + Math.abs(g.a.y - g.b.y), 0);   // total pipe length (R11: short pipes)
-  return { parts, W, H: H0, issues, crossings, conts: g.conts, dots: dots.length, marksDrawn, pipe, notes: g.notes ?? [], name: g.name ?? (g.conts ? `folded, ${g.conts} continuation${g.conts > 1 ? "s" : ""}` : g.bandLines.length ? `${g.bandLines.length + 1} bands, continuous turns` : "one band") };
+  return { parts, W, H: H0, issues, crossings, conts: g.conts, dots: dots.length, marksDrawn, pipe, hops: hops.length, notes: g.notes ?? [], name: g.name ?? (g.conts ? `folded, ${g.conts} continuation${g.conts > 1 ? "s" : ""}` : g.bandLines.length ? `${g.bandLines.length + 1} bands, continuous turns` : "one band") };
 }
 
 /** Try the arrangements, keep the most compact clean one, and draw the sheet around it. */
@@ -302,6 +308,7 @@ export function renderFolded(s: Schematic, generatedAt: string): { svg: string; 
     ...usedB.map((b) => ({ icon: (x: number, yy: number) => `<line x1="${x}" y1="${yy}" x2="${x + 30}" y2="${yy}" stroke="#475569" stroke-width="2.2"${LINK_STYLE[b].dash ? ` stroke-dasharray="${LINK_STYLE[b].dash}"` : ''}/>`, text: LINK_STYLE[b].label })),
     ...(s.nodes.some((x) => x.state === 'closed') ? [{ icon: (x: number, yy: number) => `<polygon points="${x + 5},${yy - 6} ${x + 5},${yy + 6} ${x + 15},${yy} ${x + 25},${yy - 6} ${x + 25},${yy + 6} ${x + 15},${yy}" fill="#0f172a"/>`, text: 'Closed per the procedure step named' }] : []),
     ...(r.dots ? [{ icon: (x: number, yy: number) => `<circle cx="${x + 15}" cy="${yy}" r="3.6" fill="#0f172a"/>`, text: 'Junction' }] : []),
+    ...(r.hops ? [{ icon: (x: number, yy: number) => `<line x1="${x + 15}" y1="${yy - 8}" x2="${x + 15}" y2="${yy - 3}" stroke="#0e7490" stroke-width="2"/><line x1="${x + 15}" y1="${yy + 3}" x2="${x + 15}" y2="${yy + 8}" stroke="#0e7490" stroke-width="2"/><line x1="${x}" y1="${yy}" x2="${x + 30}" y2="${yy}" stroke="#0f172a" stroke-width="3"/>`, text: 'Crossing — not connected' }] : []),
     ...(r.conts ? [{ icon: (x: number, yy: number) => `<polygon points="${x + 3},${yy - 7} ${x + 15},${yy - 7} ${x + 23},${yy} ${x + 15},${yy + 7} ${x + 3},${yy + 7}" fill="#fff" stroke="#0f172a" stroke-width="1.4"/>`, text: 'Continues at the same letter' }] : []),
     ...(s.nodes.some((x) => x.kind === 'junction' && x.state !== 'known') ? [{ icon: (x: number, yy: number) => `<circle cx="${x + 15}" cy="${yy}" r="6" fill="#fff" stroke="#b45309" stroke-width="2" stroke-dasharray="3 2"/>`, text: 'Not recorded' }] : [])];
   parts.push(`<line x1="24" y1="${y}" x2="${W - 24}" y2="${y}" stroke="#e2e8f0"/>`); y += 20;
@@ -318,6 +325,6 @@ export function renderFolded(s: Schematic, generatedAt: string): { svg: string; 
   const rules = checkRules(s, svg, issues); for (const f of rules.failed) if (!issues.includes(f)) issues.push(f);
   const info = schematicInfo(s, generatedAt);
   info.meta.push(['Review rules', `${rules.passed.length}/${DRAWING_RULES.length} passed${rules.failed.length ? ` — ${rules.failed.join('; ')}` : ''}`]); for (const n of r.notes) info.meta.push(['Layout note', n]);
-  info.meta.push(['Layout', `${r.name} · ${r.crossings} crossing${r.crossings === 1 ? '' : 's'}`], ['Automatic check', issues.length ? issues.join('; ') : 'passed (connections, junctions, labels, crossings)']);
+  info.meta.push(['Layout', `${r.name} · ${r.crossings} crossing${r.crossings === 1 ? '' : 's'}${r.hops ? ` · ${r.hops} unavoidable crossing${r.hops > 1 ? 's' : ''} drawn with a break` : ''}`], ['Automatic check', issues.length ? issues.join('; ') : 'passed (connections, junctions, labels, crossings)']);
   return { svg, issues, info };
 }
