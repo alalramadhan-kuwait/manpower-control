@@ -39,6 +39,8 @@ No unrelated improvements or redesigns while a priority is open.
 - "Not required" is never "done": an N/R loop keeps its reason, who and when, is left out of outstanding counts,
   shown apart, and is not taken as safe for handover or blinding.
 - Validation for people's edits (reasons, 48 h) must not hit updates that triggers copy from another record.
+- A P6 line on the wrong equipment is moved (same row, ids, hours, P6 dates) to its real tag or a named work item, never
+  copied; totals checked before and after; no invented tags.
 - Approved calculations (manpower minimums, roster cycle, tracker progress/forecast) change only with authorization.
 - **No hard delete** of user records. Use soft states (cancelled, voided, declined, superseded) that keep links and
   history. No DROP / TRUNCATE / unscoped DELETE; production data changes only with confirmed mappings.

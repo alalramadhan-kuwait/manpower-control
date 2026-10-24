@@ -193,6 +193,16 @@ starts, stamped and logged). N/R loops are left out of the Neutralized x/y count
 and "Not started" in the report (listed as "Not required (N/R)"); an item whose only open loops are N/R reads "ready …
 N/R (confirm)" — the handover itself is still confirmed the normal way.
 
+## 6a3. Rotating scope mapping (24 Oct 2026)
+
+The P6 bar chart puts some lines under the main machine although they belong to other equipment. Corrected for
+C-12-201-ST (rows moved, not copied; ids, hours, P6 dates kept; moves in `trk_log`): A3768 → C-12-201-E-03 (gland
+condenser), A3769 → C-12-201-EJ-01 (ejector) — tag match from the plant equipment list, not yet on a P&ID —, A3765 /
+A3771 / A6640 → "C-12-201-ST on-site checks". Totals unchanged (main 29–34 % / plan 45 %, 726 lines, 25,857 h).
+Same pattern still open on C-12-201 (not changed): A7690 both LO coolers (items C-12-201-E-01A/B exist, off),
+A7700 LO and dry-gas filters (C-12-201-F-03A/B exists, off; F-01B on), A7430 suction drum inspection and A7630 /
+A6630 suction strainer / line (no tag in the lists). A re-import / publish from the template restores the P6 mapping.
+
 ## 6b. Operational readiness review (24 Oct 2026)
 
 Estimate ~88 % (verified functionality). Recommendation: **ready for operational use**, with the conditions below.
