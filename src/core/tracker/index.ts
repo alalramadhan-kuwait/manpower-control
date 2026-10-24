@@ -20,6 +20,9 @@ export interface TrkEquipment {
   blindsIn: string | null; blindsOut: string | null; updatedBy: string | null; updatedAt: string | null;
   /** items worked as one (E-12-216A/B): one row in the list, a step started / finished on all of them */
   combine?: string | null;
+  /** display group: items of one machine (a compressor with its turbine, lube oil, suction …) listed together under one
+   *  expandable heading; each keeps its own steps, stage, P6 lines and progress — not used in any count */
+  system?: string | null;
 }
 export interface TrkIat { id: string; tag: string; iatNo: string; jobText: string | null; discipline: string | null; issuedAt: string; status: 'open' | 'closed'; closedAt: string | null;
   /** from the daily IAT tracking sheet: work order, the line it is on, the status as written in the sheet, a remark */
@@ -96,6 +99,13 @@ export interface TrkData { events?: TrkEvent[]; engine?: TrkEngine; pointSteps?:
 /** The main equipment groups; the rest (control valve shells, PSVs, check valves, RTJ & injection points, piping, OPR
  *  list, PMRs …) is miscellaneous, shown after them. */
 export const MAIN_GROUPS = ['Reactors', 'Heaters', 'Exchangers', 'Vessels', 'Filters', 'Compressor', 'Pumps / LO'] as const;
+/** The list heading an item is shown under: items of one system go with the system's main item (the one whose tag
+ *  starts the system name), so a compressor's filters and lube oil items sit with the compressor. Display only. */
+export function shownGroup(equipment: TrkEquipment[]): (e: TrkEquipment) => string {
+  const lead = new Map<string, string>();
+  for (const e of equipment) if (e.system && (!lead.has(e.system) || e.system.startsWith(e.tag + ' '))) lead.set(e.system, e.group);
+  return (e) => (e.system ? lead.get(e.system) ?? e.group : e.group);
+}
 export const isMisc = (group: string) => !(MAIN_GROUPS as readonly string[]).includes(group);
 /** Small jobs in the M & I progress: the miscellaneous groups and the pumps' lube oil work (short jobs that the bar
  *  chart plans as long windows, Section Head decision 23 Oct), counted apart from the main equipment. */

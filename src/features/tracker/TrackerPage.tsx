@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
-import { isNR, daysAsHours, blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, relatedWork, shiftOf, shiftReport, staleItems, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
+import { isNR, shownGroup, daysAsHours, blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, relatedWork, shiftOf, shiftReport, staleItems, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import { StageReview, StaleAlert } from './StageReview';
 import { CONFLICT_EVENT, setActivity, setEquipment, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
@@ -254,7 +254,10 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
   };
   const isoMemo = new Map(eqs.map((e) => [e.eq.tag, e.stage === 0 ? isoState(e.eq.tag, 0, points) : null]));
   const iso = (e: EquipView) => isoMemo.get(e.eq.tag) ?? null;
-  const groups = [...new Set(eqs.map((e) => e.eq.group))];
+  // items of one machine (a compressor and its accessories) are listed under the machine's heading, in one expandable block
+  const grpOf = useMemo(() => { const f = shownGroup(eqs.map((e) => e.eq)); return (e: EquipView) => f(e.eq); }, [eqs]);
+  const [openSys, setOpenSys] = useState<Set<string>>(new Set());
+  const groups = [...new Set(eqs.map(grpOf))];
   // PSVs have their own chip (operations isolate and remove them), the other small items stay under Misc
   const misc_ = (g: string) => isMisc(g) && g !== 'PSVs';
   const main = groups.filter((x) => !misc_(x)), misc = groups.filter(misc_);
@@ -264,16 +267,16 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
   const [showOff, setShowOff] = useState(false);
   const off = eqs.filter((e) => !e.eq.tracked);
   const shown = eqs.filter((e) => (showOff || e.eq.tracked) && (!onlyOps || e.eq.opsItem || e.stage > 0 || e.eq.group === 'PSVs'));
-  const inChip = (e: EquipView) => (g === 'All' ? true : g === 'Misc' ? misc_(e.eq.group) : e.eq.group === g);
+  const inChip = (e: EquipView) => (g === 'All' ? true : g === 'Misc' ? misc_(grpOf(e)) : grpOf(e) === g);
   // items worked as one (E-12-216A/B) show as one row: the first of them stands for the set
   const twins = new Map<string, EquipView[]>(); for (const e of eqs) if (e.eq.combine) twins.set(e.eq.combine, [...(twins.get(e.eq.combine) ?? []), e]);
   const firstOf = new Set<string>(); const lead = (e: EquipView) => { if (!e.eq.combine) return true; if (firstOf.has(e.eq.combine)) return false; firstOf.add(e.eq.combine); return true; };
   const list = shown.filter(inChip).filter(lead);
   const RANK: Record<string, number> = { HO_LATE: 0, LATE: 1, PENDING: 2, IAT_OPEN: 3 };
   const sorted = lateFirst ? [...list].sort((a, b) => (RANK[a.flag] ?? 9) - (RANK[b.flag] ?? 9) || b.lateBy - a.lateBy) : list;
-  const by = (xs: string[]) => xs.map((x) => [x, sorted.filter((e) => e.eq.group === x)] as [string, EquipView[]]).filter(([, ys]) => ys.length);
+  const by = (xs: string[]) => xs.map((x) => [x, sorted.filter((e) => grpOf(e) === x)] as [string, EquipView[]]).filter(([, ys]) => ys.length);
   // All: the main groups, then miscellaneous folded · Misc: its groups · Late first: one list, main items first
-  const sections: [string, EquipView[]][] = lateFirst ? [['', [...sorted.filter((e) => !misc_(e.eq.group)), ...sorted.filter((e) => misc_(e.eq.group))]]]
+  const sections: [string, EquipView[]][] = lateFirst ? [['', [...sorted.filter((e) => !misc_(grpOf(e))), ...sorted.filter((e) => misc_(grpOf(e)))]]]
     : g === 'All' ? by(main) : g === 'Misc' ? by(misc) : [['', sorted]];
   const miscRows = g === 'All' && !lateFirst ? by(misc) : [];
   // the one-tap step of a row: finish the running step, else start the next one (blind and neutralization lines are
@@ -335,9 +338,19 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
         ? <button type="button" aria-label={`Drums ${e.eq.tag}`} onClick={(x) => { x.stopPropagation(); setDrumKey(dm.key); }} className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-400 text-base shadow-sm active:bg-amber-500">🛢</button>
         : st ? <StepButton key={st.a.id} a={st.a} also={st.also} finish={st.finish} more={st.more} eq={e.eq} onDone={(m, u) => onDone?.(m, u)} /> : <span className="w-8" />}
     </div>); };
+  // a system's items in one block where its first item stands: a heading row (tap to open), then the items as usual
+  const rows = (xs: EquipView[]) => { const done = new Set<string>(); return xs.flatMap((e) => { const sys = e.eq.system; if (!sys || lateFirst) return [row(e)]; if (done.has(sys)) return []; done.add(sys);
+    const ms = xs.filter((m) => m.eq.system === sys); if (ms.length < 2) return [row(e)]; const isOpen = openSys.has(sys);
+    const ho = ms.filter((m) => m.stage >= 1).length, late = ms.filter((m) => m.late).length;
+    return [<button key={`sys:${sys}`} type="button" aria-expanded={isOpen} onClick={() => setOpenSys((s) => { const n = new Set(s); if (n.has(sys)) n.delete(sys); else n.add(sys); return n; })}
+      className="flex w-full items-center gap-2 border-t border-slate-100 bg-slate-50 px-2.5 py-1.5 text-left first:border-t-0 active:bg-slate-100">
+      <span className="w-3 text-[11px] text-slate-500">{isOpen ? '▾' : '▸'}</span>
+      <span className="min-w-0 flex-1"><b className="block truncate text-[13px] text-slate-900">{sys}</b><span className="text-[11px] text-slate-600">{ms.length} items · {ho} handed over{late ? <span className="font-bold text-red-700"> · {late} late</span> : null}</span></span>
+      <StageBar stage={Math.min(...ms.map((m) => m.stage))} className="w-14 shrink-0" /></button>,
+      ...(isOpen ? ms.map((m) => <div key={`in:${m.eq.tag}`} className="border-l-4 border-slate-200">{row(m)}</div>) : [])]; }); };
   return (
     <div className="space-y-2">
-      <div className="flex gap-1.5 overflow-x-auto pb-1">{['All', ...main, ...(misc.length ? ['Misc'] : [])].map((x) => { const n = x === 'All' ? shown.length : x === 'Misc' ? shown.filter((e) => misc_(e.eq.group)).length : shown.filter((e) => e.eq.group === x).length;
+      <div className="flex gap-1.5 overflow-x-auto pb-1">{['All', ...main, ...(misc.length ? ['Misc'] : [])].map((x) => { const n = x === 'All' ? shown.length : x === 'Misc' ? shown.filter((e) => misc_(grpOf(e))).length : shown.filter((e) => grpOf(e) === x).length;
         return <button key={x} type="button" onClick={() => setG(x)} className={cx('min-h-9 shrink-0 rounded-full px-3 text-xs font-semibold', g === x ? 'bg-brand-500 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{x}{n ? <span className="ml-1 opacity-60">{n}</span> : null}</button>; })}</div>
       <div className="flex items-center gap-2 text-xs text-slate-600">
         <label className="flex items-center gap-2"><input type="checkbox" checked={onlyOps} onChange={(e) => setOnlyOps(e.target.checked)} />Operations items only</label>
@@ -347,12 +360,12 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
       {sections.map(([name, xs]) => (
         <section key={name || 'list'}>
           {name && <h3 className="mb-1 mt-2 flex justify-between px-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-500"><span>{name}</span><span>{xs.length} · {xs.filter((e) => e.stage >= 1).length} HO</span></h3>}
-          <div className="overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">{xs.map(row)}</div>
+          <div className="overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">{rows(xs)}</div>
         </section>
       ))}
       {miscRows.length > 0 && <section className="pt-1">
         <button type="button" onClick={() => setShowMisc((x) => !x)} className="flex w-full justify-between rounded-xl bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-600"><span>{showMisc ? '▾' : '▸'} Miscellaneous</span><span>{miscRows.reduce((t, [, xs]) => t + xs.length, 0)} items</span></button>
-        {showMisc && miscRows.map(([name, xs]) => <div key={name}><h3 className="mb-1 mt-2 px-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">{name} · {xs.length}</h3><div className="overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">{xs.map(row)}</div></div>)}
+        {showMisc && miscRows.map(([name, xs]) => <div key={name}><h3 className="mb-1 mt-2 px-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">{name} · {xs.length}</h3><div className="overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">{rows(xs)}</div></div>)}
       </section>}
       {!list.length && <p className="py-4 text-center text-sm text-slate-500">No items here{onlyOps ? ' for operations' : ''}.</p>}
       {drumKey && engine && (() => { const sc = scopeOf(drumKey)!; const tag = eqs.find((e) => (e.eq.barchartKey ?? e.eq.tag) === drumKey)?.eq.tag ?? drumKey;

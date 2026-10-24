@@ -4,7 +4,7 @@
 // stamped with the ID; Undo for a few seconds after each one.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
-import { isNR, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
+import { isNR, shownGroup, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, addQtyEntry, confirmEmpty, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatLabel, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -285,18 +285,29 @@ function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string)
   const [open, setOpen] = useState<TrkEquipment | null>(null);
   const stale = useMemo(() => new Map(staleItems(d, now).filter((i) => !i.small || WITH_EQUIP.includes(i.section)).map((i) => [i.key, i.ageH])), [d, now]);
   const mi = useMemo(() => new Map((phases(d, now).mi.weighted?.items ?? []).map((i) => [i.key, i])), [d, now]);
-  const main = d.equipment.filter((e) => e.tracked && (!isSmallJob(e.group) || WITH_EQUIP.includes(e.group)) && lines(d, [keyOf(e)]).length && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e));
-  const all = [...new Set(main.map((e) => e.group))];
+  // items of one machine (a compressor and its accessories) sit under the machine's heading, in one expandable block
+  const grpOf = useMemo(() => shownGroup(d.equipment), [d.equipment]);
+  const [openSys, setOpenSys] = useState<Set<string>>(new Set());
+  const main = d.equipment.filter((e) => e.tracked && (!isSmallJob(e.group) || WITH_EQUIP.includes(e.group) || !!e.system) && lines(d, [keyOf(e)]).length && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e));
+  const all = [...new Set(main.map(grpOf))];
   const todo = main.filter((e) => stale.has(keyOf(e)));
-  const shown = f === 'todo' ? todo : f === 'all' ? main : main.filter((e) => e.group === f);
-  const groups = [...new Set(shown.map((e) => e.group))];
-  const chips: [string, string][] = [['all', `All ${main.length}`], ['todo', `To update ${todo.length}`], ...all.map((g): [string, string] => [g, `${g} ${main.filter((e) => e.group === g).length}`])];
+  const shown = f === 'todo' ? todo : f === 'all' ? main : main.filter((e) => grpOf(e) === f);
+  const groups = [...new Set(shown.map(grpOf))];
+  const chips: [string, string][] = [['all', `All ${main.length}`], ['todo', `To update ${todo.length}`], ...all.map((g): [string, string] => [g, `${g} ${main.filter((e) => grpOf(e) === g).length}`])];
   return (<>
     <div className="-mx-3 mb-2.5 flex gap-1.5 overflow-x-auto px-3 pb-0.5 [scrollbar-width:none]">{chips.map(([k, l]) => <button key={k} type="button" onClick={() => setF(k)} ref={(el) => { if (el && f === k && f !== 'all') el.scrollIntoView({ inline: 'center', block: 'nearest' }); }}
       className={cx('min-h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-[12px] font-bold', f === k ? 'bg-brand-700 text-white' : k === 'todo' && todo.length ? 'bg-amber-50 text-amber-900 ring-1 ring-amber-300' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>)}</div>
     {f === 'todo' && <p className="mx-1 mb-2 text-[12px] text-slate-500">Work running (or due to start) with no update for {'>'}12 h · critical {'>'}6 h. Any step, note, status or drum entry counts as an update.</p>}
     {(f === 'all' || f === 'Reactors') && <Reactors d={d} now={now} done={done} />}
-    {groups.map((g) => <div key={g}><Sec>{g}</Sec><List>{shown.filter((e) => e.group === g).map((e) => <ItemRow key={e.id} d={d} e={e} now={now} ageH={stale.get(keyOf(e))} mi={mi.get(keyOf(e))} onOpen={() => setOpen(e)} />)}</List></div>)}
+    {groups.map((g) => { const xs = shown.filter((e) => grpOf(e) === g); const seen = new Set<string>();
+      const item = (e: TrkEquipment) => <ItemRow key={e.id} d={d} e={e} now={now} ageH={stale.get(keyOf(e))} mi={mi.get(keyOf(e))} onOpen={() => setOpen(e)} />;
+      return <div key={g}><Sec>{g}</Sec><List>{xs.flatMap((e) => { const sys = e.system; if (!sys || f === 'todo') return [item(e)]; if (seen.has(sys)) return []; seen.add(sys);
+        const ms = xs.filter((m) => m.system === sys); if (ms.length < 2) return [item(e)]; const isOpen = openSys.has(sys); const ho = ms.filter((m) => m.stage >= 1).length;
+        return [<button key={`sys:${sys}`} type="button" aria-expanded={isOpen} onClick={() => setOpenSys((s) => { const n = new Set(s); if (n.has(sys)) n.delete(sys); else n.add(sys); return n; })}
+          className="flex w-full items-center gap-2 bg-slate-50 px-3 py-2 text-left active:bg-slate-100">
+          <span className="w-3 text-[12px] text-slate-500">{isOpen ? '▾' : '▸'}</span>
+          <span className="min-w-0 flex-1"><b className="block truncate text-[14px] text-slate-900">{sys}</b><span className="text-[12px] text-slate-600">{ms.length} items · {ho} handed over · tap to {isOpen ? 'close' : 'open'}</span></span></button>,
+          ...(isOpen ? ms.map((m) => <div key={`in:${m.id}`} className="border-l-4 border-slate-200">{item(m)}</div>) : [])]; })}</List></div>; })}
     {!shown.length && <Card><p className="text-sm font-semibold text-green-800">{f === 'todo' ? '✓ Everything has a recent update.' : 'Nothing here.'}</p></Card>}
     {open && <ItemSheet d={d} e={open} done={done} onClose={() => setOpen(null)} />}
   </>);
