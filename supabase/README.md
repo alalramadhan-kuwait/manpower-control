@@ -238,3 +238,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261024062036_shutdown_progress_c201_shifted` | Live tracker: C-201 compressor and turbine shifted to the workshop; both overhauls running, due 4 Nov |
 | `20261024062403_shutdown_progress_c201_dismantle_step` | Live tracker: C-201 / C-201-ST get a 3-day Dismantle step before the overhaul; overhaul re-timed to end 4 Nov |
 | `20261024062516_shutdown_progress_c201_wording_hours` | Live tracker: C-201 / C-201-ST status lines and step notes reworded in hours ("dismantling I/P", 72 h) |
+| `20261024094825_trk_security_a_links_own_tracker` | Tracker security part A: engineer links expire (`trk_access.expires_at`, existing links to 17 Nov 07:00, new ones 30 days) and read/write only their own tracker (`trk_access_tracker()`, tracker policies altered in place, `trk_set_order` checks the tracker); `trk_split_lines` Section Head only. Rollback in `rollback/` |

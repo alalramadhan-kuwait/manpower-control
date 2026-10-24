@@ -74,8 +74,8 @@ approval (see §7).
 
 ### 3.3 Permission gaps found
 
-1. Engineer links are not limited to their own tracker (`trk_access_id()` ignores `tracker_id`); no expiry.
-2. `trk_split_lines(p_tracker)` is security definer, no permission check, executable by `anon`.
+1. ~~Engineer links reach every tracker; no expiry~~ — fixed 24 Oct (part A): own tracker only, `expires_at`.
+2. ~~`trk_split_lines` open to anon~~ — fixed 24 Oct (part A): Section Head only.
 3. Hard delete possible: staff on employees, role assignments, qualifications, leave_records, sd_*, holidays; Head on
    user_profiles and auth users (`manage-users` delete); table DELETE grants to `anon`/`authenticated` on most tables.
 4. Some Head-only UI actions are open to staff in RLS (e.g. `crew_movements` update).
@@ -99,7 +99,7 @@ drums). No UI, RLS or link-access tests.
 
 | # | Gap | Level |
 |---|---|---|
-| T1 | Engineer links reach every tracker; no expiry; `trk_split_lines` open to anon; DELETE grants to anon | P0 |
+| T1 | ~~Links reach every tracker, no expiry, `trk_split_lines` open~~ (fixed, part A). Open: function execute and DELETE grants for anon / delete on operational tables (part B, prepared) | P0 |
 | T2 | Concurrent edits overwrite silently (no version check; Undo writes old values blindly); polling 30 s / 2 min | P0 |
 | T3 | Stage vs steps drift (C-201-ST, LO system at Not HO with work done; 139 steps with no stage; stage sync only on finish) | P0 |
 | T4 | Engineer view records "now" only — no backdated start/finish for late reports | P0 |
@@ -143,6 +143,32 @@ across all of it; a link from a shutdown item (`trk_equipment`) to the plant ass
 6. IATs stay their own workflow records and appear in the asset's technical list through their link (no copy).
 7. UI: a "Technical" section in the existing item sheet / item page and the existing search; category admin inside
    Admin. Permissions: L1/L2 add, correct, verify, archive; L3 add (unverified) and suggest corrections.
+
+## 9. Equipment relationships & shared handover steps — requirement (24 Oct 2026, assess later)
+
+Requirement: relations between items (shared piping, isolation boundaries, blinds, preparation, handover); one shared
+activity shown under several items without copies; clear "ready before" dependencies; a shared step's status the same
+everywhere; completing a shared step never marks an item handed over; authorized editing with history; physical,
+procedural and schedule relations kept apart; **isolation is never inferred from database connections — only from
+verified P&IDs and approved procedures.**
+
+Example reported by Operations: E-12-204 / E-12-205 shell side connected with no intermediate isolation. The line-up
+has E-205 shell out → E-204 shell in on `P-12-2056-HR2-10"-Ih` (P&ID 113, tee to the TV-667 bypass) with no spectacle
+blind listed on that line, while the neighbouring lines list one — confidence "check" (not verified). To be confirmed
+on the approved P&ID and isolation procedure before any use.
+
+**What exists:** `trk_points` (blinds, loops) already link one record to many items (`items[]`, e.g. S215 → E-204 and
+E-205), with `requires[]` (blinds before a loop), `part_of[]` and links to steps; handover stays per item
+(`trk_steps`, stage) and is not set by a point. `lu_streams` holds physical connections (unverified). `trk_equipment
+.combine` merges display only (E-216A/B). `trk_link` (P6 logic) is empty.
+
+**Missing:** M&I steps (`trk_activities`) belong to one item only, so a shared step needs a copy; no typed relation
+between items (physical / procedural / schedule) with source and verification; no "waiting on" view for M&I steps.
+
+**Smallest change (when approved):** a `trk_relation` table (item ↔ item, kind physical | procedural | schedule, note,
+source reference, verified by/at, soft archive, logged); `trk_activities.shared_with` (other item keys) so one step
+shows under each related item, counted once in progress on its owner (no calculation change); "Related" and "Waiting
+on" lines in the item sheet. No automatic handover and no isolation logic.
 
 ## 7. Decisions log
 
