@@ -86,6 +86,27 @@ Touch: primary buttons `min-h-11` (44px) · secondary/row actions `min-h-9` (36p
   versions kept, revisions with a reason and approval, effective version and date shown. A procedure template and its
   execution records are separate: changing the template never rewrites completed checklists.
 
+## 4a. One component per job (shared across modules)
+
+Equivalent actions look and behave the same in every module; domains keep their own information. Use the shared
+component; a screen-local copy of one of these is a defect to fix.
+
+| Job | Standard |
+|---|---|
+| Item detail sheet (equipment, PMR, IAT, loop) | `BottomSheet`: header (full tag, name, system link) → state chips → one progress line → primary action(s) → main list → folded sections |
+| Stage vs work status | Two separate chips: `STAGE · …` (handover/M&I stage) and `WORK · …` (in progress / waiting … / stopped). Never one control for both |
+| Work status / hold | One compact selector (`⏸ Hold ▾` → reasons list + note), not a row of pills |
+| Step actions | Running step: full-width amber `✓ FINISH <step>`; next: navy `▶ START NEXT`; Undo only in the toast; time / note corrections in the row's `⋯` |
+| Edit | `✎ Edit` link → fields in place → `Cancel` (secondary) + `Save` (primary); no confirmation dialog |
+| Feedback | One toast for every save: "<TAG>: <what happened>." with `Undo` when it can be undone; errors in `ErrorBox` |
+| Issues | One `Issues` row: count or "None open" + `+ Issue`; same component in desktop and engineer views |
+| Lists / progress | Rows: dot (state colour) · text (never truncate tags) · meta right; progress = one bar with the plan tick + "x% done · plan y%" |
+| Folded sections | Same header everywhere: ▸ title · count / summary right; closed by default unless something needs action |
+| Secondary actions | Under Details / ⋯ / More; the screen shows at most two primary actions |
+| Dialogs | Bottom sheet on mobile; no `confirm()`; destructive or scope changes ask for a reason inline instead |
+
+Tags are shown in full (C-12-201, not C-201) wherever there is room; shorten only inside fixed-width grids.
+
 ## 4b. Technical information on equipment
 
 - Shown inside the equipment's own view (item sheet / item page) as a compact list grouped by category:

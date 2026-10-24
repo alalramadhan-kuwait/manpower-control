@@ -139,3 +139,10 @@ data in its `tasks` and `history` collections, written with the ArtifactData too
   `docs/APP_KNOWLEDGE.md` (decisions log) and here if it is a rule, set `synced: true`, update status / next action,
   and never ask the same question again. The board says "saved · not yet picked up by Claude" until then — never
   claim work started before it did.
+
+## One design system (permanent)
+
+Every screen follows `.claude/skills/refinery-enterprise-design/SKILL.md` §4a: one shared component per job (detail
+sheet, stage vs work status, hold selector, step actions, edit, toast + Undo, issues, lists, folded sections).
+Equivalent actions look and behave the same in all modules; domains keep their own information. Visual work never
+changes database logic, calculations, permissions or workflows. Mock-up first for any layout change.
