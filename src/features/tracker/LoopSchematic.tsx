@@ -31,7 +31,7 @@ function Viewer({ loop, data, fixes, items, reload, onClose }: { loop: Loop; dat
 }
 
 /** loops drawn with the compact layout (trial on FT-681 before it applies to all) */
-const COMPACT = new Set(['FT-681']);
+const COMPACT = new Set(['FT-681', 'S318']);
 
 /** what the compact sheet keeps off the drawing: procedure points, notes, unknowns, sources and revision */
 function Details({ info }: { info: SchematicInfo }) {
