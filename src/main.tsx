@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './app/App';
 import { UpdatePrompt } from './app/UpdatePrompt';
 import { BusyIndicator } from './app/BusyIndicator';
+import { OfflineBanner } from './app/OfflineBanner';
 import { LangProvider } from './i18n';
 import './index.css';
 
@@ -14,5 +15,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     </BrowserRouter>
     <UpdatePrompt />
     <BusyIndicator />
+    <OfflineBanner />
   </React.StrictMode>
 );

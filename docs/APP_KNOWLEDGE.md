@@ -107,7 +107,7 @@ drums). No UI, RLS or link-access tests.
 | T3 | ~~Stage vs steps drift~~ — 24 Oct: steps no longer raise a not-handed-over item; stage review list on Today (C-201-ST flagged: blinded, HO not recorded) | done (review open) |
 | T4 | ~~No backdated times~~ — 24 Oct: time field on engineer steps; Section Head, Engineers and links enter any past time, Controllers/Coordinator 48 h; a reason for a correction or over 48 h back, kept in `trk_log` with who and when (no approval step, Section Head instruction) | done |
 | T5 | Progress entered through migrations ("system"), not by people in the app — no field attribution | P0 (process) |
-| T6 | Offline (assessed 24 Oct): the app shell is cached (PWA), data is not; a save with no network fails with an error. Smallest safe step: an offline banner and blocked buttons, last data kept for reading. Full step: an outbox (IndexedDB) replayed on reconnect through the same field-level check, so a stale offline change is refused, not overwriting; the time chosen is kept, entry time = when it reaches the server | P1 |
+| T6 | Offline: a "No connection" bar on every screen and saves refused while offline (24 Oct, done). Offline queue not built (Section Head decision). Assessment: the app shell is cached (PWA), data is not; a save with no network fails with an error. Smallest safe step: an offline banner and blocked buttons, last data kept for reading. Full step: an outbox (IndexedDB) replayed on reconnect through the same field-level check, so a stale offline change is refused, not overwriting; the time chosen is kept, entry time = when it reaches the server | P1 |
 | T7 | P6 relationships (assessed 24 Oct): `trk_link` exists (FS/SS/FF, source p6/confirmed) but is empty; the bar-chart export has no predecessor columns, so the forecast chains steps by planned adjacency within an item only. Needed: the P6 relationships export (predecessor, successor, type, lag) to import as `source='p6'` and check against the bar chart; using them in the forecast is a calculation change (needs approval) | P1 |
 | T8 | Hard-coded to this shutdown (R-12-205, REACTORS, 3-day threshold, TR-2 template); no create/close flow | P1 |
 | T9 | ~~Days in tracker text~~ — 24 Oct: all tracker screens and reports show hours (`daysAsHours`); calculations unchanged | done |
@@ -173,6 +173,19 @@ source reference, verified by/at, soft archive, logged); `trk_activities.shared_
 shows under each related item, counted once in progress on its owner (no calculation change); "Related" and "Waiting
 on" lines in the item sheet. No automatic handover and no isolation logic.
 
+## 6b. Operational readiness review (24 Oct 2026)
+
+Estimate ~88 % (verified functionality). Recommendation: **ready for operational use**, with the conditions below.
+- Works and verified: progress, forecast (labelled unverified), drums, handover/isolation, IATs, shift and Team leader
+  reports, engineer view, earlier times with reason and history, overwrite protection, stage review, no-update alert,
+  offline bar, link scope/expiry, three levels, no hard delete; 31 database checks, screen scripts, 523 unit tests.
+- Conditions (not code): every shift engineer gets access (a link per person or an Engineer login) and enters
+  progress in the app (in the last 48 h all entries came from the Section Head login or report loads, no field
+  link); C-201-ST handover verified on site and recorded; the forecast is read as unverified until P6 links exist.
+- To reach 100 %: P6 relationships export imported and checked (then the forecast loses "unverified", with approval
+  for the calculation change); one or two shifts of field use with feedback; future items: offline queue, T8
+  generalization, technical equipment knowledge (§8), equipment relationships (§9).
+
 ## 7. Decisions log
 
 | Date | Decision |
@@ -185,3 +198,4 @@ on" lines in the item sheet. No automatic handover and no isolation logic.
 | 24 Oct 2026 | No approval for earlier times: Engineers / links correct any past time with a reason and full history |
 | 24 Oct 2026 | Manpower assignment = manpower and leave work only; administrative data by role (Head, Engineer, Coordinator) |
 | 24 Oct 2026 | C-201-ST: blinded, handover not recorded — flagged for operational verification only, not changed |
+| 24 Oct 2026 | Offline: indicator and saving off only, no queue; P6 forecast stays unverified until real relationships; R-205 / reactor setup kept for this shutdown |

@@ -21,6 +21,8 @@ export function kindOf(url: string, method = 'GET'): Kind | null {
 export const trackedFetch: typeof fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   const k = kindOf(url, init?.method ?? (input instanceof Request ? input.method : 'GET'));
+  // no connection: nothing is saved (no offline queue); the banner says so and the screen shows the error
+  if (k === 'save' && typeof navigator !== 'undefined' && navigator.onLine === false) throw new Error('No connection: not saved. Reconnect and try again.');
   if (k) { count[k]++; emit(); }
   try { return await fetch(input, init); } finally { if (k) { count[k] = Math.max(0, count[k] - 1); emit(); } }
 };

@@ -13,3 +13,16 @@ describe('saving or loading', () => {
     expect(kindOf('https://x.supabase.co/auth/v1/token?grant_type=refresh_token', 'POST')).toBeNull();
   });
 });
+
+describe('no connection', () => {
+  it('a save is refused with a clear message; a load still goes out', async () => {
+    const { trackedFetch } = await import('../busy');
+    const was = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
+    const real = globalThis.fetch; globalThis.fetch = (async () => new Response('[]')) as typeof fetch;
+    try {
+      await expect(trackedFetch('https://x.supabase.co/rest/v1/trk_event', { method: 'POST' })).rejects.toThrow('No connection: not saved');
+      await expect(trackedFetch('https://x.supabase.co/rest/v1/trk_event', { method: 'GET' })).resolves.toBeInstanceOf(Response);
+    } finally { globalThis.fetch = real; if (was) Object.defineProperty(globalThis, 'navigator', was); else delete (globalThis as { navigator?: unknown }).navigator; }
+  });
+});
