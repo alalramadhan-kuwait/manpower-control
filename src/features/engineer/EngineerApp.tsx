@@ -4,12 +4,13 @@
 // stamped with the ID; Undo for a few seconds after each one.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { DrumEntry } from '@/features/tracker/Drums';
+import { LABEL_CLS, OpsLabel } from '@/features/tracker/Iats';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
 import { isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
-import { BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, confirmEmpty, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatLabel, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
+import { BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, confirmEmpty, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
 import { BottomSheet, ErrorBox, Spinner, Toast, cx } from '@/ui/components';
 import { fetchSdTeamOn } from '@/data/shutdown';
@@ -825,10 +826,6 @@ function SmallGroup({ d, now, items, stale, done, onBack, back = 'Back' }: { d: 
   </>);
 }
 const IAT_CLS: Record<string, string> = { 'In progress': 'bg-blue-100 text-blue-800', 'To start': 'bg-amber-100 text-amber-800', 'New IAT': 'bg-slate-100 text-slate-700', Hold: 'bg-red-100 text-red-800', Completed: 'bg-green-100 text-green-800', Cancelled: 'bg-slate-100 text-slate-500' };
-/** The operations label's colour: the card's edge and its chip. */
-const LABEL_CLS: Record<IatLabel, { edge: string; chip: string }> = {
-  painting: { edge: 'border-l-violet-500', chip: 'bg-violet-100 text-violet-800' }, spool: { edge: 'border-l-orange-500', chip: 'bg-orange-100 text-orange-800' },
-  ready: { edge: 'border-l-status-green', chip: 'bg-green-100 text-green-800' }, progress: { edge: 'border-l-brand-500', chip: 'bg-blue-100 text-blue-800' } };
 function IatCard({ d, i, done }: { d: TrackerData; i: TrkIat; done: Done }) {
   const st = iatStatus(i); const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null); const [more, setMore] = useState(false);
   const was = { sheetStatus: i.sheetStatus ?? null, status: i.status, closedAt: i.closedAt, remark: i.remark ?? null };
@@ -838,7 +835,6 @@ function IatCard({ d, i, done }: { d: TrackerData; i: TrkIat; done: Done }) {
   const where = streams.length ? streams.map((x) => `${x.from} → ${x.to}`).join(' · ') : onEq.length ? onEq.map((x) => `On ${x.eq.tag}${x.eq.name ? ` (${x.eq.name.toLowerCase()})` : ''}`).join(' · ') : item ? `${short(item.tag)}${item.description ? ` · ${item.description}` : ''}` : short(i.tag);
   const service = streams[0]?.fluid ?? null;
   const lab = i.opsLabel ?? null; const manage = useCanManage();
-  const setLab = async (x: IatLabel | null) => { setBusy(true); setErr(null); try { await setIatLabel(i.id, x); done(`IAT ${i.iatNo}: ${x ? IAT_LABELS.find(([k]) => k === x)![1].replace(/^\S+ /, '') : 'label cleared'}.`, () => setIatLabel(i.id, lab)); } catch (e) { setErr(e); } finally { setBusy(false); } };
   return (
     <Card className={cx(lab && `border-l-[6px] ${LABEL_CLS[lab].edge}`)}>
       <button type="button" onClick={() => setMore((x) => !x)} className="block w-full text-left">
@@ -858,8 +854,7 @@ function IatCard({ d, i, done }: { d: TrackerData; i: TrkIat; done: Done }) {
       <div className="mt-2 flex items-center gap-1.5">
         <select aria-label={`Status of IAT ${i.iatNo}`} disabled={busy} value={st} onChange={async (x) => { const to = x.target.value as typeof st; if (to === st) return; setBusy(true); setErr(null); try { await setIatStatus(i.id, to, iatClosedBy(to)); done(`IAT ${i.iatNo}: ${to}.`, () => restoreIat(i.id, was)); } catch (e) { setErr(e); } finally { setBusy(false); } }}
           className={cx('min-h-9 min-w-0 flex-1 rounded-lg border-0 px-2 text-[12px] font-bold ring-1 ring-slate-200', IAT_CLS[st] ?? 'bg-white text-slate-700')}>{IAT_STATUSES.map((x) => <option key={x} value={x}>{x}</option>)}</select>
-        {manage && <select aria-label={`Operations label of IAT ${i.iatNo}`} disabled={busy} value={lab ?? ''} onChange={(x) => void setLab((x.target.value || null) as IatLabel | null)}
-          className={cx('min-h-9 min-w-0 flex-1 rounded-lg border-0 px-2 text-[12px] font-bold ring-1 ring-slate-200', lab ? LABEL_CLS[lab].chip : 'bg-white text-slate-600')}><option value="">Ops: none</option>{IAT_LABELS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>}
+        {manage && <OpsLabel i={i} canEdit onDone={done} />}
       </div>
       {err != null && <ErrorBox error={err} />}
     </Card>

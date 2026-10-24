@@ -7,7 +7,7 @@ import { DrumPanel, ItemUpdate } from './Drums';
 import { addIat, closeIat, fetchItemLog, setEquipment, setStep } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, Field, cx } from '@/ui/components';
 import { FlagChip, IsoChip, PlanChip, StageBar, StateChip } from './ui';
-import { IatDetail, OpsTicks } from './Iats';
+import { IatDetail, OpsLabel } from './Iats';
 import { stepNow } from './actions';
 
 const when = (iso: string | null) => (iso ? `${kwDay(iso)} ${kwTime(iso)}` : '');
@@ -167,15 +167,15 @@ export function EquipSheet({ system = [], groups = [], systems = [], canManage =
         </Field>
         {canEdit && !e.pendingReason && !pending && <Button variant="secondary" className="w-full" disabled={busy} onClick={() => setPending(true)}>⏸ Hold (with reason)</Button>}
         {pending && <PendingForm initial={e.pendingReason} busy={busy} onSave={(r) => run(() => setEquipment(e.id, { pending_reason: r }), `${e.tag}: on hold.`)} />}
-        {iatOpen && <IatDetail i={allIats.find((x) => x.id === iatOpen.id) ?? iatOpen} items={new Set(tags)} lineup={lineup} lineupEq={lineupEq} points={points} canEdit={canEdit} onDone={(m, u) => onDone(m, u)} onItem={() => setIatOpen(null)} onClose={() => setIatOpen(null)} />}
+        {iatOpen && <IatDetail i={allIats.find((x) => x.id === iatOpen.id) ?? iatOpen} items={new Set(tags)} lineup={lineup} lineupEq={lineupEq} points={points} canEdit={canEdit} canLabel={canManage} onDone={(m, u) => onDone(m, u)} onItem={() => setIatOpen(null)} onClose={() => setIatOpen(null)} />}
         {err != null && <ErrorBox error={err} />}
-        <Fold title={`IATs · ${rel.filter((x) => x.status === 'open').length} open${rel.some((x) => x.status === 'open' && x.opsAction) ? ` · ${rel.filter((x) => x.status === 'open' && x.opsAction).length} need Operations` : ''}`} open={rel.some((x) => x.status === 'open' && x.opsAction)}>
+        <Fold title={`IATs · ${rel.filter((x) => x.status === 'open').length} open${rel.some((x) => x.status === 'open' && x.opsLabel === 'spool') ? ` · ${rel.filter((x) => x.status === 'open' && x.opsLabel === 'spool').length} spool to drop` : ''}`} open={rel.some((x) => x.status === 'open' && x.opsLabel === 'spool')}>
           <div className="space-y-1.5">
             {rel.filter((x) => x.status === 'open').map((i) => <div key={i.id} className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[12px] ring-1 ring-amber-200">
               <button type="button" onClick={() => setIatOpen(i)} className="flex w-full items-baseline gap-1.5 text-left"><b>{i.iatNo}</b><span className="min-w-0 flex-1 truncate">{i.jobText}</span>
                 <span className="shrink-0 text-[11px] font-semibold text-slate-600">{i.sheetStatus ?? 'open'}</span><span className="shrink-0 text-xs font-semibold text-brand-500">›</span></button>
               {i.tag !== e.tag && <span className="block text-[11px] text-slate-500">on line {i.line ?? i.tag}</span>}
-              <div className="mt-1 flex items-center gap-2"><span className="min-w-0 flex-1"><OpsTicks i={i} canEdit={canEdit} compact onDone={(m) => onDone(m)} /></span>
+              <div className="mt-1 flex items-center gap-2"><span className="flex min-w-0 flex-1"><OpsLabel i={i} canEdit={canManage} onDone={(m, u) => onDone(m, u)} /></span>
                 {canEdit && <button type="button" disabled={busy} onClick={() => run(() => closeIat(i.id), `${i.iatNo} closed.`)} className="shrink-0 text-[11px] font-semibold text-slate-500">Close IAT</button>}</div>
             </div>)}
             {!rel.some((x) => x.status === 'open') && <p className="text-xs text-slate-500">No open IAT.</p>}

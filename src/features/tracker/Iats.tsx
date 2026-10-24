@@ -4,13 +4,14 @@
 import { Fragment, useState } from 'react';
 import { IAT_LABELS, IAT_STATUSES, iatClosedBy, kwDay, kwTime, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, streamItems, type LuEquip, type LuStream, type TrkIat, type TrkPoint } from '@/core/tracker';
 import { BottomSheet, ErrorBox, cx } from '@/ui/components';
-import { restoreIat, setIatStatus, setIatTicks } from '@/data/tracker';
+import { restoreIat, setIatLabel, setIatStatus } from '@/data/tracker';
+import type { IatLabel } from '@/core/tracker';
 
 const CLS: Record<string, string> = { 'In progress': 'bg-blue-100 text-blue-800', 'To start': 'bg-amber-100 text-amber-800', 'New IAT': 'bg-slate-100 text-slate-700', Hold: 'bg-red-100 text-red-800', Completed: 'bg-green-100 text-green-800', Cancelled: 'bg-slate-100 text-slate-500' };
 const TILES = ['In progress', 'To start', 'New IAT', 'Completed'] as const;
 type Filter = 'open' | 'items' | 'lines' | 'material' | 'all';
 
-export function IatsTab({ iats, tags, lineup = [], lineupEq = [], points = [], canEdit = false, onDone, onItem }: { iats: TrkIat[]; tags: string[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; points?: TrkPoint[]; canEdit?: boolean; onDone?: (msg: string, undo?: () => Promise<unknown>) => void; onItem: (tag: string) => void }) {
+export function IatsTab({ iats, tags, lineup = [], lineupEq = [], points = [], canEdit = false, canLabel = false, onDone, onItem }: { iats: TrkIat[]; tags: string[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; points?: TrkPoint[]; canEdit?: boolean; canLabel?: boolean; onDone?: (msg: string, undo?: () => Promise<unknown>) => void; onItem: (tag: string) => void }) {
   const [q, setQ] = useState(''); const [f, setF] = useState<Filter>('open'); const [done, setDone] = useState(false); const [open, setOpen] = useState<TrkIat | null>(null);
   const items = new Set(tags);
   const onItemTag = (i: TrkIat) => items.has(i.tag);
@@ -25,14 +26,14 @@ export function IatsTab({ iats, tags, lineup = [], lineupEq = [], points = [], c
   const card = (i: TrkIat) => { const w = where(i); const st = iatStatus(i);
     return (
       <button key={i.id} type="button" onClick={() => setOpen(i)} className="w-full rounded-xl bg-white p-2.5 text-left ring-1 ring-slate-200 active:bg-slate-50">
-        <span className="flex items-center gap-2"><b className="text-[13px]">{i.iatNo}</b>{i.opsLabel && <span className={cx('whitespace-nowrap rounded px-1.5 py-px text-[10px] font-bold', { painting: 'bg-violet-100 text-violet-800', spool: 'bg-orange-100 text-orange-800', ready: 'bg-green-100 text-green-800', progress: 'bg-blue-100 text-blue-800' }[i.opsLabel])}>{IAT_LABELS.find(([k]) => k === i.opsLabel)?.[1]}</span>}<span className={cx('whitespace-nowrap rounded px-1.5 py-px text-[10px] font-bold', CLS[st] ?? CLS['New IAT'])}>{st}</span>
+        <span className="flex items-center gap-2"><b className="text-[13px]">{i.iatNo}</b>{i.opsLabel && <span className={cx('whitespace-nowrap rounded px-1.5 py-px text-[10px] font-bold', LABEL_CLS[i.opsLabel].chip)}>{IAT_LABELS.find(([k]) => k === i.opsLabel)?.[1]}</span>}<span className={cx('whitespace-nowrap rounded px-1.5 py-px text-[10px] font-bold', CLS[st] ?? CLS['New IAT'])}>{st}</span>
           {onItemTag(i) ? <span className="ml-auto text-xs font-bold text-brand-500">{i.tag} ›</span> : <span className="ml-auto text-[11px] text-slate-500">line</span>}</span>
         <span className="mt-0.5 block text-[12px] text-slate-700">{i.jobText}</span>
         <span className="mt-0.5 block truncate text-[11px] text-slate-500">📍 {[w, i.line, i.lineClass].filter(Boolean).join(' · ') || '—'}</span>
         <span className="mt-1 flex flex-wrap gap-1">{iatChecks(i).map((c) => <span key={c.key} className={cx('rounded px-1.5 text-[10px] font-bold', c.optional ? 'border border-dashed border-slate-300 text-slate-500' : 'bg-slate-100 text-slate-600')}>{c.label}{c.optional ? ' if req.' : ''}</span>)}
           {i.painting?.ref && <span className="rounded bg-slate-100 px-1.5 text-[10px] font-bold text-slate-600">Painting IAT {i.painting.ref}</span>}
           {i.material && <span className="rounded bg-slate-100 px-1.5 text-[10px] font-bold text-slate-600">Material</span>}
-          {tickChips(i)}</span>
+</span>
       </button>); };
   if (!iats.length) return <p className="py-6 text-center text-sm text-slate-500">No IATs yet: they come from the daily IAT tracking sheet.</p>;
   return (
@@ -46,12 +47,12 @@ export function IatsTab({ iats, tags, lineup = [], lineupEq = [], points = [], c
       {closed.length > 0 && <button type="button" onClick={() => setDone((x) => !x)} className="text-sm font-semibold text-status-green">{done ? '▾' : '▸'} ✓ Completed ({closed.length})</button>}
       {done && <div className="space-y-1.5 opacity-80">{closed.map(card)}</div>}
       <p className="text-[11px] text-slate-500">Updated from the daily IAT tracking sheet. Tap an IAT for the full details.</p>
-      {open && <IatDetail i={iats.find((x) => x.id === open.id) ?? open} canEdit={canEdit} onDone={onDone} items={items} lineup={lineup} lineupEq={lineupEq} points={points} onItem={(t) => { setOpen(null); onItem(t); }} onClose={() => setOpen(null)} />}
+      {open && <IatDetail i={iats.find((x) => x.id === open.id) ?? open} canEdit={canEdit} canLabel={canLabel} onDone={onDone} items={items} lineup={lineup} lineupEq={lineupEq} points={points} onItem={(t) => { setOpen(null); onItem(t); }} onClose={() => setOpen(null)} />}
     </div>
   );
 }
 
-export function IatDetail({ i, items, lineup, lineupEq, points, canEdit = false, onDone, onItem, onClose }: { i: TrkIat; items: Set<string>; lineup: LuStream[]; lineupEq: LuEquip[]; points: TrkPoint[]; canEdit?: boolean; onDone?: (msg: string, undo?: () => Promise<unknown>) => void; onItem: (tag: string) => void; onClose: () => void }) {
+export function IatDetail({ i, items, lineup, lineupEq, points, canEdit = false, canLabel = false, onDone, onItem, onClose }: { i: TrkIat; items: Set<string>; lineup: LuStream[]; lineupEq: LuEquip[]; points: TrkPoint[]; canEdit?: boolean; canLabel?: boolean; onDone?: (msg: string, undo?: () => Promise<unknown>) => void; onItem: (tag: string) => void; onClose: () => void }) {
   const st = iatStatus(i); const streams = lineStreams(i.line, lineup); const onEq = streams.length ? [] : lineOnEquipment(i.line, lineupEq);
   const ends = [...new Set([...streams.flatMap((s) => streamItems(s, [...items])), ...onEq.map((x) => x.eq.plantTag ?? '').filter((t) => items.has(t)), ...(items.has(i.tag) ? [i.tag] : [])])];
   const loop = points.find((p) => p.kind === 'neut' && i.line && loopLines(p, lineup).lines.includes(i.line));
@@ -62,7 +63,8 @@ export function IatDetail({ i, items, lineup, lineupEq, points, canEdit = false,
       <div className="space-y-2.5">
         <div><span className={cx('rounded px-1.5 py-px text-[11px] font-bold', CLS[st] ?? CLS['New IAT'])}>{st}</span> <b className="text-sm">{i.jobText}</b></div>
         {canEdit && <IatStatus key={`${i.id}|${i.sheetStatus ?? ''}|${i.remark ?? ''}`} i={i} onDone={onDone} />}
-        <OpsTicks i={i} canEdit={canEdit} onDone={onDone} />
+        <div className="flex items-center gap-2"><span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Operations</span><OpsLabel i={i} canEdit={canLabel} onDone={onDone} /></div>
+        {oldTicks(i) && <p className="text-[11px] text-slate-500">Earlier Operations ticks (kept for the record): {oldTicks(i)}</p>}
         <Sec t="Where"><div className="grid grid-cols-[5.5rem_1fr] gap-x-2 gap-y-1">
           <Row k="Line">{i.line ?? '—'}{i.lineClass ? ` · ${i.lineClass}` : ''}</Row>
           {streams.map((s) => <Row key={s.id} k="From → To">{s.from} → {s.to}{s.fluid ? ` · ${s.fluid}` : ''}</Row>)}
@@ -81,7 +83,7 @@ export function IatDetail({ i, items, lineup, lineupEq, points, canEdit = false,
         <Sec t="Work"><div className="grid grid-cols-[5.5rem_1fr] gap-x-2 gap-y-1">
           <Row k="WO">{i.wo ?? '—'}</Row><Row k="Material">{i.material ?? '—'}</Row><Row k="Action by">{i.actionBy ?? '—'}</Row><Row k="Remark">{i.remark ?? '—'}</Row>
         </div></Sec>
-        <p className="text-[11px] text-slate-500">From the daily IAT tracking sheet. The status, remark and Operations ticks are set here.</p>
+        <p className="text-[11px] text-slate-500">From the daily IAT tracking sheet. The status, remark and Operations label are set here.</p>
       </div>
     </BottomSheet>
   );
@@ -120,36 +122,25 @@ function IatStatus({ i, onDone }: { i: TrkIat; onDone?: (msg: string, undo?: () 
   );
 }
 
-type Tick = 'ops_action' | 'ho_required' | 'ops_none' | 'spool_only';
-const TICKS: { k: Tick; label: string; on: string }[] = [
-  { k: 'ops_none', label: 'No action from Operations', on: 'bg-green-100 text-green-800 ring-green-300' },
-  { k: 'spool_only', label: 'Spool drop only', on: 'bg-amber-100 text-amber-900 ring-amber-300' },
-  { k: 'ops_action', label: 'Operations action', on: 'bg-brand-100 text-brand-600 ring-brand-200' },
-  { k: 'ho_required', label: 'Handover needed', on: 'bg-brand-100 text-brand-600 ring-brand-200' },
-];
-// a tick that rules others out: none clears the rest, spool only means no handover, an action or handover clears none
-const CLEARS: Record<Tick, Tick[]> = { ops_none: ['ops_action', 'ho_required', 'spool_only'], spool_only: ['ops_none', 'ho_required'], ops_action: ['ops_none'], ho_required: ['ops_none', 'spool_only'] };
-const val = (i: TrkIat, k: Tick) => !!(k === 'ops_action' ? i.opsAction : k === 'ho_required' ? i.hoRequired : k === 'ops_none' ? i.opsNone : i.spoolOnly);
-/** The ticks of an IAT as chips (for the lists): only those ticked. */
-export const tickChips = (i: TrkIat) => TICKS.filter((t) => val(i, t.k)).map((t) => <span key={t.k} className={cx('rounded px-1.5 text-[10px] font-bold ring-1', t.on)}>✓ {t.label}</span>);
+/** The operations label of an IAT (owner, 24 Oct 2026: the one Operations classification in both views). */
+export const LABEL_CLS: Record<IatLabel, { edge: string; chip: string }> = {
+  painting: { edge: 'border-l-violet-500', chip: 'bg-violet-100 text-violet-800' }, spool: { edge: 'border-l-orange-500', chip: 'bg-orange-100 text-orange-800' },
+  ready: { edge: 'border-l-status-green', chip: 'bg-green-100 text-green-800' }, progress: { edge: 'border-l-brand-500', chip: 'bg-blue-100 text-blue-800' } };
+const labelText = (x: IatLabel | null) => (x ? IAT_LABELS.find(([k]) => k === x)![1] : 'none');
+/** The earlier Operations ticks (replaced by the label): shown read-only when any was set, never changed. */
+export const oldTicks = (i: TrkIat) => [i.opsNone && 'no action', i.spoolOnly && 'spool drop only', i.opsAction && 'Operations action', i.hoRequired && 'handover needed'].filter(Boolean).join(', ');
 
-/** The Operations ticks of an IAT, set by a person (logged): no action, spool drop only, Operations action, handover. */
-export function OpsTicks({ i, canEdit, onDone, compact = false }: { i: TrkIat; canEdit: boolean; onDone?: (msg: string) => void; compact?: boolean }) {
+/** Set the operations label: one select, saved at once, with Undo. Read-only as a chip without the right. */
+export function OpsLabel({ i, canEdit, onDone, className }: { i: TrkIat; canEdit: boolean; onDone?: (msg: string, undo?: () => Promise<unknown>) => void; className?: string }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  // shown at once, put back if the save fails
-  const [now, setNow] = useState<Partial<Record<Tick, boolean>>>({});
-  const cur = (k: Tick) => now[k] ?? val(i, k);
-  const flip = async (k: Tick, v: boolean, label: string) => {
-    const patch: Partial<Record<Tick, boolean>> = { [k]: v }; if (v) for (const c of CLEARS[k]) if (cur(c)) patch[c] = false;
-    const back = Object.fromEntries(Object.keys(patch).map((x) => [x, cur(x as Tick)]));
-    setBusy(true); setErr(null); setNow((x) => ({ ...x, ...patch }));
-    try { await setIatTicks(i.id, patch); onDone?.(`IAT ${i.iatNo}: ${label} ${v ? 'ticked' : 'cleared'}.`); } catch (e) { setErr(e); setNow((x) => ({ ...x, ...back })); } finally { setBusy(false); } };
-  return (
-    <div className={cx('flex flex-wrap gap-1.5', !compact && 'rounded-lg bg-slate-50 px-2 py-2')}>
-      {TICKS.map((t) => { const on = cur(t.k);
-        return <label key={t.k} className={cx('flex items-center gap-1.5 rounded-full px-2 py-1 ring-1', compact ? 'text-[11px]' : 'text-[12px]', on ? `font-semibold ${t.on}` : 'bg-white text-slate-600 ring-slate-200')}>
-          <input type="checkbox" className="h-3.5 w-3.5" checked={on} disabled={!canEdit || busy} onChange={(e) => flip(t.k, e.target.checked, t.label)} />{t.label}</label>; })}
-      {err != null && <ErrorBox error={err} />}
-    </div>
-  );
+  const lab = i.opsLabel ?? null;
+  if (!canEdit) return lab ? <span className={cx('rounded-md px-1.5 py-0.5 text-[11px] font-bold', LABEL_CLS[lab].chip)}>{labelText(lab)}</span> : <span className="text-[12px] text-slate-500">—</span>;
+  const set = async (x: IatLabel | null) => { setBusy(true); setErr(null);
+    try { await setIatLabel(i.id, x); onDone?.(`IAT ${i.iatNo}: ${x ? labelText(x).replace(/^\S+ /, '') : 'label cleared'}.`, () => setIatLabel(i.id, lab)); } catch (e) { setErr(e); } finally { setBusy(false); } };
+  return (<>
+    <select aria-label={`Operations label of IAT ${i.iatNo}`} disabled={busy} value={lab ?? ''} onChange={(x) => void set((x.target.value || null) as IatLabel | null)}
+      className={cx('min-h-9 min-w-0 flex-1 rounded-lg border-0 px-2 text-[12px] font-bold ring-1 ring-slate-200', lab ? LABEL_CLS[lab].chip : 'bg-white text-slate-600', className)}>
+      <option value="">Ops: none</option>{IAT_LABELS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+    {err != null && <ErrorBox error={err} />}
+  </>);
 }

@@ -118,7 +118,7 @@ Tags are shown in full (C-12-201, not C-201) wherever there is room; shorten onl
 | Step action | start/finish now: twins together, hold ended, Undo restores both | `stepNow` in `src/features/tracker/actions.ts` (never a local copy) |
 | Segmented control | grey track, white selected — switches views; filters stay pills | `Seg` (Engineer), VIEWS bar (tracker) |
 | Report button | `bg-whatsapp`; Save is navy (green = status only) | — |
-| IAT card controls | status and operations label as one select each | `IatCard` |
+| IAT operations label | the one Operations classification (owner): `OpsLabel` select with Undo, read-only chip for Controllers; old ticks shown read-only | `src/features/tracker/Iats.tsx` |
 | Role in the Engineer view | `EngRole` context: Controller gets no rename/add/remove step, loop requirement, IAT label, reactor empty | `EngineerView` |
 
 ## 4b. Technical information on equipment
