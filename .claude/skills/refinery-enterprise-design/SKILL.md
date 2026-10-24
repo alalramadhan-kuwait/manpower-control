@@ -86,6 +86,16 @@ Touch: primary buttons `min-h-11` (44px) · secondary/row actions `min-h-9` (36p
   versions kept, revisions with a reason and approval, effective version and date shown. A procedure template and its
   execution records are separate: changing the template never rewrites completed checklists.
 
+## 4b. Technical information on equipment
+
+- Shown inside the equipment's own view (item sheet / item page) as a compact list grouped by category:
+  `Category · name · key value` per line (e.g. `RTJ · Flange 3 · 6" 1500# R-46`). Tap for the full record.
+- Show only the fields defined for that category; empty fields read **unknown**, never blank guesses.
+- Each record shows its source and a **Verified / Unverified** chip (verified = green chip with who and when).
+- Tags, sizes, ratings and units never truncate; long descriptions wrap.
+- One search box finds items by equipment, tag, category or words in the description.
+- Edit / correct / archive from the record (authorized users), history one tap away.
+
 ## 5. Records: every one can be corrected
 
 A feature that creates a record with no way to correct it is not finished.

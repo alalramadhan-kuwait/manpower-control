@@ -52,7 +52,20 @@ Three levels plus task assignments — see `docs/APP_KNOWLEDGE.md` §3 for the m
 Section Head > Engineer / Assistant Section Head > Controller; extra rights (e.g. Manpower) come from an assignment,
 not a promotion. New features state which level may view, create, correct and approve, and enforce it in the database.
 
-## 6. Testing before "done"
+## 6. Equipment technical information (standard)
+
+Every equipment item is the central reference for its technical information (PSV, RTJ, NRV, IAT are examples, not a
+fixed list: any component, piping, instrument, valve, material, inspection or maintenance detail).
+- One flexible structure: categories with their own attributes, **no hard-coded types, no schema change per category**.
+- Each item: clear name, description, location, links to one or more assets (equipment, line, instrument …), its
+  source, and whether it is **verified** or not. Missing details are shown as *unknown*, never invented.
+- Reuse the existing asset data (`lu_equipment`, `lu_streams`, `trk_equipment`, `trk_iat`); no duplicate records.
+- Searchable by equipment, tag, category and description; compact summary, full details on tap; inside the existing
+  equipment views, not a separate module.
+- Authorized add / edit / correct / archive with history.
+- Approach and status: `docs/APP_KNOWLEDGE.md` §8. Not to be built before the tracker priorities are complete.
+
+## 7. Testing before "done"
 
 - `npx vitest run` and `npm run build` clean.
 - Rendered screens checked at 393×852 and 1280 wide with real data; before/after for visual changes.
@@ -61,7 +74,7 @@ not a promotion. New features state which level may view, create, correct and ap
   user inside a rolled-back transaction (no production change).
 - Never claim a check that was not run.
 
-## 7. Wording and output
+## 8. Wording and output
 
 - Durations in **hours**, never days. Dates "7 Nov 18:19" (Kuwait time). Status lines end in "I/P"; tags short (R-205).
 - No personal names in code, migrations or commits.

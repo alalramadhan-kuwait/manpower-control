@@ -115,6 +115,35 @@ drums). No UI, RLS or link-access tests.
 | T14 | Exports: CSV and print only; no DSR PDF/Excel | P2 |
 | T15 | No history for `trk_ask` and link changes | P2 |
 
+## 8. Equipment technical information — assessment (24 Oct 2026, not built)
+
+Standard: CLAUDE.md §6. To be built after the tracker priorities.
+
+**What exists**
+
+| Data | Rows | Holds |
+|---|---|---|
+| `lu_equipment` (P&ID line-up) | 465 | Plant asset master: tag, plant tag, name, service, type/subtype, section, train, P&ID sheets, confidence, note |
+| `lu_streams` (line-up) | 749 | Connections: from → to, fluid, line no(s), size, valves (json), P&ID sheets, confidence, source |
+| `trk_equipment` (per tracker) | 96 on live | Shutdown items: tag, group, description, procedure, stage, remark — per shutdown, not a master |
+| `trk_iat` | 10 | IATs: number, job, line, line class, material, finding, recommendation, status, ops label |
+| `trk_points` | — | Blinds and loops: ref, name, items, status |
+
+**Missing:** a home for component details (RTJ size/rating/gasket, NRV size/flow direction, PSV set pressure …);
+category-specific fields; verified vs unverified with source; attachments; history for technical edits; one search
+across all of it; a link from a shutdown item (`trk_equipment`) to the plant asset (`lu_equipment`).
+
+**Approach (no new module, no schema change per type)**
+1. `tech_categories`: name + field definitions (`[{key, label, unit, type}]`) — a new category is a new row.
+2. `tech_items`: category, name, tag (optional), description, location, `attrs` (json, only the category's fields),
+   source / reference, verified (by, at), status active / archived, `supersedes` for revisions.
+3. `tech_item_assets`: links to one or more assets (`lu_equipment` tag, `lu_streams` line, `trk_equipment` item).
+4. History by trigger (old → new, who, when); attachments in Storage linked to the item; soft archive only.
+5. `trk_equipment` gets its plant asset (`lu_equipment` tag) so every shutdown reuses the same technical data.
+6. IATs stay their own workflow records and appear in the asset's technical list through their link (no copy).
+7. UI: a "Technical" section in the existing item sheet / item page and the existing search; category admin inside
+   Admin. Permissions: L1/L2 add, correct, verify, archive; L3 add (unverified) and suggest corrections.
+
 ## 7. Decisions log
 
 | Date | Decision |
@@ -122,4 +151,5 @@ drums). No UI, RLS or link-access tests.
 | 24 Oct 2026 | Leave approval in the app replaces Oracle status; only planned/rescheduled PV need approval |
 | 24 Oct 2026 | Report updates: take the most advanced of report / Excel / tracker |
 | 24 Oct 2026 | Durations in hours; Team leader report (option B) added |
-| 24 Oct 2026 | Three user levels + task assignments adopted as the target; build pending approval of §3.2 |
+| 24 Oct 2026 | Three user levels + Manpower assignment approved; engineer login is the target, links kept restricted with expiry meanwhile |
+| 24 Oct 2026 | Equipment technical information standard adopted (CLAUDE.md §6); flexible categories; build after the tracker |
