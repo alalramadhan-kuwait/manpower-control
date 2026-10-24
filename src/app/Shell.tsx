@@ -94,7 +94,7 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
         </div>
       </nav>
       {/* Quick Add: opens Requests → Entry (the one place to add or change); not shown on Entry itself */}
-      {!onEntry && (
+      {!onEntry && !pathname.startsWith('/progress') && (
         <Link to="/requests?view=entry" aria-label={t('Quick add')}
           className="fixed bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] end-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-brand-700 text-white shadow-lg shadow-brand-900/30 active:scale-95 sm:hidden print:hidden">
           <Plus className="h-7 w-7" />
@@ -112,7 +112,7 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
 }
 
 /** Pages that need the whole width (grids, calendars, printed sheets): no side panel. */
-const WIDE = [/^\/calendar/, /^\/leave-planning/, /^\/controllers/, /^\/shutdown\/[^/]+\/(schedule|overtime)/, /^\/admin/];
+const WIDE = [/^\/progress/, /^\/calendar/, /^\/leave-planning/, /^\/controllers/, /^\/shutdown\/[^/]+\/(schedule|overtime)/, /^\/admin/];
 
 function RailLink({ to, label, icon: Icon, end, count = 0 }: { to: string; label: string; icon: typeof Bell; end?: boolean; count?: number }) {
   return (

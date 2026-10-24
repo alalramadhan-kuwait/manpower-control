@@ -117,9 +117,9 @@ function VisitRecorder() {
 function TrackerOnly({ profile }: { profile: NonNullable<ReturnType<typeof useSession>['profile']> }) {
   return (
     <div className="min-h-full bg-canvas">
-      <header className="flex items-center justify-between bg-brand-700 px-4 py-2 text-white safe-top print:hidden">
-        <span className="text-sm font-semibold">ARDS Operations · {profile.display_name}</span>
-        <button type="button" className="rounded-lg bg-white/10 px-3 py-1.5 text-sm font-semibold" onClick={() => supabase.auth.signOut()}>Sign out</button>
+      <header className="sticky top-0 z-30 flex items-center gap-2 bg-brand-700 px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white print:hidden">
+        <div className="min-w-0 flex-1"><p className="truncate text-[17px] font-bold">ARDS Operations</p><p className="truncate text-xs opacity-80">{profile.display_name} · Controller</p></div>
+        <button type="button" className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-semibold" onClick={() => supabase.auth.signOut()}>Sign out</button>
       </header>
       <div className="mx-auto max-w-6xl p-3">
         <Routes>

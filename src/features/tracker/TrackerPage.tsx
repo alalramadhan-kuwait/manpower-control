@@ -4,12 +4,12 @@
 import { ReportImport } from './ReportImport';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
+import { Printer, Share2, Copy, MessageCircle, Home, Lock, Wrench, Compass, ClipboardList, HardHat, Settings, type LucideIcon } from 'lucide-react';
 import { isNR, isOutOfScope, scopeImpact, shownGroup, daysAsHours, blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, relatedWork, shiftOf, shiftReport, staleItems, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import { StageReview, StaleAlert } from './StageReview';
-import { CONFLICT_EVENT, setActivity, setEquipment, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
+import { CONFLICT_EVENT, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
-import { BottomSheet, Button, ErrorBox, Spinner, cx } from '@/ui/components';
+import { BottomSheet, Button, ErrorBox, Spinner, Toast, cx } from '@/ui/components';
 import { AskUpdates } from './Ask';
 import { DrumQuick } from './Drums';
 import { EngineerView } from '@/features/engineer/EngineerApp';
@@ -21,12 +21,13 @@ import { IsolationTab } from './Isolation';
 import { isAdminStaff } from '@/core/users/access';
 import { IatsTab } from './Iats';
 import { TodayTab, type Nav } from './TrackerToday';
+import { stepNow } from './actions';
 import { FLAG_STYLE, ISO_DOT, IsoChip, PlanChip, StageBar, StateChip } from './ui';
 
 type Tab = 'today' | 'isolation' | 'guideline' | 'equipment' | 'iats' | 'timing' | 'map' | 'report' | 'admin';
 // the bar: Timing is a view of Equipment, Map a view of Sequence; Report and Admin open as sheets
 type Main = 'today' | 'isolation' | 'equipment' | 'guideline' | 'iats';
-const TABS: [Main, string, string][] = [['today', 'Today', '🏠'], ['isolation', 'Isolation', '🔒'], ['equipment', 'Equipment', '🔧'], ['guideline', 'Sequence', '🧭'], ['iats', 'IATs', '📋']];
+const TABS: [Main, string, LucideIcon][] = [['today', 'Today', Home], ['isolation', 'Isolation', Lock], ['equipment', 'Equipment', Wrench], ['guideline', 'Sequence', Compass], ['iats', 'IATs', ClipboardList]];
 const MAIN: Record<Tab, Main> = { today: 'today', isolation: 'isolation', equipment: 'equipment', timing: 'equipment', guideline: 'guideline', map: 'guideline', iats: 'iats', report: 'today', admin: 'today' };
 const VIEWS: Partial<Record<Main, [Tab, string][]>> = { equipment: [['equipment', 'Items'], ['timing', 'Timing']], guideline: [['guideline', 'Gates'], ['map', 'Map']] };
 const today = () => new Date(Date.now() + 3 * 36e5).toISOString().slice(0, 10);
@@ -124,37 +125,34 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const spare = new Map([...miItems.values()].filter((i) => i.done < i.lines).map((i) => [i.tag, i.spareD]));
   const open = (a: { kind: 'step' | 'equipment'; ref: string }) => setSheet(a.kind === 'step' ? { kind: 'step', id: a.ref } : { kind: 'eq', tag: a.ref });
 
-  if (eng) return <div className="fixed inset-0 z-[60] overflow-y-auto bg-canvas"><EngineerView trackerId={tracker.id} name={profile.display_name} title={tracker.title} onExit={() => toEng(false)} /></div>;
+  if (eng) return <div className="fixed inset-0 z-[60] overflow-y-auto bg-canvas"><EngineerView trackerId={tracker.id} name={profile.display_name} title={tracker.title} role={isHead ? 'head' : profile.role_code === 'controller' ? 'controller' : 'engineer'} onExit={() => toEng(false)} /></div>;
   return (
     <div className="mx-auto max-w-3xl pb-24">
       {test && <div className="mb-2 rounded-lg bg-amber-200 px-3 py-1.5 text-center text-xs font-bold tracking-wide text-amber-950">TEST · a copy for trying; nothing here is live{now !== Date.now() && Math.abs(now - Date.now()) > 120_000 ? ` · clock ${kwDay(now)} ${kwTime(now)}` : ''}{other.filter((o) => o.mode === 'live').map((o) => <Link key={o.id} to={`/progress/${o.id}`} className="ml-2 underline">Live ›</Link>)}</div>}
       <div className="mb-2 flex items-center justify-between gap-2 print:hidden">
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-bold text-brand-600">{tracker.title}</h1>
+          <h1 className="truncate text-xl font-semibold text-brand-700">{tracker.title}</h1>
           <p className="text-xs text-slate-500">{tracker.eventTitle ?? ''}{tracker.settings.workOrder ? ` · WO ${tracker.settings.workOrder}` : ''}</p>
         </div>
         <div className="flex shrink-0 gap-1.5">
-          <button type="button" onClick={() => toEng(true)} title="Engineer view" className="flex min-h-11 flex-col items-center justify-center rounded-xl bg-white px-2 text-[10px] font-bold leading-tight text-brand-700 ring-1 ring-slate-200 active:bg-slate-50"><span className="text-base">👷</span>Engineer</button>
-          <button type="button" onClick={() => setTab('report')} className="flex min-h-11 items-center gap-1 rounded-xl bg-status-green px-3 text-sm font-bold text-white shadow-sm active:bg-green-700">💬 Report</button>
-          {isHead && <button type="button" aria-label="Admin" onClick={() => setTab('admin')} className="min-h-11 min-w-11 rounded-xl bg-white text-lg ring-1 ring-slate-200 active:bg-slate-50">⚙️</button>}
+          <button type="button" onClick={() => toEng(true)} title="Engineer view" aria-label="Engineer view" className="flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl bg-white px-2.5 text-sm font-semibold text-brand-700 ring-1 ring-slate-300 active:bg-slate-50"><HardHat className="h-5 w-5" /><span className="hidden sm:inline">Engineer</span></button>
+          <button type="button" onClick={() => setTab('report')} className="flex min-h-11 items-center gap-1.5 rounded-xl bg-whatsapp px-3 text-sm font-bold text-white shadow-sm active:opacity-90"><MessageCircle className="h-4 w-4" />Report</button>
+          {isHead && <button type="button" aria-label="Admin" title="Admin" onClick={() => setTab('admin')} className="flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-white text-brand-700 ring-1 ring-slate-300 active:bg-slate-50"><Settings className="h-5 w-5" /></button>}
         </div>
       </div>
       <nav className="sticky top-0 z-20 mb-2 grid grid-cols-5 gap-0.5 rounded-2xl bg-slate-200/70 p-1 backdrop-blur print:hidden" aria-label="Progress">
-        {TABS.map(([k, label, icon]) => { const on = MAIN[tab] === k; const badge = k === 'equipment' ? tot.late : k === 'iats' ? tot.iatOpen : k === 'isolation' ? isoOpen : 0;
+        {TABS.map(([k, label, Icon]) => { const on = MAIN[tab] === k; const badge = k === 'equipment' ? tot.late : k === 'iats' ? tot.iatOpen : k === 'isolation' ? isoOpen : 0;
           return <button key={k} type="button" aria-current={on ? 'page' : undefined} onClick={() => setTab(k)}
-            className={cx('relative flex min-h-14 flex-col items-center justify-center rounded-xl px-0.5 text-[12px] font-semibold', on ? 'bg-white text-brand-500 shadow-sm' : 'text-slate-600 active:bg-white/60')}>
-            <span className="text-lg leading-none" aria-hidden>{icon}</span><span className="mt-0.5 truncate">{label}</span>
+            className={cx('relative flex min-h-14 flex-col items-center justify-center rounded-xl px-0.5 text-[11px] font-semibold', on ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 active:bg-white/60')}>
+            <Icon className="h-5 w-5" aria-hidden /><span className="mt-0.5 truncate">{label}</span>
             {badge > 0 && <span className={cx('absolute right-1 top-0.5 min-w-[18px] rounded-full px-1 text-[10px] font-bold leading-[18px] text-white', k === 'equipment' ? 'bg-status-red' : k === 'isolation' ? 'bg-brand-500' : 'bg-status-amber')}>{badge}</span>}
           </button>; })}
       </nav>
       {VIEWS[MAIN[tab]] && <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-slate-200/60 p-1 print:hidden">
-        {VIEWS[MAIN[tab]]!.map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={cx('min-h-10 rounded-lg text-sm font-semibold', tab === k ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-600')}>{l}</button>)}
+        {VIEWS[MAIN[tab]]!.map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={cx('min-h-10 rounded-lg text-sm font-semibold', tab === k ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-600')}>{l}</button>)}
       </div>}
       {refreshing && <div aria-hidden className="fixed inset-x-0 top-0 z-[80] h-1 overflow-hidden bg-brand-100"><div className="h-full w-1/3 animate-[trkbar_1s_ease-in-out_infinite] bg-brand-500" /></div>}
-      {flash && <div role="status" className="fixed inset-x-3 bottom-24 z-[70] mx-auto flex max-w-md items-center gap-2 rounded-xl bg-brand-700 px-3 py-2.5 text-sm text-white shadow-xl">
-        <span className="min-w-0 flex-1">{flash.msg}</span>
-        {flash.undo && <button type="button" onClick={undoLast} className="shrink-0 rounded-lg bg-white/15 px-3 py-1.5 text-xs font-bold">↶ Undo</button>}
-      </div>}
+      {flash && <Toast msg={flash.msg} onUndo={flash.undo ? undoLast : undefined} />}
       {tab === 'today' && <StaleAlert data={data} now={now} onAsk={() => setTab('report')} />}
       {tab === 'today' && eqs && <StageReview data={data} eqs={eqs} canEdit={canEdit} onOpen={(tag) => open({ kind: 'equipment', ref: tag })} onDone={() => load(true)} />}
       {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} now={now} onOpen={open} onNav={nav} />}
@@ -505,15 +503,8 @@ function StepButton({ a, also = [], finish, more, eq, onDone }: { a: TrackerData
   const go = async (x: React.MouseEvent) => {
     x.stopPropagation(); if (busy) return; setBusy(true); setErr(null);
     try {
-      const at = new Date().toISOString(); const all = [a, ...also];
-      const before = all.map((y) => ({ id: y.id, actual_start: y.actualStart ?? null, actual_finish: y.actualFinish ?? null }));
-      // the same step of the items worked with it (E-12-216A/B) moves with it, each keeps its own line
-      for (const y of all) await setActivity(y.id, finish ? { actual_finish: at, ...(y.actualStart ? {} : { actual_start: a.actualStart ?? at }) } : { actual_start: at });
-      // starting a step ends the item's waiting note (it was waiting for this work to begin)
-      const was = eq.pendingReason; const cleared = !finish && !!was;
-      if (cleared) await setEquipment(eq.id, { pending_reason: null });
-      onDone(`${all.map((y) => y.key).join(' + ')}: ${a.activity} ${finish ? 'finished' : 'started'}.${cleared ? ` Hold "${was}" ended.` : ''}`,
-        async () => { for (const b of before) await setActivity(b.id, { actual_start: b.actual_start, actual_finish: b.actual_finish, time_reason: 'Undo' }); if (cleared) await setEquipment(eq.id, { pending_reason: was ?? null }); });
+      const r = await stepNow(a, also, finish, [eq]);
+      onDone(r.msg, r.undo);
     }
     catch (e) { setErr(e instanceof Error ? e.message : 'Not saved'); setBusy(false); }
   };

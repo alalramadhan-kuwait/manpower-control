@@ -104,7 +104,8 @@ export function ErrorBox({ error }: { error: unknown }) {
     : o && typeof o === 'object' && typeof o.message === 'string' ? [o.message, typeof o.details === 'string' ? o.details : '', typeof o.hint === 'string' ? o.hint : ''].filter(Boolean).join(' ')
     : String(error);
   // no connection: one plain sentence, not the request's stack (src/data/busy.ts refuses saves offline)
-  const shown = /No connection: not saved/.test(msg) ? 'No connection: not saved. Reconnect and try again.' : msg;
+  const shown = /No connection: not saved/.test(msg) ? 'No connection: not saved. Reconnect and try again.'
+    : /permission denied/i.test(msg) ? 'You do not have access to this.' : msg;
   return <div role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{shown}</div>;
 }
 
@@ -185,6 +186,16 @@ export function BottomSheet({ open, onClose, title, children }: { open: boolean;
         </div>
         {children}
       </div>
+    </div>
+  );
+}
+
+/** The one save feedback: a short message at the bottom, with Undo when the change can be taken back. */
+export function Toast({ msg, onUndo, className }: { msg: string; onUndo?: () => void; className?: string }) {
+  return (
+    <div role="status" className={cx('fixed inset-x-3 bottom-24 z-[70] mx-auto flex max-w-md items-center gap-2 rounded-xl bg-brand-700 px-3 py-2.5 text-sm text-white shadow-xl', className)}>
+      <span className="min-w-0 flex-1">{msg}</span>
+      {onUndo && <button type="button" onClick={onUndo} className="shrink-0 rounded-lg bg-white/15 px-3 py-1.5 text-xs font-bold">↶ Undo</button>}
     </div>
   );
 }
