@@ -2,6 +2,7 @@
 // attach / withdraw: Section Head, Coordinator, Engineer. Rows are never deleted: a new revision supersedes, a wrong
 // upload is withdrawn with a reason (both in trk_log).
 import type { TrkDrawing } from '@/core/tracker/drawings';
+import type { LoopFix } from '@/core/tracker/schematic';
 import { supabase } from './supabase';
 
 const BUCKET = 'trk-drawings';
@@ -36,5 +37,23 @@ export async function attachDrawing(trackerId: string, file: File, v: { pointId:
 
 export async function withdrawDrawing(id: string, reason: string) {
   const { error } = await supabase.rpc('trk_drawing_withdraw', { p_id: id, p_reason: reason });
+  if (error) throw error;
+}
+
+// ── corrections to the auto-generated schematics (trk_loop_fix) ─────────────────────────────────────────────
+interface FixRow { id: string; point_id: string; op: LoopFix['op']; target: string | null; a: string | null; b: string | null; line: string | null; kind: LoopFix['kind']; text: string | null;
+  sheet: string | null; reason: string | null; status: LoopFix['status']; by_name: string | null; at: string }
+export async function fetchLoopFixes(trackerId: string): Promise<LoopFix[]> {
+  const { data, error } = await supabase.from('trk_loop_fix').select('id,point_id,op,target,a,b,line,kind,text,sheet,reason,status,by_name,at').eq('tracker_id', trackerId).order('at').limit(2000);
+  if (error) throw error;
+  return ((data ?? []) as FixRow[]).map((r) => ({ id: r.id, pointId: r.point_id, op: r.op, target: r.target, a: r.a, b: r.b, line: r.line, kind: r.kind, text: r.text, sheet: r.sheet, reason: r.reason, status: r.status, by: r.by_name, at: r.at }));
+}
+export async function addLoopFix(trackerId: string, pointId: string, v: Partial<Pick<LoopFix, 'op' | 'target' | 'a' | 'b' | 'line' | 'kind' | 'text' | 'sheet' | 'reason'>> & { op: LoopFix['op'] }) {
+  const t = (x?: string | null) => (x?.trim() ? x.trim() : null);
+  const { error } = await supabase.from('trk_loop_fix').insert({ tracker_id: trackerId, point_id: pointId, op: v.op, target: t(v.target), a: t(v.a), b: t(v.b), line: t(v.line), kind: v.kind ?? null, text: t(v.text), sheet: t(v.sheet), reason: t(v.reason) });
+  if (error) throw error;
+}
+export async function withdrawLoopFix(id: string, reason: string) {
+  const { error } = await supabase.rpc('trk_loop_fix_withdraw', { p_id: id, p_reason: reason });
   if (error) throw error;
 }

@@ -232,6 +232,23 @@ available"**. Every view carries "Reference only — not an authorization for is
   (35 P&ID sheets, Train 1 + common) has no FT/FV-681…684 and the Train-2 heater sheet was not read. FT-681 therefore
   shows "Drawing not available" until the approved sheet is attached.
 
+### Auto-generated schematics (24 Oct 2026)
+
+Every neutralization loop also has **"View auto-generated schematic"** (loop sheet; "📐 Schematic (auto)" on the
+engineer card when no verified drawing exists). It is built in the app each time it is opened
+(`src/core/tracker/schematic.ts`) and shown in the same viewer, labelled **"Auto-generated schematic — Not a verified
+P&ID"**. Rules:
+- A connection is drawn only when a record names both ends: the loop name / detail / items ("A → B", "A to B",
+  "through C", "A to B: X, Y"), or, when those give none, the fill step ("P-203 and P-103B to H-201 inlet"). The
+  loop's own instrument group (FT/FV-681…684) is placed on the lines into the item the fill reaches.
+- Each connection is matched to the P&ID line-up: **verified** (sheet read, solid blue), **unchecked** (Train-2
+  generated, solid amber), or **record only** (grey dashed, "line no. unknown").
+- Fill (soda ash hoses), drain (drain hoses, drained to DX), vent (overflow hoses, clear soda ash at …), isolation and
+  boundary blinds are listed word for word with their procedure step / blind list, beside the route: positions along
+  the pipe are not recorded, and the sheet says so. Everything missing is listed under "Unknown — not in the records".
+- Corrections (`trk_loop_fix`): remove a generated element with a reason, add a connection or point (purple; "checked"
+  only with the P&ID sheet), add a note; withdrawn, never deleted; logged. "Rebuild from the latest data" in the viewer.
+
 ## 6b. Operational readiness review (24 Oct 2026)
 
 Estimate ~88 % (verified functionality). Recommendation: **ready for operational use**, with the conditions below.
@@ -249,6 +266,7 @@ Estimate ~88 % (verified functionality). Recommendation: **ready for operational
 
 | Date | Decision |
 |---|---|
+| 24 Oct 2026 | Loop schematics are generated from the records each time (not stored); connections only where a record names both ends; corrections are recorded edits on top |
 | 24 Oct 2026 | Loop diagrams are attached verified excerpts (P&ID / isometric / vendor), never drawn by the app; reference only |
 | 24 Oct 2026 | Maintenance activities map to their own equipment or work scope, never by default to the parent compressor / turbine; unconfirmed tags labelled UNVERIFIED |
 | 24 Oct 2026 | Leave approval in the app replaces Oracle status; only planned/rescheduled PV need approval |

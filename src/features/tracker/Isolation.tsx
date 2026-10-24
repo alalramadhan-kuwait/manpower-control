@@ -251,7 +251,7 @@ function LoopSheet({ acts = [], p, points, lineup, iats, steps, checks, canEdit,
         {action && <div className="flex items-center justify-end gap-2">{canEdit && !p.holdReason && !pointComplete(p) && !hold && <button type="button" onClick={() => setHold(true)} className="text-xs font-semibold text-slate-500">⏸ Hold</button>}{action}</div>}
         {hold && <PendingForm initial={null} busy={false} onSave={async (r) => { try { await setPoint(p.id, { hold_reason: r }); setHold(false); onDone(`${p.ref}: on hold.`); } catch (e) { setCErr(e); } }} />}
         {err != null && <ErrorBox error={err} />}
-        {trackerId && <LoopDiagrams trackerId={trackerId} loop={p} canAttach={canAttach} />}
+        {trackerId && <LoopDiagrams trackerId={trackerId} loop={p} canAttach={canAttach} data={{ points, steps: checks, lineup }} />}
         {p.items.length > 0 && <section>
           <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Items{(p.partOf ?? []).length ? ` · part of ${p.partOf!.join(', ')}` : ''}</h3>
           <div className="flex flex-wrap gap-1">{p.items.map((t) => <button key={t} type="button" onClick={() => onItem(t)} className="rounded bg-white px-1.5 py-0.5 text-[12px] font-semibold text-brand-600 ring-1 ring-slate-200">{t} ›</button>)}</div>

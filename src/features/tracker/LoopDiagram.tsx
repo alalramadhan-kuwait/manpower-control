@@ -4,8 +4,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { DRAWING_SOURCES, DRAWING_TYPES, REFERENCE_NOTE, drawingLabel, drawingProblem, isPdf, loopDrawings, type TrkDrawing } from '@/core/tracker/drawings';
+import { SCHEMATIC_LABEL } from '@/core/tracker/schematic';
 import { attachDrawing, drawingFile, fetchDrawings, withdrawDrawing } from '@/data/drawings';
 import { ErrorBox, cx } from '@/ui/components';
+import { LoopSchematic, SchematicButton, type SchematicData } from './LoopSchematic';
+import type { TrkPoint } from '@/core/tracker';
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kuwait' }) : '');
 const meta = (d: TrkDrawing) => `${d.source}${d.uploadedBy ? ` · added by ${d.uploadedBy}` : ''}, ${when(d.uploadedAt)}`;
@@ -13,18 +16,18 @@ const meta = (d: TrkDrawing) => `${d.source}${d.uploadedBy ? ` · added by ${d.u
 /** The field card's compact entry: one tap to the loop's current drawing; nothing when none is attached (the loop
  *  sheet says "Drawing not available"). One fetch per tracker for all cards. */
 const cache = new Map<string, Promise<TrkDrawing[]>>();
-export function LoopDiagramButton({ trackerId, loop }: { trackerId: string; loop: { id: string; ref: string; items: string[] } }) {
+export function LoopDiagramButton({ trackerId, loop, data }: { trackerId: string; loop: TrkPoint; data?: SchematicData }) {
   const [d, setD] = useState<TrkDrawing | null | undefined>(undefined); const [open, setOpen] = useState(false);
   useEffect(() => { let live = true; if (!cache.has(trackerId)) cache.set(trackerId, fetchDrawings(trackerId).catch(() => { cache.delete(trackerId); return []; }));
     void cache.get(trackerId)!.then((all) => { if (live) setD(loopDrawings(all, loop).current[0] ?? null); }); return () => { live = false; }; }, [trackerId, loop.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!d) return d === null ? <span className="text-[11px] text-slate-500">Drawing not available</span> : null;
+  if (!d) return d === null ? (data ? <SchematicButton trackerId={trackerId} loop={loop} data={data} /> : <span className="text-[11px] text-slate-500">Drawing not available</span>) : null;
   return <>
     <button type="button" onClick={() => setOpen(true)} className="min-h-9 rounded-xl px-3 text-[12px] font-semibold text-brand-700 ring-1 ring-slate-300">📐 Diagram</button>
     {open && <DrawingViewer d={d} title={loop.ref} canWithdraw={false} onClose={() => setOpen(false)} onWithdrawn={() => setOpen(false)} />}
   </>;
 }
 
-export function LoopDiagrams({ trackerId, loop, canAttach }: { trackerId: string; loop: { id: string; ref: string; items: string[] }; canAttach: boolean }) {
+export function LoopDiagrams({ trackerId, loop, canAttach, data }: { trackerId: string; loop: TrkPoint; canAttach: boolean; data?: SchematicData }) {
   const [all, setAll] = useState<TrkDrawing[] | null>(null); const [err, setErr] = useState<unknown>(null);
   const [open, setOpen] = useState<TrkDrawing | null>(null); const [add, setAdd] = useState(false); const [old, setOld] = useState(false);
   const load = () => fetchDrawings(trackerId).then(setAll, setErr);
@@ -44,6 +47,7 @@ export function LoopDiagrams({ trackerId, loop, canAttach }: { trackerId: string
       {v && <div className="space-y-1.5">
         {v.current.map((d) => viewBtn(d, 'View loop diagram'))}
         {!v.current.length && <p className="rounded-xl border border-dashed border-slate-300 px-2.5 py-2 text-[12px] text-slate-600"><b>Drawing not available.</b> No verified drawing is attached for this loop.</p>}
+        {data && <LoopSchematic trackerId={trackerId} loop={loop} data={data} canCorrect={canAttach} />}
         {v.equipment.map((d) => viewBtn(d, `Equipment drawing · ${d.items.join(', ')} (not loop-specific)`))}
         {v.history.length > 0 && <>
           <button type="button" onClick={() => setOld((x) => !x)} className="text-[12px] font-semibold text-slate-600">{old ? '▾' : '▸'} Earlier revisions ({v.history.length})</button>
@@ -90,12 +94,16 @@ function AttachForm({ trackerId, loop, prev, onCancel, onDone }: { trackerId: st
 
 /** Full screen, outside the sheet (its drag-to-close must not take the pinch). Images: pinch, drag, double-tap, ± and
  *  Fit. PDFs: shown in the browser's own viewer, with Open for a separate tab. */
-export function DrawingViewer({ d, title, canWithdraw, onClose, onWithdrawn }: { d: TrkDrawing; title: string; canWithdraw: boolean; onClose: () => void; onWithdrawn: () => void }) {
+export function DrawingViewer({ d, title, canWithdraw, onClose, onWithdrawn, svg, onRegenerate }: { d: TrkDrawing; title: string; canWithdraw: boolean; onClose: () => void; onWithdrawn: () => void;
+  /** an auto-generated schematic: shown from this SVG instead of a stored file */ svg?: string; onRegenerate?: () => void }) {
   const [url, setUrl] = useState<string | null>(null); const [err, setErr] = useState<unknown>(null);
   const [t, setT] = useState({ s: 1, x: 0, y: 0 }); const [why, setWhy] = useState<string | null>(null); const [busy, setBusy] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const pts = useRef(new Map<number, { x: number; y: number }>()); const g = useRef<{ d: number; s: number; cx: number; cy: number; x: number; y: number } | null>(null); const tap = useRef<{ x: number; y: number; at: number } | null>(null); const press = useRef<{ x: number; y: number; at: number } | null>(null);
-  useEffect(() => { let u: string | null = null; drawingFile(d.path).then((x) => { u = x; setUrl(x); }, setErr); return () => { if (u) URL.revokeObjectURL(u); }; }, [d.path]);
+  useEffect(() => { let u: string | null = null;
+    if (svg !== undefined) { u = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' })); setUrl(u); }
+    else drawingFile(d.path).then((x) => { u = x; setUrl(x); }, setErr);
+    return () => { if (u) URL.revokeObjectURL(u); }; }, [d.path, svg]);
   useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, [onClose]);
   const clamp = (s: number) => Math.min(8, Math.max(1, s));
   // zoom about a point of the screen (relative to the centre of the view), keeping that point still
@@ -132,9 +140,10 @@ export function DrawingViewer({ d, title, canWithdraw, onClose, onWithdrawn }: {
   return createPortal(
     <div className="fixed inset-0 z-[70] flex flex-col bg-neutral-950 text-white" role="dialog" aria-label={`Loop diagram ${title}`}>
       <div className="flex items-center gap-2 px-3 pb-1.5 pt-[max(0.5rem,env(safe-area-inset-top))]">
-        <span className="min-w-0 flex-1"><b className="block truncate text-[14px]">{title} · {drawingLabel(d)}</b><span className="block truncate text-[11px] text-white/70">{d.title ? `${d.title} · ` : ''}{meta(d)}</span></span>
+        <span className="min-w-0 flex-1"><b className="block truncate text-[14px]">{title} · {svg !== undefined ? 'Auto-generated schematic' : drawingLabel(d)}</b><span className="block truncate text-[11px] text-white/70">{svg !== undefined ? `Built ${when(d.uploadedAt)} from the records` : `${d.title ? `${d.title} · ` : ''}${meta(d)}`}</span></span>
         <button type="button" onClick={onClose} aria-label="Close" className={btn}>✕</button>
       </div>
+      {svg !== undefined && <p className="bg-red-700 px-3 py-1 text-[12px] font-bold uppercase">{SCHEMATIC_LABEL}</p>}
       <p className="bg-amber-600 px-3 py-1 text-[12px] font-bold">{REFERENCE_NOTE}</p>
       {d.status !== 'current' && <p className="bg-red-700 px-3 py-1 text-[12px] font-bold">{d.status === 'withdrawn' ? 'WITHDRAWN' : 'SUPERSEDED'} — not the current drawing{d.closedReason ? ` (${d.closedReason})` : ''}</p>}
       <div ref={box} className="relative min-h-0 flex-1 touch-none overflow-hidden" onPointerDown={isPdf(d) ? undefined : down} onPointerMove={isPdf(d) ? undefined : move} onPointerUp={up} onPointerCancel={up} onWheel={isPdf(d) ? undefined : wheel}>
@@ -151,8 +160,9 @@ export function DrawingViewer({ d, title, canWithdraw, onClose, onWithdrawn }: {
         </div>}
       </div>
       <div className="space-y-1 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 text-[11px] text-white/80">
-        <p>Linked: {[title, ...d.items].join(', ')}{d.note ? ` · ${d.note}` : ''}</p>
+        <p>{svg !== undefined ? 'Rebuilt each time it is opened from the loop record, procedure, blind list and P&ID line-up.' : `Linked: ${[title, ...d.items].join(', ')}${d.note ? ` · ${d.note}` : ''}`}</p>
         <div className="flex items-center gap-3">
+          {onRegenerate && <button type="button" onClick={onRegenerate} className="font-bold text-sky-300">↻ Rebuild from the latest data</button>}
           {url && isPdf(d) && <a href={url} target="_blank" rel="noreferrer" className="font-bold text-sky-300">Open PDF in a new tab</a>}
           {canWithdraw && why === null && <button type="button" onClick={() => setWhy('')} className="font-semibold text-white/70">Withdraw this drawing…</button>}
         </div>
