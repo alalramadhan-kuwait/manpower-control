@@ -182,6 +182,7 @@ function StaleAlert({ d, now, onOpen }: { d: TrackerData; now: number; onOpen: (
   return (
     <button type="button" onClick={onOpen} className={cx('mb-2.5 block w-full rounded-2xl p-3 text-left ring-1', crit ? 'bg-red-50 ring-red-200' : 'bg-amber-50 ring-amber-200')}>
       <span className={cx('block text-[13px] font-bold', crit ? 'text-status-red' : 'text-amber-900')}>⏰ {xs.length} without a recent update{crit ? ` · ${crit} on the critical path` : ''}</span>
+      <span className="block text-[11px] text-slate-500">Main equipment, pumps and PSVs (small jobs under SD scope)</span>
       <span className="block text-[12px] text-slate-700">{xs.slice(0, 3).map((i) => `${short(i.tag)} ${i.ageH} h`).join(' · ')}{xs.length > 3 ? ' …' : ''}</span>
       <span className="block text-[11px] font-semibold text-brand-700">Update them ›</span>
     </button>
@@ -190,6 +191,19 @@ function StaleAlert({ d, now, onOpen }: { d: TrackerData; now: number; onOpen: (
 
 function Dashboard({ d, now, go, by, done }: P) {
   const [report, setReport] = useState(false);
+  return (<>
+    <button type="button" onClick={() => setReport(true)} className="mb-2.5 flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-whatsapp text-[14px] font-bold text-white active:opacity-90">💬 WhatsApp report</button>
+    {report && <ReportSheet d={d} now={now} by={by} onClose={() => setReport(false)} />}
+    <StaleAlert d={d} now={now} onOpen={() => go('equip', 'todo')} />
+    <ShutdownHero d={d} now={now} onGroup={(g) => go('equip', g)} onSmall={() => go('scope')} />
+    <Issues d={d} done={done} />
+    <TeamToday now={now} />
+  </>);
+}
+
+/** The three cards that answer "are we late": end date, main equipment done vs plan, done / plan by group. The same
+ *  cards on the Engineer dashboard and the Section Head's Today. */
+export function ShutdownHero({ d, now, onGroup, onSmall }: { d: TrackerData; now: number; onGroup: (group: string) => void; onSmall: () => void }) {
   const mi = useMemo(() => phases(d, now).mi, [d, now]);
   const w = mi.weighted;
   // done / plan by equipment group, each item weighed by its hours (as the main %)
@@ -203,9 +217,6 @@ function Dashboard({ d, now, go, by, done }: P) {
   if (!w) return <Card><p className="text-sm text-slate-600">M &amp; I has not started yet.</p></Card>;
   const late = w.impactD > 0, cp = w.controlling;
   return (<>
-    <button type="button" onClick={() => setReport(true)} className="mb-2.5 flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-whatsapp text-[14px] font-bold text-white active:opacity-90">💬 WhatsApp report</button>
-    {report && <ReportSheet d={d} now={now} by={by} onClose={() => setReport(false)} />}
-    <StaleAlert d={d} now={now} onOpen={() => go('equip', 'todo')} />
     <Card className={cx('border-l-[6px]', late ? 'border-l-status-red' : (cp?.spareD ?? 9) <= 1 ? 'border-l-amber-400' : 'border-l-status-green')}>
       <p className="text-[11px] font-bold text-slate-500">END DATE</p>
       <p className={cx('text-[28px] font-extrabold leading-tight', late ? 'text-status-red' : 'text-brand-700')}>{late ? `Behind ${daysAsHours(w.impactD)}` : 'On time'}</p>
@@ -221,12 +232,10 @@ function Dashboard({ d, now, go, by, done }: P) {
     </Card>
     <Card>
       <p className="mb-1 text-[11px] font-bold text-slate-500">BY GROUP · done / plan <span className="font-normal">· tap to open</span></p>
-      {groups.map((x) => <GroupRow key={x.g} label={x.g} act={x.act} plan={x.plan} onClick={() => go('equip', x.g)} />)}
-      <GroupRow label="Small jobs" act={w.small.physPct} plan={w.small.planPct} onClick={() => go('scope')} />
+      {groups.map((x) => <GroupRow key={x.g} label={x.g} act={x.act} plan={x.plan} onClick={() => onGroup(x.g)} />)}
+      <GroupRow label="Small jobs" act={w.small.physPct} plan={w.small.planPct} onClick={onSmall} />
       <p className="mt-1.5 text-[11px] text-slate-500">Black line = where the plan is today</p>
     </Card>
-    <Issues d={d} done={done} />
-    <TeamToday now={now} />
   </>);
 }
 

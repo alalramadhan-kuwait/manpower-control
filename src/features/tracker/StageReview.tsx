@@ -52,12 +52,11 @@ export function StaleAlert({ data, now, onAsk }: { data: TrackerData; now: numbe
   if (!xs.length) return null;
   const crit = xs.filter((i) => i.critical).length;
   return (
-    <section className={cx('mb-3 flex items-center gap-2 rounded-2xl p-3 ring-1', crit ? 'bg-red-50 ring-red-200' : 'bg-amber-50 ring-amber-200')}>
-      <span className="min-w-0 flex-1">
-        <span className={cx('block text-[13px] font-bold', crit ? 'text-status-red' : 'text-amber-900')}>⏰ {xs.length} without a recent update{crit ? ` · ${crit} on the critical path` : ''}</span>
-        <span className="block text-[12px] text-slate-700">{xs.slice(0, 4).map((i) => `${i.tag.replace(/^([A-Z]{1,3})-12-/, '$1-')} ${i.ageH} h`).join(' · ')}{xs.length > 4 ? ' …' : ''}</span>
-      </span>
-      <button type="button" onClick={onAsk} className="min-h-9 shrink-0 rounded-lg bg-white px-2.5 text-[12px] font-bold text-brand-700 ring-1 ring-slate-300">Ask for updates</button>
-    </section>
+    <button type="button" onClick={onAsk} className={cx('mb-3 block w-full rounded-2xl p-3 text-left ring-1', crit ? 'bg-red-50 ring-red-200' : 'bg-amber-50 ring-amber-200')}>
+      <span className={cx('block text-[13px] font-bold', crit ? 'text-status-red' : 'text-amber-900')}>⏰ {xs.length} without a recent update{crit ? ` · ${crit} on the critical path` : ''}</span>
+      <span className="block text-[12px] text-slate-700">{xs.slice(0, 4).map((i) => `${i.tag.replace(/^([A-Z]{1,3})-12-/, '$1-')} ${i.ageH} h`).join(' · ')}{xs.length > 4 ? ' …' : ''}</span>
+      <span className="block text-[11px] text-slate-500">All items, small jobs included{xs.some((i) => i.small) ? ` (${xs.filter((i) => i.small).length})` : ''}</span>
+      <span className="block text-[11px] font-semibold text-brand-700">Ask for updates ›</span>
+    </button>
   );
 }
