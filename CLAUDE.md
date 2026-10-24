@@ -118,3 +118,24 @@ data in its `tasks` and `history` collections, written with the ArtifactData too
 - After finishing any task: update its row (status, progress, next action) and add a `history` entry; record the
   user's decisions there too; then update `docs/APP_KNOWLEDGE.md`.
 - No duplicate rows: update the existing task instead of adding a new one.
+
+### How tasks and decisions are written (permanent)
+
+- **Simple English.** Short titles and one-line descriptions. Avoid jargon; explain a needed technical term in plain
+  words. Technical explanations go in the task's Details (`details`), never in the title.
+- **Operational names first.** The title uses the equipment tag, approved SOP / procedure name or operational
+  description Operations use ("H-201 charge feed & heater protection drawing"), never an internal ID (S318, T5,
+  migration names). Internal IDs stay in the database for traceability, shown only small under Details (`ref`).
+  This applies to the board, notifications and progress reports alike.
+- **One main next action per task** (`next`).
+- **Decisions are multiple choice.** Each has `decision: {about, question, options[2–4]}`: `about` says in plain words
+  which equipment or procedure it concerns; every option has a short label, what happens (benefit / consequence) and
+  optionally the status it sets; exactly one is `recommended`; "Other / explain" is offered unless pointless. Never
+  ask for approval with only an internal number or a database term.
+- **Ask fewer questions.** Decide implementation details yourself. Put on the board only significant operational,
+  technical, security or business-rule choices. If information is missing, recommend the safest option and say why.
+- **After the user chooses** (the board saves `answer {key, label, note, at, synced: false}` and a history entry):
+  at the start of each session read the board, apply every answer with `synced: false`, record it in
+  `docs/APP_KNOWLEDGE.md` (decisions log) and here if it is a rule, set `synced: true`, update status / next action,
+  and never ask the same question again. The board says "saved · not yet picked up by Claude" until then — never
+  claim work started before it did.
