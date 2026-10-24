@@ -26,9 +26,9 @@ function columns(s: Schematic) {
   return col;
 }
 
-interface Laid { parts: string[]; W: number; H: number; issues: string[]; crossings: number; conts: number; dots: number }
+interface Laid { parts: string[]; W: number; H: number; issues: string[]; crossings: number; conts: number; dots: number; marksDrawn: number; pipe: number }
 
-function layout(s: Schematic, col0: Map<string, number>, cuts: number[], top: number, flip: boolean): Laid {
+function layout(s: Schematic, col0: Map<string, number>, cuts: number[], top: number, flip: boolean, turns = false): Laid {
   const issues: string[] = []; const node = new Map(s.nodes.map((n) => [n.key, n]));
   const col = new Map(col0);
   const bandOf = (c: number) => cuts.filter((x) => x < c).length;
@@ -71,8 +71,13 @@ function layout(s: Schematic, col0: Map<string, number>, cuts: number[], top: nu
     for (const kk of new Set(ks)) used.set(kk, Math.max(used.get(kk) ?? 0, base + (inCol.get(kk) ?? 0)));
   }
   // continuation links (between bands) and their margins
-  const cross = s.links.filter((l) => band.get(l.a) !== band.get(l.b));
+  const cross0 = s.links.filter((l) => band.get(l.a) !== band.get(l.b));
+  // R14: a pipe into the next band is drawn continuous with 90° turns (down the right edge, along the gap between the
+  // bands, down into its item); A/B continuation markers only where that is not possible
+  const turn = turns ? cross0.filter((l) => band.get(l.b) === band.get(l.a)! + 1) : [];
+  const cross = cross0.filter((l) => !turn.includes(l));
   const letter = new Map(cross.map((l, i) => [l.key, String.fromCharCode(65 + i)]));
+  const bandRight: number[] = [];
   // geometry per band
   const pos = new Map<string, Pt>(); let y0 = top; let W = 0; const bandBox: { top: number; bot: number }[] = [];
   for (let b = 0; b < bands; b++) {
@@ -81,17 +86,19 @@ function layout(s: Schematic, col0: Map<string, number>, cuts: number[], top: nu
     const w = Array.from({ length: ncol }, (_, c) => Math.max(56, ...ks.filter((k) => lc(k) === c).map((k) => nodeW(node.get(k)!))));
     const gap = Array.from({ length: ncol }, (_, c) => { const out = s.links.filter((l) => band.get(l.a) === b && band.get(l.b) === b && lc(l.a) === c);
       return Math.max(70, ...out.map((l) => l.lines.slice(0, 2).join(', ').length * 6.2 + 30)); });
-    const left = cross.some((l) => band.get(l.b) === b) ? 96 : 24, right = cross.some((l) => band.get(l.a) === b) ? 96 : 24;
+    const nIn = turn.filter((l) => band.get(l.b) === b).length, nOut = turn.filter((l) => band.get(l.a) === b).length;
+    const left = cross.some((l) => band.get(l.b) === b) ? 96 : 24 + (nIn ? 20 + nIn * 14 : 0), right = cross.some((l) => band.get(l.a) === b) ? 96 : 24 + (nOut ? 24 + nOut * 14 : 0);
     // empty columns (left by items drawn elsewhere) take no space
     const filled = (c: number) => ks.some((k) => lc(k) === c); const last = Math.max(...ks.map(lc));
     let x = left; const xs: number[] = []; for (let c = 0; c < ncol; c++) { if (!filled(c)) { xs[c] = x; continue; } x += w[c] / 2; xs[c] = x; x += w[c] / 2 + (c < last ? gap[c] : 0); }
-    W = Math.max(W, x + right);
+    W = Math.max(W, x + right); bandRight[b] = x;
     const rs = ks.map((k) => row.get(k)!); const rmin = Math.min(0, ...rs), rmax = Math.max(...rs);
     const rh = new Map<number, number>(); for (let r = rmin; r <= rmax; r++) rh.set(r, r === 0 ? 96 : 60);
     for (const k of ks) rh.set(row.get(k)!, Math.max(rh.get(row.get(k)!)!, nodeH(node.get(k)!) + 22));
     const ry = new Map<number, number>(); let yy = y0 + (rmin < 0 ? 30 : 34); for (let r = rmin; r <= rmax; r++) { ry.set(r, yy); yy += rh.get(r)!; }
     for (const k of ks) pos.set(k, { x: xs[lc(k)], y: ry.get(row.get(k)!)! });
-    bandBox.push({ top: y0, bot: yy }); y0 = yy + 18;
+    const gapNext = turn.filter((l) => band.get(l.a) === b).length;
+    bandBox.push({ top: y0, bot: yy }); y0 = yy + 18 + (gapNext ? 14 + gapNext * 12 : 0);
   }
   // tall multi-pass heater: every line enters on its own
   const tall = new Map<string, { top: number; bot: number }>();
@@ -131,6 +138,11 @@ function layout(s: Schematic, col0: Map<string, number>, cuts: number[], top: nu
     }
     paths.push({ l, pts, arrow: !toJ });
   }
+  // continuous turns into the next band
+  turn.forEach((l, i) => { const a = port(l.a, true, l.aSide); const b = port(l.b, false, l.bSide); const bb = band.get(l.b)!;
+    const xr = bandRight[band.get(l.a)!] + 18 + i * 14, yg = bandBox[bb].top - 14 - i * 12, xl = b.x - 22 - i * 14;
+    if (s.nodes.some((o) => band.get(o.key) === band.get(l.a) && o.key !== l.a && Math.abs(pos.get(o.key)!.y + 26 - a.y) < 30 && pos.get(o.key)!.x > a.x && pos.get(o.key)!.x < xr)) issues.push(`turn from ${l.a} blocked`);
+    paths.push({ l, pts: [a, { x: xr, y: a.y }, { x: xr, y: yg }, { x: xl, y: yg }, { x: xl, y: b.y }, b], arrow: node.get(l.b)!.kind !== 'junction' }); });
   // continuation stubs
   const marker = (x: number, y: number, ch: string, dir: 'out' | 'in') => `<polygon points="${x - 12},${y - 10} ${x + 4},${y - 10} ${x + 14},${y} ${x + 4},${y + 10} ${x - 12},${y + 10}" fill="#fff" stroke="#0f172a" stroke-width="1.6"/><text x="${x - 1}" y="${y + 4}" text-anchor="middle" font-size="11" font-weight="800">${ch}</text>${dir === 'out' ? '' : ''}`;
   const contParts: string[] = []; const contBoxes: Box[] = [];
@@ -171,13 +183,30 @@ function layout(s: Schematic, col0: Map<string, number>, cuts: number[], top: nu
     boxes.push({ x: p.x - HW[n.kind] - 4, y: p.y - 6, w: 2 * HW[n.kind] + 8, h: 62 }, { x: p.x - tw, y: p.y + 58, w: 2 * tw, h: nodeH(n) - 56 }); }
   const pipeBoxes: Box[] = segs.map((g) => ({ x: Math.min(g.a.x, g.b.x) - 2, y: Math.min(g.a.y, g.b.y) - 2, w: Math.abs(g.a.x - g.b.x) + 4, h: Math.abs(g.a.y - g.b.y) + 4 }));
   const t = (x: number, y: number, txt: string, o = '') => `<text x="${x}" y="${y}" ${o}>${esc(txt)}</text>`;
-  const labels: string[] = [];
+  const labels: string[] = []; const labelsLater: (() => void)[] = [];
   const place = (txt: string, x: number, y: number, color: string) => { const w = txt.length * 6 + 8;
     for (const dy of [0, -14, 22, 36, -28]) for (const dx of [0, 16, -16, 32, -32, 48, -48]) { const b = { x: x + dx - w / 2, y: y + dy - 11, w, h: 14 };
       if (!boxes.some((o) => hit(o, b)) && !pipeBoxes.some((o) => hit(o, b))) { boxes.push(b); labels.push(t(x + dx, y + dy, txt, `text-anchor="middle" font-size="10" fill="${color}"`)); return; } }
     issues.push(`label "${txt}" has no free place`); labels.push(t(x, y, txt, `text-anchor="middle" font-size="10" fill="${color}"`)); };
   const small = (txt: string, x: number, y: number, anchor: 'start' | 'end') => { const w = txt.length * 5.4 + 4; const b = { x: anchor === 'start' ? x : x - w, y: y - 10, w, h: 12 };
     if (!boxes.some((o) => hit(o, b)) && !pipeBoxes.some((o) => hit(o, b))) { boxes.push(b); labels.push(t(x, y, txt, `text-anchor="${anchor}" font-size="9" fill="#334155" font-weight="600"`)); } };
+  // fill / vent / drain points the records put on a pipe or an item: a short stub with a small valve, on that pipe (R15)
+  const markParts: string[] = []; let marksDrawn = 0;
+  for (const m of s.marks.filter((x) => x.on && (x.kind === 'drain' || x.kind === 'vent' || x.kind === 'fill'))) {
+    let at: Pt | null = null;
+    if (m.on!.at === 'node') { const p = pos.get(m.on!.a); const n = node.get(m.on!.a); if (p && n) at = { x: p.x + Math.max(10, HW[n.kind] - 6), y: m.kind === 'drain' ? p.y + 52 : p.y + 2 }; }
+    else { const p = paths.find((q) => q.l.a === m.on!.a && q.l.b === m.on!.b);
+      const hs = p ? p.pts.slice(1).map((q, j) => [p.pts[j], q] as const).filter(([u, v]) => u.y === v.y && Math.abs(v.x - u.x) > 40) : [];
+      if (hs.length) { const seg = m.on!.at === 'start' ? hs[0] : m.on!.at === 'end' ? hs[hs.length - 1] : [...hs].sort((u, v) => Math.abs(v[1].x - v[0].x) - Math.abs(u[1].x - u[0].x))[0];
+        const dir = Math.sign(seg[1].x - seg[0].x) || 1; at = { x: m.on!.at === 'start' ? seg[0].x + 30 * dir : m.on!.at === 'end' ? seg[1].x - 30 * dir : (seg[0].x + seg[1].x) / 2, y: seg[0].y }; } }
+    if (!at) { issues.push(`${m.kind} point "${m.text}" could not be placed on its line`); continue; }
+    const c = m.kind === 'drain' ? '#1d4ed8' : m.kind === 'vent' ? '#0e7490' : '#15803d', sg = m.kind === 'drain' ? 1 : -1, y2 = at.y + sg * 20;
+    markParts.push(`<line x1="${at.x}" y1="${at.y}" x2="${at.x}" y2="${y2}" stroke="${c}" stroke-width="1.6"/>`,
+      `<polygon points="${at.x - 5},${y2} ${at.x + 5},${y2} ${at.x},${y2 + sg * 6} ${at.x - 5},${y2 + sg * 12} ${at.x + 5},${y2 + sg * 12} ${at.x},${y2 + sg * 6}" fill="#fff" stroke="${c}" stroke-width="1.4"/>`);
+    boxes.push({ x: at.x - 7, y: Math.min(at.y, y2 + sg * 12) - 2, w: 14, h: 36 }); marksDrawn++;
+    const tag = m.text.split(/[ ,(]/)[0];
+    labelsLater.push(() => place(`${m.kind === 'drain' ? 'D' : m.kind === 'vent' ? 'V' : 'F'}: ${tag}`, at!.x + 4, y2 + sg * 22 + (sg > 0 ? 4 : 0), c));
+  }
   const labelled = new Set<string>();
   for (const p of paths) { const l = p.l; if (labelled.has(l.key)) continue; labelled.add(l.key);
     const first = l.role && l.role !== 'active' && l.role !== 'bypass' && !s.links.some((o) => o.b === l.a && o.role === l.role) && s.links.filter((o) => o.a === l.a && o.role === l.role)[0] === l;
@@ -186,11 +215,12 @@ function layout(s: Schematic, col0: Map<string, number>, cuts: number[], top: nu
       if (hseg) place(txt, (hseg[0].x + hseg[1].x) / 2, hseg[0].y - 8, look(l).color); }
     if (l.bSide && /^pass/.test(l.bSide)) small(l.bSide.replace(/ inlet$/, ''), p.pts[0].x + 4, p.pts[0].y - 6, 'start');
     else if (l.aSide && outCount(l.a) < 2) small(l.aSide, p.pts[0].x + 4, p.pts[0].y + 14, 'start'); }
+  for (const f of labelsLater) f();
   // draw
   const parts: string[] = [];
   for (const p of [...paths].sort((u, v) => Number(u.l.role === 'active') - Number(v.l.role === 'active'))) { const st = look(p.l);
     parts.push(`<path d="M ${p.pts.map((q) => `${q.x} ${q.y}`).join(' L ')}" fill="none" stroke="${st.color}" stroke-width="${st.width}"${st.dash ? ` stroke-dasharray="${st.dash}"` : ''}${p.arrow ? ` marker-end="url(#ar-${st.marker})"` : ''}/>`); }
-  parts.push(...contParts);
+  parts.push(...contParts, ...markParts);
   for (const n of s.nodes) {
     const p = pos.get(n.key)!; const c = n.state === 'standby' ? '#94a3b8' : '#0f172a';
     if (n.kind === 'junction' && n.state === 'known') { const jl = wrap(n.label ?? n.tag.slice(2), 22);
@@ -213,7 +243,8 @@ function layout(s: Schematic, col0: Map<string, number>, cuts: number[], top: nu
   }
   parts.push(...dots.map((d) => `<circle cx="${d.x}" cy="${d.y}" r="3.6" fill="#0f172a"/>`), ...labels);
   for (let b = 1; b < bands; b++) parts.push(`<line x1="24" y1="${bandBox[b].top - 9}" x2="${W - 24}" y2="${bandBox[b].top - 9}" stroke="#e2e8f0" stroke-dasharray="4 4"/>`);
-  return { parts, W, H: H0, issues, crossings, conts: cross.length, dots: dots.length };
+  const pipe = segs.reduce((t2, g) => t2 + Math.abs(g.a.x - g.b.x) + Math.abs(g.a.y - g.b.y), 0);   // total pipe length (R11: short pipes)
+  return { parts, W, H: H0, issues, crossings, conts: cross.length, dots: dots.length, marksDrawn, pipe };
 }
 
 /** Try the arrangements, keep the most compact clean one, and draw the sheet around it. */
@@ -229,18 +260,20 @@ export function renderFolded(s: Schematic, generatedAt: string): { svg: string; 
   const series = (l: SLink) => { const a = s.nodes.find((x) => x.key === l.a)!, b = s.nodes.find((x) => x.key === l.b)!; return a.kind === b.kind && a.tag.replace(/[A-Z]$/, '') === b.tag.replace(/[A-Z]$/, ''); };
   for (const cut of cands) for (const flip of [false, true]) {
     if (cut.some((c) => !s.nodes.some((x) => col.get(x.key) === c) || !s.nodes.some((x) => col.get(x.key) === c + 1))) continue;
-    if (s.links.some((l) => crosses(cut, l) && (l.role !== 'active' || series(l)))) continue;
-    const r = layout(s, col, cut, TOP, flip); const W = Math.max(r.W, head.length * 10.5 + 48, 700);
-    const score = W * r.H * (1 + 0.1 * r.conts) + r.crossings * 60000 + r.issues.length * 120000;
+    for (const turns of [false, true]) {
+    // markers: a fold only through the active route; continuous turns: any pipe may turn down into the next band (R14)
+    if (s.links.some((l) => crosses(cut, l) && (series(l) || (!turns && l.role !== 'active')))) continue;
+    const r = layout(s, col, cut, TOP, flip, turns); const W = Math.max(r.W, head.length * 10.5 + 48, 700);
+    const score = (W * r.H + 40 * r.pipe) * (1 + 0.35 * r.conts + (turns ? 0.03 * cut.length : 0)) + (r.crossings + r.issues.length) * 1e12;   // R9 / R10: a crossing or a collision rules a layout out   // R14: a continuous 90° route is preferred to A/B markers
     if (score < bestScore) { best = r; bestScore = score; }
-  }
+  } }
   const r = best!; const issues = [...schematicCheck(s), ...r.issues, ...(r.crossings ? [`${r.crossings} pipe crossing${r.crossings > 1 ? 's' : ''}`] : [])];
   const W = Math.max(r.W, head.length * 10.5 + 48, 700);
   const t = (x: number, y: number, txt: string, o = '') => `<text x="${x}" y="${y}" ${o}>${esc(txt)}</text>`;
   const parts: string[] = [`<defs>${[...Object.entries(LINK_STYLE), ...Object.entries(ROLE_STYLE).map(([k, v]) => [`r-${k}`, v] as const)].map(([k, v]) => `<marker id="ar-${k}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${v.color}"/></marker>`).join('')}</defs>`,
     `<rect x="0" y="0" width="${W}" height="32" fill="#b91c1c"/>`, t(W / 2, 21, SCHEMATIC_LABEL.toUpperCase(), 'text-anchor="middle" fill="#fff" font-size="13.5" font-weight="800" letter-spacing="0.4"'),
     t(24, 62, head, 'font-size="18" font-weight="800" fill="#0f172a"'), t(24, 82, `${s.type} · Status: ${s.status} · Rev auto-${s.revision} · ${generatedAt}`, 'font-size="11" fill="#475569"'), ...r.parts];
-  // one-row legend, a pointer to Details, the warning
+  // legend for the D / V markers is in the status line; one-row legend, a pointer to Details, the warning
   let y = r.H + 8;
   const usedR = [...new Set(s.links.map((l) => l.role).filter(Boolean))] as Role[]; const usedB = [...new Set(s.links.map((l) => l.basis))];
   const ents: { icon: (x: number, y: number) => string; text: string }[] = [
@@ -253,6 +286,9 @@ export function renderFolded(s: Schematic, generatedAt: string): { svg: string; 
   parts.push(`<line x1="24" y1="${y}" x2="${W - 24}" y2="${y}" stroke="#e2e8f0"/>`); y += 20;
   let lx = 24; for (const e of ents) { const w = 40 + e.text.length * 5.7 + 22; if (lx + w > W - 24) { lx = 24; y += 18; } parts.push(e.icon(lx, y - 4), t(lx + 38, y, e.text, 'font-size="10.5" fill="#334155"')); lx += w; }
   y += 20;
+  const fvd = (k: 'fill' | 'vent' | 'drain', name: string) => { const all = s.marks.filter((m) => m.kind === k); const on = all.filter((m) => m.on).length;
+    return all.length ? `${name}: ${on} drawn${all.length > on ? `, ${all.length - on} location not recorded` : ''}` : `${name}: not recorded`; };
+  parts.push(t(24, y, `${fvd('fill', 'Fill points')} · ${fvd('vent', 'Vents')} · ${fvd('drain', 'Drains')} (D / V / F markers on the drawing; unknown locations in Details)`, 'font-size="10.5" font-weight="700" fill="#334155"')); y += 16;
   parts.push(t(24, y, `Details panel: procedure points, notes, ${s.unknown.length} unknown / unresolved items, sources, revision.${issues.length ? `  ⚠ Layout check: ${issues.length} issue${issues.length > 1 ? 's' : ''}` : ''}`, `font-size="10.5" fill="${issues.length ? '#b91c1c' : '#64748b'}"`)); y += 14;
   parts.push(`<rect x="0" y="${y}" width="${W}" height="24" fill="#b91c1c"/>`, t(W / 2, y + 16, 'REFERENCE ONLY — NOT AN AUTHORIZATION FOR ISOLATION, LINE-UP, VALVE OPERATION OR CHEMICAL WORK', 'text-anchor="middle" fill="#fff" font-size="10" font-weight="800"'));
   const H = y + 24;

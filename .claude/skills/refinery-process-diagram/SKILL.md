@@ -308,6 +308,8 @@ Approved rules (from the Section Head's reviews, 24 Oct 2026):
 | R11 | Compact: branches next to where they connect; folded / multi-row arrangements are tried; fitted to content. |
 | R12 | The sheet keeps the title, an essential legend and the warnings; lists and metadata go to the Details panel. |
 | R13 | Nothing is removed to make a drawing smaller. |
+| R14 | The route may turn 90° and continue on another row (U / serpentine / folded) when that is more compact; a continuous pipe is preferred to A/B markers; never accepted with a crossing; a turn is a drawing choice, not a piping change. |
+| R15 | Fill, vent and drain points recorded on a line or an item are drawn there (D / V / F markers); unknown locations are listed clearly. |
 
 ## Final Principle
 

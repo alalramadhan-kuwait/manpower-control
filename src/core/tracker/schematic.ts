@@ -23,7 +23,8 @@ export interface SLink { key: string; a: string; b: string; basis: Basis; lines:
   /** the line-up gives the opposite direction */ conflict?: string;
   /** the line-up's service when it says more than the route (e.g. a bypass) */ service?: string;
   /** set by a correction: active route, bypass, standby (isolated) branch, injection */ role?: Role }
-export interface SMark { key: string; kind: MarkKind; text: string; source: string; user?: string; verifiedSheet?: string }
+export interface SMark { key: string; kind: MarkKind; text: string; source: string; user?: string; verifiedSheet?: string;
+  /** where the record puts it: on the pipe a → b (at its start, middle or end) or on an item */ on?: { a: string; b?: string; at: 'start' | 'mid' | 'end' | 'node' } }
 export type Verification = 'Verified' | 'Unverified' | 'Unknown';
 export interface Schematic { ref: string; title: string; nodes: SNode[]; links: SLink[]; extra: string[]; marks: SMark[]; notes: string[]; unknown: string[]; sources: string[]; removed: number;
   /** diagram type (skill §3) */ type: 'Neutralization loop diagram';
@@ -229,7 +230,10 @@ export function buildSchematic(p: Pick<TrkPoint, 'id' | 'ref' | 'name' | 'detail
   // corrections to the points and notes
   for (const f of fixes) {
     if (f.op === 'remove' && f.target && f.target.startsWith('mark:')) { const n0 = marks.length; marks = marks.filter((m) => m.key !== f.target); removed += n0 - marks.length; }
-    if (f.op === 'add_mark' && f.kind && f.text) marks.push({ key: `fix:${f.id}`, kind: f.kind, text: f.text, source: `Correction by ${f.by ?? 'user'}`, user: f.by ?? 'user', verifiedSheet: f.sheet ?? undefined });
+    if (f.op === 'add_mark' && f.kind && f.text) { const at = f.target?.startsWith('at:') ? f.target.slice(3) as 'start' | 'mid' | 'end' | 'node' : null;
+      const key = (x: string) => (x.startsWith('J:') ? x : /\s/.test(x) ? tagKey(x) : tagKey(x));
+      marks.push({ key: `fix:${f.id}`, kind: f.kind, text: f.text, source: f.reason ?? `Correction by ${f.by ?? 'user'}`, user: f.by ?? 'user', verifiedSheet: f.sheet ?? undefined,
+        on: at && f.a ? { a: key(f.a), b: f.b ? key(f.b) : undefined, at } : undefined }); }
     if (f.op === 'note' && f.text) notes.push(`${f.text} (${f.by ?? 'user'})`);
   }
   if (fixes.length) sources.push(`Corrections (${fixes.length})`);

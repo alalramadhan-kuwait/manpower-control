@@ -20,6 +20,8 @@ export const DRAWING_RULES: DrawingRule[] = [
   { id: 'R11', rule: 'Compact: branches sit next to where they connect; empty space is used (folded / multi-row arrangements are tried); the drawing is fitted to its content.', from: 'Compact review + revision' },
   { id: 'R12', rule: 'The sheet keeps the title, an essential legend and the warnings; procedure points, unknowns, sources and revision go to the Details panel.', from: 'Compact review' },
   { id: 'R13', rule: 'Nothing is removed to make a drawing smaller: every item, valve, bypass, vent, drain and connection of the record stays.', from: 'Compact review' },
+  { id: 'R14', rule: 'The route may turn 90° and continue on another row (U / serpentine / folded); a continuous pipe is preferred to A/B markers; a turn is a drawing choice, never a piping change, and never accepted with a crossing.', from: '90° routing rule' },
+  { id: 'R15', rule: 'Fill, vent and drain points recorded on a line or an item are drawn on that line / item (D / V / F); points whose location is not recorded are listed as such.', from: 'FT-681 review (fill / vent / drain)' },
 ];
 
 /** The rules a finished drawing can be checked against automatically (the rest are guaranteed by how it is built). */
@@ -36,6 +38,7 @@ export function checkRules(s: Schematic, svg: string, issues: string[]): { passe
     if (/crossing/.test(i)) fail('R9', i);
     if (/shared-looking|overlapping line/.test(i)) fail('R9', i);
     if (/label/.test(i)) fail('R10', i);
+    if (/could not be placed on its line/.test(i)) fail('R15', i);
   }
   const ids = new Set(failed.map((f) => f.split(':')[0]));
   return { passed: DRAWING_RULES.map((r) => r.id).filter((id) => !ids.has(id)), failed };

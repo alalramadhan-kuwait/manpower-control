@@ -59,4 +59,9 @@ describe('approved drawing rules (FT-681 reference)', () => {
   it('R13 nothing is removed: every item is on the sheet', () => {
     for (const x of s.nodes.filter((q) => q.kind !== 'junction')) expect(r.svg).toContain(`>${x.tag}<`);
   });
+  it('R15 a drain recorded on a line is drawn on that line', () => {
+    const fixes = [fx('A-101', 'E-203', 'active'), { ...fx('E-203', 'E-216', 'active') }, { id: 'm1', pointId: 'L', op: 'add_mark' as const, target: 'at:start', a: 'E-203', b: 'E-216', line: null, kind: 'drain' as const, text: 'DX-1 drain', sheet: null, reason: 'line-up', status: 'active' as const, by: 'x', at: '' }];
+    const r2 = renderSchematic(buildSchematic(loop, { fixes }), 'x', { compact: true });
+    expect(r2.svg).toContain('D: DX-1'); expect(r2.svg).toContain('Drains: 1 drawn');
+  });
 });
