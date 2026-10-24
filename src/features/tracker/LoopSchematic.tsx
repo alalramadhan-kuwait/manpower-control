@@ -43,12 +43,12 @@ export function LoopSchematic({ trackerId, loop, data, canCorrect }: { trackerId
   const { fixes, reload } = useFixes(trackerId); const [open, setOpen] = useState(false); const [edit, setEdit] = useState(false);
   const mine = (fixes ?? []).filter((f) => f.pointId === loop.id);
   const s = useMemo(() => buildSchematic(loop, { ...data, fixes: fixes ?? [] }), [loop, data, fixes]);
-  const counts = `${s.nodes.length} items · ${s.links.length} connections · ${s.marks.filter((m) => m.kind !== 'before').length} points · ${s.unknown.length} unknowns`;
+  const counts = `${s.status} · ${s.counts.verified} verified / ${s.counts.unverified} unverified connections · ${s.marks.filter((m) => m.kind !== 'before').length} points · ${s.unknown.length} unknown · rev auto-${s.revision}`;
   return (
     <div className="space-y-1.5">
       <button type="button" onClick={() => setOpen(true)} className="flex w-full items-center gap-2 rounded-xl bg-white px-2.5 py-2 text-left ring-1 ring-slate-200 active:bg-slate-50">
         <span aria-hidden>🧩</span>
-        <span className="min-w-0 flex-1"><b className="block text-[13px] text-slate-800">View auto-generated schematic</b><span className="block truncate text-[11px] text-slate-500">Not a verified P&amp;ID · {counts}{mine.some((f) => f.status === 'active') ? ` · ${mine.filter((f) => f.status === 'active').length} corrections` : ''}</span></span>
+        <span className="min-w-0 flex-1"><b className="block text-[13px] text-slate-800">View auto-generated process schematic</b><span className="block truncate text-[11px] text-slate-500">Not a verified P&amp;ID · {counts}{mine.some((f) => f.status === 'active') ? ` · ${mine.filter((f) => f.status === 'active').length} corrections` : ''}</span></span>
         <span className="text-slate-400">›</span>
       </button>
       {canCorrect && <button type="button" onClick={() => setEdit((x) => !x)} className="text-[12px] font-bold text-brand-700">{edit ? '▾' : '▸'} Correct the schematic</button>}

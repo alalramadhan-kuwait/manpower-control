@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSchematic, schematicSvg, SCHEMATIC_LABEL, type LoopFix } from '../schematic';
+import { buildSchematic, renderSchematic, schematicSvg, SCHEMATIC_LABEL, type LoopFix } from '../schematic';
 import type { LuStream, TrkPointStep } from '..';
 
 const step = (seq: number, phase: TrkPointStep['phase'], text: string): TrkPointStep => ({ id: `s${seq}`, pointId: 'L', seq, phase, text, source: 'SOP §3.9', doneAt: null, doneBy: null, crane: false, kind: 'check', startAt: null, startBy: null });
@@ -10,11 +10,14 @@ describe('auto-generated loop schematic', () => {
   const ft = { id: 'L', ref: 'FT-681', name: 'FT/FV-681…684 feed lines', detail: 'FT-681/682/683/684 and inlet FV-681…684 neutralization', items: ['H-12-201'], requires: [], method: 'soak' as const };
   const ftSteps = [step(1, 'before', 'H-201 decoking completed and H-201 handed over'), step(2, 'before', 'P-103B and P-203 discharge MOV-502/501 and B/Vs closed'),
     step(7, 'fill', 'Neutralized as per the feed line procedure (P-203 and P-103B to H-201 inlet)')];
-  it('FT-681: the pumps feed the FT/FV group into the H-201 inlet, as the procedure says; nothing else is invented', () => {
+  it('FT-681: the pumps feed four separate passes (FT/FV-681…684) into the H-201 inlet; the split is drawn unresolved', () => {
     const s = buildSchematic(ft, { steps: ftSteps });
-    expect(s.nodes.map((n) => n.tag).sort()).toEqual(['FT/FV-681…684', 'H-201', 'P-103B', 'P-203']);
-    expect(s.links.map((l) => `${l.a}>${l.b}`).sort()).toEqual(['FT/FV-681…684>H-201', 'P-103B>FT/FV-681…684', 'P-203>FT/FV-681…684']);
+    expect(s.nodes.map((n) => n.tag).sort()).toEqual(['FT/FV-681', 'FT/FV-682', 'FT/FV-683', 'FT/FV-684', 'H-201', 'P-103B', 'P-203', 'Split not recorded']);
+    expect(s.links.filter((l) => l.b === 'H-201').map((l) => `${l.a}:${l.bSide}`)).toEqual(['FT/FV-681:pass 1 inlet', 'FT/FV-682:pass 2 inlet', 'FT/FV-683:pass 3 inlet', 'FT/FV-684:pass 4 inlet']);
+    expect(s.links.filter((l) => l.b === 'J:split').map((l) => l.a).sort()).toEqual(['P-103B', 'P-203']);
     expect(s.links.every((l) => l.basis === 'record' && !l.lines.length)).toBe(true);
+    expect(s.status).toBe('Unverified');
+    expect(s.unknown[0]).toMatch(/where the common feed splits into the passes.*not recorded/);
     expect(s.marks.find((m) => m.kind === 'isolation')?.text).toMatch(/MOV-502\/501/);
     expect(s.unknown.join(' ')).toMatch(/Line numbers not in the P&ID line-up/);
     expect(s.unknown.join(' ')).toMatch(/Fill \(soda ash in\) points are not recorded/);
@@ -34,7 +37,7 @@ describe('auto-generated loop schematic', () => {
     expect(s.marks.map((m) => `${m.kind}:${m.text}`)).toEqual(['fill:V-206 and V-207 drains', 'drain:LV-511A/B U/S and D/S drains', 'vent:Clear soda ash at LV-511A/B drains']);
   });
   it('corrections: a removed connection goes, an added one is shown as the person\'s (checked only with a sheet)', () => {
-    const s = buildSchematic(ft, { steps: ftSteps, fixes: [fix({ op: 'remove', target: 'link:P-103B>FT/FV-681…684', reason: 'P-103B not used' }), fix({ op: 'add_link', a: 'E-229', b: 'H-201', line: 'P-12-2303', sheet: '1-4-12-0-313' }), fix({ op: 'add_link', a: 'X-1', b: 'H-201', status: 'withdrawn' })] });
+    const s = buildSchematic(ft, { steps: ftSteps, fixes: [fix({ op: 'remove', target: 'link:P-103B>J:split', reason: 'P-103B not used' }), fix({ op: 'add_link', a: 'E-229', b: 'H-201', line: 'P-12-2303', sheet: '1-4-12-0-313' }), fix({ op: 'add_link', a: 'X-1', b: 'H-201', status: 'withdrawn' })] });
     expect(s.links.some((l) => l.a === 'P-103B')).toBe(false);
     expect(s.links.find((l) => l.a === 'E-229')).toMatchObject({ basis: 'user_verified', lines: ['P-12-2303'], user: 'Engineer' });
     expect(s.nodes.some((n) => n.tag === 'X-1')).toBe(false);
@@ -42,7 +45,29 @@ describe('auto-generated loop schematic', () => {
   it('a loop with no equipment named says the route is not known; the sheet is labelled as not a verified P&ID', () => {
     const s = buildSchematic({ id: 'L', ref: 'S112', name: 'ADD line', detail: null, items: [], requires: [], method: 'soak' }, {});
     expect(s.nodes).toEqual([]); expect(s.unknown[0]).toMatch(/route is not known/);
-    const svg = schematicSvg(s, '24 Oct 2026');
+    const svg = schematicSvg(s, '24 Oct 2026'); expect(s.status).toBe('Unknown');
     expect(svg).toContain(SCHEMATIC_LABEL.toUpperCase().replace('&', '&amp;')); expect(svg).toContain('Route not available');
+  });
+  it('a record direction opposite to the line-up is flagged as a conflict, not silently changed', () => {
+    const p = { id: 'L', ref: 'S318', name: 'P-203 to E-216', detail: 'E-216 → E-203', items: [], requires: [], method: 'soak' as const };
+    const s = buildSchematic(p, { lineup: [lu('E-203', 'E-216', 'P-12-2052', 'check')] });
+    const l = s.links.find((x) => x.a === 'E-216' && x.b === 'E-203')!;
+    expect(l.basis).toBe('record'); expect(l.conflict).toMatch(/line-up gives E-203 → E-216 \(P-12-2052\)/);
+    expect(s.unknown[0]).toMatch(/^Source conflict/);
+  });
+  it('Verified only when every connection is verified and nothing is unknown; the sheet carries metadata and passes its check', () => {
+    const p = { id: 'L', ref: 'X', name: 'V-213 to E-211', detail: null, items: [], requires: ['SEG-01'], method: 'soak' as const };
+    const steps = [step(1, 'before', 'Soda ash hoses on V-213 drain'), step(2, 'fill', 'Clear soda ash at E-211 vent')];
+    const s = buildSchematic(p, { steps, lineup: [lu('V-213', 'E-211', 'P-12-2350', 'ok')], points: [{ kind: 'blind', ref: 'SEG-01', name: 'x' }] });
+    expect(s.links[0].basis).toBe('verified');
+    expect(s.status).toBe(s.unknown.length ? 'Unverified' : 'Verified');
+    const r = renderSchematic(s, '24 Oct 2026');
+    expect(r.issues).toEqual([]);
+    for (const k of ['Diagram revision', `auto-${s.revision}`, 'Generator', 'Verification', 'Automatic check', 'NOT AN AUTHORIZATION']) expect(r.svg).toContain(k);
+  });
+  it('the revision changes with the data, not with the time it is built', () => {
+    const a = buildSchematic(ft, { steps: ftSteps }), b = buildSchematic(ft, { steps: ftSteps });
+    const c = buildSchematic(ft, { steps: ftSteps, fixes: [fix({ op: 'note', text: 'x' })] });
+    expect(a.revision).toBe(b.revision); expect(c.revision).not.toBe(a.revision);
   });
 });

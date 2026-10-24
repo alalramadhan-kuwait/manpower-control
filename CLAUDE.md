@@ -45,6 +45,10 @@ No unrelated improvements or redesigns while a priority is open.
   line, strainer or filter set), never grouped under its parent compressor or turbine by default. A tag not confirmed on
   a P&ID is labelled UNVERIFIED with its source; a possible P6 duplicate is flagged, never merged or deleted without
   the confirmed scope.
+- Every automatically generated process diagram (loop schematics, PFDs, shutdown / startup / maintenance schematics)
+  follows `.claude/skills/refinery-process-diagram/SKILL.md`: records-only topology, Verified / Unverified / Unknown
+  shown, no invented tags, lines, valves or directions, labelled "Auto-generated process schematic — Reference only —
+  Not a verified P&ID". Engine: `src/core/tracker/schematic.ts`; viewer: the existing Drawing Viewer.
 - Approved calculations (manpower minimums, roster cycle, tracker progress/forecast) change only with authorization.
 - **No hard delete** of user records. Use soft states (cancelled, voided, declined, superseded) that keep links and
   history. No DROP / TRUNCATE / unscoped DELETE; production data changes only with confirmed mappings.

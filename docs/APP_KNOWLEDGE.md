@@ -234,6 +234,15 @@ available"**. Every view carries "Reference only — not an authorization for is
 
 ### Auto-generated schematics (24 Oct 2026)
 
+Drawing rules: `.claude/skills/refinery-process-diagram/SKILL.md` (mandatory). Generator `schematic 2.0`: status
+Verified / Unverified / Unknown per diagram and per connection (line pattern, not colour only: solid = verified,
+long dash = Train-2 line-up unchecked, dotted = record only, dash-dot = added by a person); numbered instrument
+ranges drawn as separate passes with an unresolved split; vapour outlets leave the top of vessels; junction dots only
+where pipes join or split, shared segments drawn in the weakest style; line numbers only where known; record vs
+line-up direction conflicts flagged (S318: E-216 → E-203 in the record, E-203 → E-216 in the line-up); metadata block
+(diagram, type, loop, equipment, generated, revision auto-<hash of the data>, generator, sources, verification) and
+an automatic check (topology + overlapping labels) on every sheet.
+
 Every neutralization loop also has **"View auto-generated schematic"** (loop sheet; "📐 Schematic (auto)" on the
 engineer card when no verified drawing exists). It is built in the app each time it is opened
 (`src/core/tracker/schematic.ts`) and shown in the same viewer, labelled **"Auto-generated schematic — Not a verified

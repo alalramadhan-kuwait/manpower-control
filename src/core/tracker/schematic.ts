@@ -4,19 +4,28 @@
 // is listed as unknown. Connections found in the line-up are "verified" (P&ID read) or "unchecked" (Train-2 lines
 // generated from Train 1); the rest come from the loop record or procedure. People's corrections (trk_loop_fix) are
 // applied on top and shown as theirs. The SVG is shown in the drawing viewer, labelled as not a verified P&ID.
+// Drawing rules: .claude/skills/refinery-process-diagram/SKILL.md (mandatory for every generated process diagram).
 import { luKeys, type LuStream, type TrkPoint, type TrkPointStep } from './index';
 
-export type NodeKind = 'vessel' | 'reactor' | 'exchanger' | 'heater' | 'pump' | 'compressor' | 'column' | 'filter' | 'valve' | 'instrument' | 'item';
+export type NodeKind = 'vessel' | 'reactor' | 'exchanger' | 'heater' | 'pump' | 'compressor' | 'column' | 'filter' | 'valve' | 'instrument' | 'pass' | 'junction' | 'item';
 export type Basis = 'verified' | 'unchecked' | 'record' | 'user' | 'user_verified';
 export type MarkKind = 'fill' | 'drain' | 'vent' | 'isolation' | 'blind' | 'before';
 export interface SNode { key: string; tag: string; kind: NodeKind; via: string[]; user?: string }
-export interface SLink { key: string; a: string; b: string; basis: Basis; lines: string[]; sheets: string[]; source: string; user?: string }
+export interface SLink { key: string; a: string; b: string; basis: Basis; lines: string[]; sheets: string[]; source: string; user?: string;
+  /** the side / nozzle named in the record at each end (T/S, S/S, O/L, I/L, vapour, inlet…) */ aSide?: string | null; bSide?: string | null;
+  /** the line-up gives the opposite direction */ conflict?: string }
 export interface SMark { key: string; kind: MarkKind; text: string; source: string; user?: string; verifiedSheet?: string }
-export interface Schematic { ref: string; title: string; nodes: SNode[]; links: SLink[]; extra: string[]; marks: SMark[]; notes: string[]; unknown: string[]; sources: string[]; removed: number }
+export type Verification = 'Verified' | 'Unverified' | 'Unknown';
+export interface Schematic { ref: string; title: string; nodes: SNode[]; links: SLink[]; extra: string[]; marks: SMark[]; notes: string[]; unknown: string[]; sources: string[]; removed: number;
+  /** diagram type (skill §3) */ type: 'Neutralization loop diagram';
+  /** overall status (skill §17): Verified only when every connection is verified and nothing is unknown */ status: Verification;
+  counts: { verified: number; unverified: number; unknown: number };
+  /** generated-diagram revision: changes when the data behind it changes (not the source documents' revision) */ revision: string }
 export interface LoopFix { id: string; pointId: string; op: 'remove' | 'add_link' | 'add_mark' | 'note'; target: string | null; a: string | null; b: string | null; line: string | null;
   kind: MarkKind | null; text: string | null; sheet: string | null; reason: string | null; status: 'active' | 'withdrawn'; by: string | null; at: string }
 
-export const SCHEMATIC_LABEL = 'Auto-generated schematic — Not a verified P&ID';
+export const SCHEMATIC_LABEL = 'Auto-generated process schematic — Reference only — Not a verified P&ID';
+export const GENERATOR_VERSION = 'schematic 2.0';
 
 // ── tags in the records ────────────────────────────────────────────────────────────────────────────────────────
 const EQ = /\b(EA|EJ|TK|[VEHRPCTF])-(?:12-)?(\d{3}[A-Z]?(?:\/(?:\d{3}|[A-Z]))*)(?![\d-])/g;
@@ -48,6 +57,9 @@ function tagsIn(text: string, valves = false): { tag: string; side: string | nul
 }
 /** an instrument group named in the loop's title, e.g. "FT/FV-681…684" */
 const groupIn = (text: string) => text.match(/\b[A-Z]{2,3}(?:\/[A-Z]{2,3})*-\d{3,4}(?:\s*(?:…|\.\.\.)\s*\d{3,4})?\b/)?.[0] ?? null;
+/** a numbered range in a group (FT/FV-681…684 → the four passes 681, 682, 683, 684); null when not a short range */
+const passesOf = (g: string) => { const m = g.match(/^(.+)-(\d{3,4})\s*(?:…|\.\.\.)\s*(\d{3,4})$/); if (!m) return null; const a = +m[2], b = +m[3];
+  return b > a && b - a < 8 ? Array.from({ length: b - a + 1 }, (_, i) => `${m[1]}-${a + i}`) : null; };
 
 // ── connections stated in the records ──────────────────────────────────────────────────────────────────────────
 interface Raw { a: { tag: string; side: string | null }; b: { tag: string; side: string | null }; source: string }
@@ -97,6 +109,8 @@ function marksOf(steps: TrkPointStep[]): SMark[] {
 /** one item under two names: E-210 ~ E-210A/B, P-203 ~ P-203A/B; never P-103A ~ P-103B */
 const own = (x: string) => { const k = luKeys(x); return k.length > 1 ? k.slice(1) : k; };
 const same = (x: string, y: string) => own(x).some((k) => luKeys(y).includes(k)) || own(y).some((k) => luKeys(x).includes(k));
+/** one connection per pair; the sides named in any of the records that give it are kept */
+const dedupe = (ls: SLink[]) => { const by = new Map<string, SLink>(); for (const l of ls) { const o = by.get(l.key); if (!o) by.set(l.key, { ...l }); else { o.aSide ??= l.aSide; o.bSide ??= l.bSide; } } return [...by.values()]; };
 const uniq = <T>(xs: T[], k: (x: T) => string) => { const s = new Set<string>(); return xs.filter((x) => (s.has(k(x)) ? false : (s.add(k(x)), true))); };
 
 /** The schematic of one loop from the records, with people's corrections applied. */
@@ -115,14 +129,27 @@ export function buildSchematic(p: Pick<TrkPoint, 'id' | 'ref' | 'name' | 'detail
     if (side && !n.via.includes(side)) n.via.push(side); nodes.set(k, n); return k; };
   let links: SLink[] = [];
   const ends = (r: Raw) => [node(r.a.tag, r.a.side), node(r.b.tag, r.b.side)] as const;
-  for (const r of raw) { const [a, b] = ends(r); if (a !== b) links.push({ key: `link:${a}>${b}`, a, b, basis: 'record', lines: [], sheets: [], source: r.source }); }
+  for (const r of raw) { const [a, b] = ends(r); if (a !== b) links.push({ key: `link:${a}>${b}`, a, b, basis: 'record', lines: [], sheets: [], source: r.source, aSide: r.a.side, bSide: r.b.side }); }
+  // the loop's own instruments (FT/FV-681…684) are on the feed lines into the item the fill reaches. A numbered range
+  // is one pass each (skill §5.7: passes are not merged); where the feed splits into the passes is not recorded, so
+  // the split is drawn as an unresolved junction.
+  const passNotes: string[] = [];
   if (group && fromFill && !nodes.has(tagKey(group))) {
-    const into = raw.filter((r) => /inlet|passes/i.test(r.b.side ?? '')).map((r) => tagKey(r.b.tag));
-    if (into.length) { const g = node(group, 'feed lines'); nodes.get(g)!.kind = 'instrument';
+    const into = [...new Set(raw.filter((r) => /inlet|passes/i.test(r.b.side ?? '')).map((r) => tagKey(r.b.tag)))];
+    const passes = passesOf(group);
+    if (into.length === 1 && passes) {
+      const t = into[0], j = 'J:split';
+      nodes.set(j, { key: j, tag: 'Split not recorded', kind: 'junction', via: [] });
+      links = links.flatMap((l) => (l.b === t ? [{ ...l, b: j, key: `link:${l.a}>${j}`, bSide: null }] : [l]));
+      passes.forEach((ps, i) => { const k = node(ps, null); nodes.get(k)!.kind = 'pass';
+        links.push({ key: `link:${j}>${k}`, a: j, b: k, basis: 'record', lines: [], sheets: [], source: 'Loop name (one pass per instrument number)' },
+          { key: `link:${k}>${t}`, a: k, b: t, basis: 'record', lines: [], sheets: [], source: 'Loop name / fill step', bSide: `pass ${i + 1} inlet` }); });
+      passNotes.push(`${group}: one pass per number (${passes.length} passes) into ${t}; where the common feed splits into the passes, and the order of the instruments on each pass, are not recorded.`);
+    } else if (into.length) { const g = node(group, 'feed lines'); nodes.get(g)!.kind = 'instrument';
       links = links.flatMap((l) => (into.includes(l.b) ? [{ ...l, b: g, key: `link:${l.a}>${g}` }] : [l]));
-      for (const t of [...new Set(into)]) links.push({ key: `link:${g}>${t}`, a: g, b: t, basis: 'record', lines: [], sheets: [], source: 'Loop name (instruments on the feed lines)' }); }
+      for (const t of into) links.push({ key: `link:${g}>${t}`, a: g, b: t, basis: 'record', lines: [], sheets: [], source: 'Loop name (instruments on the feed lines)', bSide: 'inlet' }); }
   }
-  links = uniq(links, (l) => l.key);
+  links = dedupe(links);
   // a direct connection that the records also give through other items is the same route: keep the longer one
   const reach = (a: string, b: string, skip: string) => { const seen = new Set([a]); const q = [a];
     while (q.length) { const x = q.shift()!; for (const l of links) if (l.a === x && l.key !== skip && !seen.has(l.b)) { if (l.b === b) return true; seen.add(l.b); q.push(l.b); } } return false; };
@@ -131,7 +158,7 @@ export function buildSchematic(p: Pick<TrkPoint, 'id' | 'ref' | 'name' | 'detail
   for (const k of [...nodes.keys()]) { const more = [...nodes.keys()].filter((o) => o !== k && luKeys(o)[0] === k && luKeys(o).length > 1);
     if (more.length !== 1) continue; const into = nodes.get(more[0])!; for (const v of nodes.get(k)!.via) if (!into.via.includes(v)) into.via.push(v);
     nodes.delete(k); links = links.map((l) => { const a2 = l.a === k ? into.key : l.a, b2 = l.b === k ? into.key : l.b; return { ...l, a: a2, b: b2, key: `link:${a2}>${b2}` }; }).filter((l) => l.a !== l.b); }
-  links = uniq(links, (l) => l.key);
+  links = dedupe(links);
   // the loop's items when no connection is stated; otherwise listed apart (place on the route not recorded)
   const itemTags = p.items.flatMap((i) => tagsIn(i, true).map((t) => t.tag)).concat(p.items.length ? [] : tagsIn(`${p.name} ${p.detail ?? ''}`).map((t) => t.tag));
   const extra: string[] = [];
@@ -141,6 +168,8 @@ export function buildSchematic(p: Pick<TrkPoint, 'id' | 'ref' | 'name' | 'detail
   let luHits = 0;
   for (const l of links) {
     const ss = lu.filter((s) => same(s.from, l.a) && same(s.to, l.b));
+    const back = lu.filter((s) => same(s.from, l.b) && same(s.to, l.a));
+    if (!ss.length && back.length && l.basis === 'record') l.conflict = `The loop record gives ${l.a} → ${l.b}; the P&ID line-up gives ${l.b} → ${l.a} (${[...new Set(back.flatMap((s) => s.lineNos))].join(', ') || 'no line no.'}). Shown as recorded: direction to be checked.`;
     if (!ss.length) continue; luHits++;
     l.basis = ss.some((s) => s.conf === 'ok') ? 'verified' : 'unchecked';
     l.lines = [...new Set(ss.flatMap((s) => s.lineNos))]; l.sheets = [...new Set(ss.flatMap((s) => s.sheets))]; l.source = 'P&ID line-up';
@@ -175,7 +204,8 @@ export function buildSchematic(p: Pick<TrkPoint, 'id' | 'ref' | 'name' | 'detail
   const nolu = links.filter((l) => l.basis === 'record');
   if (!nodes.size) unknown.push('No equipment is named in the loop record: the route is not known.');
   else if (!links.length) unknown.push('The route between the items is not recorded: items are shown without connections.');
-  if (nolu.length) unknown.push(`Line numbers not in the P&ID line-up for: ${nolu.map((l) => `${l.a} → ${l.b}`).join(', ')}.`);
+  const tagOf = (k: string) => (nodes.get(k)?.kind === 'junction' ? 'the split' : nodes.get(k)?.tag ?? k);
+  if (nolu.length) unknown.push(`Line numbers not in the P&ID line-up (left off the drawing) for: ${nolu.map((l) => `${tagOf(l.a)} → ${tagOf(l.b)}`).join(', ')}.`);
   if (links.some((l) => l.basis === 'unchecked')) unknown.push('Some line-up connections are Train-2 lines generated from Train 1 and not yet checked on the Train-2 sheet.');
   if (!steps.length) unknown.push('No field procedure is recorded: fill, drain, vent and isolation points are not known.');
   else {
@@ -185,7 +215,17 @@ export function buildSchematic(p: Pick<TrkPoint, 'id' | 'ref' | 'name' | 'detail
   if (!blinds.length) unknown.push('No boundary blinds are linked to this loop.');
   if (marks.some((m) => m.kind !== 'before')) unknown.push('Where each valve, blind, fill and drain point sits along the pipe is not recorded: they are listed beside the route, not drawn on it.');
   if (extra.length) unknown.push('Items listed under "Also in this loop" have no recorded place on the route.');
-  return { ref: p.ref, title: p.name, nodes: [...nodes.values()], links, extra, marks, notes, unknown, sources, removed };
+  unknown.unshift(...passNotes, ...links.filter((l) => l.conflict).map((l) => `Source conflict — ${l.conflict}`));
+  const ex = [...nodes.values()].filter((n) => n.kind === 'exchanger' && n.via.includes('T/S') && n.via.includes('S/S'));
+  for (const n of ex) unknown.push(`${n.tag}: both tube and shell sides are named in this loop; the circuits are separate and are not joined through the exchanger.`);
+  const verified = links.filter((l) => l.basis === 'verified' || l.basis === 'user_verified').length;
+  const counts = { verified, unverified: links.length - verified, unknown: unknown.length };
+  const status: Verification = !nodes.size ? 'Unknown' : verified === links.length && links.length > 0 && !unknown.length ? 'Verified' : 'Unverified';
+  const model = { nodes: [...nodes.values()], links, extra, marks, notes };
+  return { ref: p.ref, title: p.name, ...model, unknown, sources, removed, type: 'Neutralization loop diagram', status, counts, revision: hash(JSON.stringify(model) + GENERATOR_VERSION) };
+}
+/** short stable hash (FNV-1a) for the generated-diagram revision */
+function hash(x: string) { let h = 0x811c9dc5; for (let i = 0; i < x.length; i++) { h ^= x.charCodeAt(i); h = Math.imul(h, 0x01000193); } return (h >>> 0).toString(16).padStart(8, '0').slice(0, 6);
 }
 
 // ── drawing (SVG) ──────────────────────────────────────────────────────────────────────────────────────────────
@@ -193,18 +233,18 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 const wrap = (s: string, chars: number) => { const out: string[] = []; let cur = '';
   for (const w of s.split(/\s+/)) { if ((cur + ' ' + w).trim().length > chars && cur) { out.push(cur); cur = w; } else cur = (cur + ' ' + w).trim(); }
   if (cur) out.push(cur); return out; };
-export const LINK_STYLE: Record<Basis, { color: string; dash: string; label: string }> = {
-  verified: { color: '#1e3a8a', dash: '', label: 'In P&ID line-up (sheet read)' },
-  unchecked: { color: '#b45309', dash: '', label: 'In line-up, Train-2 not checked on its sheet' },
-  record: { color: '#64748b', dash: '7 5', label: 'From loop record / procedure, line not in line-up' },
-  user: { color: '#7c3aed', dash: '7 5', label: 'Added by a person, not checked on a P&ID' },
-  user_verified: { color: '#7c3aed', dash: '', label: 'Added by a person, checked on the P&ID sheet named' },
+export const LINK_STYLE: Record<Basis, { color: string; dash: string; width: number; label: string; level: Verification }> = {
+  verified: { color: '#0f172a', dash: '', width: 2.8, label: 'Verified — in the P&ID line-up, sheet read', level: 'Verified' },
+  user_verified: { color: '#6d28d9', dash: '', width: 2.8, label: 'Verified by a person on the P&ID sheet named', level: 'Verified' },
+  unchecked: { color: '#b45309', dash: '12 5', width: 2.4, label: 'Unverified — line-up, Train-2 generated from Train 1', level: 'Unverified' },
+  record: { color: '#475569', dash: '3 4', width: 2.2, label: 'Unverified — loop record / procedure only, line not in line-up', level: 'Unverified' },
+  user: { color: '#6d28d9', dash: '9 3 2 3', width: 2.2, label: 'Unverified — added by a person, not checked on a P&ID', level: 'Unverified' },
 };
 const MARK_STYLE: Record<MarkKind, { color: string; title: string }> = {
   before: { color: '#334155', title: 'Procedure steps (before / while filling)' },
   blind: { color: '#b91c1c', title: 'Boundary blinds (blind list)' },
-  isolation: { color: '#b91c1c', title: 'Isolation / boundary (procedure)' },
-  fill: { color: '#15803d', title: 'Fill points — soda ash in' },
+  isolation: { color: '#b91c1c', title: 'Isolation / boundary (procedure) — status as written, not a valve-position instruction' },
+  fill: { color: '#15803d', title: 'Fill / injection points — soda ash in' },
   vent: { color: '#0e7490', title: 'Vent / overflow / clear soda ash check' },
   drain: { color: '#1d4ed8', title: 'Drain points' },
 };
@@ -221,6 +261,9 @@ function symbol(k: NodeKind, cx: number, y: number, stroke: string): string {
     case 'filter': return `<rect x="${cx - 16}" y="${y + 4}" width="32" height="46" rx="6" ${s}/><line x1="${cx - 16}" y1="${y + 46}" x2="${cx + 16}" y2="${y + 8}" stroke="${stroke}" stroke-dasharray="3 3"/>`;
     case 'valve': return `<polygon points="${cx - 18},${y + 24} ${cx - 18},${y + 44} ${cx},${y + 34} ${cx + 18},${y + 24} ${cx + 18},${y + 44} ${cx},${y + 34}" ${s}/><line x1="${cx}" y1="${y + 34}" x2="${cx}" y2="${y + 14}" stroke="${stroke}" stroke-width="2"/><path d="M ${cx - 12} ${y + 14} A 12 10 0 0 1 ${cx + 12} ${y + 14} Z" ${s}/>`;
     case 'instrument': return `<circle cx="${cx - 14}" cy="${y + 26}" r="15" ${s}/><circle cx="${cx + 14}" cy="${y + 26}" r="15" ${s}/><line x1="${cx - 29}" y1="${y + 26}" x2="${cx + 29}" y2="${y + 26}" stroke="${stroke}" stroke-width="1.2"/>`;
+    // one pass: control valve with an instrument bubble (FT); their order on the pass is not recorded
+    case 'pass': return `<polygon points="${cx - 22},${y + 20} ${cx - 22},${y + 34} ${cx - 10},${y + 27} ${cx + 2},${y + 20} ${cx + 2},${y + 34} ${cx - 10},${y + 27}" ${s}/><line x1="${cx - 10}" y1="${y + 27}" x2="${cx - 10}" y2="${y + 13}" stroke="${stroke}" stroke-width="1.6"/><path d="M ${cx - 18} ${y + 13} A 8 7 0 0 1 ${cx - 2} ${y + 13} Z" ${s}/><circle cx="${cx + 16}" cy="${y + 27}" r="10" ${s}/>`;
+    case 'junction': return `<circle cx="${cx}" cy="${y + 26}" r="7" fill="#fff" stroke="#b45309" stroke-width="2" stroke-dasharray="3 2"/><text x="${cx}" y="${y + 30}" text-anchor="middle" font-size="10" font-weight="800" fill="#b45309">?</text>`;
     default: return `<rect x="${cx - 34}" y="${y + 10}" width="68" height="34" rx="6" ${s}/>`;
   }
 }
@@ -235,59 +278,124 @@ function markIcon(k: MarkKind, x: number, y: number, c: string): string {
   }
 }
 
-/** The schematic as an SVG sheet (white, landscape, readable when fitted to a phone and zoomed). */
-export function schematicSvg(s: Schematic, generatedAt: string): string {
-  const COLW = 200, ROWH = 140;
-  // columns: longest path from the starts; several items in one column stack
+/** half width of a symbol (where pipes meet it) */
+/** confidence order: a shared segment is drawn in the weakest style on it */
+const RANK: Record<Basis, number> = { record: 0, user: 1, unchecked: 2, user_verified: 3, verified: 4 };
+const HW: Record<NodeKind, number> = { vessel: 18, reactor: 20, column: 14, exchanger: 22, heater: 28, pump: 18, compressor: 22, filter: 16, valve: 18, instrument: 29, pass: 26, junction: 7, item: 34 };
+type Box = { x: number; y: number; w: number; h: number };
+const hit = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/** Topology checks before drawing (skill §21): returns the problems found. */
+export function schematicCheck(s: Schematic): string[] {
+  const out: string[] = []; const keys = new Set(s.nodes.map((n) => n.key));
+  for (const l of s.links) if (!keys.has(l.a) || !keys.has(l.b)) out.push(`connection ${l.a} → ${l.b} has a missing end`);
+  const tags = s.nodes.map((n) => n.tag); for (const t of new Set(tags)) if (tags.filter((x) => x === t).length > 1) out.push(`${t} appears twice`);
+  if (s.links.length) for (const n of s.nodes) if (!s.links.some((l) => l.a === n.key || l.b === n.key)) out.push(`${n.tag} is not connected`);
+  if (s.status === 'Verified' && s.unknown.length) out.push('marked verified with unknowns');
+  return out;
+}
+
+/** The schematic as an SVG sheet (white, left-to-right, readable when fitted to a phone and zoomed) and the
+ *  automatic quality check (topology + drawing: overlapping labels, clipped text). */
+export function renderSchematic(s: Schematic, generatedAt: string): { svg: string; issues: string[] } {
+  const issues = schematicCheck(s);
+  const COLW = 210, ROWH = 150;
+  // columns: longest path from the starts (left = where the records start the flow); several items in one column stack
   const col = new Map<string, number>(s.nodes.map((n) => [n.key, 0]));
   for (let i = 0; i < s.nodes.length; i++) for (const l of s.links) { const c = (col.get(l.a) ?? 0) + 1; if (c > (col.get(l.b) ?? 0) && c < s.nodes.length) col.set(l.b, c); }
   const cols = Math.max(1, ...[...col.values()].map((c) => c + 1));
   const byCol: string[][] = Array.from({ length: cols }, () => []);
   for (const n of s.nodes) byCol[col.get(n.key) ?? 0].push(n.key);
   const rows = Math.max(1, ...byCol.map((c) => c.length));
-  const W = Math.max(820, 40 + cols * COLW), X0 = (W - (cols - 1) * COLW) / 2;
-  const TOP = 132 + Math.max(0, Math.ceil((40 + s.sources.join(' · ').length + 70) / Math.floor((W - 48) / 6)) - 1) * 14;
+  const W = Math.max(860, 60 + cols * COLW), X0 = (W - (cols - 1) * COLW) / 2, CH = (W - 48) / 6.2;
+  const head = wrap(`${s.ref} · ${s.title}`, Math.floor((W - 48) / 10.5));
+  const TOP = 110 + head.length * 22;
   const pos = new Map<string, { x: number; y: number }>();
   byCol.forEach((ks, c) => ks.forEach((k, r) => pos.set(k, { x: X0 + c * COLW, y: TOP + (r + (rows - ks.length) / 2) * ROWH })));
-  const parts: string[] = [];
+  const node = new Map(s.nodes.map((n) => [n.key, n]));
+  const parts: string[] = []; const boxes: Box[] = [];
   const t = (x: number, y: number, txt: string, o = '') => `<text x="${x}" y="${y}" ${o}>${esc(txt)}</text>`;
-  // header
-  parts.push(`<rect x="0" y="0" width="${W}" height="30" fill="#b91c1c"/>`, t(W / 2, 20, SCHEMATIC_LABEL.toUpperCase(), 'text-anchor="middle" fill="#fff" font-size="14" font-weight="800" letter-spacing="0.5"'));
-  parts.push(t(24, 58, `${s.ref} · ${s.title}`, 'font-size="18" font-weight="800" fill="#0f172a"'));
-  const head = wrap(`Built ${generatedAt} from: ${s.sources.join(' · ')}. Reference only — not for isolation, line-up or chemical work.`, Math.floor((W - 48) / 6));
-  head.forEach((h, i) => parts.push(t(24, 78 + i * 14, h, 'font-size="11" fill="#475569"')));
+  const banner = SCHEMATIC_LABEL.toUpperCase();
+  parts.push(`<rect x="0" y="0" width="${W}" height="32" fill="#b91c1c"/>`, t(W / 2, 21, banner, 'text-anchor="middle" fill="#fff" font-size="13.5" font-weight="800" letter-spacing="0.4"'));
+  head.forEach((h, i) => parts.push(t(24, 62 + i * 22, h, 'font-size="18" font-weight="800" fill="#0f172a"')));
+  parts.push(t(24, 62 + head.length * 22, `${s.type} · Status: ${s.status} · Rev auto-${s.revision} · ${generatedAt}`, 'font-size="11" fill="#475569"'));
   parts.push(`<defs>${Object.entries(LINK_STYLE).map(([k, v]) => `<marker id="ar-${k}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${v.color}"/></marker>`).join('')}</defs>`);
-  // connections (behind the items)
-  const nodeY = (k: string) => pos.get(k)!.y + 26;
-  // links that share a gap get their own vertical, and their labels sit on their own first leg
-  const gapN = new Map<string, number>(); const gapI = new Map<string, number>();
-  for (const l of s.links) { const g = `${col.get(l.a)}`; gapN.set(g, (gapN.get(g) ?? 0) + 1); }
-  s.links.forEach((l, i) => {
-    const a = pos.get(l.a), b = pos.get(l.b); if (!a || !b) return; const st = LINK_STYLE[l.basis];
-    const g = `${col.get(l.a)}`, k = gapI.get(g) ?? 0, n = gapN.get(g) ?? 1; gapI.set(g, k + 1);
-    const x1 = a.x + 34, x2 = b.x - 36, y1 = nodeY(l.a), y2 = nodeY(l.b), mx = (x1 + x2) / 2 + (k - (n - 1) / 2) * 12;
-    const d = x2 > x1 ? `M ${x1} ${y1} H ${mx} V ${y2} H ${x2}` : `M ${a.x} ${y1 + 46} V ${y1 + 62 + (i % 3) * 6} H ${b.x} V ${y2 + 46}`;
-    parts.push(`<path d="${d}" fill="none" stroke="${st.color}" stroke-width="2.4" ${st.dash ? `stroke-dasharray="${st.dash}"` : ''} marker-end="url(#ar-${l.basis})"/>`);
-    const label = l.lines.length ? l.lines.slice(0, 2).join(', ') + (l.lines.length > 2 ? ' …' : '') : 'line no. unknown';
-    const same = s.links.filter((o) => o.a === l.a); const j = same.indexOf(l);
-    const lx = x2 > x1 ? (x1 + mx) / 2 : (a.x + b.x) / 2, ly = x2 > x1 ? y1 - 8 - j * 13 : y1 + 74 + (i % 3) * 6;
-    parts.push(`<rect x="${lx - label.length * 3.1 - 3}" y="${ly - 10}" width="${label.length * 6.2 + 6}" height="13" fill="#fff" opacity="0.9"/>`, t(lx, ly, label, `text-anchor="middle" font-size="10" fill="${st.color}" font-style="${l.lines.length ? 'normal' : 'italic'}"`));
-  });
-  // items
-  for (const n of s.nodes) {
-    const p = pos.get(n.key)!; const c = n.user ? '#7c3aed' : '#0f172a';
-    parts.push(symbol(n.kind, p.x, p.y, c));
-    parts.push(t(p.x, p.y + 70, n.tag, `text-anchor="middle" font-size="13" font-weight="800" fill="${c}"`));
-    if (n.via.length) parts.push(t(p.x, p.y + 84, n.via.join(' / '), 'text-anchor="middle" font-size="10" fill="#475569"'));
-    if (n.user) parts.push(t(p.x, p.y + 96, `added by ${n.user}`, 'text-anchor="middle" font-size="9" fill="#7c3aed"'));
+  // item boxes (symbol + tag) first, so labels can avoid them
+  for (const n of s.nodes) { const p = pos.get(n.key)!; boxes.push({ x: p.x - Math.max(HW[n.kind], n.tag.length * 4.2), y: p.y - 6, w: 2 * Math.max(HW[n.kind], n.tag.length * 4.2), h: 104 }); }
+  // ports: pipes meet a symbol at its side; a vapour outlet leaves from the top part (skill §6), drawing only
+  const port = (k: string, out: boolean, side?: string | null) => { const p = pos.get(k)!, n = node.get(k)!;
+    const vap = out && /vapou?r/i.test(side ?? '') && ['vessel', 'column', 'reactor'].includes(n.kind);
+    return { x: p.x + (out ? HW[n.kind] : -HW[n.kind]) + (n.kind === 'pump' && out ? 4 : 0), y: p.y + (n.kind === 'pump' && out ? 10 : vap ? 8 : 26) }; };
+  const fwd = s.links.filter((l) => pos.has(l.a) && pos.has(l.b) && (col.get(l.b)! > col.get(l.a)!)).sort((x, y) => RANK[y.basis] - RANK[x.basis]);
+  const inN = new Map<string, SLink[]>(), outN = new Map<string, SLink[]>();
+  const isJ = (k: string) => node.get(k)?.kind === 'junction';
+  for (const l of fwd) { if (!isJ(l.b)) inN.set(l.b, [...(inN.get(l.b) ?? []), l]); if (!isJ(l.a)) outN.set(l.a, [...(outN.get(l.a) ?? []), l]); }
+  const gapN = new Map<number, number>(), gapI = new Map<number, number>();
+  // each splitting source / merging target gets its own header x, so two headers never share a line (no false junction)
+  const offs = (m: Map<string, SLink[]>) => { const o = new Map<string, number>(); const per = new Map<number, number>();
+    for (const [k, ls] of m) if (ls.length > 1) { const c = col.get(k)!; const i = per.get(c) ?? 0; per.set(c, i + 1); o.set(k, 16 + i * 16); } return o; };
+  for (const l of fwd) gapN.set(col.get(l.a)!, (gapN.get(col.get(l.a)!) ?? 0) + 1);
+  const so = offs(outN), jo = offs(inN);
+  const dots: string[] = []; const labels: string[] = []; const geo: { l: SLink; ax: number; ay: number; by: number; mx: number }[] = [];
+  const place = (txt: string, x: number, y: number, color: string, italic: boolean, tries: number[]) => {
+    const w = txt.length * 6 + 8;
+    for (const dy of tries) for (const dx of [0, 14, 28, -14]) { const b = { x: x + dx - w / 2, y: y + dy - 11, w, h: 14 }; if (!boxes.some((o) => hit(o, b))) { boxes.push(b);
+      labels.push(`<rect x="${b.x}" y="${b.y}" width="${w}" height="14" fill="#fff"/>`, t(x + dx, y + dy, txt, `text-anchor="middle" font-size="10" fill="${color}"${italic ? ' font-style="italic"' : ''}`)); return; } }
+    issues.push(`label "${txt}" overlaps`); labels.push(t(x, y + tries[0], txt, `text-anchor="middle" font-size="10" fill="${color}"`));
+  };
+  const portLabel = (txt: string, x: number, y: number, anchor: 'start' | 'end') => { const w = txt.length * 5.4 + 4; const b = { x: anchor === 'start' ? x : x - w, y: y - 10, w, h: 12 };
+    if (!boxes.some((o) => hit(o, b))) { boxes.push(b); labels.push(t(x, y, txt, `text-anchor="${anchor}" font-size="9" fill="#334155" font-weight="600"`)); } };
+  for (const l of fwd) {
+    const st = LINK_STYLE[l.basis]; const a = port(l.a, true, l.aSide), b = port(l.b, false, l.bSide);
+    const split = (outN.get(l.a)?.length ?? 0) > 1, merge = (inN.get(l.b)?.length ?? 0) > 1;
+    const fan = isJ(l.a) && fwd.filter((o) => o.a === l.a).length > 1, gather = isJ(l.b) && fwd.filter((o) => o.b === l.b).length > 1;
+    const sx = split ? a.x + so.get(l.a)! : a.x, jx = merge ? b.x - 6 - jo.get(l.b)! : b.x;
+    const g = col.get(l.a)!, k = gapI.get(g) ?? 0, n = gapN.get(g) ?? 1; gapI.set(g, k + 1);
+    // branches from one point share one vertical header (bus); otherwise each connection gets its own vertical
+    // the vertical: at the target's merge point when it has one, else at the source's split point, else its own
+    const mx = merge ? jx : gather ? jx - 18 : split ? sx : fan ? sx + 18 : Math.min(Math.max((sx + jx) / 2 + (k - (n - 1) / 2) * 12, sx + 10), jx - 10);
+    geo.push({ l, ax: a.x, ay: a.y, by: b.y, mx });
+    const dash = st.dash ? ` stroke-dasharray="${st.dash}"` : '';
+    parts.push(`<path d="M ${a.x} ${a.y} H ${mx} V ${b.y} H ${jx}" fill="none" stroke="${st.color}" stroke-width="${st.width}"${dash}${merge || isJ(l.b) ? '' : ` marker-end="url(#ar-${l.basis})"`}/>`);
+    // line numbers where known (an unknown one is left off the pipe and listed under Unknown); a conflict is flagged
+    const lab = (l.lines.length ? l.lines.slice(0, 2).join(', ') + (l.lines.length > 2 ? ' …' : '') : '') + (l.conflict ? `${l.lines.length ? ' ' : ''}⚠ direction conflict` : '');
+    const onLast = (split || fan) && !merge, lx = onLast ? (mx + jx) / 2 : (a.x + mx) / 2, ly = onLast ? b.y - 8 : a.y - 8;
+    if (lab) place(lab, lx, ly, l.conflict ? '#b91c1c' : st.color, false, [0, 26, -14, 40]);
+    if (l.aSide && !split && !fan) portLabel(l.aSide, a.x + 4, a.y + 14, 'start');
+    if (l.bSide && /^pass/.test(l.bSide)) portLabel(l.bSide.replace(/ inlet$/, ''), a.x + 4, a.y - 6, 'start');
+    else if (l.bSide) portLabel(l.bSide, b.x - 4, b.y + 14, 'end');
   }
+  // junction dots exactly where a pipe branches off or joins another (a crossing gets none)
+  const dot = (x: number, y: number) => { const d = `<circle cx="${x}" cy="${y}" r="3.6" fill="#0f172a"/>`; if (!dots.includes(d)) dots.push(d); };
+  for (const g1 of geo) {
+    const sib = geo.filter((o) => o.l.a === g1.l.a && o.ay === g1.ay); if (sib.length > 1 && sib.filter((o) => o.mx >= g1.mx).length > 1 && g1.by !== g1.ay) dot(g1.mx, g1.ay);
+    const tgt = geo.filter((o) => o.l.b === g1.l.b && o.by === g1.by); if (tgt.length > 1 && tgt.filter((o) => o.mx <= g1.mx).length > 1 && !isJ(g1.l.b)) dot(g1.mx, g1.by);
+  }
+  for (const [k, ls] of inN) if (ls.length > 1) { const b = port(k, false, ls[0].bSide); const weakest = ls.map((x) => x.basis).sort((x, y) => RANK[x] - RANK[y])[0]; const st = LINK_STYLE[weakest]; const x = b.x - 6 - jo.get(k)!;
+    parts.push(`<path d="M ${x} ${b.y} H ${b.x}" stroke="${st.color}" stroke-width="${st.width}"${st.dash ? ` stroke-dasharray="${st.dash}"` : ''} marker-end="url(#ar-${weakest})"/>`); dot(x, b.y); }
+  // connections back to an earlier column run below the items
+  s.links.filter((l) => !fwd.includes(l) && pos.has(l.a) && pos.has(l.b)).forEach((l, i) => { const st = LINK_STYLE[l.basis]; const a = pos.get(l.a)!, b = pos.get(l.b)!; const yb = Math.max(a.y, b.y) + 112 + i * 10;
+    parts.push(`<path d="M ${a.x} ${a.y + 54} V ${yb} H ${b.x} V ${b.y + 56}" fill="none" stroke="${st.color}" stroke-width="${st.width}"${st.dash ? ` stroke-dasharray="${st.dash}"` : ''} marker-end="url(#ar-${l.basis})"/>`);
+    place(l.lines[0] ?? 'Line no.: unknown', (a.x + b.x) / 2, yb - 4, st.color, !l.lines.length, [0, 14]); });
+  // items on top of the pipes
+  for (const n of s.nodes) {
+    const p = pos.get(n.key)!; const c = n.user ? '#6d28d9' : '#0f172a';
+    parts.push(symbol(n.kind, p.x, p.y, c));
+    if (n.kind === 'junction') { parts.push(`<rect x="${p.x - 40}" y="${p.y + 41}" width="80" height="27" fill="#fff" stroke="#b45309" stroke-width="0.8" stroke-dasharray="2 2"/>`,
+      t(p.x, p.y + 52, 'Split / header', 'text-anchor="middle" font-size="10" font-weight="700" fill="#b45309"'), t(p.x, p.y + 64, 'not recorded', 'text-anchor="middle" font-size="10" fill="#b45309"')); continue; }
+    parts.push(t(p.x, p.y + 72, n.tag, `text-anchor="middle" font-size="13" font-weight="800" fill="${c}"`));
+    const via = n.via.filter((v) => !/inlet|feed lines/i.test(v)).join(' / ');
+    if (via) parts.push(t(p.x, p.y + 86, via, 'text-anchor="middle" font-size="10" fill="#475569"'));
+    if (n.user) parts.push(t(p.x, p.y + 98, `added by ${n.user}`, 'text-anchor="middle" font-size="9" fill="#6d28d9"'));
+  }
+  parts.push(...dots, ...labels);
   if (!s.nodes.length) parts.push(t(W / 2, TOP + 40, 'Route not available — no equipment is named in the loop record', 'text-anchor="middle" font-size="14" font-weight="700" fill="#b45309"'));
-  // lists below
-  let y = TOP + rows * ROWH + 10; const CH = Math.floor((W - 70) / 6.1);
+  // lists below the drawing
+  let y = TOP + rows * ROWH + (s.links.some((l) => !fwd.includes(l)) ? 40 : 0);
   const block = (title: string, color: string, lines: { icon?: string; text: string; sub?: string }[]) => {
     if (!lines.length) return;
     parts.push(`<line x1="24" y1="${y}" x2="${W - 24}" y2="${y}" stroke="#e2e8f0"/>`, t(24, y + 20, title, `font-size="12" font-weight="800" fill="${color}"`)); y += 40;
-    for (const ln of lines) { const ws = wrap(ln.text, CH - 4); if (ln.icon) parts.push(ln.icon.replace(/__Y__/g, String(y - 4)));
+    for (const ln of lines) { const ws = wrap(ln.text, CH - 8); if (ln.icon) parts.push(ln.icon.replace(/__Y__/g, String(y - 4)));
       ws.forEach((w, i) => parts.push(t(52, y + i * 14, w, 'font-size="11" fill="#0f172a"')));
       if (ln.sub) parts.push(t(52, y + ws.length * 14, ln.sub, 'font-size="9.5" fill="#64748b"'));
       y += ws.length * 14 + (ln.sub ? 16 : 6); }
@@ -295,20 +403,34 @@ export function schematicSvg(s: Schematic, generatedAt: string): string {
   };
   if (s.extra.length) block('Also in this loop — place on the route not recorded', '#334155', s.extra.map((e) => ({ text: e })));
   for (const k of ['before', 'blind', 'isolation', 'fill', 'vent', 'drain'] as MarkKind[]) {
-    const ms = s.marks.filter((m) => m.kind === k); const st = MARK_STYLE[k];
-    block(st.title, st.color, ms.map((m) => ({ icon: shiftIcon(k, st.color), text: m.text, sub: `${m.source}${m.verifiedSheet ? ` · checked on ${m.verifiedSheet}` : m.user ? ' · not checked on a P&ID' : ''}` })));
+    const st = MARK_STYLE[k];
+    block(st.title, st.color, s.marks.filter((m) => m.kind === k).map((m) => ({ icon: shiftIcon(k, st.color), text: m.text, sub: `${m.source}${m.verifiedSheet ? ` · checked on ${m.verifiedSheet}` : m.user ? ' · not checked on a P&ID' : ''}` })));
   }
   if (s.notes.length) block('After / notes', '#334155', s.notes.map((n) => ({ text: n })));
-  block('Unknown — not in the records', '#b45309', s.unknown.map((u) => ({ text: `• ${u}` })));
+  block('Unknown / unresolved — not in the records', '#b45309', s.unknown.map((u) => ({ text: `• ${u}` })));
   // legend
-  parts.push(`<line x1="24" y1="${y}" x2="${W - 24}" y2="${y}" stroke="#e2e8f0"/>`); y += 18;
+  parts.push(`<line x1="24" y1="${y}" x2="${W - 24}" y2="${y}" stroke="#e2e8f0"/>`, t(24, y + 20, 'Legend', 'font-size="12" font-weight="800" fill="#334155"')); y += 38;
   const used = [...new Set(s.links.map((l) => l.basis))];
-  (used.length ? used : (['record'] as Basis[])).forEach((b, i) => { const st = LINK_STYLE[b]; const yy = y + i * 16;
-    parts.push(`<line x1="24" y1="${yy - 4}" x2="60" y2="${yy - 4}" stroke="${st.color}" stroke-width="2.4" ${st.dash ? `stroke-dasharray="${st.dash}"` : ''}/>`, t(68, yy, st.label, 'font-size="10.5" fill="#334155"')); });
-  y += (used.length || 1) * 16 + 6;
-  parts.push(t(24, y + 4, 'Arrows show the fill direction stated in the records. Symbols are generic; sizes and positions are not to scale.', 'font-size="10" fill="#64748b"'));
-  const H = y + 20;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="Inter, Arial, sans-serif"><rect width="${W}" height="${H}" fill="#fff"/>${parts.join('')}</svg>`;
+  for (const b of (used.length ? used : ['record'] as Basis[])) { const st = LINK_STYLE[b];
+    parts.push(`<line x1="24" y1="${y - 4}" x2="64" y2="${y - 4}" stroke="${st.color}" stroke-width="${st.width}"${st.dash ? ` stroke-dasharray="${st.dash}"` : ''}/>`, t(72, y, st.label, 'font-size="10.5" fill="#334155"')); y += 16; }
+  if (dots.length) { parts.push(`<circle cx="44" cy="${y - 4}" r="3.6" fill="#0f172a"/>`, t(72, y, 'Junction: branches join or split here (as drawn, not a measured location)', 'font-size="10.5" fill="#334155"')); y += 16; }
+  parts.push(t(24, y + 2, 'Arrows: flow direction stated in the records. Symbols are generic (ISO 10628 / ISA-5.1 style, not checked for compliance); not to scale.', 'font-size="10" fill="#64748b"')); y += 22;
+  // metadata (skill §19)
+  const equip = s.nodes.filter((n) => n.kind !== 'junction').map((n) => n.tag).join(', ') || '—';
+  const meta: [string, string][] = [['Diagram', `${s.ref} loop schematic`], ['Type', s.type], ['Loop ID', s.ref], ['Equipment', equip], ['Generated', generatedAt],
+    ['Diagram revision', `auto-${s.revision} (generated; changes when the data changes — not a P&ID revision)`], ['Generator', GENERATOR_VERSION], ['Sources', s.sources.join(' · ')],
+    ['Verification', `${s.status} — ${s.counts.verified} verified, ${s.counts.unverified} unverified connection${s.counts.unverified === 1 ? '' : 's'}, ${s.counts.unknown} unknown / unresolved item${s.counts.unknown === 1 ? '' : 's'}`]];
+  const qc = () => (issues.length ? `${issues.length} issue${issues.length > 1 ? 's' : ''}: ${issues.slice(0, 3).join('; ')}${issues.length > 3 ? ' …' : ''}` : 'passed (connections, junctions, labels)');
+  parts.push(`<line x1="24" y1="${y}" x2="${W - 24}" y2="${y}" stroke="#94a3b8"/>`); y += 18;
+  const rowsMeta = (rs: [string, string][]) => { for (const [k, v] of rs) { const ws = wrap(v, CH - 28); parts.push(t(24, y, k, 'font-size="10.5" font-weight="700" fill="#334155"'));
+    ws.forEach((w, i) => parts.push(t(150, y + i * 13, w, 'font-size="10.5" fill="#0f172a"'))); y += ws.length * 13 + 4; } };
+  rowsMeta(meta);
+  const qcAt = parts.length; parts.push(''); y += 17;   // the check line is written last, once the drawing is done
+  parts.push(`<rect x="0" y="${y}" width="${W}" height="26" fill="#b91c1c"/>`, t(W / 2, y + 17, 'REFERENCE ONLY — NOT AN AUTHORIZATION FOR ISOLATION, BLINDING, VALVE OPERATION, NEUTRALIZATION, ENTRY, STARTUP OR HANDOVER', 'text-anchor="middle" fill="#fff" font-size="10" font-weight="800"'));
+  const H = y + 26;
+  parts[qcAt] = t(24, y - 13, 'Automatic check', 'font-size="10.5" font-weight="700" fill="#334155"') + t(150, y - 13, qc().slice(0, Math.floor(CH - 30)), `font-size="10.5" fill="${issues.length ? '#b91c1c' : '#15803d'}"`);
+  return { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="Inter, Arial, sans-serif"><rect width="${W}" height="${H}" fill="#fff"/>${parts.join('')}</svg>`, issues };
 }
+export const schematicSvg = (s: Schematic, generatedAt: string) => renderSchematic(s, generatedAt).svg;
 /** the list icon, placed at the left of the current line (the y is filled in per line) */
 function shiftIcon(k: MarkKind, c: string) { return `<g transform="translate(26 __Y__)">${markIcon(k, 0, 0, c)}</g>`; }
