@@ -74,7 +74,14 @@ fixed list: any component, piping, instrument, valve, material, inspection or ma
   user inside a rolled-back transaction (no production change).
 - Never claim a check that was not run.
 
-## 8. Wording and output
+## 8. Progress report (every major milestone)
+
+Under 15 lines: Completed (implemented, tested and deployed only) · In progress · Remaining for the current priority ·
+Blockers / approvals · Next step. Separate status for Design & UI, Permissions & security, Tracker functionality,
+Testing & operational readiness, Technical equipment knowledge, each with an estimated % based on verified
+functionality (plans and untested code count as 0), plus an overall estimate.
+
+## 9. Wording and output
 
 - Durations in **hours**, never days. Dates "7 Nov 18:19" (Kuwait time). Status lines end in "I/P"; tags short (R-205).
 - No personal names in code, migrations or commits.
