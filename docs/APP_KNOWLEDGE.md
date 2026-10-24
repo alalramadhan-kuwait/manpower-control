@@ -215,6 +215,23 @@ the equipment list only; dry-gas filter untagged (line-up shows only the make-up
 Open: A7430 vs V-212 A9730/A9740/A9750; A7630 vs OPR list ROW-440 (C-201 suction strainers); F-03A/B had been switched
 off by the Section Head on 21 Oct before A7700 was put on it.
 
+## 6a4. Loop diagrams (24 Oct 2026)
+
+Each neutralization loop's sheet has a **Loop diagram** section: "View loop diagram" opens the attached drawing full
+screen (pinch, drag, double-tap, ± and Fit; PDFs in the browser viewer). The engineer's loop card has a 📐 Diagram
+button when a drawing exists. The app never draws connections: with no verified drawing the loop shows **"Drawing not
+available"**. Every view carries "Reference only — not an authorization for isolation, line-up or chemical work."
+- Data: `trk_drawing` (loop `point_id`, equipment `items`, sheet, revision, approved source, file path, status
+  current / superseded / withdrawn) + private bucket `trk-drawings` (`<tracker_id>/<uuid>.<ext>`, PNG/JPG/WEBP/PDF,
+  15 MB). Read like the tracker (logins and its own engineer links; storage honours the link headers).
+- Attach / withdraw: Section Head, Coordinator, Engineer. A new upload of the same loop and sheet supersedes the old
+  one (kept under Earlier revisions); a wrong one is withdrawn with a reason. No update or delete rights; both logged
+  in `trk_log` (kind `drawing`). Drawings with no loop but matching equipment show as "Equipment drawing (not
+  loop-specific)".
+- Sources checked before building (24 Oct): no drawing files existed anywhere (app, database, repo); the line-up data
+  (35 P&ID sheets, Train 1 + common) has no FT/FV-681…684 and the Train-2 heater sheet was not read. FT-681 therefore
+  shows "Drawing not available" until the approved sheet is attached.
+
 ## 6b. Operational readiness review (24 Oct 2026)
 
 Estimate ~88 % (verified functionality). Recommendation: **ready for operational use**, with the conditions below.
@@ -232,6 +249,8 @@ Estimate ~88 % (verified functionality). Recommendation: **ready for operational
 
 | Date | Decision |
 |---|---|
+| 24 Oct 2026 | Loop diagrams are attached verified excerpts (P&ID / isometric / vendor), never drawn by the app; reference only |
+| 24 Oct 2026 | Maintenance activities map to their own equipment or work scope, never by default to the parent compressor / turbine; unconfirmed tags labelled UNVERIFIED |
 | 24 Oct 2026 | Leave approval in the app replaces Oracle status; only planned/rescheduled PV need approval |
 | 24 Oct 2026 | Report updates: take the most advanced of report / Excel / tracker |
 | 24 Oct 2026 | Durations in hours; Team leader report (option B) added |

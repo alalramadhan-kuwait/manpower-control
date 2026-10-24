@@ -30,6 +30,9 @@ begin
   if n > 0 then raise exception 'FAIL: % functions callable without a login beyond the allowed list', n; end if; ok := ok + 1;
 
   select id into a from public.trk_activities where tracker_id = live and tracked and actual_start is null and not detail and grp <> 'Operations' limit 1;
+  -- a drawing on the TEST tracker (rolled back with the rest)
+  insert into public.trk_drawing (tracker_id, items, sheet, rev, source, path, mime)
+  values ('2e9c8262-20e9-4274-bd52-87c156a3a487', array['H-12-201'], 'CHECK', '1', 'Approved P&ID', '2e9c8262-20e9-4274-bd52-87c156a3a487/check.png', 'image/png');
 
   -- ── engineer link ───────────────────────────────────────────────────────────────────────────────────────
   perform set_config('role', 'anon', true); perform set_config('request.jwt.claims', '{"role":"anon"}', true);
@@ -40,6 +43,10 @@ begin
   if n = 0 then raise exception 'FAIL: the link cannot read its own tracker'; end if; ok := ok + 1;
   update public.trk_activities set actual_note = actual_note where tracker_id <> live; get diagnostics n = row_count;
   if n > 0 then raise exception 'FAIL: the link updates another tracker'; end if; ok := ok + 1;
+  select count(*) into n from public.trk_drawing where tracker_id <> live;
+  if n > 0 then raise exception 'FAIL: the link reads another tracker''s drawings'; end if; ok := ok + 1;
+  begin insert into public.trk_drawing (tracker_id, items, sheet, rev, source, path, mime) values (live, array['X'], 'S', '1', 'x', live::text || '/x.png', 'image/png');
+    raise exception 'FAIL: the link may attach a drawing'; exception when insufficient_privilege then ok := ok + 1; end;
   begin perform public.trk_split_lines(live); raise exception 'FAIL: the link may split lines'; exception when insufficient_privilege then ok := ok + 1; end;
   begin perform public.leave_approve(array[]::uuid[], true); raise exception 'FAIL: the link may approve leave'; exception when insufficient_privilege then ok := ok + 1; end;
   update public.trk_activities set actual_start = now() - interval '2 hours' where id = a; get diagnostics n = row_count;
@@ -74,6 +81,12 @@ begin
   -- ── levels: the Coordinator login as Engineer, Controller, Controller + Manpower ──────────────────────────
   perform set_config('role', 'postgres', true); update public.user_profiles set role_code = 'engineer' where auth_user_id = coord; perform set_config('role', 'authenticated', true);
   if not public.app_is_staff() or not public.app_is_manager() then raise exception 'FAIL: the Engineer is not staff and manager'; end if; ok := ok + 1;
+  -- an Engineer attaches a new revision: the old one is superseded (kept), both logged; drawings cannot be deleted
+  insert into public.trk_drawing (tracker_id, items, sheet, rev, source, path, mime)
+  values ('2e9c8262-20e9-4274-bd52-87c156a3a487', array['H-12-201'], 'CHECK', '2', 'Approved P&ID', '2e9c8262-20e9-4274-bd52-87c156a3a487/check2.png', 'image/png');
+  select count(*) filter (where status = 'superseded'), count(*) filter (where status = 'current') into n, m from public.trk_drawing where sheet = 'CHECK';
+  if n <> 1 or m <> 1 then raise exception 'FAIL: a new revision should supersede the old one (superseded %, current %)', n, m; end if; ok := ok + 1;
+  begin delete from public.trk_drawing where sheet = 'CHECK'; raise exception 'FAIL: drawings can be deleted'; exception when insufficient_privilege then ok := ok + 1; end;
   begin perform public.leave_approve(array[]::uuid[], true); raise exception 'FAIL: the Engineer may approve leave'; exception when insufficient_privilege then ok := ok + 1; end;
   perform set_config('role', 'postgres', true); update public.user_profiles set role_code = 'controller' where auth_user_id = coord; perform set_config('role', 'authenticated', true);
   select count(*) into n from public.leave_records; select count(*) into m from public.trk_activities where tracker_id = live;
@@ -83,6 +96,8 @@ begin
   update public.employees set display_name = display_name where id = (select id from public.employees limit 1); get diagnostics n = row_count;
   if n > 0 then raise exception 'FAIL: the Manpower assignment edits the staff master'; end if; ok := ok + 1;
   begin perform public.commit_import_batch(gen_random_uuid()); raise exception 'FAIL: the Manpower assignment runs imports'; exception when others then if sqlerrm not ilike '%not allowed%' then raise exception 'FAIL: import refused for another reason: %', sqlerrm; end if; ok := ok + 1; end;
+  begin insert into public.trk_drawing (tracker_id, items, sheet, rev, source, path, mime) values (live, array['X'], 'S', '1', 'x', live::text || '/c.png', 'image/png');
+    raise exception 'FAIL: a Controller may attach a drawing'; exception when insufficient_privilege then ok := ok + 1; end;
   begin update public.trk_activities set actual_start = now() - interval '80 hours', time_reason = 'x' where id = a; raise exception 'FAIL: a Controller enters 80 h back'; exception when insufficient_privilege then ok := ok + 1; end;
   begin insert into public.user_assignments (auth_user_id, task) values (head, 'manpower'); raise exception 'FAIL: a Controller may give assignments'; exception when insufficient_privilege or check_violation then ok := ok + 1; end;
 
