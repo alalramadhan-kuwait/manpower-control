@@ -146,3 +146,8 @@ Every screen follows `.claude/skills/refinery-enterprise-design/SKILL.md` §4a: 
 sheet, stage vs work status, hold selector, step actions, edit, toast + Undo, issues, lists, folded sections).
 Equivalent actions look and behave the same in all modules; domains keep their own information. Visual work never
 changes database logic, calculations, permissions or workflows. Mock-up first for any layout change.
+
+- The Engineer view is the visual base for the whole app (owner, 24 Oct 2026). Section Head screens keep all their
+  functions and gates but use the same rows, hero cards, toast, icons and step action (table in the design skill §4a).
+- The Engineer view takes the user's role (`EngRole`); never show an action there that the Section Head tracker
+  hides from that role.

@@ -107,6 +107,20 @@ component; a screen-local copy of one of these is a defect to fix.
 
 Tags are shown in full (C-12-201, not C-201) wherever there is room; shorten only inside fixed-width grids.
 
+**Unified app (audit 24 Oct 2026): the Engineer view is the visual base.** Where the code lives:
+
+| Component | Use | File |
+|---|---|---|
+| Toast + Undo | every save, both views (Undo 7 s, plain 3 s) | `Toast` in `src/ui/components.tsx` |
+| Navigation | lucide icons, 11 px label, active `text-brand-700`; no emoji tabs | `Shell.tsx`, `TrackerPage.tsx` TABS, `EngineerApp.tsx` TABS |
+| Hero cards | end date · main equipment done · by group, the same on Engineer dashboard and Section Head Today | `ShutdownHero` in `EngineerApp.tsx` |
+| Equipment row | dot · tag · what now / stage · last update · ONE status chip · labelled `▶ Start` / `✓ Finish` / `Drums` | `ItemRow` (Engineer), `EquipmentTab` row (Section Head) |
+| Step action | start/finish now: twins together, hold ended, Undo restores both | `stepNow` in `src/features/tracker/actions.ts` (never a local copy) |
+| Segmented control | grey track, white selected — switches views; filters stay pills | `Seg` (Engineer), VIEWS bar (tracker) |
+| Report button | `bg-whatsapp`; Save is navy (green = status only) | — |
+| IAT card controls | status and operations label as one select each | `IatCard` |
+| Role in the Engineer view | `EngRole` context: Controller gets no rename/add/remove step, loop requirement, IAT label, reactor empty | `EngineerView` |
+
 ## 4b. Technical information on equipment
 
 - Shown inside the equipment's own view (item sheet / item page) as a compact list grouped by category:
