@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
 import { blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, relatedWork, shiftOf, shiftReport, staleItems, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
-import { setActivity, setEquipment, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
+import { CONFLICT_EVENT, setActivity, setEquipment, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Spinner, cx } from '@/ui/components';
 import { AskUpdates } from './Ask';
@@ -86,7 +86,9 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
     const i = window.setInterval(() => { if (document.visibilityState === 'visible') load(true); }, 30_000);
     const v = () => { if (document.visibilityState === 'visible') load(true); };
     document.addEventListener('visibilitychange', v);
-    return () => { window.clearInterval(i); document.removeEventListener('visibilitychange', v); };
+    // a save refused because someone else changed the record: show what is there now
+    const c = () => load(true); window.addEventListener(CONFLICT_EVENT, c);
+    return () => { window.clearInterval(i); document.removeEventListener('visibilitychange', v); window.removeEventListener(CONFLICT_EVENT, c); };
   }, [load]);
   const now = useClock(tracker);
   const steps = useMemo(() => (data ? stepViews(data, now) : null), [data, now]);

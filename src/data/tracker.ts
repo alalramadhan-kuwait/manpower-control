@@ -60,6 +60,9 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
   // the U-12 process lineup (P&ID streams): optional, the tracker works without it
   const [[lu, le], ps, ev] = await extraP;
   const err = [t, s, e, i, a, l, sl, pt].find((r) => r.error)?.error; if (err) throw err;
+  // what this screen has seen: a later save checks the fields it changes still hold these values
+  seen('trk_steps', s.data); seen('trk_equipment', e.data); seen('trk_iat', i.data); seen('trk_activities', a.data); seen('trk_points', pt.data);
+  if (!ps.error) seen('trk_point_step', ps.data); if (!ev.error) seen('trk_event', ev.data);
   const engine = (t.data as unknown as TrackerRow).settings?.progressV2 ? await engineP : undefined;
   const acts = a.data as ActRow[]; const base = Math.max(0, ...acts.map((x) => x.baseline));
   return {
@@ -93,7 +96,38 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
   };
 }
 
-const upd = async (table: string, id: string, patch: Record<string, unknown>) => { const { error } = await supabase.from(table).update(patch).eq('id', id); if (error) throw error; };
+// ── Saving without overwriting someone else's change ──────────────────────────────────────────────────────────
+// Every row a screen loads is remembered. A save goes through only if the fields it changes still hold the values the
+// screen showed; then the remembered row takes the new values, so an Undo goes through only if nobody changed those
+// fields since. Otherwise nothing is written: who changed it is reported and the screens reload.
+const SEEN = new Map<string, Record<string, unknown>>();
+function seen(table: string, rows: unknown) { for (const r of (rows ?? []) as Record<string, unknown>[]) if (r && typeof r.id === 'string') SEEN.set(`${table}:${r.id}`, r); }
+const scalar = (v: unknown) => v === null || ['string', 'number', 'boolean'].includes(typeof v);
+const same = (a: unknown, b: unknown) => a === b || (typeof a === 'string' && typeof b === 'string' && !Number.isNaN(Date.parse(a)) && /T\d/.test(a) && Date.parse(a) === Date.parse(b)) || (a != null && b != null && String(a) === String(b));
+/** A save refused because the record changed after this screen loaded it (or the change is not allowed). */
+export class ConflictError extends Error { constructor(msg: string) { super(msg); this.name = 'ConflictError'; } }
+export const CONFLICT_EVENT = 'trk-conflict';
+const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kuwait' }) : '');
+const upd = async (table: string, id: string, patch: Record<string, unknown>) => {
+  const before = SEEN.get(`${table}:${id}`);
+  let q = supabase.from(table).update(patch).eq('id', id);
+  if (before) for (const k of Object.keys(patch)) {
+    if (!(k in before) || !scalar(before[k])) continue;
+    q = before[k] === null ? q.is(k, null) : q.eq(k, before[k] as string | number | boolean);
+  }
+  const { data, error } = await q.select('*');
+  if (error) throw error;
+  if (data && data.length) { seen(table, data); return; }
+  // nothing written: someone changed it meanwhile, or this login may not change it
+  const { data: now } = await supabase.from(table).select('*').eq('id', id).maybeSingle();
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(CONFLICT_EVENT));
+  if (now) {
+    const row = now as Record<string, unknown>; seen(table, [row]);
+    const moved = before && Object.keys(patch).some((k) => k in before && scalar(before[k]) && !same(before[k], row[k]));
+    if (moved) throw new ConflictError(`Not saved: ${row.updated_by_name ?? 'someone'} changed this${row.updated_at ? ` at ${when(row.updated_at as string)}` : ''}. The screen is refreshed; check and try again.`);
+  }
+  throw new ConflictError('Not saved: this login may not change this record.');
+};
 export const setStep = (id: string, patch: Partial<{ status: StepStatus; pending_reason: string | null; remark: string | null; prereq: string[]; target_at: string | null; started_at: string | null; done_at: string | null; est_hours: number | null }>) => upd('trk_steps', id, patch);
 export const setEquipment = (id: string, patch: Partial<{ stage: number; pending_reason: string | null; remark: string | null; blinds_in_at: string | null; blinds_out_at: string | null; tracked: boolean; disabled_reason: string | null; critical: boolean; planned_ho: string | null; planned_finish: string | null }>) => upd('trk_equipment', id, patch);
 export const setActivity = (id: string, patch: Partial<{ activity: string; planned_start: string | null; planned_finish: string | null; duration_h: number | null; tracked: boolean; disabled_reason: string | null; stage: number | null; actual_start: string | null; actual_finish: string | null; actual_note: string | null }>) => upd('trk_activities', id, patch);
