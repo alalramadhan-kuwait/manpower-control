@@ -199,9 +199,11 @@ The P6 bar chart puts some lines under the main machine although they belong to 
 C-12-201-ST (rows moved, not copied; ids, hours, P6 dates kept; moves in `trk_log`): A3768 → C-12-201-E-03 (gland
 condenser), A3769 → C-12-201-EJ-01 (ejector) — tag match from the plant equipment list, not yet on a P&ID —, A3765 /
 A3771 / A6640 → "C-12-201-ST on-site checks". Totals unchanged (main 29–34 % / plan 45 %, 726 lines, 25,857 h).
-Same pattern still open on C-12-201 (not changed): A7690 both LO coolers (items C-12-201-E-01A/B exist, off),
-A7700 LO and dry-gas filters (C-12-201-F-03A/B exists, off; F-01B on), A7430 suction drum inspection and A7630 /
-A6630 suction strainer / line (no tag in the lists). A re-import / publish from the template restores the P6 mapping.
+C-12-201 corrected the same way: A7430 → V-12-212 (K.O. / suction drum; may duplicate V-212's own demister and
+cleaning lines A9730/A9740/A9750 — P6 question), A6630 + A7630 → work item P-12-2085-GR1 (suction line from V-212
+and its strainer, line-up not verified), A7690 → C-12-201-E-01A/B (one line for both coolers), A7700 →
+C-12-201-F-03A/B (with the dry-gas filter, no tag). Totals unchanged (main 29–34 % / plan 45 %, 726 lines, 25,857 h).
+A re-import / publish from the template restores the P6 mapping.
 
 ## 6b. Operational readiness review (24 Oct 2026)
 
