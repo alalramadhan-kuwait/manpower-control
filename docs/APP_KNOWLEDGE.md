@@ -205,6 +205,16 @@ and its strainer, line-up not verified), A7690 → C-12-201-E-01A/B (one line fo
 C-12-201-F-03A/B (with the dry-gas filter, no tag). Totals unchanged (main 29–34 % / plan 45 %, 726 lines, 25,857 h).
 A re-import / publish from the template restores the P6 mapping.
 
+**Mapping rule (permanent).** Each maintenance activity sits on the equipment it is done on or on an independently
+tracked work scope, not under its parent compressor or turbine. Unconfirmed tags carry "TAG UNVERIFIED" and their
+source in the item description. Possible duplicates are flagged for a P6 decision, never merged or deleted.
+
+Verification (24 Oct): P-12-2085 derived from verified Train-1 P-12-1085 (sheet 117), Train-2 sheet not read; no
+strainer tag in the line-up; E-01A/B from the isolation procedure (vendor package, not on a line-up P&ID); F-03A/B from
+the equipment list only; dry-gas filter untagged (line-up shows only the make-up H2 feed GH-12-2007 to the seal).
+Open: A7430 vs V-212 A9730/A9740/A9750; A7630 vs OPR list ROW-440 (C-201 suction strainers); F-03A/B had been switched
+off by the Section Head on 21 Oct before A7700 was put on it.
+
 ## 6b. Operational readiness review (24 Oct 2026)
 
 Estimate ~88 % (verified functionality). Recommendation: **ready for operational use**, with the conditions below.

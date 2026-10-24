@@ -41,6 +41,10 @@ No unrelated improvements or redesigns while a priority is open.
 - Validation for people's edits (reasons, 48 h) must not hit updates that triggers copy from another record.
 - A P6 line on the wrong equipment is moved (same row, ids, hours, P6 dates) to its real tag or a named work item, never
   copied; totals checked before and after; no invented tags.
+- Each maintenance activity is mapped to the equipment it is done on (or an independently tracked work scope such as a
+  line, strainer or filter set), never grouped under its parent compressor or turbine by default. A tag not confirmed on
+  a P&ID is labelled UNVERIFIED with its source; a possible P6 duplicate is flagged, never merged or deleted without
+  the confirmed scope.
 - Approved calculations (manpower minimums, roster cycle, tracker progress/forecast) change only with authorization.
 - **No hard delete** of user records. Use soft states (cancelled, voided, declined, superseded) that keep links and
   history. No DROP / TRUNCATE / unscoped DELETE; production data changes only with confirmed mappings.
