@@ -669,9 +669,12 @@ export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string }
 }
 
 /** The team leader update for WhatsApp: the measures first, each named for what it counts (the critical path item
- *  against its own plan, the work hours done, the steps and items completed, the items within the end date), then the
- *  item that controls the end, the items close to it, and the equipment by stage. Times in hours, no columns. */
+ *  against its own plan, the work hours done, the items completed and those within the end date), then the
+ *  item that controls the end, the items close to it, the equipment by stage, then the SD scope and the hot work as
+ *  short counts. Times in hours, no columns. */
 const LEADER_GROUPS = ['Reactors', 'Exchangers', 'Vessels', 'Heaters', 'Filters'];
+/** The SD scope groups, short; a 'key:' entry is a bar-chart line with no item of its own (counted by its jobs). */
+const SCOPE_SHORT: [string, string][] = [['key:RTJ / Inspection', 'RTJ'], ['Check valves', 'NRV'], ['Process piping', 'Piping'], ['CV shells', 'CV'], ['Pumps / LO', 'Pumps'], ['OPR list', 'OPR']];
 export function leaderReportText(d: TrkData, now: number, opts: { title?: string; test?: boolean; by?: string } = {}): string {
   const r = shiftReport(d, now, null, opts.title), w = r.mi.weighted;
   const unit = r.name.match(/U-?\s?(\d+)/i)?.[1], train = r.name.match(/TR(?:AIN)?-?\s?(\d+)/i)?.[1];
@@ -693,7 +696,6 @@ export function leaderReportText(d: TrkData, now: number, opts: { title?: string
     out.push(`🎯 *Critical path (${short(cp.tag)}):* ${word} · ${cp.physPct}% vs plan ${cp.planPct}%`, `   End ${at(cp.forecast)} · ${vsEnd(cp.forecast)}${drums ? ' (drum rate)' : ''}`);
   }
   out.push(`🛠 *Work done (hours):* ${w.main.physPct}% · plan ${w.main.planPct}%`,
-    `✅ *Steps completed:* ${main.reduce((t, i) => t + i.done, 0)} / ${main.reduce((t, i) => t + i.lines, 0)}`,
     `📦 *Items completed:* ${main.filter((i) => i.done === i.lines).length} / ${main.length}`,
     `🟢 *Items within the end date:* ${main.filter((i) => i.forecast <= end).length} / ${main.length}`);
   if (cp) { const s = status(cp.tag); out.push('', `🔴 *${short(cp.tag)}* (controls the end)`, ...(s ? [`• ${s}`] : [])); }
@@ -710,8 +712,23 @@ export function leaderReportText(d: TrkData, now: number, opts: { title?: string
     const n = STAGE_SHORT.map((_, s) => xs.filter((e) => e.stage === s).length);
     return [`• ${g} ${xs.length}: ${STAGE_SHORT.flatMap((s, k) => (n[k] ? [`${s === 'HO' || s === 'Box-up' ? s : s.toLowerCase()} ${n[k]}`] : [])).join(' · ')}`];
   });
-  if (r.psvs.total) lines.push(`• PSVs ${r.psvs.total}: removed ${r.psvs.removed} · back ${r.psvs.installed}`);
   if (lines.length) out.push('', '*Equipment status*', ...lines);
+  // the small jobs and the hot work, one short count each (done / total): an item is done when all its jobs are; one
+  // item with many jobs (the OPR list) counts its jobs
+  const jobs = (k: string) => d.activities.filter((a) => a.key === k && a.tracked && !a.detail && a.group !== 'Operations');
+  const scope = (g: string) => {
+    if (g.startsWith('key:')) { const ls = jobs(g.slice(4)); return ls.length ? `${ls.filter((a) => a.actualFinish).length}/${ls.length}` : null; }
+    const xs = d.equipment.filter((e) => e.tracked && e.group === g && (jobs(e.barchartKey ?? e.tag).length || !e.hoStep)); if (!xs.length) return null;
+    const one = xs.length === 1 ? jobs(xs[0].barchartKey ?? xs[0].tag) : [];
+    if (one.length > 1) return `${one.filter((a) => a.actualFinish).length}/${one.length}`;
+    return `${xs.filter((e) => { const ls = jobs(e.barchartKey ?? e.tag); return ls.length ? ls.every((a) => a.actualFinish) : e.stage >= STAGE_SHORT.length - 1; }).length}/${xs.length}`;
+  };
+  const small = SCOPE_SHORT.flatMap(([g, n]) => { const c = scope(g); return c ? [`${n} ${c}`] : []; });
+  if (r.psvs.total) small.push(`PSV ${r.psvs.removed} out, ${r.psvs.installed} back`);
+  const iats = d.iats.map(iatStatus).filter((x) => x !== 'Cancelled'), pmr = scope('PMRs');
+  const hot = [...(iats.length ? [`IAT ${iats.filter((x) => x === 'Completed').length}/${iats.length}${iats.includes('In progress') ? ` (${iats.filter((x) => x === 'In progress').length} I/P)` : ''}`] : []), ...(pmr ? [`PMR ${pmr}`] : [])];
+  if (small.length) out.push('', `📋 *SD scope:* ${small.join(' · ')}`);
+  if (hot.length) out.push(`🔥 *Hot work:* ${hot.join(' · ')}`);
   if (opts.by) out.push('', `— ${opts.by}`);
   return out.join('\n');
 }

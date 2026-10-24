@@ -426,9 +426,11 @@ describe('team leader report', () => {
     Object.assign(step(d, 'S110'), { status: 'done', doneAt: '2026-10-20T07:00:00+03:00' });
     const text = leaderReportText(d, at('2026-10-24 09:00'), { title: 'U-12 TR-2 SD', by: 'Ali' });
     expect(text.split('\n').slice(0, 2)).toEqual(['*U-12 Train-2 SD · Team leader update*', '_24 Oct · M&I day 5 of 18_']);
-    for (const m of ['🛠 *Work done (hours):* ', '✅ *Steps completed:* ', '📦 *Items completed:* ', '🟢 *Items within the end date:* ']) expect(text).toContain(m);
+    for (const m of ['🛠 *Work done (hours):* ', '📦 *Items completed:* ', '🟢 *Items within the end date:* ']) expect(text).toContain(m);
     expect(text).toMatch(/\n🎯 \*Critical path \(R-205\):\* (ahead|behind|on plan) · \d+% vs plan \d+%\n {3}End .* · \d+ h (after|before) P6/);
     expect(text).toContain('*Equipment status*\n• Reactors 5: ');
+    expect(text).toMatch(/\n📋 \*SD scope:\* .*NRV \d+\/\d+/);
+    expect(text).not.toContain('Steps completed');
     expect(text).not.toMatch(/\d d\b/);
     expect(text).not.toMatch(/\S {2,}/);
     expect(text.trimEnd().endsWith('— Ali')).toBe(true);
