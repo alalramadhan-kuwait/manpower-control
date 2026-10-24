@@ -45,8 +45,9 @@ Edge functions: `manage-users` (Section Head), `request-gate` (staff), `sd-plan-
 | Role code | Active logins | App access |
 |---|---|---|
 | `section_head` | 1 | Everything; Head-only: user admin, approvals (leave, requests, PV, SD readiness/exceptions), controller rules, tracker Admin/Publish/Reset/links |
-| `manpower_coordinator` | 2 | Everything except the Head-only actions (staff = `app_is_staff()`) |
-| `controller` | 0 | **None** — role inactive in `app_roles`, blocked by the app gate, though `trk_can_update()` would allow tracker edits |
+| `manpower_coordinator` | 2 | Everything except the Head-only actions (staff = `app_is_staff()`); unchanged |
+| `engineer` (L2, active 24 Oct) | 0 | Whole app + tracker structure (`app_is_manager()`); no logins, approvals, publish/reset/links |
+| `controller` (L3, active 24 Oct) | 0 | Tracker only (tracker-only screen); with the Manpower assignment the whole app like the Coordinator |
 | `employee` | 0 | None |
 | Engineer link (`trk_access`, no login) | 2 active | Tracker only: read all, update steps/points/IATs/events/drums/shift notes; no admin, no structure, no manpower data |
 
@@ -68,9 +69,11 @@ Database helpers: `app_current_role()`, `app_is_section_head()`, `app_is_staff()
 | Shutdown teams plan | ✓ approve | ✓ edit | view | ✓ edit |
 | Audit history | ✓ | ✓ | own | manpower area |
 
-To build: role `engineer` (L2), activate `controller` (L3), an assignments table (`manpower`, later others) checked by
-`app_can(task)`; today's `manpower_coordinator` logins become Controller/Engineer + Manpower assignment. Pending
-approval (see §7).
+**Built 24 Oct 2026:** roles `engineer` and `controller` active; `user_assignments` (task `manpower`; Section Head
+gives and ends, kept with who/when, audited); `app_has_task()`, `app_is_staff()` (Head, Coordinator, Engineer,
+Controller + Manpower), `app_is_manager()` (Head, Engineer). The two Coordinator logins keep their role; moving them
+to Controller/Engineer + Manpower is a Section Head decision in Users & access. Verified by
+`supabase/tests/tracker_access_and_integrity_checks.sql` (28 checks, rolled back).
 
 ### 3.3 Permission gaps found
 
@@ -100,16 +103,16 @@ drums). No UI, RLS or link-access tests.
 | # | Gap | Level |
 |---|---|---|
 | T1 | ~~Link scope, expiry, `trk_split_lines`, anon function execution, hard delete on operational tables~~ — fixed 24 Oct (parts A and B), verified | done |
-| T2 | Concurrent edits overwrite silently (no version check; Undo writes old values blindly); polling 30 s / 2 min | P0 |
-| T3 | Stage vs steps drift (C-201-ST, LO system at Not HO with work done; 139 steps with no stage; stage sync only on finish) | P0 |
-| T4 | Engineer view records "now" only — no backdated start/finish for late reports | P0 |
+| T2 | ~~Concurrent edits overwrite silently; blind Undo~~ — fixed 24 Oct (field-level check on save, safe Undo, conflict message + reload) | done |
+| T3 | ~~Stage vs steps drift~~ — 24 Oct: steps no longer raise a not-handed-over item; stage review list on Today (C-201-ST flagged: blinded, HO not recorded) | done (review open) |
+| T4 | ~~No backdated times~~ — 24 Oct: time field on engineer steps; >48 h back goes to the Section Head (`trk_time_request`); entry time and who in `trk_log` | done |
 | T5 | Progress entered through migrations ("system"), not by people in the app — no field attribution | P0 (process) |
 | T6 | No offline queue: a write with no network fails | P1 |
 | T7 | Forecast "unverified": P6 links/float not imported (`trk_link` empty); forecasts not saved | P1 |
 | T8 | Hard-coded to this shutdown (R-12-205, REACTORS, 3-day threshold, TR-2 template); no create/close flow | P1 |
 | T9 | Days instead of hours in tracker text (banner, float, report footer, engineer chips) | P1 |
 | T10 | No stale-work alert (3 steps running > 24 h with no update) | P1 |
-| T11 | No UI / RLS / engineer-flow tests | P1 |
+| T11 | Tests: unit (core), `supabase/tests/tracker_access_and_integrity_checks.sql` (28 access/integrity checks), `scripts/e2e-tracker.mjs` (screens, read-only), `scripts/e2e-tracker-conflict.mjs` (two people, TEST tracker). Not yet: desktop TrackerPage flows | partly |
 | T12 | No active TEST tracker; TEST clock per device | P2 |
 | T13 | 22 tracked loops/lines with no steps inflate counts | P2 |
 | T14 | Exports: CSV and print only; no DSR PDF/Excel | P2 |

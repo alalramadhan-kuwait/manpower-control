@@ -43,6 +43,9 @@ No unrelated improvements or redesigns while a priority is open.
   `supabase/migrations/<recorded version>_<name>.sql` and a row in `supabase/README.md`. The folder must rebuild the
   database in order.
 - Authorization is enforced in the database (RLS, security-definer RPCs that check the role), not only in the UI.
+- Every new function: `revoke execute ... from public, anon` in its migration (default privileges do not cover
+  migrations), unless an engineer link needs it. `supabase/tests/tracker_access_and_integrity_checks.sql` must end
+  `ALL PASS` after any change to access rules.
 - Edge functions: bundles are built by `npm run functions:build` (a test fails if a bundle is stale). This environment
   has no deploy token: say so when a function change needs deploying.
 
