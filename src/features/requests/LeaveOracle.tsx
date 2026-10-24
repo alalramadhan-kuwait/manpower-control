@@ -7,7 +7,7 @@ import { Check, Search, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { personOn, type MpPerson } from '@/core/manpower';
-import { daysUntil, isPlanPv } from '@/core/oracle';
+import { isPlanPv } from '@/core/oracle';
 import { expectedRequest } from '@/core/oracle/expected';
 import { isOpenEnd } from '@/core/leave';
 import { addDaysIso, CREWS, type Crew } from '@/core/roster';
@@ -36,7 +36,7 @@ const CHIP_LABEL: Record<State, string> = { planned: 'Planned', approved: 'Appro
 interface Item { person: MpPerson; leave: MergedLeave; state: State }
 const pvRecord = (r: { typeCode?: string | null }) => isPlanPv(r.typeCode);
 
-export function LeaveOracle({ isHead }: { isHead: boolean }) {
+export function LeaveOracle({ isHead, onCount }: { isHead: boolean; onCount?: (n: number) => void }) {
   const today = localToday();
   const [params, setParams] = useSearchParams();
   const when = (WHEN.find((w) => w.key === params.get('when'))?.key ?? '35') as When;
@@ -73,6 +73,8 @@ export function LeaveOracle({ isHead }: { isHead: boolean }) {
   const count = (k: State | 'all') => (k === 'all' ? inWhen.length : inWhen.filter((x) => x.state === k).length);
   const list = inWhen.filter((x) => st === 'all' || x.state === st);
   const planned = list.filter((x) => x.state === 'planned');
+  const toApprove = inWhen.filter((x) => x.state === 'planned').length;
+  useEffect(() => { if (inputs) onCount?.(toApprove); }, [inputs, toApprove]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function approve(xs: Item[], yes: boolean) {
     const ids = xs.flatMap((x) => x.leave.records.filter(pvRecord).map((r) => r.id)).filter((id): id is string => !!id);
@@ -119,24 +121,19 @@ export function LeaveOracle({ isHead }: { isHead: boolean }) {
             const open = isOpenEnd(leave.end);
             const exp = open ? null : expectedRequest(leave.start, leave.end, (d) => crewOf(person, d));
             const cr = crewOf(person, leave.start);
-            const n = daysUntil(today, leave.start);
             const late = x.state === 'planned' && leave.start <= today;
             return (
-              <div key={key} className="border-b border-slate-100 px-3 py-2 last:border-b-0">
+              <div key={key} className="border-b border-slate-100 px-3 py-1.5 last:border-b-0">
                 <div className="flex items-center gap-2">
                   {cr ? <CrewBadge crew={cr} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-500 text-[9px] font-bold text-white">{person.role === 'vr_controller' ? 'VR' : t('Day')}</span>}
-                  <Link to={`/employees/${person.id}`} className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{person.name} <span className="text-[11px] font-normal text-slate-400">#{person.employeeNumber}</span></Link>
-                  <span className={cx('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums', n <= 0 ? 'bg-brand-50 text-brand-800' : n <= 21 ? 'bg-amber-50 text-amber-900' : 'text-slate-500')}>{leave.start <= today ? t('Now') : t('in {n} d', { n })}</span>
-                </div>
-                <div className="mt-1 flex items-center gap-2 ps-8">
-                  <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 text-[12.5px] text-slate-800"><LeaveCodes codes={leave.codes} />{range(leave.start, leave.end)}
-                    {exp && <span className="text-slate-500">· {t('{n} d', { n: exp.days })} · {t('back {d}', { d: day(exp.backOn) })}</span>}</span>
+                  <Link to={`/employees/${person.id}`} className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-slate-900">{person.name}</Link>
+                  <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-[12px] text-slate-600" title={exp ? `${t('{n} d', { n: exp.days })} · ${t('back {d}', { d: day(exp.backOn) })}` : undefined}><LeaveCodes codes={leave.codes} />{range(leave.start, leave.end)}</span>
                   {isHead && x.state === 'planned'
-                    ? <button type="button" disabled={busy !== null} onClick={() => approve([x], true)} className="min-h-8 shrink-0 rounded-lg bg-green-600 px-3 text-xs font-bold text-white disabled:opacity-60">{busy === key ? '…' : `✓ ${t('Approve')}`}</button>
+                    ? <button type="button" disabled={busy !== null} onClick={() => approve([x], true)} className="min-h-8 shrink-0 rounded-lg bg-green-600 px-2.5 text-xs font-bold text-white disabled:opacity-60">{busy === key ? '…' : `✓ ${t('Approve')}`}</button>
                     : <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold', CHIP[x.state])}>{t(CHIP_LABEL[x.state])}</span>}
                   {isHead && x.state === 'approved' && <button type="button" aria-label={t('Undo approval')} title={t('Undo approval')} disabled={busy !== null} onClick={() => approve([x], false)} className="h-7 w-7 shrink-0 rounded-md text-sm text-slate-400 ring-1 ring-slate-200 disabled:opacity-60">{busy === key ? '…' : '↶'}</button>}
                 </div>
-                {late && <p className="mt-0.5 ps-8 text-[11.5px] font-medium text-red-700">{t('Started, not approved: not counted as leave')}</p>}
+                {late && <p className="ps-8 text-[11px] font-medium text-red-700">{t('Started, not approved: not counted as leave')}</p>}
               </div>
             );
           })}

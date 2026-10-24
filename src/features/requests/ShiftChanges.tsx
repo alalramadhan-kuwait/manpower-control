@@ -20,7 +20,7 @@ const GROUPS = [['all', 'All'], ['begin', 'Shutdown · begin'], ['end', 'Shutdow
 const MOVE_WINDOW_DAYS = 60;   // moves that started longer ago are history, not a request
 const days = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
 
-export function ShiftChanges() {
+export function ShiftChanges({ onCount }: { onCount?: (n: number) => void } = {}) {
   const today = localToday();
   const [items, setItems] = useState<Item[] | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -60,8 +60,9 @@ export function ShiftChanges() {
           crew: r.crew_code, vr: r.position_code === 'vr_controller', sort: `${m.start_date}-${r.display_name}`, searchable: [r.display_name, r.official_name, r.employee_number, r.arabic_name] });
       }
       setItems(out);
+      onCount?.(out.filter((i) => i.on >= today).length);
     })().catch(setError);
-  }, [today]);
+  }, [today]); // eslint-disable-line react-hooks/exhaustive-deps
   const plans = useMemo(() => [...new Map((items ?? []).filter((i) => i.planId).map((i) => [i.planId as string, i.plan as string])).entries()], [items]);
   const shown = useMemo(() => {
     const match = nameFilter(query);
@@ -96,7 +97,7 @@ export function ShiftChanges() {
           {shown.map((i) => {
             const left = days(today, i.on);
             return (
-              <Link key={i.key} to={i.link} className="flex items-center gap-3 px-3 py-3 active:bg-slate-50">
+              <Link key={i.key} to={i.link} className="flex items-center gap-3 px-3 py-2 active:bg-slate-50">
                 {isCrew(i.crew) ? <CrewBadge crew={i.crew} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">{i.vr ? 'VR' : 'DS'}</span>}
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline gap-1.5"><span className="truncate text-sm font-medium text-slate-800">{i.name}</span><span className="shrink-0 text-xs tabular-nums text-slate-500">#{i.number}</span></span>
