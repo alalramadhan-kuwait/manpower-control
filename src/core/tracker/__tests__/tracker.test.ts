@@ -557,3 +557,24 @@ describe('spanText', () => {
     expect(spanText(null, t(5))).toBe('');
   });
 });
+
+describe('handover status apart from M&I delays', () => {
+  const blind = (key: string, finish: string | null) => ({ id: `${key}-blind`, activityId: 'B-1', group: 'Rotating', key, activity: 'Blinding', durationH: 8,
+    start: kw('2026-10-20 07:00'), finish: kw('2026-10-20 15:00'), stage: 1, tracked: true, actualStart: finish, actualFinish: finish }) as never;
+  it('its own finished blind line hands an item over: no HO LATE although the shared HO step is open', () => {
+    const d = seed(); d.activities = [...d.activities, blind('C-12-201-ST', kw('2026-10-20 13:00'))];
+    const v = equipViews(d, at('2026-10-24 12:00')).find((x) => x.eq.tag === 'C-12-201-ST')!;
+    expect([v.stage >= 1, v.flag === 'HO_LATE', v.hoAt]).toEqual([true, false, kw('2026-10-20 13:00')]);
+  });
+  it('without any handover evidence past the planned handover it stays HO LATE', () => {
+    const d = seed(); Object.assign(step(d, 'S223'), { status: 'in_progress' });
+    const v = equipViews(d, at('2026-10-24 12:00')).find((x) => x.eq.tag === 'C-12-201-ST')!;
+    expect([v.stage, v.flag]).toEqual([0, 'HO_LATE']);
+  });
+  it('a late handed-over item is an M&I delay with the step and department, never a handover delay', () => {
+    const d = seed(); d.activities = [...d.activities, blind('C-12-201-ST', kw('2026-10-20 13:00'))];
+    const v = equipViews(d, at('2026-11-05 12:00')).find((x) => x.eq.tag === 'C-12-201-ST')!;
+    expect(v.flag).toBe('LATE');
+    expect(v.reason).toMatch(/^M&I/);
+  });
+});

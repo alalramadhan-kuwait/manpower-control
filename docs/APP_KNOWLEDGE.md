@@ -173,6 +173,16 @@ source reference, verified by/at, soft archive, logged); `trk_activities.shared_
 shows under each related item, counted once in progress on its owner (no calculation change); "Related" and "Waiting
 on" lines in the item sheet. No automatic handover and no isolation logic.
 
+## 6a. Handover vs M&I classification (fixed 24 Oct 2026)
+
+C-12-201-ST showed "HO LATE · −4 stages" though Operations had handed it over (blinded 20 Oct 13:00). Cause: its blind
+line was loaded by a migration (no stage sync) and its handover step S223 is shared and still open, so the item stayed
+"Not HO" and the screen read that as a late handover. Fix: handover evidence = stage, HO step done, blinds in, or the
+item's own finished blind / handover line; "HO LATE" only without any of them past the planned handover; delays of
+handed-over items are "M&I LATE" with the step and department; the stage variance chip reads "M&I −n stages · h".
+Audit: no other item had handover evidence while showing Not HO. C-12-201 LO system still shows HO LATE (no evidence
+of its own; shares S223) — to be verified on site.
+
 ## 6b. Operational readiness review (24 Oct 2026)
 
 Estimate ~88 % (verified functionality). Recommendation: **ready for operational use**, with the conditions below.

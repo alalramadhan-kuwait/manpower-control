@@ -32,6 +32,10 @@ No unrelated improvements or redesigns while a priority is open.
 - Never invent data. Unknown stays unknown; a time not given is recorded as "now" and said so.
 - The **P6 baseline is never changed**. Splits and re-timing live on our own steps inside the P6 window.
 - Status updates from reports: take the most advanced of the report, the Excel and the tracker.
+- Keep three things apart and label them: **Operations handover** (HO done / HO late — late only against the planned
+  handover with no handover evidence: HO step done, blinds in, or the item's own finished blind / handover line),
+  **M&I progress and delays** (shown as "M&I", with the step and the department), and **P6 schedule variance**.
+  Never infer who is responsible from a stage field alone; a shared handover step left open is not a late handover.
 - Approved calculations (manpower minimums, roster cycle, tracker progress/forecast) change only with authorization.
 - **No hard delete** of user records. Use soft states (cancelled, voided, declined, superseded) that keep links and
   history. No DROP / TRUNCATE / unscoped DELETE; production data changes only with confirmed mappings.

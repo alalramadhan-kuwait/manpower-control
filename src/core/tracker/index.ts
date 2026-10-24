@@ -270,11 +270,15 @@ export function equipViews(d: TrkData, now: number, steps = stepViews(d, now)): 
   for (const a of d.activities) actsBy.set(a.key, [...(actsBy.get(a.key) ?? []), a]);
   return [...d.equipment].sort((a, b) => a.sort - b.sort).map((eq) => {
     const ho = eq.hoStep ? steps.get(eq.hoStep) ?? null : null;
-    const hoDone = ho?.state === 'DONE';
+    // handed over: the stage says so, its handover step is done, blinds are recorded in, or its own blind / handover
+    // line (stage 1) is finished. A shared handover step left open does not make an item handed over by others "late".
+    const own = (eq.barchartKey ? actsBy.get(eq.barchartKey) ?? [] : []).filter((a) => a.tracked && a.stage === 1 && a.actualFinish && /blind|hand ?over/i.test(a.activity))
+      .map((a) => a.actualFinish!).sort()[0] ?? null;
+    const hoDone = ho?.state === 'DONE' || !!eq.blindsIn || !!own;
     const stage = Math.max(eq.stage, hoDone ? 1 : 0);
     const iatsOpen = d.iats.filter((i) => i.tag === eq.tag && i.status === 'open');
     const ops = eq.opsItem && !!eq.fo && !!eq.hoStep;
-    const hoAtIso = eq.blindsIn ?? (hoDone ? ho!.step.doneAt ?? ho!.step.updatedAt : null);
+    const hoAtIso = eq.blindsIn ?? (ho?.state === 'DONE' ? ho.step.doneAt ?? ho.step.updatedAt : own);
     // the bar chart of an item handed over runs from its own handover (moved by how early / late it came)
     const acts = eq.barchartKey ? actsBy.get(eq.barchartKey) ?? [] : [];
     const first = Math.min(...acts.filter((a) => a.tracked && a.start && a.group !== 'Operations').map((a) => ms(a.start)));
@@ -288,7 +292,13 @@ export function equipViews(d: TrkData, now: number, steps = stepViews(d, now)): 
     else if (stage === 0 && ho?.state === 'PENDING') { flag = 'PENDING'; reason = `${ho.step.pendingReason ?? 'Pending'} (step)`; }
     // handover late only once operations can work the handover step (assumption agreed for v1: a WAITING step's item is not late)
     else if (ops && eq.tracked && stage === 0 && eq.plannedHo && now > ms(eq.plannedHo) && ho && ho.state !== 'WAITING') { flag = 'HO_LATE'; lateBy = now - ms(eq.plannedHo); }
-    else if (ops && eq.tracked && stage < 6 && eq.plannedFinish && now > ms(eq.plannedFinish)) { flag = 'LATE'; lateBy = now - ms(eq.plannedFinish); }
+    else if (ops && eq.tracked && stage < 6 && eq.plannedFinish && now > ms(eq.plannedFinish)) {
+      flag = 'LATE'; lateBy = now - ms(eq.plannedFinish);
+      // an M&I delay: the step running (or next) and the department doing it
+      const work = sortActs(acts.filter((a) => a.tracked && !a.detail && a.group !== 'Operations' && !a.actualFinish));
+      const w = work.find((a) => a.actualStart) ?? work[0];
+      reason = w ? `M&I: ${w.activity}${w.group ? ` (${w.group})` : ''}` : 'M&I';
+    }
     else if (ops && stage === 0) flag = 'NOT_HO';
     else if (stage >= 1 && stage <= 5) flag = 'IN_PROGRESS';
     const hoAt = hoAtIso;
@@ -650,7 +660,7 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
 }
 
 export const bannerText = (b: Banner) => `${b.state === 'ON_PLAN' ? 'ON PLAN' : b.state}${b.state !== 'ON_PLAN' && b.days ? ` ${b.state === 'BEHIND' ? '−' : '+'}${daysAsHours(b.days)}` : ''}`;
-const FLAG_TEXT: Record<string, string> = { HO_LATE: 'HO LATE', LATE: 'LATE', PENDING: 'Pending', IAT_OPEN: 'IAT open', STEP_LATE: 'LATE', STEP_PENDING: 'Pending' };
+const FLAG_TEXT: Record<string, string> = { HO_LATE: 'HO LATE', LATE: 'M&I LATE', PENDING: 'Pending', IAT_OPEN: 'IAT open', STEP_LATE: 'LATE', STEP_PENDING: 'Pending' };
 export const flagText = (f: string) => FLAG_TEXT[f] ?? f;
 
 /** The WhatsApp message, in the plant's own format (one short status line per item, by equipment type) and the same

@@ -13,7 +13,7 @@ export const STATE_STYLE: Record<StepState, { bg: string; text: string; label: s
 };
 export const FLAG_STYLE: Record<Flag | 'STEP_LATE' | 'STEP_PENDING', { cls: string; label: string }> = {
   HO_LATE: { cls: 'bg-red-400 text-white', label: 'HO LATE' },
-  LATE: { cls: 'bg-red-400 text-white', label: 'LATE' },
+  LATE: { cls: 'bg-red-400 text-white', label: 'M&I LATE' },
   STEP_LATE: { cls: 'bg-red-400 text-white', label: 'LATE' },
   PENDING: { cls: 'bg-red-100 text-red-900', label: 'PENDING' },
   STEP_PENDING: { cls: 'bg-red-100 text-red-900', label: 'PENDING' },
@@ -39,7 +39,7 @@ export function StageBar({ stage, className }: { stage: number; className?: stri
 export function PlanChip({ variance, days, short = false }: { variance: number; days: number; short?: boolean }) {
   if (variance === 0) return <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">On plan</span>;
   const ahead = variance > 0;
-  return <span className={cx('rounded px-1.5 py-0.5 text-[10px] font-bold', ahead ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800')}>{ahead ? '+' : '−'}{Math.abs(variance)}{short ? '' : ` stage${Math.abs(variance) > 1 ? 's' : ''}`}{days ? ` · ${daysAsHours(days)}` : ''}</span>;
+  return <span className={cx('rounded px-1.5 py-0.5 text-[10px] font-bold', ahead ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800')}>{short ? '' : 'M&I '}{ahead ? '+' : '−'}{Math.abs(variance)}{short ? '' : ` stage${Math.abs(variance) > 1 ? 's' : ''}`}{days ? ` · ${daysAsHours(days)}` : ''}</span>;
 }
 export const Tile = ({ value, label, tone, onClick }: { value: ReactNode; label: string; tone?: 'red' | 'amber' | 'green'; onClick?: () => void }) => (
   <button type="button" onClick={onClick} className={cx('flex min-h-16 flex-col items-center justify-center rounded-xl bg-white px-1 py-2 ring-1 ring-slate-200 active:scale-[0.98]', !onClick && 'cursor-default')}>
