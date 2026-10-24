@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
-import { daysAsHours, blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, relatedWork, shiftOf, shiftReport, staleItems, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
+import { isNR, daysAsHours, blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, relatedWork, shiftOf, shiftReport, staleItems, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import { StageReview, StaleAlert } from './StageReview';
 import { CONFLICT_EVENT, setActivity, setEquipment, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
@@ -116,7 +116,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const toIsolation = (tag: string | null, kind?: 'blind' | 'neut') => { setSheet(null); setFocus(tag); setIsoKind(kind); setTab('isolation'); };
   const tot = totals(steps, eqs, data.iats);
   // the Isolation badge: blinds not in and neutralizations before handover not done (finished work drops off)
-  const isoOpen = points.filter((p) => (p.kind === 'blind' || p.beforeHo) && !pointComplete(p)).length;
+  const isoOpen = points.filter((p) => (p.kind === 'blind' || p.beforeHo) && !pointComplete(p) && !isNR(p)).length;
   // spare time before the shutdown end, for the items with bar-chart work left
   const miItems = new Map((phases(data, now, steps).mi.weighted?.items ?? []).map((i) => [i.tag, i]));
   const spare = new Map([...miItems.values()].filter((i) => i.done < i.lines).map((i) => [i.tag, i.spareD]));
@@ -487,7 +487,7 @@ function StepButton({ a, also = [], finish, more, eq, onDone }: { a: TrackerData
       const was = eq.pendingReason; const cleared = !finish && !!was;
       if (cleared) await setEquipment(eq.id, { pending_reason: null });
       onDone(`${all.map((y) => y.key).join(' + ')}: ${a.activity} ${finish ? 'finished' : 'started'}.${cleared ? ` Hold "${was}" ended.` : ''}`,
-        async () => { for (const b of before) await setActivity(b.id, { actual_start: b.actual_start, actual_finish: b.actual_finish }); if (cleared) await setEquipment(eq.id, { pending_reason: was ?? null }); });
+        async () => { for (const b of before) await setActivity(b.id, { actual_start: b.actual_start, actual_finish: b.actual_finish, time_reason: 'Undo' }); if (cleared) await setEquipment(eq.id, { pending_reason: was ?? null }); });
     }
     catch (e) { setErr(e instanceof Error ? e.message : 'Not saved'); setBusy(false); }
   };

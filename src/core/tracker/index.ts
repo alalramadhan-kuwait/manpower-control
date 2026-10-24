@@ -59,6 +59,8 @@ export interface TrkPoint {
   id: string; kind: 'blind' | 'neut';
   /** a blind: segregation or HP critical (installed by M & I) */
   grp: 'segregation' | 'hp_critical' | null; ref: string; name: string; detail: string | null; fo: string | null; stepId: string | null; items: string[];
+  /** neutralization requirement: required (default), not_required (N/R, with a reason; never "done"), pending decision */
+  requirement?: 'required' | 'not_required' | 'pending'; requirementReason?: string | null; requirementBy?: string | null; requirementAt?: string | null;
   /** the blinds (refs) that must be in before this neutralization can start */
   requires?: string[];
   /** how a neutralization is done: soak (fill, soak, drain) or spray (start, done: heater tube OD after the burners stop) */
@@ -198,6 +200,8 @@ export function sortActs<T>(xs: T[], get: (x: T) => Orderable = (x) => x as unkn
 /** Blind in (or already out) · neutralization drained. */
 /** The reactor body spray (after the catalyst dumping): part of the reactor's own work, shown with the reactor only. */
 export const withReactor = (p: Pick<TrkPoint, 'afterActs'>) => (p.afterActs ?? []).length > 0;
+/** A loop marked not required (N/R): not outstanding, never counted as neutralized, shown apart. */
+export const isNR = (p: Pick<TrkPoint, 'kind' | 'requirement'>) => p.kind === 'neut' && p.requirement === 'not_required';
 export const pointComplete = (p: Pick<TrkPoint, 'kind' | 'status'>) => (p.kind === 'blind' ? p.status === 'in' || p.status === 'out' : p.status === 'done');
 export const NEUT_FLOW = ['open', 'filling', 'soaking', 'draining', 'done'] as const;
 export const NEUT_LABEL: Record<string, string> = { open: 'Not started', filling: 'Filling', soaking: 'Soaking', draining: 'Draining', done: 'Neutralized' };
@@ -241,13 +245,15 @@ export function isoState(tag: string, stage: number, points: TrkPoint[] = []): I
   const loops = mine.filter((p) => p.kind === 'neut' && p.beforeHo);
   if (!mine.length) return null;
   if (stage >= 1) return { state: 'ho', why: 'Handed over', missing: [], loops };
-  const open = loops.filter((p) => !pointComplete(p));
+  const open = loops.filter((p) => !pointComplete(p) && !isNR(p)), nr = loops.filter(isNR);
   // blinds linked to the item, and those its open loops wait for
   const missing = [...new Set([...mine.filter((p) => p.kind === 'blind' && !pointComplete(p)).map((p) => p.ref), ...open.flatMap((p) => missingBlinds(p, points))])].sort();
   const running = open.filter((p) => p.status !== 'open');
   if (running.length) return { state: 'neut', why: `Neutralizing ${running.map((p) => `${p.ref} · ${neutLabel(p)}`).join(', ')}`, missing, loops };
   if (missing.length) return { state: 'blind', why: `🔒 ${missing.join(', ')} not in`, missing, loops };
-  if (!open.length) return { state: 'ready', why: loops.length ? `Neutralized ${loops.map((p) => p.ref).join(', ')} → hand over` : 'Blinds in → hand over', missing, loops };
+  // N/R is not taken as safe: the handover is still confirmed the normal way, the N/R loops are named
+  const nrText = nr.length ? ` · N/R ${nr.map((p) => p.ref).join(', ')} (confirm)` : '';
+  if (!open.length) return { state: 'ready', why: `${loops.length > nr.length ? `Neutralized ${loops.filter((p) => !isNR(p)).map((p) => p.ref).join(', ')} → hand over` : 'Blinds in → hand over'}${nrText}`, missing, loops };
   return { state: 'idle', why: `Waiting ${open.map((p) => p.ref).join(', ')} (not started)`, missing, loops };
 }
 
@@ -507,6 +513,8 @@ export interface ShiftReport {
   shift: { date: string; shift: 'D' | 'N' }; name: string; pointsDone: { ref: string; kind: 'blind' | 'neut' }[]; blindLinesDone: number;
   /** when the report was made, and one status line per item (by section) and per open neutralization loop */
   at: number; items: ReportItem[]; loops: { ref: string; name: string; line: string; running: boolean; started: boolean }[];
+  /** loops marked not required (N/R): listed apart, never as neutralized */
+  loopsNR: string[];
   /** segregation / HP-critical blinds not in yet */
   blindsOpen: { ref: string; name: string }[];
   /** catalyst removal by drums: each reactor dumping (or emptied this shift), its verified total and this shift's drums */
@@ -614,7 +622,8 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
       }); })(),
     // the loops still open, and those completed in the last day (shown once as completed)
     // the loops still open, and those completed in this shift (a finished loop is not repeated after its shift)
-    loops: (d.points ?? []).filter((p) => p.kind === 'neut' && !withReactor(p) && (p.stepId || (!p.items.includes(p.ref) && (p.method !== 'spray' || p.status !== 'open'))) && (!pointComplete(p) || (!!p.doneAt && ms(p.doneAt) >= sh.from))).sort((a, b) => a.sort - b.sort).map((p) => {
+    loopsNR: (d.points ?? []).filter(isNR).map((p) => p.ref),
+    loops: (d.points ?? []).filter((p) => p.kind === 'neut' && !isNR(p) && !withReactor(p) && (p.stepId || (!p.items.includes(p.ref) && (p.method !== 'spray' || p.status !== 'open'))) && (!pointComplete(p) || (!!p.doneAt && ms(p.doneAt) >= sh.from))).sort((a, b) => a.sort - b.sort).map((p) => {
       const m = p.status === 'open' ? missingBlinds(p, d.points) : []; const left = soakLeft(p, now); const done = pointComplete(p);
       // its field jobs (crane lifts, blinding): those running, and those finished this shift
       const jobs = (d.pointSteps ?? []).filter((c) => c.pointId === p.id && c.kind === 'step').map((c) => linkedStep(c, d.activities, d.points ?? []));
@@ -694,7 +703,7 @@ export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string }
   section('Segregation blinding', [bo.length ? `${bo.length} blind${bo.length > 1 ? 's' : ''} pending${bo.length <= 6 ? `: ${bo.map((b) => b.ref).join(', ')}` : ''}` : 'All segregation blinds in ✓', ...(bIn.length ? [`In this shift: ${bIn.join(', ')}`] : [])]);
   const rank = (l: ShiftReport['loops'][number]) => (l.line === 'Completed' ? 0 : l.running ? 1 : 2);
   const run = r.loops.filter((l) => l.started).sort((a, b) => rank(a) - rank(b)), idle = r.loops.filter((l) => !l.started);
-  section('Neutralization', [...run.map((l) => `${l.name}: ${l.line}`), ...(idle.length ? [`Not started: ${idle.map((l) => l.ref).join(', ')}`] : [])]);
+  section('Neutralization', [...run.map((l) => `${l.name}: ${l.line}`), ...(idle.length ? [`Not started: ${idle.map((l) => l.ref).join(', ')}`] : []), ...(r.loopsNR.length ? [`Not required (N/R): ${r.loopsNR.join(', ')}`] : [])]);
   const fmtN = (n: number) => n.toLocaleString('en-US');
   section('Catalyst removal (drums)', r.drums.map((x) => `${short(x.key)}: ${x.empty ? 'vessel empty ✓ · ' : ''}${fmtN(x.verified)}${x.working ? `/${fmtN(x.working)}` : ''} drums${x.pct !== null ? ` (${x.pct}%)` : ''}${x.shift ? ` · this shift ${x.shift > 0 ? '+' : ''}${fmtN(x.shift)}` : ''}${x.pending ? ` · ${x.pending} awaiting verification` : ''}`));
   if (r.psvs.total) section('PSVs', [`Removed ${r.psvs.removed}/${r.psvs.total} · installed ${r.psvs.installed}/${r.psvs.total}`, ...r.psvs.lines]);
@@ -961,7 +970,7 @@ export function criticalHandover(d: TrkData, steps: Map<string, StepView>): { at
 export function opsResults(d: TrkData, eqs: EquipView[]): { done: number; total: number; neut: [number, number]; ho: [number, number] } | null {
   const pts = d.points ?? [];
   if (!pts.length) return null;
-  const n = pts.filter((p) => p.kind === 'neut' && p.beforeHo), o = eqs.filter((e) => e.eq.opsItem && e.eq.tracked);
+  const n = pts.filter((p) => p.kind === 'neut' && p.beforeHo && !isNR(p)), o = eqs.filter((e) => e.eq.opsItem && e.eq.tracked);
   const neut: [number, number] = [n.filter(pointComplete).length, n.length], ho: [number, number] = [o.filter((e) => e.stage >= 1).length, o.length];
   return { done: neut[0] + ho[0], total: neut[1] + ho[1], neut, ho };
 }

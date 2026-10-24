@@ -3,7 +3,7 @@
 // reactors' issues and temperatures), Isolation (neutralization and blinds), Small jobs & IATs. Every change is
 // stamped with the ID; Undo for a few seconds after each one.
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
+import { isNR, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, addQtyEntry, confirmEmpty, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatLabel, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -591,7 +591,8 @@ function Handover({ d, now, done }: P) {
   const pts = d.points ?? [];
   const loops = pts.filter((p) => p.kind === 'neut' && !withReactor(p) && (p.stepId || (!p.items.includes(p.ref) && (p.method !== 'spray' || p.status !== 'open'))));
   const blinds = pts.filter((p) => p.kind === 'blind');
-  const openL = loops.filter((p) => !pointComplete(p)), openB = blinds.filter((p) => !pointComplete(p));
+  const openL = loops.filter((p) => !pointComplete(p) && !isNR(p)), nrL = loops.filter(isNR), openB = blinds.filter((p) => !pointComplete(p));
+  const [showNR, setShowNR] = useState(false);
   const waiting = d.equipment.filter((e) => e.tracked && e.stage === 0 && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e))
     .map((e) => ({ e, iso: isoState(e.tag, 0, pts) })).filter((x): x is { e: TrkEquipment; iso: NonNullable<ReturnType<typeof isoState>> } => !!x.iso && x.iso.state !== 'ho');
   const blocked = waiting.filter((x) => x.iso.state !== 'ready'), ready = waiting.filter((x) => x.iso.state === 'ready');
@@ -619,7 +620,9 @@ function Handover({ d, now, done }: P) {
     </>}
     {v === 'neut' && <>
       {[...openL].sort((a, b) => rank(a) - rank(b) || a.sort - b.sort).map((p) => <Loop key={p.id} d={d} p={p} now={now} done={done} />)}
-      {!openL.length && <Card><p className="text-sm font-semibold text-green-800">✓ All loops neutralized.</p></Card>}
+      {!openL.length && <Card><p className="text-sm font-semibold text-green-800">✓ All required loops neutralized.</p></Card>}
+      {nrL.length > 0 && <button type="button" onClick={() => setShowNR((x) => !x)} className="mx-1 mt-1 block text-[12px] font-semibold text-slate-500">{showNR ? '▾' : '▸'} Not required (N/R) · {nrL.length}</button>}
+      {showNR && <div className="mt-2 space-y-2">{nrL.map((p) => <Loop key={p.id} d={d} p={p} now={now} done={done} />)}</div>}
       <button type="button" onClick={() => setShowDone((x) => !x)} className="mx-1 mt-1 text-[12px] font-semibold text-slate-500">{showDone ? '▾' : '▸'} Neutralized ({loops.length - openL.length})</button>
       {showDone && <div className="mt-2"><List>{loops.filter(pointComplete).map((p) => <div key={p.id} className={ROW}><span className="min-w-0 flex-1"><b className="block truncate text-[13px]">{p.ref} · {p.name}</b><span className="block text-[11px] text-slate-500">Neutralized {when(p.doneAt)}</span></span><span className="shrink-0 rounded-md bg-green-100 px-1.5 text-[11px] font-bold text-green-800">✓</span></div>)}</List></div>}
     </>}
@@ -655,28 +658,44 @@ function Loop({ d, p, now, done }: { d: TrackerData; p: TrkPoint; now: number; d
   const job = jobs.find((c) => c.startAt && !c.doneAt) ?? jobs.find((c) => !c.startAt && !c.doneAt);
   // the soda ash only after the jobs before it (valve drops, blinds) are done
   const before = p.status === 'open' ? jobs.filter((c) => c.phase === 'before' && !c.doneAt).length : 0;
-  const run = async (f: () => Promise<unknown>, msg: string, undo?: () => Promise<unknown>) => { setBusy(true); setErr(null); try { await f(); done(msg, undo); } catch (x) { setErr(x); } finally { setBusy(false); } };
+  const run = async (f: () => Promise<unknown>, msg: string, undo?: () => Promise<unknown>) => { setBusy(true); setErr(null); try { await f(); done(msg, undo); setNr(null); } catch (x) { setErr(x); } finally { setBusy(false); } };
+  // the loop's requirement: Required · Pending decision · N/R (with a reason); N/R only before it starts
+  const [nr, setNr] = useState<string | null>(null);
+  const req = p.requirement ?? 'required', was = { requirement: req, requirement_reason: p.requirementReason ?? null };
+  const setReq = (to: 'required' | 'pending' | 'not_required', why?: string) => run(() => setPoint(p.id, { requirement: to, requirement_reason: to === 'not_required' ? why!.trim() : null }),
+    `${p.ref}: ${to === 'not_required' ? 'not required (N/R)' : to === 'pending' ? 'decision pending' : 'required'}.`, () => setPoint(p.id, was));
   const jobTap = (c: TrkPointStep) => {
     const at = new Date().toISOString(), fin = !!c.startAt;
     const la = d.activities.filter((a) => (c.linkActs ?? []).includes(a.id)), lp = (d.points ?? []).filter((x) => (c.linkPoints ?? []).includes(x.id));
     if (la.length) { const before = la.map((a) => ({ id: a.id, s: a.actualStart ?? null, f: a.actualFinish ?? null }));
-      return run(async () => { for (const a of la) await setActivity(a.id, fin ? (a.actualFinish ? {} : { actual_finish: at, ...(a.actualStart ? {} : { actual_start: at }) }) : (a.actualStart ? {} : { actual_start: at })); }, `${p.ref}: ${c.text.split(/,|:/)[0]} ${fin ? 'done' : 'started'}.`, async () => { for (const b of before) await setActivity(b.id, { actual_start: b.s, actual_finish: b.f }); }); }
+      return run(async () => { for (const a of la) await setActivity(a.id, fin ? (a.actualFinish ? {} : { actual_finish: at, ...(a.actualStart ? {} : { actual_start: at }) }) : (a.actualStart ? {} : { actual_start: at })); }, `${p.ref}: ${c.text.split(/,|:/)[0]} ${fin ? 'done' : 'started'}.`, async () => { for (const b of before) await setActivity(b.id, { actual_start: b.s, actual_finish: b.f, time_reason: 'Undo' }); }); }
     if (lp.length && fin) return run(async () => { for (const x of lp) if (x.status === 'open') await setPoint(x.id, { status: 'in', in_at: at }); }, `${p.ref}: blinds in.`);
     const back = { start_at: c.startAt ?? null, done_at: c.doneAt ?? null };
     return run(() => setPointStepTime(c.id, fin ? { done_at: at } : { start_at: at }), `${p.ref}: ${c.text.split(/,|:/)[0]} ${fin ? 'done' : 'started'}.`, () => setPointStepTime(c.id, back));
   };
   return (
     <Card>
-      <div className="flex items-start justify-between gap-2"><b className="text-[14px] leading-snug">{p.ref} · {p.name}</b><span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold', p.status === 'open' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{p.holdReason ? 'On hold' : neutLabel(p)}</span></div>
+      <div className="flex items-start justify-between gap-2"><b className="text-[14px] leading-snug">{p.ref} · {p.name}</b><span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold', isNR(p) ? 'bg-slate-100 text-slate-700' : p.status === 'open' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{isNR(p) ? 'N/R' : p.holdReason ? 'On hold' : neutLabel(p)}</span></div>
       {p.holdReason && <p className="text-xs font-semibold text-red-700">⏸ {p.holdReason}</p>}
+      {req === 'not_required' && <p className="text-xs font-semibold text-slate-700">N/R · {p.requirementReason}{p.requirementBy ? ` · ${p.requirementBy}` : ''}{p.requirementAt ? ` ${when(p.requirementAt)}` : ''}</p>}
+      {req === 'pending' && <p className="text-xs font-semibold text-amber-800">Neutralization decision pending</p>}
       {missing.length > 0 && <p className="mt-1 text-xs text-slate-600">Waiting blinds: {missing.join(', ')}</p>}
       {jobs.length > 0 && <p className="mt-1 text-xs text-slate-600">Jobs {jobs.filter((c) => c.doneAt).length}/{jobs.length}{job ? ` · next: ${job.crane ? '🏗 ' : ''}${job.text.split(/,|:/)[0]}` : ''}</p>}
       {p.status === 'soaking' && p.soakAt && <p className="mt-1 text-xs text-slate-600">Soaking since {when(p.soakAt)} ({Math.round((now - Date.parse(p.soakAt)) / H)} h)</p>}
-      <div className="mt-2 flex gap-1.5">
+      {req !== 'not_required' && <div className="mt-2 flex gap-1.5">
         {job && <button type="button" disabled={busy} onClick={() => jobTap(job)} className={cx('min-h-9 flex-1 rounded-xl px-2 text-[13px] font-bold', job.startAt ? 'bg-amber-400 text-amber-950' : 'bg-white text-brand-700 ring-1 ring-slate-300')}>{job.startAt ? '✓ Job done' : '▶ Start job'}</button>}
         {nx && !missing.length && !before && <button type="button" disabled={busy} onClick={() => run(() => setPoint(p.id, { status: nx[0], [nx[2]]: new Date().toISOString() }), `${p.ref}: ${nx[1].replace(/^[▶✓] /, '')}.`, () => setPoint(p.id, { status: p.status, [nx[2]]: null }))} className="min-h-9 flex-1 rounded-xl bg-brand-700 px-2 text-[13px] font-bold text-white">{nx[1]}</button>}
         <button type="button" disabled={busy} onClick={() => run(() => setPoint(p.id, { hold_reason: p.holdReason ? null : 'Waiting (engineer)' }), `${p.ref}: ${p.holdReason ? 'resumed' : 'on hold'}.`, () => setPoint(p.id, { hold_reason: p.holdReason ?? null }))} className="min-h-9 rounded-xl px-3 text-[12px] font-semibold text-slate-700 ring-1 ring-slate-300">{p.holdReason ? 'Resume' : 'Hold'}</button>
-      </div>
+      </div>}
+      {p.status === 'open' && (nr !== null
+        ? <div className="mt-2 flex gap-1.5"><input autoFocus className="input min-h-9 flex-1 text-[13px]" placeholder="Why not required" value={nr} onChange={(x) => setNr(x.target.value)} />
+            <button type="button" disabled={busy || !nr.trim()} onClick={() => setReq('not_required', nr)} className="min-h-9 rounded-lg bg-slate-700 px-3 text-[12px] font-bold text-white disabled:opacity-50">Save N/R</button>
+            <button type="button" onClick={() => setNr(null)} className="min-h-9 rounded-lg bg-white px-2.5 text-[12px] font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button></div>
+        : <div className="mt-1.5 flex gap-1.5 text-[12px]">
+            {req !== 'required' && <button type="button" disabled={busy} onClick={() => setReq('required')} className="min-h-8 rounded-lg bg-white px-2.5 font-bold text-brand-700 ring-1 ring-slate-300">Required</button>}
+            {req !== 'pending' && <button type="button" disabled={busy} onClick={() => setReq('pending')} className="min-h-8 rounded-lg bg-white px-2.5 font-bold text-amber-800 ring-1 ring-slate-300">Decision pending</button>}
+            {req !== 'not_required' && <button type="button" disabled={busy} onClick={() => setNr('')} className="min-h-8 rounded-lg bg-white px-2.5 font-bold text-slate-700 ring-1 ring-slate-300">N/R…</button>}
+          </div>)}
       {err != null && <ErrorBox error={err} />}
     </Card>
   );
@@ -730,7 +749,7 @@ function SmallGroup({ d, now, items, stale, done, onBack, back = 'Back' }: { d: 
   const tick = (id: string) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   async function finishAll(acts: TrkActivity[], label: string) {
     setBusy(true); setErr(null); const at = new Date().toISOString(), before = acts.map((a) => ({ id: a.id, s: a.actualStart ?? null, f: a.actualFinish ?? null }));
-    try { for (const a of acts) await setActivity(a.id, { actual_finish: at, ...(a.actualStart ? {} : { actual_start: at }) }); setSel(new Set()); done(label, async () => { for (const b of before) await setActivity(b.id, { actual_start: b.s, actual_finish: b.f }); }); } catch (x) { setErr(x); } finally { setBusy(false); }
+    try { for (const a of acts) await setActivity(a.id, { actual_finish: at, ...(a.actualStart ? {} : { actual_start: at }) }); setSel(new Set()); done(label, async () => { for (const b of before) await setActivity(b.id, { actual_start: b.s, actual_finish: b.f, time_reason: 'Undo' }); }); } catch (x) { setErr(x); } finally { setBusy(false); }
   }
   const one = items.length === 1 && lines(d, [keyOf(items[0])]).length ? items[0] : null;
   if (one) {

@@ -578,3 +578,26 @@ describe('handover status apart from M&I delays', () => {
     expect(v.reason).toMatch(/^M&I/);
   });
 });
+
+describe('neutralization not required (N/R)', () => {
+  const loop = (ref: string, status: TrkPoint['status'], requirement: TrkPoint['requirement'] = 'required') => ({ id: ref, kind: 'neut', grp: null, ref, name: ref, detail: null, fo: 'FO1', stepId: ref, items: ['V-12-206'], beforeHo: true, sort: 1, status,
+    inAt: null, outAt: null, fillAt: null, soakAt: null, drainAt: null, doneAt: null, soakH: 4, remark: null, updatedBy: null, updatedAt: null, requirement, requirementReason: requirement === 'not_required' ? 'No hydrocarbon' : null }) as TrkPoint;
+  it('an N/R loop is not outstanding, not neutralized, and named on the item (handover still confirmed)', () => {
+    const pts = [loop('S1', 'done'), loop('S2', 'open', 'not_required')];
+    const v = isoState('V-12-206', 0, pts)!;
+    expect(v.state).toBe('ready');
+    expect(v.why).toContain('N/R S2 (confirm)');
+    expect(pointComplete(pts[1])).toBe(false);
+  });
+  it('the counts leave N/R out; the report lists it apart', () => {
+    const d = seed(); d.points = [loop('S1', 'done'), loop('S2', 'open', 'not_required'), loop('S3', 'open')];
+    const r = opsResults(d, equipViews(d, at('2026-10-21 10:00')))!;
+    expect(r.neut).toEqual([1, 2]);
+    const text = reportText(shiftReport(d, at('2026-10-21 10:00'), null));
+    expect(text).toContain('Not required (N/R): S2');
+    expect(text).not.toMatch(/Not started: [^\n]*S2/);
+  });
+  it('a pending decision stays outstanding', () => {
+    expect(isoState('V-12-206', 0, [loop('S2', 'open', 'pending')])!.state).toBe('idle');
+  });
+});

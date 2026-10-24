@@ -183,6 +183,16 @@ handed-over items are "M&I LATE" with the step and department; the stage varianc
 Audit: no other item had handover evidence while showing Not HO. C-12-201 LO system still shows HO LATE (no evidence
 of its own; shares S223) — to be verified on site.
 
+## 6a2. Neutralization: routine updates and N/R (24 Oct 2026)
+
+Routine loop updates failed with "Give a reason for correcting a time…": a loop's time change is copied by
+`trk_point_sync` onto its soda-ash steps and the time guard treated the copy as a person's correction. Fixed: copies
+made inside another trigger are exempt from the reason and 48 h rules (future / order checks stay); Undo of linked
+step times sends a reason. Loops have a requirement: Required, Pending decision, N/R (reason, only before the loop
+starts, stamped and logged). N/R loops are left out of the Neutralized x/y count, the Isolation badge, open-loop lists
+and "Not started" in the report (listed as "Not required (N/R)"); an item whose only open loops are N/R reads "ready …
+N/R (confirm)" — the handover itself is still confirmed the normal way.
+
 ## 6b. Operational readiness review (24 Oct 2026)
 
 Estimate ~88 % (verified functionality). Recommendation: **ready for operational use**, with the conditions below.

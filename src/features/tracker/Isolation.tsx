@@ -177,7 +177,7 @@ function LoopSheet({ acts = [], p, points, lineup, iats, steps, checks, canEdit,
           if (patch.done_at !== undefined) await setActivity(a.id, patch.done_at ? (a.actualFinish ? {} : { actual_finish: at, ...(a.actualStart ? {} : { actual_start: at }) }) : { actual_finish: null });
           else if (patch.start_at !== undefined) await setActivity(a.id, patch.start_at ? (a.actualStart ? {} : { actual_start: at }) : { actual_start: null, actual_finish: null });
         }
-        onDone(`${p.ref}: ${msg} (${[...new Set(la.map((a) => a.key))].join(', ')})`, async () => { for (const b of before) await setActivity(b.id, { actual_start: b.actual_start, actual_finish: b.actual_finish }); });
+        onDone(`${p.ref}: ${msg} (${[...new Set(la.map((a) => a.key))].join(', ')})`, async () => { for (const b of before) await setActivity(b.id, { actual_start: b.actual_start, actual_finish: b.actual_finish, time_reason: 'Undo' }); });
       } else {
         const back = { start_at: c.startAt ?? null, done_at: c.doneAt ?? null };
         await setPointStepTime(c.id, patch); onDone(`${p.ref}: ${msg}`, () => setPointStepTime(c.id, back));

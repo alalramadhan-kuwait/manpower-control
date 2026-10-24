@@ -36,6 +36,9 @@ No unrelated improvements or redesigns while a priority is open.
   handover with no handover evidence: HO step done, blinds in, or the item's own finished blind / handover line),
   **M&I progress and delays** (shown as "M&I", with the step and the department), and **P6 schedule variance**.
   Never infer who is responsible from a stage field alone; a shared handover step left open is not a late handover.
+- "Not required" is never "done": an N/R loop keeps its reason, who and when, is left out of outstanding counts,
+  shown apart, and is not taken as safe for handover or blinding.
+- Validation for people's edits (reasons, 48 h) must not hit updates that triggers copy from another record.
 - Approved calculations (manpower minimums, roster cycle, tracker progress/forecast) change only with authorization.
 - **No hard delete** of user records. Use soft states (cancelled, voided, declined, superseded) that keep links and
   history. No DROP / TRUNCATE / unscoped DELETE; production data changes only with confirmed mappings.
