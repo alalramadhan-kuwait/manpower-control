@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { recordVisit } from '@/data/activity';
 import { useSession } from '@/features/auth/useSession';
+import { appAccess } from '@/core/users/access';
 import LoginPage from '@/features/auth/LoginPage';
 import DayOverviewPage from '@/features/day/DayOverviewPage';
 import EmployeesPage from '@/features/employees/EmployeesPage';
@@ -29,7 +30,7 @@ export default function App() {
 }
 
 function MainApp() {
-  const { loading, session, profile, profileError, access } = useSession();
+  const { loading, session, profile, profileError, access, tasks } = useSession();
   if (loading) return <SplashScreen />;
   if (!session) return <LoginPage />;
   if (!profile) {
@@ -50,7 +51,8 @@ function MainApp() {
       </div>
     );
   }
-  if (profile.employee_id && !access && ['section_head', 'manpower_coordinator'].includes(profile.role_code)) {
+  const level = appAccess(profile.role_code, tasks);
+  if (profile.employee_id && !access && appAccess(profile.role_code) !== 'none') {
     return (
       <div className="mx-auto max-w-sm p-6 text-center">
         <p className="font-semibold text-brand-800">Access paused</p>
@@ -59,11 +61,12 @@ function MainApp() {
       </div>
     );
   }
-  if (!['section_head', 'manpower_coordinator'].includes(profile.role_code)) {
+  if (level === 'tracker') return <TrackerOnly profile={profile} />;
+  if (level === 'none') {
     return (
       <div className="mx-auto max-w-sm p-6 text-center">
         <p className="font-semibold text-brand-800">No app access</p>
-        <p className="mt-2 text-sm text-slate-600">This login has no role with access. Only the Section Head and the Manpower Coordinator can use the application at this stage; ask the Section Head if you should have access.</p>
+        <p className="mt-2 text-sm text-slate-600">This login has no role with access. Ask the Section Head if you should have access.</p>
         <Button variant="secondary" className="mt-6" onClick={() => supabase.auth.signOut()}>Sign out</Button>
       </div>
     );
@@ -108,4 +111,23 @@ function VisitRecorder() {
   const tab = new URLSearchParams(search).get('tab');
   useEffect(() => { recordVisit(`${pathname}${tab ? `?tab=${tab}` : ''}`); }, [pathname, tab]);
   return null;
+}
+
+/** A Controller without the Manpower assignment: the shutdown tracker only (the database allows nothing else). */
+function TrackerOnly({ profile }: { profile: NonNullable<ReturnType<typeof useSession>['profile']> }) {
+  return (
+    <div className="min-h-full bg-canvas">
+      <header className="flex items-center justify-between bg-brand-700 px-4 py-2 text-white safe-top print:hidden">
+        <span className="text-sm font-semibold">ARDS Operations · {profile.display_name}</span>
+        <button type="button" className="rounded-lg bg-white/10 px-3 py-1.5 text-sm font-semibold" onClick={() => supabase.auth.signOut()}>Sign out</button>
+      </header>
+      <div className="mx-auto max-w-6xl p-3">
+        <Routes>
+          <Route path="/progress" element={<TrackerPage profile={profile} />} />
+          <Route path="/progress/:id" element={<TrackerPage profile={profile} />} />
+          <Route path="*" element={<Navigate to="/progress" replace />} />
+        </Routes>
+      </div>
+    </div>
+  );
 }

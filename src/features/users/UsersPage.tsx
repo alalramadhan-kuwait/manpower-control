@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Eye, EyeOff, KeyRound, Plus, RefreshCw, Trash2, UserCog } from 'lucide-react';
 import type { EmployeeDirectoryRow, UserProfile } from '@/data/types';
 import { fetchDirectory } from '@/data/queries';
-import { createUser, deleteUser, fetchRoles, listUsers, updateUser, type AppRole, type ManagedUser } from '@/data/users';
+import { createUser, deleteUser, endTask, fetchAssignments, fetchRoles, grantTask, listUsers, updateUser, type AppRole, type Assignment, type ManagedUser } from '@/data/users';
+import { TASK_LABEL } from '@/core/users/access';
 import { MIN_PASSWORD, accountEmail, passwordProblem } from '@/core/users/rules';
 import { BottomSheet, Button, Card, Chip, EmptyState, ErrorBox, Field, PageHeader, Spinner, cx, fmtDate } from '@/ui/components';
 
@@ -121,7 +122,7 @@ function CreateSheet({ roles, staff, users, onClose, onDone }: { roles: AppRole[
   );
 }
 
-function EditSheet({ user, roles, staff, users, isMe, onClose, onDone }: { user: ManagedUser; roles: AppRole[]; staff: EmployeeDirectoryRow[]; users: ManagedUser[]; isMe: boolean; onClose: () => void; onDone: (msg: string) => void }) {
+function EditSheet({ user, roles, staff, users, tasks, me, isMe, onClose, onDone }: { user: ManagedUser; roles: AppRole[]; staff: EmployeeDirectoryRow[]; users: ManagedUser[]; tasks: Assignment[]; me: string; isMe: boolean; onClose: () => void; onDone: (msg: string) => void }) {
   const [name, setName] = useState(user.display_name ?? ''); const [username, setUsername] = useState(user.username);
   const [employee, setEmployee] = useState(user.employee_id ?? '');
   const [role, setRole] = useState(user.role_code ?? ''); const [active, setActive] = useState(user.role_code ? user.is_active && !user.banned : true);
@@ -144,6 +145,11 @@ function EditSheet({ user, roles, staff, users, isMe, onClose, onDone }: { user:
         <Field label="Username"><input className="input" autoCapitalize="none" autoCorrect="off" value={username} onChange={(e) => setUsername(e.target.value)} /></Field>
         <Field label="Role"><RolePicker roles={roles} value={role} onChange={setRole} locked={isMe ? 'You cannot change your own role.' : undefined} /></Field>
         {role !== user.role_code && <RoleMoveNote roles={roles} role={role} users={users} self={user.auth_user_id} />}
+        {user.role_code && user.role_code !== 'section_head' && user.role_code !== 'employee' && (() => { const mp = tasks.find((t) => t.task === 'manpower');
+          return <label className="flex items-center justify-between rounded-xl px-3 py-3 ring-1 ring-slate-200">
+            <span><span className="block text-sm font-medium text-slate-800">Manpower assignment</span><span className="block text-xs text-slate-500">{mp ? `Given by ${mp.granted_by_name ?? '—'} · ${fmtDate(mp.granted_at.slice(0, 10))}` : 'Leave, requests, shift moves and teams, without a new role'}</span></span>
+            <input type="checkbox" className="h-5 w-5" checked={!!mp} disabled={busy} onChange={() => run(() => (mp ? endTask(mp.id, me) : grantTask(user.auth_user_id, 'manpower')), mp ? 'Manpower assignment ended.' : 'Manpower assignment given.')} />
+          </label>; })()}
         <label className={cx('flex items-center justify-between rounded-xl px-3 py-3 ring-1 ring-slate-200', isMe && 'opacity-50')}>
           <span><span className="block text-sm font-medium text-slate-800">Can sign in</span><span className="block text-xs text-slate-500">Turn off to block the login without deleting it.</span></span>
           <input type="checkbox" className="h-5 w-5" checked={active} disabled={isMe} onChange={(e) => setActive(e.target.checked)} />
@@ -177,24 +183,26 @@ function EditSheet({ user, roles, staff, users, isMe, onClose, onDone }: { user:
 
 export default function UsersPage({ profile }: { profile: UserProfile }) {
   const [users, setUsers] = useState<ManagedUser[] | null>(null); const [roles, setRoles] = useState<AppRole[]>([]);
+  const [tasks, setTasks] = useState<Assignment[]>([]);
   const [staff, setStaff] = useState<EmployeeDirectoryRow[]>([]);
   const [err, setErr] = useState<unknown>(null); const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<ManagedUser | null>(null); const [creating, setCreating] = useState(false);
   const load = useCallback(async () => {
     setErr(null);
     try {
-      const [u, r, d] = await Promise.all([listUsers(), fetchRoles(), fetchDirectory()]);
-      setUsers(u); setRoles(r); setStaff(d.filter((x) => x.is_active && x.in_unit12_scope).sort((a, b) => a.display_name.localeCompare(b.display_name)));
+      const [u, r, d, a] = await Promise.all([listUsers(), fetchRoles(), fetchDirectory(), fetchAssignments()]);
+      setUsers(u); setRoles(r); setTasks(a); setStaff(d.filter((x) => x.is_active && x.in_unit12_scope).sort((a, b) => a.display_name.localeCompare(b.display_name)));
     } catch (e) { setErr(e); }
   }, []);
   useEffect(() => { load(); }, [load]);
   const done = (msg: string) => { setEditing(null); setCreating(false); setNotice(msg); load(); };
   const roleLabel = (code: string | null) => roles.find((r) => r.code === code)?.label ?? code ?? '—';
+  const taskText = (u: ManagedUser) => tasks.filter((t) => t.auth_user_id === u.auth_user_id).map((t) => ` · + ${TASK_LABEL[t.task] ?? t.task}`).join('');
 
   if (profile.role_code !== 'section_head') return <EmptyState title="Section Head only" body="Only the Section Head can manage logins." />;
   return (
     <div>
-      <PageHeader title="Users & access" info={<><p>Create logins, change roles, reset passwords, block or delete access. Only the Section Head sees this page.</p><p>Section Head: full control. Manpower Coordinator: everything except logins (more than one allowed). Staff (no app access): can sign in but sees nothing.</p><p>A login linked to a staff member who is made inactive loses access. Every change is in the audit history.</p></>}
+      <PageHeader title="Users & access" info={<><p>Create logins, change roles, reset passwords, block or delete access. Only the Section Head sees this page.</p><p>Section Head: full control and approvals. Engineer / Asst. Section Head: everything except logins and approvals, plus tracker structure. Manpower Coordinator: everything except logins and approvals. Controller: the shutdown tracker; with the Manpower assignment also leave, requests, shift moves and teams. Staff (no app access): can sign in but sees nothing.</p><p>A login linked to a staff member who is made inactive loses access. Every change is in the audit history.</p></>}
         action={<Button className="shrink-0 whitespace-nowrap" onClick={() => { setNotice(null); setCreating(true); }}><Plus className="h-4 w-4" /> New login</Button>} />
       {notice && <div className="mb-3 rounded-xl bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{notice}</div>}
       {err != null && <div className="mb-3 space-y-2"><ErrorBox error={err} /><Button variant="secondary" onClick={load}><RefreshCw className="h-4 w-4" /> Try again</Button></div>}
@@ -207,7 +215,7 @@ export default function UsersPage({ profile }: { profile: UserProfile }) {
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700"><UserCog className="h-5 w-5" /></span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium text-slate-800">{u.display_name ?? u.username}{u.auth_user_id === profile.auth_user_id && <span className="ml-1 text-xs font-normal text-slate-500">(you)</span>}</span>
-                  <span className="block truncate text-xs text-slate-500">{u.username} · {roleLabel(u.role_code)}</span>
+                  <span className="block truncate text-xs text-slate-500">{u.username} · {roleLabel(u.role_code)}{taskText(u)}</span>
                   <span className="block truncate text-xs text-slate-500">{u.employee_name ? `Staff: ${u.employee_name}` : 'Not linked to a staff member'}</span>
                   <span className="mt-1 flex flex-wrap items-center gap-1.5 whitespace-nowrap"><StatusChip u={u} /><span className="text-[11px] text-slate-500">{lastSeen(u.last_sign_in_at)}</span></span>
                 </span>
@@ -225,7 +233,7 @@ export default function UsersPage({ profile }: { profile: UserProfile }) {
                     <td className="px-4 py-3 font-medium text-slate-800">{u.display_name ?? '—'}{u.auth_user_id === profile.auth_user_id && <span className="ml-1 text-xs font-normal text-slate-500">(you)</span>}</td>
                     <td className="px-4 py-3 text-slate-600">{u.employee_name ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{u.username}</td>
-                    <td className="px-4 py-3 text-slate-600">{roleLabel(u.role_code)}</td>
+                    <td className="px-4 py-3 text-slate-600">{roleLabel(u.role_code)}{taskText(u)}</td>
                     <td className="px-4 py-3"><StatusChip u={u} /></td>
                     <td className="px-4 py-3 text-slate-600">{lastSeen(u.last_sign_in_at)}</td>
                     <td className="px-4 py-3 text-right"><Button variant="secondary" onClick={() => { setNotice(null); setEditing(u); }}>Edit</Button></td>
@@ -237,7 +245,7 @@ export default function UsersPage({ profile }: { profile: UserProfile }) {
         </>
       )}
       {creating && users && <CreateSheet roles={roles} staff={staff} users={users} onClose={() => setCreating(false)} onDone={done} />}
-      {editing && users && <EditSheet user={editing} roles={roles} staff={staff} users={users} isMe={editing.auth_user_id === profile.auth_user_id} onClose={() => setEditing(null)} onDone={done} />}
+      {editing && users && <EditSheet user={editing} roles={roles} staff={staff} users={users} tasks={tasks.filter((t) => t.auth_user_id === editing.auth_user_id)} me={profile.display_name} isMe={editing.auth_user_id === profile.auth_user_id} onClose={() => setEditing(null)} onDone={done} />}
     </div>
   );
 }

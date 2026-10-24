@@ -68,7 +68,7 @@ const s = (v: unknown) => (v === null || v === undefined || v === '' ? null : St
 const WORDS: Record<string, string> = {
   yes: 'Yes', no: 'No', not_yet_confirmed: 'Not yet', approved: 'approved', planned: 'planned', cancelled: 'cancelled', rescheduled: 'not taken on these dates',
   unresolved: 'unresolved', submitted: 'entered', reviewed: 'reviewed', not_approved: 'not approved', withdrawn: 'withdrawn', active: 'active',
-  knpc: 'KNPC', contractor: 'Contractor', section_head: 'Section Head', manpower_coordinator: 'Manpower Coordinator', controller: 'Controller', employee: 'no app access',
+  knpc: 'KNPC', contractor: 'Contractor', section_head: 'Section Head', manpower_coordinator: 'Manpower Coordinator', engineer: 'Engineer / Asst. Section Head', controller: 'Controller', employee: 'no app access',
   take_charge: 'Take-Charge', panel_operator: 'Panel qualification', acting_controller: 'Acting Controller', controller_qualified: 'Controller qualification',
   shift_cover: 'Controller cover', morning_rotation: 'Morning rotation', scheduled: 'Scheduled', unscheduled: 'Unscheduled', unpaid: 'Unpaid'
 };

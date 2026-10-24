@@ -68,7 +68,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const [isoKind, setIsoKind] = useState<'blind' | 'neut' | undefined>(undefined); const [lateFirst, setLateFirst] = useState(false);
   const [sheet, setSheet] = useState<{ kind: 'step'; id: string } | { kind: 'eq'; tag: string } | null>(null);
   const isHead = profile.role_code === 'section_head';
-  const canEdit = ['section_head', 'manpower_coordinator', 'controller'].includes(profile.role_code);
+  const canEdit = ['section_head', 'manpower_coordinator', 'engineer', 'controller'].includes(profile.role_code);
   // a link to a tracker no longer active (e.g. the test copy after going live) opens the current one
   const tracker = useMemo(() => (trackers ? (id ? trackers.find((t) => t.id === id) : undefined) ?? currentTracker(trackers, today()) : null), [trackers, id]);
 

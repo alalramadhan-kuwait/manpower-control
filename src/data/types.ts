@@ -1,7 +1,7 @@
 import type { OracleStatus } from '@/core/oracle';
 // Hand-written row types for the Stage A schema (kept in step with supabase/migrations).
 
-export type RoleCode = 'section_head' | 'manpower_coordinator' | 'controller' | 'employee';
+export type RoleCode = 'section_head' | 'manpower_coordinator' | 'engineer' | 'controller' | 'employee';
 export type QualificationCode = 'take_charge' | 'panel_operator' | 'acting_controller' | 'controller';
 export type QualificationStatus = 'yes' | 'no' | 'not_yet_confirmed';
 

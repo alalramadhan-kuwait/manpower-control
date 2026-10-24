@@ -8,7 +8,7 @@ import { fetchAuditLookups } from '@/data/audit';
 import { Card, ErrorBox, Spinner, cx } from '@/ui/components';
 
 const PERIODS: [number, string][] = [[1, 'Today'], [7, '7 days'], [30, '30 days']];
-const ROLE: Record<string, string> = { section_head: 'Section Head', manpower_coordinator: 'Manpower Coordinator', controller: 'Controller', 'engineer link': 'Engineer link' };
+const ROLE: Record<string, string> = { section_head: 'Section Head', manpower_coordinator: 'Manpower Coordinator', engineer: 'Engineer / Asst. Section Head', controller: 'Controller', 'engineer link': 'Engineer link' };
 const kwDate = (iso: string) => new Date(Date.parse(iso) + 3 * 36e5).toISOString().slice(0, 10);
 const ago = (iso: string | null) => {
   if (!iso) return 'never';

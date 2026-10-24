@@ -45,3 +45,14 @@ export async function fetchRoles(): Promise<AppRole[]> {
   if (error) throw error;
   return data as AppRole[];
 }
+
+// ── Task assignments (extra rights without a new role; first one: Manpower) ─────────────────────────────────────
+export interface Assignment { id: string; auth_user_id: string; task: string; granted_by_name: string | null; granted_at: string }
+export async function fetchAssignments(): Promise<Assignment[]> {
+  const { data, error } = await supabase.from('user_assignments').select('id,auth_user_id,task,granted_by_name,granted_at').is('ended_at', null);
+  if (error) throw error;
+  return data as Assignment[];
+}
+/** The Section Head gives a task; ending it keeps the record (who, when) instead of deleting it. */
+export async function grantTask(authUserId: string, task: string) { const { error } = await supabase.from('user_assignments').insert({ auth_user_id: authUserId, task }); if (error) throw error; }
+export async function endTask(id: string, byName: string) { const { error } = await supabase.from('user_assignments').update({ ended_at: new Date().toISOString(), ended_by_name: byName }).eq('id', id).is('ended_at', null); if (error) throw error; }
