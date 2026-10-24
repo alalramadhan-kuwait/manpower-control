@@ -76,8 +76,8 @@ approval (see §7).
 
 1. ~~Engineer links reach every tracker; no expiry~~ — fixed 24 Oct (part A): own tracker only, `expires_at`.
 2. ~~`trk_split_lines` open to anon~~ — fixed 24 Oct (part A): Section Head only.
-3. Hard delete possible: staff on employees, role assignments, qualifications, leave_records, sd_*, holidays; Head on
-   user_profiles and auth users (`manage-users` delete); table DELETE grants to `anon`/`authenticated` on most tables.
+3. ~~Hard delete on operational tables~~ — fixed 24 Oct (part B). Still allowed by design: drafts, shutdown day grid,
+   future-dated role/qualification corrections, holidays; auth logins can be deleted by the Section Head (`manage-users`).
 4. Some Head-only UI actions are open to staff in RLS (e.g. `crew_movements` update).
 5. The app gate reads `profile.role_code` rather than the server's `app_current_role()`.
 
@@ -99,7 +99,7 @@ drums). No UI, RLS or link-access tests.
 
 | # | Gap | Level |
 |---|---|---|
-| T1 | ~~Links reach every tracker, no expiry, `trk_split_lines` open~~ (fixed, part A). Open: function execute and DELETE grants for anon / delete on operational tables (part B, prepared) | P0 |
+| T1 | ~~Link scope, expiry, `trk_split_lines`, anon function execution, hard delete on operational tables~~ — fixed 24 Oct (parts A and B), verified | done |
 | T2 | Concurrent edits overwrite silently (no version check; Undo writes old values blindly); polling 30 s / 2 min | P0 |
 | T3 | Stage vs steps drift (C-201-ST, LO system at Not HO with work done; 139 steps with no stage; stage sync only on finish) | P0 |
 | T4 | Engineer view records "now" only — no backdated start/finish for late reports | P0 |
