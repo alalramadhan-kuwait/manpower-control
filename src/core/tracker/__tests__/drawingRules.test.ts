@@ -27,9 +27,18 @@ describe('approved drawing rules (FT-681 reference)', () => {
     expect(r.issues).toEqual([]);
     expect(r.info.meta.find(([k]) => k === 'Review rules')?.[1]).toBe(`${DRAWING_RULES.length}/${DRAWING_RULES.length} passed`);
   });
-  it('R1 the route is not shortcut: the train is drawn in its sequence', () => {
-    const xs = ['P-203', 'E-203', 'E-216A', 'E-216B', 'E-229'].map((t) => xy(r.svg, t)!.x);
-    expect(xs).toEqual([...xs].sort((a, b) => a - b));
+  it('R1 the route is not shortcut: the train is drawn in its sequence (row by row, rows alternating direction)', () => {
+    const ps = ['P-203', 'E-203', 'E-216A', 'E-216B', 'E-229'].map((t) => xy(r.svg, t)!);
+    const rows = [...new Set(ps.map((p) => p.y))].sort((a, b) => a - b);
+    const order = ps.map((p) => { const ri = rows.indexOf(p.y); return ri * 1e5 + (ri % 2 ? -p.x : p.x); });
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+  it('R16 each bypass is drawn with the items it goes around, its valve just above them; the sheet is near-square', () => {
+    const v = xy(r.svg, 'HV-546B')!, a = xy(r.svg, 'E-216A')!, b = xy(r.svg, 'E-216B')!;
+    expect(v.y).toBeLessThan(a.y); expect(a.y).toBe(b.y); expect(v.x).toBeGreaterThan(Math.min(a.x, b.x) - 120); expect(v.x).toBeLessThan(Math.max(a.x, b.x) + 120);
+    const [, , W, H] = r.svg.match(/viewBox="([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+)"/)!.slice(1).map(Number);
+    expect(Math.max(W / H, H / W)).toBeLessThan(1.7);
+    expect(r.info.meta.find(([k]) => k === 'Layout')?.[1]).toMatch(/serpentine|one row/);
   });
   it('R2 each bypass has its own route: overlapping bypasses are on opposite sides', () => {
     const main = xy(r.svg, 'E-203')!.y, a = xy(r.svg, 'HV-548B')!.y, b = xy(r.svg, 'HV-546B')!.y;

@@ -310,6 +310,7 @@ Approved rules (from the Section Head's reviews, 24 Oct 2026):
 | R13 | Nothing is removed to make a drawing smaller. |
 | R14 | The route may turn 90° and continue on another row (U / serpentine / folded) when that is more compact; a continuous pipe is preferred to A/B markers; never accepted with a crossing; a turn is a drawing choice, not a piping change. |
 | R15 | Fill, vent and drain points recorded on a line or an item are drawn there (D / V / F markers); unknown locations are listed clearly. |
+| R16 | Layout by blocks: an exchanger (or shells in series) and its bypass form one group, the bypass and its valve drawn just above it. Blocks go on rows that alternate direction (serpentine, continuous 180° turns at the row ends). Compare horizontal, folded, two-row and serpentine arrangements; reject any with a crossing, shared-looking line or collision; keep the most compact one with a near-square shape. Where two bypasses overlap only because the order of a takeoff and an inline valve is not recorded, draw the takeoff past the valve and say so in Details. Engine: `schematicSerpentine.ts`. |
 
 ## Final Principle
 

@@ -22,6 +22,7 @@ export const DRAWING_RULES: DrawingRule[] = [
   { id: 'R13', rule: 'Nothing is removed to make a drawing smaller: every item, valve, bypass, vent, drain and connection of the record stays.', from: 'Compact review' },
   { id: 'R14', rule: 'The route may turn 90° and continue on another row (U / serpentine / folded); a continuous pipe is preferred to A/B markers; a turn is a drawing choice, never a piping change, and never accepted with a crossing.', from: '90° routing rule' },
   { id: 'R15', rule: 'Fill, vent and drain points recorded on a line or an item are drawn on that line / item (D / V / F); points whose location is not recorded are listed as such.', from: 'FT-681 review (fill / vent / drain)' },
+  { id: 'R16', rule: 'Layout by blocks: each exchanger (or shells in series) and its bypass is one group, the bypass and its valve drawn just above it; the blocks go on rows that alternate direction (serpentine, 180° turns at the row ends). Horizontal, folded, two-row and serpentine arrangements are compared and the most compact valid one with a balanced (near-square) shape is kept; one with a crossing, a shared-looking line or a collision is rejected.', from: 'FT-681 major layout correction' },
 ];
 
 /** The rules a finished drawing can be checked against automatically (the rest are guaranteed by how it is built). */
