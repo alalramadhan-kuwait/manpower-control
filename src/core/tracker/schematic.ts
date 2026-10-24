@@ -6,6 +6,7 @@
 // applied on top and shown as theirs. The SVG is shown in the drawing viewer, labelled as not a verified P&ID.
 // Drawing rules: .claude/skills/refinery-process-diagram/SKILL.md (mandatory for every generated process diagram).
 import { luKeys, type LuStream, type TrkPoint, type TrkPointStep } from './index';
+import { renderFolded } from './schematicFold';
 
 export type NodeKind = 'vessel' | 'reactor' | 'exchanger' | 'heater' | 'pump' | 'compressor' | 'column' | 'filter' | 'valve' | 'instrument' | 'pass' | 'junction' | 'item';
 export type Basis = 'verified' | 'unchecked' | 'record' | 'user' | 'user_verified';
@@ -202,8 +203,11 @@ export function buildSchematic(p: Pick<TrkPoint, 'id' | 'ref' | 'name' | 'detail
   let luHits = 0;
   for (const l of links) {
     // a junction is a point on a line: it is matched as the item it stands for, or else through the items on either side
-    const endsOf = (k: string, from: boolean): string[] => { const n = nodes.get(k); if (n?.kind !== 'junction') return [k]; if (n.matchAs) return [n.matchAs];
-      return links.filter((o) => (from ? o.b === k : o.a === k)).map((o) => (from ? o.a : o.b)).filter((x) => nodes.get(x)?.kind !== 'junction'); };
+    // (an inline valve a correction put on a line — one pipe in, one out — is looked through the same way)
+    const through = (k: string) => { const n = nodes.get(k); if (n?.kind === 'junction') return !n.matchAs;
+      return n?.kind === 'valve' && !!n.state && links.filter((o) => o.b === k).length === 1 && links.filter((o) => o.a === k).length === 1; };
+    const endsOf = (k: string, from: boolean, depth = 0): string[] => { const n = nodes.get(k); if (n?.kind === 'junction' && n.matchAs) return [n.matchAs]; if (!through(k) || depth > 3) return [k];
+      return links.filter((o) => (from ? o.b === k : o.a === k)).flatMap((o) => endsOf(from ? o.a : o.b, from, depth + 1)).filter((x) => nodes.get(x)?.kind !== 'junction'); };
     const A = endsOf(l.a, true), B = endsOf(l.b, false);
     const ss = lu.filter((s) => A.some((x) => same(s.from, x)) && B.some((y) => same(s.to, y)));
     const back = lu.filter((s) => B.some((y) => same(s.from, y)) && A.some((x) => same(s.to, x)));
@@ -259,8 +263,8 @@ function hash(x: string) { let h = 0x811c9dc5; for (let i = 0; i < x.length; i++
 }
 
 // ── drawing (SVG) ──────────────────────────────────────────────────────────────────────────────────────────────
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const wrap = (s: string, chars: number) => { const out: string[] = []; let cur = '';
+export const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+export const wrap = (s: string, chars: number) => { const out: string[] = []; let cur = '';
   for (const w of s.split(/\s+/)) { if ((cur + ' ' + w).trim().length > chars && cur) { out.push(cur); cur = w; } else cur = (cur + ' ' + w).trim(); }
   if (cur) out.push(cur); return out; };
 export const LINK_STYLE: Record<Basis, { color: string; dash: string; width: number; label: string; level: Verification }> = {
@@ -277,7 +281,7 @@ export const ROLE_STYLE: Record<Role, { color: string; width: number; label: str
   standby: { color: '#94a3b8', width: 1.8, label: 'Standby / isolated branch (not part of the active loop)', tag: 'standby — isolated' },
   injection: { color: '#0e7490', width: 2.2, label: 'Injection water', tag: 'injection water' },
 };
-const MARK_STYLE: Record<MarkKind, { color: string; title: string }> = {
+export const MARK_STYLE: Record<MarkKind, { color: string; title: string }> = {
   before: { color: '#334155', title: 'Procedure steps (before / while filling)' },
   blind: { color: '#b91c1c', title: 'Boundary blinds (blind list)' },
   isolation: { color: '#b91c1c', title: 'Isolation / boundary (procedure) — status as written, not a valve-position instruction' },
@@ -285,7 +289,7 @@ const MARK_STYLE: Record<MarkKind, { color: string; title: string }> = {
   vent: { color: '#0e7490', title: 'Vent / overflow / clear soda ash check' },
   drain: { color: '#1d4ed8', title: 'Drain points' },
 };
-function symbol(k: NodeKind, cx: number, y: number, stroke: string, filled = false): string {
+export function symbol(k: NodeKind, cx: number, y: number, stroke: string, filled = false): string {
   const s = `fill="${filled ? stroke : '#fff'}" stroke="${stroke}" stroke-width="2"`;
   switch (k) {
     case 'vessel': return `<rect x="${cx - 18}" y="${y}" width="36" height="52" rx="16" ${s}/>`;
@@ -317,8 +321,8 @@ function markIcon(k: MarkKind, x: number, y: number, c: string): string {
 
 /** half width of a symbol (where pipes meet it) */
 /** confidence order: a shared segment is drawn in the weakest style on it */
-const RANK: Record<Basis, number> = { record: 0, user: 1, unchecked: 2, user_verified: 3, verified: 4 };
-const HW: Record<NodeKind, number> = { vessel: 18, reactor: 20, column: 14, exchanger: 22, heater: 28, pump: 18, compressor: 22, filter: 16, valve: 18, instrument: 29, pass: 26, junction: 7, item: 34 };
+export const RANK: Record<Basis, number> = { record: 0, user: 1, unchecked: 2, user_verified: 3, verified: 4 };
+export const HW: Record<NodeKind, number> = { vessel: 18, reactor: 20, column: 14, exchanger: 22, heater: 28, pump: 18, compressor: 22, filter: 16, valve: 18, instrument: 29, pass: 26, junction: 7, item: 34 };
 type Box = { x: number; y: number; w: number; h: number };
 const hit = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
@@ -336,7 +340,9 @@ export function schematicCheck(s: Schematic): string[] {
  *  automatic quality check (topology + drawing: overlapping labels, clipped text). */
 export interface SchematicInfo { sections: { title: string; lines: { text: string; sub?: string }[] }[]; meta: [string, string][] }
 export function renderSchematic(s: Schematic, generatedAt: string, opts: { compact?: boolean } = {}): { svg: string; issues: string[]; info: SchematicInfo } {
-  const issues = schematicCheck(s); const compact = !!opts.compact;
+  const compact = !!opts.compact;
+  if (compact && s.links.some((l) => l.role)) return renderFolded(s, generatedAt);   // a corrected topology: folded compact layout
+  const issues = schematicCheck(s);
   const COLW = 210, ROWH = 150;
   // columns: longest path from the starts (left = where the records start the flow); several items in one column stack
   const col = new Map<string, number>(s.nodes.map((n) => [n.key, 0]));
@@ -519,16 +525,7 @@ export function renderSchematic(s: Schematic, generatedAt: string, opts: { compa
   parts.push(...dots, ...labels);
   if (!s.nodes.length) parts.push(t(WW / 2, (compact ? TOPc : TOP) + 40, 'Route not available — no equipment is named in the loop record', 'text-anchor="middle" font-size="14" font-weight="700" fill="#b45309"'));
   // the lists, metadata and check also go to the viewer's Details panel
-  const info: SchematicInfo = { sections: [], meta: [] };
-  const equip0 = s.nodes.filter((n) => n.kind !== 'junction').map((n) => n.tag).join(', ') || '—';
-  if (s.extra.length) info.sections.push({ title: 'Also in this loop — place on the route not recorded', lines: s.extra.map((e) => ({ text: e })) });
-  for (const k of ['before', 'blind', 'isolation', 'fill', 'vent', 'drain'] as MarkKind[]) { const ms = s.marks.filter((m) => m.kind === k);
-    if (ms.length) info.sections.push({ title: MARK_STYLE[k].title, lines: ms.map((m) => ({ text: m.text, sub: `${m.source}${m.verifiedSheet ? ` · checked on ${m.verifiedSheet}` : m.user ? ' · not checked on a P&ID' : ''}` })) }); }
-  if (s.notes.length) info.sections.push({ title: 'After / notes', lines: s.notes.map((n) => ({ text: n })) });
-  info.sections.push({ title: 'Unknown / unresolved — not in the records', lines: s.unknown.map((u) => ({ text: u })) });
-  info.meta.push(['Diagram', `${s.ref} loop schematic`], ['Type', s.type], ['Loop ID', s.ref], ['Equipment', equip0], ['Generated', generatedAt],
-    ['Diagram revision', `auto-${s.revision} (generated; changes when the data changes — not a P&ID revision)`], ['Generator', GENERATOR_VERSION], ['Sources', s.sources.join(' · ')],
-    ['Verification', `${s.status} — ${s.counts.verified} verified, ${s.counts.unverified} unverified connection${s.counts.unverified === 1 ? '' : 's'}, ${s.counts.unknown} unknown / unresolved item${s.counts.unknown === 1 ? '' : 's'}`]);
+  const info = schematicInfo(s, generatedAt);
   if (compact) {
     // compact sheet: drawing, one line pointing to Details, a short legend, the warning — fitted to the content
     let y = Math.max(...s.nodes.map((n) => pos.get(n.key)!.y + nodeH(n)), ...[...tall.values()].map((v) => v.bot + 40), (compact ? TOPc : TOP) + 60) + (s.links.some((l) => !fwd.includes(l)) ? 40 : 6);
@@ -595,6 +592,20 @@ export function renderSchematic(s: Schematic, generatedAt: string, opts: { compa
   const H = y + 26;
   parts[qcAt] = t(24, y - 13, 'Automatic check', 'font-size="10.5" font-weight="700" fill="#334155"') + t(150, y - 13, qc().slice(0, Math.floor(CH - 30)), `font-size="10.5" fill="${issues.length ? '#b91c1c' : '#15803d'}"`);
   return { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="Inter, Arial, sans-serif"><rect width="${W}" height="${H}" fill="#fff"/>${parts.join('')}</svg>`, issues, info };
+}
+/** what a sheet keeps for the Details panel: procedure points, notes, unknowns, sources, revision */
+export function schematicInfo(s: Schematic, generatedAt: string): SchematicInfo {
+  const info: SchematicInfo = { sections: [], meta: [] };
+  const equip0 = s.nodes.filter((n) => n.kind !== 'junction').map((n) => n.tag).join(', ') || '—';
+  if (s.extra.length) info.sections.push({ title: 'Also in this loop — place on the route not recorded', lines: s.extra.map((e) => ({ text: e })) });
+  for (const k of ['before', 'blind', 'isolation', 'fill', 'vent', 'drain'] as MarkKind[]) { const ms = s.marks.filter((m) => m.kind === k);
+    if (ms.length) info.sections.push({ title: MARK_STYLE[k].title, lines: ms.map((m) => ({ text: m.text, sub: `${m.source}${m.verifiedSheet ? ` · checked on ${m.verifiedSheet}` : m.user ? ' · not checked on a P&ID' : ''}` })) }); }
+  if (s.notes.length) info.sections.push({ title: 'After / notes', lines: s.notes.map((n) => ({ text: n })) });
+  info.sections.push({ title: 'Unknown / unresolved — not in the records', lines: s.unknown.map((u) => ({ text: u })) });
+  info.meta.push(['Diagram', `${s.ref} loop schematic`], ['Type', s.type], ['Loop ID', s.ref], ['Equipment', equip0], ['Generated', generatedAt],
+    ['Diagram revision', `auto-${s.revision} (generated; changes when the data changes — not a P&ID revision)`], ['Generator', GENERATOR_VERSION], ['Sources', s.sources.join(' · ')],
+    ['Verification', `${s.status} — ${s.counts.verified} verified, ${s.counts.unverified} unverified connection${s.counts.unverified === 1 ? '' : 's'}, ${s.counts.unknown} unknown / unresolved item${s.counts.unknown === 1 ? '' : 's'}`]);
+  return info;
 }
 export const schematicSvg = (s: Schematic, generatedAt: string) => renderSchematic(s, generatedAt).svg;
 /** the list icon, placed at the left of the current line (the y is filled in per line) */

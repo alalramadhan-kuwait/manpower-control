@@ -97,4 +97,15 @@ describe('auto-generated loop schematic', () => {
     const r = renderSchematic(s, 'x');
     expect(r.svg).toContain('STANDBY — ISOLATED (SOP step 2)'); expect(r.svg).toContain('CLOSED (SOP step 2)'); expect(r.svg).toContain('Standby / isolated branch');
   });
+  it('compact layout of a corrected topology: every item drawn, separate bypass routes, no crossings or label collisions', () => {
+    const f = (id: string, a: string, b: string, role: LoopFix['role']) => fix({ id, op: 'add_link', a, b, role });
+    const fixes = [f('1', 'P-203', 'E-203', 'active'), f('2', 'E-203', 'E-216A', 'active'), f('3', 'E-216A', 'E-216B', 'active'), f('4', 'E-216B', 'E-229', 'active'),
+      f('5', 'P-203', 'HV-548B', 'bypass'), f('6', 'HV-548B', 'E-216A', 'bypass'), f('7', 'E-203', 'HV-546B', 'bypass'), f('8', 'HV-546B', 'E-229', 'bypass')];
+    const item = (tag: string): LoopItem => ({ id: tag, pointId: 'L', tag, label: null, state: 'unresolved', source: 'line-up', status: 'active', by: 'x' });
+    const s = buildSchematic({ id: 'L', ref: 'X', name: 'x', detail: null, items: [], requires: [], method: 'soak' }, { fixes, items: [item('HV-548B'), item('HV-546B')] });
+    const r = renderSchematic(s, 'x', { compact: true });
+    expect(r.issues).toEqual([]);
+    for (const tag of ['P-203', 'E-203', 'E-216A', 'E-216B', 'E-229', 'HV-548B', 'HV-546B']) expect(r.svg).toContain(`>${tag}<`);
+    expect(r.info.meta.find(([k]) => k === 'Layout')?.[1]).toMatch(/0 crossings/);
+  });
 });
