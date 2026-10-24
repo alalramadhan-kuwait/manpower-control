@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSchematic, renderSchematic, schematicSvg, SCHEMATIC_LABEL, type LoopFix } from '../schematic';
+import { buildSchematic, renderSchematic, schematicSvg, SCHEMATIC_LABEL, type LoopFix, type LoopItem } from '../schematic';
 import type { LuStream, TrkPointStep } from '..';
 
 const step = (seq: number, phase: TrkPointStep['phase'], text: string): TrkPointStep => ({ id: `s${seq}`, pointId: 'L', seq, phase, text, source: 'SOP §3.9', doneAt: null, doneBy: null, crane: false, kind: 'check', startAt: null, startBy: null });
@@ -82,5 +82,19 @@ describe('auto-generated loop schematic', () => {
     expect(s.links.find((l) => l.a === 'E-203' && l.b === 'E-216')).toMatchObject({ basis: 'unchecked', lines: ['P-12-2052'], source: 'Correction by Engineer · P&ID line-up' });
     expect(s.links.find((l) => l.a === 'P-203' && l.b === 'E-216')?.service).toMatch(/bypass/);
     expect(renderSchematic(s, 'x').issues).toEqual([]);
+  });
+  it('a corrected topology: roles, a standby branch with closed valves, a tie-in matched through to the line-up', () => {
+    const lineup = [lu('P-203A/B', 'E-203', 'P-12-2014', 'check'), lu('E-229', 'H-201', 'P-12-2303', 'check')];
+    const fixes = [fix({ id: '1', op: 'add_link', a: 'P-203', b: 'J:tie', role: 'active' }), fix({ id: '2', op: 'add_link', a: 'J:tie', b: 'E-203', role: 'active' }),
+      fix({ id: '3', op: 'add_link', a: 'P-103B', b: 'MOV-501/502', role: 'standby' }), fix({ id: '4', op: 'add_link', a: 'MOV-501/502', b: 'J:tie', role: 'standby' }),
+      fix({ id: '5', op: 'add_link', a: 'E-229', b: 'J:hdr', role: 'active' })];
+    const item = (tag: string, state: LoopItem['state'], label: string | null = null): LoopItem => ({ id: tag, pointId: 'L', tag, label, state, source: 'SOP step 2', status: 'active', by: 'x' });
+    const s = buildSchematic({ id: 'L', ref: 'X', name: 'x', detail: null, items: [], requires: [], method: 'soak' }, { lineup, fixes,
+      items: [item('P-103B', 'standby'), item('MOV-501/502', 'closed'), item('J:tie', 'known', 'Tie-in on P-12-2014'), item('J:hdr', 'unresolved', 'H-201 inlet header')] });
+    expect(s.links.find((l) => l.a === 'P-203')).toMatchObject({ basis: 'unchecked', lines: ['P-12-2014'], role: 'active' });   // through the tie-in
+    expect(s.links.find((l) => l.a === 'E-229')).toMatchObject({ lines: ['P-12-2303'] });                                        // the header stands for H-201
+    expect(s.nodes.find((n) => n.key === 'MOV-501/502')).toMatchObject({ kind: 'valve', state: 'closed' });
+    const r = renderSchematic(s, 'x');
+    expect(r.svg).toContain('STANDBY — ISOLATED (SOP step 2)'); expect(r.svg).toContain('CLOSED (SOP step 2)'); expect(r.svg).toContain('Standby / isolated branch');
   });
 });

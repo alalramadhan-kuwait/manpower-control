@@ -1,10 +1,10 @@
 // The auto-generated loop schematic: built from the records when opened (src/core/tracker/schematic), shown in the
 // drawing viewer, corrected by the Section Head, Coordinators and Engineers with recorded edits (trk_loop_fix).
 import { useEffect, useMemo, useState } from 'react';
-import { buildSchematic, LINK_STYLE, schematicSvg, type LoopFix, type MarkKind, type Schematic } from '@/core/tracker/schematic';
+import { buildSchematic, LINK_STYLE, schematicSvg, type LoopFix, type LoopItem, type MarkKind, type Schematic } from '@/core/tracker/schematic';
 import type { LuStream, TrkPoint, TrkPointStep } from '@/core/tracker';
 import type { TrkDrawing } from '@/core/tracker/drawings';
-import { addLoopFix, fetchLoopFixes, withdrawLoopFix } from '@/data/drawings';
+import { addLoopFix, fetchLoopFixes, fetchLoopItems, withdrawLoopFix } from '@/data/drawings';
 import { ErrorBox } from '@/ui/components';
 import { DrawingViewer } from './LoopDiagram';
 
@@ -13,36 +13,37 @@ type Loop = TrkPoint;
 const when = (ms: number) => new Date(ms).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kuwait' });
 
 // one fetch of the corrections per tracker, shared by the cards; reload after a change
-const cache = new Map<string, Promise<LoopFix[]>>();
+const cache = new Map<string, Promise<{ fixes: LoopFix[]; items: LoopItem[] }>>();
 function useFixes(trackerId: string) {
-  const [fixes, setFixes] = useState<LoopFix[] | null>(null); const [n, setN] = useState(0);
-  useEffect(() => { let live = true; if (!cache.has(trackerId)) cache.set(trackerId, fetchLoopFixes(trackerId).catch(() => { cache.delete(trackerId); return []; }));
-    void cache.get(trackerId)!.then((x) => { if (live) setFixes(x); }); return () => { live = false; }; }, [trackerId, n]);
-  return { fixes, reload: () => { cache.delete(trackerId); setN((x) => x + 1); } };
+  const [v, setV] = useState<{ fixes: LoopFix[]; items: LoopItem[] } | null>(null); const [n, setN] = useState(0);
+  useEffect(() => { let live = true;
+    if (!cache.has(trackerId)) cache.set(trackerId, Promise.all([fetchLoopFixes(trackerId), fetchLoopItems(trackerId)]).then(([fixes, items]) => ({ fixes, items })).catch(() => { cache.delete(trackerId); return { fixes: [], items: [] }; }));
+    void cache.get(trackerId)!.then((x) => { if (live) setV(x); }); return () => { live = false; }; }, [trackerId, n]);
+  return { fixes: v?.fixes ?? null, items: v?.items ?? [], reload: () => { cache.delete(trackerId); setN((x) => x + 1); } };
 }
 const asDrawing = (loop: Loop, at: number): TrkDrawing => ({ id: `auto-${loop.id}`, trackerId: '', pointId: loop.id, items: loop.items, sheet: 'Auto-generated schematic', rev: 'auto', source: 'Built from the records',
   title: null, path: '', mime: 'image/svg+xml', note: null, status: 'current', uploadedBy: null, uploadedAt: new Date(at).toISOString(), closedAt: null, closedBy: null, closedReason: null });
 
-function Viewer({ loop, data, fixes, reload, onClose }: { loop: Loop; data: SchematicData; fixes: LoopFix[]; reload: () => void; onClose: () => void }) {
+function Viewer({ loop, data, fixes, items, reload, onClose }: { loop: Loop; data: SchematicData; fixes: LoopFix[]; items: LoopItem[]; reload: () => void; onClose: () => void }) {
   const [at, setAt] = useState(() => Date.now());
-  const svg = useMemo(() => schematicSvg(buildSchematic(loop, { ...data, fixes }), when(at)), [loop, data, fixes, at]);
+  const svg = useMemo(() => schematicSvg(buildSchematic(loop, { ...data, fixes, items }), when(at)), [loop, data, fixes, items, at]);
   return <DrawingViewer d={asDrawing(loop, at)} title={loop.ref} svg={svg} canWithdraw={false} onClose={onClose} onWithdrawn={onClose} onRegenerate={() => { reload(); setAt(Date.now()); }} />;
 }
 
 /** The field card's entry when no verified drawing is attached. */
 export function SchematicButton({ trackerId, loop, data }: { trackerId: string; loop: Loop; data: SchematicData }) {
-  const { fixes, reload } = useFixes(trackerId); const [open, setOpen] = useState(false);
+  const { fixes, items, reload } = useFixes(trackerId); const [open, setOpen] = useState(false);
   return <>
     <button type="button" onClick={() => setOpen(true)} className="min-h-9 rounded-xl px-3 text-[12px] font-semibold text-slate-700 ring-1 ring-slate-300">📐 Schematic (auto)</button>
-    {open && <Viewer loop={loop} data={data} fixes={fixes ?? []} reload={reload} onClose={() => setOpen(false)} />}
+    {open && <Viewer loop={loop} data={data} fixes={fixes ?? []} items={items} reload={reload} onClose={() => setOpen(false)} />}
   </>;
 }
 
 /** In the loop sheet: open the schematic; correct it (authorized). */
 export function LoopSchematic({ trackerId, loop, data, canCorrect }: { trackerId: string; loop: Loop; data: SchematicData; canCorrect: boolean }) {
-  const { fixes, reload } = useFixes(trackerId); const [open, setOpen] = useState(false); const [edit, setEdit] = useState(false);
+  const { fixes, items, reload } = useFixes(trackerId); const [open, setOpen] = useState(false); const [edit, setEdit] = useState(false);
   const mine = (fixes ?? []).filter((f) => f.pointId === loop.id);
-  const s = useMemo(() => buildSchematic(loop, { ...data, fixes: fixes ?? [] }), [loop, data, fixes]);
+  const s = useMemo(() => buildSchematic(loop, { ...data, fixes: fixes ?? [], items }), [loop, data, fixes, items]);
   const counts = `${s.status} · ${s.counts.verified} verified / ${s.counts.unverified} unverified connections · ${s.marks.filter((m) => m.kind !== 'before').length} points · ${s.unknown.length} unknown · rev auto-${s.revision}`;
   return (
     <div className="space-y-1.5">
@@ -53,7 +54,7 @@ export function LoopSchematic({ trackerId, loop, data, canCorrect }: { trackerId
       </button>
       {canCorrect && <button type="button" onClick={() => setEdit((x) => !x)} className="text-[12px] font-bold text-brand-700">{edit ? '▾' : '▸'} Correct the schematic</button>}
       {canCorrect && edit && <Corrections trackerId={trackerId} loop={loop} s={s} fixes={mine} onDone={reload} />}
-      {open && <Viewer loop={loop} data={data} fixes={fixes ?? []} reload={reload} onClose={() => setOpen(false)} />}
+      {open && <Viewer loop={loop} data={data} fixes={fixes ?? []} items={items} reload={reload} onClose={() => setOpen(false)} />}
     </div>
   );
 }

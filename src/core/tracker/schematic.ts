@@ -10,11 +10,18 @@ import { luKeys, type LuStream, type TrkPoint, type TrkPointStep } from './index
 export type NodeKind = 'vessel' | 'reactor' | 'exchanger' | 'heater' | 'pump' | 'compressor' | 'column' | 'filter' | 'valve' | 'instrument' | 'pass' | 'junction' | 'item';
 export type Basis = 'verified' | 'unchecked' | 'record' | 'user' | 'user_verified';
 export type MarkKind = 'fill' | 'drain' | 'vent' | 'isolation' | 'blind' | 'before';
-export interface SNode { key: string; tag: string; kind: NodeKind; via: string[]; user?: string }
+export type Role = 'active' | 'bypass' | 'standby' | 'injection';
+export type ItemState = 'active' | 'standby' | 'closed' | 'open' | 'known' | 'unresolved';
+export interface SNode { key: string; tag: string; kind: NodeKind; via: string[]; user?: string;
+  /** set by a correction (trk_loop_node): a label, a state from a named source (valve closed per SOP step 2…) */ label?: string; state?: ItemState; stateSource?: string;
+  /** a junction drawn for a point on a line: the item it stands for in the line-up (header of H-201 → H-201) */ matchAs?: string }
+/** an item's correction (trk_loop_node) */
+export interface LoopItem { id: string; pointId: string; tag: string; label: string | null; state: ItemState; source: string; status: 'active' | 'withdrawn'; by: string | null }
 export interface SLink { key: string; a: string; b: string; basis: Basis; lines: string[]; sheets: string[]; source: string; user?: string;
   /** the side / nozzle named in the record at each end (T/S, S/S, O/L, I/L, vapour, inlet…) */ aSide?: string | null; bSide?: string | null;
   /** the line-up gives the opposite direction */ conflict?: string;
-  /** the line-up's service when it says more than the route (e.g. a bypass) */ service?: string }
+  /** the line-up's service when it says more than the route (e.g. a bypass) */ service?: string;
+  /** set by a correction: active route, bypass, standby (isolated) branch, injection */ role?: Role }
 export interface SMark { key: string; kind: MarkKind; text: string; source: string; user?: string; verifiedSheet?: string }
 export type Verification = 'Verified' | 'Unverified' | 'Unknown';
 export interface Schematic { ref: string; title: string; nodes: SNode[]; links: SLink[]; extra: string[]; marks: SMark[]; notes: string[]; unknown: string[]; sources: string[]; removed: number;
@@ -23,7 +30,7 @@ export interface Schematic { ref: string; title: string; nodes: SNode[]; links: 
   counts: { verified: number; unverified: number; unknown: number };
   /** generated-diagram revision: changes when the data behind it changes (not the source documents' revision) */ revision: string }
 export interface LoopFix { id: string; pointId: string; op: 'remove' | 'add_link' | 'add_mark' | 'note'; target: string | null; a: string | null; b: string | null; line: string | null;
-  kind: MarkKind | null; text: string | null; sheet: string | null; reason: string | null; status: 'active' | 'withdrawn'; by: string | null; at: string }
+  kind: MarkKind | null; text: string | null; sheet: string | null; reason: string | null; status: 'active' | 'withdrawn'; by: string | null; at: string; role?: Role | null }
 
 export const SCHEMATIC_LABEL = 'Auto-generated process schematic — Reference only — Not a verified P&ID';
 export const GENERATOR_VERSION = 'schematic 2.0';
@@ -36,6 +43,8 @@ const SIDE = /^\s*(T\/S|S\/S|O\/L|I\/L|tube side|shell side|vapour|discharge|inl
 /** the key a tag is matched on: E-12-229 → E-229 (the line-up form) */
 export const tagKey = (t: string) => t.trim().toUpperCase().replace(/^([A-Z]{1,3})-12-(\d)/, '$1-$2');
 const kindOf = (tag: string): NodeKind => {
+  if (tag.startsWith('J:')) return 'junction';
+  if (/^B\/V\b/.test(tag)) return 'valve';
   const p = tag.split('-')[0];
   if (/^(MOV|XV|KV|FV|LV|TV|PV|HV|SDV|NRV)$/.test(p)) return 'valve';
   if (/^(FT|FE|PT|TT|LT|PDT)/.test(p) || p.includes('/')) return 'instrument';
@@ -115,7 +124,7 @@ const dedupe = (ls: SLink[]) => { const by = new Map<string, SLink>(); for (cons
 const uniq = <T>(xs: T[], k: (x: T) => string) => { const s = new Set<string>(); return xs.filter((x) => (s.has(k(x)) ? false : (s.add(k(x)), true))); };
 
 /** The schematic of one loop from the records, with people's corrections applied. */
-export function buildSchematic(p: Pick<TrkPoint, 'id' | 'ref' | 'name' | 'detail' | 'items' | 'requires' | 'method'>, d: { points?: Pick<TrkPoint, 'kind' | 'ref' | 'name'>[]; steps?: TrkPointStep[]; lineup?: LuStream[]; fixes?: LoopFix[] }): Schematic {
+export function buildSchematic(p: Pick<TrkPoint, 'id' | 'ref' | 'name' | 'detail' | 'items' | 'requires' | 'method'>, d: { points?: Pick<TrkPoint, 'kind' | 'ref' | 'name'>[]; steps?: TrkPointStep[]; lineup?: LuStream[]; fixes?: LoopFix[]; items?: LoopItem[] }): Schematic {
   const steps = (d.steps ?? []).filter((s) => s.pointId === p.id); const lu = d.lineup ?? [];
   const fixes = (d.fixes ?? []).filter((f) => f.pointId === p.id && f.status === 'active');
   const sources = ['Loop record'];
@@ -126,7 +135,9 @@ export function buildSchematic(p: Pick<TrkPoint, 'id' | 'ref' | 'name' | 'detail
   if (steps.length) sources.push(`Field procedure (${steps.length} steps)`);
   // the loop's own instruments (FT/FV-681…684) sit on the lines into the item the fill reaches ("… to H-201 inlet")
   const group = groupIn(p.name); const nodes = new Map<string, SNode>();
-  const node = (tag: string, side: string | null, user?: string) => { const k = tagKey(tag); const n = nodes.get(k) ?? { key: k, tag: tagKey(tag), kind: kindOf(tagKey(tag)), via: [], user };
+  // a junction (J:…) or a descriptive name ("Injection water manifold") keeps its spelling; tags are matched in line-up form
+  const node = (tag: string, side: string | null, user?: string) => { const k = tag.startsWith('J:') ? tag.trim() : tagKey(tag); const shown = tag.startsWith('J:') || /\s/.test(tag.trim()) ? tag.trim() : tagKey(tag);
+    const n = nodes.get(k) ?? { key: k, tag: shown, kind: kindOf(shown), via: [], user };
     if (side && !n.via.includes(side)) n.via.push(side); nodes.set(k, n); return k; };
   let links: SLink[] = [];
   const ends = (r: Raw) => [node(r.a.tag, r.a.side), node(r.b.tag, r.b.side)] as const;
@@ -176,15 +187,26 @@ export function buildSchematic(p: Pick<TrkPoint, 'id' | 'ref' | 'name' | 'detail
     }
     if (f.op === 'add_link' && f.a && f.b) {
       const a = node(f.a, null, f.by ?? 'user'), b = node(f.b, null, f.by ?? 'user');
-      links = links.filter((l) => !(l.a === a && l.b === b));
-      links.push({ key: `link:${a}>${b}`, a, b, basis: f.sheet ? 'user_verified' : 'user', lines: f.line ? [f.line] : [], sheets: f.sheet ? [f.sheet] : [], source: `Correction by ${f.by ?? 'user'}`, user: f.by ?? 'user' });
+      const was = links.find((l) => l.a === a && l.b === b);   // a correction of a generated link keeps the sides it named
+      links = links.filter((l) => l !== was);
+      links.push({ key: `link:${a}>${b}`, a, b, basis: f.sheet ? 'user_verified' : 'user', lines: f.line ? [f.line] : [], sheets: f.sheet ? [f.sheet] : [], source: `Correction by ${f.by ?? 'user'}`, user: f.by ?? 'user', role: f.role ?? undefined, aSide: was?.aSide, bSide: was?.bSide });
     }
   }
+  // items with a stated state or label (trk_loop_node): a valve closed per the SOP, a standby pump, a header
+  const itemFixes = (d.items ?? []).filter((x) => x.pointId === p.id && x.status === 'active');
+  for (const it of itemFixes) { const k = node(it.tag, null); const n = nodes.get(k)!;
+    n.label = it.label ?? undefined; n.state = it.state; n.stateSource = it.source;
+    if (n.kind === 'junction') { const first = tagsIn(it.label ?? '')[0]; n.matchAs = first && first.at === 0 ? first.tag : undefined; } }   // "H-201 inlet header" stands for H-201
+  if (itemFixes.length) sources.push(`Item corrections (${itemFixes.length})`);
   // line-up: line numbers and how far each connection is checked
   let luHits = 0;
   for (const l of links) {
-    const ss = lu.filter((s) => same(s.from, l.a) && same(s.to, l.b));
-    const back = lu.filter((s) => same(s.from, l.b) && same(s.to, l.a));
+    // a junction is a point on a line: it is matched as the item it stands for, or else through the items on either side
+    const endsOf = (k: string, from: boolean): string[] => { const n = nodes.get(k); if (n?.kind !== 'junction') return [k]; if (n.matchAs) return [n.matchAs];
+      return links.filter((o) => (from ? o.b === k : o.a === k)).map((o) => (from ? o.a : o.b)).filter((x) => nodes.get(x)?.kind !== 'junction'); };
+    const A = endsOf(l.a, true), B = endsOf(l.b, false);
+    const ss = lu.filter((s) => A.some((x) => same(s.from, x)) && B.some((y) => same(s.to, y)));
+    const back = lu.filter((s) => B.some((y) => same(s.from, y)) && A.some((x) => same(s.to, x)));
     if (!ss.length && back.length && l.basis === 'record') l.conflict = `The loop record gives ${l.a} → ${l.b}; the P&ID line-up gives ${l.b} → ${l.a} (${[...new Set(back.flatMap((s) => s.lineNos))].join(', ') || 'no line no.'}). Shown as recorded: direction to be checked.`;
     if (!ss.length) continue; luHits++;
     const lb: Basis = ss.some((s) => s.conf === 'ok') ? 'verified' : 'unchecked';
@@ -248,6 +270,13 @@ export const LINK_STYLE: Record<Basis, { color: string; dash: string; width: num
   record: { color: '#475569', dash: '3 4', width: 2.2, label: 'Unverified — loop record / procedure only, line not in line-up', level: 'Unverified' },
   user: { color: '#6d28d9', dash: '9 3 2 3', width: 2.2, label: 'Unverified — added by a person, not checked on a P&ID', level: 'Unverified' },
 };
+/** a connection's role, when a correction gives one: colour and weight (the line pattern still shows verification) */
+export const ROLE_STYLE: Record<Role, { color: string; width: number; label: string; tag: string }> = {
+  active: { color: '#0f172a', width: 4, label: 'Active flow path', tag: '' },
+  bypass: { color: '#1d4ed8', width: 2.2, label: 'Bypass branch', tag: 'bypass' },
+  standby: { color: '#94a3b8', width: 1.8, label: 'Standby / isolated branch (not part of the active loop)', tag: 'standby — isolated' },
+  injection: { color: '#0e7490', width: 2.2, label: 'Injection water', tag: 'injection water' },
+};
 const MARK_STYLE: Record<MarkKind, { color: string; title: string }> = {
   before: { color: '#334155', title: 'Procedure steps (before / while filling)' },
   blind: { color: '#b91c1c', title: 'Boundary blinds (blind list)' },
@@ -256,8 +285,8 @@ const MARK_STYLE: Record<MarkKind, { color: string; title: string }> = {
   vent: { color: '#0e7490', title: 'Vent / overflow / clear soda ash check' },
   drain: { color: '#1d4ed8', title: 'Drain points' },
 };
-function symbol(k: NodeKind, cx: number, y: number, stroke: string): string {
-  const s = `fill="#fff" stroke="${stroke}" stroke-width="2"`;
+function symbol(k: NodeKind, cx: number, y: number, stroke: string, filled = false): string {
+  const s = `fill="${filled ? stroke : '#fff'}" stroke="${stroke}" stroke-width="2"`;
   switch (k) {
     case 'vessel': return `<rect x="${cx - 18}" y="${y}" width="36" height="52" rx="16" ${s}/>`;
     case 'reactor': return `<rect x="${cx - 20}" y="${y}" width="40" height="52" rx="18" ${s}/><line x1="${cx - 20}" y1="${y + 26}" x2="${cx + 20}" y2="${y + 26}" stroke="${stroke}" stroke-dasharray="3 3"/>`;
@@ -311,15 +340,40 @@ export function renderSchematic(s: Schematic, generatedAt: string): { svg: strin
   // columns: longest path from the starts (left = where the records start the flow); several items in one column stack
   const col = new Map<string, number>(s.nodes.map((n) => [n.key, 0]));
   for (let i = 0; i < s.nodes.length; i++) for (const l of s.links) { const c = (col.get(l.a) ?? 0) + 1; if (c > (col.get(l.b) ?? 0) && c < s.nodes.length) col.set(l.b, c); }
+  // with roles set (a corrected topology), a branch that starts on its own sits next to where it joins, not at the far left
+  const roles = s.links.some((l) => l.role);
+  // (as late as possible: every item moves right up to one column before the first item it feeds)
+  if (roles) for (let i = 0; i < s.nodes.length; i++) for (const n of s.nodes) {
+    const next = s.links.filter((l) => l.a === n.key).map((l) => col.get(l.b)!); if (next.length) col.set(n.key, Math.max(col.get(n.key)!, Math.min(...next) - 1)); }
   const cols = Math.max(1, ...[...col.values()].map((c) => c + 1));
   const byCol: string[][] = Array.from({ length: cols }, () => []);
-  for (const n of s.nodes) byCol[col.get(n.key) ?? 0].push(n.key);
+  const onActive = (k: string) => s.links.some((l) => l.role === 'active' && (l.a === k || l.b === k));
+  for (const n of [...s.nodes].sort((x, y) => (roles ? Number(onActive(y.key)) - Number(onActive(x.key)) : 0))) byCol[col.get(n.key) ?? 0].push(n.key);
   const rows = Math.max(1, ...byCol.map((c) => c.length));
   const W = Math.max(860, 60 + cols * COLW), X0 = (W - (cols - 1) * COLW) / 2, CH = (W - 48) / 6.2;
   const head = wrap(`${s.ref} · ${s.title}`, Math.floor((W - 48) / 10.5));
   const TOP = 110 + head.length * 22;
   const pos = new Map<string, { x: number; y: number }>();
-  byCol.forEach((ks, c) => ks.forEach((k, r) => pos.set(k, { x: X0 + c * COLW, y: TOP + (r + (rows - ks.length) / 2) * ROWH })));
+  // with roles: rows from the top, the active route first; each branch off it (standby, injection) is placed below
+  // every active item in the columns it spans, so no branch sits on the active route's lines
+  const rowOf = new Map<string, number>();
+  if (roles) {
+    const act = s.nodes.filter((n) => onActive(n.key)), used = new Map<number, number>();
+    for (const n of act) { const c = col.get(n.key)!; rowOf.set(n.key, used.get(c) ?? 0); used.set(c, (used.get(c) ?? 0) + 1); }
+    const rest = s.nodes.filter((n) => !onActive(n.key)); const seen = new Set<string>();
+    for (const n of rest) { if (seen.has(n.key)) continue;
+      const comp: string[] = [n.key]; seen.add(n.key);   // the branch: items joined by non-active connections
+      for (let i = 0; i < comp.length; i++) for (const l of s.links) for (const [x, y] of [[l.a, l.b], [l.b, l.a]]) if (x === comp[i] && !onActive(y) && !seen.has(y)) { seen.add(y); comp.push(y); }
+      const cs = comp.map((k) => col.get(k)!); const lo = Math.min(...cs), hi = Math.max(...cs);
+      const base = Math.max(0, ...Array.from({ length: hi - lo + 1 }, (_, i) => used.get(lo + i) ?? 0));
+      const inCol = new Map<number, number>();
+      for (const k of comp) { const c = col.get(k)!; const r = base + (inCol.get(c) ?? 0); inCol.set(c, (inCol.get(c) ?? 0) + 1); rowOf.set(k, r); }
+      for (const [c, k] of inCol) used.set(c, Math.max(used.get(c) ?? 0, base + k));   // a later branch goes below this one
+      for (let c = lo; c <= hi; c++) used.set(c, Math.max(used.get(c) ?? 0, base + Math.max(...inCol.values())));
+    }
+  }
+  const rowsR = roles ? Math.max(1, ...[...rowOf.values()].map((r) => r + 1)) : rows;
+  byCol.forEach((ks, c) => ks.forEach((k, r) => pos.set(k, { x: X0 + c * COLW, y: TOP + (roles ? rowOf.get(k)! : r + (rows - ks.length) / 2) * ROWH })));
   const node = new Map(s.nodes.map((n) => [n.key, n]));
   const parts: string[] = []; const boxes: Box[] = [];
   const t = (x: number, y: number, txt: string, o = '') => `<text x="${x}" y="${y}" ${o}>${esc(txt)}</text>`;
@@ -327,17 +381,25 @@ export function renderSchematic(s: Schematic, generatedAt: string): { svg: strin
   parts.push(`<rect x="0" y="0" width="${W}" height="32" fill="#b91c1c"/>`, t(W / 2, 21, banner, 'text-anchor="middle" fill="#fff" font-size="13.5" font-weight="800" letter-spacing="0.4"'));
   head.forEach((h, i) => parts.push(t(24, 62 + i * 22, h, 'font-size="18" font-weight="800" fill="#0f172a"')));
   parts.push(t(24, 62 + head.length * 22, `${s.type} · Status: ${s.status} · Rev auto-${s.revision} · ${generatedAt}`, 'font-size="11" fill="#475569"'));
-  parts.push(`<defs>${Object.entries(LINK_STYLE).map(([k, v]) => `<marker id="ar-${k}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${v.color}"/></marker>`).join('')}</defs>`);
+  parts.push(`<defs>${[...Object.entries(LINK_STYLE), ...Object.entries(ROLE_STYLE).map(([k, v]) => [`r-${k}`, v] as const)].map(([k, v]) => `<marker id="ar-${k}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${v.color}"/></marker>`).join('')}</defs>`);
+  // a link's look: its role's colour and weight when it has one, its verification's pattern always
+  const look = (l: SLink) => { const st = LINK_STYLE[l.basis]; const r = l.role ? ROLE_STYLE[l.role] : null;
+    return { color: r?.color ?? st.color, width: r?.width ?? st.width, dash: st.dash, marker: r ? `r-${l.role}` : l.basis }; };
   // item boxes (symbol + tag) first, so labels can avoid them
   for (const n of s.nodes) { const p = pos.get(n.key)!; boxes.push({ x: p.x - Math.max(HW[n.kind], n.tag.length * 4.2), y: p.y - 6, w: 2 * Math.max(HW[n.kind], n.tag.length * 4.2), h: 104 }); }
   // ports: pipes meet a symbol at its side; a vapour outlet leaves from the top part (skill §6), drawing only
-  const port = (k: string, out: boolean, side?: string | null) => { const p = pos.get(k)!, n = node.get(k)!;
+  const port = (k: string, out: boolean, side?: string | null, fromY?: number) => { const p = pos.get(k)!, n = node.get(k)!;
+    if (!out && fromY !== undefined && tall.has(k)) return { x: p.x - HW[n.kind], y: fromY };   // a multi-pass heater: each pass enters on its own line
     const vap = out && /vapou?r/i.test(side ?? '') && ['vessel', 'column', 'reactor'].includes(n.kind);
     return { x: p.x + (out ? HW[n.kind] : -HW[n.kind]) + (n.kind === 'pump' && out ? 4 : 0), y: p.y + (n.kind === 'pump' && out ? 10 : vap ? 8 : 26) }; };
+  const tall = new Map<string, { top: number; bot: number }>();
   const fwd = s.links.filter((l) => pos.has(l.a) && pos.has(l.b) && (col.get(l.b)! > col.get(l.a)!)).sort((x, y) => RANK[y.basis] - RANK[x.basis]);
+  // with roles, a heater fed by several separate lines (passes, injection) is drawn tall: every line enters on its own, none merged
+  if (roles) for (const n of s.nodes) if (n.kind === 'heater') { const ys = fwd.filter((l) => l.b === n.key).map((l) => port(l.a, true, l.aSide).y);
+    if (ys.length >= 3) tall.set(n.key, { top: Math.min(...ys) - 22, bot: Math.max(...ys) + 22 }); }
   const inN = new Map<string, SLink[]>(), outN = new Map<string, SLink[]>();
   const isJ = (k: string) => node.get(k)?.kind === 'junction';
-  for (const l of fwd) { if (!isJ(l.b)) inN.set(l.b, [...(inN.get(l.b) ?? []), l]); if (!isJ(l.a)) outN.set(l.a, [...(outN.get(l.a) ?? []), l]); }
+  for (const l of fwd) { if (!isJ(l.b) && !tall.has(l.b)) inN.set(l.b, [...(inN.get(l.b) ?? []), l]); if (!isJ(l.a)) outN.set(l.a, [...(outN.get(l.a) ?? []), l]); }
   const gapN = new Map<number, number>(), gapI = new Map<number, number>();
   // each splitting source / merging target gets its own header x, so two headers never share a line (no false junction)
   const offs = (m: Map<string, SLink[]>) => { const o = new Map<string, number>(); const per = new Map<number, number>();
@@ -354,7 +416,7 @@ export function renderSchematic(s: Schematic, generatedAt: string): { svg: strin
   const portLabel = (txt: string, x: number, y: number, anchor: 'start' | 'end') => { const w = txt.length * 5.4 + 4; const b = { x: anchor === 'start' ? x : x - w, y: y - 10, w, h: 12 };
     if (!boxes.some((o) => hit(o, b))) { boxes.push(b); labels.push(t(x, y, txt, `text-anchor="${anchor}" font-size="9" fill="#334155" font-weight="600"`)); } };
   for (const l of fwd) {
-    const st = LINK_STYLE[l.basis]; const a = port(l.a, true, l.aSide), b = port(l.b, false, l.bSide);
+    const st = look(l); const a = port(l.a, true, l.aSide), b = port(l.b, false, l.bSide, port(l.a, true, l.aSide).y);
     const split = (outN.get(l.a)?.length ?? 0) > 1, merge = (inN.get(l.b)?.length ?? 0) > 1;
     const fan = isJ(l.a) && fwd.filter((o) => o.a === l.a).length > 1, gather = isJ(l.b) && fwd.filter((o) => o.b === l.b).length > 1;
     const sx = split ? a.x + so.get(l.a)! : a.x, jx = merge ? b.x - 6 - jo.get(l.b)! : b.x;
@@ -370,9 +432,12 @@ export function renderSchematic(s: Schematic, generatedAt: string): { svg: strin
     if (mid.length) { const si = skips++; track = Math.min(...mid) - 18 - si * 10; x1 = a.x + 12 + si * 6; x2 = merge ? jx : jx - 12 - si * 6; }
     geo.push({ l, ax: a.x, ay: a.y, by: b.y, mx: x1, mxIn: x2, over: track !== null, bx: b.x });
     const d = track === null ? `M ${a.x} ${a.y} H ${mx} V ${b.y} H ${jx}` : `M ${a.x} ${a.y} H ${x1} V ${track} H ${x2} V ${b.y} H ${jx}`;
-    parts.push(`<path d="${d}" fill="none" stroke="${st.color}" stroke-width="${st.width}"${dash}${merge || isJ(l.b) ? '' : ` marker-end="url(#ar-${l.basis})"`}/>`);
+    parts.push(`<path d="${d}" fill="none" stroke="${st.color}" stroke-width="${st.width}"${dash}${merge || isJ(l.b) ? '' : ` marker-end="url(#ar-${st.marker})"`}/>`);
     // line numbers where known (an unknown one is left off the pipe and listed under Unknown); a conflict is flagged
-    const lab = [l.lines.length ? l.lines.slice(0, 2).join(', ') + (l.lines.length > 2 ? ' …' : '') : '', l.service ? 'bypass' : '', l.conflict ? '⚠ direction conflict' : ''].filter(Boolean).join(' · ');
+    // a branch's role is named once, on its first connection (where it leaves the active route or starts)
+    const first = l.role && !s.links.some((o) => o.b === l.a && o.role === l.role) && s.links.filter((o) => o.a === l.a && o.role === l.role)[0] === l;
+    const roleTag = l.role ? (l.role === 'bypass' || first ? ROLE_STYLE[l.role].tag : '') : l.service ? 'bypass' : '';
+    const lab = [l.lines.length ? l.lines.slice(0, 2).join(', ') + (l.lines.length > 2 ? ' …' : '') : '', roleTag, l.conflict ? '⚠ direction conflict' : ''].filter(Boolean).join(' · ');
     const onLast = (split || fan) && !merge, lx = track !== null ? (x1 + x2) / 2 : onLast ? (mx + jx) / 2 : (a.x + mx) / 2, ly = track !== null ? track - 8 : onLast ? b.y - 8 : a.y - 8;
     if (lab) place(lab, lx, ly, l.conflict ? '#b91c1c' : st.color, false, [0, 26, -14, 40]);
     if (l.aSide && !split && !fan) portLabel(l.aSide, a.x + 4, a.y + 14, 'start');
@@ -386,27 +451,41 @@ export function renderSchematic(s: Schematic, generatedAt: string): { svg: strin
     if (sib.length > 1 && sib.filter((o) => reachX(o) >= g1.mx).length > 1 && (g1.by !== g1.ay || g1.over)) dot(g1.mx, g1.ay);
     const tgt = geo.filter((o) => o.l.b === g1.l.b && o.by === g1.by); if (tgt.length > 1 && tgt.filter((o) => o.mxIn <= g1.mxIn).length > 1 && !isJ(g1.l.b) && (g1.by !== g1.ay || g1.over || tgt.some((o) => o !== g1 && o.mxIn < g1.mxIn))) dot(g1.mxIn, g1.by);
   }
-  for (const [k, ls] of inN) if (ls.length > 1) { const b = port(k, false, ls[0].bSide); const weakest = ls.map((x) => x.basis).sort((x, y) => RANK[x] - RANK[y])[0]; const st = LINK_STYLE[weakest]; const x = b.x - 6 - jo.get(k)!;
-    parts.push(`<path d="M ${x} ${b.y} H ${b.x}" stroke="${st.color}" stroke-width="${st.width}"${st.dash ? ` stroke-dasharray="${st.dash}"` : ''} marker-end="url(#ar-${weakest})"/>`); dot(x, b.y); }
+  for (const [k, ls] of inN) if (ls.length > 1) { const b = port(k, false, ls[0].bSide); const pick = [...ls].sort((x, y) => (x.role === 'active' ? -1 : 0) - (y.role === 'active' ? -1 : 0) || RANK[x.basis] - RANK[y.basis])[0]; const st = look(pick); const x = b.x - 6 - jo.get(k)!;
+    parts.push(`<path d="M ${x} ${b.y} H ${b.x}" stroke="${st.color}" stroke-width="${st.width}"${st.dash ? ` stroke-dasharray="${st.dash}"` : ''} marker-end="url(#ar-${st.marker})"/>`); dot(x, b.y); }
   // connections back to an earlier column run below the items
-  s.links.filter((l) => !fwd.includes(l) && pos.has(l.a) && pos.has(l.b)).forEach((l, i) => { const st = LINK_STYLE[l.basis]; const a = pos.get(l.a)!, b = pos.get(l.b)!; const yb = Math.max(a.y, b.y) + 112 + i * 10;
-    parts.push(`<path d="M ${a.x} ${a.y + 54} V ${yb} H ${b.x} V ${b.y + 56}" fill="none" stroke="${st.color}" stroke-width="${st.width}"${st.dash ? ` stroke-dasharray="${st.dash}"` : ''} marker-end="url(#ar-${l.basis})"/>`);
+  s.links.filter((l) => !fwd.includes(l) && pos.has(l.a) && pos.has(l.b)).forEach((l, i) => { const st = look(l); const a = pos.get(l.a)!, b = pos.get(l.b)!; const yb = Math.max(a.y, b.y) + 112 + i * 10;
+    parts.push(`<path d="M ${a.x} ${a.y + 54} V ${yb} H ${b.x} V ${b.y + 56}" fill="none" stroke="${st.color}" stroke-width="${st.width}"${st.dash ? ` stroke-dasharray="${st.dash}"` : ''} marker-end="url(#ar-${st.marker})"/>`);
     place(l.lines[0] ?? 'Line no.: unknown', (a.x + b.x) / 2, yb - 4, st.color, !l.lines.length, [0, 14]); });
   // items on top of the pipes
   for (const n of s.nodes) {
-    const p = pos.get(n.key)!; const c = n.user ? '#6d28d9' : '#0f172a';
-    parts.push(symbol(n.kind, p.x, p.y, c));
-    if (n.kind === 'junction') { parts.push(`<rect x="${p.x - 40}" y="${p.y + 41}" width="80" height="27" fill="#fff" stroke="#b45309" stroke-width="0.8" stroke-dasharray="2 2"/>`,
-      t(p.x, p.y + 52, 'Split / header', 'text-anchor="middle" font-size="10" font-weight="700" fill="#b45309"'), t(p.x, p.y + 64, 'not recorded', 'text-anchor="middle" font-size="10" fill="#b45309"')); continue; }
+    const p = pos.get(n.key)!; const c = n.state === 'standby' ? '#94a3b8' : n.user && !roles ? '#6d28d9' : '#0f172a';
+    if (n.kind === 'junction' && n.state === 'known') {   // a recorded point on a line (a tie-in): a plain junction with its name
+      parts.push(`<circle cx="${p.x}" cy="${p.y + 26}" r="5" fill="#0f172a"/>`);
+      wrap(n.label ?? n.tag.slice(2), 22).forEach((w, i) => parts.push(t(p.x, p.y + 48 + i * 12, w, 'text-anchor="middle" font-size="10" font-weight="600" fill="#0f172a"'))); continue; }
+    const tl = tall.get(n.key);
+    if (tl) { const zig = Array.from({ length: Math.max(2, Math.floor((tl.bot - tl.top - 20) / 14)) }, (_, i) => `${p.x + (i % 2 ? 14 : -14)},${tl.top + 10 + i * 14}`).join(' ');
+      parts.push(`<rect x="${p.x - 28}" y="${tl.top}" width="56" height="${tl.bot - tl.top}" fill="#fff" stroke="${c}" stroke-width="2"/><rect x="${p.x - 7}" y="${tl.top - 10}" width="14" height="10" fill="#fff" stroke="${c}" stroke-width="2"/><polyline points="${zig}" fill="none" stroke="${c}" stroke-width="1.4"/>`,
+        t(p.x, tl.bot + 20, n.tag, `text-anchor="middle" font-size="13" font-weight="800" fill="${c}"`));
+      const via = n.via.filter((v) => !/inlet|feed lines/i.test(v)).join(' / '); if (via) parts.push(t(p.x, tl.bot + 34, via, 'text-anchor="middle" font-size="10" fill="#475569"'));
+      continue; }
+    parts.push(symbol(n.kind, p.x, p.y, c, n.state === 'closed'));
+    if (n.kind === 'junction') { const ls = wrap(n.label ?? 'Split / header not recorded', 20); const h = 6 + ls.length * 12;
+      parts.push(`<rect x="${p.x - 58}" y="${p.y + 41}" width="116" height="${h}" fill="#fff" stroke="#b45309" stroke-width="0.8" stroke-dasharray="2 2"/>`,
+        ...ls.map((w, i) => t(p.x, p.y + 52 + i * 12, w, `text-anchor="middle" font-size="10" ${i ? '' : 'font-weight="700" '}fill="#b45309"`))); continue; }
     parts.push(t(p.x, p.y + 72, n.tag, `text-anchor="middle" font-size="13" font-weight="800" fill="${c}"`));
+    if (n.state === 'closed' || n.state === 'standby' || n.state === 'open') {
+      const st = n.state === 'closed' ? 'CLOSED' : n.state === 'open' ? 'OPEN' : 'STANDBY — ISOLATED';
+      parts.push(t(p.x, p.y + 98, `${st}${n.stateSource ? ` (${n.stateSource})` : ''}`, `text-anchor="middle" font-size="9.5" font-weight="700" fill="${n.state === 'closed' ? '#b91c1c' : '#64748b'}"`)); }
+    if (n.label) parts.push(t(p.x, p.y + 110, n.label, 'text-anchor="middle" font-size="9" fill="#475569"'));
     const via = n.via.filter((v) => !/inlet|feed lines/i.test(v)).join(' / ');
     if (via) parts.push(t(p.x, p.y + 86, via, 'text-anchor="middle" font-size="10" fill="#475569"'));
-    if (n.user) parts.push(t(p.x, p.y + 98, `added by ${n.user}`, 'text-anchor="middle" font-size="9" fill="#6d28d9"'));
+    if (n.user && !n.state && !roles) parts.push(t(p.x, p.y + 98, `added by ${n.user}`, 'text-anchor="middle" font-size="9" fill="#6d28d9"'));
   }
   parts.push(...dots, ...labels);
   if (!s.nodes.length) parts.push(t(W / 2, TOP + 40, 'Route not available — no equipment is named in the loop record', 'text-anchor="middle" font-size="14" font-weight="700" fill="#b45309"'));
   // lists below the drawing
-  let y = TOP + rows * ROWH + (s.links.some((l) => !fwd.includes(l)) ? 40 : 0);
+  let y = TOP + (roles ? rowsR : rows) * ROWH + (s.links.some((l) => !fwd.includes(l)) ? 40 : 0) + Math.max(0, ...[...tall.values()].map((v) => v.bot + 50 - TOP - (roles ? rowsR : rows) * ROWH));
   const block = (title: string, color: string, lines: { icon?: string; text: string; sub?: string }[]) => {
     if (!lines.length) return;
     parts.push(`<line x1="24" y1="${y}" x2="${W - 24}" y2="${y}" stroke="#e2e8f0"/>`, t(24, y + 20, title, `font-size="12" font-weight="800" fill="${color}"`)); y += 40;
@@ -426,8 +505,12 @@ export function renderSchematic(s: Schematic, generatedAt: string): { svg: strin
   // legend
   parts.push(`<line x1="24" y1="${y}" x2="${W - 24}" y2="${y}" stroke="#e2e8f0"/>`, t(24, y + 20, 'Legend', 'font-size="12" font-weight="800" fill="#334155"')); y += 38;
   const used = [...new Set(s.links.map((l) => l.basis))];
-  for (const b of (used.length ? used : ['record'] as Basis[])) { const st = LINK_STYLE[b];
-    parts.push(`<line x1="24" y1="${y - 4}" x2="64" y2="${y - 4}" stroke="${st.color}" stroke-width="${st.width}"${st.dash ? ` stroke-dasharray="${st.dash}"` : ''}/>`, t(72, y, st.label, 'font-size="10.5" fill="#334155"')); y += 16; }
+  const usedRoles = [...new Set(s.links.map((l) => l.role).filter(Boolean))] as Role[];
+  for (const r of usedRoles) { const st = ROLE_STYLE[r];
+    parts.push(`<line x1="24" y1="${y - 4}" x2="64" y2="${y - 4}" stroke="${st.color}" stroke-width="${st.width}"/>`, t(72, y, `${st.label} (colour and weight)`, 'font-size="10.5" fill="#334155"')); y += 16; }
+  for (const b of (used.length ? used : ['record'] as Basis[])) { const st = LINK_STYLE[b]; const c = usedRoles.length ? '#475569' : st.color;
+    parts.push(`<line x1="24" y1="${y - 4}" x2="64" y2="${y - 4}" stroke="${c}" stroke-width="${usedRoles.length ? 2.2 : st.width}"${st.dash ? ` stroke-dasharray="${st.dash}"` : ''}/>`, t(72, y, `${st.label}${usedRoles.length ? ' (line pattern)' : ''}`, 'font-size="10.5" fill="#334155"')); y += 16; }
+  if (s.nodes.some((n) => n.state === 'closed')) { parts.push(`<polygon points="34,${y - 10} 34,${y + 2} 44,${y - 4} 54,${y - 10} 54,${y + 2} 44,${y - 4}" fill="#0f172a"/>`, t(72, y, 'Filled valve: closed as written in the procedure step named (status as recorded, not an instruction)', 'font-size="10.5" fill="#334155"')); y += 16; }
   if (dots.length) { parts.push(`<circle cx="44" cy="${y - 4}" r="3.6" fill="#0f172a"/>`, t(72, y, 'Junction: branches join or split here (as drawn, not a measured location)', 'font-size="10.5" fill="#334155"')); y += 16; }
   parts.push(t(24, y + 2, 'Arrows: flow direction stated in the records. Symbols are generic (ISO 10628 / ISA-5.1 style, not checked for compliance); not to scale.', 'font-size="10" fill="#64748b"')); y += 22;
   // metadata (skill §19)
