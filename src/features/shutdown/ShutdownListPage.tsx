@@ -60,7 +60,7 @@ export default function ShutdownListPage() {
             <span className="block text-xs text-slate-700">{w.range} · {w.length} days</span>
             <span className="block text-xs text-slate-500">{p.kind === 'total' ? 'Total · ' : ''}{p.daysOff ? `${p.daysOn} on, ${p.daysOff} off` : 'every day'} · {p.shiftHours} h · <span className={cx(n === 0 && !finished && 'font-medium text-amber-700')}>{n === 0 ? 'no one added yet' : `${n} ${n === 1 ? 'person' : 'people'}`}</span></span>
           </span>
-          <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
         </Link>
         <button type="button" aria-label={`Edit or delete ${p.title}`} onClick={() => setEditing(p)} className="flex h-12 w-12 shrink-0 items-center justify-center text-brand-700"><Pencil className="h-4 w-4" /></button>
       </div>
@@ -141,7 +141,7 @@ function TimelineTab({ plans, people, today }: { plans: SdPlan[]; people: Map<st
         return (
           <Card key={y} className="p-3">
             <div className="mb-1 flex items-baseline justify-between"><h2 className="text-lg font-semibold text-brand-800">{y}</h2><span className="text-xs text-slate-500">{inYear.length === 0 ? 'no shutdown' : `${inYear.length} ${inYear.length === 1 ? 'shutdown' : 'shutdowns'}`}</span></div>
-            <div className="grid grid-cols-12 text-center text-[10px] text-slate-400">{['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'].map((m, i) => <span key={i}>{m}</span>)}</div>
+            <div className="grid grid-cols-12 text-center text-[10px] text-slate-500">{['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'].map((m, i) => <span key={i}>{m}</span>)}</div>
             <div className="relative rounded-md bg-slate-50 ring-1 ring-slate-200" style={{ height }}>
               {Array.from({ length: 11 }, (_, i) => <span key={i} className="absolute top-0 h-full w-px bg-slate-200" style={{ left: `${((i + 1) / 12) * 100}%` }} />)}
               {inYear.map((p) => { const seg = yearSegment(p.start, p.end, y)!; const planned = p.start > today;
@@ -164,7 +164,7 @@ function TimelineTab({ plans, people, today }: { plans: SdPlan[]; people: Map<st
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium text-slate-900">{p.title}{p.start > today ? <span className="ml-1.5 text-[10px] font-semibold text-brand-700">planned</span> : p.end >= today ? <span className="ml-1.5 text-[10px] font-semibold text-green-700">running</span> : null}</span>
                           <span className="block text-xs text-slate-600">{fmtDate(p.start)} – {fmtDate(p.end)} · {days(p.start, p.end) + 1} days · {n} {n === 1 ? 'person' : 'people'}{p.end.slice(0, 4) !== p.start.slice(0, 4) ? ` · continues into ${p.end.slice(0, 4)}` : ''}</span>
-                          {gap != null && gap >= 0 && <span className="block text-[11px] text-slate-400">{gap} days after {prev!.title}</span>}
+                          {gap != null && gap >= 0 && <span className="block text-[11px] text-slate-500">{gap} days after {prev!.title}</span>}
                         </span>
                       </Link>
                     </li>
@@ -251,7 +251,7 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
       </div>
       <div className="flex gap-2">
         <label className="relative block min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
           <input className="input" style={{ paddingLeft: '2.25rem' }} placeholder="Search name or number" value={query} onChange={(e) => setQuery(e.target.value)} />
         </label>
         <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}
@@ -274,7 +274,7 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
             ))}
           </FilterRow>
           <div className="border-t border-slate-100 pt-2">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Leave out <span className="font-normal normal-case text-slate-400">(tap to hide, tap again to bring back)</span></p>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Leave out <span className="font-normal normal-case text-slate-500">(tap to hide, tap again to bring back)</span></p>
             <div className="space-y-3">
               <FilterRow label="Position">
                 {([['controller', 'Controller'], ['vr', 'VR'], ['panel', 'Panel'], ['field', 'Field']] as const).map(([k, l]) => (
@@ -315,7 +315,7 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
               const eligible = r.position_code === 'panel_operator' || r.position_code === 'field_operator' ? sdOperatorEligible({ role: r.position_code, grade: r.grade, employmentType: r.employment_type }) : true;
               return (
                 <Link key={id} to={`/employees/${id}`} className="flex items-center gap-2.5 px-3 py-2.5 active:bg-slate-50">
-                  {isCrew(r.crew_code) ? <CrewBadge crew={r.crew_code} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-600">{r.position_code === 'vr_controller' ? 'VR' : 'DS'}</span>}
+                  {isCrew(r.crew_code) ? <CrewBadge crew={r.crew_code} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">{r.position_code === 'vr_controller' ? 'VR' : 'DS'}</span>}
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline gap-1.5"><span className="truncate text-sm font-medium text-slate-900">{r.display_name}</span><span className="shrink-0 text-xs tabular-nums text-slate-500">#{r.employee_number}</span></span>
                     <span className="block text-xs text-slate-500">{r.position_label ?? '—'}{r.grade ? ` · Grade ${r.grade}` : ''}{r.employment_type === 'contractor' ? ' · Contractor' : ''}{level ? ` · ${level}` : ''}{!eligible ? ' · not eligible for a team place' : ''}</span>
@@ -332,9 +332,9 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
         <Card className="divide-y divide-slate-100 p-0">
           {rows.map(({ id, r, list }) => (
             <Link key={id} to={`/employees/${id}`} className="flex items-start gap-2.5 px-3 py-2.5 active:bg-slate-50">
-              {r && isCrew(r.crew_code) ? <span className="mt-0.5"><CrewBadge crew={r.crew_code} size="sm" /></span> : <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-600">{r?.position_code === 'vr_controller' ? 'VR' : 'DS'}</span>}
+              {r && isCrew(r.crew_code) ? <span className="mt-0.5"><CrewBadge crew={r.crew_code} size="sm" /></span> : <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">{r?.position_code === 'vr_controller' ? 'VR' : 'DS'}</span>}
               <span className="min-w-0 flex-1">
-                <span className="flex items-baseline gap-1.5"><span className="truncate text-sm font-medium text-slate-900">{r?.display_name}</span><span className="shrink-0 text-xs tabular-nums text-slate-500">#{r?.employee_number}</span>{r && !r.is_active && <span className="shrink-0 text-[10px] font-semibold text-slate-400">inactive</span>}</span>
+                <span className="flex items-baseline gap-1.5"><span className="truncate text-sm font-medium text-slate-900">{r?.display_name}</span><span className="shrink-0 text-xs tabular-nums text-slate-500">#{r?.employee_number}</span>{r && !r.is_active && <span className="shrink-0 text-[10px] font-semibold text-slate-500">inactive</span>}</span>
                 <span className="mt-1 flex flex-wrap gap-1">
                   {list.map((p) => <span key={p.id} className={cx('rounded-md px-1.5 py-0.5 text-[11px]', p.start > today ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-200' : 'bg-slate-100 text-slate-700')}>{p.title} · {monthSpan(p.start, p.end)}{p.start > today ? ' · planned' : ''}</span>)}
                 </span>

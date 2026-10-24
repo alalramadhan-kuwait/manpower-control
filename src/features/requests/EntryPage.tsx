@@ -173,9 +173,9 @@ function PersonPicker({ people, today, onPick }: { people: MpPerson[]; today: st
         ))}
       </div>
       <label className="flex min-h-11 items-center gap-2 rounded-xl bg-white px-3 ring-1 ring-slate-200">
-        <Search className="h-4 w-4 text-slate-400" />
+        <Search className="h-4 w-4 text-slate-500" />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('Name or number')} className="w-full bg-transparent text-sm outline-none" />
-        {q && <button type="button" onClick={() => setQ('')} aria-label={t('Clear')}><X className="h-4 w-4 text-slate-400" /></button>}
+        {q && <button type="button" onClick={() => setQ('')} aria-label={t('Clear')}><X className="h-4 w-4 text-slate-500" /></button>}
       </label>
       {!q && !group && recent.length > 0 && (
         <div>
@@ -496,7 +496,7 @@ function MyEntries({ list, people, onChanged, onCorrect }: { list: MyEntry[]; pe
               <button type="button" onClick={() => open(e.id)} className="min-w-0 flex-1 text-start">
                 <div className="truncate font-medium text-slate-800">{names.get(e.employeeId) ?? t('Employee')}</div>
                 <div className="truncate text-xs text-slate-500">{e.summary}</div>
-                <div className="text-[11px] text-slate-400">{t(s.plan)}{e.source === 'section_head_direct' ? ` · ${t('Section Head direct')}` : ''}</div>
+                <div className="text-[11px] text-slate-500">{t(s.plan)}{e.source === 'section_head_direct' ? ` · ${t('Section Head direct')}` : ''}</div>
               </button>
               <div className="flex shrink-0 items-center gap-1">
                 <Chip tone={s.tone}>{t(s.label)}</Chip>

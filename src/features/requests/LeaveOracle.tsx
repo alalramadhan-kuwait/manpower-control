@@ -111,15 +111,15 @@ export function LeaveOracle({ isHead, onCount }: { isHead: boolean; onCount?: (n
       </div>
       <div className="mb-2 flex items-center gap-2">
         <label className="flex min-h-10 flex-1 items-center gap-2 rounded-xl bg-white px-3 ring-1 ring-slate-200">
-          <Search className="h-4 w-4 text-slate-400" />
+          <Search className="h-4 w-4 text-slate-500" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('Name or number')} className="w-full bg-transparent text-sm outline-none" />
-          {q && <button type="button" onClick={() => setQ('')} aria-label={t('Clear')}><X className="h-4 w-4 text-slate-400" /></button>}
+          {q && <button type="button" onClick={() => setQ('')} aria-label={t('Clear')}><X className="h-4 w-4 text-slate-500" /></button>}
         </label>
         <div className="flex gap-1">
           {[null, ...CREWS].map((x) => <button key={x ?? 'all'} type="button" aria-pressed={crew === x} onClick={() => set('crew', x)} className={cx('h-10 min-w-9 rounded-lg px-2 text-xs font-semibold ring-1', crew === x ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-600 ring-slate-200')}>{x ?? t('All')}</button>)}
         </div>
       </div>
-      {st === 'planned' && <p className="mb-2 px-1 text-[11.5px] text-slate-500">{t('A planned PV does not count as leave from its first day until it is approved.')}</p>}
+      {st === 'planned' && <p className="mb-2 px-1 text-[12px] text-slate-500">{t('A planned PV does not count as leave from its first day until it is approved.')}</p>}
       {error != null && <div className="mb-2"><ErrorBox error={error} /></div>}
       {done && <p className="mb-2 flex items-center gap-1 text-sm text-status-green"><Check className="h-4 w-4" />{done}</p>}
       {isHead && planned.length > 1 && (
@@ -138,7 +138,7 @@ export function LeaveOracle({ isHead, onCount }: { isHead: boolean; onCount?: (n
             return (
               <div key={key} className={cx('border-b border-slate-100 px-3 py-2 last:border-b-0', x.state === 'rejected' && 'bg-slate-50')}>
                 <div className="flex items-center gap-2">
-                  {cr ? <CrewBadge crew={cr} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-500 text-[9px] font-bold text-white">{person.role === 'vr_controller' ? 'VR' : t('Day')}</span>}
+                  {cr ? <CrewBadge crew={cr} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-500 text-[10px] font-bold text-white">{person.role === 'vr_controller' ? 'VR' : t('Day')}</span>}
                   <button type="button" onClick={() => setCard(x)} className="min-w-0 flex-1 text-start">
                     <span className="block text-[14px] font-semibold leading-tight text-slate-900">{person.name}</span>
                     <span className="mt-0.5 flex items-center gap-1 text-[12px] text-slate-600"><LeaveCodes codes={leave.codes} />{range(leave.start, leave.end)}</span>
@@ -150,10 +150,10 @@ export function LeaveOracle({ isHead, onCount }: { isHead: boolean; onCount?: (n
                       : <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold', CHIP[x.state])}>{t(CHIP_LABEL[x.state])}</span>}
                   {decide && <button type="button" aria-label={t('More')} disabled={busy !== null} onClick={() => setMenu(x)} className="h-9 w-9 shrink-0 rounded-lg text-base font-bold text-slate-500 ring-1 ring-slate-300 disabled:opacity-60">⋯</button>}
                 </div>
-                {x.state === 'fix' && <p className="mt-0.5 ps-8 text-[11.5px] text-sky-800">{t('To Coordinator')}{x.decision?.fix_note ? `: “${x.decision.fix_note}”` : ''}</p>}
-                {x.state === 'rejected' && x.decision?.declined_reason && <p className="mt-0.5 ps-8 text-[11.5px] text-slate-500">{x.decision.declined_reason}</p>}
-                {x.pending && <p className="mt-0.5 ps-8 text-[11.5px] font-medium text-brand-700">{t('New dates sent')}: {range(x.pending.new_start, x.pending.new_end)} · {t('in Approvals')}</p>}
-                {late && !x.pending && <p className="mt-0.5 ps-8 text-[11.5px] font-medium text-red-700">{t('Started, not approved: not counted as leave')}</p>}
+                {x.state === 'fix' && <p className="mt-0.5 ps-8 text-[12px] text-sky-800">{t('To Coordinator')}{x.decision?.fix_note ? `: “${x.decision.fix_note}”` : ''}</p>}
+                {x.state === 'rejected' && x.decision?.declined_reason && <p className="mt-0.5 ps-8 text-[12px] text-slate-500">{x.decision.declined_reason}</p>}
+                {x.pending && <p className="mt-0.5 ps-8 text-[12px] font-medium text-brand-700">{t('New dates sent')}: {range(x.pending.new_start, x.pending.new_end)} · {t('in Approvals')}</p>}
+                {late && !x.pending && <p className="mt-0.5 ps-8 text-[12px] font-medium text-red-700">{t('Started, not approved: not counted as leave')}</p>}
               </div>
             );
           })}

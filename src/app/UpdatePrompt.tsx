@@ -36,9 +36,9 @@ export function UpdatePrompt() {
   return (
     <div role="status" className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+5rem)] z-[100] flex justify-center px-3 sm:bottom-4">
       <div className="pointer-events-auto flex max-w-full items-center gap-2 rounded-2xl bg-slate-900 py-2 pl-4 pr-2 text-sm text-white shadow-lg">
-        <span className="min-w-0">{offline ? 'No connection: try again when you have signal.' : stuck ? 'The update did not finish.' : 'A new version is ready.'}{newer && <span className="block text-[11px] text-slate-400">{stuck ? 'Close the app and open it again (or press Ctrl+Shift+R).' : `You have ${APP_VERSION} · new ${remote!.version}`}</span>}</span>
+        <span className="min-w-0">{offline ? 'No connection: try again when you have signal.' : stuck ? 'The update did not finish.' : 'A new version is ready.'}{newer && <span className="block text-[11px] text-slate-500">{stuck ? 'Close the app and open it again (or press Ctrl+Shift+R).' : `You have ${APP_VERSION} · new ${remote!.version}`}</span>}</span>
         <button type="button" disabled={busy} onClick={() => { setBusy(true); setOffline(false); void hardUpdate(remote?.version).then((ok) => { if (!ok) { setBusy(false); setOffline(true); } }); }} className="shrink-0 rounded-full bg-amber-400 px-3 py-1.5 text-[13px] font-semibold text-slate-900 disabled:opacity-60">{busy ? 'Updating…' : 'Update'}</button>
-        <button type="button" onClick={() => setLater(true)} className="shrink-0 rounded-full px-2 py-1.5 text-[13px] font-medium text-slate-400">Later</button>
+        <button type="button" onClick={() => setLater(true)} className="shrink-0 rounded-full px-2 py-1.5 text-[13px] font-medium text-slate-500">Later</button>
       </div>
     </div>
   );

@@ -25,25 +25,25 @@ export function IatsTab({ iats, tags, lineup = [], lineupEq = [], points = [], c
   const card = (i: TrkIat) => { const w = where(i); const st = iatStatus(i);
     return (
       <button key={i.id} type="button" onClick={() => setOpen(i)} className="w-full rounded-xl bg-white p-2.5 text-left ring-1 ring-slate-200 active:bg-slate-50">
-        <span className="flex items-center gap-2"><b className="text-[13.5px]">{i.iatNo}</b>{i.opsLabel && <span className={cx('whitespace-nowrap rounded px-1.5 py-px text-[10.5px] font-bold', { painting: 'bg-violet-100 text-violet-800', spool: 'bg-orange-100 text-orange-800', ready: 'bg-green-100 text-green-800', progress: 'bg-blue-100 text-blue-800' }[i.opsLabel])}>{IAT_LABELS.find(([k]) => k === i.opsLabel)?.[1]}</span>}<span className={cx('whitespace-nowrap rounded px-1.5 py-px text-[10.5px] font-bold', CLS[st] ?? CLS['New IAT'])}>{st}</span>
-          {onItemTag(i) ? <span className="ml-auto text-xs font-bold text-[#0850A0]">{i.tag} ›</span> : <span className="ml-auto text-[11px] text-slate-500">line</span>}</span>
-        <span className="mt-0.5 block text-[12.5px] text-slate-700">{i.jobText}</span>
+        <span className="flex items-center gap-2"><b className="text-[13px]">{i.iatNo}</b>{i.opsLabel && <span className={cx('whitespace-nowrap rounded px-1.5 py-px text-[10px] font-bold', { painting: 'bg-violet-100 text-violet-800', spool: 'bg-orange-100 text-orange-800', ready: 'bg-green-100 text-green-800', progress: 'bg-blue-100 text-blue-800' }[i.opsLabel])}>{IAT_LABELS.find(([k]) => k === i.opsLabel)?.[1]}</span>}<span className={cx('whitespace-nowrap rounded px-1.5 py-px text-[10px] font-bold', CLS[st] ?? CLS['New IAT'])}>{st}</span>
+          {onItemTag(i) ? <span className="ml-auto text-xs font-bold text-brand-500">{i.tag} ›</span> : <span className="ml-auto text-[11px] text-slate-500">line</span>}</span>
+        <span className="mt-0.5 block text-[12px] text-slate-700">{i.jobText}</span>
         <span className="mt-0.5 block truncate text-[11px] text-slate-500">📍 {[w, i.line, i.lineClass].filter(Boolean).join(' · ') || '—'}</span>
-        <span className="mt-1 flex flex-wrap gap-1">{iatChecks(i).map((c) => <span key={c.key} className={cx('rounded px-1.5 text-[10.5px] font-bold', c.optional ? 'border border-dashed border-slate-300 text-slate-500' : 'bg-slate-100 text-slate-600')}>{c.label}{c.optional ? ' if req.' : ''}</span>)}
-          {i.painting?.ref && <span className="rounded bg-slate-100 px-1.5 text-[10.5px] font-bold text-slate-600">Painting IAT {i.painting.ref}</span>}
-          {i.material && <span className="rounded bg-slate-100 px-1.5 text-[10.5px] font-bold text-slate-600">Material</span>}
+        <span className="mt-1 flex flex-wrap gap-1">{iatChecks(i).map((c) => <span key={c.key} className={cx('rounded px-1.5 text-[10px] font-bold', c.optional ? 'border border-dashed border-slate-300 text-slate-500' : 'bg-slate-100 text-slate-600')}>{c.label}{c.optional ? ' if req.' : ''}</span>)}
+          {i.painting?.ref && <span className="rounded bg-slate-100 px-1.5 text-[10px] font-bold text-slate-600">Painting IAT {i.painting.ref}</span>}
+          {i.material && <span className="rounded bg-slate-100 px-1.5 text-[10px] font-bold text-slate-600">Material</span>}
           {tickChips(i)}</span>
       </button>); };
   if (!iats.length) return <p className="py-6 text-center text-sm text-slate-500">No IATs yet: they come from the daily IAT tracking sheet.</p>;
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-4 gap-1.5">{TILES.map((t) => { const n = iats.filter((i) => iatStatus(i) === t).length;
-        return <div key={t} className="rounded-xl bg-white py-1.5 text-center ring-1 ring-slate-200"><b className={cx('block text-lg', t === 'In progress' ? 'text-blue-800' : t === 'To start' ? 'text-amber-800' : t === 'Completed' ? 'text-green-800' : 'text-slate-900')}>{n}</b><span className="text-[10.5px] text-slate-500">{t === 'New IAT' ? 'New' : t}</span></div>; })}</div>
+        return <div key={t} className="rounded-xl bg-white py-1.5 text-center ring-1 ring-slate-200"><b className={cx('block text-lg', t === 'In progress' ? 'text-blue-800' : t === 'To start' ? 'text-amber-800' : t === 'Completed' ? 'text-green-800' : 'text-slate-900')}>{n}</b><span className="text-[11px] text-slate-500">{t === 'New IAT' ? 'New' : t}</span></div>; })}</div>
       <input className="input" placeholder="🔎 IAT no., line, tag…" value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="flex gap-1.5 overflow-x-auto pb-0.5">{([['open', 'Open'], ['items', 'On items'], ['lines', 'On lines'], ['material', 'Material'], ['all', 'All']] as const).map(([k, l]) =>
-        <button key={k} type="button" onClick={() => setF(k)} className={cx('min-h-8 shrink-0 rounded-full px-3 text-xs font-semibold', f === k ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l} <span className="opacity-60">{iats.filter(pick[k]).length}</span></button>)}</div>
+        <button key={k} type="button" onClick={() => setF(k)} className={cx('min-h-8 shrink-0 rounded-full px-3 text-xs font-semibold', f === k ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l} <span className="opacity-60">{iats.filter(pick[k]).length}</span></button>)}</div>
       {shown.length ? <div className="space-y-1.5">{shown.map(card)}</div> : <p className="py-3 text-center text-sm text-slate-500">No IAT here.</p>}
-      {closed.length > 0 && <button type="button" onClick={() => setDone((x) => !x)} className="text-sm font-semibold text-[#08A048]">{done ? '▾' : '▸'} ✓ Completed ({closed.length})</button>}
+      {closed.length > 0 && <button type="button" onClick={() => setDone((x) => !x)} className="text-sm font-semibold text-status-green">{done ? '▾' : '▸'} ✓ Completed ({closed.length})</button>}
       {done && <div className="space-y-1.5 opacity-80">{closed.map(card)}</div>}
       <p className="text-[11px] text-slate-500">Updated from the daily IAT tracking sheet. Tap an IAT for the full details.</p>
       {open && <IatDetail i={iats.find((x) => x.id === open.id) ?? open} canEdit={canEdit} onDone={onDone} items={items} lineup={lineup} lineupEq={lineupEq} points={points} onItem={(t) => { setOpen(null); onItem(t); }} onClose={() => setOpen(null)} />}
@@ -56,7 +56,7 @@ export function IatDetail({ i, items, lineup, lineupEq, points, canEdit = false,
   const ends = [...new Set([...streams.flatMap((s) => streamItems(s, [...items])), ...onEq.map((x) => x.eq.plantTag ?? '').filter((t) => items.has(t)), ...(items.has(i.tag) ? [i.tag] : [])])];
   const loop = points.find((p) => p.kind === 'neut' && i.line && loopLines(p, lineup).lines.includes(i.line));
   const Row = ({ k, children }: { k: string; children: React.ReactNode }) => <><b className="font-semibold text-slate-500">{k}</b><span className="min-w-0">{children}</span></>;
-  const Sec = ({ t, children }: { t: string; children: React.ReactNode }) => <section><h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">{t}</h3><div className="rounded-xl bg-white p-2.5 text-[12.5px] text-slate-800 ring-1 ring-slate-200">{children}</div></section>;
+  const Sec = ({ t, children }: { t: string; children: React.ReactNode }) => <section><h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">{t}</h3><div className="rounded-xl bg-white p-2.5 text-[12px] text-slate-800 ring-1 ring-slate-200">{children}</div></section>;
   return (
     <BottomSheet open onClose={onClose} title={`IAT ${i.iatNo}`}>
       <div className="space-y-2.5">
@@ -68,7 +68,7 @@ export function IatDetail({ i, items, lineup, lineupEq, points, canEdit = false,
           {streams.map((s) => <Row key={s.id} k="From → To">{s.from} → {s.to}{s.fluid ? ` · ${s.fluid}` : ''}</Row>)}
           {onEq.map((x) => <Row key={x.eq.tag} k="On">{x.eq.tag} ({x.what}){x.eq.name ? ` · ${x.eq.name}` : ''}</Row>)}
           {(streams[0]?.sheets[0] || onEq[0]?.eq.sheet) && <Row k="P&ID">{streams[0]?.sheets[0] ?? onEq[0]?.eq.sheet} <span className="text-slate-500">(Train-1 sheet, Train-2 by rule)</span></Row>}
-          {ends.length > 0 && <Row k="Items"><span className="flex flex-wrap gap-1">{ends.map((t) => <button key={t} type="button" onClick={() => onItem(t)} className="rounded bg-slate-50 px-1.5 text-xs font-bold text-[#0850A0] ring-1 ring-slate-200">{t} ›</button>)}</span></Row>}
+          {ends.length > 0 && <Row k="Items"><span className="flex flex-wrap gap-1">{ends.map((t) => <button key={t} type="button" onClick={() => onItem(t)} className="rounded bg-slate-50 px-1.5 text-xs font-bold text-brand-500 ring-1 ring-slate-200">{t} ›</button>)}</span></Row>}
           <Row k="Loop">{loop ? `🧪 ${loop.ref} · ${loop.name}` : '— (not in a neutralization loop)'}</Row>
           {!streams.length && !onEq.length && <Row k="">Line not found in the P&amp;ID lineup.</Row>}
         </div></Sec>
@@ -112,7 +112,7 @@ function IatStatus({ i, onDone }: { i: TrkIat; onDone?: (msg: string, undo?: () 
       </div>
       <div className="mt-2 flex gap-1.5">
         <input className="input min-w-0 flex-1" placeholder="Remark (e.g. spool dropped, waiting material)" value={remark} onChange={(e) => setRemark(e.target.value)} />
-        {dirty && <button type="button" disabled={busy} onClick={() => save(cur, remark.trim() || null)} className="shrink-0 rounded-lg bg-[#0d2a5e] px-3 text-xs font-bold text-white">Save</button>}
+        {dirty && <button type="button" disabled={busy} onClick={() => save(cur, remark.trim() || null)} className="shrink-0 rounded-lg bg-brand-700 px-3 text-xs font-bold text-white">Save</button>}
       </div>
       {i.updatedAt && <p className="mt-1 text-[11px] text-slate-500">Last update {kwDay(i.updatedAt)} {kwTime(i.updatedAt)}{i.updatedBy ? ` · ${i.updatedBy}` : ''}</p>}
       {err != null && <div className="mt-1.5"><ErrorBox error={err} /></div>}
@@ -124,14 +124,14 @@ type Tick = 'ops_action' | 'ho_required' | 'ops_none' | 'spool_only';
 const TICKS: { k: Tick; label: string; on: string }[] = [
   { k: 'ops_none', label: 'No action from Operations', on: 'bg-green-100 text-green-800 ring-green-300' },
   { k: 'spool_only', label: 'Spool drop only', on: 'bg-amber-100 text-amber-900 ring-amber-300' },
-  { k: 'ops_action', label: 'Operations action', on: 'bg-[#D6E6F5] text-[#004080] ring-[#9DC3E6]' },
-  { k: 'ho_required', label: 'Handover needed', on: 'bg-[#D6E6F5] text-[#004080] ring-[#9DC3E6]' },
+  { k: 'ops_action', label: 'Operations action', on: 'bg-brand-100 text-brand-600 ring-brand-200' },
+  { k: 'ho_required', label: 'Handover needed', on: 'bg-brand-100 text-brand-600 ring-brand-200' },
 ];
 // a tick that rules others out: none clears the rest, spool only means no handover, an action or handover clears none
 const CLEARS: Record<Tick, Tick[]> = { ops_none: ['ops_action', 'ho_required', 'spool_only'], spool_only: ['ops_none', 'ho_required'], ops_action: ['ops_none'], ho_required: ['ops_none', 'spool_only'] };
 const val = (i: TrkIat, k: Tick) => !!(k === 'ops_action' ? i.opsAction : k === 'ho_required' ? i.hoRequired : k === 'ops_none' ? i.opsNone : i.spoolOnly);
 /** The ticks of an IAT as chips (for the lists): only those ticked. */
-export const tickChips = (i: TrkIat) => TICKS.filter((t) => val(i, t.k)).map((t) => <span key={t.k} className={cx('rounded px-1.5 text-[10.5px] font-bold ring-1', t.on)}>✓ {t.label}</span>);
+export const tickChips = (i: TrkIat) => TICKS.filter((t) => val(i, t.k)).map((t) => <span key={t.k} className={cx('rounded px-1.5 text-[10px] font-bold ring-1', t.on)}>✓ {t.label}</span>);
 
 /** The Operations ticks of an IAT, set by a person (logged): no action, spool drop only, Operations action, handover. */
 export function OpsTicks({ i, canEdit, onDone, compact = false }: { i: TrkIat; canEdit: boolean; onDone?: (msg: string) => void; compact?: boolean }) {

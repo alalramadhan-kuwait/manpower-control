@@ -48,7 +48,7 @@ export default function OperationPage({ profile }: { profile: UserProfile }) {
           <span className="block text-xs text-slate-600">{shortDate(p.start_date)} – {shortDate(p.end_date)}{p.status === 'cancelled' ? ' · cancelled' : ''}</span>
           {m && <span className="block text-[11px] text-slate-500">{minimumsText(m)}</span>}
           {p.note && <span className="block text-[11px] text-slate-500">{p.note}</span>}
-          {p.cancel_reason && <span className="block text-[11px] text-slate-400">Cancelled: {p.cancel_reason}</span>}
+          {p.cancel_reason && <span className="block text-[11px] text-slate-500">Cancelled: {p.cancel_reason}</span>}
         </span>
         {actions && <button type="button" className="shrink-0 text-xs font-medium text-status-red" onClick={() => setSheet({ kind: 'cancel', period: p })}>Cancel</button>}
       </li>
@@ -103,7 +103,7 @@ export default function OperationPage({ profile }: { profile: UserProfile }) {
 
           <Card className="p-0">
             <button type="button" onClick={() => setManual(!manual)} className="flex w-full items-center justify-between px-4 py-3 text-left">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Manual override · {view.live.length ? `${view.live.length} period${view.live.length === 1 ? '' : 's'}` : 'none'}</span>{manual ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Manual override · {view.live.length ? `${view.live.length} period${view.live.length === 1 ? '' : 's'}` : 'none'}</span>{manual ? <ChevronUp className="h-4 w-4 text-slate-500" /> : <ChevronDown className="h-4 w-4 text-slate-500" />}
             </button>
             {manual && (
               <div className="px-4 pb-3">
@@ -134,7 +134,7 @@ export default function OperationPage({ profile }: { profile: UserProfile }) {
           {view.past.length > 0 && (
             <Card className="p-0">
               <button type="button" onClick={() => setHistory(!history)} className="flex w-full items-center justify-between px-4 py-3 text-left">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Past and cancelled periods ({view.past.length})</span>{history ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Past and cancelled periods ({view.past.length})</span>{history ? <ChevronUp className="h-4 w-4 text-slate-500" /> : <ChevronDown className="h-4 w-4 text-slate-500" />}
               </button>
               {history && <ul className="divide-y divide-slate-100 px-4 pb-2">{view.past.map((p) => <PeriodRowView key={p.id} p={p} />)}</ul>}
             </Card>

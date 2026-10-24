@@ -17,8 +17,8 @@ export function EventsCard({ events, trackerId, canEdit, now, onDone }: { events
     setBusy(true); setErr(null); try { await f(); after?.(); onDone(msg, undo); } catch (e) { setErr(e); } finally { setBusy(false); } }
   const row = (e: TrkEvent) => (
     <div key={e.id} className={cx('flex items-start gap-2 px-2.5 py-1.5', e.endedAt && 'opacity-70')}>
-      <span className={cx('mt-0.5 shrink-0 rounded px-1.5 text-[10.5px] font-bold', CAT_CLS[e.category])}>{EVENT_LABEL[e.category]}</span>
-      <span className="min-w-0 flex-1 text-[12.5px] text-slate-800">{e.key && <b>{e.key.replace(/^([A-Z]{1,3})-12-/, '$1-')}: </b>}{e.text}
+      <span className={cx('mt-0.5 shrink-0 rounded px-1.5 text-[10px] font-bold', CAT_CLS[e.category])}>{EVENT_LABEL[e.category]}</span>
+      <span className="min-w-0 flex-1 text-[12px] text-slate-800">{e.key && <b>{e.key.replace(/^([A-Z]{1,3})-12-/, '$1-')}: </b>}{e.text}
         <span className="block text-[11px] text-slate-500">{when(e.startedAt)}{e.endedAt ? ` → ${when(e.endedAt)} · ${hoursText(Date.parse(e.endedAt) - Date.parse(e.startedAt))}` : ` · ${hoursText(now - Date.parse(e.startedAt))} so far`}{e.by ? ` · ${e.by}` : ''}</span></span>
       {canEdit && !e.endedAt && <RowBtn tone="ghost" disabled={busy} onClick={() => run(() => endEvent(e.id, true), `${EVENT_LABEL[e.category]}: ended.`, () => endEvent(e.id, false))}>End</RowBtn>}
     </div>);
@@ -26,10 +26,10 @@ export function EventsCard({ events, trackerId, canEdit, now, onDone }: { events
     <section className="rounded-xl bg-white ring-1 ring-slate-200">
       <div className="flex items-center justify-between px-2.5 pt-2">
         <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Events · N₂ & reactors{open.length ? ` · ${open.length} open` : ''}</h3>
-        {canEdit && !add && <button type="button" onClick={() => setAdd(true)} className="text-xs font-semibold text-[#0850A0]">+ Event</button>}
+        {canEdit && !add && <button type="button" onClick={() => setAdd(true)} className="text-xs font-semibold text-brand-500">+ Event</button>}
       </div>
       {add && <div className="space-y-1.5 px-2.5 pt-1.5">
-        <div className="flex gap-1">{(Object.keys(EVENT_LABEL) as TrkEvent['category'][]).map((k) => <button key={k} type="button" onClick={() => setCat(k)} className={cx('min-h-8 rounded-full px-2.5 text-xs font-semibold', cat === k ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{EVENT_LABEL[k]}</button>)}</div>
+        <div className="flex gap-1">{(Object.keys(EVENT_LABEL) as TrkEvent['category'][]).map((k) => <button key={k} type="button" onClick={() => setCat(k)} className={cx('min-h-8 rounded-full px-2.5 text-xs font-semibold', cat === k ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{EVENT_LABEL[k]}</button>)}</div>
         <input className="input" placeholder={cat === 'nitrogen' ? 'e.g. N₂ trailer empty, waiting next trailer' : cat === 'reactors' ? 'e.g. vacuum truck down, dumping stopped on all reactors' : 'What happened'} value={text} onChange={(x) => setText(x.target.value)} />
         <div className="flex gap-1.5"><RowBtn tone="navy" disabled={busy || !text.trim()} onClick={() => run(() => addEvent(trackerId, cat, text.trim()), `${EVENT_LABEL[cat]}: event recorded.`, undefined, () => { setAdd(false); setText(''); })}>Record</RowBtn><RowBtn tone="ghost" onClick={() => setAdd(false)}>Cancel</RowBtn></div>
       </div>}

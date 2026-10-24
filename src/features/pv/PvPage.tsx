@@ -413,7 +413,7 @@ function PersonSheet({ model, person, picks, ctx, busy, onTap, onClose }: { mode
                 const why = on || away ? null : blockReason(ctx, person.id, c.index);
                 return (
                   <button key={c.index} type="button" disabled={busy || (!on && !!away)} aria-pressed={on} title={away ? 'Other leave' : why ?? undefined} onClick={() => onTap(person, c.index)}
-                    className={cx('min-h-11 rounded-lg px-3 text-sm font-medium tabular-nums ring-1', on ? 'bg-brand-700 text-white ring-brand-700' : away ? 'bg-slate-100 text-slate-400 ring-slate-200 line-through' : why ? 'bg-red-50 text-red-800 ring-red-200' : c.summer ? 'bg-amber-50 text-amber-900 ring-amber-200' : 'bg-white text-slate-800 ring-slate-300')}>
+                    className={cx('min-h-11 rounded-lg px-3 text-sm font-medium tabular-nums ring-1', on ? 'bg-brand-700 text-white ring-brand-700' : away ? 'bg-slate-100 text-slate-500 ring-slate-200 line-through' : why ? 'bg-red-50 text-red-800 ring-red-200' : c.summer ? 'bg-amber-50 text-amber-900 ring-amber-200' : 'bg-white text-slate-800 ring-slate-300')}>
                     {Number(c.start.slice(8))}–{Number(c.end.slice(8))}{Number(c.end.slice(5, 7)) !== Number(c.start.slice(5, 7)) ? ` ${MONTHS[Number(c.end.slice(5, 7)) - 1]}` : ''}
                   </button>
                 );
@@ -473,7 +473,7 @@ function PanelCard({ crew, g }: { crew: Crew; g: Model['groups'][Crew] }) {
       {g.short > 0 && <p className="text-xs font-semibold text-status-red">{g.short} seat{g.short === 1 ? '' : 's'} cannot be filled: not enough Grade 13 Field Operators on this shift.</p>}
       <ol className="divide-y divide-slate-100 text-xs">
         {g.ranked.map((p, i) => (
-          <li key={p.id} className={cx('flex items-center gap-2 py-1', !used.has(p.id) && 'text-slate-400')}>
+          <li key={p.id} className={cx('flex items-center gap-2 py-1', !used.has(p.id) && 'text-slate-500')}>
             <span className="w-4 tabular-nums">{i + 1}</span>
             <span className="min-w-0 flex-1 truncate font-medium">{p.name} <span className="font-normal">#{p.number}</span></span>
             <span className="shrink-0 tabular-nums">in grade since {p.gradeSince ? p.gradeSince.slice(0, 7) : '—'}</span>
@@ -518,7 +518,7 @@ function ControllersTimeline({ model, picks, issues }: { model: Model; picks: Ma
         </div>
         {ctl.map((p) => (
           <div key={p.id} className="flex items-center gap-1 py-0.5">
-            <div className="flex w-24 shrink-0 items-center gap-1">{p.crew ? <CrewBadge crew={p.crew} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-600">{p.role === 'vr_controller' ? 'VR' : 'DS'}</span>}<span className="truncate text-[11px] font-medium text-slate-800">{shortName(p.name)}</span></div>
+            <div className="flex w-24 shrink-0 items-center gap-1">{p.crew ? <CrewBadge crew={p.crew} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">{p.role === 'vr_controller' ? 'VR' : 'DS'}</span>}<span className="truncate text-[11px] font-medium text-slate-800">{shortName(p.name)}</span></div>
             <div className="relative h-5 flex-1 rounded bg-slate-50 ring-1 ring-slate-100">
               {MONTHS.map((m, i) => i > 0 && <span key={m} className="absolute top-0 h-full w-px bg-slate-200" style={{ left: pct(`${year}-${String(i + 1).padStart(2, '0')}-01`) }} />)}
               {(spans.get(p.id) ?? []).map((s) => <span key={`${s.start}${s.end}`} className={cx('absolute top-0.5 h-4 rounded-sm', s.other ? 'bg-slate-400' : 'bg-brand-700')} style={{ left: pct(s.start), width: width(s.start, s.end) }} title={`${shortDate(s.start)} – ${shortDate(s.end)}`} />)}

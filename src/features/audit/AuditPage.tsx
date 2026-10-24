@@ -63,7 +63,7 @@ export default function AuditPage() {
         ))}
       </div>
       <div className="mb-3 flex items-center gap-2">
-        <label className="relative block min-w-0 flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <label className="relative block min-w-0 flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
           <input className="input" style={{ paddingLeft: '2.25rem' }} placeholder="Search name or change" value={q} onChange={(e) => setQ(e.target.value)} inputMode="search" /></label>
         <label className="flex shrink-0 items-center gap-1.5 text-xs text-slate-600"><input type="checkbox" checked={imports} onChange={(e) => setImports(e.target.checked)} /> Imports</label>
       </div>
@@ -74,7 +74,7 @@ export default function AuditPage() {
       <p className="-mt-1 mb-3 text-[11px] text-slate-500">Search finds a person, the author or the change; each entry shows before → after. The history cannot be edited or deleted.</p>
       {!imports && <p className="-mt-1 mb-3 text-[11px] text-slate-500">Imports: see <Link to="/import?tab=history" className="font-medium text-brand-700">Import history</Link></p>}
       {error ? <ErrorBox error={error} /> : !entries ? <Spinner /> : entries.length === 0 ? (
-        <Card className="text-sm text-slate-500"><History className="mb-1 h-5 w-5 text-slate-400" />Nothing recorded{q ? ' matches the search' : ''}.</Card>
+        <Card className="text-sm text-slate-500"><History className="mb-1 h-5 w-5 text-slate-500" />Nothing recorded{q ? ' matches the search' : ''}.</Card>
       ) : (
         <div className="space-y-3">
           {days.map((d) => (
@@ -107,7 +107,7 @@ export function Entry({ e, showPerson = true }: { e: AuditEntry; showPerson?: bo
             {showPerson && e.employeeId && <><span>·</span><Link to={`/employees/${e.employeeId}`} onClick={(ev) => ev.stopPropagation()} className="font-medium text-brand-700">Profile</Link></>}
           </span>
         </span>
-        {hasMore && (open ? <ChevronUp className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" /> : <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />)}
+        {hasMore && (open ? <ChevronUp className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" /> : <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />)}
       </button>
       {open && <ul className="ml-12 mt-1 space-y-0.5 rounded-md bg-slate-50 px-2 py-1.5 text-xs text-slate-700">{e.details.map((d, i) => <li key={i}>{d}</li>)}</ul>}
     </div>

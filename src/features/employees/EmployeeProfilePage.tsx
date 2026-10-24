@@ -224,7 +224,7 @@ export default function EmployeeProfilePage({ profile, editId }: { profile: User
                 {c.from_start ? `${fmtDate(c.from_start)} → ${fmtDate(c.from_end)}` : ''}{c.from_start && c.to_start ? '  ⇒  ' : ''}{c.to_start ? `${fmtDate(c.to_start)} → ${fmtDate(c.to_end)}` : ''}
               </div>
               {c.note ? <div className="text-xs text-slate-500">{c.note}</div> : null}
-              {c.evidence ? <div className="text-xs text-slate-400">{t('Evidence')}: {c.evidence}</div> : null}
+              {c.evidence ? <div className="text-xs text-slate-500">{t('Evidence')}: {c.evidence}</div> : null}
             </li>
           ))}
         </ul>
@@ -246,7 +246,7 @@ export default function EmployeeProfilePage({ profile, editId }: { profile: User
 
       <Collapsible title="Role history" count={data.roles.length}>
         <ul className="divide-y divide-slate-100 text-sm">
-          {data.roles.map((r) => <li key={r.id} className="flex justify-between py-2"><span className="inline-flex flex-wrap items-center gap-1.5">{r.positions?.label ?? r.position_id}{isCrew(r.crews?.code) && <><span className="text-slate-400">·</span><CrewTag crew={r.crews?.code} /></>}</span><span className="text-slate-500">{fmtDate(r.effective_from)} → {r.effective_to ? fmtDate(r.effective_to) : t('current')}</span></li>)}
+          {data.roles.map((r) => <li key={r.id} className="flex justify-between py-2"><span className="inline-flex flex-wrap items-center gap-1.5">{r.positions?.label ?? r.position_id}{isCrew(r.crews?.code) && <><span className="text-slate-500">·</span><CrewTag crew={r.crews?.code} /></>}</span><span className="text-slate-500">{fmtDate(r.effective_from)} → {r.effective_to ? fmtDate(r.effective_to) : t('current')}</span></li>)}
         </ul>
       </Collapsible>
 
@@ -296,7 +296,7 @@ function BlockRow({ b, today, showReturn, to }: { b: LeaveBlock<ProfileSpan>; to
         </span>
         <span className="flex shrink-0 items-center gap-2">
           {showReturn && <span className="text-xs font-medium text-slate-600">{t('Return')} {shortDate(b.returnOn)}</span>}
-          {to && <Pencil className="h-3.5 w-3.5 text-slate-400" />}
+          {to && <Pencil className="h-3.5 w-3.5 text-slate-500" />}
         </span>
       </span>
   );
@@ -310,7 +310,7 @@ function Collapsible({ title, count, children, startOpen = false }: { title: str
     <Card className="mb-3">
       <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex min-h-9 w-full items-center justify-between text-start">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t(title)} ({count})</h2>
-        {open ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+        {open ? <ChevronUp className="h-4 w-4 text-slate-500" /> : <ChevronDown className="h-4 w-4 text-slate-500" />}
       </button>
       {open && <div className="mt-2">{children}</div>}
     </Card>

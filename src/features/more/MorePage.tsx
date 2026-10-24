@@ -19,7 +19,7 @@ export default function MorePage({ profile }: { profile: UserProfile }) {
             <Link to={to} className="flex min-h-16 items-center gap-3 px-4 py-3 active:bg-slate-50">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700"><Icon className="h-5 w-5" /></span>
               <span className="min-w-0 flex-1"><span className="block font-medium text-slate-800">{t(label)}</span><span className="block truncate text-xs text-slate-500">{desc.split(' · ').map((d) => t(d)).join(' · ')}</span></span>
-              <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 rtl:rotate-180" />
+              <ChevronRight className="h-4 w-4 shrink-0 text-slate-500 rtl:rotate-180" />
             </Link>
           </li>
         ))}
@@ -27,7 +27,7 @@ export default function MorePage({ profile }: { profile: UserProfile }) {
           <Link to="/notifications" className="flex min-h-16 items-center gap-3 px-4 py-3 active:bg-slate-50">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700"><Bell className="h-5 w-5" /></span>
             <span className="min-w-0 flex-1"><span className="block font-medium text-slate-800">{t('Notifications')}</span><span className="block truncate text-xs text-slate-500">{t('Open alerts and resolved history')}</span></span>
-            <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 rtl:rotate-180" />
+            <ChevronRight className="h-4 w-4 shrink-0 text-slate-500 rtl:rotate-180" />
           </Link>
         </li>
       </ul>
@@ -39,8 +39,8 @@ export default function MorePage({ profile }: { profile: UserProfile }) {
         <div className="text-sm text-slate-600">{t('Signed in as')} <span className="font-medium text-slate-800">{profile.display_name}</span></div>
         <Button variant="secondary" className="mt-3 w-full" onClick={() => supabase.auth.signOut()}><LogOut className="h-4 w-4" /> {t('Sign out')}</Button>
       </Card>
-      <VersionLine className="mt-6 text-center text-[11px] text-slate-400" />
-      <p className="mt-2 text-center text-[11px] text-slate-400">ARDS Operations · Area 4 · Unit 12 · Manpower Control</p>
+      <VersionLine className="mt-6 text-center text-[11px] text-slate-500" />
+      <p className="mt-2 text-center text-[11px] text-slate-500">ARDS Operations · Area 4 · Unit 12 · Manpower Control</p>
     </div>
   );
 }

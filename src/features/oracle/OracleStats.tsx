@@ -78,8 +78,8 @@ export function OracleStatsPanel({ profile }: { profile: UserProfile }) {
         {!s ? <p className="text-sm text-slate-500">{t('No Oracle report imported yet. Use Excel import → Upload, or enter one figure below.')}</p> : <>
           <p className="mb-2 text-xs text-slate-500">{t('Report period')}: <b>{period(s)}</b> · {t('taken from Oracle')} {s.extractedOn} · {t('imported')} {s.importedAt.slice(0, 10)} · {t('codes')}: {s.codes.join(', ')}</p>
           <label className="mb-2 flex min-h-10 items-center gap-2 rounded-xl bg-white px-3 ring-1 ring-slate-200">
-            <Search className="h-4 w-4 text-slate-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('Name or number')} className="w-full bg-transparent text-sm outline-none" />
-            {q && <button type="button" onClick={() => setQ('')} aria-label={t('Clear')}><X className="h-4 w-4 text-slate-400" /></button>}
+            <Search className="h-4 w-4 text-slate-500" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('Name or number')} className="w-full bg-transparent text-sm outline-none" />
+            {q && <button type="button" onClick={() => setQ('')} aria-label={t('Clear')}><X className="h-4 w-4 text-slate-500" /></button>}
           </label>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -90,7 +90,7 @@ export function OracleStatsPanel({ profile }: { profile: UserProfile }) {
                   const roll = sickRolling(p.id, today, data.snapshots, data.values, data.codes);
                   return (
                     <tr key={p.id}>
-                      <td className="py-1.5"><Link to={`/employees/${p.id}`} className="font-medium text-brand-700">{p.display_name}</Link><div className="text-[11px] text-slate-400">#{p.employee_number}</div></td>
+                      <td className="py-1.5"><Link to={`/employees/${p.id}`} className="font-medium text-brand-700">{p.display_name}</Link><div className="text-[11px] text-slate-500">#{p.employee_number}</div></td>
                       {s.codes.map((c) => <td key={c} className={cx('px-1 text-end tabular-nums', row[c] === null && 'text-slate-300')}>{row[c] === null ? '—' : row[c]}</td>)}
                       <td className="px-1"><div className="flex flex-wrap items-center gap-1">
                         <Chip tone={ROLL_TONE[roll.state]}>{t(ROLL_LABEL[roll.state])}</Chip>

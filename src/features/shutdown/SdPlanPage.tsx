@@ -425,10 +425,10 @@ function TeamCard({ t, data, view, check, onMove, onAdd, onMember, onEdit }: { t
       <div className="mt-1.5 grid gap-px" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}>
         {days.map((d) => { const n = dayShort(d.slots); const st = dayState(d.slots); return (
           <button key={d.date} type="button" onClick={() => setDay(day === d.date ? null : d.date)} title={shortDate(d.date)}
-            className={cx('flex h-5 items-center justify-center rounded-[3px] text-[8px] font-bold', st === 'critical' ? 'bg-status-red text-white' : st === 'short' ? 'bg-amber-200 text-amber-900' : st === 'idle' ? 'bg-slate-200 text-slate-500' : 'bg-green-200 text-green-900', isRampDay(data.plan, d.date) && 'ring-1 ring-inset ring-slate-500', day === d.date && 'outline outline-2 outline-brand-700')}>{n || ''}</button>
+            className={cx('flex h-5 items-center justify-center rounded-[3px] text-[9px] font-bold', st === 'critical' ? 'bg-status-red text-white' : st === 'short' ? 'bg-amber-200 text-amber-900' : st === 'idle' ? 'bg-slate-200 text-slate-500' : 'bg-green-200 text-green-900', isRampDay(data.plan, d.date) && 'ring-1 ring-inset ring-slate-500', day === d.date && 'outline outline-2 outline-brand-700')}>{n || ''}</button>
         ); })}
       </div>
-      <div className="mt-0.5 flex justify-between text-[9px] text-slate-400"><span>{shortDate(days[0].date)}</span><span>green all on · amber fewer · red a slot empty{total ? ' · grey not needed' : ''}</span><span>{shortDate(days[days.length - 1].date)}</span></div>
+      <div className="mt-0.5 flex justify-between text-[9px] text-slate-500"><span>{shortDate(days[0].date)}</span><span>green all on · amber fewer · red a slot empty{total ? ' · grey not needed' : ''}</span><span>{shortDate(days[days.length - 1].date)}</span></div>
       {sel && <p className="mt-1 rounded-md bg-slate-50 px-2 py-1 text-[11px] text-slate-700">{wd(sel.date)} {shortDate(sel.date)}{isRampDay(data.plan, sel.date) ? ' · reduced' : ''}: {Object.entries(sel.slots).map(([k, x]) => <span key={k} className={cx('ml-1', x.have < x.need && 'font-semibold text-status-red')}>{slotLabel(k)} {x.have}/{x.need}</span>)}</p>}
 
       {total ? <AreaGroups t={t} data={data} view={view} need={need} onMove={onMove} onAdd={onAdd} onMember={onMember} /> : <div className="mt-1 divide-y divide-slate-100">
@@ -532,9 +532,9 @@ function MemberRow({ m, data, view, check, onOpen }: { m: SdMember; data: Data; 
     <button type="button" onClick={onOpen} draggable title="Drag the name to another place or team"
       onDragStart={(e) => { e.dataTransfer.setData(DND, m.id); e.dataTransfer.effectAllowed = 'move'; }}
       className="flex w-full cursor-grab items-center gap-2 py-1 text-left active:cursor-grabbing">
-      {crew ? <CrewBadge crew={crew} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-500">VR</span>}
+      {crew ? <CrewBadge crew={crew} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-500">VR</span>}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-slate-900">{r?.display_name ?? '—'}{isPo(r) ? <span className="ml-1 text-[10px] font-semibold text-slate-400">PO</span> : r?.fo_level && m.slot !== 'controller' ? <span className="ml-1 text-[10px] font-semibold text-slate-400">{FO_LEVEL_LABEL[r.fo_level]}</span> : null}</span>
+        <span className="block truncate text-sm font-medium text-slate-900">{r?.display_name ?? '—'}{isPo(r) ? <span className="ml-1 text-[10px] font-semibold text-slate-500">PO</span> : r?.fo_level && m.slot !== 'controller' ? <span className="ml-1 text-[10px] font-semibold text-slate-500">{FO_LEVEL_LABEL[r.fo_level]}</span> : null}</span>
         <span className="block truncate text-[11px] text-slate-500">#{r?.employee_number}{data.plan.kind === 'total' && m.slot === 'controller' && m.area ? ` · ${m.area}` : ''}{m.followCrew ? ` · follows ${m.followCrew}` : ''} · {off.length ? `off ${off.join(', ')}…` : 'every day'}{m.start !== data.plan.start || m.end !== data.plan.end ? ` · ${range(m.start, m.end)}` : ''}</span>
       </span>
       {m.controllerRole && <span className="shrink-0 rounded-full bg-brand-50 px-1.5 text-[10px] font-semibold text-brand-800">{m.controllerRole === 'primary' ? 'Primary' : 'Assistant'}</span>}
@@ -614,7 +614,7 @@ function AddSheet({ plan, team, slot, area, data, view, onClose, onDone }: { pla
         <div className="divide-y divide-slate-100">
           {listed.map((c) => (
             <button key={c.p.id} type="button" disabled={busy || c.elig?.level === 'blocked'} onClick={() => pick(c.p)} className={cx('flex w-full items-center gap-2 py-2 text-left disabled:opacity-50', !c.match && 'opacity-60')}>
-              {c.crew ? <CrewBadge crew={c.crew} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-500">VR</span>}
+              {c.crew ? <CrewBadge crew={c.crew} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-500">VR</span>}
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-slate-900">{c.p.name} <span className="text-[11px] font-normal text-slate-500">{c.p.employmentType === 'contractor' ? 'Contractor' : `G${c.p.grade ?? '—'}`}{c.p.role === 'panel_operator' ? ' · Panel Operator' : c.level ? ` · ${FO_LEVEL_LABEL[c.level]}` : slot !== 'controller' ? ' · no level' : ''}</span></span>
                 {c.elig && c.elig.reasons.length > 0 && <span className={cx('block text-[11px] font-semibold', c.elig.level === 'blocked' || c.elig.level === 'needs_exception' ? 'text-status-red' : c.elig.level === 'verify' ? 'text-sky-800' : 'text-amber-800')}>{c.elig.reasons.join(' ')}</span>}
@@ -937,7 +937,7 @@ function NamesEditor({ label, list, set, placeholder }: { label: string; list: N
         {list.map((a, i) => (
           <div key={a.key || i} className="flex items-center gap-2">
             <input className="input" value={a.name} placeholder={placeholder} onChange={(e) => set((l) => l.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
-            <button type="button" aria-label="Remove" onClick={() => set((l) => l.filter((_, j) => j !== i))} className="text-slate-400"><Trash2 className="h-4 w-4" /></button>
+            <button type="button" aria-label="Remove" onClick={() => set((l) => l.filter((_, j) => j !== i))} className="text-slate-500"><Trash2 className="h-4 w-4" /></button>
           </div>
         ))}
         <button type="button" onClick={() => set((l) => [...l, { key: `new-${Date.now()}`, name: '' }])} className="flex items-center gap-1 text-sm font-medium text-brand-700"><Plus className="h-4 w-4" />Add</button>
@@ -997,7 +997,7 @@ function PhasesSheet({ plan, teams, phases, onClose, onDone }: { plan: SdPlan; t
             <div className="flex items-end gap-2">
               <Field label={`Phase ${i + 1} from`}><input type="date" className="input" value={x.start} min={plan.start} max={plan.end} onChange={(e) => setPhase(i, (p) => ({ ...p, start: e.target.value }))} /></Field>
               <Field label="Until"><input type="date" className="input" value={x.end} min={plan.start} max={plan.end} onChange={(e) => setPhase(i, (p) => ({ ...p, end: e.target.value }))} /></Field>
-              {list.length > 1 && <button type="button" aria-label="Remove phase" onClick={() => { if (!x.id.startsWith('new')) setRemoved((r) => [...r, x.id]); setList((l) => l.filter((_, j) => j !== i)); }} className="mb-3 text-slate-400"><Trash2 className="h-4 w-4" /></button>}
+              {list.length > 1 && <button type="button" aria-label="Remove phase" onClick={() => { if (!x.id.startsWith('new')) setRemoved((r) => [...r, x.id]); setList((l) => l.filter((_, j) => j !== i)); }} className="mb-3 text-slate-500"><Trash2 className="h-4 w-4" /></button>}
             </div>
             <div className="mt-2 overflow-x-auto">
               <table className="w-full text-sm">

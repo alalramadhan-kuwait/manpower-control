@@ -120,7 +120,7 @@ function MonthView() {
                   <div key={wi}>
                     <div className="grid grid-cols-[12px_repeat(7,minmax(0,1fr))] gap-x-0.5">
                       {showPills && !crew ? (
-                        <div className="flex flex-col pt-[15px] text-[9px] font-semibold leading-[14px] text-slate-400"><span className="mb-px">M</span><span className="mb-px">A</span><span>N</span></div>
+                        <div className="flex flex-col pt-[15px] text-[9px] font-semibold leading-[14px] text-slate-500"><span className="mb-px">M</span><span className="mb-px">A</span><span>N</span></div>
                       ) : <div />}
                       {week.map((d, di) => d ? <DayCell key={d} date={d} day={view.byDate.get(d)!} today={today} crew={crew} filter={filter} showPills={showPills}
                         away={view.away(d)} holiday={view.holidayOn(d)} inEvent={view.bars.some((b) => b.start <= d && d <= b.end)} onOpen={() => setOpen(d)} /> : <div key={`x${di}`} />)}
@@ -152,7 +152,7 @@ function MonthView() {
                 <button key={h.id} type="button" onClick={() => setSheet({ kind: 'holiday', holiday: h })} className="flex w-full items-center gap-2 py-2 text-left">
                   <Star className="h-4 w-4 shrink-0 fill-pink-500 text-pink-600" />
                   <span className="min-w-0 flex-1"><span className="block text-sm font-medium text-slate-900">{h.name}</span><span className="block text-xs text-slate-500">{h.start === h.end ? shortDate(h.start) : `${shortDate(h.start)} – ${shortDate(h.end)}`}{h.expected ? ' · expected, to be confirmed' : ''}</span></span>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
                 </button>
               ))}
             </Section>
@@ -163,7 +163,7 @@ function MonthView() {
               const Icon = b.icon;
               const inner = <><span className={cx('flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-white', b.cls)}><Icon className="h-3.5 w-3.5" /></span>
                 <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-900">{b.label}</span><span className="block text-xs text-slate-500">{b.event ? EVENT_CATEGORY_LABEL[b.event.category] : 'Operating mode: own minimums per crew'}{b.event?.note ? ` · ${b.event.note}` : ''}</span></span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" /></>;
+                <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" /></>;
               return b.event ? <button key={b.id} type="button" onClick={() => setSheet({ kind: 'event', event: b.event! })} className="flex w-full items-center gap-2 py-2 text-left">{inner}</button>
                 : <Link key={b.id} to="/shutdown?tab=modes" className="flex items-center gap-2 py-2">{inner}</Link>;
             })}

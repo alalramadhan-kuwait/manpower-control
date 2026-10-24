@@ -15,7 +15,7 @@ const fromLocal = (v: string) => (v ? `${v}:00+03:00` : null);
 
 function Section({ title, children, open: initial = false }: { title: string; children: React.ReactNode; open?: boolean }) {
   const [open, setOpen] = useState(initial);
-  return <section className="rounded-2xl bg-white p-3 ring-1 ring-slate-200"><button type="button" onClick={() => setOpen((x) => !x)} className="flex w-full items-center justify-between text-sm font-bold text-[#004080]"><span>{title}</span><span>{open ? '▾' : '▸'}</span></button>{open && <div className="mt-2 space-y-2">{children}</div>}</section>;
+  return <section className="rounded-2xl bg-white p-3 ring-1 ring-slate-200"><button type="button" onClick={() => setOpen((x) => !x)} className="flex w-full items-center justify-between text-sm font-bold text-brand-600"><span>{title}</span><span>{open ? '▾' : '▸'}</span></button>{open && <div className="mt-2 space-y-2">{children}</div>}</section>;
 }
 
 export function TrackerAdmin({ data, eqs, by = 'Section Head', onDone }: { data: TrackerData; eqs: EquipView[]; by?: string; onDone: (msg: string) => void }) {
@@ -59,7 +59,7 @@ export function TrackerAdmin({ data, eqs, by = 'Section Head', onDone }: { data:
       </Section>
 
       <Section title={`Bar chart · ${data.activities.length} activities · ${keys.length} items`} open={!data.activities.length}>
-        <label className={cx('flex min-h-11 cursor-pointer items-center justify-center rounded-xl bg-[#0850A0] px-4 text-sm font-medium text-white', busy && 'opacity-50')}>
+        <label className={cx('flex min-h-11 cursor-pointer items-center justify-center rounded-xl bg-brand-500 px-4 text-sm font-medium text-white', busy && 'opacity-50')}>
           Import bar chart (CSV)<input type="file" accept=".csv,text/csv" className="hidden" disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }} />
         </label>
         <p className="text-[11px] text-slate-500">Columns: activity_id, group, equipment_key, activity, duration_h, planned_start, planned_finish, stage, tracked (as barchart_activities.csv; Kuwait time). Each import is a new baseline: the actual progress stays.</p>

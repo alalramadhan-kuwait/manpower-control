@@ -119,34 +119,34 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const spare = new Map([...miItems.values()].filter((i) => i.done < i.lines).map((i) => [i.tag, i.spareD]));
   const open = (a: { kind: 'step' | 'equipment'; ref: string }) => setSheet(a.kind === 'step' ? { kind: 'step', id: a.ref } : { kind: 'eq', tag: a.ref });
 
-  if (eng) return <div className="fixed inset-0 z-[60] overflow-y-auto bg-[#f4f6fa]"><EngineerView trackerId={tracker.id} name={profile.display_name} title={tracker.title} onExit={() => toEng(false)} /></div>;
+  if (eng) return <div className="fixed inset-0 z-[60] overflow-y-auto bg-canvas"><EngineerView trackerId={tracker.id} name={profile.display_name} title={tracker.title} onExit={() => toEng(false)} /></div>;
   return (
     <div className="mx-auto max-w-3xl pb-24">
-      {test && <div className="mb-2 rounded-lg bg-[#FFE699] px-3 py-1.5 text-center text-xs font-bold tracking-wide text-amber-950">TEST · a copy for trying; nothing here is live{now !== Date.now() && Math.abs(now - Date.now()) > 120_000 ? ` · clock ${kwDay(now)} ${kwTime(now)}` : ''}{other.filter((o) => o.mode === 'live').map((o) => <Link key={o.id} to={`/progress/${o.id}`} className="ml-2 underline">Live ›</Link>)}</div>}
+      {test && <div className="mb-2 rounded-lg bg-amber-200 px-3 py-1.5 text-center text-xs font-bold tracking-wide text-amber-950">TEST · a copy for trying; nothing here is live{now !== Date.now() && Math.abs(now - Date.now()) > 120_000 ? ` · clock ${kwDay(now)} ${kwTime(now)}` : ''}{other.filter((o) => o.mode === 'live').map((o) => <Link key={o.id} to={`/progress/${o.id}`} className="ml-2 underline">Live ›</Link>)}</div>}
       <div className="mb-2 flex items-center justify-between gap-2 print:hidden">
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-bold text-[#004080]">{tracker.title}</h1>
+          <h1 className="truncate text-lg font-bold text-brand-600">{tracker.title}</h1>
           <p className="text-xs text-slate-500">{tracker.eventTitle ?? ''}{tracker.settings.workOrder ? ` · WO ${tracker.settings.workOrder}` : ''}</p>
         </div>
         <div className="flex shrink-0 gap-1.5">
-          <button type="button" onClick={() => toEng(true)} title="Engineer view" className="flex min-h-11 flex-col items-center justify-center rounded-xl bg-white px-2 text-[10px] font-bold leading-tight text-[#0d2a5e] ring-1 ring-slate-200 active:bg-slate-50"><span className="text-base">👷</span>Engineer</button>
-          <button type="button" onClick={() => setTab('report')} className="flex min-h-11 items-center gap-1 rounded-xl bg-[#08A048] px-3 text-sm font-bold text-white shadow-sm active:bg-green-700">💬 Report</button>
+          <button type="button" onClick={() => toEng(true)} title="Engineer view" className="flex min-h-11 flex-col items-center justify-center rounded-xl bg-white px-2 text-[10px] font-bold leading-tight text-brand-700 ring-1 ring-slate-200 active:bg-slate-50"><span className="text-base">👷</span>Engineer</button>
+          <button type="button" onClick={() => setTab('report')} className="flex min-h-11 items-center gap-1 rounded-xl bg-status-green px-3 text-sm font-bold text-white shadow-sm active:bg-green-700">💬 Report</button>
           {isHead && <button type="button" aria-label="Admin" onClick={() => setTab('admin')} className="min-h-11 min-w-11 rounded-xl bg-white text-lg ring-1 ring-slate-200 active:bg-slate-50">⚙️</button>}
         </div>
       </div>
       <nav className="sticky top-0 z-20 mb-2 grid grid-cols-5 gap-0.5 rounded-2xl bg-slate-200/70 p-1 backdrop-blur print:hidden" aria-label="Progress">
         {TABS.map(([k, label, icon]) => { const on = MAIN[tab] === k; const badge = k === 'equipment' ? tot.late : k === 'iats' ? tot.iatOpen : k === 'isolation' ? isoOpen : 0;
           return <button key={k} type="button" aria-current={on ? 'page' : undefined} onClick={() => setTab(k)}
-            className={cx('relative flex min-h-14 flex-col items-center justify-center rounded-xl px-0.5 text-[11.5px] font-semibold', on ? 'bg-white text-[#0850A0] shadow-sm' : 'text-slate-600 active:bg-white/60')}>
+            className={cx('relative flex min-h-14 flex-col items-center justify-center rounded-xl px-0.5 text-[12px] font-semibold', on ? 'bg-white text-brand-500 shadow-sm' : 'text-slate-600 active:bg-white/60')}>
             <span className="text-lg leading-none" aria-hidden>{icon}</span><span className="mt-0.5 truncate">{label}</span>
-            {badge > 0 && <span className={cx('absolute right-1 top-0.5 min-w-[18px] rounded-full px-1 text-[10.5px] font-bold leading-[18px] text-white', k === 'equipment' ? 'bg-[#E02028]' : k === 'isolation' ? 'bg-[#0850A0]' : 'bg-[#D97706]')}>{badge}</span>}
+            {badge > 0 && <span className={cx('absolute right-1 top-0.5 min-w-[18px] rounded-full px-1 text-[10px] font-bold leading-[18px] text-white', k === 'equipment' ? 'bg-status-red' : k === 'isolation' ? 'bg-brand-500' : 'bg-status-amber')}>{badge}</span>}
           </button>; })}
       </nav>
       {VIEWS[MAIN[tab]] && <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-slate-200/60 p-1 print:hidden">
-        {VIEWS[MAIN[tab]]!.map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={cx('min-h-10 rounded-lg text-sm font-semibold', tab === k ? 'bg-white text-[#004080] shadow-sm' : 'text-slate-600')}>{l}</button>)}
+        {VIEWS[MAIN[tab]]!.map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={cx('min-h-10 rounded-lg text-sm font-semibold', tab === k ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-600')}>{l}</button>)}
       </div>}
-      {refreshing && <div aria-hidden className="fixed inset-x-0 top-0 z-[80] h-1 overflow-hidden bg-[#D6E6F5]"><div className="h-full w-1/3 animate-[trkbar_1s_ease-in-out_infinite] bg-[#0850A0]" /></div>}
-      {flash && <div role="status" className="fixed inset-x-3 bottom-24 z-[70] mx-auto flex max-w-md items-center gap-2 rounded-xl bg-[#0d2a5e] px-3 py-2.5 text-sm text-white shadow-xl">
+      {refreshing && <div aria-hidden className="fixed inset-x-0 top-0 z-[80] h-1 overflow-hidden bg-brand-100"><div className="h-full w-1/3 animate-[trkbar_1s_ease-in-out_infinite] bg-brand-500" /></div>}
+      {flash && <div role="status" className="fixed inset-x-3 bottom-24 z-[70] mx-auto flex max-w-md items-center gap-2 rounded-xl bg-brand-700 px-3 py-2.5 text-sm text-white shadow-xl">
         <span className="min-w-0 flex-1">{flash.msg}</span>
         {flash.undo && <button type="button" onClick={undoLast} className="shrink-0 rounded-lg bg-white/15 px-3 py-1.5 text-xs font-bold">↶ Undo</button>}
       </div>}
@@ -159,8 +159,8 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {sheetTab === 'report' && <BottomSheet open onClose={closeSheetTab} title="💬 Shift report"><ReportTab data={data} now={now} canEdit={canEdit} by={profile.display_name} onSaved={() => load(true)} /></BottomSheet>}
       {sheetTab === 'admin' && isHead && <BottomSheet open onClose={closeSheetTab} title="⚙️ Admin · Section Head">
-        {other.length > 0 && <div className="mb-3 flex items-center justify-between rounded-xl bg-white px-3 py-2.5 text-sm ring-1 ring-slate-200"><span><b className={test ? 'text-amber-800' : 'text-[#0850A0]'}>{test ? 'TEST' : 'LIVE'}</b> · {test ? 'a copy for trying' : 'this is the real tracker'}</span>
-          {other.map((o) => <Link key={o.id} to={`/progress/${o.id}`} className="font-bold text-[#0850A0]">{o.mode === 'live' ? 'Live' : 'Test copy'} ›</Link>)}</div>}
+        {other.length > 0 && <div className="mb-3 flex items-center justify-between rounded-xl bg-white px-3 py-2.5 text-sm ring-1 ring-slate-200"><span><b className={test ? 'text-amber-800' : 'text-brand-500'}>{test ? 'TEST' : 'LIVE'}</b> · {test ? 'a copy for trying' : 'this is the real tracker'}</span>
+          {other.map((o) => <Link key={o.id} to={`/progress/${o.id}`} className="font-bold text-brand-500">{o.mode === 'live' ? 'Live' : 'Test copy'} ›</Link>)}</div>}
         <TrackerAdmin data={data} eqs={eqs} by={profile.display_name} onDone={done} /></BottomSheet>}
       {openStep && <StepSheet v={openStep} isHead={isHead} canEdit={canEdit} points={points.filter((p) => p.stepId === openStep.step.stepId)} items={eqs.filter((e) => e.eq.hoStep === openStep.step.stepId && e.eq.tracked)}
         onIsolation={() => toIsolation(null)} onClose={() => setSheet(null)} onDone={(m, u) => done(m, false, u)} />}
@@ -177,7 +177,7 @@ function StepRow({ v, auto, onOpen }: { v: StepView; auto?: 'isolation' | 'equip
       <b className="w-11 shrink-0 text-sm">{v.step.stepId}</b>
       <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{v.step.shortName}</span>
       {v.state === 'WAITING' && v.waitingFor.length > 0 && <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">after {v.waitingFor.join(', ')}</span>}
-      {auto && v.state !== 'WAITING' && <span className="shrink-0 rounded bg-[#D6E6F5] px-1.5 py-0.5 text-[10px] font-semibold text-[#004080]">{auto === 'isolation' ? 'from Isolation' : 'from Equipment'}</span>}
+      {auto && v.state !== 'WAITING' && <span className="shrink-0 rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-semibold text-brand-600">{auto === 'isolation' ? 'from Isolation' : 'from Equipment'}</span>}
     </button>
   );
 }
@@ -193,7 +193,7 @@ function SequenceTab({ steps, auto, onOpen }: { steps: Map<string, StepView>; au
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-200/60 p-1">
-        {Object.entries(FO_NAMES).map(([k, n]) => <button key={k} type="button" onClick={() => { setFo(k); setOpened({}); }} className={cx('min-h-10 rounded-lg text-xs font-semibold', fo === k ? 'bg-white text-[#004080] shadow-sm' : 'text-slate-600')}>{k} {n}</button>)}
+        {Object.entries(FO_NAMES).map(([k, n]) => <button key={k} type="button" onClick={() => { setFo(k); setOpened({}); }} className={cx('min-h-10 rounded-lg text-xs font-semibold', fo === k ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-600')}>{k} {n}</button>)}
       </div>
       {gates.map((g) => {
         const xs = list.filter((v) => v.step.gate === g), done = xs.filter(closedOf).length;
@@ -201,15 +201,15 @@ function SequenceTab({ steps, auto, onOpen }: { steps: Map<string, StepView>; au
         const show = opened[g] ?? (isNow || isNext);
         const now = xs.filter((v) => !closedOf(v) && v.state !== 'WAITING'), later = xs.filter((v) => v.state === 'WAITING'), fin = xs.filter(closedOf);
         return (
-          <section key={g} className={cx('rounded-2xl p-2', isNow ? 'bg-[#D6E6F5]/50 ring-2 ring-[#0850A0]' : 'bg-white ring-1 ring-slate-200')}>
+          <section key={g} className={cx('rounded-2xl p-2', isNow ? 'bg-brand-100/50 ring-2 ring-brand-500' : 'bg-white ring-1 ring-slate-200')}>
             <button type="button" onClick={() => setOpened((o) => ({ ...o, [g]: !show }))} className="flex w-full items-center gap-2 text-left">
-              <span className={cx('flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold', done === xs.length ? 'bg-[#08A048] text-white' : isNow ? 'bg-[#0850A0] text-white' : 'bg-slate-200 text-slate-600')}>{done === xs.length ? '✓' : g}</span>
-              <span className="min-w-0 flex-1 text-sm font-semibold text-slate-800">{xs[0]?.step.gateName ?? `Gate ${g}`}{isNow && <span className="ml-1.5 rounded bg-[#0850A0] px-1.5 py-0.5 text-[10px] font-bold text-white">NOW</span>}</span>
+              <span className={cx('flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold', done === xs.length ? 'bg-status-green text-white' : isNow ? 'bg-brand-500 text-white' : 'bg-slate-200 text-slate-600')}>{done === xs.length ? '✓' : g}</span>
+              <span className="min-w-0 flex-1 text-sm font-semibold text-slate-800">{xs[0]?.step.gateName ?? `Gate ${g}`}{isNow && <span className="ml-1.5 rounded bg-brand-500 px-1.5 py-0.5 text-[10px] font-bold text-white">NOW</span>}</span>
               <span className="text-xs tabular-nums text-slate-500">{done}/{xs.length} {show ? '▾' : '▸'}</span>
             </button>
             {show && (
               <div className="mt-2 space-y-1.5">
-                {now.length > 0 && <p className="text-[11px] font-bold uppercase tracking-wide text-[#004080]">Do now</p>}
+                {now.length > 0 && <p className="text-[11px] font-bold uppercase tracking-wide text-brand-600">Do now</p>}
                 {now.map((v) => <StepRow key={v.step.stepId} v={v} auto={auto.get(v.step.stepId)} onOpen={() => onOpen(v.step.stepId)} />)}
                 {later.length > 0 && <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Then</p>}
                 {later.map((v) => <StepRow key={v.step.stepId} v={v} auto={auto.get(v.step.stepId)} onOpen={() => onOpen(v.step.stepId)} />)}
@@ -219,7 +219,7 @@ function SequenceTab({ steps, auto, onOpen }: { steps: Map<string, StepView>; au
           </section>
         );
       })}
-      {current === undefined && <p className="py-3 text-center text-sm text-[#08A048]">All steps of {fo} are done.</p>}
+      {current === undefined && <p className="py-3 text-center text-sm text-status-green">All steps of {fo} are done.</p>}
       <p className="text-[11px] text-slate-500">The guideline shows the order of the work. Blinds and neutralization are entered on Isolation and handovers on Equipment: their steps tick themselves.</p>
     </div>
   );
@@ -228,7 +228,7 @@ function SequenceTab({ steps, auto, onOpen }: { steps: Map<string, StepView>; au
 /** One thin row per item: tag, stage bar and the one thing to know (pending, the step running, the isolation, the next
  *  step), the status and the plan difference. "All" groups the items under their group; "Late first" puts the late,
  *  pending and IAT items on top. */
-const ISO_BG = { red: 'bg-[#E02028]', grey: 'bg-slate-300', amber: 'bg-amber-500', teal: 'bg-teal-500', blue: 'bg-[#0850A0]' } as const;
+const ISO_BG = { red: 'bg-status-red', grey: 'bg-slate-300', amber: 'bg-amber-500', teal: 'bg-teal-500', blue: 'bg-brand-500' } as const;
 function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, spare = new Map(), stale = new Map(), canEdit = false, engine, events = [], trackerId, onDone, onOpen }: { initialLateFirst?: boolean; engine?: TrackerData['engine']; events?: TrackerData['events']; trackerId?: string; eqs: EquipView[]; activities: TrackerData['activities']; points: TrkPoint[]; now: number; spare?: Map<string, number>; stale?: Map<string, number>; canEdit?: boolean; onDone?: (msg: string, undo?: () => Promise<unknown>) => void; onOpen: (tag: string) => void }) {
   const lineOf = (e: EquipView): { text: string; tone: 'run' | 'muted' | 'red' } | null => {
     const key = e.eq.barchartKey ?? e.eq.tag;
@@ -312,17 +312,17 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
       <span className="min-w-0">
         <span className="flex flex-wrap items-center gap-1">
           {iso(e) && <span className={cx('h-2 w-2 shrink-0 rounded-full', ISO_BG[ISO_DOT[iso(e)!.state]])} />}
-          <b className="mr-1 text-[13px] text-slate-900">{e.eq.critical && <span className="text-[#E02028]">★ </span>}{name}</b>
+          <b className="mr-1 text-[13px] text-slate-900">{e.eq.critical && <span className="text-status-red">★ </span>}{name}</b>
           {iso(e) && iso(e)!.state !== 'ho' && <IsoChip state={iso(e)!.state}>{ISO_LABEL[iso(e)!.state]}</IsoChip>}
-          <span className={cx('whitespace-nowrap rounded px-1 py-px text-[9.5px] font-bold', FLAG_STYLE[e.flag].cls)}>{FLAG_STYLE[e.flag].label}{e.late ? ` ${hoursText(e.lateBy)}` : ''}{e.iatsOpen.length && e.flag !== 'IAT_OPEN' ? ` · IAT ${e.iatsOpen.length}` : ''}</span>
+          <span className={cx('whitespace-nowrap rounded px-1 py-px text-[10px] font-bold', FLAG_STYLE[e.flag].cls)}>{FLAG_STYLE[e.flag].label}{e.late ? ` ${hoursText(e.lateBy)}` : ''}{e.iatsOpen.length && e.flag !== 'IAT_OPEN' ? ` · IAT ${e.iatsOpen.length}` : ''}</span>
           {e.plan && e.stage < 6 && e.plan.variance !== 0 && <PlanChip variance={e.plan.variance} days={e.plan.days} short />}
-          {ageH !== undefined && <span className="rounded bg-slate-100 px-1 text-[9.5px] font-bold text-slate-700">⏰ {ageH} h no update</span>}
-          {sp !== undefined && sp <= 7 && <span className={cx('rounded px-1 text-[9.5px] font-bold', sp < 0 ? 'bg-red-600 text-white' : sp <= 3 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{sp < 0 ? `delays ${-sp} d` : `${sp} d float`}</span>}
+          {ageH !== undefined && <span className="rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-700">⏰ {ageH} h no update</span>}
+          {sp !== undefined && sp <= 7 && <span className={cx('rounded px-1 text-[10px] font-bold', sp < 0 ? 'bg-red-600 text-white' : sp <= 3 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{sp < 0 ? `delays ${-sp} d` : `${sp} d float`}</span>}
         </span>
-        {e.eq.group === 'PSVs' && e.eq.description && <span className="block truncate text-[11.5px] text-slate-600">📍 {e.eq.description.split(' · ')[0].replace(/^PSV on /, 'On ')}</span>}
+        {e.eq.group === 'PSVs' && e.eq.description && <span className="block truncate text-[12px] text-slate-600">📍 {e.eq.description.split(' · ')[0].replace(/^PSV on /, 'On ')}</span>}
         <span className="mt-0.5 flex items-center gap-2">
           <StageBar stage={stage} className="w-14 shrink-0" />
-          {l && <span className={cx('min-w-0 truncate text-[11.5px]', l.tone === 'run' ? 'text-[#004080]' : l.tone === 'red' ? 'text-red-800' : 'text-slate-600')}>{st && !st.finish && l.text.startsWith('Next:') ? `Next: ${st.a.activity}` : st && !st.finish && l.tone === 'red' ? `${l.text} · next ${st.a.activity}` : l.text}{dm ? drumText(dm.key) : ''}</span>}
+          {l && <span className={cx('min-w-0 truncate text-[12px]', l.tone === 'run' ? 'text-brand-600' : l.tone === 'red' ? 'text-red-800' : 'text-slate-600')}>{st && !st.finish && l.text.startsWith('Next:') ? `Next: ${st.a.activity}` : st && !st.finish && l.tone === 'red' ? `${l.text} · next ${st.a.activity}` : l.text}{dm ? drumText(dm.key) : ''}</span>}
         </span>
       </span>
       {dm && (!st || (st.finish && dm.activityIds.includes(st.a.activityId)))
@@ -332,10 +332,10 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
   return (
     <div className="space-y-2">
       <div className="flex gap-1.5 overflow-x-auto pb-1">{['All', ...main, ...(misc.length ? ['Misc'] : [])].map((x) => { const n = x === 'All' ? shown.length : x === 'Misc' ? shown.filter((e) => misc_(e.eq.group)).length : shown.filter((e) => e.eq.group === x).length;
-        return <button key={x} type="button" onClick={() => setG(x)} className={cx('min-h-9 shrink-0 rounded-full px-3 text-xs font-semibold', g === x ? 'bg-[#0850A0] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{x}{n ? <span className="ml-1 opacity-60">{n}</span> : null}</button>; })}</div>
+        return <button key={x} type="button" onClick={() => setG(x)} className={cx('min-h-9 shrink-0 rounded-full px-3 text-xs font-semibold', g === x ? 'bg-brand-500 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{x}{n ? <span className="ml-1 opacity-60">{n}</span> : null}</button>; })}</div>
       <div className="flex items-center gap-2 text-xs text-slate-600">
         <label className="flex items-center gap-2"><input type="checkbox" checked={onlyOps} onChange={(e) => setOnlyOps(e.target.checked)} />Operations items only</label>
-        <span className="ml-auto flex rounded-lg bg-slate-200/70 p-0.5">{([[false, 'Group'], [true, 'Late first']] as const).map(([v, l]) => <button key={l} type="button" onClick={() => setLateFirst(v)} className={cx('rounded-md px-2 py-1 font-semibold', lateFirst === v ? 'bg-white text-[#004080] shadow-sm' : 'text-slate-600')}>{l}</button>)}</span>
+        <span className="ml-auto flex rounded-lg bg-slate-200/70 p-0.5">{([[false, 'Group'], [true, 'Late first']] as const).map(([v, l]) => <button key={l} type="button" onClick={() => setLateFirst(v)} className={cx('rounded-md px-2 py-1 font-semibold', lateFirst === v ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-600')}>{l}</button>)}</span>
       </div>
       {trackerId && (g === 'All' || g === 'Reactors') && <EventsCard events={events ?? []} trackerId={trackerId} canEdit={canEdit} now={now} onDone={(m, u) => onDone?.(m, u)} />}
       {sections.map(([name, xs]) => (
@@ -346,7 +346,7 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
       ))}
       {miscRows.length > 0 && <section className="pt-1">
         <button type="button" onClick={() => setShowMisc((x) => !x)} className="flex w-full justify-between rounded-xl bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-600"><span>{showMisc ? '▾' : '▸'} Miscellaneous</span><span>{miscRows.reduce((t, [, xs]) => t + xs.length, 0)} items</span></button>
-        {showMisc && miscRows.map(([name, xs]) => <div key={name}><h3 className="mb-1 mt-2 px-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">{name} · {xs.length}</h3><div className="overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">{xs.map(row)}</div></div>)}
+        {showMisc && miscRows.map(([name, xs]) => <div key={name}><h3 className="mb-1 mt-2 px-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">{name} · {xs.length}</h3><div className="overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">{xs.map(row)}</div></div>)}
       </section>}
       {!list.length && <p className="py-4 text-center text-sm text-slate-500">No items here{onlyOps ? ' for operations' : ''}.</p>}
       {drumKey && engine && (() => { const sc = scopeOf(drumKey)!; const tag = eqs.find((e) => (e.eq.barchartKey ?? e.eq.tag) === drumKey)?.eq.tag ?? drumKey;
@@ -368,10 +368,10 @@ function MapTab({ steps, onOpen }: { steps: Map<string, StepView>; onOpen: (id: 
         <tbody>
           {Object.entries(FO_NAMES).map(([fo, n]) => (
             <tr key={fo}>
-              <th className="align-top text-xs font-bold text-[#004080]">{fo}<span className="block font-normal text-slate-500">{n}</span></th>
+              <th className="align-top text-xs font-bold text-brand-600">{fo}<span className="block font-normal text-slate-500">{n}</span></th>
               {gates.map((g) => <td key={g} className="align-top"><div className="space-y-1">{all.filter((v) => v.step.fo === fo && v.step.gate === g).map((v) => (
                 <button key={v.step.stepId} type="button" onClick={() => onOpen(v.step.stepId)} title={v.step.shortName}
-                  className={cx('block w-full rounded-md px-1.5 py-1 text-left text-[10px] font-semibold leading-tight', v.late ? 'bg-[#E06666] text-white' : v.state === 'DONE' ? 'bg-[#C6EFCE] text-green-900' : v.state === 'READY' ? 'bg-[#FFE699] text-amber-950' : v.state === 'IN_PROGRESS' ? 'bg-[#D6E6F5] text-[#004080]' : v.state === 'PENDING' ? 'bg-[#FFC7CE] text-red-900' : 'bg-[#EDEFF2] text-slate-600')}>
+                  className={cx('block w-full rounded-md px-1.5 py-1 text-left text-[10px] font-semibold leading-tight', v.late ? 'bg-red-400 text-white' : v.state === 'DONE' ? 'bg-green-100 text-green-900' : v.state === 'READY' ? 'bg-amber-200 text-amber-950' : v.state === 'IN_PROGRESS' ? 'bg-brand-100 text-brand-600' : v.state === 'PENDING' ? 'bg-red-100 text-red-900' : 'bg-slate-100 text-slate-600')}>
                   {v.step.stepId}<span className="block truncate font-normal">{v.step.shortName}</span></button>))}</div></td>)}
             </tr>
           ))}
@@ -389,7 +389,7 @@ function ReportTab(p: { data: TrackerData; now: number; canEdit: boolean; by: st
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-200/70 p-1 print:hidden">
         {([[false, 'Shift report'], [true, `Ask for updates${n ? ` (${n})` : ''}`]] as const).map(([v, l]) => (
-          <button key={l} type="button" onClick={() => setAsk(v)} className={cx('min-h-10 rounded-xl text-sm font-semibold', ask === v ? 'bg-white text-[#0d2a5e] shadow-sm' : 'text-slate-600')}>{l}</button>))}
+          <button key={l} type="button" onClick={() => setAsk(v)} className={cx('min-h-10 rounded-xl text-sm font-semibold', ask === v ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-600')}>{l}</button>))}
       </div>
       {ask ? <AskUpdates data={p.data} now={p.now} by={p.by} /> : <ShiftReportView {...p} />}
     </div>
@@ -416,11 +416,11 @@ function ShiftReportView({ data, now, canEdit, by, onSaved }: { data: TrackerDat
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 print:hidden">{([[false, 'Shift report'], [true, 'Team leader']] as const).map(([v, label]) => (
-        <button key={label} type="button" onClick={() => setLeader(v)} className={cx('min-h-9 rounded-lg text-sm font-semibold', leader === v ? 'bg-white text-[#004080] shadow-sm' : 'text-slate-500')}>{label}</button>))}</div>
-      {leader && <pre className="whitespace-pre-wrap rounded-2xl bg-[#e7f8e9] p-3 font-sans text-[13px] leading-snug text-slate-800 ring-1 ring-green-200">{text}</pre>}
+        <button key={label} type="button" onClick={() => setLeader(v)} className={cx('min-h-9 rounded-lg text-sm font-semibold', leader === v ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-500')}>{label}</button>))}</div>
+      {leader && <pre className="whitespace-pre-wrap rounded-2xl bg-whatsapp-soft p-3 font-sans text-[13px] leading-snug text-slate-800 ring-1 ring-green-200">{text}</pre>}
       <div className="grid grid-cols-2 gap-2 print:hidden sm:grid-cols-4">
         <Button onClick={share}><Share2 className="h-4 w-4" />Share</Button>
-        <a href={`https://wa.me/${wa}?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer" onClick={() => { if (canEdit) save(); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#25D366] px-4 text-sm font-medium text-white"><MessageCircle className="h-4 w-4" />WhatsApp{wa ? '' : ' (choose chat)'}</a>
+        <a href={`https://wa.me/${wa}?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer" onClick={() => { if (canEdit) save(); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-whatsapp px-4 text-sm font-medium text-white"><MessageCircle className="h-4 w-4" />WhatsApp{wa ? '' : ' (choose chat)'}</a>
         <Button variant="secondary" onClick={() => window.print()}><Printer className="h-4 w-4" />PDF</Button>
         <Button variant="secondary" onClick={async () => { try { await navigator.clipboard.writeText(text); setCopied(true); window.setTimeout(() => setCopied(false), 2000); } catch { /* blocked */ } }}><Copy className="h-4 w-4" />{copied ? 'Copied' : 'Copy text'}</Button>
       </div>
@@ -437,12 +437,12 @@ function ShiftReportView({ data, now, canEdit, by, onSaved }: { data: TrackerDat
       <article className={cx('rounded-2xl bg-white p-4 text-sm ring-1 ring-slate-200 print:ring-0', leader && 'hidden')}>
         <header className="mb-2 border-b border-slate-200 pb-2">
           <img src={`${import.meta.env.BASE_URL}brand/knpc-logo.png`} alt="KNPC" className="mb-1 hidden h-10 print:block" />
-          <h2 className="font-bold text-[#004080]">{test ? '[TEST] ' : ''}{r.title}</h2>
-          {r.ops && r.ops.state === 'DONE' && r.ops.finishedAt !== null ? <p className="font-semibold text-[#08A048]">Operations done {kwDay(r.ops.finishedAt)} {kwTime(r.ops.finishedAt)} (R-12-205 handed over)</p>
+          <h2 className="font-bold text-brand-600">{test ? '[TEST] ' : ''}{r.title}</h2>
+          {r.ops && r.ops.state === 'DONE' && r.ops.finishedAt !== null ? <p className="font-semibold text-status-green">Operations done {kwDay(r.ops.finishedAt)} {kwTime(r.ops.finishedAt)} (R-12-205 handed over)</p>
             : r.ops && r.ops.state !== 'NOT_STARTED' && <p className="font-semibold text-slate-800">Operations day {r.ops.day}/{r.ops.days} · Plan {r.ops.planPct}% · Actual {r.ops.actualPct}%</p>}
-          {r.mi.actualStart === null ? <p className="font-semibold text-[#004080]">M &amp; I starts at R-12-205 handover (plan {kwDay(r.mi.planned)} {kwTime(r.mi.planned)})</p>
-            : r.mi.weighted ? <p className={cx('font-semibold', r.mi.weighted.state === 'BEHIND' ? 'text-[#E02028]' : r.mi.weighted.state === 'AHEAD' ? 'text-[#08A048]' : 'text-amber-700')}>M &amp; I {r.mi.weighted.state === 'BEHIND' ? 'behind' : r.mi.weighted.state === 'AHEAD' ? 'ahead' : 'on plan'} · Plan {r.mi.weighted.planPct}% · Actual {r.mi.weighted.actualPct}% · started {kwDay(r.mi.actualStart)} {kwTime(r.mi.actualStart)}</p>
-            : r.mi.banner && <p className={cx('font-semibold', r.mi.banner.state === 'BEHIND' ? 'text-[#E02028]' : r.mi.banner.state === 'AHEAD' ? 'text-[#08A048]' : 'text-amber-700')}>M &amp; I {bannerText(r.mi.banner)} · Plan {r.mi.banner.planPct}% · Actual {r.mi.banner.actualPct}% · started {kwDay(r.mi.actualStart)} {kwTime(r.mi.actualStart)}</p>}
+          {r.mi.actualStart === null ? <p className="font-semibold text-brand-600">M &amp; I starts at R-12-205 handover (plan {kwDay(r.mi.planned)} {kwTime(r.mi.planned)})</p>
+            : r.mi.weighted ? <p className={cx('font-semibold', r.mi.weighted.state === 'BEHIND' ? 'text-status-red' : r.mi.weighted.state === 'AHEAD' ? 'text-status-green' : 'text-amber-700')}>M &amp; I {r.mi.weighted.state === 'BEHIND' ? 'behind' : r.mi.weighted.state === 'AHEAD' ? 'ahead' : 'on plan'} · Plan {r.mi.weighted.planPct}% · Actual {r.mi.weighted.actualPct}% · started {kwDay(r.mi.actualStart)} {kwTime(r.mi.actualStart)}</p>
+            : r.mi.banner && <p className={cx('font-semibold', r.mi.banner.state === 'BEHIND' ? 'text-status-red' : r.mi.banner.state === 'AHEAD' ? 'text-status-green' : 'text-amber-700')}>M &amp; I {bannerText(r.mi.banner)} · Plan {r.mi.banner.planPct}% · Actual {r.mi.banner.actualPct}% · started {kwDay(r.mi.actualStart)} {kwTime(r.mi.actualStart)}</p>}
           <p className="text-xs text-slate-600">Steps {r.totals.stepsDone}/{r.totals.steps} · HO {r.totals.hoDone}/{r.totals.ho} · late {r.totals.late} · pending {r.totals.pending} · IAT open {r.totals.iatOpen}</p>
         </header>
         <h3 className="mt-2 font-semibold">Done this shift ({r.stepsDone.length})</h3>
@@ -490,11 +490,11 @@ function StepButton({ a, also = [], finish, more, eq, onDone }: { a: TrackerData
     <span className="flex flex-col items-end">
       <button type="button" disabled={busy} onClick={go} title={`${finish ? 'Finish' : 'Start'}: ${a.activity}`} aria-label={`${finish ? 'Finish' : 'Start'} ${a.activity}`}
         className={cx('flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm disabled:opacity-50',
-          finish ? 'bg-amber-400 !text-slate-900 ring-1 ring-amber-500 active:bg-amber-500' : 'bg-[#0d2a5e] active:bg-[#0850A0]')}>
+          finish ? 'bg-amber-400 !text-slate-900 ring-1 ring-amber-500 active:bg-amber-500' : 'bg-brand-700 active:bg-brand-500')}>
         {busy ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" /> : finish ? '✓' : '▶'}
       </button>
-      {more > 0 && <span className="text-[9.5px] font-semibold text-slate-500">+{more} running</span>}
-      {err && <span className="max-w-[7rem] text-right text-[9.5px] text-red-700">{err}</span>}
+      {more > 0 && <span className="text-[10px] font-semibold text-slate-500">+{more} running</span>}
+      {err && <span className="max-w-[7rem] text-right text-[10px] text-red-700">{err}</span>}
     </span>
   );
 }

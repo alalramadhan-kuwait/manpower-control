@@ -68,12 +68,12 @@ function TeamBlock({ edge, plan, team, members, date, name, leave }: { edge: boo
   const ctls = on.filter((r) => r.m.slot === 'controller'), rest = on.filter((r) => r.m.slot !== 'controller');
   // the Day team in the Morning colour, the Night team in the Night colour (as the shifts on the Today page)
   return (
-    <div className={cx('min-w-0 overflow-hidden text-[12.5px] leading-[1.45]', night ? 'bg-indigo-50/70' : 'bg-amber-50/70', edge && 'border-l border-white')}>
-      <div className={cx('flex items-center gap-1 whitespace-nowrap px-2 py-1 text-[10.5px] font-extrabold uppercase', night ? 'bg-indigo-300 text-indigo-950' : 'bg-amber-200 text-amber-950')}>
+    <div className={cx('min-w-0 overflow-hidden text-[12px] leading-[1.45]', night ? 'bg-indigo-50/70' : 'bg-amber-50/70', edge && 'border-l border-white')}>
+      <div className={cx('flex items-center gap-1 whitespace-nowrap px-2 py-1 text-[10px] font-extrabold uppercase', night ? 'bg-indigo-300 text-indigo-950' : 'bg-amber-200 text-amber-950')}>
         <span className="truncate">{night ? '☾' : '☀'} {team.name} {first ? `${hhmm(first.start).slice(0, 2)}–${hhmm(first.end).slice(0, 2)}` : team.hoursLabel ?? ''}</span><span className="ml-auto normal-case">{on.length} on</span>
       </div>
       <div className="px-2 pb-2 pt-1">
-        {ctl ? <><b className="block truncate font-extrabold text-brand-800">{ctls[0] && name(ctls[0].m.employeeId)}</b>{ctls.slice(1).map((r) => <span key={r.m.id} className="block truncate text-[11.5px] text-slate-500">+ {name(r.m.employeeId)}</span>)}</>
+        {ctl ? <><b className="block truncate font-extrabold text-brand-800">{ctls[0] && name(ctls[0].m.employeeId)}</b>{ctls.slice(1).map((r) => <span key={r.m.id} className="block truncate text-[12px] text-slate-500">+ {name(r.m.employeeId)}</span>)}</>
           : <b className="block text-status-red">No Controller</b>}
         <div className="mt-1">
           {rest.map(({ m, duty }) => <span key={m.id} className="block truncate text-slate-800">{name(m.employeeId)}{duty && duty.hours < plan.shiftHours ? <span className="ml-1 text-[11px] font-semibold text-amber-700">{duty.hours} h</span> : null}</span>)}

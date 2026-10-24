@@ -159,7 +159,7 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
           <Card className="mb-3">
             <button type="button" onClick={() => setShowHistory(!showHistory)} aria-expanded={showHistory} className="flex w-full items-center justify-between text-left">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Assignment history ({history.length})</h2>
-              {showHistory ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+              {showHistory ? <ChevronUp className="h-4 w-4 text-slate-500" /> : <ChevronDown className="h-4 w-4 text-slate-500" />}
             </button>
             {showHistory && (
               <ul className="mt-2 divide-y divide-slate-100">

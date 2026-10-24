@@ -144,10 +144,10 @@ function SpreadDaysBody({ plan, teams, members, phases, names, crewOf, conflicts
                             const tone = worst > plan.maxOvertime || yearOver ? 'text-status-red' : worst >= plan.maxOvertime - 4 ? 'text-status-green' : 'text-amber-700';
                             return (
                               <li key={x.id} className="flex items-center gap-1.5 text-xs">
-                                {x.crew ? <CrewBadge crew={x.crew} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-500">Day</span>}
+                                {x.crew ? <CrewBadge crew={x.crew} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-500">Day</span>}
                                 <span className="min-w-0 flex-1 truncate text-slate-800">{names.get(emp) ?? 'Employee'}</span>
                                 <span className="shrink-0 text-slate-500">{x.days} d · {x.full}×{plan.shiftHours} h + {x.short}×{Math.min(plan.normalHours, plan.shiftHours)} h</span>
-                                <span className={cx('shrink-0 text-right font-semibold tabular-nums', tone)}>{months.length > 1 ? months.map(([mo, h]) => `${MONTH_SHORT[Number(mo.slice(5)) - 1]} ${h}`).join(' · ') : `OT ${x.overtime}`}<span className="font-normal text-slate-400">/{plan.maxOvertime}</span>{yearLines.map(([y, v]) => <span key={y} className="block text-[10px] font-normal text-slate-500">{y}: {v.taken} + {v.planned} = {v.taken + v.planned}/{yearCap(plan)}</span>)}</span>
+                                <span className={cx('shrink-0 text-right font-semibold tabular-nums', tone)}>{months.length > 1 ? months.map(([mo, h]) => `${MONTH_SHORT[Number(mo.slice(5)) - 1]} ${h}`).join(' · ') : `OT ${x.overtime}`}<span className="font-normal text-slate-500">/{plan.maxOvertime}</span>{yearLines.map(([y, v]) => <span key={y} className="block text-[10px] font-normal text-slate-500">{y}: {v.taken} + {v.planned} = {v.taken + v.planned}/{yearCap(plan)}</span>)}</span>
                               </li>
                             );
                           })}

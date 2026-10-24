@@ -132,7 +132,7 @@ export function SdMemoPage() {
             <div className="mt-10 flex justify-end break-inside-avoid">
               <div className="min-w-64 text-center">
                 <div className="h-10" />
-                <p className="font-bold">{s.signer?.name || <span className="font-normal text-slate-400 print:hidden">Signer — set with “Date, signer, cc”</span>}</p>
+                <p className="font-bold">{s.signer?.name || <span className="font-normal text-slate-500 print:hidden">Signer — set with “Date, signer, cc”</span>}</p>
                 <p>{s.signer?.title}</p>
               </div>
             </div>

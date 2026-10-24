@@ -81,11 +81,11 @@ export function FollowSheet({ asPage, plan, teams, members, groups, names, isVr,
                   <label className="flex items-center gap-2 px-3 py-2">
                     <input type="checkbox" className="h-4 w-4" checked={!skip.has(c.memberId)} onChange={() => setSkip((s) => { const n = new Set(s); if (n.has(c.memberId)) n.delete(c.memberId); else n.add(c.memberId); return n; })} />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-slate-900">{names.get(c.employeeId) ?? 'Employee'}{isVr(c.employeeId) && <span className="ml-1 text-[10px] font-semibold text-slate-400">VR</span>}</span>
+                      <span className="block truncate text-sm font-medium text-slate-900">{names.get(c.employeeId) ?? 'Employee'}{isVr(c.employeeId) && <span className="ml-1 text-[10px] font-semibold text-slate-500">VR</span>}</span>
                       <span className="block text-[11px] text-slate-500">{teamName(c.g.teamId)} · {slotLabel(c.g.key)} · days nobody there {c.g.before.gapDays} → {c.g.after.gapDays} · short {c.g.before.short} → {c.g.after.short}</span>
                     </span>
                     {c.remove && <span className="shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-900">Remove instruction · back to own {c.to}</span>}
-                    <span className="flex shrink-0 items-center gap-1 text-xs font-semibold"><CrewBadge crew={c.from} size="sm" /><ArrowRight className="h-3.5 w-3.5 text-slate-400" /><CrewBadge crew={c.to} size="sm" /></span>
+                    <span className="flex shrink-0 items-center gap-1 text-xs font-semibold"><CrewBadge crew={c.from} size="sm" /><ArrowRight className="h-3.5 w-3.5 text-slate-500" /><CrewBadge crew={c.to} size="sm" /></span>
                   </label>
                 </li>
               ))}

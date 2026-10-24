@@ -79,7 +79,7 @@ function Strip({ d }: { d: SideData }) {
               <Link to={day.date === d.today ? '/' : `/?date=${day.date}`} className="flex items-center gap-2 rounded-md py-0.5 hover:bg-slate-50">
                 <span className={cx('w-[5.5rem] shrink-0 whitespace-nowrap text-[11px] tabular-nums', day.date === d.today ? 'font-semibold text-slate-900' : 'text-slate-600')}>{wd(day.date)} {shortDate(day.date)}</span>
                 <span className="flex flex-1 items-center gap-1">
-                  {marks.length === 0 ? <span className="text-[10px] text-slate-400">no crew on duty</span> : marks.map((m) => (
+                  {marks.length === 0 ? <span className="text-[10px] text-slate-500">no crew on duty</span> : marks.map((m) => (
                     <span key={m.crew} title={`${m.crew} shift`} className={cx('flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold text-white', MARK[m.mark])}>{m.crew}</span>
                   ))}
                 </span>
@@ -88,7 +88,7 @@ function Strip({ d }: { d: SideData }) {
           );
         })}
       </ul>
-      <p className="mt-1 text-[10px] text-slate-400">Crews on duty: green fine · amber no buffer · red short · grey not confirmed</p>
+      <p className="mt-1 text-[10px] text-slate-500">Crews on duty: green fine · amber no buffer · red short · grey not confirmed</p>
     </Panel>
   );
 }
@@ -176,7 +176,7 @@ export function SidePanel({ isHead }: { isHead: boolean }) {
   const { pathname } = useLocation();
   const data = useSideData(isHead);
   if (data === null) return <Spinner />;
-  if (data === 'error') return <p className="text-xs text-slate-400">The side panel could not load.</p>;
+  if (data === 'error') return <p className="text-xs text-slate-500">The side panel could not load.</p>;
   return (
     <div>
       {widgetsFor(pathname).map((w) => w === 'attention' ? <Attention key={w} d={data} /> : w === 'strip' ? <Strip key={w} d={data} />

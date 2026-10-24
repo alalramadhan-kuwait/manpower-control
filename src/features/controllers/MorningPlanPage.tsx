@@ -109,7 +109,7 @@ export default function MorningPlanPage() {
               <tbody className="divide-y divide-slate-100">
                 {view.turns.map((t) => (
                   <tr key={t.person.id}>
-                    <td className="py-1.5"><span className="flex items-center gap-1.5"><span className={cx('h-2.5 w-2.5 shrink-0 rounded-sm', view.colour.get(t.person.id))} /><span className="truncate">{t.person.name}</span>{t.person.crew ? <CrewBadge crew={t.person.crew} size="sm" /> : <span className="text-[10px] font-semibold text-slate-400">VR</span>}</span></td>
+                    <td className="py-1.5"><span className="flex items-center gap-1.5"><span className={cx('h-2.5 w-2.5 shrink-0 rounded-sm', view.colour.get(t.person.id))} /><span className="truncate">{t.person.name}</span>{t.person.crew ? <CrewBadge crew={t.person.crew} size="sm" /> : <span className="text-[10px] font-semibold text-slate-500">VR</span>}</span></td>
                     <td className="text-right tabular-nums">{t.byYear[year] || '–'}</td>
                     <td className="text-right tabular-nums">{t.byYear[year + 1] || '–'}</td>
                     <td className="text-right text-xs text-slate-500">{t.lastEnd ? shortDate(t.lastEnd) : 'Never'}</td>
@@ -140,7 +140,7 @@ function SegmentRow({ s, view }: { s: MorningSegment; view: View }) {
           {s.crewDuties && <span className="rounded-full bg-slate-100 px-1.5 text-[11px] font-medium text-slate-700">{s.crewDuties.crew} Shift needs cover · {s.crewDuties.duties} duties</span>}
         </span>
       </span>
-      <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+      <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
     </Link>
   );
 }

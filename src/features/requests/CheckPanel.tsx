@@ -57,7 +57,7 @@ export function CheckPanel({ check, error }: { check: Check | null; error?: unkn
             {check.timeline.map((r) => (
               <tr key={r.date} className={cx(r.changed && 'bg-amber-50/70')}>
                 <td className={cx('whitespace-nowrap px-2 py-1 tabular-nums', r.changed ? 'border-l-4 border-amber-400 font-medium text-slate-900' : 'border-l-4 border-transparent text-slate-600')}>
-                  <span className="mr-1 text-xs text-slate-400">{weekday(r.date)}</span>{shortDate(r.date)}
+                  <span className="mr-1 text-xs text-slate-500">{weekday(r.date)}</span>{shortDate(r.date)}
                 </td>
                 <td className={cx('px-2 py-1 font-semibold', DUTY_TONE[r.duty] ?? 'text-slate-700')}>
                   {r.duty}{r.flagged && <span className={cx('ml-1 inline-block h-2 w-2 rounded-full align-middle', r.flagged === 'hard_stop' ? 'bg-red-600' : r.flagged === 'critical' ? 'bg-orange-500' : 'bg-amber-400')} title={SEVERITY_LABEL[r.flagged]} />}

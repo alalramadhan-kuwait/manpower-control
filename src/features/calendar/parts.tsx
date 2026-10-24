@@ -34,7 +34,7 @@ export function AttentionList({ items, onOpen, past = false }: { items: Attentio
             <span className={cx('block text-sm font-medium', a.kind === 'shortage' ? 'text-status-red' : 'text-slate-700')}>{a.text}</span>
             <span className="block text-xs text-slate-500">{a.start === a.end ? shortDate(a.start) : `${shortDate(a.start)} – ${shortDate(a.end)}`} · {a.duties} dut{a.duties === 1 ? 'y' : 'ies'}</span>
           </span>
-          <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
         </button>
       ))}
     </>

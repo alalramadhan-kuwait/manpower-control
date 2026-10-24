@@ -16,7 +16,7 @@ export function PendingForm({ initial, onSave, busy }: { initial: string | null;
   const [note, setNote] = useState(initial && !PENDING_REASONS.some((r) => initial === r) ? initial.replace(/^[^–]*–\s*/, '') : '');
   return (
     <div className="space-y-2 rounded-xl bg-red-50 p-2.5 ring-1 ring-red-200">
-      <div className="flex flex-wrap gap-1.5">{PENDING_REASONS.map((r) => <button key={r} type="button" onClick={() => setReason(r)} className={cx('rounded-full px-2.5 py-1 text-xs ring-1', reason === r ? 'bg-[#E02028] text-white ring-[#E02028]' : 'bg-white text-slate-700 ring-slate-300')}>{r}</button>)}</div>
+      <div className="flex flex-wrap gap-1.5">{PENDING_REASONS.map((r) => <button key={r} type="button" onClick={() => setReason(r)} className={cx('rounded-full px-2.5 py-1 text-xs ring-1', reason === r ? 'bg-status-red text-white ring-status-red' : 'bg-white text-slate-700 ring-slate-300')}>{r}</button>)}</div>
       <input className="input" placeholder="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
       <Button className="w-full" disabled={!reason || busy} onClick={() => onSave(note.trim() ? `${reason} – ${note.trim()}` : reason)}>Hold</Button>
     </div>
@@ -37,21 +37,21 @@ export function StepSheet({ v, isHead, canEdit, points = [], items = [], onIsola
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600"><StateChip state={v.state} late={v.late} />{s.fo} · Gate {s.gate} {s.gateName}{s.updatedAt ? <span>· {s.updatedBy} {when(s.updatedAt)}</span> : null}</div>
         {v.waitingFor.length > 0 && <p className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-sm text-slate-700">Waiting for <b>{v.waitingFor.join(', ')}</b></p>}
-        {s.pendingReason && <p className="rounded-lg bg-[#FFC7CE] px-2.5 py-1.5 text-sm text-red-900">⏸ {s.pendingReason}</p>}
-        {(s.text || s.procedure) && <div className="rounded-lg bg-slate-50 px-2.5 py-2 text-sm text-slate-800">{s.text}{s.procedure && <span className="mt-0.5 block text-xs font-semibold text-[#004080]">{s.procedure}</span>}</div>}
+        {s.pendingReason && <p className="rounded-lg bg-red-100 px-2.5 py-1.5 text-sm text-red-900">⏸ {s.pendingReason}</p>}
+        {(s.text || s.procedure) && <div className="rounded-lg bg-slate-50 px-2.5 py-2 text-sm text-slate-800">{s.text}{s.procedure && <span className="mt-0.5 block text-xs font-semibold text-brand-600">{s.procedure}</span>}</div>}
         {points.length > 0 && (
-          <div className="space-y-1.5 rounded-xl bg-[#D6E6F5]/40 p-2.5 ring-1 ring-[#0850A0]/30">
+          <div className="space-y-1.5 rounded-xl bg-brand-100/40 p-2.5 ring-1 ring-brand-500/30">
             <p className="text-sm text-slate-800">Ticks itself from the <b>Isolation</b> page · {points.filter(pointComplete).length}/{points.length} done</p>
-            <div className="flex flex-wrap gap-1">{points.map((p) => <span key={p.id} className={cx('rounded px-1.5 py-0.5 text-[11px] font-semibold', pointComplete(p) ? 'bg-[#C6EFCE] text-green-900' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{pointComplete(p) ? '✓ ' : ''}{p.kind === 'blind' ? p.ref : `${p.ref} ${neutLabel(p).toLowerCase()}`}</span>)}</div>
+            <div className="flex flex-wrap gap-1">{points.map((p) => <span key={p.id} className={cx('rounded px-1.5 py-0.5 text-[11px] font-semibold', pointComplete(p) ? 'bg-green-100 text-green-900' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{pointComplete(p) ? '✓ ' : ''}{p.kind === 'blind' ? p.ref : `${p.ref} ${neutLabel(p).toLowerCase()}`}</span>)}</div>
             {onIsolation && <Button variant="secondary" className="w-full" onClick={onIsolation}>Open on Isolation</Button>}
           </div>
         )}
         {items.length > 0 && <p className="rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700">Ticks itself when its items are handed over: {items.map((e) => `${e.stage >= 1 ? '✓ ' : ''}${e.eq.tag}`).join(' · ')}</p>}
         {canEdit && !points.length && (
           <div className="grid grid-cols-3 gap-2">
-            <button type="button" disabled={busy || v.state === 'IN_PROGRESS'} onClick={() => run({ status: 'in_progress', pending_reason: null }, `${s.stepId} started.`)} className="flex min-h-16 flex-col items-center justify-center rounded-xl bg-[#D6E6F5] text-[#004080] disabled:opacity-40"><span className="text-xl">▶</span><span className="text-sm font-semibold">Start</span></button>
-            <button type="button" disabled={busy || v.state === 'DONE'} onClick={done} className="flex min-h-16 flex-col items-center justify-center rounded-xl bg-[#C6EFCE] text-green-900 disabled:opacity-40"><span className="text-xl">✓</span><span className="text-sm font-semibold">Done</span></button>
-            <button type="button" disabled={busy} onClick={() => setPending((x) => !x)} className="flex min-h-16 flex-col items-center justify-center rounded-xl bg-[#FFC7CE] text-red-900 disabled:opacity-40"><span className="text-xl">⏸</span><span className="text-sm font-semibold">Pending</span></button>
+            <button type="button" disabled={busy || v.state === 'IN_PROGRESS'} onClick={() => run({ status: 'in_progress', pending_reason: null }, `${s.stepId} started.`)} className="flex min-h-16 flex-col items-center justify-center rounded-xl bg-brand-100 text-brand-600 disabled:opacity-40"><span className="text-xl">▶</span><span className="text-sm font-semibold">Start</span></button>
+            <button type="button" disabled={busy || v.state === 'DONE'} onClick={done} className="flex min-h-16 flex-col items-center justify-center rounded-xl bg-green-100 text-green-900 disabled:opacity-40"><span className="text-xl">✓</span><span className="text-sm font-semibold">Done</span></button>
+            <button type="button" disabled={busy} onClick={() => setPending((x) => !x)} className="flex min-h-16 flex-col items-center justify-center rounded-xl bg-red-100 text-red-900 disabled:opacity-40"><span className="text-xl">⏸</span><span className="text-sm font-semibold">Pending</span></button>
           </div>
         )}
         {blocked && (
@@ -105,10 +105,10 @@ export function EquipSheet({ mi, related = [], allIats = [], lineup = [], lineup
   return (
     <BottomSheet open onClose={onClose} title={e.tag}>
       <div className="space-y-3">
-        {twins.length > 1 && <div className="flex gap-1">{twins.map((t) => <button key={t} type="button" onClick={() => t !== e.tag && onTwin?.(t)} className={cx('min-h-9 rounded-full px-3 text-xs font-semibold', t === e.tag ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{t}</button>)}<span className="self-center text-[11px] text-slate-500">worked as one</span></div>}
-        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600"><FlagChip flag={v.flag} />{v.plan && <PlanChip variance={v.plan.variance} days={v.plan.days} />}{e.critical && <span className="font-bold text-[#E02028]">★ Critical</span>}<span>{e.description}</span></div>
-        {v.reason && <div className="flex items-center gap-2 rounded-lg bg-[#FFC7CE] px-2.5 py-1.5 text-sm text-red-900"><span className="min-w-0 flex-1">⏸ On hold: {v.reason}</span>
-          {canEdit && e.pendingReason && <button type="button" disabled={busy} onClick={() => { const was = e.pendingReason; run(() => setEquipment(e.id, { pending_reason: null }), `${e.tag}: resumed.`, () => setEquipment(e.id, { pending_reason: was })); }} className="shrink-0 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-[#0d2a5e] ring-1 ring-red-200">▶ Resume</button>}</div>}
+        {twins.length > 1 && <div className="flex gap-1">{twins.map((t) => <button key={t} type="button" onClick={() => t !== e.tag && onTwin?.(t)} className={cx('min-h-9 rounded-full px-3 text-xs font-semibold', t === e.tag ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{t}</button>)}<span className="self-center text-[11px] text-slate-500">worked as one</span></div>}
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600"><FlagChip flag={v.flag} />{v.plan && <PlanChip variance={v.plan.variance} days={v.plan.days} />}{e.critical && <span className="font-bold text-status-red">★ Critical</span>}<span>{e.description}</span></div>
+        {v.reason && <div className="flex items-center gap-2 rounded-lg bg-red-100 px-2.5 py-1.5 text-sm text-red-900"><span className="min-w-0 flex-1">⏸ On hold: {v.reason}</span>
+          {canEdit && e.pendingReason && <button type="button" disabled={busy} onClick={() => { const was = e.pendingReason; run(() => setEquipment(e.id, { pending_reason: null }), `${e.tag}: resumed.`, () => setEquipment(e.id, { pending_reason: was })); }} className="shrink-0 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-brand-700 ring-1 ring-red-200">▶ Resume</button>}</div>}
         {mi && <MiLine i={mi} />}
         {related.length > 0 && <Related acts={related} />}
         <EquipActivities trackerId={trackerId} itemKey={e.barchartKey ?? e.tag} activities={activities} now={now} canEdit={canEdit} isHead={isHead} neutCovered={!!iso?.neut.length} neutLabel={soda ? `${neutName(soda)} · ${neutLabel(soda)}` : undefined} onNeut={onNeut} onDone={onDone} />
@@ -128,19 +128,19 @@ export function EquipSheet({ mi, related = [], allIats = [], lineup = [], lineup
                   {iso.neut.length > 0 && <span className="mt-0.5 flex flex-wrap items-center gap-1">Neutralization: {iso.neut.map((p) => { const m = p.status === 'open' ? [...missingBlinds(p, points), ...waitAfter(waitingSteps(p, activities))] : [];
                     return <IsoChip key={p.id} state={pointComplete(p) ? 'ready' : p.status !== 'open' ? 'neut' : m.length ? 'blind' : 'idle'}>{neutName(p)} · {m.length ? `🔒 ${m.join(', ')}` : neutLabel(p)}</IsoChip>; })}</span>}
                   {parts.length > 0 && <span className="mt-0.5 flex flex-wrap items-center gap-1">Parts, on their own: {parts.map((p) => <IsoChip key={p.id} state={pointComplete(p) ? 'ready' : p.status !== 'open' ? 'neut' : 'idle'}>{p.ref} {p.name} · {neutLabel(p)}</IsoChip>)}</span>}
-                  <span className={cx('mt-1 block text-[11px] font-semibold', v.stage >= 1 ? 'text-[#0850A0]' : block.length ? 'text-red-800' : 'text-teal-800')}>
+                  <span className={cx('mt-1 block text-[11px] font-semibold', v.stage >= 1 ? 'text-brand-500' : block.length ? 'text-red-800' : 'text-teal-800')}>
                     {v.stage >= 1 ? 'Handed over.' : block.length ? `Hand over blocked: ${[...new Set(block)].join(', ')}` : 'Ready: handed over automatically.'}</span>
                 </>; })()}
             </span>
-            <span className="text-xs font-semibold text-[#0850A0]">Open ›</span>
+            <span className="text-xs font-semibold text-brand-500">Open ›</span>
           </button>
         )}
         <section>
           <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">{`IAT · ${rel.filter((x) => x.status === 'open').length} open${rel.some((x) => x.status === 'open' && x.opsAction) ? ` · ${rel.filter((x) => x.status === 'open' && x.opsAction).length} need Operations` : ''}`}</h3>
           <div className="space-y-1.5">
-            {rel.filter((x) => x.status === 'open').map((i) => <div key={i.id} className="rounded-lg bg-[#FFF4CC] px-2.5 py-1.5 text-[12.5px] ring-1 ring-amber-200">
+            {rel.filter((x) => x.status === 'open').map((i) => <div key={i.id} className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[12px] ring-1 ring-amber-200">
               <button type="button" onClick={() => setIatOpen(i)} className="flex w-full items-baseline gap-1.5 text-left"><b>{i.iatNo}</b><span className="min-w-0 flex-1 truncate">{i.jobText}</span>
-                <span className="shrink-0 text-[11px] font-semibold text-slate-600">{i.sheetStatus ?? 'open'}</span><span className="shrink-0 text-xs font-semibold text-[#0850A0]">›</span></button>
+                <span className="shrink-0 text-[11px] font-semibold text-slate-600">{i.sheetStatus ?? 'open'}</span><span className="shrink-0 text-xs font-semibold text-brand-500">›</span></button>
               {i.tag !== e.tag && <span className="block text-[11px] text-slate-500">on line {i.line ?? i.tag}</span>}
               <div className="mt-1 flex items-center gap-2"><span className="min-w-0 flex-1"><OpsTicks i={i} canEdit={canEdit} compact onDone={(m) => onDone(m)} /></span>
                 {canEdit && <button type="button" disabled={busy} onClick={() => run(() => closeIat(i.id), `${i.iatNo} closed.`)} className="shrink-0 text-[11px] font-semibold text-slate-500">Close IAT</button>}</div>
@@ -160,10 +160,10 @@ export function EquipSheet({ mi, related = [], allIats = [], lineup = [], lineup
             {canEdit && fixStage && <div className="grid grid-cols-3 gap-1.5">
               {STAGES.slice(1).map((label, i) => { const s = i + 1; const next = s === v.stage + 1; const lines = stageLines.filter((a) => a.stage === s); const fin = lines.filter((a) => a.actualFinish).length;
                 return <button key={s} type="button" disabled={busy || s === v.stage} onClick={() => run(() => setEquipment(e.id, { stage: s }), `${e.tag}: ${label}.`)}
-                  className={cx('min-h-11 rounded-lg px-1 text-xs font-semibold ring-1 disabled:opacity-40', s === v.stage ? 'bg-[#0850A0] text-white ring-[#0850A0]' : next ? 'bg-[#D6E6F5] text-[#004080] ring-[#0850A0]' : 'bg-white text-slate-700 ring-slate-300')}>{s}. {label}{lines.length > 0 && <span className="block text-[10.5px] font-normal opacity-80">{fin}/{lines.length} steps</span>}</button>; })}
+                  className={cx('min-h-11 rounded-lg px-1 text-xs font-semibold ring-1 disabled:opacity-40', s === v.stage ? 'bg-brand-500 text-white ring-brand-500' : next ? 'bg-brand-100 text-brand-600 ring-brand-500' : 'bg-white text-slate-700 ring-slate-300')}>{s}. {label}{lines.length > 0 && <span className="block text-[11px] font-normal opacity-80">{fin}/{lines.length} steps</span>}</button>; })}
             </div>}
             <p className="flex items-baseline gap-2 text-[11px] text-slate-500"><span className="min-w-0 flex-1">{v.hoAt ? <>Handed over {when(v.hoAt)}{e.blindsOut ? <> · deblinded {when(e.blindsOut)}</> : null}. </> : null}Moves by itself with the work steps.</span>
-              {canEdit && <button type="button" onClick={() => setFixStage((x) => !x)} className="shrink-0 font-semibold text-[#0850A0]">{fixStage ? 'Done' : 'Correct stage'}</button>}</p>
+              {canEdit && <button type="button" onClick={() => setFixStage((x) => !x)} className="shrink-0 font-semibold text-brand-500">{fixStage ? 'Done' : 'Correct stage'}</button>}</p>
           </div>
         </Field>
         {canEdit && !e.pendingReason && !pending && <Button variant="secondary" className="w-full" disabled={busy} onClick={() => setPending(true)}>⏸ Hold (with reason)</Button>}
@@ -198,8 +198,8 @@ function MiLine({ i }: { i: MiItem }) {
     <div className="rounded-lg bg-slate-50 px-2.5 py-1.5 text-[12px] text-slate-700 ring-1 ring-slate-200">
       <div className="flex flex-wrap gap-x-3 gap-y-0.5">
         <span>Physical <b className="text-slate-900">{pct}</b> / plan {i.planPct}%</span>
-        <span>vs P6 <b className={i.svD < 0 ? 'text-[#E02028]' : 'text-[#08A048]'}>{i.svD > 0 ? '+' : ''}{i.svD} d</b></span>
-        {!done && <span>{i.spareD < 0 ? <b className="text-[#E02028]">delays shutdown {i.impactD} d</b> : <>Float <b className="text-slate-900">{i.spareD} d</b></>}</span>}
+        <span>vs P6 <b className={i.svD < 0 ? 'text-status-red' : 'text-status-green'}>{i.svD > 0 ? '+' : ''}{i.svD} d</b></span>
+        {!done && <span>{i.spareD < 0 ? <b className="text-status-red">delays shutdown {i.impactD} d</b> : <>Float <b className="text-slate-900">{i.spareD} d</b></>}</span>}
       </div>
       <div className="text-[11px] text-slate-500">{done ? `Finished ${kwDay(i.forecast)} ${kwTime(i.forecast)}` : `Forecast ${kwDay(i.forecast)} ${kwTime(i.forecast)} · ${i.remainingD} d left · P6 ${kwDay(i.p6Finish)} ${kwTime(i.p6Finish)}`}
         {!done && i.unverified.length > 0 && <button type="button" onClick={() => setWhy((x) => !x)} className="ml-1 font-semibold text-amber-700">· unverified {why ? '▾' : '▸'}</button>}</div>
@@ -216,7 +216,7 @@ function Related({ acts }: { acts: TrkActivity[] }) {
       <ul className="mt-0.5 space-y-0.5">{acts.map((a) => (
         <li key={a.id} className="flex items-start gap-2 text-[12px] text-slate-700">
           <span className="min-w-0 flex-1"><b className="text-slate-500">{a.key.startsWith('OPR') ? 'OPR list' : a.key}:</b> {a.activity.replace(/^OPlist-\d+\s*/, '')}</span>
-          <span className={cx('shrink-0 rounded px-1.5 text-[10.5px] font-bold', a.actualFinish ? 'bg-green-100 text-green-800' : a.actualStart ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-600')}>{a.actualFinish ? '✓ done' : a.actualStart ? 'I/P' : 'not started'}</span>
+          <span className={cx('shrink-0 rounded px-1.5 text-[10px] font-bold', a.actualFinish ? 'bg-green-100 text-green-800' : a.actualStart ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-600')}>{a.actualFinish ? '✓ done' : a.actualStart ? 'I/P' : 'not started'}</span>
         </li>))}
       </ul>
     </section>

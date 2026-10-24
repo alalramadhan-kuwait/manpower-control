@@ -22,12 +22,12 @@ export function EngineerLinks({ trackerId, by }: { trackerId: string; by: string
         <p className="text-xs font-bold text-green-800">Link for {made.id}: shown only now, send it to them</p>
         <p className="break-all rounded-lg bg-white p-2 font-mono text-[11px]">{made.url}</p>
         <div className="grid grid-cols-2 gap-2">
-          <a href={`https://wa.me/?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center rounded-xl bg-[#25D366] text-sm font-semibold text-white">WhatsApp</a>
+          <a href={`https://wa.me/?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center rounded-xl bg-whatsapp text-sm font-semibold text-white">WhatsApp</a>
           <Button variant="secondary" onClick={async () => { try { await navigator.clipboard.writeText(msg); setCopied(true); window.setTimeout(() => setCopied(false), 2000); } catch { /* blocked */ } }}>{copied ? 'Copied' : 'Copy'}</Button>
         </div></div>}
       {list.map((a) => (
         <div key={a.id} className="flex items-center gap-2 rounded-xl bg-slate-50 px-2.5 py-2 ring-1 ring-slate-200">
-          <span className="min-w-0 flex-1"><b>{a.loginId}</b> <span className={cx('rounded px-1 text-[10.5px] font-bold', a.active ? 'bg-green-100 text-green-800' : 'bg-slate-200 text-slate-600')}>{a.active ? 'ON' : 'OFF'}</span>
+          <span className="min-w-0 flex-1"><b>{a.loginId}</b> <span className={cx('rounded px-1 text-[10px] font-bold', a.active ? 'bg-green-100 text-green-800' : 'bg-slate-200 text-slate-600')}>{a.active ? 'ON' : 'OFF'}</span>
             <span className="block text-[11px] text-slate-500">Made {kwDay(a.createdAt)} {kwTime(a.createdAt)}{a.lastSeenAt ? ` · last used ${kwDay(a.lastSeenAt)} ${kwTime(a.lastSeenAt)}` : ' · not used yet'}</span></span>
           <Button variant="secondary" disabled={busy} onClick={() => run(() => setAccessActive(a.id, !a.active))}>{a.active ? 'Turn off' : 'Turn on'}</Button>
         </div>))}

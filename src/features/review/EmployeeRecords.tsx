@@ -31,8 +31,8 @@ export function EmployeeRecords({ profile }: { profile: UserProfile }) {
     <div className="lg:max-w-3xl">
       <p className="mb-2 text-sm text-slate-600">{t('Correct master data, role / crew and qualifications here. Every change is kept in the audit history with before and after.')}</p>
       <label className="mb-2 flex min-h-11 items-center gap-2 rounded-xl bg-white px-3 ring-1 ring-slate-200">
-        <Search className="h-4 w-4 text-slate-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('Name or number')} className="w-full bg-transparent text-sm outline-none" />
-        {q && <button type="button" onClick={() => setQ('')} aria-label={t('Clear')}><X className="h-4 w-4 text-slate-400" /></button>}
+        <Search className="h-4 w-4 text-slate-500" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('Name or number')} className="w-full bg-transparent text-sm outline-none" />
+        {q && <button type="button" onClick={() => setQ('')} aria-label={t('Clear')}><X className="h-4 w-4 text-slate-500" /></button>}
       </label>
       <ul className="divide-y divide-slate-100 rounded-xl bg-white ring-1 ring-slate-200">
         {list.map((d) => (

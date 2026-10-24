@@ -117,7 +117,7 @@ export default function LeavePlanPage() {
         ))}
       </div>
       <label className="relative mb-3 block">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
         <input className="input" style={{ paddingLeft: '2.25rem' }} placeholder="Search name or number" value={query} onChange={(e) => setQuery(e.target.value)} />
       </label>
 
@@ -130,7 +130,7 @@ export default function LeavePlanPage() {
                 <h2 className="text-sm font-semibold text-slate-800">{isCrew(g) ? <CrewTag crew={g} size="md" /> : g === 'ctl' ? 'Controllers' : 'Day staff'}</h2>
                 <span className="text-xs text-slate-500">{onLeave} on leave today</span>
               </div>
-              <div className="flex items-end gap-1.5 px-2 pb-1 text-[10px] text-slate-400">
+              <div className="flex items-end gap-1.5 px-2 pb-1 text-[10px] text-slate-500">
                 <span className="w-[4.5rem] shrink-0 sm:w-40" />
                 {mode === 'month'
                   ? <span className="flex flex-1 gap-1.5">{weeks.map((w, i) => <span key={i} className="flex-1 text-center leading-tight">{weekLabel(w)}</span>)}</span>
@@ -140,7 +140,7 @@ export default function LeavePlanPage() {
               {/* rows by position, a thin line between the groups; longest-serving first */}
               {positionRuns(rows).map((run) => (
                 <div key={run.group} className="border-t border-slate-200 first:border-t-0">
-                  {g !== 'ctl' && <div className="px-2 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">{run.group}</div>}
+                  {g !== 'ctl' && <div className="px-2 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{run.group}</div>}
                   <ul className="divide-y divide-slate-100">
                     {run.rows.map((r) => (
                       <li key={r.p.id}>
@@ -148,7 +148,7 @@ export default function LeavePlanPage() {
                           <span className="w-[4.5rem] shrink-0 sm:w-40">
                             {g === 'ctl' && <span className="mb-0.5 block text-[9px] font-semibold text-slate-500">{isCrew(r.p.crew_code) ? <span className="inline-flex items-center gap-1"><span className={cx('h-2 w-2 rounded-full', CREW_IDENTITY[r.p.crew_code].bg)} />{r.p.crew_code} Shift</span> : ROLE_SHORT[r.p.position_code ?? '']}</span>}
                             <span className="block text-[11px] font-medium leading-tight text-slate-800 [overflow-wrap:anywhere] sm:text-sm">{r.p.display_name}</span>
-                            <span className="block text-[9px] tabular-nums leading-tight text-slate-400">#{r.p.employee_number}</span>
+                            <span className="block text-[9px] tabular-nums leading-tight text-slate-500">#{r.p.employee_number}</span>
                           </span>
                           {mode === 'month'
                             ? <WeekCells weeks={weeks} blocks={r.current} today={today} shortOf={(c) => data?.types.find((t) => t.code === c)?.short_code} />
@@ -278,7 +278,7 @@ function PersonDetail({ row, year, data, today, onEdit, onAdd }: { row: Row; yea
         <ul className="mt-1 divide-y divide-slate-200 text-xs">
           {changes.map((c) => (
             <li key={c.id} className="py-1.5">
-              <div className="flex justify-between gap-2"><span className="font-medium text-slate-700">{changeLabel(c)}</span><span className="shrink-0 text-slate-400">{new Date(c.created_at).toLocaleDateString('en-GB')}</span></div>
+              <div className="flex justify-between gap-2"><span className="font-medium text-slate-700">{changeLabel(c)}</span><span className="shrink-0 text-slate-500">{new Date(c.created_at).toLocaleDateString('en-GB')}</span></div>
               <div className="text-slate-600">{c.from_start ? range(c.from_start, c.from_end ?? c.from_start) : ''}{c.from_start && c.to_start ? ' → ' : ''}{c.to_start ? range(c.to_start, c.to_end ?? c.to_start) : ''}</div>
               {c.note && <div className="text-slate-500">{c.note}</div>}
             </li>

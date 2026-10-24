@@ -5,7 +5,7 @@ import { attention, bannerText, equipViews, phases, stepViews } from '@/core/tra
 import { currentTracker, fetchTrackerData, fetchTrackers } from '@/data/tracker';
 import { cx } from '@/ui/components';
 
-const DOT = { AHEAD: 'bg-[#08A048]', BEHIND: 'bg-[#E02028]', ON_PLAN: 'bg-amber-500' } as const;
+const DOT = { AHEAD: 'bg-status-green', BEHIND: 'bg-status-red', ON_PLAN: 'bg-amber-500' } as const;
 
 export function TrackerTodayCard({ date, embedded = false }: { date: string; embedded?: boolean }) {
   const [v, setV] = useState<{ id: string; title: string; test: boolean; state: keyof typeof DOT; text: string; att: number; pct: [number, number] | null } | null>(null);

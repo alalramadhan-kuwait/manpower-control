@@ -118,7 +118,7 @@ export function WeekView({ start, today, onWeek, onMonth }: { start: string; tod
                 </div>
               ))}
               <div className={cx(grid, 'pt-0.5')}>
-                <div className="flex items-center justify-center text-slate-400"><UserMinus className="h-3.5 w-3.5" /></div>
+                <div className="flex items-center justify-center text-slate-500"><UserMinus className="h-3.5 w-3.5" /></div>
                 {days.map((d) => { const n = view.away(d); return <div key={d} className="text-center text-[11px] font-medium tabular-nums text-slate-500">{n || ''}</div>; })}
               </div>
             </div>

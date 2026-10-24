@@ -97,21 +97,21 @@ export default function ReleasePage() {
       <Card className="mb-3 space-y-3 p-3">
         {person ? (
           <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
-            {(() => { const c = personOn(person, start).crew; return c ? <CrewBadge crew={c} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[9px] font-semibold text-slate-600">DS</span>; })()}
+            {(() => { const c = personOn(person, start).crew; return c ? <CrewBadge crew={c} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600">DS</span>; })()}
             <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-900">{person.name}</span><span className="block truncate text-xs text-slate-500">#{person.employeeNumber} · {ROLE_LABEL[person.role ?? ''] ?? ''}{person.grade ? ` · Grade ${person.grade}` : ''}</span></span>
             <button type="button" aria-label="Choose someone else" onClick={() => setPersonId(null)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500"><X className="h-4 w-4" /></button>
           </div>
         ) : (
           <div>
             <label className="relative block">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
               <input className="input" style={{ paddingLeft: '2.25rem' }} placeholder="Search the employee: name or number" value={query} onChange={(e) => setQuery(e.target.value)} />
             </label>
             {query.trim() && (people.length === 0 ? <p className="mt-2 text-sm text-slate-500">{inputs ? 'Nobody found.' : 'Loading…'}</p> : (
               <ul className="mt-2 divide-y divide-slate-100 rounded-xl bg-white ring-1 ring-slate-200">
                 {people.map((p) => { const c = personOn(p, start).crew; return (
                   <li key={p.id}><button type="button" onClick={() => { setPersonId(p.id); setQuery(''); }} className="flex w-full items-center gap-2 px-3 py-2 text-left">
-                    {c ? <CrewBadge crew={c} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-600">DS</span>}
+                    {c ? <CrewBadge crew={c} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">DS</span>}
                     <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-900">{p.name}</span><span className="block truncate text-xs text-slate-500">#{p.employeeNumber} · {ROLE_LABEL[p.role ?? ''] ?? ''}</span></span>
                   </button></li>
                 ); })}
@@ -194,7 +194,7 @@ function DayRow({ d }: { d: ReleaseDay }) {
         <span className={cx('ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold', VERDICT[d.verdict].chip)}>{VERDICT[d.verdict].label}</span>
       </div>
       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 pl-16 text-xs tabular-nums">
-        {d.positions.map((p) => <span key={p.key} className={cx(p.after !== p.before ? (p.after < p.min ? 'font-semibold text-status-red' : p.after === p.min ? 'font-semibold text-amber-700' : 'font-semibold text-slate-800') : 'text-slate-400')}>{p.label} {p.after !== p.before ? `${p.before} → ${p.after}` : p.after} <span className="text-slate-400">/ {p.min}</span></span>)}
+        {d.positions.map((p) => <span key={p.key} className={cx(p.after !== p.before ? (p.after < p.min ? 'font-semibold text-status-red' : p.after === p.min ? 'font-semibold text-amber-700' : 'font-semibold text-slate-800') : 'text-slate-500')}>{p.label} {p.after !== p.before ? `${p.before} → ${p.after}` : p.after} <span className="text-slate-500">/ {p.min}</span></span>)}
       </div>
       {d.issues.length > 0 && <p className="mt-0.5 pl-16 text-[11px] text-slate-600">{d.issues.join(' · ')}</p>}
       {d.already.length > 0 && <p className="mt-0.5 pl-16 text-[11px] text-slate-500">Already open before the release: {d.already.join(' · ')}</p>}

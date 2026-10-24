@@ -52,9 +52,9 @@ function PersonRow({ p, onOpen }: { p: ActivityPerson; onOpen: () => void }) {
   return (
     <button type="button" onClick={onOpen} className="grid w-full grid-cols-[1fr_auto] items-center gap-2 border-b border-slate-100 px-3 py-2.5 text-left last:border-b-0 hover:bg-slate-50 sm:grid-cols-[1fr_110px_70px_80px_80px]">
       <span className="min-w-0"><span className="flex items-center gap-1.5 font-semibold text-slate-900">{fresh && <span className="h-2 w-2 rounded-full bg-status-green" />}{p.name}</span>
-        <span className="block text-[11.5px] text-slate-500">{ROLE[p.role ?? ''] ?? p.role}{p.lastPage ? ` · last on ${pageName(p.lastPage)}` : ''}</span>
-        <span className="block text-[11.5px] text-slate-500 sm:hidden">{p.visits} visits · {p.trackerChanges} tracker · {p.appChanges} app changes</span></span>
-      <span className="text-right text-[12.5px] text-slate-700 sm:text-left">{ago(p.lastSeen)}</span>
+        <span className="block text-[12px] text-slate-500">{ROLE[p.role ?? ''] ?? p.role}{p.lastPage ? ` · last on ${pageName(p.lastPage)}` : ''}</span>
+        <span className="block text-[12px] text-slate-500 sm:hidden">{p.visits} visits · {p.trackerChanges} tracker · {p.appChanges} app changes</span></span>
+      <span className="text-right text-[12px] text-slate-700 sm:text-left">{ago(p.lastSeen)}</span>
       <span className="hidden text-right tabular-nums sm:block">{p.visits}</span>
       <span className="hidden text-right tabular-nums sm:block">{p.trackerChanges}</span>
       <span className="hidden text-right tabular-nums sm:block">{p.appChanges}</span>
@@ -96,7 +96,7 @@ function PersonTimeline({ p, days, onBack }: { p: ActivityPerson; days: number; 
           {rows.filter((r) => kwDate(r.at) === day).slice(0, 500).map((r, i) => (
             <div key={i} className="flex gap-2 px-3 py-1.5 text-[13px]">
               <span className="w-11 shrink-0 tabular-nums text-slate-500">{kwTime(r.at)}</span>
-              <span className={cx('mt-0.5 h-fit shrink-0 rounded px-1.5 text-[10.5px] font-bold', r.kind === 'visit' ? 'bg-slate-100 text-slate-500' : r.kind === 'tracker' ? 'bg-amber-100 text-amber-900' : 'bg-sky-100 text-sky-900')}>{r.kind === 'visit' ? 'Opened' : r.kind === 'tracker' ? 'Tracker' : 'App'}</span>
+              <span className={cx('mt-0.5 h-fit shrink-0 rounded px-1.5 text-[10px] font-bold', r.kind === 'visit' ? 'bg-slate-100 text-slate-500' : r.kind === 'tracker' ? 'bg-amber-100 text-amber-900' : 'bg-sky-100 text-sky-900')}>{r.kind === 'visit' ? 'Opened' : r.kind === 'tracker' ? 'Tracker' : 'App'}</span>
               <span className="min-w-0 flex-1"><b>{r.item}</b> <span className="text-slate-700">{r.what}</span></span>
             </div>))}
         </div>

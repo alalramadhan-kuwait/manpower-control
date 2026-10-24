@@ -51,19 +51,19 @@ function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], ch
   const extra = blind ? null : <>
     {locked && (p.requires ?? []).map((r) => <IsoChip key={r} state={missing.includes(r) ? 'blind' : 'ready'}>{r} {missing.includes(r) ? '✗' : '✓'}</IsoChip>)}
     {p.items.map((t) => <IsoChip key={t} state={loopState}>{t}</IsoChip>)}
-    {checks.some((c) => c.kind === 'step' && c.startAt && !c.doneAt) && <span className="rounded bg-[#004080] px-1 text-[10.5px] font-bold text-white">▶ {checks.filter((c) => c.kind === 'step' && c.startAt && !c.doneAt).length} running</span>}
-    {checks.some((c) => c.crane && !c.doneAt) && <span className="rounded bg-[#E02028] px-1 text-[10.5px] font-bold text-white">🏗 Crane</span>}
-    {checks.some(followed) && <span className={cx('rounded px-1 text-[10.5px] font-bold', checks.filter(followed).every((c) => c.doneAt) ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-600')}>📋 {checks.filter(followed).filter((c) => c.doneAt).length}/{checks.filter(followed).length}</span>}
-    {(p.partOf ?? []).length > 0 && <span className="text-[10.5px] font-semibold text-slate-500">part of {p.partOf!.map((t) => t.replace('-12-', '-')).join(', ')} · on its own</span>}
+    {checks.some((c) => c.kind === 'step' && c.startAt && !c.doneAt) && <span className="rounded bg-brand-600 px-1 text-[10px] font-bold text-white">▶ {checks.filter((c) => c.kind === 'step' && c.startAt && !c.doneAt).length} running</span>}
+    {checks.some((c) => c.crane && !c.doneAt) && <span className="rounded bg-status-red px-1 text-[10px] font-bold text-white">🏗 Crane</span>}
+    {checks.some(followed) && <span className={cx('rounded px-1 text-[10px] font-bold', checks.filter(followed).every((c) => c.doneAt) ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-600')}>📋 {checks.filter(followed).filter((c) => c.doneAt).length}/{checks.filter(followed).length}</span>}
+    {(p.partOf ?? []).length > 0 && <span className="text-[11px] font-semibold text-slate-500">part of {p.partOf!.map((t) => t.replace('-12-', '-')).join(', ')} · on its own</span>}
   </>;
   const action = !canEdit ? null
     : blind ? (p.status === 'open' ? <RowBtn disabled={busy} onClick={() => run({ status: 'in' }, `${p.ref} blinded.`)}>Blinded</RowBtn>
-      : p.status === 'in' ? <RowBtn tone="ghost" disabled={busy} onClick={() => run({ status: 'out' }, `${p.ref} deblinded.`)}>Deblinded</RowBtn> : <span className="shrink-0 text-[11px] font-bold text-[#004080]">Out</span>)
+      : p.status === 'in' ? <RowBtn tone="ghost" disabled={busy} onClick={() => run({ status: 'out' }, `${p.ref} deblinded.`)}>Deblinded</RowBtn> : <span className="shrink-0 text-[11px] font-bold text-brand-600">Out</span>)
     : locked && !force ? <RoundBtn kind="lock" label={spray ? 'Spray' : 'Fill'} disabled={busy || !isHead} onClick={() => setForce(true)} />
     : next ? <RoundBtn kind={p.status === 'open' ? 'start' : 'finish'} label={next[1].replace(/^[▶✓]\s*/, '')} disabled={busy}
         onClick={() => run({ status: next[0], ...(p.holdReason ? { hold_reason: null } : {}) }, `${p.ref}: ${(next[0] === 'filling' && spray ? 'spraying' : NEUT_LABEL[next[0]].toLowerCase())}.${p.holdReason ? ' Hold ended.' : ''}`, undefined,
           { status: p.status, ...(p.holdReason ? { hold_reason: p.holdReason } : {}) })} />
-    : <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100 text-sm font-bold text-[#08A048]">✓</span>;
+    : <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100 text-sm font-bold text-status-green">✓</span>;
   return (
     <>
       {force && locked && <div className="mx-2.5 mt-1 rounded-lg bg-red-50 p-2 text-xs text-red-900">Start {p.ref} {missing.length ? `without ${missing.join(', ')}` : waiting.length ? `before ${waiting.join(', ')}` : `before ${jobs.length} job${jobs.length > 1 ? 's are' : ' is'} finished`}? It is logged as a Section Head override.
@@ -75,8 +75,8 @@ function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], ch
             {p.detail && p.detail !== p.name && <p className="text-[11px] text-slate-600">{p.detail}</p>}
             {p.remark && <p className="text-xs italic text-slate-600">{p.remark}</p>}
             {p.kind === 'neut' && (() => { const ll = loopLines(p, lineup).lines; const onLine = iats.filter((i) => i.status === 'open' && i.line && ll.includes(i.line));
-              return ll.length > 0 ? <p className="text-[11px] text-slate-600">P&amp;ID lines: <b>{ll.join(', ')}</b>{onLine.map((i) => <span key={i.id} className="ml-1 rounded bg-[#FFE699] px-1 font-bold text-slate-800">IAT {i.iatNo} on {i.line}</span>)}</p> : null; })()}
-            {p.items.length > 0 && <div className="flex flex-wrap gap-1">{p.items.map((t) => <button key={t} type="button" onClick={() => onItem(t)} className="rounded bg-white px-1.5 py-0.5 text-[11px] font-semibold text-[#004080] ring-1 ring-slate-200">{t} ›</button>)}</div>}
+              return ll.length > 0 ? <p className="text-[11px] text-slate-600">P&amp;ID lines: <b>{ll.join(', ')}</b>{onLine.map((i) => <span key={i.id} className="ml-1 rounded bg-amber-200 px-1 font-bold text-slate-800">IAT {i.iatNo} on {i.line}</span>)}</p> : null; })()}
+            {p.items.length > 0 && <div className="flex flex-wrap gap-1">{p.items.map((t) => <button key={t} type="button" onClick={() => onItem(t)} className="rounded bg-white px-1.5 py-0.5 text-[11px] font-semibold text-brand-600 ring-1 ring-slate-200">{t} ›</button>)}</div>}
             {canEdit && <div className="flex flex-wrap gap-1.5">
               {p.status !== 'open' && <MenuBtn danger disabled={busy} onClick={() => run({ status: back as PointStatus }, `${p.ref} back to ${(blind ? BLIND_LABEL[back] : NEUT_LABEL[back]).toLowerCase()}.`, close)}>↶ Undo</MenuBtn>}
             </div>}
@@ -95,10 +95,10 @@ function RoundBtn({ kind, label, disabled, onClick }: { kind: 'start' | 'finish'
   return (
     <span className="flex shrink-0 flex-col items-center">
       <button type="button" disabled={disabled} onClick={onClick} aria-label={label} title={label}
-        className={cx('flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold shadow-sm disabled:opacity-60', kind === 'lock' ? 'bg-slate-200 text-slate-500' : kind === 'finish' ? 'bg-amber-400 text-slate-900 ring-1 ring-amber-500' : 'bg-[#0d2a5e] text-white')}>
+        className={cx('flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold shadow-sm disabled:opacity-60', kind === 'lock' ? 'bg-slate-200 text-slate-500' : kind === 'finish' ? 'bg-amber-400 text-slate-900 ring-1 ring-amber-500' : 'bg-brand-700 text-white')}>
         {kind === 'lock' ? '🔒' : kind === 'finish' ? '✓' : '▶'}
       </button>
-      <span className="mt-0.5 text-[9.5px] font-semibold text-slate-500">{label}</span>
+      <span className="mt-0.5 text-[10px] font-semibold text-slate-500">{label}</span>
     </span>
   );
 }
@@ -106,14 +106,14 @@ function RoundBtn({ kind, label, disabled, onClick }: { kind: 'start' | 'finish'
 function PhaseDots({ p }: { p: TrkPoint }) {
   const n = p.method === 'spray' ? 2 : 4;
   const at = p.status === 'done' ? n : p.method === 'spray' ? (p.status === 'open' ? 0 : 1) : Math.max(0, NEUT_FLOW.indexOf(p.status as typeof NEUT_FLOW[number]));
-  return <span className="flex shrink-0 gap-0.5">{Array.from({ length: n }, (_, i) => <span key={i} className={cx('h-1.5 w-3 rounded-full', i < at ? 'bg-[#08A048]' : i === at && p.status !== 'open' ? 'bg-amber-400' : 'bg-slate-200')} />)}</span>;
+  return <span className="flex shrink-0 gap-0.5">{Array.from({ length: n }, (_, i) => <span key={i} className={cx('h-1.5 w-3 rounded-full', i < at ? 'bg-status-green' : i === at && p.status !== 'open' ? 'bg-amber-400' : 'bg-slate-200')} />)}</span>;
 }
 
 /** The Section Head adds a field job to a loop (scaffolding and the like): a timed step, before the fill unless said. */
 function AddJob({ onAdd }: { onAdd: (text: string, crane: boolean, after: boolean) => Promise<void> }) {
   const [open, setOpen] = useState(false); const [text, setText] = useState(''); const [crane, setCrane] = useState(false); const [after, setAfter] = useState(false);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className="text-xs font-semibold text-[#0850A0]">+ Add job (scaffolding…)</button>;
+  if (!open) return <button type="button" onClick={() => setOpen(true)} className="text-xs font-semibold text-brand-500">+ Add job (scaffolding…)</button>;
   const save = async () => { setBusy(true); setErr(null); try { await onAdd(text.trim(), crane, after); setOpen(false); setText(''); setCrane(false); setAfter(false); } catch (e) { setErr(e); } finally { setBusy(false); } };
   return (
     <div className="space-y-1.5 rounded-lg bg-slate-50 p-2">
@@ -131,11 +131,11 @@ function AddJob({ onAdd }: { onAdd: (text: string, crane: boolean, after: boolea
 
 /** The start / finish button of a timed field step: one tap, now (the message offers Undo). */
 function JobButton({ c, busy, onStart, onFinish }: { c: TrkPointStep; busy: boolean; onStart: () => void; onFinish: () => void }) {
-  if (c.doneAt) return <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#08A048] text-[12px] font-bold text-white">✓</span>;
+  if (c.doneAt) return <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-status-green text-[12px] font-bold text-white">✓</span>;
   const finish = !!c.startAt;
   return (
     <button type="button" disabled={busy} aria-label={`${finish ? 'Finish' : 'Start'} step ${c.seq}`} onClick={finish ? onFinish : onStart}
-      className={cx('mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold disabled:opacity-50', finish ? 'bg-amber-400 text-slate-900 ring-1 ring-amber-500' : 'bg-[#0d2a5e] text-white')}>
+      className={cx('mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold disabled:opacity-50', finish ? 'bg-amber-400 text-slate-900 ring-1 ring-amber-500' : 'bg-brand-700 text-white')}>
       {finish ? '✓' : '▶'}
     </button>
   );
@@ -208,13 +208,13 @@ function LoopSheet({ acts = [], p, points, lineup, iats, steps, checks, canEdit,
           {p.fo && <span className="rounded bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-700">{p.fo}</span>}
           <span className="text-slate-500">{doneN}/{total} steps{p.beforeHo ? ' · needed for the handover' : ' · after the handover'}</span>
         </div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-slate-200"><div className="h-full bg-[#08A048]" style={{ width: `${(doneN / Math.max(total, 1)) * 100}%` }} /></div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-slate-200"><div className="h-full bg-status-green" style={{ width: `${(doneN / Math.max(total, 1)) * 100}%` }} /></div>
         {(step || (p.detail && p.detail !== p.name) || checks.some((c) => !followed(c))) && <section className="rounded-xl bg-slate-50 p-2.5">
           <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Procedure</h3>
           {step && <p className="mt-0.5 font-semibold text-slate-900">{step.stepId} · {step.shortName}{step.procedure ? <span className="font-normal text-slate-500"> · {step.procedure}</span> : null}</p>}
-          {step?.text && <p className="mt-0.5 whitespace-pre-line text-[12.5px] text-slate-700">{step.text}</p>}
-          {p.detail && p.detail !== p.name && p.detail !== step?.text && <p className="mt-0.5 text-[12.5px] text-slate-700">{p.detail}</p>}
-          {step && onStep && <button type="button" onClick={() => onStep(step.stepId)} className="mt-1 text-xs font-semibold text-[#0850A0]">Open step {step.stepId} ›</button>}
+          {step?.text && <p className="mt-0.5 whitespace-pre-line text-[12px] text-slate-700">{step.text}</p>}
+          {p.detail && p.detail !== p.name && p.detail !== step?.text && <p className="mt-0.5 text-[12px] text-slate-700">{p.detail}</p>}
+          {step && onStep && <button type="button" onClick={() => onStep(step.stepId)} className="mt-1 text-xs font-semibold text-brand-500">Open step {step.stepId} ›</button>}
           {checks.some((c) => !followed(c)) && <>
             <button type="button" onClick={() => setRef((x) => !x)} className="mt-1 block text-xs font-semibold text-slate-600">{ref ? '▾' : '▸'} Field procedure ({checks.filter((c) => !followed(c)).length} line{checks.filter((c) => !followed(c)).length > 1 ? "s" : ""}, reference)</button>
             {ref && <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-[12px] text-slate-600">{checks.filter((c) => !followed(c)).map((c) => <li key={c.id}>{c.phase === 'fill' ? <i>While filling: </i> : c.phase === 'after' ? <i>After: </i> : null}{c.text}</li>)}</ol>}
@@ -230,33 +230,33 @@ function LoopSheet({ acts = [], p, points, lineup, iats, steps, checks, canEdit,
                     onFinish={() => time(x.check!, { done_at: new Date().toISOString() }, `${x.check!.text.split(',')[0]} finished.`)} />
                 : x.check && canEdit
                 ? <button type="button" disabled={busy === x.check.id} onClick={() => tick(x.check!)} aria-label={`${x.done ? 'Undo' : 'Tick'} step ${i + 1}`}
-                    className={cx('mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[12px] font-bold ring-1 disabled:opacity-50', x.done ? 'bg-[#08A048] text-white ring-[#08A048]' : 'bg-white text-slate-400 ring-slate-300')}>{x.done ? '✓' : ''}</button>
-                : <span className={cx('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold', x.done ? 'bg-[#08A048] text-white' : x.now ? 'bg-amber-400 text-white' : 'bg-slate-200 text-slate-500')}>{x.done ? '✓' : i + 1}</span>}
-              <span className="min-w-0 flex-1"><span className={cx('block', x.check ? 'text-[12.5px] font-medium' : 'font-semibold', x.done ? 'text-slate-900' : x.now ? 'text-amber-900' : 'text-slate-600')}>{x.check?.crane && <span className={cx('mr-1 rounded px-1 text-[10px] font-bold', x.done ? 'bg-slate-200 text-slate-600' : 'bg-[#E02028] text-white')}>🏗 CRANE · CRITICAL</span>}{x.label}{x.now ? ' · now' : ''}</span>
-                {x.info && <span className="block text-[11.5px] text-slate-500">{x.info}</span>}
-                {(x.check?.linkActs ?? []).length > 0 && <span className="block text-[11px] font-semibold text-[#0850A0]">= {acts.filter((a) => x.check!.linkActs!.includes(a.id)).map((a) => `${a.key.replace('-12-', '-')}: ${a.activity}${a.actualFinish ? ' ✓' : a.actualStart ? ' ▶' : ''}`).join(' · ')}</span>}
-                {(x.check?.linkPoints ?? []).length > 0 && <span className="block text-[11px] font-semibold text-[#0850A0]">= {points.filter((b) => x.check!.linkPoints!.includes(b.id)).map((b) => `${b.ref} ${b.name}${b.status === 'in' || b.status === 'out' ? ' ✓' : ''}`).join(' · ')}</span>}
-                {x.check?.kind === 'step' && canEdit && (x.check.startAt || x.check.doneAt) && <button type="button" disabled={busy === x.check.id} className="text-[11px] font-semibold text-slate-400"
+                    className={cx('mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[12px] font-bold ring-1 disabled:opacity-50', x.done ? 'bg-status-green text-white ring-status-green' : 'bg-white text-slate-500 ring-slate-300')}>{x.done ? '✓' : ''}</button>
+                : <span className={cx('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold', x.done ? 'bg-status-green text-white' : x.now ? 'bg-amber-400 text-white' : 'bg-slate-200 text-slate-500')}>{x.done ? '✓' : i + 1}</span>}
+              <span className="min-w-0 flex-1"><span className={cx('block', x.check ? 'text-[12px] font-medium' : 'font-semibold', x.done ? 'text-slate-900' : x.now ? 'text-amber-900' : 'text-slate-600')}>{x.check?.crane && <span className={cx('mr-1 rounded px-1 text-[10px] font-bold', x.done ? 'bg-slate-200 text-slate-600' : 'bg-status-red text-white')}>🏗 CRANE · CRITICAL</span>}{x.label}{x.now ? ' · now' : ''}</span>
+                {x.info && <span className="block text-[12px] text-slate-500">{x.info}</span>}
+                {(x.check?.linkActs ?? []).length > 0 && <span className="block text-[11px] font-semibold text-brand-500">= {acts.filter((a) => x.check!.linkActs!.includes(a.id)).map((a) => `${a.key.replace('-12-', '-')}: ${a.activity}${a.actualFinish ? ' ✓' : a.actualStart ? ' ▶' : ''}`).join(' · ')}</span>}
+                {(x.check?.linkPoints ?? []).length > 0 && <span className="block text-[11px] font-semibold text-brand-500">= {points.filter((b) => x.check!.linkPoints!.includes(b.id)).map((b) => `${b.ref} ${b.name}${b.status === 'in' || b.status === 'out' ? ' ✓' : ''}`).join(' · ')}</span>}
+                {x.check?.kind === 'step' && canEdit && (x.check.startAt || x.check.doneAt) && <button type="button" disabled={busy === x.check.id} className="text-[11px] font-semibold text-slate-500"
                   onClick={() => time(x.check!, x.check!.doneAt ? { done_at: null } : { start_at: null }, `step ${x.check!.seq} ${x.check!.doneAt ? 'finish' : 'start'} undone.`)}>↶ undo {x.check.doneAt ? 'finish' : 'start'}</button>}</span>
             </li>)}
           </ol>
         </section>
-        {checks.length > 0 && <p className="-mt-2 text-[10.5px] text-slate-400">Jobs from {checks.find((c) => c.source && c.source !== 'Added on site')?.source ?? 'site'}: ▶ starts, ✓ finishes. The rest of the procedure is under Procedure, for reference.</p>}
+        {checks.length > 0 && <p className="-mt-2 text-[11px] text-slate-500">Jobs from {checks.find((c) => c.source && c.source !== 'Added on site')?.source ?? 'site'}: ▶ starts, ✓ finishes. The rest of the procedure is under Procedure, for reference.</p>}
         {isHead && trackerId && <AddJob onAdd={(text, crane, after) => { const seqs = checks.map((c) => c.seq);
           return addPointStep({ tracker_id: trackerId, point_id: p.id, seq: after ? Math.max(0, ...seqs) + 1 : Math.min(1, ...seqs) - 1, phase: after ? 'after' : 'before', text, kind: 'step', crane }).then(() => onDone(`${p.ref}: ${text} added.`)); }} />}
         {cErr != null && <ErrorBox error={cErr} />}
-        {p.holdReason && <div className="flex items-center gap-2 rounded-lg bg-[#FFC7CE] px-2.5 py-1.5 text-sm text-red-900"><span className="min-w-0 flex-1">⏸ On hold: {p.holdReason}</span>
-          {canEdit && <button type="button" onClick={async () => { const was = p.holdReason!; try { await setPoint(p.id, { hold_reason: null }); onDone(`${p.ref}: resumed.`, () => setPoint(p.id, { hold_reason: was })); } catch (e) { setCErr(e); } }} className="shrink-0 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-[#0d2a5e] ring-1 ring-red-200">▶ Resume</button>}</div>}
+        {p.holdReason && <div className="flex items-center gap-2 rounded-lg bg-red-100 px-2.5 py-1.5 text-sm text-red-900"><span className="min-w-0 flex-1">⏸ On hold: {p.holdReason}</span>
+          {canEdit && <button type="button" onClick={async () => { const was = p.holdReason!; try { await setPoint(p.id, { hold_reason: null }); onDone(`${p.ref}: resumed.`, () => setPoint(p.id, { hold_reason: was })); } catch (e) { setCErr(e); } }} className="shrink-0 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-brand-700 ring-1 ring-red-200">▶ Resume</button>}</div>}
         {action && <div className="flex items-center justify-end gap-2">{canEdit && !p.holdReason && !pointComplete(p) && !hold && <button type="button" onClick={() => setHold(true)} className="text-xs font-semibold text-slate-500">⏸ Hold</button>}{action}</div>}
         {hold && <PendingForm initial={null} busy={false} onSave={async (r) => { try { await setPoint(p.id, { hold_reason: r }); setHold(false); onDone(`${p.ref}: on hold.`); } catch (e) { setCErr(e); } }} />}
         {err != null && <ErrorBox error={err} />}
         {p.items.length > 0 && <section>
           <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Items{(p.partOf ?? []).length ? ` · part of ${p.partOf!.join(', ')}` : ''}</h3>
-          <div className="flex flex-wrap gap-1">{p.items.map((t) => <button key={t} type="button" onClick={() => onItem(t)} className="rounded bg-white px-1.5 py-0.5 text-[12px] font-semibold text-[#004080] ring-1 ring-slate-200">{t} ›</button>)}</div>
+          <div className="flex flex-wrap gap-1">{p.items.map((t) => <button key={t} type="button" onClick={() => onItem(t)} className="rounded bg-white px-1.5 py-0.5 text-[12px] font-semibold text-brand-600 ring-1 ring-slate-200">{t} ›</button>)}</div>
         </section>}
-        {ll.length > 0 && <p className="text-[12px] text-slate-600">P&amp;ID lines: <b>{ll.join(', ')}</b>{onLine.map((i) => <span key={i.id} className="ml-1 rounded bg-[#FFE699] px-1 font-bold text-slate-800">IAT {i.iatNo} on {i.line}</span>)}</p>}
+        {ll.length > 0 && <p className="text-[12px] text-slate-600">P&amp;ID lines: <b>{ll.join(', ')}</b>{onLine.map((i) => <span key={i.id} className="ml-1 rounded bg-amber-200 px-1 font-bold text-slate-800">IAT {i.iatNo} on {i.line}</span>)}</p>}
         {p.remark && <p className="text-[12px] italic text-slate-600">📝 {p.remark}</p>}
-        {p.updatedBy && <p className="text-[11px] text-slate-400">Last update {p.updatedBy}{p.updatedAt ? ` · ${when(p.updatedAt)}` : ''}</p>}
+        {p.updatedBy && <p className="text-[11px] text-slate-500">Last update {p.updatedBy}{p.updatedAt ? ` · ${when(p.updatedAt)}` : ''}</p>}
       </div>
     </BottomSheet>
   );
@@ -271,7 +271,7 @@ function EquipBlindRow({ a, canEdit, onItem, onDone }: { a: TrkActivity; canEdit
     <>
       <CRow dot={done ? 'green' : 'grey'} title={<>{a.key} · {a.activity}</>} onTitle={() => onItem(a.key)}
         sub={done ? `✓ In ${when(a.actualFinish ?? null)}${a.updatedBy ? ` · ${a.updatedBy}` : ''}` : a.start ? `Plan ${when(a.start)}` : '—'}
-        action={canEdit && !done ? <RowBtn disabled={busy} onClick={() => { const t = new Date().toISOString(); run({ actual_start: a.actualStart ?? t, actual_finish: t }, `${a.key} blinded.`); }}>Blinded</RowBtn> : done ? <span className="shrink-0 text-[11px] font-bold text-[#08A048]">Done</span> : null}
+        action={canEdit && !done ? <RowBtn disabled={busy} onClick={() => { const t = new Date().toISOString(); run({ actual_start: a.actualStart ?? t, actual_finish: t }, `${a.key} blinded.`); }}>Blinded</RowBtn> : done ? <span className="shrink-0 text-[11px] font-bold text-status-green">Done</span> : null}
         menu={canEdit && done ? (close) => <MenuBtn danger disabled={busy} onClick={() => run({ actual_finish: null, actual_start: null }, `${a.key} back to not blinded.`, close)}>↶ Undo</MenuBtn> : undefined} />
       {err != null && <ErrorBox error={err} />}
     </>
@@ -310,13 +310,13 @@ export function IsolationTab({ trackerId, initialKind, activities = [], points, 
         <Tile value={soaking} label="soaking now" tone={soaking ? 'amber' : undefined} onClick={() => setKind('neut')} />
       </div>
       <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-200/60 p-1">
-        {([['blind', 'Blinds (M & I)'], ['neut', 'Neutralization']] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setKind(k)} className={cx('min-h-10 rounded-lg text-xs font-semibold', kind === k ? 'bg-white text-[#004080] shadow-sm' : 'text-slate-600')}>{l}</button>)}
+        {([['blind', 'Blinds (M & I)'], ['neut', 'Neutralization']] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setKind(k)} className={cx('min-h-10 rounded-lg text-xs font-semibold', kind === k ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-600')}>{l}</button>)}
       </div>
       {kind === 'blind' && <div className="flex gap-1.5">{GRP.map(([k, l]) => { const n = k === 'equipment' ? `${eqBlinds.filter((a) => a.actualFinish).length}/${eqBlinds.length}` : `${blinds.filter((p) => (p.grp ?? 'segregation') === k && pointComplete(p)).length}/${blinds.filter((p) => (p.grp ?? 'segregation') === k).length}`;
-        return <button key={k} type="button" onClick={() => setGrp(k)} className={cx('min-h-9 flex-1 rounded-lg px-2 text-xs font-semibold ring-1', grp === k ? 'bg-[#004080] text-white ring-[#004080]' : 'bg-white text-slate-700 ring-slate-200')}>{l} <span className="opacity-70">{n}</span></button>; })}</div>}
+        return <button key={k} type="button" onClick={() => setGrp(k)} className={cx('min-h-9 flex-1 rounded-lg px-2 text-xs font-semibold ring-1', grp === k ? 'bg-brand-600 text-white ring-brand-600' : 'bg-white text-slate-700 ring-slate-200')}>{l} <span className="opacity-70">{n}</span></button>; })}</div>}
       {eqView ? <div>{eqBlinds.length > 0 && <RowList>{eqBlinds.map((a) => <EquipBlindRow key={a.id} a={a} canEdit={canEdit} onItem={onItem} onDone={onDone} />)}</RowList>}{!eqBlinds.length && <p className="py-3 text-center text-sm text-slate-500">No blind lines in the bar chart{focus ? ` for ${focus}` : ''}.</p>}</div> : <>
       <div className="flex flex-wrap gap-1.5">
-        {['All', 'FO1', 'FO2', 'FO3'].map((x) => <button key={x} type="button" onClick={() => setFo(x)} className={cx('min-h-9 rounded-full px-3 text-xs font-semibold', fo === x ? 'bg-[#0850A0] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{x}</button>)}
+        {['All', 'FO1', 'FO2', 'FO3'].map((x) => <button key={x} type="button" onClick={() => setFo(x)} className={cx('min-h-9 rounded-full px-3 text-xs font-semibold', fo === x ? 'bg-brand-500 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{x}</button>)}
         {focus && <button type="button" onClick={() => onFocus(null)} className="min-h-9 rounded-full bg-amber-100 px-3 text-xs font-semibold text-amber-900">{focus} ✕</button>}
       </div>
       {sections.map(([k, xs]) => { const all = list.filter((p) => secOf(p) === k); return (
@@ -325,8 +325,8 @@ export function IsolationTab({ trackerId, initialKind, activities = [], points, 
           <RowList>{xs.map((p) => <PointRow key={p.id} p={p} points={points} acts={activities} lineup={lineup} iats={iats} steps={steps} checks={pointSteps.filter((c) => c.pointId === p.id)} trackerId={trackerId} isHead={isHead} now={now} canEdit={canEdit} onItem={onItem} onStep={onStep} onDone={onDone} />)}</RowList>
         </section>
       ); })}
-      {!open.length && <p className="py-3 text-center text-sm text-[#08A048]">All {kind === 'blind' ? 'blinds are in' : 'neutralization is done'}{fo !== 'All' ? ` for ${fo}` : ''}.</p>}
-      {closed.length > 0 && <button type="button" onClick={() => setShowDone((x) => !x)} className="text-sm font-semibold text-[#08A048]">{showDone ? '▾' : '▸'} ✓ {kind === 'blind' ? 'Blinded' : 'Neutralized'} ({closed.length})</button>}
+      {!open.length && <p className="py-3 text-center text-sm text-status-green">All {kind === 'blind' ? 'blinds are in' : 'neutralization is done'}{fo !== 'All' ? ` for ${fo}` : ''}.</p>}
+      {closed.length > 0 && <button type="button" onClick={() => setShowDone((x) => !x)} className="text-sm font-semibold text-status-green">{showDone ? '▾' : '▸'} ✓ {kind === 'blind' ? 'Blinded' : 'Neutralized'} ({closed.length})</button>}
       {showDone && <RowList>{closed.map((p) => <PointRow key={p.id} p={p} points={points} acts={activities} lineup={lineup} iats={iats} steps={steps} checks={pointSteps.filter((c) => c.pointId === p.id)} trackerId={trackerId} isHead={isHead} now={now} canEdit={canEdit} onItem={onItem} onStep={onStep} onDone={onDone} />)}</RowList>}
       </>}
       <p className="text-[11px] text-slate-500">One tap here updates the rest: operations hands an item over when its neutralization is done, M &amp; I then installs the blinds (an item blinded counts as handed over), the guideline step ticks when all its rows are done, and the soda-ash and blind bar-chart lines take the times.</p>

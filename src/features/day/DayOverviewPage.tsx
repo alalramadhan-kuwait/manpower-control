@@ -148,7 +148,7 @@ export default function DayOverviewPage() {
           {inputs && <ShutdownToday date={date} people={inputs.people} leave={leave} tick={tick} />}
           <AwayToday result={result} leave={leave} />
           {(() => { const n = new Set(inputs?.absences.filter((a) => a.lapsed && a.oracle !== 'rejected' && a.start <= date && date <= a.end).map((a) => a.employeeId)).size;
-            return n > 0 ? <Link to="/requests?view=leave&when=now&st=planned" className="mb-2 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-[12.5px] text-amber-900 ring-1 ring-amber-300"><span className="min-w-0 flex-1"><b>{n} PV not approved</b> · not counted as leave until you approve</span><span className="font-semibold">›</span></Link> : null; })()}
+            return n > 0 ? <Link to="/requests?view=leave&when=now&st=planned" className="mb-2 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-[12px] text-amber-900 ring-1 ring-amber-300"><span className="min-w-0 flex-1"><b>{n} PV not approved</b> · not counted as leave until you approve</span><span className="font-semibold">›</span></Link> : null; })()}
           <OffToday result={result} leave={leave} date={date} />
         </>
       )}
@@ -266,7 +266,7 @@ function ManpowerLine({ label, pos, notes, names = [] }: { label: string; pos: P
     <div className="py-2">
       <div className="flex items-baseline justify-between gap-3">
         <span className="min-w-0 truncate text-sm font-medium text-slate-700">{label}{names.length > 0 && <span className="font-normal text-slate-500"> · {names.join(', ')}</span>}</span>
-        <span className={cx('text-lg font-semibold tabular-nums', findingColor(pos.finding))}>{pos.count} <span className="text-slate-400">/</span> {pos.min}</span>
+        <span className={cx('text-lg font-semibold tabular-nums', findingColor(pos.finding))}>{pos.count} <span className="text-slate-500">/</span> {pos.min}</span>
       </div>
       {notes.length > 0 && (
         <div className="mt-1 flex flex-wrap gap-1">
@@ -462,7 +462,7 @@ function TodaySummary({ result, date, today }: { result: DayResult; date: string
             <li key={`${g.crew}${g.label}`}><a href={`#crew-${g.crew}`} className="flex min-h-12 items-start gap-2 px-3 py-2 text-sm">
               <CrewBadge crew={g.crew} size="sm" />
               <span className="min-w-0 flex-1"><span className={cx('block font-semibold', g.red ? 'text-status-red' : 'text-slate-800')}>{g.crew} {t('Shift')} · {t(g.label)}: {t('required')} {g.min}, {t('available')} {g.count}{g.red ? ' ✕' : ''}</span><span className="block text-xs text-slate-600">{g.shift} · {g.why}</span></span>
-              <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-slate-400 rtl:rotate-180" />
+              <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-slate-500 rtl:rotate-180" />
             </a></li>
           ))}
         </ul>
@@ -490,7 +490,7 @@ function EventsCard({ date, events }: { date: string; events: UnitEvent[] }) {
         return <Link key={e.id} to={`/calendar?month=${date.slice(0, 7)}`} className="flex items-center gap-2 border-b border-slate-100 px-3 py-1.5 text-[13px]">
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal-700 text-white"><Icon className="h-3.5 w-3.5" /></span>
           <span className="min-w-0 flex-1 truncate text-slate-800">{e.unit ? `${e.unit} ` : ''}{e.title}{e.start <= date && date <= e.end && e.start !== e.end ? <span className="text-slate-500"> · day {dayIndex(e.start, date)} of {dayIndex(e.start, e.end)}</span> : null}</span>
-          <span className="shrink-0 text-[11.5px] text-slate-500">{e.start === e.end ? shortDate(e.start) : `to ${shortDate(e.end)}`}</span>
+          <span className="shrink-0 text-[12px] text-slate-500">{e.start === e.end ? shortDate(e.start) : `to ${shortDate(e.end)}`}</span>
         </Link>; })}
       <TrackerTodayCard date={date} embedded />
     </div>
@@ -534,7 +534,7 @@ function ShiftBoard({ result, leave, date, needFor }: { result: DayResult; leave
           <button type="button" aria-label="Earlier shifts" disabled={from === 0} onClick={() => setAt(from - 1)} className="flex h-8 w-9 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-slate-300 disabled:opacity-35"><ChevronLeft className="h-4 w-4" /></button>
           <div className="flex flex-1 justify-center gap-1.5">
             {working.map((c, i) => { const on = i >= from && i < from + 2;
-              return <button key={c.crew} type="button" onClick={() => setAt(Math.min(i, last))} className={cx('rounded-full px-2.5 py-0.5 text-[11.5px] font-bold', on ? SHIFT_PILL[c.state as 'M' | 'A' | 'N'] : 'bg-white text-slate-600 ring-1 ring-slate-200')}>{c.shift}</button>; })}
+              return <button key={c.crew} type="button" onClick={() => setAt(Math.min(i, last))} className={cx('rounded-full px-2.5 py-0.5 text-[12px] font-bold', on ? SHIFT_PILL[c.state as 'M' | 'A' | 'N'] : 'bg-white text-slate-600 ring-1 ring-slate-200')}>{c.shift}</button>; })}
           </div>
           <button type="button" aria-label="Later shifts" disabled={from >= last} onClick={() => setAt(from + 1)} className="flex h-8 w-9 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-slate-300 disabled:opacity-35"><ChevronRight className="h-4 w-4" /></button>
         </div>
@@ -562,32 +562,32 @@ function ShiftColumn({ c, first, result, leave, date, need }: { c: CrewDay; firs
     <div className="mt-1.5">
       <b className={cx('text-[13px]', pos.count < pos.min && 'text-status-red')}>{label} {people.length}</b>
       {people.map((p) => <Link key={p.id} to={`/employees/${p.id}`} className="block truncate text-slate-800">{nb(p.name)}</Link>)}
-      {notes.map((n) => <span key={n.text} className={cx('mt-0.5 block rounded px-1 text-[10.5px] font-medium leading-tight', NOTE_CLS[n.tone])}>{n.text}</span>)}
+      {notes.map((n) => <span key={n.text} className={cx('mt-0.5 block rounded px-1 text-[11px] font-medium leading-tight', NOTE_CLS[n.tone])}>{n.text}</span>)}
     </div>
   );
   return (
     <div className={cx('min-w-0 overflow-hidden text-[13px] leading-[1.55]', cls.body, !first && 'border-l-2 border-white')}>
-      <div className={cx('flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1.5 text-[11.5px] font-extrabold uppercase', cls.head)}>
+      <div className={cx('flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1.5 text-[12px] font-extrabold uppercase', cls.head)}>
         <span className={cx('inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full text-[10px] text-white', CREW_IDENTITY[c.crew].bg)}>{c.crew}</span><span>{c.shift}</span>
         <span className="ml-auto rounded bg-white/80 px-1.5 text-[11px] normal-case">{nth(c.duty)}</span>
       </div>
       <div className="px-2.5 pb-2.5 pt-1.5">
         {who.name ? <b className="block truncate text-[14px] font-extrabold text-brand-800">{nb(who.name)}</b> : <b className="block text-[12px] text-status-red">No Controller</b>}
-        <span className="block truncate text-[11.5px] text-slate-500">in charge{who.note ? ` · ${who.note}` : ''}</span>
-        {ctlNotes.map((n) => n.to ? <Link key={n.text} to={n.to} className={cx('mt-0.5 block rounded px-1 text-[10.5px] font-medium leading-tight', NOTE_CLS[n.tone])}>{n.text} · {n.link} ›</Link>
-          : <span key={n.text} className={cx('mt-0.5 block rounded px-1 text-[10.5px] font-medium leading-tight', NOTE_CLS[n.tone])}>{n.text}</span>)}
+        <span className="block truncate text-[12px] text-slate-500">in charge{who.note ? ` · ${who.note}` : ''}</span>
+        {ctlNotes.map((n) => n.to ? <Link key={n.text} to={n.to} className={cx('mt-0.5 block rounded px-1 text-[11px] font-medium leading-tight', NOTE_CLS[n.tone])}>{n.text} · {n.link} ›</Link>
+          : <span key={n.text} className={cx('mt-0.5 block rounded px-1 text-[11px] font-medium leading-tight', NOTE_CLS[n.tone])}>{n.text}</span>)}
         <Group label="Panel" pos={c.panel} people={panel} notes={notesFor(c, 'panel', leave, date)} />
         <Group label="Field" pos={c.field} people={field} notes={notesFor(c, 'field', leave, date)} />
         {morning.length > 0 && (
           <div className={cx('mt-1.5 border-t border-dashed pt-1', cls.line)}>
-            <b className="text-[13px]">Day duty</b> <span className="text-[11.5px] text-slate-500">Sun–Thu</span>
+            <b className="text-[13px]">Day duty</b> <span className="text-[12px] text-slate-500">Sun–Thu</span>
             {[...morning].sort((a, b) => bySeniority(a.person, b.person)).map((s) => { const l = leave.get(s.person.id);
-              return <Link key={s.person.id} to={`/employees/${s.person.id}`} className="block truncate text-slate-800">{nb(s.person.name)}{s.absence ? <span className="block text-[10.5px] text-slate-500">{l?.typeShort ?? s.absence.typeShort ?? 'Leave'}</span> : !s.working ? <span className="block text-[10.5px] text-slate-500">off today</span> : null}</Link>; })}
+              return <Link key={s.person.id} to={`/employees/${s.person.id}`} className="block truncate text-slate-800">{nb(s.person.name)}{s.absence ? <span className="block text-[11px] text-slate-500">{l?.typeShort ?? s.absence.typeShort ?? 'Leave'}</span> : !s.working ? <span className="block text-[11px] text-slate-500">off today</span> : null}</Link>; })}
           </div>
         )}
         <div className="mt-1.5 flex flex-wrap gap-1">
-          {final ? <span className={cx('rounded-md px-1.5 text-[10.5px] font-bold', final === 'green' ? 'bg-green-100 text-green-800' : final === 'amber' ? 'bg-amber-100 text-amber-900' : 'bg-red-100 text-red-800')}>{STATUS_HINT[final] === 'Safe' ? 'OK' : STATUS_HINT[final]}</span> : null}
-          {c.pending.map((k) => <span key={k} className="rounded-md bg-slate-200 px-1.5 text-[10.5px] font-bold text-slate-700">{k === 'coverage_required' ? 'Cover needed' : 'Data to confirm'}</span>)}
+          {final ? <span className={cx('rounded-md px-1.5 text-[10px] font-bold', final === 'green' ? 'bg-green-100 text-green-800' : final === 'amber' ? 'bg-amber-100 text-amber-900' : 'bg-red-100 text-red-800')}>{STATUS_HINT[final] === 'Safe' ? 'OK' : STATUS_HINT[final]}</span> : null}
+          {c.pending.map((k) => <span key={k} className="rounded-md bg-slate-200 px-1.5 text-[10px] font-bold text-slate-700">{k === 'coverage_required' ? 'Cover needed' : 'Data to confirm'}</span>)}
         </div>
       </div>
     </div>
@@ -610,14 +610,14 @@ function AwayToday({ result, leave }: { result: DayResult; leave: Map<string, On
           <div key={r.crew} className="flex items-center gap-2 border-b border-slate-100 px-3 py-1.5 last:border-b-0">
             <CrewBadge crew={r.crew} size="sm" />
             <div className="min-w-0 flex-1 text-[13px]">
-              {r.xs.map((a) => <Link key={a.person.id} to={`/employees/${a.person.id}`} className="flex items-baseline justify-between gap-2"><span className="flex min-w-0 items-center gap-1 truncate text-slate-900"><OracleDot status={leave.get(a.person.id)?.oracle ?? a.absence.oracle} />{a.person.name}</span><span className="shrink-0 text-[11.5px] text-slate-500">{back(a.person.id, a.absence)}</span></Link>)}
+              {r.xs.map((a) => <Link key={a.person.id} to={`/employees/${a.person.id}`} className="flex items-baseline justify-between gap-2"><span className="flex min-w-0 items-center gap-1 truncate text-slate-900"><OracleDot status={leave.get(a.person.id)?.oracle ?? a.absence.oracle} />{a.person.name}</span><span className="shrink-0 text-[12px] text-slate-500">{back(a.person.id, a.absence)}</span></Link>)}
             </div>
           </div>
         ))}
         {staff.length > 0 && (
           <div className="flex items-center gap-2 px-3 py-1.5">
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-500 text-[10px] font-bold text-white">VR</span>
-            <div className="min-w-0 flex-1 text-[13px]">{staff.map((s) => <Link key={s.person.id} to={`/employees/${s.person.id}`} className="flex items-baseline justify-between gap-2"><span className="truncate text-slate-900">{s.person.name}</span><span className="shrink-0 text-[11.5px] text-slate-500">{back(s.person.id, s.absence!)}</span></Link>)}</div>
+            <div className="min-w-0 flex-1 text-[13px]">{staff.map((s) => <Link key={s.person.id} to={`/employees/${s.person.id}`} className="flex items-baseline justify-between gap-2"><span className="truncate text-slate-900">{s.person.name}</span><span className="shrink-0 text-[12px] text-slate-500">{back(s.person.id, s.absence!)}</span></Link>)}</div>
           </div>
         )}
       </div>
@@ -645,7 +645,7 @@ function OffToday({ result, date }: { result: DayResult; leave: Map<string, OnLe
         <Link key={s.person.id} to={`/employees/${s.person.id}`} className="flex items-center gap-2 border-b border-slate-100 px-3 py-1.5 text-[13px] last:border-b-0">
           <span className="w-16 shrink-0 text-[11px] font-bold text-slate-500">{role(s)}</span>
           <span className="min-w-0 flex-1 truncate text-slate-800">{s.person.name}</span>
-          <span className={cx('shrink-0 text-[11.5px]', what(s) === 'available' ? 'text-status-green' : 'text-slate-500')}>{what(s)}</span>
+          <span className={cx('shrink-0 text-[12px]', what(s) === 'available' ? 'text-status-green' : 'text-slate-500')}>{what(s)}</span>
         </Link>
       ))}
       {result.morningPost.status === 'coverage_required' && (

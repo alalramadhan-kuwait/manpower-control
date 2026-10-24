@@ -76,7 +76,7 @@ export function ShiftChanges({ onCount }: { onCount?: (n: number) => void } = {}
   return (
     <div className="space-y-2">
       <label className="relative block">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
         <input className="input" style={{ paddingLeft: '2.25rem' }} placeholder="Search name or number" value={query} onChange={(e) => setQuery(e.target.value)} />
       </label>
       <div className="flex gap-1.5 overflow-x-auto pb-0.5">
@@ -111,7 +111,7 @@ export function ShiftChanges({ onCount }: { onCount?: (n: number) => void } = {}
                   <span className="block text-xs font-semibold text-slate-800">{shortDate(i.on)}</span>
                   <span className={cx('block text-[11px]', left < 0 ? 'text-status-green' : left <= 7 ? 'font-semibold text-status-amber' : 'text-slate-500')}>{left < 0 ? 'Done' : left === 0 ? 'Today' : `in ${left} d`}</span>
                 </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
               </Link>
             );
           })}

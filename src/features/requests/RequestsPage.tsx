@@ -34,7 +34,7 @@ export default function RequestsPage({ profile }: { profile: UserProfile }) {
   const go = (x: View) => setParams({ view: x }, { replace: true });
   const tile = (x: View, n: number | null, label: string, cls: string) => (
     <button type="button" aria-pressed={view === x} onClick={() => go(x)} className={cx('flex-1 rounded-xl bg-white px-1.5 py-2 text-center', view === x ? 'ring-2 ring-brand-800' : 'ring-1 ring-slate-200')}>
-      <span className={cx('block text-2xl font-extrabold tabular-nums leading-tight', n ? cls : 'text-slate-400')}>{n ?? '…'}</span>
+      <span className={cx('block text-2xl font-extrabold tabular-nums leading-tight', n ? cls : 'text-slate-500')}>{n ?? '…'}</span>
       <span className="block text-[11px] font-semibold text-slate-600">{t(label)}</span>
     </button>
   );

@@ -45,7 +45,7 @@ function NewSheet({ target, people, busy, err, run, onClose }: { target: Extract
     <BottomSheet open onClose={onClose} title="Shift movement">
       <div className="space-y-4">
         {target.employeeId && person ? (
-          <div className="flex items-center gap-1.5 text-sm font-medium text-slate-800">{person.name}{person.crew && <><span className="text-slate-400">· now</span><CrewBadge crew={person.crew} size="sm" /></>}</div>
+          <div className="flex items-center gap-1.5 text-sm font-medium text-slate-800">{person.name}{person.crew && <><span className="text-slate-500">· now</span><CrewBadge crew={person.crew} size="sm" /></>}</div>
         ) : (
           <Field label="Employee">
             <select className="input" value={employee} onChange={(e) => setEmployee(e.target.value)}>

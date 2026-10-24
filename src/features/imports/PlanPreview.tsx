@@ -88,7 +88,7 @@ export function RowLine({ row }: { row: RowLineProps }) {
         <Chip>{KIND_LABEL[row.entity_kind] ?? row.entity_kind}</Chip>
         {row.employee_number && <span className="font-mono text-xs text-slate-600">#{row.employee_number}</span>}
         {typeof name === 'string' && <span className="truncate text-xs text-slate-700">{name}</span>}
-        <span className="ml-auto text-[11px] text-slate-400">{[row.sheet, row.row_ref].filter(Boolean).join(' · ')}</span>
+        <span className="ml-auto text-[11px] text-slate-500">{[row.sheet, row.row_ref].filter(Boolean).join(' · ')}</span>
       </div>
       {(row.message || auto) && <p className="mt-1 text-slate-700">{row.message ?? auto}</p>}
       {row.diff && Object.keys(row.diff).length > 0 && (

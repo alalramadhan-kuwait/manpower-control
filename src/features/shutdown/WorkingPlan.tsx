@@ -35,7 +35,7 @@ function cellClass(v: CellView, night: boolean): string {
     case 'W12': return night ? 'bg-blue-900 text-white' : 'bg-amber-300 text-amber-950';
     case 'W8': return night ? 'bg-blue-300 text-blue-950' : 'bg-amber-100 text-amber-900';
     case 'O': return 'bg-white text-slate-500 ring-1 ring-inset ring-slate-300';
-    case 'U': return 'bg-[repeating-linear-gradient(135deg,#e2e8f0_0_4px,#cbd5e1_4px_8px)] text-slate-800';
+    case 'U': return 'bg-[repeating-linear-gradient(135deg,var(--color-slate-200)_0_4px,var(--color-slate-300)_4px_8px)] text-slate-800';
     case 'L': return 'bg-violet-300 text-violet-950 cursor-not-allowed';
     case 'X': return 'bg-slate-100 text-slate-300 cursor-not-allowed';
   }

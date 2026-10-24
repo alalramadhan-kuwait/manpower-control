@@ -70,14 +70,14 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
             {tabs.filter((t) => t.to !== '/more').map(({ to, label, icon: Icon }) => <RailLink key={to} to={to} label={label} icon={Icon} end={to === '/'} count={badge(to)} />)}
           </div>
           <div className="mt-4">
-            <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-slate-400">{t('Workspaces')}</div>
+            <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{t('Workspaces')}</div>
             <div className="space-y-0.5">
               {WORKSPACES.map((i) => <RailLink key={i.to} to={i.to} label={t(i.label)} icon={i.icon} />)}
               <RailLink to="/more" label={t('More')} icon={MoreHorizontal} end />
             </div>
           </div>
           <button type="button" onClick={() => supabase.auth.signOut()} className="mt-4 flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100"><LogOut className="h-4 w-4" />{t('Sign out')}</button>
-          <VersionLine className="mt-4 px-3 text-[10px] leading-tight text-slate-400" />
+          <VersionLine className="mt-4 px-3 text-[10px] leading-tight text-slate-500" />
         </nav>
         <main className="min-w-0 flex-1 px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-4 sm:pb-8 lg:px-0 print:p-0">{children}</main>
         {!wide && <aside aria-label="Side panel" className="sticky top-16 hidden max-h-[calc(100vh-4rem)] self-start overflow-y-auto py-4 xl:block print:hidden"><SidePanel isHead={isHead} /></aside>}

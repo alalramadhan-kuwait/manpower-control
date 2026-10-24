@@ -20,7 +20,7 @@ const MONTH = (ym: string) => new Date(`${ym}-01T00:00:00Z`).toLocaleDateString(
 const monthName = (ym: string) => new Date(`${ym}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' });
 const hrs = (label: string | null) => label?.replace(/(\d\d:\d\d)/g, '$1 HRS').replace(/\s*-\s*/, ' TO ') ?? '';
 
-const KNPC_BLUE = '#005DAA';
+const KNPC_BLUE = 'var(--color-knpc-blue)';
 /** The KNPC letterhead, as on the Excel sheets: the logo, the title, the refinery and unit, the period and the flame's colours. */
 export function Letterhead({ title, sub }: { title: string; sub: string }) {
   return (
@@ -33,7 +33,7 @@ export function Letterhead({ title, sub }: { title: string; sub: string }) {
         </div>
         <div className="hidden w-24 shrink-0 sm:block" />
       </div>
-      <div className="mt-2 flex h-1 overflow-hidden rounded-full"><span className="w-[12%] bg-[#E31E24]" /><span className="w-[12%] bg-[#009A3E]" /><span className="flex-1 bg-[#005DAA]" /></div>
+      <div className="mt-2 flex h-1 overflow-hidden rounded-full"><span className="w-[12%] bg-knpc-red" /><span className="w-[12%] bg-knpc-green" /><span className="flex-1 bg-knpc-blue" /></div>
     </header>
   );
 }
@@ -126,7 +126,7 @@ export function ScheduleBody({ doc }: { doc: Doc }) {
       {blocks.map((b, bi) => (
         <table key={bi} className="mb-3 w-full border-collapse text-center text-[10px] text-slate-900 print:break-inside-avoid">
           <thead>
-            <tr><th colSpan={4} className={cx(th, 'bg-[#005DAA] text-white')}>EMPLOYEES</th><th colSpan={b.length} className={cx(th, 'bg-[#005DAA] text-white')}>DAYS</th></tr>
+            <tr><th colSpan={4} className={cx(th, 'bg-knpc-blue text-white')}>EMPLOYEES</th><th colSpan={b.length} className={cx(th, 'bg-knpc-blue text-white')}>DAYS</th></tr>
             <tr><th colSpan={4} className={th} />{b.map((d) => <th key={d} className={cx(th, 'font-medium')}>{new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' })}</th>)}</tr>
             <tr><th className={cx(th, 'w-px')} /><th className={cx(th, 'w-px')}>S.NO</th><th className={cx(th, 'w-px')}>E NO.</th><th className={cx(th, 'w-px min-w-40 text-left')}>E. NAME</th>
               {b.map((d) => <th key={d} className={cx(th, 'w-8 whitespace-nowrap')}>{Number(d.slice(8))}-{new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })}</th>)}</tr>
@@ -148,7 +148,7 @@ export function ScheduleBody({ doc }: { doc: Doc }) {
                     const h = w ? memberHoursOn(plan, x.m, d) : 0;
                     const short = w && h < plan.shiftHours;
                     const night = x.team.shiftCode === 'N';
-                    return <td key={d} className={cx(td, 'font-semibold', w ? (night ? (short ? 'bg-slate-100' : 'bg-slate-300') : short ? 'bg-white' : 'bg-sky-100') : offInside(plan, x.m, dates, d) && 'bg-yellow-300', w && !isDutyDay(x.crew, d) && 'text-red-600')}>{w ? <>{x.team.shiftCode}{short && <sub className="text-[8px] font-bold">{h}</sub>}</> : 'O'}</td>;
+                    return <td key={d} className={cx(td, 'font-semibold', w ? (night ? (short ? 'bg-slate-100' : 'bg-slate-300') : short ? 'bg-white' : 'bg-sky-100') : offInside(plan, x.m, dates, d) && 'bg-yellow-300', w && !isDutyDay(x.crew, d) && 'text-red-600')}>{w ? <>{x.team.shiftCode}{short && <sub className="text-[9px] font-bold">{h}</sub>}</> : 'O'}</td>;
                   })}
                 </tr>
               );
@@ -158,7 +158,7 @@ export function ScheduleBody({ doc }: { doc: Doc }) {
       ))}
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-700">
         {doc.teams.map((t) => <span key={t.id}><b className={cx('mr-1 inline-block w-6 border border-slate-500 text-center', t.shiftCode === 'N' ? 'bg-slate-300' : 'bg-sky-100')}>{t.shiftCode}</b>{t.name} shift {plan.shiftHours} hrs {t.hoursLabel ?? ''}</span>)}
-        {[...new Set(doc.teams.map((t) => t.shiftCode))].map((c) => <span key={`s${c}`}><b className={cx('mr-1 inline-block w-6 border border-slate-500 text-center', c === 'N' ? 'bg-slate-100' : 'bg-white')}>{c}<sub className="text-[8px] font-bold">{plan.normalHours}</sub></b>{c === 'N' ? 'Night' : 'Day'} shift {plan.normalHours} hrs: a shorter day, the small number is the hours</span>)}
+        {[...new Set(doc.teams.map((t) => t.shiftCode))].map((c) => <span key={`s${c}`}><b className={cx('mr-1 inline-block w-6 border border-slate-500 text-center', c === 'N' ? 'bg-slate-100' : 'bg-white')}>{c}<sub className="text-[9px] font-bold">{plan.normalHours}</sub></b>{c === 'N' ? 'Night' : 'Day'} shift {plan.normalHours} hrs: a shorter day, the small number is the hours</span>)}
         <span><b className="mr-1 inline-block w-5 border border-slate-500 bg-yellow-300 text-center">O</b>Off</span>
         <span><b className="mr-1 inline-block w-5 border border-slate-500 text-center text-red-600">{doc.teams[0]?.shiftCode ?? 'M'}</b>{(plan.rulesVersion ?? 1) >= 2 ? "On the person's crew rest day (set against the cycle's regular hours)" : "On the person's crew rest day (full overtime)"}</span>
         <span><b className="mr-1 inline-block w-5 border border-slate-500 bg-slate-900 text-center">&nbsp;</b>Not on the team</span>
@@ -246,7 +246,7 @@ function SignaturesSheet({ plan, value, onClose, onDone }: { plan: SdPlan; value
               <Field label="Name"><input className="input" value={s.name} onChange={(e) => set(i, 'name', e.target.value)} /></Field>
               <Field label="Title"><input className="input" value={s.title} onChange={(e) => set(i, 'title', e.target.value)} /></Field>
             </div>
-            <button type="button" aria-label="Remove" onClick={() => setV((x) => x.filter((_, j) => j !== i))} className="mb-2 text-slate-400"><Trash2 className="h-4 w-4" /></button>
+            <button type="button" aria-label="Remove" onClick={() => setV((x) => x.filter((_, j) => j !== i))} className="mb-2 text-slate-500"><Trash2 className="h-4 w-4" /></button>
           </div>
         ))}
         <button type="button" onClick={() => setV((x) => [...x, { title: '', name: '' }])} className="flex items-center gap-1 text-sm font-medium text-brand-700"><Plus className="h-4 w-4" />Add signature</button>

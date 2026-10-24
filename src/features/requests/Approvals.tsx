@@ -102,7 +102,7 @@ export function Approvals({ isHead }: { isHead: boolean }) {
         ))}
       </div>
       <label className="relative block">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
         <input className="input" style={{ paddingLeft: '2.25rem' }} placeholder="Search name, number or request" value={query} onChange={(e) => setQuery(e.target.value)} />
       </label>
       <div className="flex gap-1.5 overflow-x-auto pb-0.5 lg:flex-wrap">
@@ -131,7 +131,7 @@ export function Approvals({ isHead }: { isHead: boolean }) {
                     {tab === 'decided' && <Chip tone={i.tone}>{i.status}</Chip>}
                   </span>
                 </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
               </>
             );
             return i.form

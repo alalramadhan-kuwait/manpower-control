@@ -162,7 +162,7 @@ export default function ControllersBoardPage({ profile }: { profile: UserProfile
             rows={[...base.ctl.map((p) => ({ key: p.id, label: (
               <Link to={`/employees/${p.id}`} className="flex items-center gap-1 font-medium text-slate-800">
                 <span className="truncate text-[11px]">{base.short.get(p.id)}</span>
-                {p.crew ? <CrewBadge crew={p.crew} size="sm" /> : <span className="rounded bg-slate-100 px-1 text-[9px] text-slate-500">VR</span>}
+                {p.crew ? <CrewBadge crew={p.crew} size="sm" /> : <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-500">VR</span>}
               </Link>), cell: (g: Col) => <PersonCell key={g.date} c={g.people[p.id]} wide={mode === 'week'} /> })),
             { key: 'morning', label: <Link to="/controllers?tab=morning" className="flex items-center gap-1 text-[11px] font-medium text-slate-800"><Sun className="h-3.5 w-3.5 text-amber-500" />Morning</Link>,
               cell: (g: Col) => <td key={g.date} className={cx('h-7 rounded', g.morning === 'held' ? 'bg-amber-100 text-amber-700' : g.morning === 'empty' ? 'bg-red-200' : '')}>{g.morning === 'held' ? <Sun className="mx-auto h-3 w-3" /> : ''}</td> }]} />
@@ -198,7 +198,7 @@ export default function ControllersBoardPage({ profile }: { profile: UserProfile
               <tbody className="divide-y divide-slate-100">
                 {base.check.people.map(({ person, years }) => (
                   <tr key={person.id}>
-                    <td className="py-1.5"><span className="flex items-center gap-1.5"><span className="truncate">{person.name}</span>{person.crew ? <CrewBadge crew={person.crew} size="sm" /> : <span className="text-[10px] font-semibold text-slate-400">VR</span>}</span></td>
+                    <td className="py-1.5"><span className="flex items-center gap-1.5"><span className="truncate">{person.name}</span>{person.crew ? <CrewBadge crew={person.crew} size="sm" /> : <span className="text-[10px] font-semibold text-slate-500">VR</span>}</span></td>
                     {years.map((y) => {
                       const over = y.count > CONTROLLER_LEAVE_RULES.maxLeavesPerYear, open = y.extras.some((x) => !x.approval);
                       return <td key={y.year} className="text-right text-xs tabular-nums">
@@ -248,7 +248,7 @@ function BoardCard({ title, cols, rows, mode, today, onDay, scrollRef, onScroll 
               <th className="sticky left-0 z-10 w-[5.75rem] min-w-[5.75rem] max-w-[5.75rem] bg-white" />
               {cols.map((g) => {
                 const wd = new Date(`${g.date}T00:00:00Z`).getUTCDay();
-                return <th key={g.date} className={cx('pb-0.5 font-medium leading-tight', !week && 'w-6 min-w-6', wd >= 5 ? 'text-slate-400' : 'text-slate-500')}>
+                return <th key={g.date} className={cx('pb-0.5 font-medium leading-tight', !week && 'w-6 min-w-6', wd >= 5 ? 'text-slate-500' : 'text-slate-500')}>
                   <button type="button" onClick={() => onDay(g.date)} className="w-full">
                     <div>{week ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][wd] : 'SMTWTFS'[wd]}</div>
                     <div className={cx('mx-auto flex h-5 w-5 items-center justify-center rounded-full text-[11px]', g.date === today ? 'bg-brand-700 text-white' : 'text-slate-700')}>{Number(g.date.slice(8))}</div>
@@ -302,7 +302,7 @@ function DaySheet({ col, ctl, onClose }: { col: Col; ctl: MpPerson[]; onClose: (
           <h3 className="mb-1 text-xs font-semibold text-slate-700">Crew cover</h3>
           <div className="divide-y divide-slate-100 rounded-xl ring-1 ring-slate-200">
             {crews.map((c) => {
-              if (!c.working) return <div key={c.crew} className="flex items-center gap-2 px-2.5 py-2 text-sm text-slate-400"><span className="w-7 text-xs font-semibold">Off</span><CrewBadge crew={c.crew} size="sm" muted /></div>;
+              if (!c.working) return <div key={c.crew} className="flex items-center gap-2 px-2.5 py-2 text-sm text-slate-500"><span className="w-7 text-xs font-semibold">Off</span><CrewBadge crew={c.crew} size="sm" muted /></div>;
               const ok = col.crews[c.crew]?.ok;
               const who = c.controller.cover?.counted ? `${c.controller.cover.person.name} (cover)` : c.controller.acting ? `${c.controller.acting.name} (acting)` : c.controller.counted[0]?.name ?? null;
               return (
@@ -321,7 +321,7 @@ function DaySheet({ col, ctl, onClose }: { col: Col; ctl: MpPerson[]; onClose: (
           <div className="divide-y divide-slate-100 rounded-xl ring-1 ring-slate-200">
             {ctl.map((p) => { const st = statusText(col.people[p.id]); return (
               <Link key={p.id} to={`/employees/${p.id}`} className="flex items-center gap-2 px-2.5 py-2">
-                {p.crew ? <CrewBadge crew={p.crew} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-500">VR</span>}
+                {p.crew ? <CrewBadge crew={p.crew} size="sm" /> : <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-500">VR</span>}
                 <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-900">{p.name}</span><span className={cx('block truncate text-xs', st.cls)}>{st.text}</span></span>
               </Link>
             ); })}
@@ -369,7 +369,7 @@ function OverlapRow({ o, name, isHead, past, onApprove, onWithdraw }: { o: Overl
         <span className="block truncate text-sm font-medium text-slate-900">{name.get(o.a.employeeId)} + {name.get(o.b.employeeId)}</span>
         <span className="block text-xs text-slate-500">{range(o.start, o.end)} · {o.days} day{o.days === 1 ? '' : 's'}{o.approval?.note ? ` · ${o.approval.note}` : ''}</span>
       </span>
-      {past ? <span className="text-[11px] text-slate-400">{o.approval ? 'Approved' : 'Past'}</span>
+      {past ? <span className="text-[11px] text-slate-500">{o.approval ? 'Approved' : 'Past'}</span>
         : <ApproveState approval={o.approval} isHead={isHead} onApprove={onApprove!} onWithdraw={onWithdraw!} />}
     </div>
   );

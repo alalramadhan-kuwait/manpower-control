@@ -33,11 +33,19 @@ Colours: use the `@theme` tokens in `src/index.css`. Do not add new hex values.
 | Neutral / not started | slate |
 | Crew A/B/C/D | `crew-*` only for crew identity, never for status |
 | Shift M / A / N | amber / orange / indigo, only for shift identity |
+| Running step marker | `amber-400` fill, `amber-950` text |
+| WhatsApp buttons / preview | `whatsapp` / `whatsapp-soft` |
+| Printed KNPC documents only | `knpc-blue` / `knpc-red` / `knpc-green` |
 
-The same colour means the same thing everywhere. Colour is never the only signal: pair it with a word or icon.
+Soft fills for states use the Tailwind palette at 50–200 (`green-100`, `red-100`, `amber-200`). No `-[#hex]` classes
+anywhere except the logo artwork (`src/ui/brand.tsx`). The same colour means the same thing everywhere. Colour is
+never the only signal: pair it with a word or icon.
 
 Type (px): 20 page title · 15–16 section · 14 body · 13 list primary · 12 list secondary · 11 meta/timestamps ·
-10 chips/badges only. Nothing below 10. Numbers `tabular-nums`. Weight for hierarchy, not size.
+10 chips, badges, uppercase section labels, grid headers, legends · 9 only inside fixed-size matrix cells (calendar,
+leave plan, Gantt). Nothing below 9. No half sizes (10.5, 12.5 …). Numbers `tabular-nums`. Weight for hierarchy, not
+size. Choose the size by the element's job and the space it has; do not raise sizes across the board.
+Text colour: `slate-500` is the lightest for readable text; `slate-400` only for an empty value ("—", "Off").
 
 Spacing: 4 · 8 · 12 · 16 · 24 (Tailwind 1 · 2 · 3 · 4 · 6). Card padding 12 (`p-3`). Rows in the same list use
 identical padding.
@@ -67,6 +75,17 @@ Touch: primary buttons `min-h-11` (44px) · secondary/row actions `min-h-9` (36p
 - **Reports (WhatsApp):** see §7.
 - Management views show exceptions and decisions, each linking to its records. No decorative KPIs.
 
+**When these modules are added** (not in the app yet; the rules apply from the first screen):
+- **Chemical / laboratory:** every result with unit, detection limit, sample time, source and spec limits; trends with
+  labelled axes, units and limits; an estimate is never shown as a verified result.
+- **Handover slips:** create, reopen, edit while a draft, add/remove items, withdraw or void with a reason, revise an
+  approved slip as a new version, show who changed what and when, link to the equipment and its work. A slip never
+  implies a physical handover that the approved process has not completed; a software tick is not a permit, gas test or
+  isolation.
+- **Procedures:** drafts fully editable (title, steps add/remove/reorder, assignments), duplicate, discard; published
+  versions kept, revisions with a reason and approval, effective version and date shown. A procedure template and its
+  execution records are separate: changing the template never rewrites completed checklists.
+
 ## 5. Records: every one can be corrected
 
 A feature that creates a record with no way to correct it is not finished.
@@ -84,7 +103,9 @@ A feature that creates a record with no way to correct it is not finished.
 Rules:
 - Routine reversible actions: one tap plus an **Undo** toast. No confirm dialog.
 - Confirm only for irreversible or high-consequence actions; ask for a reason when a decision is reversed or rejected.
-- Prefer soft states (cancelled, voided, declined) over deleting rows. Never hard-delete production data from the app.
+- No hard delete of user records. Use soft states (cancelled, voided, declined, superseded) that keep links and history.
+- Every new user-managed record type ships with its correction path in the table above (correct, revise, cancel or
+  undo). No create-only dead ends.
 - Keep who / when / old value / new value for every consequential change.
 - Test the whole loop: do it → refresh → still there → undo or correct it → refresh again.
 
@@ -106,10 +127,14 @@ Rules:
 
 ## 8. Check before saying done
 
-1. Screenshot the changed screen at 393×852 (and wider if it is a desktop page) with real data from the harness.
+1. Screenshot the changed screens at 393×852 and 1280 wide with real data (engineer link for tracker screens, the
+   local harness with a data dump for logged-in pages). For broad visual changes, compare before and after side by
+   side (a git worktree of the previous commit on a second port).
 2. Look for: clipped or wrapped labels, truncated names, overflow, uneven row spacing, colour used off-meaning.
 3. Long name, empty list, loading and error states.
-4. The edit loop in §5 for any record the change touches.
+4. The edit loop in §5 for any record the change touches. Database functions can be checked as the Section Head
+   inside a transaction that is rolled back (`set_config('request.jwt.claims', …)`, then raise to roll back), so no
+   production record changes.
 5. Click through every engineer tab before a release; no page errors.
 6. `npx vitest run` and `npm run build` clean. Deployed version matches the commit (`/version.json`).
 

@@ -96,7 +96,7 @@ export function MoveLeaveSheet({ plan, members, names, inputs, onClose, onDone }
           {(list ?? []).map((p) => (
             <li key={`${p.employeeId}:${p.leave.start}`} className="py-2">
               <p className="text-sm font-medium text-slate-900">{p.name}</p>
-              <p className="flex flex-wrap items-center gap-1 text-xs text-slate-600">{range(p.leave.start, p.leave.end)} <span className="text-slate-400">({days(p.leave.start, p.leave.end)} d)</span>
+              <p className="flex flex-wrap items-center gap-1 text-xs text-slate-600">{range(p.leave.start, p.leave.end)} <span className="text-slate-500">({days(p.leave.start, p.leave.end)} d)</span>
                 {p.newStart && p.newEnd ? <><ArrowRight className="h-3 w-3" /><b className="text-slate-900">{range(p.newStart, p.newEnd)}</b></> : null}</p>
               {p.problem && <p className="flex items-center gap-1 text-xs font-semibold text-status-red"><AlertTriangle className="h-3 w-3" />{p.problem}</p>}
               {p.sent && <p className="flex items-center gap-1 text-xs font-medium text-status-green"><Check className="h-3 w-3" />Request sent</p>}

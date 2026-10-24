@@ -44,7 +44,7 @@ export default function NotificationsPage({ profile }: { profile: UserProfile })
             <div key={h.key} className="flex items-start gap-3 px-3 py-2.5">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-status-green" />
               <span className="min-w-0 flex-1"><span className="block text-sm font-medium text-slate-800">{h.title}</span><span className="block text-xs text-slate-600">{h.detail}</span>
-                <span className="block text-[11px] text-slate-400">{t(ISSUE_LABEL[h.level])} · {t('opened')} {h.openedAt.slice(0, 10)} · {t('resolved')} {h.resolvedAt?.slice(0, 10)}</span></span>
+                <span className="block text-[11px] text-slate-500">{t(ISSUE_LABEL[h.level])} · {t('opened')} {h.openedAt.slice(0, 10)} · {t('resolved')} {h.resolvedAt?.slice(0, 10)}</span></span>
             </div>
           ))}
         </Card>
@@ -66,7 +66,7 @@ export default function NotificationsPage({ profile }: { profile: UserProfile })
                           <span className="block text-sm font-medium text-slate-900">{n.title}</span>
                           <span className="block text-xs text-slate-600">{n.detail}</span>
                         </span>
-                        <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-slate-400 rtl:rotate-180" />
+                        <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-slate-500 rtl:rotate-180" />
                       </Link>
                     );
                   })}

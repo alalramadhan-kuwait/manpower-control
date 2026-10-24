@@ -11,11 +11,11 @@ const when = (iso: string | null | undefined) => (iso ? `${kwDay(iso)} ${kwTime(
 const local = (iso: string | null | undefined) => (iso ? new Date(Date.parse(iso) + 3 * 36e5).toISOString().slice(0, 16) : '');
 const fromLocal = (v: string) => (v ? `${v}:00+03:00` : null);
 const h = (x: number | null) => (x === null ? '—' : `${x > 0 ? '+' : ''}${x} h`);
-const STATE = { NOT_STARTED: { cls: 'bg-[#EDEFF2] text-slate-600', label: 'Not started' }, RUNNING: { cls: 'bg-[#D6E6F5] text-[#004080]', label: 'Running' }, FINISHED: { cls: 'bg-[#C6EFCE] text-green-900', label: 'Finished' } } as const;
+const STATE = { NOT_STARTED: { cls: 'bg-slate-100 text-slate-600', label: 'Not started' }, RUNNING: { cls: 'bg-brand-100 text-brand-600', label: 'Running' }, FINISHED: { cls: 'bg-green-100 text-green-900', label: 'Finished' } } as const;
 
 export function TimingChip({ t }: { t: T }) {
   const late = t.lateStart || t.lateFinish;
-  return <span className={cx('inline-flex shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold', late ? 'bg-[#E06666] text-white' : STATE[t.state].cls)}>{t.lateStart ? 'START LATE' : t.lateFinish ? 'FINISH LATE' : STATE[t.state].label}</span>;
+  return <span className={cx('inline-flex shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold', late ? 'bg-red-400 text-white' : STATE[t.state].cls)}>{t.lateStart ? 'START LATE' : t.lateFinish ? 'FINISH LATE' : STATE[t.state].label}</span>;
 }
 
 /** One activity as a thin row: Start / Finish stamp now; ⋯ holds the time and note correction, the bar-chart dates
@@ -37,7 +37,7 @@ export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, n
     : `Plan ${when(a.start)} · ${t.plannedH ?? '—'} h${t.lateStart ? ' · start late' : ''}`;
   const free = canEdit && a.tracked && !link && !nlink;
   const action = !a.tracked ? (isHead ? <RowBtn tone="ghost" disabled={busy} onClick={() => run({ tracked: true, disabled_reason: null }, `${a.key}: ${a.activityId} required again.`)}>↺ Required</RowBtn> : null)
-    : link ? <span className="shrink-0 text-[11px] font-bold text-[#004080]">= Stage {link}</span>
+    : link ? <span className="shrink-0 text-[11px] font-bold text-brand-600">= Stage {link}</span>
     // done on the Isolation page: names which neutralization, one tap opens it there
     : nlink ? (onNeut ? <button type="button" onClick={onNeut} className="max-w-[45%] shrink-0 truncate rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800 ring-1 ring-amber-200">🧪 {neutLabel ?? 'Neutralization'} ›</button>
       : <span className="shrink-0 text-[11px] font-bold text-amber-800">= {neutLabel ?? 'Neutralization'}</span>)
@@ -45,14 +45,14 @@ export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, n
     // one tap, now; the message offers Undo
     : !a.actualStart ? <RowBtn disabled={busy} onClick={() => run({ actual_start: new Date().toISOString() }, `${a.key}: ${a.activity} started.`, undefined, () => setActivity(a.id, { actual_start: null }))}>▶ Start</RowBtn>
     : !a.actualFinish ? <RowBtn tone="amber" disabled={busy} onClick={() => run({ actual_finish: new Date().toISOString() }, `${a.key}: ${a.activity} finished.`, undefined, () => setActivity(a.id, { actual_finish: null }))}>✓ Finish</RowBtn>
-    : <span className="shrink-0 text-[11px] font-bold text-[#08A048]">Done</span>;
+    : <span className="shrink-0 text-[11px] font-bold text-status-green">Done</span>;
   const menu = canEdit && a.tracked ? (close: () => void) => (
     <>
       <div className="flex flex-wrap gap-1.5">
         {free && a.actualFinish && <MenuBtn danger disabled={busy} onClick={() => run({ actual_finish: null }, `${a.key}: ${a.activityId} back to running.`, close)}>↶ Undo finish</MenuBtn>}
         {free && a.actualStart && !a.actualFinish && <MenuBtn danger disabled={busy} onClick={() => run({ actual_start: null }, `${a.key}: ${a.activityId} back to not started.`, close)}>↶ Undo start</MenuBtn>}
         {isHead && free && !a.actualStart && <MenuBtn disabled={busy} onClick={() => run({ tracked: false, disabled_reason: 'not required' }, `${a.key}: ${a.activityId} not required.`, close)}>Not required</MenuBtn>}
-        <span className="self-center text-[10px] text-slate-400">{a.activityId}{a.updatedBy ? ` · ${a.updatedBy}` : ''}</span>
+        <span className="self-center text-[10px] text-slate-500">{a.activityId}{a.updatedBy ? ` · ${a.updatedBy}` : ''}</span>
       </div>
       <div className="grid grid-cols-2 gap-1.5">
         <Field label="Started"><input type="datetime-local" className="input" value={s} onChange={(e) => setS(e.target.value)} /></Field>
@@ -85,7 +85,7 @@ function download(name: string, text: string) {
 type Filter = 'open' | 'running' | 'finished' | 'late' | 'all';
 export function TimingTab({ activities, steps, now, canEdit, isHead, title, neutKeys, onDone }: { activities: TrkActivity[]; steps: TrkStep[]; now: number; canEdit: boolean; isHead: boolean; title: string; neutKeys?: Set<string>; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   const [kind, setKind] = useState<'mech' | 'steps'>('mech');
-  const seg = <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-200/60 p-1">{([['mech', 'Mechanical (bar chart)'], ['steps', 'Guideline steps']] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setKind(k)} className={cx('min-h-10 rounded-lg text-xs font-semibold', kind === k ? 'bg-white text-[#004080] shadow-sm' : 'text-slate-600')}>{l}</button>)}</div>;
+  const seg = <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-200/60 p-1">{([['mech', 'Mechanical (bar chart)'], ['steps', 'Guideline steps']] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setKind(k)} className={cx('min-h-10 rounded-lg text-xs font-semibold', kind === k ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-600')}>{l}</button>)}</div>;
   if (kind === 'steps') return <div className="space-y-3">{seg}<StepTimingList steps={steps} now={now} canEdit={canEdit} isHead={isHead} title={title} onDone={onDone} /></div>;
   return <div className="space-y-3">{seg}<MechTiming activities={activities} now={now} canEdit={canEdit} isHead={isHead} title={title} neutKeys={neutKeys} onDone={onDone} /></div>;
 }
@@ -109,13 +109,13 @@ function MechTiming({ activities, now, canEdit, isHead, title, neutKeys, onDone 
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         {([['open', 'Due now'], ['running', 'Running'], ['late', 'Late'], ['finished', 'Finished'], ['all', 'All']] as [Filter, string][]).map(([k, l]) => (
-          <button key={k} type="button" onClick={() => setFilter(k)} className={cx('min-h-9 rounded-full px-3 text-xs font-semibold', filter === k ? 'bg-[#0850A0] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>))}
+          <button key={k} type="button" onClick={() => setFilter(k)} className={cx('min-h-9 rounded-full px-3 text-xs font-semibold', filter === k ? 'bg-brand-500 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>))}
         <Button variant="secondary" className="ml-auto min-h-9 px-3 text-xs" onClick={() => download(`${title.replace(/\s+/g, '_')}_mechanical_timing.csv`, timingCsv(all))}><Download className="h-3.5 w-3.5" />Export</Button>
       </div>
       <input className="input" placeholder="Search equipment or activity" value={q} onChange={(e) => setQ(e.target.value)} />
       {keys.slice(0, 40).map((k) => (
         <section key={k} className="space-y-1">
-          <h3 className="text-xs font-bold text-[#004080]">{k}</h3>
+          <h3 className="text-xs font-bold text-brand-600">{k}</h3>
           <RowList>{sortActs(list.filter((t) => t.a.key === k), (t) => t.a).map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} neutCovered={!!neutKeys?.has(t.a.key)} onDone={onDone} />)}</RowList>
         </section>
       ))}
@@ -142,13 +142,13 @@ export function EquipActivities({ trackerId, itemKey, activities, now, canEdit, 
     <div className="rounded-xl bg-slate-50 p-2 ring-1 ring-slate-200">
       <div className="flex items-center gap-2">
         <button type="button" onClick={() => setOpen((x) => !x)} className="flex min-w-0 flex-1 items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-600"><span>Work steps · {fin.length}/{ts.length} finished{running.length ? ` · ${running.length} running` : ''}</span><span>{open ? '▾' : '▸'}</span></button>
-        {canEdit && open && ts.length > 1 && !order && <button type="button" onClick={() => setOrderIds(all.map((t) => t.a.id))} className="shrink-0 text-xs font-bold text-[#0850A0]">↕ Reorder</button>}
+        {canEdit && open && ts.length > 1 && !order && <button type="button" onClick={() => setOrderIds(all.map((t) => t.a.id))} className="shrink-0 text-xs font-bold text-brand-500">↕ Reorder</button>}
       </div>
       {!ts.length && !off.length && <p className="mt-1 text-xs text-slate-500">None yet: import the bar chart (Admin){isHead ? ' or add the procedure steps here' : ''}.</p>}
       {ts.length > 0 && !order && <p className="mt-1 text-xs text-slate-700">{running.length ? <>Now: <b>{running.map((t) => t.a.activity).join(' · ')}</b></> : null}{running.length && next ? ' · ' : ''}{next ? <>Next: <b>{next.a.activity}</b></> : null}</p>}
       {open && order && <Reorder trackerId={trackerId} itemKey={itemKey} rows={all} ids={order} setIds={setOrderIds} onDone={(m) => { setOrderIds(null); onDone(m); }} />}
       {open && !order && <>
-        {fin.length > 0 && <button type="button" onClick={() => setShowDone((x) => !x)} className="mt-1.5 flex w-full justify-between rounded-lg bg-green-50 px-2.5 py-1.5 text-xs font-semibold text-[#08A048] ring-1 ring-green-100"><span>{showDone ? '▾' : '▸'} ✓ Done ({fin.length})</span><span className="font-normal text-slate-500">{showDone ? 'hide' : 'show'}</span></button>}
+        {fin.length > 0 && <button type="button" onClick={() => setShowDone((x) => !x)} className="mt-1.5 flex w-full justify-between rounded-lg bg-green-50 px-2.5 py-1.5 text-xs font-semibold text-status-green ring-1 ring-green-100"><span>{showDone ? '▾' : '▸'} ✓ Done ({fin.length})</span><span className="font-normal text-slate-500">{showDone ? 'hide' : 'show'}</span></button>}
         {showDone && fin.length > 0 && <RowList className="mt-1">{fin.map(row)}</RowList>}
         {rest.length > 0 && <RowList className="mt-1.5">{rest.map(row)}</RowList>}
         {field.length > 0 && <button type="button" onClick={() => setShowField((x) => !x)} className="mt-1.5 text-[11px] font-semibold text-slate-500">{showField ? '▾' : '▸'} Field steps ({field.length}) · for the field operator</button>}
@@ -203,8 +203,8 @@ function Reorder({ trackerId, itemKey, rows, ids, setIds, onDone }: { trackerId:
       <div ref={list} className="divide-y divide-slate-100 overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">{shown.map((id, i) => { const t = by.get(id)!; const moved = start.indexOf(id) - i;
         return <div key={id} ref={(el) => { if (el) els.current.set(id, el); else els.current.delete(id); }} onPointerDown={(e) => down(e, id)} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
           onContextMenu={(e) => e.preventDefault()} style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' }}
-          className={cx('flex items-center gap-2 px-2.5 py-2 transition-colors', drag === id ? 'relative z-10 scale-[1.02] bg-[#D6E6F5] shadow-lg' : moved !== 0 ? 'bg-amber-50' : '')}>
-          <span data-handle className="-my-2 -ml-2.5 flex w-9 shrink-0 items-center justify-center self-stretch text-lg text-slate-400" style={{ touchAction: 'none' }}>⋮⋮</span>
+          className={cx('flex items-center gap-2 px-2.5 py-2 transition-colors', drag === id ? 'relative z-10 scale-[1.02] bg-brand-100 shadow-lg' : moved !== 0 ? 'bg-amber-50' : '')}>
+          <span data-handle className="-my-2 -ml-2.5 flex w-9 shrink-0 items-center justify-center self-stretch text-lg text-slate-500" style={{ touchAction: 'none' }}>⋮⋮</span>
           <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-semibold text-slate-900">{t.a.activity}</span>{moved !== 0 && !drag && <span className="block text-[11px] text-amber-800">moved {moved > 0 ? '↑' : '↓'} {Math.abs(moved)}</span>}</span>
         </div>; })}</div>
       {err != null && <ErrorBox error={err} />}
@@ -255,7 +255,7 @@ export function StepTimes({ t, canEdit, isHead, onDone }: { t: StepTiming; canEd
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span>⏱ Est <b>{t.estH ?? '—'}{t.estH !== null ? ' h' : ''}</b></span>
         <span>Took <b>{t.actualH === null ? '—' : `${t.actualH} h`}</b>{t.running ? ' (running)' : ''}</span>
-        {t.overrunH !== null && <span className={cx('font-semibold', t.overrunH > 0 ? 'text-[#E02028]' : 'text-[#08A048]')}>{h(t.overrunH)}</span>}
+        {t.overrunH !== null && <span className={cx('font-semibold', t.overrunH > 0 ? 'text-status-red' : 'text-status-green')}>{h(t.overrunH)}</span>}
         {canEdit && <button type="button" className="ml-auto text-xs font-semibold text-brand-700 underline" onClick={() => setEdit((x) => !x)}>{edit ? 'Close' : 'Edit times'}</button>}
       </div>
       <div className="mt-0.5 text-[11px] text-slate-500">Started {when(s.startedAt)} · Done {when(s.doneAt)}</div>
@@ -287,7 +287,7 @@ function StepTimingList({ steps, now, canEdit, isHead, title, onDone }: { steps:
         <Tile value={h(avg)} label="avg vs estimate" tone={(avg ?? 0) > 0 ? 'red' : undefined} />
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
-        {['all', 'FO1', 'FO2', 'FO3'].map((k) => <button key={k} type="button" onClick={() => setFo(k)} className={cx('min-h-9 rounded-full px-3 text-xs font-semibold', fo === k ? 'bg-[#0850A0] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{k === 'all' ? 'All' : k}</button>)}
+        {['all', 'FO1', 'FO2', 'FO3'].map((k) => <button key={k} type="button" onClick={() => setFo(k)} className={cx('min-h-9 rounded-full px-3 text-xs font-semibold', fo === k ? 'bg-brand-500 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{k === 'all' ? 'All' : k}</button>)}
         <Button variant="secondary" className="ml-auto min-h-9 px-3 text-xs" onClick={() => download(`${title.replace(/\s+/g, '_')}_step_timing.csv`, stepTimingCsv(all))}><Download className="h-3.5 w-3.5" />Export</Button>
       </div>
       {list.map((t) => (

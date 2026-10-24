@@ -100,7 +100,7 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
 
       <div className="lg:flex lg:items-start lg:gap-3">
         <label className="relative block lg:w-72 lg:shrink-0">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
           <input className="input" style={{ paddingLeft: '2.25rem' }} placeholder="Search name or employee number" value={q} onChange={(e) => set('q', e.target.value)} inputMode="search" />
         </label>
         {/* one row per filter: role, crew, employment type */}
@@ -242,13 +242,13 @@ function ApproveSheet({ rows, profile, onClose, onDone }: { rows: Row[]; profile
 function SelectBox({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
   return (
     <button type="button" role="checkbox" aria-checked={checked} aria-label={label} onClick={onChange} className="flex h-10 w-10 items-center justify-center rounded-lg text-brand-700 hover:bg-brand-50">
-      {checked ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5 text-slate-400" />}
+      {checked ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5 text-slate-500" />}
     </button>
   );
 }
 
 function ActionChips({ actions }: { actions: ActionItem[] }) {
-  if (!actions.length) return <span className="text-xs text-slate-400">—</span>;
+  if (!actions.length) return <span className="text-xs text-slate-500">—</span>;
   return <div className="flex flex-wrap gap-1">{actions.map((a) => <Chip key={a.code} tone={a.bulk ? 'amber' : 'neutral'} className="whitespace-nowrap text-[11px]">{a.label}</Chip>)}</div>;
 }
 

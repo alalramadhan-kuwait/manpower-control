@@ -23,13 +23,13 @@ export function AskUpdates({ data, now, by }: { data: TrackerData; now: number; 
   return (
     <div className="space-y-3">
       <div className="flex gap-1.5">{SCOPES.map(([s, l]) => (
-        <button key={s} type="button" onClick={() => setScope(s)} className={cx('min-h-9 rounded-full px-3 text-xs font-semibold', scope === s ? 'bg-[#0d2a5e] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l} ({count(s)})</button>))}
+        <button key={s} type="button" onClick={() => setScope(s)} className={cx('min-h-9 rounded-full px-3 text-xs font-semibold', scope === s ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l} ({count(s)})</button>))}
       </div>
       <p className="text-xs text-slate-600">Work running or due with no update for <b>{normal} h</b> (critical-path items {STALE_H.critical} h, small jobs {STALE_H.small} h). Untick a line to leave it out.</p>
       {items.length === 0 ? <p className="rounded-xl bg-green-50 p-3 text-sm font-semibold text-green-800 ring-1 ring-green-200">✓ Everything here has a recent update.</p> : <>
         <div className="grid grid-cols-2 gap-2">
           <a href={`https://wa.me/${wa}?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer" aria-disabled={!picked.length}
-            className={cx('inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#25D366] px-4 text-sm font-medium text-white', !picked.length && 'pointer-events-none opacity-50')}><MessageCircle className="h-4 w-4" />WhatsApp ({picked.length})</a>
+            className={cx('inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-whatsapp px-4 text-sm font-medium text-white', !picked.length && 'pointer-events-none opacity-50')}><MessageCircle className="h-4 w-4" />WhatsApp ({picked.length})</a>
           <Button variant="secondary" disabled={!picked.length} onClick={async () => { try { await navigator.clipboard.writeText(text); setCopied(true); window.setTimeout(() => setCopied(false), 2000); } catch { /* blocked */ } }}><Copy className="h-4 w-4" />{copied ? 'Copied' : 'Copy text'}</Button>
         </div>
         <ul className="divide-y divide-slate-100 rounded-2xl bg-white ring-1 ring-slate-200">{items.map((i) => (
