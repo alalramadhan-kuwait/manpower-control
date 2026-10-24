@@ -231,3 +231,5 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261024030812_leave_approval_pv_only` | Only a plan PV (planned / rescheduled) waits for approval; UL and other types always count |
 | `20261024031054_leave_approval_mirror` | Trigger `leave_approval_mirror` keeps `oracle_status` equal to the approval, for the edge functions not yet redeployed; one-time sync |
 | `20261024031118_leave_approval_mirror_insert` | The mirror treats a PV recorded through a request or by hand as approved on insert |
+| `20261024050855_leave_not_approved` | `declined_at / declined_by_name`; `approval_state` and the mirror read a refused PV as `rejected` (never counts); `leave_decline` (Section Head) |
+| `20261024054815_leave_decision_reason_and_fix` | `declined_reason`, `fix_note / fix_sent_at / fix_sent_by_name`; `leave_decline(ids, decline, reason)`, `leave_send_fix(ids, note, send)` (send to the Manpower Coordinator to fix the dates); approving clears a refusal or a note to fix |

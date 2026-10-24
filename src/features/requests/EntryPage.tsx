@@ -427,7 +427,7 @@ function LeaveForm({ person, data, today, isHead, draft, prefill, replaces, onDo
 // ── PV reschedule ──────────────────────────────────────────────────────────────────────────────────────────────────
 function PvCard({ person, data, today, isHead, wanted, onDone, onClose }: { person: MpPerson; data: Data; today: string; isHead: boolean; wanted: string | null; onDone: (m: string) => void; onClose: () => void }) {
   const pv = new Set(data.types.filter((x) => x.mode === 'pv').map((x) => x.code));
-  const leaves = mergedLeaves(data.inputs.absences, person.id).filter((l) => l.end >= today && l.records.some((r) => r.typeCode && pv.has(r.typeCode)));
+  const leaves = mergedLeaves(data.inputs.absences, person.id, new Set(), true).filter((l) => l.end >= today && l.records.some((r) => r.typeCode && pv.has(r.typeCode)));
   const [open, setOpen] = useState<(MergedLeave & { replan?: boolean }) | null>(() => leaves.find((l) => l.start === wanted) ?? null);
   // planned PV cancelled (e.g. for a shutdown) and not given new dates yet
   const [owed, setOwed] = useState<OwedLeave[]>([]);

@@ -35,6 +35,38 @@ export async function approveLeave(records: string[], approve = true): Promise<n
   return data as number;
 }
 
+/** The Section Head refuses (or takes back the refusal of) planned PVs, with an optional reason. */
+export async function declineLeave(records: string[], decline = true, reason?: string): Promise<number> {
+  const { data, error } = await supabase.rpc('leave_decline', { p_records: records, p_decline: decline, p_reason: reason?.trim() || null });
+  if (error) throw plain(error);
+  dataChanged();
+  return data as number;
+}
+
+/** The Section Head sends planned PVs to the Manpower Coordinator to fix the dates (or takes them back). */
+export async function sendLeaveToFix(records: string[], note: string, send = true): Promise<number> {
+  const { data, error } = await supabase.rpc('leave_send_fix', { p_records: records, p_note: note.trim() || null, p_send: send });
+  if (error) throw plain(error);
+  dataChanged();
+  return data as number;
+}
+
+export interface LeaveDecision { id: string; declined_at: string | null; declined_reason: string | null; fix_note: string | null; fix_sent_at: string | null }
+/** The decisions on current leave that the manpower inputs do not carry: refusals with their reason, and notes to fix. */
+export async function fetchLeaveDecisions(): Promise<Map<string, LeaveDecision>> {
+  const { data, error } = await supabase.from('leave_records').select('id,declined_at,declined_reason,fix_note,fix_sent_at')
+    .eq('in_current_plan', true).or('declined_at.not.is.null,fix_sent_at.not.is.null').limit(2000);
+  if (error) throw error;
+  return new Map((data as LeaveDecision[]).map((r) => [r.id, r]));
+}
+
+/** A person's sick-leave days per year (the imported totals), newest year first. */
+export async function fetchSickDays(employeeId: string): Promise<{ year: number; days: number; asOf: string | null }[]> {
+  const { data, error } = await supabase.from('sick_leave_totals').select('year,days,reported_as_of').eq('employee_id', employeeId).order('year', { ascending: false }).limit(5);
+  if (error) throw error;
+  return (data as { year: number; days: number; reported_as_of: string | null }[]).map((r) => ({ year: r.year, days: Number(r.days), asOf: r.reported_as_of }));
+}
+
 /** Mark one or many current leave records in Oracle HR (the ref is kept unless a new one is given). Returns how many changed. */
 export async function setOracleStatus(records: string[], status: OracleStatus, ref?: string): Promise<number> {
   const { data, error } = await supabase.rpc('leave_set_oracle', { p_records: records, p_status: status, p_ref: ref?.trim() || null });

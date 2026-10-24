@@ -147,7 +147,7 @@ export default function DayOverviewPage() {
           <ShiftBoard result={result} leave={leave} date={date} needFor={needFor} />
           {inputs && <ShutdownToday date={date} people={inputs.people} leave={leave} tick={tick} />}
           <AwayToday result={result} leave={leave} />
-          {(() => { const n = new Set(inputs?.absences.filter((a) => a.lapsed && a.start <= date && date <= a.end).map((a) => a.employeeId)).size;
+          {(() => { const n = new Set(inputs?.absences.filter((a) => a.lapsed && a.oracle !== 'rejected' && a.start <= date && date <= a.end).map((a) => a.employeeId)).size;
             return n > 0 ? <Link to="/requests?view=leave&when=now&st=planned" className="mb-2 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-[12.5px] text-amber-900 ring-1 ring-amber-300"><span className="min-w-0 flex-1"><b>{n} PV not approved</b> · not counted as leave until you approve</span><span className="font-semibold">›</span></Link> : null; })()}
           <OffToday result={result} leave={leave} date={date} />
         </>

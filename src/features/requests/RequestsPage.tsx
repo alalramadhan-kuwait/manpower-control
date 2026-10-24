@@ -58,7 +58,7 @@ export default function RequestsPage({ profile }: { profile: UserProfile }) {
         <>
           <div className="mb-3 flex gap-2">
             {tile('approvals', open, 'Approvals', 'text-brand-800')}
-            {tile('leave', leaveN, 'Leave to approve', 'text-amber-600')}
+            {tile('leave', leaveN, isHead ? 'Leave to approve' : 'Leave to fix', isHead ? 'text-amber-600' : 'text-sky-700')}
             {tile('moves', movesN, 'Shift moves', 'text-indigo-600')}
           </div>
           {view === 'approvals' && <Approvals isHead={isHead} />}
