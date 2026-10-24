@@ -1,6 +1,7 @@
 // Shutdown progress (U-12 TR-2 tracker v1): five tabs, all on screen (Today · Isolation · Equipment, with its Timing
 // view · Sequence, with its Map view · IATs), the WhatsApp report and the Admin (Section Head) as sheets from the header. The controllers update steps and equipment in a few taps; the status, the "needs me" list, plan vs actual and
 // the shift report are worked out from the rows (src/core/tracker). Reloads every 30 s and when the page comes back.
+import { ReportImport } from './ReportImport';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
@@ -163,7 +164,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={(m, u) => done(m, false, u)} />}
       {tab === 'iats' && <IatsTab iats={data.iats} tags={data.equipment.map((e) => e.tag)} lineup={data.lineup} lineupEq={data.lineupEq} points={points} canEdit={canEdit} onDone={(m, u) => done(m, true, u)} onItem={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
-      {sheetTab === 'report' && <BottomSheet open onClose={closeSheetTab} title="💬 Shift report"><ReportTab data={data} now={now} canEdit={canEdit} by={profile.display_name} onSaved={() => load(true)} /></BottomSheet>}
+      {sheetTab === 'report' && <BottomSheet open onClose={closeSheetTab} title="💬 Shift report"><ReportTab data={data} now={now} canEdit={canEdit} isHead={isHead} onDone={(m) => done(m, false)} by={profile.display_name} onSaved={() => load(true)} /></BottomSheet>}
       {sheetTab === 'admin' && isHead && <BottomSheet open onClose={closeSheetTab} title="⚙️ Admin · Section Head">
         {other.length > 0 && <div className="mb-3 flex items-center justify-between rounded-xl bg-white px-3 py-2.5 text-sm ring-1 ring-slate-200"><span><b className={test ? 'text-amber-800' : 'text-brand-500'}>{test ? 'TEST' : 'LIVE'}</b> · {test ? 'a copy for trying' : 'this is the real tracker'}</span>
           {other.map((o) => <Link key={o.id} to={`/progress/${o.id}`} className="font-bold text-brand-500">{o.mode === 'live' ? 'Live' : 'Test copy'} ›</Link>)}</div>}
@@ -410,8 +411,8 @@ function MapTab({ steps, onOpen }: { steps: Map<string, StepView>; onOpen: (id: 
   );
 }
 
-function ReportTab(p: { data: TrackerData; now: number; canEdit: boolean; by: string; onSaved: () => void }) {
-  const [ask, setAsk] = useState(false);
+function ReportTab(p: { data: TrackerData; now: number; canEdit: boolean; by: string; isHead?: boolean; onSaved: () => void; onDone?: (msg: string) => void }) {
+  const [ask, setAsk] = useState(false); const [imp, setImp] = useState(false);
   const n = useMemo(() => staleItems(p.data, p.now).length, [p.data, p.now]);
   return (
     <div className="space-y-3">
@@ -419,7 +420,9 @@ function ReportTab(p: { data: TrackerData; now: number; canEdit: boolean; by: st
         {([[false, 'Shift report'], [true, `Ask for updates${n ? ` (${n})` : ''}`]] as const).map(([v, l]) => (
           <button key={l} type="button" onClick={() => setAsk(v)} className={cx('min-h-10 rounded-xl text-sm font-semibold', ask === v ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-600')}>{l}</button>))}
       </div>
-      {ask ? <AskUpdates data={p.data} now={p.now} by={p.by} /> : <ShiftReportView {...p} />}
+      {p.isHead && <button type="button" onClick={() => setImp((x) => !x)} className="w-full rounded-xl px-3 py-2 text-left text-[13px] font-semibold text-brand-700 ring-1 ring-slate-200 print:hidden">{imp ? '▾' : '▸'} 📥 Import the plant's shutdown report</button>}
+      {imp && <ReportImport data={p.data} onDone={(m) => { p.onDone?.(m); p.onSaved(); }} />}
+      {!imp && (ask ? <AskUpdates data={p.data} now={p.now} by={p.by} /> : <ShiftReportView {...p} />)}
     </div>
   );
 }

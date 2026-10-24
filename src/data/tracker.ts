@@ -241,8 +241,8 @@ function qtyError(e: { code?: string; message?: string }): Error {
   if (e.code === '23514') return new Error(/check2/.test(e.message ?? '') ? 'A shift with 0 drums needs the reason (stoppage).' : /check1/.test(e.message ?? '') ? 'A correction needs the entry it corrects and a remark.' : 'Drums cannot be negative.');
   return new Error(e.message ?? 'Not saved.');
 }
-export async function addQtyEntry(scopeId: string, v: { shiftDate: string; shift: Shift; kind: QtyKind; method: QtyMethod; qty: number; stoppage?: string | null; remark?: string | null; corrects?: string | null }) {
-  const { error } = await supabase.from('trk_qty_entry').insert({ scope_id: scopeId, shift_date: v.shiftDate, shift: v.shift, kind: v.kind, method: v.method, qty: v.qty, stoppage: v.stoppage || null, remark: v.remark || null, corrects: v.corrects ?? null });
+export async function addQtyEntry(scopeId: string, v: { shiftDate: string; shift: Shift; kind: QtyKind; method: QtyMethod; qty: number; stoppage?: string | null; remark?: string | null; corrects?: string | null; source?: 'field' | 'plant_report'; verified?: boolean }) {
+  const { error } = await supabase.from('trk_qty_entry').insert({ scope_id: scopeId, shift_date: v.shiftDate, shift: v.shift, kind: v.kind, method: v.method, qty: v.qty, stoppage: v.stoppage || null, remark: v.remark || null, corrects: v.corrects ?? null, ...(v.source ? { source: v.source } : {}), ...(v.verified ? { verify_state: 'verified' } : {}) });
   if (error) throw qtyError(error);
 }
 export async function verifyQtyEntry(id: string, state: 'verified' | 'rejected') { const { error } = await supabase.from('trk_qty_entry').update({ verify_state: state }).eq('id', id); if (error) throw new Error(error.message); }

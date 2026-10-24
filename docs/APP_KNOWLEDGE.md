@@ -288,6 +288,7 @@ Estimate ~88 % (verified functionality). Recommendation: **ready for operational
 | 24 Oct 2026 | No approval for earlier times: Engineers / links correct any past time with a reason and full history |
 | 24 Oct 2026 | Manpower assignment = manpower and leave work only; administrative data by role (Head, Engineer, Coordinator) |
 | 24 Oct 2026 | C-201-ST: blinded, handover not recorded — flagged for operational verification only, not changed |
+| 24 Oct 2026 | Daily plant reports are imported in the app (Report › Import, Section Head): paste → preview (forward-only steps, status lines, drums to the report total once per report) → Save through the normal audited saves; no direct database loads |
 | 24 Oct 2026 | Equipment screen: Out of scope (Section Head, reason, Restore; records and P6 lines kept, not counted, listed apart from completed work with its share of planned hours); step Not required keeps a reason; item history, related equipment (system, other lists, P&ID connections) and technical details in folded sections; name, group and system editable by Section Head / Engineers |
 | 24 Oct 2026 | C-12-201 compressor items grouped as one system (display only) |
 | 24 Oct 2026 | E-216A/B drawn A → B until the approved P&ID is checked (line-up notes say B first, unverified) |
