@@ -49,6 +49,8 @@ No unrelated improvements or redesigns while a priority is open.
   follows `.claude/skills/refinery-process-diagram/SKILL.md`: records-only topology, Verified / Unverified / Unknown
   shown, no invented tags, lines, valves or directions, labelled "Auto-generated process schematic — Reference only —
   Not a verified P&ID". Engine: `src/core/tracker/schematic.ts`; viewer: the existing Drawing Viewer.
+  Review feedback on a drawing is classified (skill §23): general rules go to the skill, `drawingRules.ts`, the engine
+  and a regression test; loop-specific facts go to structured records. Never repeat a fix by hand on one drawing.
 - Approved calculations (manpower minimums, roster cycle, tracker progress/forecast) change only with authorization.
 - **No hard delete** of user records. Use soft states (cancelled, voided, declined, superseded) that keep links and
   history. No DROP / TRUNCATE / unscoped DELETE; production data changes only with confirmed mappings.

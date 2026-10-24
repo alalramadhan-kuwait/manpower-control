@@ -275,6 +275,40 @@ Data quality
 
 Apply this skill to the existing refinery application. Use the current equipment database, piping line-up, neutralization records, SOP data, existing drawing storage, existing Drawing Viewer. Do not rebuild the application. Do not create another database of duplicate equipment. Build reusable diagram components and layout rules for future use across Neutralization, Shutdown, Equipment, and Startup Preparation. Generate diagrams from available structured data. If critical topology is missing, draw only the supported portion and explicitly mark the remaining information as unresolved. Start with FT-681 to FT-684, then expand to other loops using the same engine. Keep development practical and avoid unnecessary approval cycles for routine design decisions.
 
+## 23. Learned review rules (mandatory) and how feedback is handled
+
+**Every review comment improves the shared engine, not one drawing.**
+
+1. Classify the comment:
+   - **General drawing rule** → added to the list below, to `src/core/tracker/drawingRules.ts` (`DRAWING_RULES`,
+     checked on every sheet by `checkRules`) and to the engine, with a test in `__tests__/drawingRules.test.ts`.
+   - **Loop-specific technical information** (a connection, a valve, a state, a tag) → saved as structured records
+     (`trk_loop_fix` with role, `trk_loop_node` with state and source), logged and withdrawable; never a one-off edit.
+2. Before any drawing is shown, all approved rules are checked; the result is in the Details panel
+   ("Review rules n/n passed") and a failure is listed as a layout issue.
+3. General improvements apply to every loop once the reference drawing (FT-681) is approved; engineering connections
+   are never changed by a layout change.
+4. **Never assume a bypass has a control valve** (or any valve) unless a record or a confirmed correction for that
+   loop gives it; a recorded tag or position not confirmed is drawn and marked "UNVERIFIED".
+
+Approved rules (from the Section Head's reviews, 24 Oct 2026):
+
+| ID | Rule |
+|---|---|
+| R1 | Never shortcut a recorded route: every item between two connected items is drawn in sequence. |
+| R2 | Each exchanger bypass is its own branch with its own route; no two bypasses share a line. |
+| R3 | A valve is drawn only from a record or a confirmed correction; an unconfirmed tag / position is marked unverified. |
+| R4 | A standby / isolated branch is drawn apart from the active route, with its isolating valves and their recorded state. |
+| R5 | Active path, bypass, standby and injection differ by colour and weight; verification by line pattern. |
+| R6 | Two different physical points are never one junction (tie-in ≠ pass split). |
+| R7 | A multi-pass heater shows each pass entering on its own; passes are never merged. |
+| R8 | Shells in series (E-216A/B) are drawn as separate shells in sequence. |
+| R9 | Junction dots only where pipes really join or split; no crossings, no shared-looking or overlapping lines. |
+| R10 | No label on a pipe, a symbol or another label; no clipped tags; text is not shrunk to fit. |
+| R11 | Compact: branches next to where they connect; folded / multi-row arrangements are tried; fitted to content. |
+| R12 | The sheet keeps the title, an essential legend and the warnings; lists and metadata go to the Details panel. |
+| R13 | Nothing is removed to make a drawing smaller. |
+
 ## Final Principle
 
 A professional process diagram is defined by correct engineering relationships, understandable flow, recognizable symbols, and readable presentation — not by decoration.

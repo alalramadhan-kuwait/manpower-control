@@ -5,6 +5,7 @@
 //   · each exchanger bypass sits on its own side of the route (above / below), never sharing a line with another
 //   · junction dots only where pipes really meet (3 or more directions at a point); crossings are counted
 //   · labels are placed after all pipes, never on a pipe, a symbol or another label
+import { checkRules, DRAWING_RULES } from './drawingRules';
 import { esc, HW, LINK_STYLE, ROLE_STYLE, SCHEMATIC_LABEL, schematicCheck, schematicInfo, symbol, wrap, type Role, type Schematic, type SchematicInfo, type SLink, type SNode } from './schematic';
 
 type Pt = { x: number; y: number };
@@ -151,6 +152,12 @@ function layout(s: Schematic, col0: Map<string, number>, cuts: number[], top: nu
   const nodePorts = new Set(s.nodes.flatMap((n) => { const p = pos.get(n.key)!; return [`${Math.round(p.x - HW[n.kind])}:${Math.round(p.y + 26)}`, `${Math.round(p.x + HW[n.kind])}:${Math.round(p.y + 26)}`]; }));
   for (const p of paths) for (const v of p.pts) { if (dots.some((d) => Math.abs(d.x - v.x) < 0.5 && Math.abs(d.y - v.y) < 0.5)) continue;
     if (nodePorts.has(`${Math.round(v.x)}:${Math.round(v.y)}`)) continue; if (dirs(v).size >= 3) dots.push(v); }
+  // R9: two different connections running along the same line look like one pipe (unless they share their start or end: a tee)
+  for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++) { const g = segs[i], h = segs[j]; if (g.i === h.i) continue;
+    const L1 = paths[g.i].l, L2 = paths[h.i].l; if (L1.a === L2.a || L1.b === L2.b || L1.key === L2.key) continue;
+    const ov = g.a.y === g.b.y && h.a.y === h.b.y && Math.abs(g.a.y - h.a.y) < 3 ? Math.min(Math.max(g.a.x, g.b.x), Math.max(h.a.x, h.b.x)) - Math.max(Math.min(g.a.x, g.b.x), Math.min(h.a.x, h.b.x))
+      : g.a.x === g.b.x && h.a.x === h.b.x && Math.abs(g.a.x - h.a.x) < 3 ? Math.min(Math.max(g.a.y, g.b.y), Math.max(h.a.y, h.b.y)) - Math.max(Math.min(g.a.y, g.b.y), Math.min(h.a.y, h.b.y)) : 0;
+    if (ov > 20) issues.push(`shared-looking line: ${L1.a} → ${L1.b} and ${L2.a} → ${L2.b}`); }
   let crossings = 0;
   const hs = segs.filter((g) => g.a.y === g.b.y), vs = segs.filter((g) => g.a.x === g.b.x);
   for (const h of hs) for (const v of vs) { if (h.i === v.i) continue; const x = v.a.x, y = h.a.y;
@@ -249,6 +256,10 @@ export function renderFolded(s: Schematic, generatedAt: string): { svg: string; 
   parts.push(t(24, y, `Details panel: procedure points, notes, ${s.unknown.length} unknown / unresolved items, sources, revision.${issues.length ? `  ⚠ Layout check: ${issues.length} issue${issues.length > 1 ? 's' : ''}` : ''}`, `font-size="10.5" fill="${issues.length ? '#b91c1c' : '#64748b'}"`)); y += 14;
   parts.push(`<rect x="0" y="${y}" width="${W}" height="24" fill="#b91c1c"/>`, t(W / 2, y + 16, 'REFERENCE ONLY — NOT AN AUTHORIZATION FOR ISOLATION, LINE-UP, VALVE OPERATION OR CHEMICAL WORK', 'text-anchor="middle" fill="#fff" font-size="10" font-weight="800"'));
   const H = y + 24;
-  const info = schematicInfo(s, generatedAt); info.meta.push(['Layout', `${r.conts ? `folded, ${r.conts} continuation${r.conts > 1 ? 's' : ''}` : 'one band'} · ${r.crossings} crossing${r.crossings === 1 ? '' : 's'}`], ['Automatic check', issues.length ? issues.join('; ') : 'passed (connections, junctions, labels, crossings)']);
-  return { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="Inter, Arial, sans-serif"><rect width="${W}" height="${H}" fill="#fff"/>${parts.join('')}</svg>`, issues, info };
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="Inter, Arial, sans-serif"><rect width="${W}" height="${H}" fill="#fff"/>${parts.join('')}</svg>`;
+  // every approved review rule is checked on the finished sheet
+  const rules = checkRules(s, svg, issues); for (const f of rules.failed) if (!issues.includes(f)) issues.push(f);
+  const info = schematicInfo(s, generatedAt);
+  info.meta.push(['Review rules', `${rules.passed.length}/${DRAWING_RULES.length} passed${rules.failed.length ? ` — ${rules.failed.join('; ')}` : ''}`]); info.meta.push(['Layout', `${r.conts ? `folded, ${r.conts} continuation${r.conts > 1 ? 's' : ''}` : 'one band'} · ${r.crossings} crossing${r.crossings === 1 ? '' : 's'}`], ['Automatic check', issues.length ? issues.join('; ') : 'passed (connections, junctions, labels, crossings)']);
+  return { svg, issues, info };
 }
