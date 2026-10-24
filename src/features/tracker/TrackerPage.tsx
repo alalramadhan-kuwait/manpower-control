@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
-import { blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, relatedWork, shiftOf, shiftReport, staleItems, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
+import { blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, relatedWork, shiftOf, shiftReport, staleItems, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import { setActivity, setEquipment, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Spinner, cx } from '@/ui/components';
@@ -404,7 +404,8 @@ function ShiftReportView({ data, now, canEdit, by, onSaved }: { data: TrackerDat
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null); const [copied, setCopied] = useState(false);
   const r = shiftReport(data, now, { notes, temps }, data.tracker.title);
   const test = data.tracker.mode === 'test';
-  const text = reportText(r, { test, by });
+  const [leader, setLeader] = useState(false);
+  const text = leader ? leaderReportText(data, now, { title: data.tracker.title, test, by }) : reportText(r, { test, by });
   const wa = (data.settings.whatsapp ?? '').replace(/\D/g, '');
   async function save() { setBusy(true); setErr(null); try { await saveShiftLog(data.tracker.id, sh.date, sh.shift, { notes, temps }); onSaved(); } catch (e) { setErr(e); } finally { setBusy(false); } }
   async function share() {
@@ -414,13 +415,16 @@ function ShiftReportView({ data, now, canEdit, by, onSaved }: { data: TrackerDat
   }
   return (
     <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 print:hidden">{([[false, 'Shift report'], [true, 'Team leader']] as const).map(([v, label]) => (
+        <button key={label} type="button" onClick={() => setLeader(v)} className={cx('min-h-9 rounded-lg text-sm font-semibold', leader === v ? 'bg-white text-[#004080] shadow-sm' : 'text-slate-500')}>{label}</button>))}</div>
+      {leader && <pre className="whitespace-pre-wrap rounded-2xl bg-[#e7f8e9] p-3 font-sans text-[13px] leading-snug text-slate-800 ring-1 ring-green-200">{text}</pre>}
       <div className="grid grid-cols-2 gap-2 print:hidden sm:grid-cols-4">
         <Button onClick={share}><Share2 className="h-4 w-4" />Share</Button>
         <a href={`https://wa.me/${wa}?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer" onClick={() => { if (canEdit) save(); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#25D366] px-4 text-sm font-medium text-white"><MessageCircle className="h-4 w-4" />WhatsApp{wa ? '' : ' (choose chat)'}</a>
         <Button variant="secondary" onClick={() => window.print()}><Printer className="h-4 w-4" />PDF</Button>
         <Button variant="secondary" onClick={async () => { try { await navigator.clipboard.writeText(text); setCopied(true); window.setTimeout(() => setCopied(false), 2000); } catch { /* blocked */ } }}><Copy className="h-4 w-4" />{copied ? 'Copied' : 'Copy text'}</Button>
       </div>
-      {canEdit && (
+      {canEdit && !leader && (
         <section className="space-y-2 rounded-2xl bg-white p-3 ring-1 ring-slate-200 print:hidden">
           <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500">This shift · {sh.shift === 'D' ? 'Day' : 'Night'} {kwDay(sh.from)}</h2>
           <textarea className="input min-h-16" placeholder="Notes for the next shift" value={notes} onChange={(e) => setNotes(e.target.value)} />
@@ -430,7 +434,7 @@ function ShiftReportView({ data, now, canEdit, by, onSaved }: { data: TrackerDat
           {err != null && <ErrorBox error={err} />}
         </section>
       )}
-      <article className="rounded-2xl bg-white p-4 text-sm ring-1 ring-slate-200 print:ring-0">
+      <article className={cx('rounded-2xl bg-white p-4 text-sm ring-1 ring-slate-200 print:ring-0', leader && 'hidden')}>
         <header className="mb-2 border-b border-slate-200 pb-2">
           <img src={`${import.meta.env.BASE_URL}brand/knpc-logo.png`} alt="KNPC" className="mb-1 hidden h-10 print:block" />
           <h2 className="font-bold text-[#004080]">{test ? '[TEST] ' : ''}{r.title}</h2>
@@ -455,7 +459,7 @@ function ShiftReportView({ data, now, canEdit, by, onSaved }: { data: TrackerDat
         {r.notes && <><h3 className="mt-2 font-semibold">Notes for the next shift</h3><p className="whitespace-pre-wrap">{r.notes}</p></>}
         <p className="mt-3 text-xs text-slate-500">— {by}</p>
       </article>
-      <details className="print:hidden"><summary className="cursor-pointer text-xs font-semibold text-slate-600">Message text</summary><pre className="mt-1 whitespace-pre-wrap rounded-lg bg-slate-50 p-2 text-xs">{text}</pre></details>
+      <details className={cx('print:hidden', leader && 'hidden')}><summary className="cursor-pointer text-xs font-semibold text-slate-600">Message text</summary><pre className="mt-1 whitespace-pre-wrap rounded-lg bg-slate-50 p-2 text-xs">{text}</pre></details>
     </div>
   );
 }

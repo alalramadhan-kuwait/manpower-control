@@ -1,7 +1,7 @@
 // The tracker rules on the TR-2 seed (tracker v4 pack), against the test scenarios of the module plan (§10).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { logText, spanText, tidyStep, noteCurrent, relatedWork, askText, staleItems, equipBlind, linkedStep, miWeighted, neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
+import { logText, spanText, tidyStep, noteCurrent, relatedWork, askText, staleItems, equipBlind, linkedStep, miWeighted, neutName, partsOf, waitingSteps, attention, planVsActual, focusList, iatChecks, iatStatus, lineOnEquipment, lineStreams, loopLines, luKeys, luTag, streamItems, sortActs, isoState, missingBlinds, nextStep, blindLink, miBlinds, criticalHandover, isolationOf, neutLink, opsProgress, opsResults, pointComplete, soakLeft, type TrkPoint, banner, equipViews, reportText, leaderReportText, shiftOf, shiftReport, stepViews, phases, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type TrkData, type TrkEquipment, type TrkLog, type TrkStep } from '..';
 import { barchartRows, parseCsv } from '../csv';
 
 const csv = (f: string) => parseCsv(readFileSync(new URL(`./fixtures/${f}.csv`, import.meta.url), 'utf8'));
@@ -417,6 +417,21 @@ describe('WhatsApp report in the plant format', () => {
     expect(text).toContain('- V-202/210: Under inspection');
     expect(text).toContain('*Segregation blinding*\n- 1 blind pending: SEG-18');
     expect(text).toContain('*Neutralization*\n- V-206 to V-207: Soda ash draining I/P\n- Not started: S112');
+  });
+});
+
+describe('team leader report', () => {
+  it('the measures by name, the controlling item, then the equipment by stage; hours, no days, no columns', () => {
+    const d = seed(); d.settings = { ...d.settings, miStart: kw('2026-10-20 07:00'), miEnd: kw('2026-11-07 07:00') };
+    Object.assign(step(d, 'S110'), { status: 'done', doneAt: '2026-10-20T07:00:00+03:00' });
+    const text = leaderReportText(d, at('2026-10-24 09:00'), { title: 'U-12 TR-2 SD', by: 'Ali' });
+    expect(text.split('\n').slice(0, 2)).toEqual(['*U-12 Train-2 SD · Team leader update*', '_24 Oct · M&I day 5 of 18_']);
+    for (const m of ['🛠 *Work done (hours):* ', '✅ *Steps completed:* ', '📦 *Items completed:* ', '🟢 *Items within the end date:* ']) expect(text).toContain(m);
+    expect(text).toMatch(/\n🎯 \*Critical path \(R-205\):\* (ahead|behind|on plan) · \d+% vs plan \d+%\n {3}End .* · \d+ h (after|before) P6/);
+    expect(text).toContain('*Equipment status*\n• Reactors 5: ');
+    expect(text).not.toMatch(/\d d\b/);
+    expect(text).not.toMatch(/\S {2,}/);
+    expect(text.trimEnd().endsWith('— Ali')).toBe(true);
   });
 });
 

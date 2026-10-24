@@ -3,7 +3,7 @@
 // reactors' issues and temperatures), Isolation (neutralization and blinds), Small jobs & IATs. Every change is
 // stamped with the ID; Undo for a few seconds after each one.
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
+import { EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { addEngStep, addEvent, addQtyEntry, confirmEmpty, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatLabel, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -469,14 +469,18 @@ function ReportSheet({ d, now, by, onClose }: { d: TrackerData; now: number; by:
   const saved = d.shiftLogs.find((l) => l.shiftDate === sh.date && l.shift === sh.shift) ?? null;
   const [notes, setNotes] = useState(saved?.notes ?? '');
   const [copied, setCopied] = useState(false); const [err, setErr] = useState<unknown>(null);
-  const text = reportText(shiftReport(d, now, { notes, temps: saved?.temps ?? {} }, d.tracker.title), { test: d.tracker.mode === 'test', by });
+  const [leader, setLeader] = useState(false);
+  const text = leader ? leaderReportText(d, now, { title: d.tracker.title, test: d.tracker.mode === 'test', by })
+    : reportText(shiftReport(d, now, { notes, temps: saved?.temps ?? {} }, d.tracker.title), { test: d.tracker.mode === 'test', by });
   const wa = (d.settings.whatsapp ?? '').replace(/\D/g, '');
   const keep = async () => { if ((saved?.notes ?? '') !== notes) { try { await saveShiftLog(d.tracker.id, sh.date, sh.shift, { notes, temps: saved?.temps ?? {} }); } catch (x) { setErr(x); } } };
   async function share() { await keep(); try { if (navigator.share) { await navigator.share({ text }); return; } } catch { return; } window.open(`https://wa.me/${wa}?text=${encodeURIComponent(text)}`, '_blank'); }
   return (
     <BottomSheet open onClose={onClose} title="WhatsApp report">
       <div className="space-y-2.5">
-        <textarea className="input min-h-14 text-[14px]" placeholder="Note for this shift (optional)" value={notes} onChange={(x) => setNotes(x.target.value)} />
+        <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">{([[false, 'Shift report'], [true, 'Team leader']] as const).map(([v, label]) => (
+          <button key={label} type="button" onClick={() => setLeader(v)} className={cx('min-h-9 rounded-lg text-[13px] font-bold', leader === v ? 'bg-white text-[#0d2a5e] shadow-sm' : 'text-slate-500')}>{label}</button>))}</div>
+        {!leader && <textarea className="input min-h-14 text-[14px]" placeholder="Note for this shift (optional)" value={notes} onChange={(x) => setNotes(x.target.value)} />}
         <pre className="max-h-[45vh] overflow-y-auto whitespace-pre-wrap rounded-xl bg-[#e7f8e9] p-3 font-sans text-[12.5px] leading-snug text-slate-800 ring-1 ring-green-200">{text}</pre>
         <div className="grid grid-cols-3 gap-1.5">
           <a href={`https://wa.me/${wa}?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer" onClick={() => void keep()} className="flex min-h-11 items-center justify-center rounded-xl bg-[#25D366] text-[13px] font-bold text-white">WhatsApp</a>

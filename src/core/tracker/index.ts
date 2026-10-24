@@ -668,6 +668,54 @@ export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string }
   return out.join('\n');
 }
 
+/** The team leader update for WhatsApp: the measures first, each named for what it counts (the critical path item
+ *  against its own plan, the work hours done, the steps and items completed, the items within the end date), then the
+ *  item that controls the end, the items close to it, and the equipment by stage. Times in hours, no columns. */
+const LEADER_GROUPS = ['Reactors', 'Exchangers', 'Vessels', 'Heaters', 'Filters'];
+export function leaderReportText(d: TrkData, now: number, opts: { title?: string; test?: boolean; by?: string } = {}): string {
+  const r = shiftReport(d, now, null, opts.title), w = r.mi.weighted;
+  const unit = r.name.match(/U-?\s?(\d+)/i)?.[1], train = r.name.match(/TR(?:AIN)?-?\s?(\d+)/i)?.[1];
+  const name = unit || train ? [unit && `U-${unit}`, train && `Train-${train}`].filter(Boolean).join(' ') + ' SD' : r.name;
+  const date = new Date(`${r.shift.date}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const start = miStart(d.settings), end = ms(d.settings.miEnd ?? d.settings.end);
+  const dayOf = !Number.isNaN(start) && !Number.isNaN(end) && now >= start ? ` · M&I day ${Math.min(Math.floor((now - start) / DAY) + 1, Math.round((end - start) / DAY))} of ${Math.round((end - start) / DAY)}` : '';
+  const out = [`*${opts.test ? '[TEST] ' : ''}${name} · Team leader update*`, `_${date}${dayOf}_`];
+  if (!w) { out.push('', 'M&I progress not available yet.'); if (opts.by) out.push(`— ${opts.by}`); return out.join('\n'); }
+  const day = (x: number) => kwDay(new Date(x).toISOString()).replace(/^\w+,\s*/, '');
+  const at = (x: number) => `${day(x)} ${kwTime(new Date(x).toISOString())}`;
+  const vsEnd = (x: number) => { const h = Math.round(Math.abs(x - end) / H); return x > end ? `${h} h after P6` : `${h} h before P6`; };
+  const status = (tag: string) => r.items.find((i) => i.tag === tag)?.line ?? d.equipment.find((e) => e.tag === tag)?.remark?.trim() ?? null;
+  const main = w.items.filter((i) => !i.small), cp = w.controlling;
+  out.push('');
+  if (cp) {
+    const word = cp.physPct > cp.planPct ? 'ahead' : cp.physPct < cp.planPct ? 'behind' : 'on plan';
+    const drums = r.drums.some((x) => x.key === cp.key && !x.empty);
+    out.push(`🎯 *Critical path (${short(cp.tag)}):* ${word} · ${cp.physPct}% vs plan ${cp.planPct}%`, `   End ${at(cp.forecast)} · ${vsEnd(cp.forecast)}${drums ? ' (drum rate)' : ''}`);
+  }
+  out.push(`🛠 *Work done (hours):* ${w.main.physPct}% · plan ${w.main.planPct}%`,
+    `✅ *Steps completed:* ${main.reduce((t, i) => t + i.done, 0)} / ${main.reduce((t, i) => t + i.lines, 0)}`,
+    `📦 *Items completed:* ${main.filter((i) => i.done === i.lines).length} / ${main.length}`,
+    `🟢 *Items within the end date:* ${main.filter((i) => i.forecast <= end).length} / ${main.length}`);
+  if (cp) { const s = status(cp.tag); out.push('', `🔴 *${short(cp.tag)}* (controls the end)`, ...(s ? [`• ${s}`] : [])); }
+  // the items close to the end, those with the same float and status on one line
+  const watch = new Map<string, { tags: string[]; line: string | null; h: string }>();
+  for (const i of w.critical.filter((x) => x !== cp && x.done < x.lines)) {
+    const hh = Math.round((end - i.forecast) / H), h = hh >= 0 ? `${hh} h float` : `${-hh} h past the end`, line = status(i.tag);
+    const k = `${h}|${line}`; watch.set(k, { tags: [...(watch.get(k)?.tags ?? []), i.tag], line, h });
+  }
+  if (watch.size) out.push('', '🟠 *Watch*', ...[...watch.values()].flatMap((x) => [`• ${joinTags(x.tags).replace(/, /g, ' / ')}: ${x.h}`, ...(x.line ? [`  ${x.line}`] : [])]));
+  const eqs = equipViews(d, now).filter((e) => e.eq.tracked);
+  const lines = LEADER_GROUPS.flatMap((g) => {
+    const xs = eqs.filter((e) => e.eq.group === g); if (!xs.length) return [];
+    const n = STAGE_SHORT.map((_, s) => xs.filter((e) => e.stage === s).length);
+    return [`• ${g} ${xs.length}: ${STAGE_SHORT.flatMap((s, k) => (n[k] ? [`${s === 'HO' || s === 'Box-up' ? s : s.toLowerCase()} ${n[k]}`] : [])).join(' · ')}`];
+  });
+  if (r.psvs.total) lines.push(`• PSVs ${r.psvs.total}: removed ${r.psvs.removed} · back ${r.psvs.installed}`);
+  if (lines.length) out.push('', '*Equipment status*', ...lines);
+  if (opts.by) out.push('', `— ${opts.by}`);
+  return out.join('\n');
+}
+
 // ── Mechanical activity timing (plan vs actual, for future shutdowns) ───────────────────────────────────────────
 export type TimingState = 'NOT_STARTED' | 'RUNNING' | 'FINISHED';
 export interface Timing {
