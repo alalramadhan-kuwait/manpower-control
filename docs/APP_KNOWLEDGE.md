@@ -105,14 +105,14 @@ drums). No UI, RLS or link-access tests.
 | T1 | ~~Link scope, expiry, `trk_split_lines`, anon function execution, hard delete on operational tables~~ — fixed 24 Oct (parts A and B), verified | done |
 | T2 | ~~Concurrent edits overwrite silently; blind Undo~~ — fixed 24 Oct (field-level check on save, safe Undo, conflict message + reload) | done |
 | T3 | ~~Stage vs steps drift~~ — 24 Oct: steps no longer raise a not-handed-over item; stage review list on Today (C-201-ST flagged: blinded, HO not recorded) | done (review open) |
-| T4 | ~~No backdated times~~ — 24 Oct: time field on engineer steps; >48 h back goes to the Section Head (`trk_time_request`); entry time and who in `trk_log` | done |
+| T4 | ~~No backdated times~~ — 24 Oct: time field on engineer steps; Section Head, Engineers and links enter any past time, Controllers/Coordinator 48 h; a reason for a correction or over 48 h back, kept in `trk_log` with who and when (no approval step, Section Head instruction) | done |
 | T5 | Progress entered through migrations ("system"), not by people in the app — no field attribution | P0 (process) |
-| T6 | No offline queue: a write with no network fails | P1 |
-| T7 | Forecast "unverified": P6 links/float not imported (`trk_link` empty); forecasts not saved | P1 |
+| T6 | Offline (assessed 24 Oct): the app shell is cached (PWA), data is not; a save with no network fails with an error. Smallest safe step: an offline banner and blocked buttons, last data kept for reading. Full step: an outbox (IndexedDB) replayed on reconnect through the same field-level check, so a stale offline change is refused, not overwriting; the time chosen is kept, entry time = when it reaches the server | P1 |
+| T7 | P6 relationships (assessed 24 Oct): `trk_link` exists (FS/SS/FF, source p6/confirmed) but is empty; the bar-chart export has no predecessor columns, so the forecast chains steps by planned adjacency within an item only. Needed: the P6 relationships export (predecessor, successor, type, lag) to import as `source='p6'` and check against the bar chart; using them in the forecast is a calculation change (needs approval) | P1 |
 | T8 | Hard-coded to this shutdown (R-12-205, REACTORS, 3-day threshold, TR-2 template); no create/close flow | P1 |
-| T9 | Days instead of hours in tracker text (banner, float, report footer, engineer chips) | P1 |
-| T10 | No stale-work alert (3 steps running > 24 h with no update) | P1 |
-| T11 | Tests: unit (core), `supabase/tests/tracker_access_and_integrity_checks.sql` (28 access/integrity checks), `scripts/e2e-tracker.mjs` (screens, read-only), `scripts/e2e-tracker-conflict.mjs` (two people, TEST tracker). Not yet: desktop TrackerPage flows | partly |
+| T9 | ~~Days in tracker text~~ — 24 Oct: all tracker screens and reports show hours (`daysAsHours`); calculations unchanged | done |
+| T10 | ~~No stale-work alert~~ — 24 Oct: alert card on the engineer Dashboard and desktop Today (critical 6 h, others 12 h, small jobs 24 h) | done |
+| T11 | Tests: unit (core), `supabase/tests/tracker_access_and_integrity_checks.sql` (28 access/integrity checks), `scripts/e2e-tracker.mjs` (screens, read-only), `scripts/e2e-tracker-conflict.mjs` (two people, TEST tracker). `scripts/e2e-tracker-desktop.mjs` (desktop + phone, every tab, report sheet; needs a Section Head login) | done |
 | T12 | No active TEST tracker; TEST clock per device | P2 |
 | T13 | 22 tracked loops/lines with no steps inflate counts | P2 |
 | T14 | Exports: CSV and print only; no DSR PDF/Excel | P2 |
@@ -182,3 +182,6 @@ on" lines in the item sheet. No automatic handover and no isolation logic.
 | 24 Oct 2026 | Durations in hours; Team leader report (option B) added |
 | 24 Oct 2026 | Three user levels + Manpower assignment approved; engineer login is the target, links kept restricted with expiry meanwhile |
 | 24 Oct 2026 | Equipment technical information standard adopted (CLAUDE.md §6); flexible categories; build after the tracker |
+| 24 Oct 2026 | No approval for earlier times: Engineers / links correct any past time with a reason and full history |
+| 24 Oct 2026 | Manpower assignment = manpower and leave work only; administrative data by role (Head, Engineer, Coordinator) |
+| 24 Oct 2026 | C-201-ST: blinded, handover not recorded — flagged for operational verification only, not changed |

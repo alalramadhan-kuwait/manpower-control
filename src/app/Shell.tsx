@@ -8,6 +8,7 @@ import { actionCount } from '@/core/notifications';
 import { cx } from '@/ui/components';
 import { BrandTile } from '@/ui/brand';
 import { WORKSPACES } from '@/app/moreItems';
+import { isAdminStaff } from '@/core/users/access';
 import { t } from '@/i18n';
 import { VersionLine } from '@/app/VersionLine';
 import { SidePanel } from '@/features/side/SidePanel';
@@ -72,7 +73,7 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
           <div className="mt-4">
             <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{t('Workspaces')}</div>
             <div className="space-y-0.5">
-              {WORKSPACES.map((i) => <RailLink key={i.to} to={i.to} label={t(i.label)} icon={i.icon} />)}
+              {WORKSPACES.filter((i) => !i.admin || isAdminStaff(profile.role_code)).map((i) => <RailLink key={i.to} to={i.to} label={t(i.label)} icon={i.icon} />)}
               <RailLink to="/more" label={t('More')} icon={MoreHorizontal} end />
             </div>
           </div>

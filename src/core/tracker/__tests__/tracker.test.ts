@@ -552,8 +552,8 @@ describe('spanText', () => {
     expect(spanText(t(0), t(0.1))).toBe('');
     expect(spanText(t(0), t(0.5))).toBe('30 min');
     expect(spanText(t(0), t(6))).toBe('6 h');
-    expect(spanText(t(0), t(51))).toBe('2 d 3 h');
-    expect(spanText(t(0), t(72))).toBe('3 d');
+    expect(spanText(t(0), t(51))).toBe('51 h'); // durations in hours (project rule)
+    expect(spanText(t(0), t(72))).toBe('72 h');
     expect(spanText(null, t(5))).toBe('');
   });
 });

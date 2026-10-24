@@ -7,4 +7,6 @@ export function appAccess(role: string | null | undefined, tasks: readonly strin
   if (role === 'controller') return tasks.includes('manpower') ? 'full' : 'tracker';
   return 'none';
 }
+/** Administrative data (staff master, imports, holidays, users): by role, never by an assignment. */
+export const isAdminStaff = (role: string | null | undefined) => role === 'section_head' || role === 'manpower_coordinator' || role === 'engineer';
 export const TASK_LABEL: Record<string, string> = { manpower: 'Manpower' };

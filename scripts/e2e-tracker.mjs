@@ -23,6 +23,6 @@ await p.click('button:has-text("All steps")'); await p.waitForTimeout(800);
 await p.locator('div.fixed.inset-0 main button.text-left').first().click(); await p.waitForTimeout(500);
 await need('input[type="datetime-local"]', 'time field on a step');
 await p.locator('input[type="datetime-local"]').fill(new Date(Date.now() - 72 * 36e5 + 3 * 36e5).toISOString().slice(0, 16)); await p.waitForTimeout(300);
-await need('text=the Section Head approves it', '>48 h request form');
+await need('input[placeholder^="Reason (over"]', '>48 h reason field');
 console.log(problems.length ? problems.join('\n') : 'tracker screens OK');
 await b.close(); process.exit(problems.length ? 1 : 0);

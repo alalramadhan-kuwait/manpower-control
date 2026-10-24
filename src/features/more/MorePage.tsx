@@ -4,6 +4,7 @@ import { supabase } from '@/data/supabase';
 import type { UserProfile } from '@/data/types';
 import { ROLE_LABEL } from '@/features/auth/useSession';
 import { WORKSPACES } from '@/app/moreItems';
+import { isAdminStaff } from '@/core/users/access';
 import { VersionLine } from '@/app/VersionLine';
 import { LangSwitch, t } from '@/i18n';
 import { Button, Card, PageHeader } from '@/ui/components';
@@ -14,7 +15,7 @@ export default function MorePage({ profile }: { profile: UserProfile }) {
     <div className="lg:max-w-3xl">
       <PageHeader title="More" subtitle={[...new Set([profile.display_name, t(ROLE_LABEL[profile.role_code])])].join(' · ')} />
       <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-        {WORKSPACES.map(({ to, label, desc, icon: Icon }) => (
+        {WORKSPACES.filter((i) => !i.admin || isAdminStaff(profile.role_code)).map(({ to, label, desc, icon: Icon }) => (
           <li key={to}>
             <Link to={to} className="flex min-h-16 items-center gap-3 px-4 py-3 active:bg-slate-50">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700"><Icon className="h-5 w-5" /></span>

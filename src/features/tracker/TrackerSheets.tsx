@@ -1,7 +1,7 @@
 // The two input sheets of the controllers: a guideline step (Start · Done · Pending) and an equipment item (stage,
 // blinded = handed over, IATs, pending). Big buttons, the time and the name are stamped by the database.
 import { useState } from 'react';
-import { connectionsOf, iatsOf, type LuEquip, type LuStream, type TrkIat, PENDING_REASONS, neutLabel, neutName, partsOf, waitingSteps, isoState, missingBlinds, STAGES, kwDay, kwTime, pointComplete, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint, type TrkEngine, type TrkSettings, type MiItem } from '@/core/tracker';
+import { daysAsHours, connectionsOf, iatsOf, type LuEquip, type LuStream, type TrkIat, PENDING_REASONS, neutLabel, neutName, partsOf, waitingSteps, isoState, missingBlinds, STAGES, kwDay, kwTime, pointComplete, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint, type TrkEngine, type TrkSettings, type MiItem } from '@/core/tracker';
 import { EquipActivities, StepTimes } from './Timing';
 import { DrumPanel, ItemUpdate } from './Drums';
 import { addIat, closeIat, setEquipment, setStep } from '@/data/tracker';
@@ -198,10 +198,10 @@ function MiLine({ i }: { i: MiItem }) {
     <div className="rounded-lg bg-slate-50 px-2.5 py-1.5 text-[12px] text-slate-700 ring-1 ring-slate-200">
       <div className="flex flex-wrap gap-x-3 gap-y-0.5">
         <span>Physical <b className="text-slate-900">{pct}</b> / plan {i.planPct}%</span>
-        <span>vs P6 <b className={i.svD < 0 ? 'text-status-red' : 'text-status-green'}>{i.svD > 0 ? '+' : ''}{i.svD} d</b></span>
-        {!done && <span>{i.spareD < 0 ? <b className="text-status-red">delays shutdown {i.impactD} d</b> : <>Float <b className="text-slate-900">{i.spareD} d</b></>}</span>}
+        <span>vs P6 <b className={i.svD < 0 ? 'text-status-red' : 'text-status-green'}>{i.svD > 0 ? '+' : i.svD < 0 ? '−' : ''}{daysAsHours(i.svD)}</b></span>
+        {!done && <span>{i.spareD < 0 ? <b className="text-status-red">delays shutdown {daysAsHours(i.impactD)}</b> : <>Float <b className="text-slate-900">{daysAsHours(i.spareD)}</b></>}</span>}
       </div>
-      <div className="text-[11px] text-slate-500">{done ? `Finished ${kwDay(i.forecast)} ${kwTime(i.forecast)}` : `Forecast ${kwDay(i.forecast)} ${kwTime(i.forecast)} · ${i.remainingD} d left · P6 ${kwDay(i.p6Finish)} ${kwTime(i.p6Finish)}`}
+      <div className="text-[11px] text-slate-500">{done ? `Finished ${kwDay(i.forecast)} ${kwTime(i.forecast)}` : `Forecast ${kwDay(i.forecast)} ${kwTime(i.forecast)} · ${daysAsHours(i.remainingD)} left · P6 ${kwDay(i.p6Finish)} ${kwTime(i.p6Finish)}`}
         {!done && i.unverified.length > 0 && <button type="button" onClick={() => setWhy((x) => !x)} className="ml-1 font-semibold text-amber-700">· unverified {why ? '▾' : '▸'}</button>}</div>
       {why && <ul className="mt-0.5 list-disc pl-4 text-[11px] text-amber-800">{i.unverified.map((u) => <li key={u}>{u}</li>)}</ul>}
     </div>

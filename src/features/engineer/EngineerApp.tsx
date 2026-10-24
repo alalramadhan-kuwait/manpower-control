@@ -3,9 +3,9 @@
 // reactors' issues and temperatures), Isolation (neutralization and blinds), Small jobs & IATs. Every change is
 // stamped with the ID; Undo for a few seconds after each one.
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
+import { daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
-import { BACKDATE_LIMIT_H, CONFLICT_EVENT, sendTimeRequest, addEngStep, addEvent, addQtyEntry, confirmEmpty, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatLabel, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
+import { BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, addQtyEntry, confirmEmpty, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatLabel, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
 import { BottomSheet, ErrorBox, Spinner, cx } from '@/ui/components';
 import { fetchSdTeamOn } from '@/data/shutdown';
@@ -167,6 +167,20 @@ const GroupRow = ({ label, act, plan, onClick }: { label: string; act: number; p
     <span className="whitespace-nowrap text-right font-semibold tabular-nums text-slate-600">{act}% / {plan}%</span><span className="text-slate-500">›</span></button>);
 
 // ── Dashboard ───────────────────────────────────────────────────────────────────────────────────────────────────────
+/** Work running or due with no update for longer than its limit (critical path 6 h, others 12 h, small jobs 24 h). */
+function StaleAlert({ d, now, onOpen }: { d: TrackerData; now: number; onOpen: () => void }) {
+  const xs = useMemo(() => staleItems(d, now).filter((i) => !i.small || WITH_EQUIP.includes(i.section)).sort((a, b) => Number(b.critical) - Number(a.critical) || b.ageH - a.ageH), [d, now]);
+  if (!xs.length) return null;
+  const crit = xs.filter((i) => i.critical).length;
+  return (
+    <button type="button" onClick={onOpen} className={cx('mb-2.5 block w-full rounded-2xl p-3 text-left ring-1', crit ? 'bg-red-50 ring-red-200' : 'bg-amber-50 ring-amber-200')}>
+      <span className={cx('block text-[13px] font-bold', crit ? 'text-status-red' : 'text-amber-900')}>⏰ {xs.length} without a recent update{crit ? ` · ${crit} on the critical path` : ''}</span>
+      <span className="block text-[12px] text-slate-700">{xs.slice(0, 3).map((i) => `${short(i.tag)} ${i.ageH} h`).join(' · ')}{xs.length > 3 ? ' …' : ''}</span>
+      <span className="block text-[11px] font-semibold text-brand-700">Update them ›</span>
+    </button>
+  );
+}
+
 function Dashboard({ d, now, go, by, done }: P) {
   const [report, setReport] = useState(false);
   const mi = useMemo(() => phases(d, now).mi, [d, now]);
@@ -184,9 +198,10 @@ function Dashboard({ d, now, go, by, done }: P) {
   return (<>
     <button type="button" onClick={() => setReport(true)} className="mb-2.5 flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-whatsapp text-[14px] font-bold text-white active:opacity-90">💬 WhatsApp report</button>
     {report && <ReportSheet d={d} now={now} by={by} onClose={() => setReport(false)} />}
+    <StaleAlert d={d} now={now} onOpen={() => go('equip', 'todo')} />
     <Card className={cx('border-l-[6px]', late ? 'border-l-status-red' : (cp?.spareD ?? 9) <= 1 ? 'border-l-amber-400' : 'border-l-status-green')}>
       <p className="text-[11px] font-bold text-slate-500">END DATE</p>
-      <p className={cx('text-[28px] font-extrabold leading-tight', late ? 'text-status-red' : 'text-brand-700')}>{late ? `Behind ${w.impactD} d` : 'On time'}</p>
+      <p className={cx('text-[28px] font-extrabold leading-tight', late ? 'text-status-red' : 'text-brand-700')}>{late ? `Behind ${daysAsHours(w.impactD)}` : 'On time'}</p>
       <p className="text-xs text-slate-600">{late ? 'forecast past the plan' : `${cp?.spareD ?? 0} days spare`} · forecast {when(w.estEnd)} · plan {kwDay(w.end)}</p>
       {cp && <p className="mt-1.5 text-xs text-slate-600">Sets the end: <b>{short(cp.tag)}</b>{cp.driving ? ` · ${cp.driving}` : ''}</p>}
     </Card>
@@ -240,14 +255,14 @@ function lastUpdate(d: TrackerData, keys: string[]): number | null {
     .filter((x): x is string => !!x).map((x) => Date.parse(x)).filter((x) => !Number.isNaN(x));
   return ts.length ? Math.max(...ts) : null;
 }
-const ago = (t: number, now: number) => { const h = Math.round((now - t) / H); return h < 1 ? 'just now' : h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`; };
+const ago = (t: number, now: number) => { const h = Math.round((now - t) / H); return h < 1 ? 'just now' : `${h} h ago`; };
 /** Against the bar chart: the item's forecast finish vs its P6 finish (+ ahead, − behind). */
 function VsPlan({ mi }: { mi?: MiItem }) {
   if (!mi) return null;
   const v = mi.svD, done = mi.done >= mi.lines;
   return (
     <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold', done ? 'bg-green-100 text-green-800' : v >= 0.5 ? 'bg-green-100 text-green-800' : v > -0.5 ? 'bg-slate-100 text-slate-700' : 'bg-red-100 text-red-800')}>
-      {done ? '✓ done' : v >= 0.5 ? `${v} d ahead` : v > -0.5 ? 'on plan' : `${-v} d behind`}</span>
+      {done ? '✓ done' : v >= 0.5 ? `${daysAsHours(v)} ahead` : v > -0.5 ? 'on plan' : `${daysAsHours(v)} behind`}</span>
   );
 }
 /** One item in two lines: tag, what is happening; done / plan and when it was last updated (orange when overdue). */
@@ -385,7 +400,8 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
   const [edit, setEdit] = useState<{ id: string; text: string } | null>(null);
   const [add, setAdd] = useState<{ key: string; text: string; after: string | null } | null>(null);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  // the time a start / finish happened: now, or an earlier time typed in (Kuwait); over 48 h back goes to the Section Head
+  // the time a start / finish happened: now, or an earlier time typed in (Kuwait); a correction or a time over 48 h
+  // back needs a reason, kept in the change log with who and when
   const [at, setAt] = useState(''); const [why, setWhy] = useState('');
   async function act(f: () => Promise<unknown>, msg: string, undo?: () => Promise<unknown>) { setBusy(true); setErr(null); try { await f(); done(msg, undo); setEdit(null); setAdd(null); setOrd(null); setAt(''); setWhy(''); } catch (x) { setErr(x); } finally { setBusy(false); } }
   const atIso = at ? new Date(`${at}:00+03:00`).toISOString() : null;
@@ -408,13 +424,11 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
     const t = atIso ?? new Date().toISOString(), back = { actual_start: a.actualStart ?? null, actual_finish: a.actualFinish ?? null };
     const patch = to === 'start' ? { actual_start: t } : to === 'finish' ? { actual_finish: t, ...(a.actualStart ? {} : { actual_start: t }) } : a.actualFinish ? { actual_finish: null } : { actual_start: null };
     const said = to === 'undo' ? 'undone' : `${to === 'start' ? 'started' : 'finished'}${atIso ? ` ${when(t)}` : ''}`;
-    return act(() => setActivity(a.id, patch), `${a.activity}: ${said}.`, () => setActivity(a.id, back));
+    return act(() => setActivity(a.id, { ...patch, ...(why.trim() ? { time_reason: why.trim() } : {}) }), `${a.activity}: ${said}.`, () => setActivity(a.id, back));
   };
   // correct a recorded time to the one typed in
-  const retime = (a: TrkActivity, field: 'actual_start' | 'actual_finish') => act(() => setActivity(a.id, { [field]: atIso }), `${a.activity}: ${field === 'actual_start' ? 'start' : 'finish'} set to ${when(atIso!)}.`,
-    () => setActivity(a.id, { [field]: field === 'actual_start' ? a.actualStart ?? null : a.actualFinish ?? null }));
-  const request = (a: TrkActivity) => act(() => sendTimeRequest(d.tracker.id, a.id, a.actualStart && !a.actualFinish ? { actualFinish: atIso, reason: why } : !a.actualStart ? { actualStart: atIso, reason: why } : { actualFinish: atIso, reason: why }),
-    `${a.activity}: earlier time sent to the Section Head.`);
+  const retime = (a: TrkActivity, field: 'actual_start' | 'actual_finish') => act(() => setActivity(a.id, { [field]: atIso, time_reason: why.trim() }), `${a.activity}: ${field === 'actual_start' ? 'start' : 'finish'} set to ${when(atIso!)}.`,
+    () => setActivity(a.id, { [field]: field === 'actual_start' ? a.actualStart ?? null : a.actualFinish ?? null, time_reason: 'Undo of a correction' }));
   return (
     <div className="fixed inset-0 z-[60] overflow-y-auto bg-canvas pb-28">
       <header className="sticky top-0 z-10 flex items-center gap-2 bg-brand-700 px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white">
@@ -453,7 +467,6 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
                     <span className="block text-[13px] font-semibold leading-snug">{a.activity}</span>
                     <span className="block text-[11px] text-slate-500">{a.actualFinish ? `Done ${ld(a.actualFinish)}${entered(a, 'actual_finish', a.actualFinish)}${tookOf(a)}` : a.actualStart ? `Started ${ld(a.actualStart)}${entered(a, 'actual_start', a.actualStart)}${spanText(a.actualStart, new Date().toISOString()) ? ` · running ${spanText(a.actualStart, new Date().toISOString())}` : ''}` : eng ? 'Added step · no plan time' : a.start ? `Plan ${ld(a.start)}${h ? ` · ${h} h` : ''}` : 'No plan time'}{a.updatedBy && (a.actualStart || eng) ? ` · ${a.updatedBy}` : ''}</span>
                     {a.p6Activity && <span className="block text-[11px] italic text-slate-500">P6: {a.p6Activity}</span>}
-                    {d.timeRequests.filter((r) => r.activityRow === a.id && r.status === 'pending').map((r) => <span key={r.id} className="block text-[11px] font-semibold text-amber-800">⏳ {r.actualStart ? `Start ${when(r.actualStart)}` : `Finish ${when(r.actualFinish!)}`} sent to the Section Head</span>)}
                   </button>
                   {ids && <span className="flex shrink-0 gap-1"><button type="button" aria-label="Up" disabled={i === 0} onClick={() => move(a.id, -1)} className="h-9 w-9 rounded-lg bg-slate-100 text-lg font-bold disabled:opacity-30">↑</button>
                     <button type="button" aria-label="Down" disabled={i === shown.length - 1} onClick={() => move(a.id, 1)} className="h-9 w-9 rounded-lg bg-slate-100 text-lg font-bold disabled:opacity-30">↓</button></span>}
@@ -470,17 +483,13 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
                     {at ? <button type="button" onClick={() => { setAt(''); setWhy(''); }} className="min-h-9 rounded-lg bg-slate-100 px-2.5 text-[12px] font-bold text-slate-700">Now</button> : <span className="text-[12px] text-slate-500">now</span>}
                   </div>
                   {future && <p className="text-[12px] font-semibold text-status-red">The time cannot be in the future.</p>}
-                  {tooOld && <div className="space-y-1.5 rounded-xl bg-amber-50 p-2 ring-1 ring-amber-200">
-                    <p className="text-[12px] text-amber-900">More than {BACKDATE_LIMIT_H} h back: the Section Head approves it.</p>
-                    <input className="input min-h-9 text-[13px]" placeholder="Why so late (e.g. reported by the night shift)" value={why} onChange={(x) => setWhy(x.target.value)} />
-                    <button type="button" disabled={busy || !why.trim()} onClick={() => request(a)} className="min-h-10 w-full rounded-xl bg-brand-700 text-[13px] font-bold text-white disabled:opacity-50">Send {!a.actualStart ? 'start' : 'finish'} time to the Section Head</button>
-                  </div>}
-                  {!tooOld && !future && <div className="grid grid-cols-2 gap-1.5">
-                    {!a.actualStart && <button type="button" disabled={busy} onClick={() => step(a, 'start')} className="min-h-10 rounded-xl bg-brand-700 text-[13px] font-bold text-white">▶ Start</button>}
-                    {!a.actualFinish && <button type="button" disabled={busy} onClick={() => step(a, 'finish')} className="min-h-10 rounded-xl bg-amber-400 text-[13px] font-bold text-amber-950">✓ Finish</button>}
+                  {atIso && !future && (tooOld || a.actualStart) && <input className="input min-h-9 text-[13px]" placeholder={tooOld ? `Reason (over ${BACKDATE_LIMIT_H} h back)` : 'Reason for the correction'} value={why} onChange={(x) => setWhy(x.target.value)} />}
+                  {!future && <div className="grid grid-cols-2 gap-1.5">
+                    {!a.actualStart && <button type="button" disabled={busy || (tooOld && !why.trim())} onClick={() => step(a, 'start')} className="min-h-10 rounded-xl bg-brand-700 text-[13px] font-bold text-white">▶ Start</button>}
+                    {!a.actualFinish && <button type="button" disabled={busy || (tooOld && !why.trim())} onClick={() => step(a, 'finish')} className="min-h-10 rounded-xl bg-amber-400 text-[13px] font-bold text-amber-950">✓ Finish</button>}
                     {a.actualStart && <button type="button" disabled={busy} onClick={() => step(a, 'undo')} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-slate-700 ring-1 ring-slate-300">↶ Undo {a.actualFinish ? 'finish' : 'start'}</button>}
-                    {atIso && a.actualStart && <button type="button" disabled={busy} onClick={() => retime(a, 'actual_start')} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-brand-700 ring-1 ring-slate-300">Set start to this time</button>}
-                    {atIso && a.actualFinish && <button type="button" disabled={busy} onClick={() => retime(a, 'actual_finish')} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-brand-700 ring-1 ring-slate-300">Set finish to this time</button>}
+                    {atIso && a.actualStart && <button type="button" disabled={busy || !why.trim()} onClick={() => retime(a, 'actual_start')} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-brand-700 ring-1 ring-slate-300">Set start to this time</button>}
+                    {atIso && a.actualFinish && <button type="button" disabled={busy || !why.trim()} onClick={() => retime(a, 'actual_finish')} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-brand-700 ring-1 ring-slate-300">Set finish to this time</button>}
                     <button type="button" disabled={busy} onClick={() => setEdit({ id: a.id, text: a.activity })} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-brand-700 ring-1 ring-slate-300">✎ Edit name</button>
                     {eng && <button type="button" disabled={busy} onClick={() => { if (window.confirm(`Remove "${a.activity}"?`)) void act(() => setActivity(a.id, { tracked: false, disabled_reason: 'removed' }), 'Step removed.', () => setActivity(a.id, { tracked: true, disabled_reason: null })); }} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-red-700 ring-1 ring-red-200">🗑 Remove</button>}
                   </div>}</>}

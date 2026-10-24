@@ -58,12 +58,12 @@ export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, n
         <Field label="Started"><input type="datetime-local" className="input" value={s} onChange={(e) => setS(e.target.value)} /></Field>
         <Field label="Finished"><input type="datetime-local" className="input" value={f} onChange={(e) => setF(e.target.value)} /></Field>
       </div>
-      <input className="input" placeholder="Note (why late / longer, for next time)" value={note} onChange={(e) => setNote(e.target.value)} />
+      <input className="input" placeholder="Note / reason (needed when a recorded time is corrected or over 48 h back)" value={note} onChange={(e) => setNote(e.target.value)} />
       {isHead && <div className="grid grid-cols-2 gap-1.5">
         <Field label="Bar chart start"><input type="datetime-local" className="input" value={ps} onChange={(e) => setPs(e.target.value)} /></Field>
         <Field label="Bar chart finish"><input type="datetime-local" className="input" value={pf} onChange={(e) => setPf(e.target.value)} /></Field>
       </div>}
-      <Button className="w-full" disabled={busy || (!!s && !!f && f < s) || (!!ps && !!pf && pf < ps)} onClick={() => run({ actual_start: fromLocal(s), actual_finish: fromLocal(f), actual_note: note.trim() || null,
+      <Button className="w-full" disabled={busy || (!!s && !!f && f < s) || (!!ps && !!pf && pf < ps)} onClick={() => run({ actual_start: fromLocal(s), actual_finish: fromLocal(f), actual_note: note.trim() || null, time_reason: note.trim() || null,
         ...(isHead && (ps !== local(a.start) || pf !== local(a.finish)) ? { planned_start: fromLocal(ps), planned_finish: fromLocal(pf), duration_h: ps && pf ? Math.round((Date.parse(pf) - Date.parse(ps)) / 36e5 * 10) / 10 : null } : {}) }, `${a.key}: ${a.activityId} times saved.`, close)}>Save</Button>
       {!!s && !!f && f < s && <p className="text-xs text-status-red">The finish is before the start.</p>}
     </>

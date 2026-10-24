@@ -1,6 +1,6 @@
 // Shared look of the progress tracker: the status colours of the module plan (§9), chips and the stage bar.
 import { useState, type ReactNode } from 'react';
-import { STAGE_SHORT, type Flag, type StepState } from '@/core/tracker';
+import { daysAsHours, STAGE_SHORT, type Flag, type StepState } from '@/core/tracker';
 import { cx } from '@/ui/components';
 
 export const STATE_STYLE: Record<StepState, { bg: string; text: string; label: string }> = {
@@ -39,7 +39,7 @@ export function StageBar({ stage, className }: { stage: number; className?: stri
 export function PlanChip({ variance, days, short = false }: { variance: number; days: number; short?: boolean }) {
   if (variance === 0) return <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">On plan</span>;
   const ahead = variance > 0;
-  return <span className={cx('rounded px-1.5 py-0.5 text-[10px] font-bold', ahead ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800')}>{ahead ? '+' : '−'}{Math.abs(variance)}{short ? '' : ` stage${Math.abs(variance) > 1 ? 's' : ''}`}{days ? ` · ${days} d` : ''}</span>;
+  return <span className={cx('rounded px-1.5 py-0.5 text-[10px] font-bold', ahead ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800')}>{ahead ? '+' : '−'}{Math.abs(variance)}{short ? '' : ` stage${Math.abs(variance) > 1 ? 's' : ''}`}{days ? ` · ${daysAsHours(days)}` : ''}</span>;
 }
 export const Tile = ({ value, label, tone, onClick }: { value: ReactNode; label: string; tone?: 'red' | 'amber' | 'green'; onClick?: () => void }) => (
   <button type="button" onClick={onClick} className={cx('flex min-h-16 flex-col items-center justify-center rounded-xl bg-white px-1 py-2 ring-1 ring-slate-200 active:scale-[0.98]', !onClick && 'cursor-default')}>

@@ -2,7 +2,7 @@
 // A finished step is never taken as a formal handover; "behind" can be moved to the steps' stage in one tap
 // (handed-over items only), the rest are opened in the item sheet.
 import { useState } from 'react';
-import { STAGE_SHORT, stageReview, type EquipView, type StageIssue } from '@/core/tracker';
+import { STAGE_SHORT, stageReview, staleItems, type EquipView, type StageIssue } from '@/core/tracker';
 import { setEquipment, type TrackerData } from '@/data/tracker';
 import { ErrorBox, cx } from '@/ui/components';
 
@@ -42,6 +42,22 @@ export function StageReview({ data, eqs, canEdit, onOpen, onDone }: { data: Trac
         <p className="mt-1 text-[11px] text-slate-500">Handover is never set from finished steps: confirm it in the item the normal way.</p>
         {err != null && <ErrorBox error={err} />}
       </>}
+    </section>
+  );
+}
+
+/** Work running or due with no update for longer than its limit (critical path 6 h, others 12 h, small jobs 24 h). */
+export function StaleAlert({ data, now, onAsk }: { data: TrackerData; now: number; onAsk: () => void }) {
+  const xs = staleItems(data, now).sort((a, b) => Number(b.critical) - Number(a.critical) || Number(a.small) - Number(b.small) || b.ageH - a.ageH);
+  if (!xs.length) return null;
+  const crit = xs.filter((i) => i.critical).length;
+  return (
+    <section className={cx('mb-3 flex items-center gap-2 rounded-2xl p-3 ring-1', crit ? 'bg-red-50 ring-red-200' : 'bg-amber-50 ring-amber-200')}>
+      <span className="min-w-0 flex-1">
+        <span className={cx('block text-[13px] font-bold', crit ? 'text-status-red' : 'text-amber-900')}>⏰ {xs.length} without a recent update{crit ? ` · ${crit} on the critical path` : ''}</span>
+        <span className="block text-[12px] text-slate-700">{xs.slice(0, 4).map((i) => `${i.tag.replace(/^([A-Z]{1,3})-12-/, '$1-')} ${i.ageH} h`).join(' · ')}{xs.length > 4 ? ' …' : ''}</span>
+      </span>
+      <button type="button" onClick={onAsk} className="min-h-9 shrink-0 rounded-lg bg-white px-2.5 text-[12px] font-bold text-brand-700 ring-1 ring-slate-300">Ask for updates</button>
     </section>
   );
 }

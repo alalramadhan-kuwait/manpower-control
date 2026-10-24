@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appAccess } from '../access';
+import { appAccess, isAdminStaff } from '../access';
 
 describe('app access by level and assignment', () => {
   it('Section Head, Manpower Coordinator and Engineer open the whole app', () => {
@@ -11,5 +11,8 @@ describe('app access by level and assignment', () => {
   });
   it('staff logins and unknown roles open nothing', () => {
     expect([appAccess('employee'), appAccess(null), appAccess('x', ['manpower'])]).toEqual(['none', 'none', 'none']);
+  });
+  it('administration is by role only: the Manpower assignment does not open it', () => {
+    expect(['section_head', 'manpower_coordinator', 'engineer', 'controller', 'employee'].map(isAdminStaff)).toEqual([true, true, true, false, false]);
   });
 });

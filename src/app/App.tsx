@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { recordVisit } from '@/data/activity';
 import { useSession } from '@/features/auth/useSession';
-import { appAccess } from '@/core/users/access';
+import { appAccess, isAdminStaff } from '@/core/users/access';
 import LoginPage from '@/features/auth/LoginPage';
 import DayOverviewPage from '@/features/day/DayOverviewPage';
 import EmployeesPage from '@/features/employees/EmployeesPage';
@@ -51,7 +51,7 @@ function MainApp() {
       </div>
     );
   }
-  const level = appAccess(profile.role_code, tasks);
+  const level = appAccess(profile.role_code, tasks), admin = isAdminStaff(profile.role_code);
   if (profile.employee_id && !access && appAccess(profile.role_code) !== 'none') {
     return (
       <div className="mx-auto max-w-sm p-6 text-center">
@@ -93,10 +93,10 @@ function MainApp() {
           <Route path="/shutdown/:id/memo" element={<SdMemoPage />} />
           <Route path="/progress" element={<TrackerPage profile={profile} />} />
           <Route path="/progress/:id" element={<TrackerPage profile={profile} />} />
-          <Route path="/data-quality" element={<DataQualityWorkspace profile={profile} />} />
-          <Route path="/import" element={<ImportWorkspace profile={profile} />} />
-          <Route path="/import/:batchId" element={<ImportBatchPage />} />
-          <Route path="/admin" element={<AdminWorkspace profile={profile} />} />
+          <Route path="/data-quality" element={admin ? <DataQualityWorkspace profile={profile} /> : <Navigate to="/" replace />} />
+          <Route path="/import" element={admin ? <ImportWorkspace profile={profile} /> : <Navigate to="/" replace />} />
+          <Route path="/import/:batchId" element={admin ? <ImportBatchPage /> : <Navigate to="/" replace />} />
+          <Route path="/admin" element={admin ? <AdminWorkspace profile={profile} /> : <Navigate to="/" replace />} />
           {/* an old or mistyped address lands on Today with a short note (no old page is kept) */}
           <Route path="*" element={<Navigate to="/" replace state={{ moved: true }} />} />
         </Routes>

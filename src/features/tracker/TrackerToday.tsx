@@ -2,7 +2,7 @@
 // handover · M & I: the bar chart and the blinds it installs) with their planned and actual dates, and the late /
 // pending / IAT counts. Each card opens its detail; every line in it opens the step, item or page behind it.
 import { useMemo, useState } from 'react';
-import { CRITICAL_SPARE_D, type MiItem, type MiPart, type MiWeighted, FO_NAMES, isMisc, attention, focusList, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, neutLabel,
+import { daysAsHours, CRITICAL_SPARE_D, type MiItem, type MiPart, type MiWeighted, FO_NAMES, isMisc, attention, focusList, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, neutLabel,
   type Attention, type Banner, type Focus, type NextStep, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import type { TrackerData } from '@/data/tracker';
 import { BottomSheet, cx } from '@/ui/components';
@@ -11,7 +11,7 @@ import { FlagChip, Tile } from './ui';
 const DAY = 864e5;
 const at = (t: number | null) => (t === null || Number.isNaN(t) ? '—' : `${kwDay(new Date(t).toISOString())} ${kwTime(new Date(t).toISOString())}`);
 const iso = (s: string | undefined) => (s ? Date.parse(s) : NaN);
-const hrs = (x: number) => (Math.abs(x) >= 24 ? `${Math.round(Math.abs(x) / 2.4) / 10} d` : `${Math.round(Math.abs(x) * 10) / 10} h`);
+const hrs = (x: number) => `${Math.abs(x) >= 10 ? Math.round(Math.abs(x)) : Math.round(Math.abs(x) * 10) / 10} h`;
 
 export type Nav = { tab: 'isolation' | 'equipment' | 'iats' | 'timing' | 'report' | 'guideline'; iso?: 'blind' | 'neut'; lateFirst?: boolean };
 
@@ -102,7 +102,7 @@ export function TodayTab({ steps, eqs, data, now, onOpen, onNav }: { steps: Map<
             {mi.weighted.small.items > 0 && <PhysBar label="Small jobs (PSVs, CVs, pumps &amp; lube oil, piping)" p={mi.weighted.small} />}
             {mi.weighted.controlling && <Controlling i={mi.weighted.controlling} onClick={() => onOpen({ kind: 'equipment', ref: mi.weighted!.controlling!.tag })} />}
             {mi.weighted.critical.length > 0 && <>
-              <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">Near critical · {CRITICAL_SPARE_D} d float or less</p>
+              <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">Near critical · {CRITICAL_SPARE_D * 24} h float or less</p>
               <div className="mt-1 space-y-1">{mi.weighted.critical.slice(0, 4).map((i) => <SpareRow key={i.key} i={i} onClick={() => onOpen({ kind: 'equipment', ref: i.tag })} />)}</div>
               {mi.weighted.critical.length > 4 && <p className="mt-1 text-[11px] text-slate-500">+ {mi.weighted.critical.length - 4} more in the M &amp; I sheet</p>}
             </>}
@@ -208,7 +208,7 @@ function OpsSheet({ data, eqs, plan, finished, badge, onOpen, onNav, onClose }: 
 }
 
 const pctText = (lo: number, hi: number) => (hi > lo ? `${lo}–${hi}%` : `${lo}%`);
-const days = (x: number) => `${x > 0 ? '+' : ''}${x} d`;
+const days = (x: number) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${daysAsHours(x)}`;
 /** Physical progress against the plan: measured, up to (running work not measured), the plan marker. */
 function PhysBar({ label, p, state }: { label: string; p: MiPart; state?: MiWeighted['state'] }) {
   const tone = (state ?? (p.physPct >= p.planPct + 2 ? 'AHEAD' : p.physHiPct < p.planPct - 2 ? 'BEHIND' : 'ON_PLAN')) === 'BEHIND' ? 'bg-status-red' : 'bg-status-green';
@@ -230,8 +230,8 @@ function Controlling({ i, onClick }: { i: MiItem; onClick: () => void }) {
     <button type="button" onClick={(x) => { x.stopPropagation(); onClick(); }} className={cx('mt-1 block w-full rounded-lg px-2.5 py-2 text-left ring-1', late ? 'bg-red-50 ring-red-200' : 'bg-slate-50 ring-slate-200')}>
       <span className="block text-[11px] font-bold uppercase tracking-wide text-slate-500">Controlling the end <span className="font-semibold normal-case tracking-normal text-amber-700">· unverified</span></span>
       <span className="flex items-baseline justify-between gap-2"><b className="text-[14px]">{i.tag}</b>
-        <span className={cx('text-[12px] font-bold', late ? 'text-status-red' : 'text-slate-700')}>{late ? `delays end ${i.impactD} d` : `${i.spareD} d float`}</span></span>
-      <span className="block text-[12px] text-slate-600">Forecast {kwDay(i.forecast)} {kwTime(i.forecast)} · {i.remainingD} d left · {pctText(i.physPct, i.physHiPct)} / plan {i.planPct}% · {days(i.svD)} vs P6</span>
+        <span className={cx('text-[12px] font-bold', late ? 'text-status-red' : 'text-slate-700')}>{late ? `delays end ${daysAsHours(i.impactD)}` : `${daysAsHours(i.spareD)} float`}</span></span>
+      <span className="block text-[12px] text-slate-600">Forecast {kwDay(i.forecast)} {kwTime(i.forecast)} · {daysAsHours(i.remainingD)} left · {pctText(i.physPct, i.physHiPct)} / plan {i.planPct}% · {days(i.svD)} vs P6</span>
       {i.driving && <span className="block truncate text-[11px] text-slate-500">Driving: {i.driving}</span>}
     </button>
   );
@@ -242,7 +242,7 @@ function SpareRow({ i, onClick }: { i: MiItem; onClick: () => void }) {
     <button type="button" onClick={(x) => { x.stopPropagation(); onClick(); }} className="flex w-full items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5 text-left ring-1 ring-slate-200">
       <span className="min-w-0 flex-1"><b className="text-[13px]">{i.tag}</b> <span className="text-[11px] text-slate-500">{pctText(i.physPct, i.physHiPct)} / plan {i.planPct}% · <span className={i.svD < 0 ? 'text-status-red' : 'text-status-green'}>{days(i.svD)}</span></span>{i.unverified.length > 0 && <span title="unverified" className="font-bold text-amber-600">*</span>}
         <span className="block truncate text-[11px] text-slate-600">Forecast {kwDay(i.forecast)} {kwTime(i.forecast)}{i.driving ? ` · ${i.driving}` : ''}</span></span>
-      <span className={cx('shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold', i.spareD < 0 ? 'bg-red-600 text-white' : i.spareD <= 1 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{i.spareD < 0 ? `🔴 delays ${i.impactD} d` : `${i.spareD} d float`}</span>
+      <span className={cx('shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold', i.spareD < 0 ? 'bg-red-600 text-white' : i.spareD <= 1 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{i.spareD < 0 ? `🔴 delays ${daysAsHours(i.impactD)}` : `${daysAsHours(i.spareD)} float`}</span>
     </button>
   );
 }
@@ -273,7 +273,7 @@ function MiSheet({ data, steps, now, mi, behind, onOpen, onNav, onClose }: { dat
           </table>
         )}
         {mi.weighted && mi.weighted.critical.length > 0 && <>
-          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Near critical · {CRITICAL_SPARE_D} d float or less</p>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Near critical · {CRITICAL_SPARE_D * 24} h float or less</p>
           <div className="space-y-1">{mi.weighted.critical.map((i) => <SpareRow key={i.key} i={i} onClick={() => onOpen({ kind: 'equipment', ref: i.tag })} />)}</div>
         </>}
         {mi.weighted && mi.weighted.support[1] > 0 && <p className="text-xs text-slate-600">Support jobs (not on an item, not in the %): <b>{mi.weighted.support[0]}/{mi.weighted.support[1]}</b> done</p>}
@@ -289,7 +289,7 @@ function MiSheet({ data, steps, now, mi, behind, onOpen, onNav, onClose }: { dat
         </table>
         {behind.length > 0 && <>
           <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Behind plan · most first</p>
-          <div className="space-y-1.5">{(all ? behind : behind.slice(0, 5)).map((e) => <Row key={e.eq.tag} tag={e.eq.tag} text={e.eq.description ?? ''} chip={`−${-e.plan!.variance}${e.plan!.days ? ` · ${e.plan!.days} d` : ''}`} chipCls="bg-red-100 text-red-800" onClick={() => onOpen({ kind: 'equipment', ref: e.eq.tag })} />)}</div>
+          <div className="space-y-1.5">{(all ? behind : behind.slice(0, 5)).map((e) => <Row key={e.eq.tag} tag={e.eq.tag} text={e.eq.description ?? ''} chip={`−${-e.plan!.variance}${e.plan!.days ? ` · ${daysAsHours(e.plan!.days)}` : ''}`} chipCls="bg-red-100 text-red-800" onClick={() => onOpen({ kind: 'equipment', ref: e.eq.tag })} />)}</div>
           {behind.length > 5 && !all && <button type="button" onClick={() => setAll(true)} className="w-full rounded-xl py-2 text-sm text-slate-500 ring-1 ring-slate-200">+ {behind.length - 5} more</button>}
         </>}
         <div className="flex gap-2"><NavBtn label="Blinds" onClick={() => onNav({ tab: 'isolation', iso: 'blind' })} /><NavBtn label="Equipment" onClick={() => onNav({ tab: 'equipment', lateFirst: true })} /><NavBtn label="Timing" onClick={() => onNav({ tab: 'timing' })} /></div>

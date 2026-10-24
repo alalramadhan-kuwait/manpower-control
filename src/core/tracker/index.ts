@@ -342,7 +342,9 @@ export function banner(eqs: EquipView[]): Banner {
 
 export interface Attention { kind: 'step' | 'equipment'; ref: string; label: string; detail: string; flag: Flag | 'STEP_LATE' | 'STEP_PENDING'; rank: number; at: number }
 const RANK: Record<string, number> = { HO_LATE: 1, LATE: 2, STEP_LATE: 2, PENDING: 3, STEP_PENDING: 3, IAT_OPEN: 4 };
-export const hoursText = (msec: number) => (msec >= DAY ? `${Math.round(msec / DAY * 10) / 10} d` : `${Math.max(1, Math.round(msec / H))} h`);
+export const hoursText = (msec: number) => `${Math.max(1, Math.round(msec / H))} h`;
+/** A figure the engine keeps in days (float, delay, remaining), shown in hours: project rule, durations in hours. */
+export const daysAsHours = (days: number) => `${Math.round(Math.abs(days) * 24)} h`;
 /** The "needs me" list: HO LATE › LATE › PENDING › IAT OPEN (tracked items only), steps late or pending too. */
 export function attention(steps: Map<string, StepView>, eqs: EquipView[]): Attention[] {
   const out: Attention[] = [];
@@ -534,7 +536,7 @@ export function spanText(start: string | null | undefined, end: string | null | 
   if (m < 10) return '';
   if (m < 60) return `${m} min`;
   const h = Math.round(m / 60);
-  return h < 48 ? `${h} h` : `${Math.floor(h / 24)} d${h % 24 ? ` ${h % 24} h` : ''}`;
+  return `${h} h`;
 }
 
 export function noteCurrent(e: TrkEquipment, d: TrkData, now: number): boolean {
@@ -647,7 +649,7 @@ export function shiftReport(d: TrkData, now: number, log: { notes?: string | nul
   };
 }
 
-export const bannerText = (b: Banner) => `${b.state === 'ON_PLAN' ? 'ON PLAN' : b.state}${b.state !== 'ON_PLAN' && b.days ? ` ${b.state === 'BEHIND' ? '−' : '+'}${b.days} d` : ''}`;
+export const bannerText = (b: Banner) => `${b.state === 'ON_PLAN' ? 'ON PLAN' : b.state}${b.state !== 'ON_PLAN' && b.days ? ` ${b.state === 'BEHIND' ? '−' : '+'}${daysAsHours(b.days)}` : ''}`;
 const FLAG_TEXT: Record<string, string> = { HO_LATE: 'HO LATE', LATE: 'LATE', PENDING: 'Pending', IAT_OPEN: 'IAT open', STEP_LATE: 'LATE', STEP_PENDING: 'Pending' };
 export const flagText = (f: string) => FLAG_TEXT[f] ?? f;
 
@@ -694,7 +696,7 @@ export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string }
   out.push('', `📊 Handover ${res ? `${res.ho[0]}/${res.ho[1]}` : `${r.totals.hoDone}/${r.totals.ho}`}${res ? ` · Neutralized ${res.neut[0]}/${res.neut[1]}` : ''}${blindsAll ? ` · Blinds ${blindsIn}/${blindsAll}` : ''}${w ? ` · M&I ${w.actualPct}%${w.actualHiPct > w.actualPct ? `–${w.actualHiPct}%` : ''} (plan ${w.planPct}%)` : mi && mi.items ? ` · M&I ${mi.state === 'BEHIND' ? `behind${mi.days ? ` ${mi.days} d` : ''}` : mi.state === 'AHEAD' ? `ahead${mi.days ? ` ${mi.days} d` : ''}` : 'on plan'}` : ''}`);
   // the controlling item: the latest forecast against the M & I end (unverified: P6 links not imported)
   const cp = w?.controlling;
-  if (cp) out.push(`⏱ Controlling: ${short(cp.tag)} · forecast ${kwDay(cp.forecast)} ${kwTime(cp.forecast)} · ${cp.spareD < 0 ? `${-cp.spareD} d past the end (delays shutdown)` : `${cp.spareD} d float`}${w!.delays.length > 1 ? ` · ${w!.delays.length} items past the end` : ''} (unverified)`);
+  if (cp) out.push(`⏱ Controlling: ${short(cp.tag)} · forecast ${kwDay(cp.forecast)} ${kwTime(cp.forecast)} · ${cp.spareD < 0 ? `${daysAsHours(cp.spareD)} past the end (delays shutdown)` : `${daysAsHours(cp.spareD)} float`}${w!.delays.length > 1 ? ` · ${w!.delays.length} items past the end` : ''} (unverified)`);
   if (opts.by) out.push(`— ${opts.by}`);
   return out.join('\n');
 }
