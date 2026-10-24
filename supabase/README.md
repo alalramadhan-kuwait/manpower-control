@@ -254,3 +254,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261024121226_trk_loop_schematic_fixes` | Auto-generated loop schematics: `trk_loop_fix` corrections (remove a generated element with reason, add connection / point, note; "checked" only with a P&ID sheet), read like the tracker, added by Section Head / Coordinator / Engineer, withdrawn never deleted, logged (`trk_log` kind `schematic`) |
 | `20261024124836_trk_s318_route_from_lineup` | S318 schematic: record direction E-216 → E-203 corrected from the P&ID line-up (E-203 → E-216A/B, P-12-2052) and P-203 → E-203 (P-12-2014) added, as logged corrections; loop record unchanged |
 | `20261024125247_trk_s318_e216_to_e229` | S318 schematic: E-216A/B → E-229 (P-12-2029) added from the line-up to complete the route |
+| `20261024125855_trk_s318_e229_bypass` | S318 schematic: E-229 shell-side bypass E-216A/B → H-201 (P-12-2305) added from the line-up as a logged correction |
