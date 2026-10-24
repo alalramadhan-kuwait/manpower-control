@@ -9,8 +9,8 @@ export interface MergedLeave { start: string; end: string; codes: string[]; orac
 const RANK: OracleStatus[] = ['rejected', 'not_submitted', 'submitted', 'approved'];
 
 /** A person's leaves in the current plan, oldest first; records that touch are one leave. */
-export function mergedLeaves(absences: MpAbsence[], personId: string, estimated: Set<string> = new Set()): MergedLeave[] {
-  const mine = absences.filter((a) => a.employeeId === personId && (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false).sort((a, b) => a.start.localeCompare(b.start));
+export function mergedLeaves(absences: MpAbsence[], personId: string, estimated: Set<string> = new Set(), withLapsed = false): MergedLeave[] {
+  const mine = absences.filter((a) => a.employeeId === personId && (a.status === 'approved' || a.status === 'planned') && (a.inCurrentPlan !== false || (withLapsed && a.lapsed))).sort((a, b) => a.start.localeCompare(b.start));
   const out: MergedLeave[] = [];
   for (const a of mine) {
     const last = out[out.length - 1];

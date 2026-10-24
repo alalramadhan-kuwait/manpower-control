@@ -147,6 +147,8 @@ export default function DayOverviewPage() {
           <ShiftBoard result={result} leave={leave} date={date} needFor={needFor} />
           {inputs && <ShutdownToday date={date} people={inputs.people} leave={leave} tick={tick} />}
           <AwayToday result={result} leave={leave} />
+          {(() => { const n = new Set(inputs?.absences.filter((a) => a.lapsed && a.start <= date && date <= a.end).map((a) => a.employeeId)).size;
+            return n > 0 ? <Link to="/requests?view=leave&when=now&st=planned" className="mb-2 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-[12.5px] text-amber-900 ring-1 ring-amber-300"><span className="min-w-0 flex-1"><b>{n} PV not approved</b> · not counted as leave until you approve</span><span className="font-semibold">›</span></Link> : null; })()}
           <OffToday result={result} leave={leave} date={date} />
         </>
       )}
@@ -292,7 +294,7 @@ function AbsentRow({ person, absence, leave }: { person: MpPerson; absence: MpAb
         <div className="mb-1 rounded-md bg-white px-2 py-1 text-xs text-slate-600 ring-1 ring-slate-200">
           {absence.typeLabel ?? 'Leave'} · {fmtDate(start)} – {fmtDate(until)}
           {leave && <> · back to work {fmtDate(leave.returnOn)}</>}
-          {(leave?.oracle ?? absence.oracle) && <> · Oracle: {ORACLE_LABEL[(leave?.oracle ?? absence.oracle)!]}</>}
+          {(leave?.oracle ?? absence.oracle) && <> · {ORACLE_LABEL[(leave?.oracle ?? absence.oracle)!]}</>}
           <Link to={`/employees/${person.id}`} className="ml-2 font-medium text-brand-700">Profile</Link>
         </div>
       )}

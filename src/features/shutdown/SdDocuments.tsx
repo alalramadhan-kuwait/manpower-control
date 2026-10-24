@@ -43,7 +43,7 @@ const periodOf = (p: SdPlan) => { const f = (d: string) => new Date(`${d}T00:00:
 /** A row: the member, the group it is printed under (Controller, an area, Operators) and its number within the team. */
 export interface Row { m: SdMember; team: SdTeam; r: EmployeeDirectoryRow | undefined; /** the crew whose duty days he keeps on the team (the one he follows, else his own) */ crew: Crew | null; /** the shift he is counted in: his own crew, the shutdown aside (a VR Controller on the team: the shift he follows) */ home: Crew | null; /** the crew he is in the day after the shutdown (a VR Controller: his placement then) */ after: Crew | null; vr: boolean; group: string; no: number; /** the person (role history and shift movements), for the roster of each date */ person?: MpPerson }
 export interface Doc { plan: SdPlan; teams: SdTeam[]; rows: Row[]; signatures: Signature[]; memo?: MemoSettings; people?: MpPerson[]; dates: string[]; months: string[]; name: string;
-  /** Leave already approved in Oracle on a date (credited in the overtime: the regular hours of that duty day are not owed). */
+  /** Leave already approved on a date (credited in the overtime: the regular hours of that duty day are not owed). */
   leaveOn?: (employeeId: string, date: string) => boolean }
 
 /** Everything the shutdown documents (and the Excel file) are made of. */

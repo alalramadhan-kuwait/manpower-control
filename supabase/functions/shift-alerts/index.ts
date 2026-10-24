@@ -633,7 +633,8 @@ var toMpAssignment = (a) => ({ id: a.id, kind: a.kind, employeeId: a.employee_id
 
 // src/core/oracle/index.ts
 var kuwaitToday = (now = Date.now()) => new Date(now + 3 * 36e5).toISOString().slice(0, 10);
-var lapsedLeave = (a, today) => !!a.typeCode?.startsWith("annual_leave") && (a.oracle === "rejected" || a.oracle === "not_submitted" && a.start < today);
+var isPlanPv = (typeCode) => typeCode === "annual_leave_planned" || typeCode === "annual_leave_rescheduled";
+var lapsedLeave = (a, today) => isPlanPv(a.typeCode) && (a.oracle === "rejected" || (a.oracle === "not_submitted" || a.oracle === "submitted") && a.start <= today);
 
 // src/data/manpower.ts
 var ROLES = ["controller", "vr_controller", "morning_controller", "panel_operator", "field_operator"];
@@ -666,13 +667,14 @@ function toMpAbsence(l, today = kuwaitToday()) {
     typeShort: l.absence_types?.short_code ?? null,
     sourceRef: l.source_ref,
     inCurrentPlan: l.in_current_plan && !lapsed,
+    lapsed: l.in_current_plan && lapsed,
     oracle: l.oracle_status
   };
 }
 async function fetchManpowerInputs(from, to) {
   const [dir, lv, ca, ra, mv, op, sd, tr] = await Promise.all([
     supabase.from("employee_directory_v").select("*").eq("in_unit12_scope", true).eq("is_active", true),
-    supabase.from("leave_records").select("id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,oracle_status,absence_types(label,short_code)").eq("in_current_plan", true).in("status", ["approved", "planned", "unresolved"]).lte("start_date", to).or(openFrom(from)),
+    supabase.from("leave_records").select("id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,oracle_status:approval_state,absence_types(label,short_code)").eq("in_current_plan", true).in("status", ["approved", "planned", "unresolved"]).lte("start_date", to).or(openFrom(from)),
     supabase.from("controller_assignments").select("*").eq("status", "active").lte("start_date", to).gte("end_date", from),
     supabase.from("employee_role_assignments").select("employee_id,effective_from,effective_to,positions(code),crews(code)").limit(5e3),
     supabase.from("crew_movements").select("employee_id,start_date,end_date,to_crew,kind").eq("status", "active").in("kind", ["temporary", "placement"]).lte("start_date", to).or(`end_date.is.null,end_date.gte.${from}`),

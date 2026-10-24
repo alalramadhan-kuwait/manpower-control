@@ -116,7 +116,7 @@ function SpreadDaysBody({ plan, teams, members, phases, names, crewOf, conflicts
         {conflicts.length > 0 && (
           <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-300">
             <p className="font-semibold">Approved leave inside the shutdown · {conflicts.length}</p>
-            <p>{v2 ? 'A team member takes no leave during the shutdown. Leave approved in Oracle is respected (the person is off those days); move it if you can:' : 'A team member takes no leave during the shutdown, so the days below are planned as if everyone is present. Move this leave first:'}</p>
+            <p>{v2 ? 'A team member takes no leave during the shutdown. Approved leave is respected (the person is off those days); move it if you can:' : 'A team member takes no leave during the shutdown, so the days below are planned as if everyone is present. Move this leave first:'}</p>
             <ul className="mt-1 space-y-0.5">
               {conflicts.map((c) => <li key={c.employeeId} className="flex items-center justify-between gap-2"><span className="truncate">{names.get(c.employeeId) ?? 'Employee'} · {c.days} {c.days === 1 ? 'day' : 'days'}</span><Link to={`/requests?view=leave&q=${encodeURIComponent(c.number)}`} className="shrink-0 font-semibold text-brand-700 underline">Move leave</Link></li>)}
             </ul>

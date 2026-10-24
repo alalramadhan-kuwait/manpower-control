@@ -15,7 +15,7 @@ export async function fetchDirectory(): Promise<EmployeeDirectoryRow[]> {
 /** Counted leave (approved or planned, current plan) around `date`, for the on-leave markers. */
 export async function fetchLeaveSpans(date: string): Promise<LeaveSpan[]> {
   const { data, error } = await supabase.from('leave_records')
-    .select('employee_id,start_date,end_date,status,in_current_plan,oracle_status,absence_type_code,absence_types(label,short_code)')
+    .select('employee_id,start_date,end_date,status,in_current_plan,oracle_status:approval_state,absence_type_code,absence_types(label,short_code)')
     .eq('in_current_plan', true).in('status', ['approved', 'planned'])
     .lte('start_date', addDaysIso(date, 120)).or(openFrom(addDaysIso(date, -120)));
   if (error) throw error;

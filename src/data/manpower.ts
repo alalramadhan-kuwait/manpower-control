@@ -32,7 +32,7 @@ export function toMpAbsence(l: LeaveRow, today = kuwaitToday()): MpAbsence {
   const lapsed = lapsedLeave({ typeCode: l.absence_type_code, oracle: l.oracle_status, start: l.start_date }, today);
   return {
     id: l.id, employeeId: l.employee_id, start: l.start_date, end: l.end_date, status: l.status, typeCode: l.absence_type_code,
-    typeLabel: l.absence_types?.label ?? (l.status === 'unresolved' ? 'Unresolved absence' : null), typeShort: l.absence_types?.short_code ?? null, sourceRef: l.source_ref, inCurrentPlan: l.in_current_plan && !lapsed, oracle: l.oracle_status
+    typeLabel: l.absence_types?.label ?? (l.status === 'unresolved' ? 'Unresolved absence' : null), typeShort: l.absence_types?.short_code ?? null, sourceRef: l.source_ref, inCurrentPlan: l.in_current_plan && !lapsed, lapsed: l.in_current_plan && lapsed, oracle: l.oracle_status
   };
 }
 
@@ -50,7 +50,7 @@ export async function fetchManpowerInputs(from: string, to: string): Promise<Man
   const [dir, lv, ca, ra, mv, op, sd, tr] = await Promise.all([
     supabase.from('employee_directory_v').select('*').eq('in_unit12_scope', true).eq('is_active', true),
     supabase.from('leave_records')
-      .select('id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,oracle_status,absence_types(label,short_code)')
+      .select('id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,oracle_status:approval_state,absence_types(label,short_code)')
       .eq('in_current_plan', true).in('status', ['approved', 'planned', 'unresolved'])
       .lte('start_date', to).or(openFrom(from)),
     supabase.from('controller_assignments').select('*').eq('status', 'active').lte('start_date', to).gte('end_date', from),

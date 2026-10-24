@@ -57,6 +57,8 @@ export interface LeaveRecord {
   open_end?: boolean; estimated_return?: string | null; next_review?: string | null; return_confirmed_at?: string | null;
   /** Where the leave stands in Oracle HR; new dates on future leave reset it to not_submitted. */
   oracle_status: OracleStatus; oracle_ref: string | null; oracle_updated_at: string | null;
+  /** The Section Head's approval as the app counts it (approved, or not_submitted = planned PV not approved yet). */
+  approval_state?: OracleStatus; approved_at?: string | null; approved_by_name?: string | null;
   /** The plan the leave belongs to (kept by every later version). */
   plan_year: number;
   /** How this version came to be. */

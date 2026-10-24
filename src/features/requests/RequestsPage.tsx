@@ -11,11 +11,11 @@ import { LeaveOracle } from './LeaveOracle';
 import { ShiftChanges } from './ShiftChanges';
 
 type View = 'entry' | 'approvals' | 'leave' | 'moves';
-const VIEWS: { key: View; label: string }[] = [{ key: 'entry', label: 'Entry' }, { key: 'approvals', label: 'Approvals' }, { key: 'leave', label: 'Leave & Oracle' }, { key: 'moves', label: 'Shift movements' }];
+const VIEWS: { key: View; label: string }[] = [{ key: 'entry', label: 'Entry' }, { key: 'approvals', label: 'Approvals' }, { key: 'leave', label: 'Leave' }, { key: 'moves', label: 'Shift movements' }];
 
 /**
- * Requests: Entry (the one place to add or change anything for a person), Approvals (the Section Head's inbox), Leave &
- * Oracle (authorised in the plan vs confirmed in Oracle HR) and Shift movements (read-only list).
+ * Requests: Entry (the one place to add or change anything for a person), Approvals (the Section Head's inbox), Leave
+ * (planned, approved by the Section Head, or unplanned) and Shift movements (read-only list).
  */
 export default function RequestsPage({ profile }: { profile: UserProfile }) {
   const [params, setParams] = useSearchParams();
@@ -34,7 +34,7 @@ export default function RequestsPage({ profile }: { profile: UserProfile }) {
       <PageHeader title="Requests" info={<div className="space-y-2 text-sm text-slate-700">
         <p><b>{t('Entry')}:</b> {t('pick the person, then the action: Leave / Absence, PV reschedule, Shift change / cover, Controller assignment or Task release. The crews are checked on the server before anything is recorded or sent.')}</p>
         <p><b>{t('Approvals')}:</b> {t('everything waiting for the Section Head, with the effect on the crews. The Section Head’s own entries are recorded directly and never wait here.')}</p>
-        <p><b>{t('Leave & Oracle')}:</b> {t('leave now and coming up: authorised in the plan, and what Oracle HR says.')}</p>
+        <p><b>{t('Leave')}:</b> {t('leave now and coming up: planned, approved or unplanned. A planned PV counts as leave only once the Section Head approves it.')}</p>
         <p><b>{t('Shift movements')}:</b> {t('every cover, move, day duty and VR placement, read only. Changes are made in Entry.')}</p>
       </div>} />
       <div role="tablist" className="no-scrollbar mb-3 flex gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 text-sm lg:max-w-3xl">
@@ -50,7 +50,7 @@ export default function RequestsPage({ profile }: { profile: UserProfile }) {
           <span><b>{t('{n} waiting for your decision', { n: open })}</b></span><ChevronRight className="h-4 w-4 shrink-0 rtl:rotate-180" />
         </button>
       )}
-      {view === 'entry' ? <EntryPage profile={profile} /> : view === 'leave' ? <LeaveOracle /> : view === 'moves' ? <ShiftChanges /> : <Approvals isHead={isHead} />}
+      {view === 'entry' ? <EntryPage profile={profile} /> : view === 'leave' ? <LeaveOracle isHead={isHead} /> : view === 'moves' ? <ShiftChanges /> : <Approvals isHead={isHead} />}
     </div>
   );
 }

@@ -9,7 +9,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 /** "27 Sep": day and three-letter month, the same on every device. */
 const short = (iso: string | null) => (iso == null || iso >= '9999-01-01' ? 'open' : `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`);
 
-/** The on-leave marker in the Oracle HR colours: green approved, blue submitted, amber not submitted, red (struck) rejected. */
+/** The on-leave marker in the approval colours: green approved, amber planned (not approved yet). */
 const ORACLE_CHIP: Record<OracleStatus, string> = {
   approved: 'bg-green-100 text-green-900 ring-green-400', submitted: 'bg-sky-100 text-sky-900 ring-sky-400',
   not_submitted: 'bg-amber-100 text-amber-900 ring-amber-400', rejected: 'bg-red-100 text-red-800 ring-red-400 line-through',

@@ -107,9 +107,9 @@ export function ProposeSheet({ person, leave, inputs, approvals, today, changes,
         <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm ring-1 ring-slate-200">
           <div className="font-medium text-slate-800">{person.name}</div>
           {replan
-            ? <div className="text-xs text-slate-600">Cancelled: <b>{range(leave.start, leave.end)}</b> · {days} days in Oracle to give again</div>
-            : <div className="text-xs text-slate-600">Now: <b>{range(leave.start, leave.end)}</b>{now ? ` · ${now.days} days in Oracle · back ${weekday(now.backOn)} ${shortDate(now.backOn)}` : ''}</div>}
-          {leave.oracle && !replan && <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">Oracle now <OraclePill status={leave.oracle} /></div>}
+            ? <div className="text-xs text-slate-600">Cancelled: <b>{range(leave.start, leave.end)}</b> · {days} working days to give again</div>
+            : <div className="text-xs text-slate-600">Now: <b>{range(leave.start, leave.end)}</b>{now ? ` · ${now.days} working days · back ${weekday(now.backOn)} ${shortDate(now.backOn)}` : ''}</div>}
+          {leave.oracle && !replan && <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">Now <OraclePill status={leave.oracle} /></div>}
           {changes !== undefined && !replan && <div className="mt-1 text-xs font-medium text-amber-800">Counted on him: {changes === 0 ? 'no change approved this year, this would be the first' : `${changes} change${changes === 1 ? '' : 's'} approved this year, this would be no. ${changes + 1}`}</div>}
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -117,7 +117,7 @@ export function ProposeSheet({ person, leave, inputs, approvals, today, changes,
           <Field label="New last day"><input type="date" className="input" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></Field>
         </div>
         {valid && !unchanged && <>
-          <p className="text-sm font-medium text-slate-800">New plan {range(start, planEnd)} · {oracleDays(start, end)} days in Oracle{replan && oracleDays(start, end) !== days ? ` (owed ${days})` : ''}{exp ? ` · back ${weekday(exp.backOn)} ${shortDate(exp.backOn)}` : ''}</p>
+          <p className="text-sm font-medium text-slate-800">New plan {range(start, planEnd)} · {oracleDays(start, end)} working days{replan && oracleDays(start, end) !== days ? ` (owed ${days})` : ''}{exp ? ` · back ${weekday(exp.backOn)} ${shortDate(exp.backOn)}` : ''}</p>
           {impact && <ImpactBox impact={impact} />}
           <CheckPanel check={check} error={checkErr} />
           {verdict && !verdict.allowed && !hard && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-900 ring-1 ring-red-200">{isHead ? 'Cover the crew first (Shift change / cover), then save these dates.' : 'The crew must be covered before the Section Head can approve these dates. You can send it: say how in the remark.'}</p>}

@@ -120,6 +120,8 @@ export interface MpAbsence {
   typeLabel?: string | null;
   sourceRef?: string | null;
   inCurrentPlan?: boolean;
+  /** A planned PV past its first day without the Section Head's approval: kept for Requests › Leave, never counted. */
+  lapsed?: boolean;
   /** Oracle HR status (information only: planned leave counts for manpower whatever it is). */
   oracle?: OracleStatus;
 }

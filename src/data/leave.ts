@@ -27,6 +27,14 @@ export async function fetchEstimatedLeaves(): Promise<EstimatedLeave[]> {
 }
 
 
+/** The Section Head approves (or takes back the approval of) leave records; a planned PV counts only once approved. */
+export async function approveLeave(records: string[], approve = true): Promise<number> {
+  const { data, error } = await supabase.rpc('leave_approve', { p_records: records, p_approve: approve });
+  if (error) throw plain(error);
+  dataChanged();
+  return data as number;
+}
+
 /** Mark one or many current leave records in Oracle HR (the ref is kept unless a new one is given). Returns how many changed. */
 export async function setOracleStatus(records: string[], status: OracleStatus, ref?: string): Promise<number> {
   const { data, error } = await supabase.rpc('leave_set_oracle', { p_records: records, p_status: status, p_ref: ref?.trim() || null });
@@ -40,7 +48,7 @@ export interface OracleRow { id: string; employee_id: string; start_date: string
 /** Current-plan leave not finished before `from`, with its Oracle HR status. */
 export async function fetchOracleLeaves(from: string): Promise<OracleRow[]> {
   const { data, error } = await supabase.from('leave_records')
-    .select('id,employee_id,start_date,end_date,absence_type_code,oracle_status,oracle_ref,oracle_updated_at,absence_types(label,short_code)')
+    .select('id,employee_id,start_date,end_date,absence_type_code,oracle_status:approval_state,oracle_ref,oracle_updated_at,absence_types(label,short_code)')
     .eq('in_current_plan', true).in('status', ['approved', 'planned']).or(openFrom(from)).order('start_date').limit(5000);
   if (error) throw error;
   return withOpenEnd(data as { end_date: string | null }[]) as unknown as OracleRow[];

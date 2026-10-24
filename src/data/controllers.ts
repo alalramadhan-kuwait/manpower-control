@@ -90,7 +90,7 @@ export async function fetchControllerLeave(from: string, to: string): Promise<{ 
   if (error) throw error;
   const people = (dir as EmployeeDirectoryRow[]).map(toMpPerson);
   const [lv, approvals] = await Promise.all([
-    people.length ? supabase.from('leave_records').select('id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,oracle_status,absence_types(label,short_code)')
+    people.length ? supabase.from('leave_records').select('id,employee_id,start_date,end_date,status,absence_type_code,source_ref,in_current_plan,oracle_status:approval_state,absence_types(label,short_code)')
       .in('employee_id', people.map((p) => p.id)).eq('in_current_plan', true).in('status', ['approved', 'planned']).lte('start_date', to).or(openFrom(from))
       : Promise.resolve({ data: [], error: null }),
     fetchLeaveApprovals()

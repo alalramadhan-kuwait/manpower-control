@@ -219,7 +219,7 @@ function DraftBar({ pv, isHead, onChanged }: { pv: PvPlan; isHead: boolean; onCh
       </div>
       <p className="text-xs">
         {pv.status === 'published' ? <>In the live plan: it counts for manpower, the calendar and Oracle. Changes now go through requests (reschedule).</>
-          : pv.status === 'draft' ? <>Taps are saved to the draft only. Until it is published it does <b>not</b> reduce manpower, create alerts, show in the calendar or in Oracle HR.</>
+          : pv.status === 'draft' ? <>Taps are saved to the draft only. Until it is published it does <b>not</b> reduce manpower, create alerts or show in the calendar.</>
           : <>Locked while it is {pv.status === 'submitted' ? 'with the Section Head' : 'waiting to be published'}. Not in use yet.</>}
       </p>
       {returned && <p className="rounded-lg bg-white/70 px-2 py-1 text-xs"><b>Sent back:</b> {returned.note}</p>}
@@ -239,7 +239,7 @@ function DraftBar({ pv, isHead, onChanged }: { pv: PvPlan; isHead: boolean; onCh
       <BottomSheet open={ask !== null} onClose={() => setAsk(null)} title={ask === 'submit' ? `Submit PV Plan · ${pv.year}` : ask === 'return' ? 'Send back to the draft' : `Publish PV Plan · ${pv.year}`}>
         <div className="space-y-3">
           {ask === 'publish'
-            ? <p className="text-sm text-slate-700">Every leave of the plan goes into the live plan for {pv.year}: it will count for manpower, show in the calendar and in Oracle HR. This is done once; later changes go through requests.</p>
+            ? <p className="text-sm text-slate-700">Every leave of the plan goes into the live plan for {pv.year}: it will count for manpower and show in the calendar; each leave counts once the Section Head approves it. This is done once; later changes go through requests.</p>
             : <>
                 <p className="text-sm text-slate-700">{ask === 'submit' ? 'The draft is locked and sent to the Section Head.' : `It goes back to the draft as v${pv.version + 1}, to be changed and submitted again.`}</p>
                 <textarea className="input min-h-20" value={note} onChange={(e) => setNote(e.target.value)} placeholder={ask === 'submit' ? 'Note (optional)' : 'What to change'} />

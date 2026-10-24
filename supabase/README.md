@@ -226,3 +226,8 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261023135144_user_activity` | `app_activity` (pages opened, by login or engineer link; Section Head reads), `app_visit()`, `user_activity_summary(days)` |
 | `20261023143624_shutdown_progress_h201_pigging_passes` | H-201 pigging (96 h) split into 4 × 24 h passes in the P6 window; pass 1 done, pass 2 running; field pass steps off |
 | `20261023161647_shutdown_progress_dsr_23oct` | Live tracker progress from the 23 Oct status report (text + DSR sheet, the more advanced of each): 27 steps done, 5 started, status lines, PSVs 8/9 dropped, PMRs handed over, drums R-203 1256 / R-205 988 |
+| `20261024025802_leave_section_head_approval` | Leave approved by the Section Head in the app instead of Oracle HR: `leave_records.approved_at / approved_by / approved_by_name`; `approval_state(leave_records)` (computed field the app reads as `oracle_status`); backfill of PVs approved in Oracle or recorded through a request / by hand; trigger `leave_approve_on_insert`; RPC `leave_approve(ids, approve)` (Section Head only) |
+| `20261024030117_engineer_team_leave_approval` | `trk_sd_team` returns the approval state instead of the Oracle status |
+| `20261024030812_leave_approval_pv_only` | Only a plan PV (planned / rescheduled) waits for approval; UL and other types always count |
+| `20261024031054_leave_approval_mirror` | Trigger `leave_approval_mirror` keeps `oracle_status` equal to the approval, for the edge functions not yet redeployed; one-time sync |
+| `20261024031118_leave_approval_mirror_insert` | The mirror treats a PV recorded through a request or by hand as approved on insert |

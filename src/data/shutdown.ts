@@ -399,7 +399,7 @@ export async function fetchIncompleteShutdowns(today: string): Promise<{ plan: S
     const sd = await fetchSdPlan(p.id);
     const ids = [...new Set(sd.members.map((m) => m.employeeId))];
     const { data, error } = ids.length
-      ? await supabase.from('leave_records').select('employee_id,start_date,end_date').in('employee_id', ids).eq('in_current_plan', true).eq('oracle_status', 'approved')
+      ? await supabase.from('leave_records').select('employee_id,start_date,end_date').in('employee_id', ids).eq('in_current_plan', true).eq('approval_state', 'approved')
           .in('status', ['approved', 'planned']).lte('start_date', sd.plan.end).or(openFrom(sd.plan.start))
       : { data: [], error: null };
     if (error) throw error;

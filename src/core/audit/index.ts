@@ -2,7 +2,7 @@
 // The database writes one row for every insert / update / delete on the audited tables (trigger audit_row_change),
 // plus the login changes made by the manage-users Edge Function (entity_table = 'user_accounts').
 // Nothing here changes data; it only reads the before / after snapshots.
-import { ORACLE_LABEL, type OracleStatus } from '../oracle';
+import type { OracleStatus } from '../oracle';
 
 export type AuditCategory = 'crews' | 'leave' | 'requests' | 'controllers' | 'shutdown' | 'modes' | 'qualifications' | 'staff' | 'notes' | 'oracle' | 'logins' | 'other';
 
@@ -72,7 +72,9 @@ const WORDS: Record<string, string> = {
   take_charge: 'Take-Charge', panel_operator: 'Panel qualification', acting_controller: 'Acting Controller', controller_qualified: 'Controller qualification',
   shift_cover: 'Controller cover', morning_rotation: 'Morning rotation', scheduled: 'Scheduled', unscheduled: 'Unscheduled', unpaid: 'Unpaid'
 };
-const ora = (v: unknown) => ORACLE_LABEL[v as OracleStatus] ?? w(v);
+// the Oracle HR statuses recorded before 24 Oct, in their own words (the app now uses the Section Head's approval)
+const ORACLE_HISTORY: Record<OracleStatus, string> = { not_submitted: 'Not submitted', submitted: 'Submitted', approved: 'Approved', rejected: 'Rejected' };
+const ora = (v: unknown) => ORACLE_HISTORY[v as OracleStatus] ?? w(v);
 const w = (v: unknown) => { const t = s(v); return t === null ? 'not recorded' : WORDS[t] ?? t; };
 const hm = (v: unknown) => (typeof v === 'string' ? v.slice(0, 5) : '—');
 

@@ -162,14 +162,14 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
     // the crew whose duty and rest days the member keeps on the team: the one he is told to follow, else his own
     const dutyCrew = (m: SdMember) => m.followCrew ?? homeCrew(m.employeeId, plan.start);
     const hours = new Map(members.map((m) => [m.id, memberHours(plan, m, dutyCrew(m))]));
-    // leave already approved in Oracle needs a decision now; leave not yet approved is postponed and coordinated later
+    // leave already approved needs a decision now; leave not yet approved is postponed and coordinated later
     const approvedOn = (emp: string, d: string) => inputs.absences.some((a) => a.employeeId === emp && a.oracle === 'approved' && (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && a.start <= d && d <= a.end);
     // leave on a day he works the shutdown; a leave day the plan already gives him off is no clash (rules v2: the
     // shutdown has its own days off, so the plan's day decides; before v2: his crew's duty day)
     const clashOn = (m: SdMember, d: string) => (data.v2 ? memberWorks(plan, m, d) : plan.kind === 'total' || isDutyDay(dutyCrew(m), d));
     const leaveDays = (m: SdMember) => dates.filter((d) => d >= m.start && d <= m.end && leaveOn(m.employeeId, d) && clashOn(m, d)).length;
     const approvedLeaveDays = (m: SdMember) => dates.filter((d) => d >= m.start && d <= m.end && approvedOn(m.employeeId, d) && clashOn(m, d)).length;
-    // the team's days count leave already approved in Oracle as away; leave not yet approved is postponed
+    // the team's days count leave already approved as away; leave not yet approved is postponed
     const teamDays = new Map(teams.map((t) => [t.id, dates.map((d) => ({ date: d, slots: teamDay(plan, t, members, d, approvedOn, data.phases) }))]));
     const overlaps = plan.kind === 'total' ? [] : suggestFollow(plan, teams, members, data.phases, dutyCrew, (m) => data.dir.get(m.employeeId)?.position_code === 'vr_controller', (m) => homeCrew(m.employeeId, plan.start));
     // places short on some day (approved leave counts as away; leave not yet approved is postponed)
@@ -328,7 +328,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
       {approvedLeave.length > 0 && (
         <div className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-300">
           <p className="font-semibold">Approved leave inside the shutdown · {approvedLeave.length} {approvedLeave.length === 1 ? 'person' : 'people'}</p>
-          <p>Already approved in Oracle: decide now. Move the leave (Oracle then needs the new dates), or take the person off the team.</p>
+          <p>Already approved: decide now. Move the leave, or take the person off the team.</p>
           <Button className="my-1.5 min-h-9 w-full px-3 text-xs" onClick={() => setMoving(true)}>Propose new dates for all</Button>
           <ul className="mt-1 space-y-0.5">
             {approvedLeave.map((c) => <li key={c.employeeId} className="flex items-center justify-between gap-2"><span className="truncate">{data.dir.get(c.employeeId)?.display_name ?? 'Employee'} · {c.days} {c.days === 1 ? 'day' : 'days'}</span><Link to={`/requests?view=leave&q=${encodeURIComponent(c.number)}`} className="shrink-0 font-semibold text-brand-700 underline">Move leave</Link></li>)}
@@ -338,7 +338,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
       {pendingLeave.length > 0 && (
         <div className="mb-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700 ring-1 ring-slate-200">
           <p className="font-semibold">Leave not yet approved · {pendingLeave.length} {pendingLeave.length === 1 ? 'person' : 'people'} · postponed, coordinated later</p>
-          <p>Not approved in Oracle yet: it is postponed and new dates are agreed later. The team is planned with them present.</p>
+          <p>Not approved yet: it is postponed and new dates are agreed later. The team is planned with them present.</p>
           <ul className="mt-1 space-y-0.5">
             {pendingLeave.map((c) => <li key={c.employeeId} className="truncate">{data.dir.get(c.employeeId)?.display_name ?? 'Employee'} · {c.days} {c.days === 1 ? 'day' : 'days'}</li>)}
           </ul>
@@ -393,7 +393,7 @@ interface View {
   clockGaps: CoverGap[];
   people: Map<string, MpPerson>;
   leaveOn: (employeeId: string, date: string) => boolean;
-  /** Leave already approved in Oracle on a date (the person is off the team that day). */
+  /** Leave already approved on a date (the person is off the team that day). */
   approvedOn: (employeeId: string, date: string) => boolean;
   /** The person's own crew on a date, the shutdown team aside (VRs: their placement crew). */
   homeCrew: (employeeId: string, date: string) => Crew | null;

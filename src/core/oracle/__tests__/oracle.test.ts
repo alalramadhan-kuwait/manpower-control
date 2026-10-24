@@ -28,12 +28,11 @@ describe('Oracle HR tracking', () => {
   });
 });
 
-describe('lapsedLeave: leave that is not going ahead stops counting', () => {
+describe('lapsedLeave: a planned PV counts only once the Section Head approves it', () => {
   const pv = (oracle: 'not_submitted' | 'submitted' | 'approved' | 'rejected', start: string) => ({ typeCode: 'annual_leave_planned', oracle, start });
   it('rejected in Oracle never counts', () => { expect(lapsedLeave(pv('rejected', '2026-10-20'), '2026-10-12')).toBe(true); expect(lapsedLeave(pv('rejected', '2026-10-08'), '2026-10-12')).toBe(true); });
-  it('not submitted counts until its first day, then stops', () => { expect(lapsedLeave(pv('not_submitted', '2026-10-12'), '2026-10-12')).toBe(false); expect(lapsedLeave(pv('not_submitted', '2026-10-08'), '2026-10-12')).toBe(true); });
-  it('submitted or approved keeps counting; other types are not Oracle-tracked', () => {
-    expect(lapsedLeave(pv('submitted', '2026-10-08'), '2026-10-12')).toBe(false);
+  it('planned (not approved) shows in the plan ahead, and stops counting from its first day', () => { expect(lapsedLeave(pv('not_submitted', '2026-10-13'), '2026-10-12')).toBe(false); expect(lapsedLeave(pv('not_submitted', '2026-10-12'), '2026-10-12')).toBe(true); expect(lapsedLeave(pv('not_submitted', '2026-10-08'), '2026-10-12')).toBe(true); });
+  it('approved keeps counting; other types always count', () => {
     expect(lapsedLeave(pv('approved', '2026-10-08'), '2026-10-12')).toBe(false);
     expect(lapsedLeave({ typeCode: 'injury', oracle: 'not_submitted', start: '2026-10-01' }, '2026-10-12')).toBe(false);
   });
