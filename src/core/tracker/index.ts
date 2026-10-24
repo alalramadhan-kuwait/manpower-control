@@ -296,6 +296,37 @@ export function equipViews(d: TrkData, now: number, steps = stepViews(d, now)): 
   });
 }
 
+// ── Stage review ─────────────────────────────────────────────────────────────────────────────────────────────
+/** Items whose stage and finished steps disagree, for a person to review. Nothing is changed automatically, and a
+ *  finished step never stands for a formal handover:
+ *  - `ho_missing`: blinded, or work after handover started, but the item is not handed over (to confirm the normal way);
+ *  - `behind`: handed over, and the finished steps reach a later stage than the item shows;
+ *  - `ahead`: the item shows a later stage than its finished steps (often fine: work done outside the bar chart);
+ *  - `no_stage`: started work whose steps carry no stage, so the stage cannot follow them. */
+export type StageIssue = 'ho_missing' | 'behind' | 'ahead' | 'no_stage';
+export interface StageReviewItem { eq: TrkEquipment; issue: StageIssue; stage: number; steps: number | null; done: number; total: number }
+export function stageReview(d: TrkData, eqs: EquipView[]): StageReviewItem[] {
+  const out: StageReviewItem[] = [];
+  for (const v of eqs) {
+    if (!v.eq.tracked) continue;
+    const key = v.eq.barchartKey ?? v.eq.tag;
+    const xs = d.activities.filter((a) => a.key === key && a.tracked && !a.detail && a.group !== 'Operations');
+    if (!xs.length) continue;
+    const fin = xs.filter((a) => a.actualFinish);
+    const staged = fin.filter((a) => a.stage != null && a.stage >= 2 && a.stage <= 6).map((a) => a.stage!);
+    const steps = staged.length ? Math.max(...staged) : null;
+    const base = { eq: v.eq, stage: v.stage, steps, done: fin.length, total: xs.length };
+    // not handed over, but blinded (a finished stage-1 line) or work after handover started
+    const blinded = fin.some((a) => a.stage === 1), work = xs.some((a) => a.actualStart && (a.stage ?? 0) >= 2);
+    if (v.stage === 0 && (blinded || work)) out.push({ ...base, issue: 'ho_missing' });
+    else if (steps != null && v.stage >= 1 && steps > v.stage) out.push({ ...base, issue: 'behind' });
+    else if (steps != null && v.stage >= 2 && v.stage < 6 && v.stage > steps) out.push({ ...base, issue: 'ahead' });
+    else if (xs.some((a) => a.actualStart) && xs.every((a) => a.stage == null)) out.push({ ...base, issue: 'no_stage' });
+  }
+  const rank: Record<StageIssue, number> = { ho_missing: 0, behind: 1, ahead: 2, no_stage: 3 };
+  return out.sort((a, b) => rank[a.issue] - rank[b.issue] || a.eq.sort - b.eq.sort);
+}
+
 // ── Overall ────────────────────────────────────────────────────────────────────────────────────────────────────
 export type Banner = { state: 'AHEAD' | 'BEHIND' | 'ON_PLAN'; planPct: number; actualPct: number; days: number; items: number };
 const median = (xs: number[]) => { if (!xs.length) return 0; const s = [...xs].sort((a, b) => a - b); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };

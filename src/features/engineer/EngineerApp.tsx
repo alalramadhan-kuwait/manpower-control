@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
-import { CONFLICT_EVENT, addEngStep, addEvent, addQtyEntry, confirmEmpty, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatLabel, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
+import { BACKDATE_LIMIT_H, CONFLICT_EVENT, sendTimeRequest, addEngStep, addEvent, addQtyEntry, confirmEmpty, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatLabel, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
 import { BottomSheet, ErrorBox, Spinner, cx } from '@/ui/components';
 import { fetchSdTeamOn } from '@/data/shutdown';
@@ -385,7 +385,19 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
   const [edit, setEdit] = useState<{ id: string; text: string } | null>(null);
   const [add, setAdd] = useState<{ key: string; text: string; after: string | null } | null>(null);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  async function act(f: () => Promise<unknown>, msg: string, undo?: () => Promise<unknown>) { setBusy(true); setErr(null); try { await f(); done(msg, undo); setEdit(null); setAdd(null); setOrd(null); } catch (x) { setErr(x); } finally { setBusy(false); } }
+  // the time a start / finish happened: now, or an earlier time typed in (Kuwait); over 48 h back goes to the Section Head
+  const [at, setAt] = useState(''); const [why, setWhy] = useState('');
+  async function act(f: () => Promise<unknown>, msg: string, undo?: () => Promise<unknown>) { setBusy(true); setErr(null); try { await f(); done(msg, undo); setEdit(null); setAdd(null); setOrd(null); setAt(''); setWhy(''); } catch (x) { setErr(x); } finally { setBusy(false); } }
+  const atIso = at ? new Date(`${at}:00+03:00`).toISOString() : null;
+  const tooOld = !!atIso && Date.now() - Date.parse(atIso) > BACKDATE_LIMIT_H * H;
+  const future = !!atIso && Date.parse(atIso) > Date.now() + 15 * 60000;
+  const kwInput = (ms0: number) => new Date(ms0 + 3 * H).toISOString().slice(0, 16);
+  // a start / finish entered well after it happened: when and by whom it was entered
+  const entered = (a: TrkActivity, field: 'actual_start' | 'actual_finish', value: string | null | undefined) => {
+    if (!value) return '';
+    const l = [...d.log].reverse().find((x) => x.ref === `${a.key} · ${a.activityId}` && x.field === field);
+    return l && Date.parse(l.at) - Date.parse(value) > H ? ` · entered ${when(l.at)}${l.byName ? ` by ${l.byName}` : ''}` : '';
+  };
   // every step of the item in its order (the hidden field steps too, so a saved order keeps their place)
   const allOf = (k: string) => sortActs(d.activities.filter((a) => a.key === k && a.tracked));
   const ld = (iso: string | null | undefined) => (iso ? when(iso) : '');
@@ -393,10 +405,16 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
   // a done step: how long it took from start to finish, against its plan hours when it has them
   const tookOf = (a: TrkActivity) => { const t = spanText(a.actualStart, a.actualFinish), h = hrs(a); return t ? ` · took ${t}${h ? ` (plan ${h} h)` : ''}` : ''; };
   const step = (a: TrkActivity, to: 'start' | 'finish' | 'undo') => {
-    const at = new Date().toISOString(), back = { actual_start: a.actualStart ?? null, actual_finish: a.actualFinish ?? null };
-    const patch = to === 'start' ? { actual_start: at } : to === 'finish' ? { actual_finish: at, ...(a.actualStart ? {} : { actual_start: at }) } : a.actualFinish ? { actual_finish: null } : { actual_start: null };
-    return act(() => setActivity(a.id, patch), `${a.activity}: ${to === 'undo' ? 'undone' : to === 'start' ? 'started' : 'finished'}.`, () => setActivity(a.id, back));
+    const t = atIso ?? new Date().toISOString(), back = { actual_start: a.actualStart ?? null, actual_finish: a.actualFinish ?? null };
+    const patch = to === 'start' ? { actual_start: t } : to === 'finish' ? { actual_finish: t, ...(a.actualStart ? {} : { actual_start: t }) } : a.actualFinish ? { actual_finish: null } : { actual_start: null };
+    const said = to === 'undo' ? 'undone' : `${to === 'start' ? 'started' : 'finished'}${atIso ? ` ${when(t)}` : ''}`;
+    return act(() => setActivity(a.id, patch), `${a.activity}: ${said}.`, () => setActivity(a.id, back));
   };
+  // correct a recorded time to the one typed in
+  const retime = (a: TrkActivity, field: 'actual_start' | 'actual_finish') => act(() => setActivity(a.id, { [field]: atIso }), `${a.activity}: ${field === 'actual_start' ? 'start' : 'finish'} set to ${when(atIso!)}.`,
+    () => setActivity(a.id, { [field]: field === 'actual_start' ? a.actualStart ?? null : a.actualFinish ?? null }));
+  const request = (a: TrkActivity) => act(() => sendTimeRequest(d.tracker.id, a.id, a.actualStart && !a.actualFinish ? { actualFinish: atIso, reason: why } : !a.actualStart ? { actualStart: atIso, reason: why } : { actualFinish: atIso, reason: why }),
+    `${a.activity}: earlier time sent to the Section Head.`);
   return (
     <div className="fixed inset-0 z-[60] overflow-y-auto bg-canvas pb-28">
       <header className="sticky top-0 z-10 flex items-center gap-2 bg-brand-700 px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white">
@@ -431,10 +449,11 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
               return <div key={a.id} className={cx('border-b border-slate-100 last:border-b-0', on && 'bg-slate-50')}>
                 <div className="flex items-center gap-2 px-2.5 py-1.5">
                   <span className={cx('flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold', a.actualFinish ? 'bg-status-green text-white' : a.actualStart ? 'bg-amber-400 text-amber-950' : 'bg-slate-100 text-slate-600')}>{a.actualFinish ? '✓' : a.actualStart ? '▶' : i + 1}</span>
-                  <button type="button" disabled={!!ids} onClick={() => { setOpen(on ? null : a.id); setEdit(null); }} className="min-w-0 flex-1 text-left">
+                  <button type="button" disabled={!!ids} onClick={() => { setOpen(on ? null : a.id); setEdit(null); setAt(''); setWhy(''); }} className="min-w-0 flex-1 text-left">
                     <span className="block text-[13px] font-semibold leading-snug">{a.activity}</span>
-                    <span className="block text-[11px] text-slate-500">{a.actualFinish ? `Done ${ld(a.actualFinish)}${tookOf(a)}` : a.actualStart ? `Started ${ld(a.actualStart)}${spanText(a.actualStart, new Date().toISOString()) ? ` · running ${spanText(a.actualStart, new Date().toISOString())}` : ''}` : eng ? 'Added step · no plan time' : a.start ? `Plan ${ld(a.start)}${h ? ` · ${h} h` : ''}` : 'No plan time'}{a.updatedBy && (a.actualStart || eng) ? ` · ${a.updatedBy}` : ''}</span>
+                    <span className="block text-[11px] text-slate-500">{a.actualFinish ? `Done ${ld(a.actualFinish)}${entered(a, 'actual_finish', a.actualFinish)}${tookOf(a)}` : a.actualStart ? `Started ${ld(a.actualStart)}${entered(a, 'actual_start', a.actualStart)}${spanText(a.actualStart, new Date().toISOString()) ? ` · running ${spanText(a.actualStart, new Date().toISOString())}` : ''}` : eng ? 'Added step · no plan time' : a.start ? `Plan ${ld(a.start)}${h ? ` · ${h} h` : ''}` : 'No plan time'}{a.updatedBy && (a.actualStart || eng) ? ` · ${a.updatedBy}` : ''}</span>
                     {a.p6Activity && <span className="block text-[11px] italic text-slate-500">P6: {a.p6Activity}</span>}
+                    {d.timeRequests.filter((r) => r.activityRow === a.id && r.status === 'pending').map((r) => <span key={r.id} className="block text-[11px] font-semibold text-amber-800">⏳ {r.actualStart ? `Start ${when(r.actualStart)}` : `Finish ${when(r.actualFinish!)}`} sent to the Section Head</span>)}
                   </button>
                   {ids && <span className="flex shrink-0 gap-1"><button type="button" aria-label="Up" disabled={i === 0} onClick={() => move(a.id, -1)} className="h-9 w-9 rounded-lg bg-slate-100 text-lg font-bold disabled:opacity-30">↑</button>
                     <button type="button" aria-label="Down" disabled={i === shown.length - 1} onClick={() => move(a.id, 1)} className="h-9 w-9 rounded-lg bg-slate-100 text-lg font-bold disabled:opacity-30">↓</button></span>}
@@ -444,13 +463,27 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
                     <textarea autoFocus className="input min-h-16 text-[14px]" value={edit.text} onChange={(x) => setEdit({ ...edit, text: x.target.value })} />
                     <div className="flex gap-2"><button type="button" onClick={() => setEdit(null)} className="min-h-10 flex-1 rounded-xl bg-white font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button>
                       <button type="button" disabled={busy || !edit.text.trim() || edit.text.trim() === a.activity} onClick={() => act(() => setActivity(a.id, { activity: edit.text.trim() }), 'Step renamed.', () => setActivity(a.id, { activity: a.activity }))} className="min-h-10 flex-1 rounded-xl bg-status-green font-bold text-white disabled:opacity-50">Save</button></div>
-                  </> : <div className="grid grid-cols-2 gap-1.5">
+                  </> : <>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold uppercase text-slate-500">Time</span>
+                    <input type="datetime-local" className="input min-h-9 flex-1 py-1 text-[13px]" value={at} max={kwInput(Date.now())} onChange={(x) => setAt(x.target.value)} />
+                    {at ? <button type="button" onClick={() => { setAt(''); setWhy(''); }} className="min-h-9 rounded-lg bg-slate-100 px-2.5 text-[12px] font-bold text-slate-700">Now</button> : <span className="text-[12px] text-slate-500">now</span>}
+                  </div>
+                  {future && <p className="text-[12px] font-semibold text-status-red">The time cannot be in the future.</p>}
+                  {tooOld && <div className="space-y-1.5 rounded-xl bg-amber-50 p-2 ring-1 ring-amber-200">
+                    <p className="text-[12px] text-amber-900">More than {BACKDATE_LIMIT_H} h back: the Section Head approves it.</p>
+                    <input className="input min-h-9 text-[13px]" placeholder="Why so late (e.g. reported by the night shift)" value={why} onChange={(x) => setWhy(x.target.value)} />
+                    <button type="button" disabled={busy || !why.trim()} onClick={() => request(a)} className="min-h-10 w-full rounded-xl bg-brand-700 text-[13px] font-bold text-white disabled:opacity-50">Send {!a.actualStart ? 'start' : 'finish'} time to the Section Head</button>
+                  </div>}
+                  {!tooOld && !future && <div className="grid grid-cols-2 gap-1.5">
                     {!a.actualStart && <button type="button" disabled={busy} onClick={() => step(a, 'start')} className="min-h-10 rounded-xl bg-brand-700 text-[13px] font-bold text-white">▶ Start</button>}
                     {!a.actualFinish && <button type="button" disabled={busy} onClick={() => step(a, 'finish')} className="min-h-10 rounded-xl bg-amber-400 text-[13px] font-bold text-amber-950">✓ Finish</button>}
                     {a.actualStart && <button type="button" disabled={busy} onClick={() => step(a, 'undo')} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-slate-700 ring-1 ring-slate-300">↶ Undo {a.actualFinish ? 'finish' : 'start'}</button>}
+                    {atIso && a.actualStart && <button type="button" disabled={busy} onClick={() => retime(a, 'actual_start')} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-brand-700 ring-1 ring-slate-300">Set start to this time</button>}
+                    {atIso && a.actualFinish && <button type="button" disabled={busy} onClick={() => retime(a, 'actual_finish')} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-brand-700 ring-1 ring-slate-300">Set finish to this time</button>}
                     <button type="button" disabled={busy} onClick={() => setEdit({ id: a.id, text: a.activity })} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-brand-700 ring-1 ring-slate-300">✎ Edit name</button>
                     {eng && <button type="button" disabled={busy} onClick={() => { if (window.confirm(`Remove "${a.activity}"?`)) void act(() => setActivity(a.id, { tracked: false, disabled_reason: 'removed' }), 'Step removed.', () => setActivity(a.id, { tracked: true, disabled_reason: null })); }} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-red-700 ring-1 ring-red-200">🗑 Remove</button>}
-                  </div>}
+                  </div>}</>}
                   {!eng && !edit && <p className="text-[11px] text-slate-500">Bar-chart step: its plan dates stay as in P6.</p>}
                 </div>}
               </div>; })}</List>}

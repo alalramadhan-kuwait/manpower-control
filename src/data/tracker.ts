@@ -30,7 +30,10 @@ interface PointRow { hold_reason?: string | null; hold_at?: string | null; id: s
 interface LogRow { kind: TrkLog['kind']; ref: string; field: string; old_value: string | null; new_value: string | null; by_name: string | null; at: string }
 export interface ShiftLog { id: string; shiftDate: string; shift: 'D' | 'N'; notes: string | null; temps: Record<string, string>; updatedBy: string | null }
 
-export interface TrackerData extends TrkData { tracker: Tracker; shiftLogs: ShiftLog[] }
+/** A start / finish time more than 48 h back, sent to the Section Head (the trigger refuses it from anyone else). */
+export interface TimeRequest { id: string; activityRow: string; actualStart: string | null; actualFinish: string | null; reason: string; byName: string | null; at: string;
+  status: 'pending' | 'approved' | 'rejected' | 'withdrawn'; decidedBy: string | null; decidedAt: string | null; note: string | null }
+export interface TrackerData extends TrkData { tracker: Tracker; shiftLogs: ShiftLog[]; timeRequests: TimeRequest[] }
 
 // the U-12 process lineup (P&ID streams) does not change during a session: fetched once
 let lineupOnce: ReturnType<typeof fetchLineup> | null = null;
@@ -45,6 +48,8 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
   const extraP = Promise.all([lineupOnce,
     // the SOP field steps of each neutralization: optional as well
     supabase.from('trk_point_step').select('id,point_id,seq,phase,text,source,done_at,done_by_name,crane,kind,start_at,start_by_name,link_acts,link_points').eq('tracker_id', id).order('seq').limit(2000),
+    // earlier times sent to the Section Head (last 14 days): optional
+    supabase.from('trk_time_request').select('*').eq('tracker_id', id).gte('at', new Date(Date.now() - 14 * 864e5).toISOString()).order('at', { ascending: false }).limit(200),
     // the shutdown's events (nitrogen, reactors): optional too
     supabase.from('trk_event').select('id,category,text,started_at,ended_at,by_name,ended_by_name,equipment_key').eq('tracker_id', id).order('started_at', { ascending: false }).limit(300)]);
   const [t, s, e, i, a, l, sl, pt] = await Promise.all([
@@ -58,7 +63,7 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     supabase.from('trk_points').select('*').eq('tracker_id', id).eq('removed', false).order('sort'),
   ]);
   // the U-12 process lineup (P&ID streams): optional, the tracker works without it
-  const [[lu, le], ps, ev] = await extraP;
+  const [[lu, le], ps, tr, ev] = await extraP;
   const err = [t, s, e, i, a, l, sl, pt].find((r) => r.error)?.error; if (err) throw err;
   // what this screen has seen: a later save checks the fields it changes still hold these values
   seen('trk_steps', s.data); seen('trk_equipment', e.data); seen('trk_iat', i.data); seen('trk_activities', a.data); seen('trk_points', pt.data);
@@ -75,6 +80,8 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
       .map((r): LuEquip => ({ tag: r.tag, plantTag: r.plant_tag, name: r.name, data: r.data, sheet: r.primary_sheet })),
     lineup: lu.error ? [] : (lu.data as { id: string; frm: string; to_tag: string; fluid: string | null; line: string | null; line_nos: string[]; sheets: string[]; size: string | null; conf: string | null }[])
       .map((r): LuStream => ({ id: r.id, from: r.frm, to: r.to_tag, fluid: r.fluid, line: r.line, lineNos: r.line_nos ?? [], sheets: r.sheets ?? [], size: r.size, conf: r.conf })),
+    timeRequests: tr.error ? [] : (tr.data as { id: string; activity_row: string; actual_start: string | null; actual_finish: string | null; reason: string; by_name: string | null; at: string; status: TimeRequest['status']; decided_by_name: string | null; decided_at: string | null; decision_note: string | null }[])
+      .map((r): TimeRequest => ({ id: r.id, activityRow: r.activity_row, actualStart: r.actual_start, actualFinish: r.actual_finish, reason: r.reason, byName: r.by_name, at: r.at, status: r.status, decidedBy: r.decided_by_name, decidedAt: r.decided_at, note: r.decision_note })),
     tracker: toTracker(t.data as unknown as TrackerRow),
     steps: (s.data as StepRow[]).map((r): TrkStep => ({ id: r.id, stepId: r.step_id, fo: r.fo, gate: r.gate, gateName: r.gate_name, shortName: r.short_name, text: r.step_text, procedure: r.procedure,
       prereq: r.prereq ?? [], estHours: r.est_hours, note: r.note, target: r.target_at, status: r.status, pendingReason: r.pending_reason, remark: r.remark, updatedBy: r.updated_by_name, updatedAt: r.updated_at, startedAt: r.started_at, doneAt: r.done_at })),
@@ -260,3 +267,13 @@ export async function createAccess(trackerId: string, loginId: string, by: strin
   return `${window.location.origin}${import.meta.env.BASE_URL}?sd=${key}`;
 }
 export const setAccessActive = (id: string, active: boolean) => upd('trk_access', id, { active });
+
+// ── Earlier start / finish times ──────────────────────────────────────────────────────────────────────────────
+/** Times more than this far back are approved by the Section Head (the database trigger enforces the same). */
+export const BACKDATE_LIMIT_H = 48;
+export async function sendTimeRequest(trackerId: string, activityRow: string, v: { actualStart?: string | null; actualFinish?: string | null; reason: string }) {
+  const { error } = await supabase.from('trk_time_request').insert({ tracker_id: trackerId, activity_row: activityRow, actual_start: v.actualStart ?? null, actual_finish: v.actualFinish ?? null, reason: v.reason.trim() });
+  if (error) throw error;
+}
+export async function decideTimeRequest(id: string, approve: boolean, note?: string) { const { error } = await supabase.rpc('trk_time_request_decide', { p_id: id, p_approve: approve, p_note: note?.trim() || null }); if (error) throw error; }
+export async function withdrawTimeRequest(id: string) { const { error } = await supabase.rpc('trk_time_request_withdraw', { p_id: id }); if (error) throw error; }
