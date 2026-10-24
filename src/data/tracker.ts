@@ -65,6 +65,8 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
   if (!ps.error) seen('trk_point_step', ps.data); if (!ev.error) seen('trk_event', ev.data);
   const engine = (t.data as unknown as TrackerRow).settings?.progressV2 ? await engineP : undefined;
   const acts = a.data as ActRow[]; const base = Math.max(0, ...acts.map((x) => x.baseline));
+  // an item out of the shutdown scope: its P6 lines stay as they are in the database, but are not counted
+  const outKeys = new Set((e.data as EqRow[]).filter((r) => (r.disabled_reason ?? '').startsWith('out of scope')).map((r) => r.barchart_key ?? r.tag));
   return {
     engine,
     events: ev.error ? [] : (ev.data as { id: string; category: TrkEvent['category']; text: string; started_at: string; ended_at: string | null; by_name: string | null; ended_by_name: string | null; equipment_key: string | null }[])
@@ -85,7 +87,7 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
       finding: r.finding ?? null, recommendation: r.recommendation ?? null, lineClass: r.line_class ?? null, material: r.material ?? null, checks: r.checks ?? {}, painting: r.painting ?? {}, actionBy: r.action_by ?? null, opsAction: !!r.ops_action, hoRequired: !!r.ho_required, opsLabel: (r.ops_label ?? null) as TrkIat['opsLabel'], opsNone: !!r.ops_none, spoolOnly: !!r.spool_only, updatedBy: r.updated_by_name ?? null, updatedAt: r.updated_at ?? null })),
     // a combined bar-chart line split into its jobs (the database keeps it, off) is not shown: its parts are
     activities: acts.filter((x) => x.baseline === base && !['split', 'removed', 'unit'].includes(x.disabled_reason ?? '')).map((r): TrkActivity => ({ id: r.id, activityId: r.activity_id, group: r.grp, key: r.equipment_key, activity: r.activity, durationH: r.duration_h,
-      start: r.planned_start, finish: r.planned_finish, stage: r.stage, tracked: r.tracked,
+      start: r.planned_start, finish: r.planned_finish, stage: r.stage, tracked: r.tracked && !outKeys.has(r.equipment_key), disabledReason: r.disabled_reason, outOfScope: outKeys.has(r.equipment_key),
       actualStart: r.actual_start, actualFinish: r.actual_finish, actualNote: r.actual_note, seq: r.seq ?? null, detail: !!r.detail, p6Activity: r.p6_activity ?? null, updatedBy: r.updated_by_name, updatedAt: r.updated_at })),
     log: (l.data as LogRow[]).map((r): TrkLog => ({ kind: r.kind, ref: r.ref, field: r.field, oldValue: r.old_value, newValue: r.new_value, byName: r.by_name, at: r.at })),
     shiftLogs: (sl.data as { id: string; shift_date: string; shift: 'D' | 'N'; notes: string | null; temps: Record<string, string> | null; updated_by_name: string | null }[])
@@ -130,7 +132,7 @@ const upd = async (table: string, id: string, patch: Record<string, unknown>) =>
   throw new ConflictError('Not saved: this login may not change this record.');
 };
 export const setStep = (id: string, patch: Partial<{ status: StepStatus; pending_reason: string | null; remark: string | null; prereq: string[]; target_at: string | null; started_at: string | null; done_at: string | null; est_hours: number | null }>) => upd('trk_steps', id, patch);
-export const setEquipment = (id: string, patch: Partial<{ stage: number; pending_reason: string | null; remark: string | null; blinds_in_at: string | null; blinds_out_at: string | null; tracked: boolean; disabled_reason: string | null; critical: boolean; planned_ho: string | null; planned_finish: string | null }>) => upd('trk_equipment', id, patch);
+export const setEquipment = (id: string, patch: Partial<{ stage: number; pending_reason: string | null; remark: string | null; blinds_in_at: string | null; blinds_out_at: string | null; tracked: boolean; disabled_reason: string | null; critical: boolean; planned_ho: string | null; planned_finish: string | null; description: string | null; grp: string; system: string | null }>) => upd('trk_equipment', id, patch);
 export const setActivity = (id: string, patch: Partial<{ activity: string; planned_start: string | null; planned_finish: string | null; duration_h: number | null; tracked: boolean; disabled_reason: string | null; stage: number | null; actual_start: string | null; actual_finish: string | null; actual_note: string | null; time_reason: string | null }>) => upd('trk_activities', id, patch);
 /** A procedure activity the bar chart does not list, on an item (Section Head); in the bar chart's current baseline. */
 export async function addActivity(trackerId: string, v: { key: string; activity: string; start: string | null; hours: number | null; stage: number | null }) {
@@ -181,6 +183,14 @@ export async function fetchChangeLog(trackerId: string, days: number): Promise<T
   if (error) throw error;
   return (data as { kind: TrkLog['kind']; ref: string; field: string; old_value: string | null; new_value: string | null; by_name: string | null; at: string }[])
     .map((r) => ({ kind: r.kind, ref: r.ref, field: r.field, oldValue: r.old_value, newValue: r.new_value, byName: r.by_name, at: r.at }));
+}
+/** One item's history (newest first): its own changes and its steps', with the reason given. */
+export async function fetchItemLog(trackerId: string, tag: string, key: string): Promise<TrkLog[]> {
+  const { data, error } = await supabase.from('trk_log').select('kind,ref,field,old_value,new_value,by_name,at,reason').eq('tracker_id', trackerId)
+    .or(`ref.eq.${JSON.stringify(tag)},ref.like.${JSON.stringify(key + ' · %')}`).order('at', { ascending: false }).limit(200);
+  if (error) throw error;
+  return (data as { kind: TrkLog['kind']; ref: string; field: string; old_value: string | null; new_value: string | null; by_name: string | null; at: string; reason: string | null }[])
+    .map((r) => ({ kind: r.kind, ref: r.ref, field: r.field, oldValue: r.old_value, newValue: r.new_value, reason: r.reason, byName: r.by_name, at: r.at }));
 }
 export const setEventText = (id: string, text: string) => upd('trk_event', id, { text });
 export const closeIat = (id: string) => upd('trk_iat', id, { status: 'closed', closed_at: new Date().toISOString(), sheet_status: 'Completed' });

@@ -47,10 +47,12 @@ export interface TrkActivity {
   actualStart?: string | null; actualFinish?: string | null; actualNote?: string | null; updatedBy?: string | null; updatedAt?: string | null;
   /** the place set by hand in the item's list (null = the plan order) · a field-operator detail step, hidden for the Section Head */
   seq?: number | null; detail?: boolean;
+  /** why a step is off ("not required: …"); out of scope = its item is out of the shutdown scope (the step is kept, not counted) */
+  disabledReason?: string | null; outOfScope?: boolean;
   /** the P6 text of a bar-chart line renamed in the field */
   p6Activity?: string | null;
 }
-export interface TrkLog { kind: 'step' | 'equipment' | 'iat' | 'activity' | 'point' | 'event' | 'qty' | 'shift'; ref: string; field: string; oldValue: string | null; newValue: string | null; byName: string | null; at: string }
+export interface TrkLog { kind: 'step' | 'equipment' | 'iat' | 'activity' | 'point' | 'event' | 'qty' | 'shift'; ref: string; field: string; oldValue: string | null; newValue: string | null; reason?: string | null; byName: string | null; at: string }
 import { qtyForecast, qtyProgress, type TrkEngine } from './qty';
 export * from './qty';
 export interface TrkSettings { hoTarget?: string; end?: string; workOrder?: string; whatsapp?: string; opsStart?: string; miStart?: string; miEnd?: string;
@@ -105,6 +107,18 @@ export function shownGroup(equipment: TrkEquipment[]): (e: TrkEquipment) => stri
   const lead = new Map<string, string>();
   for (const e of equipment) if (e.system && (!lead.has(e.system) || e.system.startsWith(e.tag + ' '))) lead.set(e.system, e.group);
   return (e) => (e.system ? lead.get(e.system) ?? e.group : e.group);
+}
+// ── Scope: an item out of the shutdown scope keeps its records and P6 activities, which are no longer counted ─────
+export const OUT_OF_SCOPE = 'out of scope';
+export const isOutOfScope = (e: Pick<TrkEquipment, 'disabledReason'>) => !!e.disabledReason?.startsWith(OUT_OF_SCOPE);
+export const scopeReasonText = (v: string | null | undefined) => (v ?? '').replace(/^out of scope:?\s*/, '').replace(/^not required:?\s*/, '');
+/** What taking items out of scope removes from the applicable scope: planned hours of their P6 lines, of all planned
+ *  hours (field-detail steps and Operations lines left out, as in the progress weighting). */
+export function scopeImpact(d: Pick<TrkData, 'equipment' | 'activities'>, keys?: string[]): { items: number; hours: number; totalH: number; pct: number } {
+  const work = d.activities.filter((a) => !a.detail && a.group !== 'Operations' && (a.tracked || a.outOfScope));
+  const out = keys ?? d.equipment.filter(isOutOfScope).map((e) => e.barchartKey ?? e.tag);
+  const hours = work.filter((a) => out.includes(a.key)).reduce((t, a) => t + (a.durationH ?? 0), 0), totalH = work.reduce((t, a) => t + (a.durationH ?? 0), 0);
+  return { items: out.length, hours: Math.round(hours), totalH: Math.round(totalH), pct: totalH ? Math.round((hours / totalH) * 1000) / 10 : 0 };
 }
 export const isMisc = (group: string) => !(MAIN_GROUPS as readonly string[]).includes(group);
 /** Small jobs in the M & I progress: the miscellaneous groups and the pumps' lube oil work (short jobs that the bar
@@ -1112,7 +1126,7 @@ export function logText(l: TrkLog, acts: TrkActivity[] = []): { item: string; wh
     if (l.field === 'actual_finish') return { item, what: l.newValue ? `✓ finished ${name}` : `↶ finish undone · ${name}` };
     if (l.field === 'renamed') return { item, what: `✎ step renamed ${q(l.oldValue)} → ${q(l.newValue)}` };
     if (l.field === 'step added') return { item, what: `+ step added ${q(l.newValue)}` };
-    if (l.field === 'step off' || l.field === 'step on') return { item, what: `${l.field === 'step off' ? '🗑 step removed' : '+ step back'} ${q(l.newValue)}` };
+    if (l.field === 'step off' || l.field === 'step on') return { item, what: `${l.field === 'step off' ? '⊘ step not required' : '+ step required again'} ${q(l.newValue)}${l.field === 'step off' && l.reason ? ` · ${l.reason.replace(/^not required:?\s*/, '')}` : ''}` };
     if (l.field === 'order') return { item, what: '↕ steps reordered' };
     return { item, what: `${l.field}: ${t(l.oldValue) ?? '—'} → ${t(l.newValue) ?? '—'}` };
   }
@@ -1124,6 +1138,10 @@ export function logText(l: TrkLog, acts: TrkActivity[] = []): { item: string; wh
     if (l.field === 'blinds_in') return { item, what: l.newValue ? `🔒 blinds in ${t(l.newValue)}` : 'blinds in undone' };
     if (l.field === 'blinds_out') return { item, what: l.newValue ? `🔓 blinds out ${t(l.newValue)}` : 'blinds out undone' };
     if (l.field === 'tracked') return { item, what: l.newValue === 'true' ? 'followed again' : 'taken off the tracker' };
+    if (l.field === 'scope') return { item, what: /^out of scope/.test(l.newValue ?? '') ? `⊘ out of scope · ${scopeReasonText(l.newValue)}` : /^out of scope/.test(l.oldValue ?? '') ? '↺ back in scope' : `scope note ${q(l.newValue)}` };
+    if (l.field === 'description') return { item, what: `✎ name ${q(l.oldValue)} → ${q(l.newValue)}` };
+    if (l.field === 'group') return { item, what: `✎ group ${q(l.oldValue)} → ${q(l.newValue)}` };
+    if (l.field === 'system') return { item, what: `✎ system ${q(l.oldValue)} → ${q(l.newValue)}` };
   }
   if (l.kind === 'step') {
     if (l.field === 'status') return { item: l.ref, what: `${STEP_WORDS[l.oldValue ?? ''] ?? l.oldValue ?? '—'} → ${STEP_WORDS[l.newValue ?? ''] ?? l.newValue ?? '—'}` };

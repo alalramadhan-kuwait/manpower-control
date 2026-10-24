@@ -54,6 +54,9 @@ begin
   begin update public.trk_activities set actual_finish = now() - interval '3 hours' where id = a; raise exception 'FAIL: finish before start accepted'; exception when check_violation then ok := ok + 1; end;
   begin update public.trk_activities set actual_finish = now() + interval '2 hours' where id = a; raise exception 'FAIL: future time accepted'; exception when check_violation then ok := ok + 1; end;
   begin update public.trk_activities set actual_start = now() - interval '60 hours', time_reason = null where id = a; raise exception 'FAIL: 60 h back accepted without a reason'; exception when check_violation then ok := ok + 1; end;
+  -- out of scope is the Section Head's (engineer link refused)
+  begin update public.trk_equipment set tracked = false, disabled_reason = 'out of scope: check' where id = (select id from public.trk_equipment where tracker_id = live and tracked limit 1);
+    raise exception 'FAIL: the link may take an item out of scope'; exception when insufficient_privilege then ok := ok + 1; end;
   update public.trk_activities set actual_start = now() - interval '60 hours', time_reason = 'check' where id = a; get diagnostics n = row_count;
   if n <> 1 then raise exception 'FAIL: the link cannot enter 60 h back with a reason'; end if; ok := ok + 1;
   if not exists (select 1 from public.trk_log where field = 'actual_start' and reason = 'check' and ref like '%' || (select activity_id from public.trk_activities where id = a)) then
@@ -100,6 +103,15 @@ begin
     raise exception 'FAIL: a Controller may attach a drawing'; exception when insufficient_privilege then ok := ok + 1; end;
   begin update public.trk_activities set actual_start = now() - interval '80 hours', time_reason = 'x' where id = a; raise exception 'FAIL: a Controller enters 80 h back'; exception when insufficient_privilege then ok := ok + 1; end;
   begin insert into public.user_assignments (auth_user_id, task) values (head, 'manpower'); raise exception 'FAIL: a Controller may give assignments'; exception when insufficient_privilege or check_violation then ok := ok + 1; end;
+
+  -- a Controller cannot take an item out of scope or change its details
+  begin update public.trk_equipment set tracked = false, disabled_reason = 'out of scope: check' where id = (select id from public.trk_equipment where tracker_id = live and tracked limit 1);
+    raise exception 'FAIL: a Controller may take an item out of scope'; exception when insufficient_privilege then ok := ok + 1; end;
+
+  -- the Section Head: out of scope needs a reason
+  perform set_config('request.jwt.claims', json_build_object('sub', head, 'role', 'authenticated')::text, true);
+  begin update public.trk_equipment set tracked = false, disabled_reason = 'out of scope: ' where id = (select id from public.trk_equipment where tracker_id = live and tracked limit 1);
+    raise exception 'FAIL: out of scope accepted without a reason'; exception when check_violation then ok := ok + 1; end;
 
   raise exception 'ALL PASS (% checks)', ok;
 end $$;

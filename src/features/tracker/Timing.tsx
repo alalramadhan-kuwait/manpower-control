@@ -30,13 +30,14 @@ export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, n
   async function run(patch: Parameters<typeof setActivity>[1], msg: string, close?: () => void, undo?: () => Promise<unknown>) { setBusy(true); setErr(null); try { await setActivity(a.id, patch); close?.(); onDone(msg, undo); window.setTimeout(() => setBusy(false), 8000); } catch (e) { setErr(e); setBusy(false); } }
   const late = t.lateStart || t.lateFinish;
   const dot = !a.tracked ? 'grey' : t.state === 'FINISHED' ? 'green' : late ? 'red' : t.state === 'RUNNING' ? 'blue' : 'grey';
-  const sub = !a.tracked ? 'Not required'
+  const why = (a.disabledReason ?? '').replace(/^not required:?\s*/, '');
+  const sub = a.outOfScope ? 'Out of scope with its item · kept, not counted' : !a.tracked ? `Not required${why && why !== 'not required' ? ` · ${why}` : ''}`
     : t.state === 'FINISHED' ? `✓ ${when(a.actualStart)} → ${kwTime(a.actualFinish!)}${t.actualH !== null ? ` · ${t.actualH} h` : ''}${t.overrunH ? ` (${h(t.overrunH)})` : ''}`
     : t.state === 'RUNNING' ? `▶ since ${when(a.actualStart)} · ${t.actualH ?? 0} h of ${t.plannedH ?? '—'} h${t.lateFinish ? ' · finish late' : ''}`
     : a.group === 'Operations' ? `Operations${a.durationH ? ` · ${a.durationH} h` : ''}`
     : `Plan ${when(a.start)} · ${t.plannedH ?? '—'} h${t.lateStart ? ' · start late' : ''}`;
   const free = canEdit && a.tracked && !link && !nlink;
-  const action = !a.tracked ? (isHead ? <RowBtn tone="ghost" disabled={busy} onClick={() => run({ tracked: true, disabled_reason: null }, `${a.key}: ${a.activityId} required again.`)}>↺ Required</RowBtn> : null)
+  const action = a.outOfScope ? null : !a.tracked ? (isHead ? <RowBtn tone="ghost" disabled={busy} onClick={() => run({ tracked: true, disabled_reason: null }, `${a.key}: ${a.activityId} required again.`)}>↺ Required</RowBtn> : null)
     : link ? <span className="shrink-0 text-[11px] font-bold text-brand-600">= Stage {link}</span>
     // done on the Isolation page: names which neutralization, one tap opens it there
     : nlink ? (onNeut ? <button type="button" onClick={onNeut} className="max-w-[45%] shrink-0 truncate rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800 ring-1 ring-amber-200">🧪 {neutLabel ?? 'Neutralization'} ›</button>
@@ -51,7 +52,7 @@ export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, n
       <div className="flex flex-wrap gap-1.5">
         {free && a.actualFinish && <MenuBtn danger disabled={busy} onClick={() => run({ actual_finish: null }, `${a.key}: ${a.activityId} back to running.`, close)}>↶ Undo finish</MenuBtn>}
         {free && a.actualStart && !a.actualFinish && <MenuBtn danger disabled={busy} onClick={() => run({ actual_start: null }, `${a.key}: ${a.activityId} back to not started.`, close)}>↶ Undo start</MenuBtn>}
-        {isHead && free && !a.actualStart && <MenuBtn disabled={busy} onClick={() => run({ tracked: false, disabled_reason: 'not required' }, `${a.key}: ${a.activityId} not required.`, close)}>Not required</MenuBtn>}
+        {isHead && free && !a.actualStart && <MenuBtn disabled={busy || note.trim().length < 3} onClick={() => run({ tracked: false, disabled_reason: `not required: ${note.trim()}` }, `${a.key}: ${a.activityId} not required.`, close, () => setActivity(a.id, { tracked: true, disabled_reason: null }))}>Not required{note.trim().length < 3 ? ' (write why in the note)' : ''}</MenuBtn>}
         <span className="self-center text-[10px] text-slate-500">{a.activityId}{a.updatedBy ? ` · ${a.updatedBy}` : ''}</span>
       </div>
       <div className="grid grid-cols-2 gap-1.5">

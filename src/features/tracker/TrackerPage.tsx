@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle } from 'lucide-react';
-import { isNR, shownGroup, daysAsHours, blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, relatedWork, shiftOf, shiftReport, staleItems, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
+import { isNR, isOutOfScope, scopeImpact, shownGroup, daysAsHours, blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, relatedWork, shiftOf, shiftReport, staleItems, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import { StageReview, StaleAlert } from './StageReview';
 import { CONFLICT_EVENT, setActivity, setEquipment, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
@@ -170,7 +170,8 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
         <TrackerAdmin data={data} eqs={eqs} by={profile.display_name} onDone={done} /></BottomSheet>}
       {openStep && <StepSheet v={openStep} isHead={isHead} canEdit={canEdit} points={points.filter((p) => p.stepId === openStep.step.stepId)} items={eqs.filter((e) => e.eq.hoStep === openStep.step.stepId && e.eq.tracked)}
         onIsolation={() => toIsolation(null)} onClose={() => setSheet(null)} onDone={(m, u) => done(m, false, u)} />}
-      {openEq && <EquipSheet mi={miItems.get(openEq.eq.tag)} related={relatedWork(openEq.eq.tag, openEq.eq.barchartKey ?? openEq.eq.tag, data.activities)} allIats={data.iats} lineup={data.lineup} lineupEq={data.lineupEq} tags={data.equipment.map((e) => e.tag)} twins={openEq.eq.combine ? eqs.filter((x) => x.eq.combine === openEq.eq.combine).map((x) => x.eq.tag) : []} onTwin={(tag) => setSheet({ kind: 'eq', tag })} v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={data.activities.filter((a) => a.key === (openEq.eq.barchartKey ?? openEq.eq.tag))} now={now}
+      {openEq && <EquipSheet system={openEq.eq.system ? eqs.filter((x) => x.eq.system === openEq.eq.system && x.eq.tag !== openEq.eq.tag) : []} groups={[...new Set(data.equipment.map((x) => x.group))]} systems={[...new Set(data.equipment.map((x) => x.system).filter((x): x is string => !!x))]}
+        canManage={isHead || profile.role_code === 'engineer'} canScope={isHead} totalH={scopeImpact(data).totalH} onItem={(tag) => setSheet({ kind: 'eq', tag })} mi={miItems.get(openEq.eq.tag)} related={relatedWork(openEq.eq.tag, openEq.eq.barchartKey ?? openEq.eq.tag, data.activities)} allIats={data.iats} lineup={data.lineup} lineupEq={data.lineupEq} tags={data.equipment.map((e) => e.tag)} twins={openEq.eq.combine ? eqs.filter((x) => x.eq.combine === openEq.eq.combine).map((x) => x.eq.tag) : []} onTwin={(tag) => setSheet({ kind: 'eq', tag })} v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={data.activities.filter((a) => a.key === (openEq.eq.barchartKey ?? openEq.eq.tag))} now={now}
         iso={isolationOf(openEq.eq.tag, points)} points={points} engine={data.engine} settings={data.settings} me={profile.auth_user_id} onIsolation={() => toIsolation(openEq.eq.tag)} onNeut={() => toIsolation(openEq.eq.tag, 'neut')} onClose={() => setSheet(null)} onDone={(m, u) => done(m, true, u)} />}
     </div>
   );
@@ -265,8 +266,11 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
   const [onlyOps, setOnlyOps] = useState(true); const [lateFirst, setLateFirst] = useState(initialLateFirst);
   // items switched off (Admin) are kept but not listed, unless asked for
   const [showOff, setShowOff] = useState(false);
-  const off = eqs.filter((e) => !e.eq.tracked);
-  const shown = eqs.filter((e) => (showOff || e.eq.tracked) && (!onlyOps || e.eq.opsItem || e.stage > 0 || e.eq.group === 'PSVs'));
+  const off = eqs.filter((e) => !e.eq.tracked && !isOutOfScope(e.eq));
+  // out of the shutdown scope: kept, listed apart from completed work, with what it takes out of the planned work
+  const outs = eqs.filter((e) => isOutOfScope(e.eq)); const [showOut, setShowOut] = useState(false);
+  const outImpact = useMemo(() => scopeImpact({ equipment: eqs.map((e) => e.eq), activities }), [eqs, activities]);
+  const shown = eqs.filter((e) => !isOutOfScope(e.eq) && (showOff || e.eq.tracked) && (!onlyOps || e.eq.opsItem || e.stage > 0 || e.eq.group === 'PSVs'));
   const inChip = (e: EquipView) => (g === 'All' ? true : g === 'Misc' ? misc_(grpOf(e)) : grpOf(e) === g);
   // items worked as one (E-12-216A/B) show as one row: the first of them stands for the set
   const twins = new Map<string, EquipView[]>(); for (const e of eqs) if (e.eq.combine) twins.set(e.eq.combine, [...(twins.get(e.eq.combine) ?? []), e]);
@@ -372,6 +376,11 @@ function EquipmentTab({ initialLateFirst = false, eqs, activities, points, now, 
         return <BottomSheet open onClose={() => setDrumKey(null)} title={`${tag} · drums`}>
           <DrumQuick scope={sc} entries={engine.entries.filter((x) => x.scopeId === sc.id)} now={now} canEdit={canEdit} onOpen={() => { setDrumKey(null); onOpen(tag); }} onDone={(m) => { setDrumKey(null); onDone?.(m); }} />
         </BottomSheet>; })()}
+      {outs.length > 0 && <section className="pt-1">
+        <button type="button" onClick={() => setShowOut((x) => !x)} className="flex w-full justify-between rounded-xl bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-600"><span>{showOut ? '▾' : '▸'} Out of scope · {outs.length}</span><span className="normal-case tracking-normal">{outImpact.hours} h of {outImpact.totalH} h planned work not counted ({outImpact.pct}%)</span></button>
+        {showOut && <div className="mt-1 overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">{outs.map((e) => <button key={e.eq.tag} type="button" onClick={() => onOpen(e.eq.tag)} className="block w-full border-t border-slate-100 px-2.5 py-1.5 text-left first:border-t-0">
+          <b className="text-[13px] text-slate-500 line-through">{e.eq.tag}</b><span className="block truncate text-[12px] text-slate-600">⊘ {(e.eq.disabledReason ?? '').replace(/^out of scope:?\s*/, '')}</span></button>)}</div>}
+      </section>}
       {off.length > 0 && <button type="button" onClick={() => setShowOff((x) => !x)} className="w-full py-2 text-xs font-semibold text-slate-500">{showOff ? 'Hide' : 'Show'} switched-off items ({off.length})</button>}
     </div>
   );
