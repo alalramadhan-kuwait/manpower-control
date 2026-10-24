@@ -142,7 +142,7 @@ export function EquipActivities({ trackerId, itemKey, activities, now, canEdit, 
   return (
     <div className="rounded-xl bg-slate-50 p-2 ring-1 ring-slate-200">
       <div className="flex items-center gap-2">
-        <button type="button" onClick={() => setOpen((x) => !x)} className="flex min-w-0 flex-1 items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-600"><span>Work steps · {fin.length}/{ts.length} finished{running.length ? ` · ${running.length} running` : ''}</span><span>{open ? '▾' : '▸'}</span></button>
+        <button type="button" onClick={() => setOpen((x) => !x)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[11px] font-extrabold uppercase tracking-wider text-slate-500"><span className="w-3">{open ? '▾' : '▸'}</span><span className="truncate">Steps · {fin.length}/{ts.length} done{running.length ? ` · ${running.length} running` : ''}</span></button>
         {canEdit && open && ts.length > 1 && !order && <button type="button" onClick={() => setOrderIds(all.map((t) => t.a.id))} className="shrink-0 text-xs font-bold text-brand-500">↕ Reorder</button>}
       </div>
       {!ts.length && !off.length && <p className="mt-1 text-xs text-slate-500">None yet: import the bar chart (Admin){isHead ? ' or add the procedure steps here' : ''}.</p>}

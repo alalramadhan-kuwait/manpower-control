@@ -161,7 +161,7 @@ const Tagged = ({ tag, children }: { tag: string; children: React.ReactNode }) =
   : <span className="min-w-0 flex-1"><b className="block truncate text-[13px] leading-tight">{tag}</b>{children}</span>;
 const Sec = ({ children }: { children: React.ReactNode }) => <p className="mx-1 mb-1.5 mt-3 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">{children}</p>;
 const Seg = <T extends string>({ v, set, opts }: { v: T; set: (x: T) => void; opts: [T, string][] }) => (
-  <div className="mb-2.5 flex gap-1.5">{opts.map(([k, l]) => <button key={k} type="button" onClick={() => set(k)} className={cx('min-h-9 flex-1 rounded-full px-2 text-[12px] font-bold', v === k ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>)}</div>);
+  <div className="mb-2.5 flex gap-1 rounded-xl bg-slate-200/60 p-1">{opts.map(([k, l]) => <button key={k} type="button" aria-pressed={v === k} onClick={() => set(k)} className={cx('min-h-9 flex-1 rounded-lg px-2 text-[13px] font-semibold', v === k ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-600')}>{l}</button>)}</div>);
 const Bar = ({ act, plan, tone }: { act: number; plan: number; tone: string }) => (
   <span className="relative block h-3 flex-1 rounded-full bg-slate-200"><span className={cx('absolute inset-y-0 left-0 rounded-full', tone)} style={{ width: `${Math.min(100, act)}%` }} /><span className="absolute -top-1 h-5 w-[3px] rounded bg-slate-900" style={{ left: `${Math.min(100, plan)}%` }} /></span>);
 const tone = (act: number, plan: number) => (act >= plan ? 'bg-status-green' : act >= plan - 10 ? 'bg-amber-400' : 'bg-status-red');
@@ -694,6 +694,7 @@ function Loop({ d, p, now, done }: { d: TrackerData; p: TrkPoint; now: number; d
   const run = async (f: () => Promise<unknown>, msg: string, undo?: () => Promise<unknown>) => { setBusy(true); setErr(null); try { await f(); done(msg, undo); setNr(null); } catch (x) { setErr(x); } finally { setBusy(false); } };
   // the loop's requirement: Required · Pending decision · N/R (with a reason); N/R only before it starts
   const [nr, setNr] = useState<string | null>(null);
+  const diagram = <LoopDiagramButton trackerId={d.tracker.id} loop={p} data={{ points: d.points ?? [], steps: d.pointSteps ?? [], lineup: d.lineup ?? [] }} />; const [reqOpen, setReqOpen] = useState(false);
   const req = p.requirement ?? 'required', was = { requirement: req, requirement_reason: p.requirementReason ?? null };
   const setReq = (to: 'required' | 'pending' | 'not_required', why?: string) => run(() => setPoint(p.id, { requirement: to, requirement_reason: to === 'not_required' ? why!.trim() : null }),
     `${p.ref}: ${to === 'not_required' ? 'not required (N/R)' : to === 'pending' ? 'decision pending' : 'required'}.`, () => setPoint(p.id, was));
@@ -715,18 +716,20 @@ function Loop({ d, p, now, done }: { d: TrackerData; p: TrkPoint; now: number; d
       {missing.length > 0 && <p className="mt-1 text-xs text-slate-600">Waiting blinds: {missing.join(', ')}</p>}
       {waiting.length > 0 && <p className="mt-1 text-xs text-slate-600">Waiting for: {waiting.join(', ')}</p>}
       {jobs.length > 0 && <p className="mt-1 text-xs text-slate-600">Jobs {jobs.filter((c) => c.doneAt).length}/{jobs.length}{job ? ` · next: ${job.crane ? '🏗 ' : ''}${job.text.split(/,|:/)[0]}` : ''}</p>}
-      <div className="mt-1 flex items-center justify-end"><LoopDiagramButton trackerId={d.tracker.id} loop={p} data={{ points: d.points ?? [], steps: d.pointSteps ?? [], lineup: d.lineup ?? [] }} /></div>
       {p.status === 'soaking' && p.soakAt && <p className="mt-1 text-xs text-slate-600">Soaking since {when(p.soakAt)} ({Math.round((now - Date.parse(p.soakAt)) / H)} h)</p>}
       {req !== 'not_required' && <div className="mt-2 flex gap-1.5">
         {job && <button type="button" disabled={busy} onClick={() => jobTap(job)} className={cx('min-h-9 flex-1 rounded-xl px-2 text-[13px] font-bold', job.startAt ? 'bg-amber-400 text-amber-950' : 'bg-white text-brand-700 ring-1 ring-slate-300')}>{job.startAt ? '✓ Job done' : '▶ Start job'}</button>}
         {nx && !missing.length && !before && !waiting.length && <button type="button" disabled={busy} onClick={() => run(() => setPoint(p.id, { status: nx[0], [nx[2]]: new Date().toISOString() }), `${p.ref}: ${nx[1].replace(/^[▶✓] /, '')}.`, () => setPoint(p.id, { status: p.status, [nx[2]]: null }))} className="min-h-9 flex-1 rounded-xl bg-brand-700 px-2 text-[13px] font-bold text-white">{nx[1]}</button>}
         <button type="button" disabled={busy} onClick={() => run(() => setPoint(p.id, { hold_reason: p.holdReason ? null : 'Waiting (engineer)' }), `${p.ref}: ${p.holdReason ? 'resumed' : 'on hold'}.`, () => setPoint(p.id, { hold_reason: p.holdReason ?? null }))} className="min-h-9 rounded-xl px-3 text-[12px] font-semibold text-slate-700 ring-1 ring-slate-300">{p.holdReason ? 'Resume' : 'Hold'}</button>
+        {diagram}
       </div>}
+      {req === 'not_required' && <div className="mt-1 flex justify-end">{diagram}</div>}
       {p.status === 'open' && manage && (nr !== null
         ? <div className="mt-2 flex gap-1.5"><input autoFocus className="input min-h-9 flex-1 text-[13px]" placeholder="Why not required" value={nr} onChange={(x) => setNr(x.target.value)} />
             <button type="button" disabled={busy || !nr.trim()} onClick={() => setReq('not_required', nr)} className="min-h-9 rounded-lg bg-slate-700 px-3 text-[12px] font-bold text-white disabled:opacity-50">Save N/R</button>
             <button type="button" onClick={() => setNr(null)} className="min-h-9 rounded-lg bg-white px-2.5 text-[12px] font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button></div>
-        : <div className="mt-1.5 flex gap-1.5 text-[12px]">
+        : !reqOpen ? <button type="button" onClick={() => setReqOpen(true)} className="mt-1 text-[12px] font-semibold text-slate-500">⋯ Requirement{req !== 'required' ? `: ${req === 'pending' ? 'decision pending' : 'not required'}` : ''}</button>
+        : <div className="mt-1.5 flex flex-wrap gap-1.5 text-[12px]">
             {req !== 'required' && <button type="button" disabled={busy} onClick={() => setReq('required')} className="min-h-8 rounded-lg bg-white px-2.5 font-bold text-brand-700 ring-1 ring-slate-300">Required</button>}
             {req !== 'pending' && <button type="button" disabled={busy} onClick={() => setReq('pending')} className="min-h-8 rounded-lg bg-white px-2.5 font-bold text-amber-800 ring-1 ring-slate-300">Decision pending</button>}
             {req !== 'not_required' && <button type="button" disabled={busy} onClick={() => setNr('')} className="min-h-8 rounded-lg bg-white px-2.5 font-bold text-slate-700 ring-1 ring-slate-300">Not required…</button>}
@@ -851,10 +854,13 @@ function IatCard({ d, i, done }: { d: TrackerData; i: TrkIat; done: Done }) {
         {i.material && <p><b className="text-slate-500">Material: </b>{i.material}</p>}
         <p><b className="text-slate-500">WO: </b>{i.wo ?? '—'}{streams[0]?.sheets[0] ? <> · <b className="text-slate-500">P&amp;ID </b>{streams[0].sheets[0]}</> : null}</p>
       </div>}
-      {manage && <div className="mt-2 flex flex-wrap items-center gap-1.5"><span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Ops</span>
-        {IAT_LABELS.map(([k, l]) => <button key={k} type="button" disabled={busy} onClick={() => void setLab(lab === k ? null : k)} className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', lab === k ? LABEL_CLS[k].chip + ' ring-2 ring-current' : 'bg-white text-slate-600 ring-1 ring-slate-300')}>{l}</button>)}</div>}
-      <div className="mt-1.5 flex flex-wrap gap-1.5">{IAT_STATUSES.filter((x) => x !== 'Cancelled').map((x) => <button key={x} type="button" disabled={busy || x === st} onClick={async () => { setBusy(true); setErr(null); try { await setIatStatus(i.id, x, iatClosedBy(x)); done(`IAT ${i.iatNo}: ${x}.`, () => restoreIat(i.id, was)); } catch (e) { setErr(e); } finally { setBusy(false); } }}
-        className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', x === st ? IAT_CLS[x] : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{x === 'New IAT' ? 'New' : x === 'Completed' ? 'Done' : x}</button>)}</div>
+      {/* status and the operations label: one control each (the same choices as before, Cancelled included) */}
+      <div className="mt-2 flex items-center gap-1.5">
+        <select aria-label={`Status of IAT ${i.iatNo}`} disabled={busy} value={st} onChange={async (x) => { const to = x.target.value as typeof st; if (to === st) return; setBusy(true); setErr(null); try { await setIatStatus(i.id, to, iatClosedBy(to)); done(`IAT ${i.iatNo}: ${to}.`, () => restoreIat(i.id, was)); } catch (e) { setErr(e); } finally { setBusy(false); } }}
+          className={cx('min-h-9 min-w-0 flex-1 rounded-lg border-0 px-2 text-[12px] font-bold ring-1 ring-slate-200', IAT_CLS[st] ?? 'bg-white text-slate-700')}>{IAT_STATUSES.map((x) => <option key={x} value={x}>{x}</option>)}</select>
+        {manage && <select aria-label={`Operations label of IAT ${i.iatNo}`} disabled={busy} value={lab ?? ''} onChange={(x) => void setLab((x.target.value || null) as IatLabel | null)}
+          className={cx('min-h-9 min-w-0 flex-1 rounded-lg border-0 px-2 text-[12px] font-bold ring-1 ring-slate-200', lab ? LABEL_CLS[lab].chip : 'bg-white text-slate-600')}><option value="">Ops: none</option>{IAT_LABELS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>}
+      </div>
       {err != null && <ErrorBox error={err} />}
     </Card>
   );

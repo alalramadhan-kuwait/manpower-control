@@ -1,13 +1,14 @@
 // The two input sheets of the controllers: a guideline step (Start · Done · Pending) and an equipment item (stage,
 // blinded = handed over, IATs, pending). Big buttons, the time and the name are stamped by the database.
 import { useState } from 'react';
-import { isOutOfScope, logText, scopeReasonText, type TrkLog, daysAsHours, connectionsOf, iatsOf, type LuEquip, type LuStream, type TrkIat, PENDING_REASONS, neutLabel, neutName, partsOf, waitingSteps, isoState, missingBlinds, STAGES, kwDay, kwTime, pointComplete, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint, type TrkEngine, type TrkSettings, type MiItem } from '@/core/tracker';
+import { isOutOfScope, logText, scopeReasonText, type TrkLog, daysAsHours, connectionsOf, iatsOf, type LuEquip, type LuStream, type TrkIat, PENDING_REASONS, neutLabel, neutName, partsOf, waitingSteps, isoState, missingBlinds, STAGES, kwDay, kwTime, pointComplete, sortActs, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint, type TrkEngine, type TrkSettings, type MiItem } from '@/core/tracker';
 import { EquipActivities, StepTimes } from './Timing';
 import { DrumPanel, ItemUpdate } from './Drums';
 import { addIat, closeIat, fetchItemLog, setEquipment, setStep } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, Field, cx } from '@/ui/components';
 import { FlagChip, IsoChip, PlanChip, StageBar, StateChip } from './ui';
 import { IatDetail, OpsTicks } from './Iats';
+import { stepNow } from './actions';
 
 const when = (iso: string | null) => (iso ? `${kwDay(iso)} ${kwTime(iso)}` : '');
 
@@ -116,10 +117,18 @@ export function EquipSheet({ system = [], groups = [], systems = [], canManage =
     <BottomSheet open onClose={onClose} title={e.tag}>
       <div className="space-y-3">
         {twins.length > 1 && <div className="flex gap-1">{twins.map((t) => <button key={t} type="button" onClick={() => t !== e.tag && onTwin?.(t)} className={cx('min-h-9 rounded-full px-3 text-xs font-semibold', t === e.tag ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{t}</button>)}<span className="self-center text-[11px] text-slate-500">worked as one</span></div>}
-        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600"><FlagChip flag={v.flag} />{v.plan && <PlanChip variance={v.plan.variance} days={v.plan.days} />}{e.critical && <span className="font-bold text-status-red">★ Critical</span>}<span>{e.description}</span></div>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600"><FlagChip flag={v.flag} />{v.plan && !mi && <PlanChip variance={v.plan.variance} days={v.plan.days} />}{e.critical && <span className="font-bold text-status-red">★ Critical</span>}<span>{e.description}</span></div>
         {v.reason && <div className="flex items-center gap-2 rounded-lg bg-red-100 px-2.5 py-1.5 text-sm text-red-900"><span className="min-w-0 flex-1">⏸ On hold: {v.reason}</span>
           {canEdit && e.pendingReason && <button type="button" disabled={busy} onClick={() => { const was = e.pendingReason; run(() => setEquipment(e.id, { pending_reason: null }), `${e.tag}: resumed.`, () => setEquipment(e.id, { pending_reason: was })); }} className="shrink-0 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-brand-700 ring-1 ring-red-200">▶ Resume</button>}</div>}
         {mi && <MiLine i={mi} />}
+        {canEdit && !out && (() => { const key = e.barchartKey ?? e.tag; const xs = sortActs(activities.filter((a) => a.tracked && !a.detail && a.key === key && a.group !== 'Operations'));
+          const run1 = xs.find((a) => a.actualStart && !a.actualFinish), nx = xs.find((a) => !a.actualStart);
+          const go = async (a: TrkActivity, fin: boolean) => { setBusy(true); setErr(null); try { const r = await stepNow(a, [], fin, [e]); onDone(r.msg, r.undo); } catch (x) { setErr(x); } finally { setBusy(false); } };
+          // the main action on top, the same as the Engineer sheet: finish what is running, start what is next
+          return (run1 || nx) ? <div className="space-y-1.5">
+            {run1 && <button type="button" disabled={busy} onClick={() => go(run1, true)} className="w-full rounded-xl bg-amber-400 px-3 py-2 text-left text-amber-950 disabled:opacity-50"><span className="block text-[11px] font-bold uppercase tracking-wide opacity-80">✓ Finish</span><span className="line-clamp-2 text-[13px] font-semibold leading-snug">{run1.activity}</span></button>}
+            {nx && <button type="button" disabled={busy} onClick={() => go(nx, false)} className="w-full rounded-xl bg-brand-700 px-3 py-2 text-left text-white disabled:opacity-50"><span className="block text-[11px] font-bold uppercase tracking-wide opacity-80">▶ Start{run1 ? ' next' : ''}</span><span className="line-clamp-2 text-[13px] font-semibold leading-snug">{nx.activity}</span></button>}
+          </div> : null; })()}
         <EquipActivities trackerId={trackerId} itemKey={e.barchartKey ?? e.tag} activities={activities} now={now} canEdit={canEdit} isHead={isHead} neutCovered={!!iso?.neut.length} neutLabel={soda ? `${neutName(soda)} · ${neutLabel(soda)}` : undefined} onNeut={onNeut} onDone={onDone} />
         {engine && (() => { const key = e.barchartKey ?? e.tag; const sc = engine.scopes.find((x) => x.key === key && x.scope === 'removal' && x.unit);
           return <>
