@@ -12,7 +12,7 @@ import { BlindList } from '@/features/tracker/BlindList';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
-import { isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
+import { WITH_EQUIP, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, confirmEmpty, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -26,8 +26,6 @@ import { PlanCard } from '@/features/day/ShutdownToday';
 type Tab = 'dash' | 'equip' | 'ho' | 'scope' | 'hot';
 type Done = (msg: string, undo?: () => Promise<unknown>) => void;
 const TABS: [Tab, LucideIcon, string][] = [['dash', LayoutDashboard, 'Dashboard'], ['equip', Wrench, 'Equipment'], ['ho', Handshake, 'Handover'], ['scope', ClipboardList, 'SD scope'], ['hot', Flame, 'Hot work']];
-/** Small jobs followed with the main equipment (Section Head, 23 Oct): they stay small jobs in the M & I %. */
-const WITH_EQUIP = ['Pumps / LO', 'PSVs'];
 /** The SD scope lists by discipline; PMRs are hot work. */
 const SCOPE: [string, string[]][] = [['Rotating', [ROTATING]], ['Operations', ['OPR list']], ['Instrument', ['CV shells']], ['Inspection', ['Check valves', 'Process piping']]];
 const H = 36e5;
@@ -92,6 +90,19 @@ function Frame({ title, sub, right, children }: { title: string; sub: string; ri
 export type EngRole = 'head' | 'engineer' | 'controller';
 const RoleCtx = createContext<EngRole>('engineer');
 const useCanManage = () => useContext(RoleCtx) !== 'controller';
+/** Opens an item in the page around (the Section Head mode opens its own item sheet); none = the Engineer item sheet. */
+const OpenItemCtx = createContext<((tag: string) => void) | null>(null);
+/** The SD scope and the PMRs, the same lists in the Section Head mode (its item sheet opens on a tap). */
+export function ScopeLists({ d, now, done, role, onItem, pmr = false }: { d: TrackerData; now: number; done: Done; role: EngRole; onItem: (tag: string) => void; pmr?: boolean }) {
+  const pmrs = smallItems(d).filter((e) => e.group === 'PMRs');
+  const stale = new Map(staleItems(d, now).filter((i) => i.small).map((i) => [i.key, i.ageH]));
+  return <RoleCtx.Provider value={role}><OpenItemCtx.Provider value={onItem}>
+    {pmr ? <>
+      <p className="mx-1 mb-2 text-[12px] text-slate-600">{pmrs.filter(finishedOf(d)).length}/{pmrs.length} returned · tap one to open it</p>
+      {pmrs.length ? <SmallGroup d={d} now={now} items={pmrs} stale={stale} done={done} /> : <Card><p className="text-sm text-slate-600">No PMRs on this shutdown.</p></Card>}
+    </> : <Scope d={d} now={now} done={done} go={() => {}} by="" />}
+  </OpenItemCtx.Provider></RoleCtx.Provider>;
+}
 export function EngineerView({ trackerId, name, title, role, onExit }: { trackerId: string; name: string; title: string; role: EngRole; onExit: () => void }) {
   return <RoleCtx.Provider value={role}><Tracker preset={{ login_id: name, tracker_id: trackerId, title }} onExit={onExit} /></RoleCtx.Provider>;
 }
@@ -136,7 +147,7 @@ function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: 
   const props = { d: data, now, done, go, by: me.login_id };
   return (
     <Frame title={`Hi ${me.login_id}`} sub={`${kwDay(now)} · ${sh.shift === 'D' ? 'Day' : 'Night'} shift · ${data.tracker.title}`}
-      right={<>{onExit && <button type="button" onClick={onExit} className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-brand-700">Section Head view</button>}
+      right={<>{onExit && <button type="button" onClick={onExit} className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-brand-700">Section Head mode</button>}
         <button type="button" aria-label="Refresh" onClick={() => void load(me.tracker_id)} className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-semibold">↻</button></>}>
       <main className="mx-auto max-w-xl px-3 pt-3">
         {err != null && <div className="mb-2"><ErrorBox error={err} /></div>}
@@ -312,7 +323,7 @@ function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string)
   // items of one machine (a compressor and its accessories) sit under the machine's heading, in one expandable block
   const grpOf = useMemo(() => shownGroup(d.equipment), [d.equipment]);
   const [openSys, setOpenSys] = useState<Set<string>>(new Set());
-  const main = d.equipment.filter((e) => e.tracked && !e.list && (!isSmallJob(e.group) || WITH_EQUIP.includes(e.group) || !!e.system) && lines(d, [keyOf(e)]).length && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e));
+  const main = d.equipment.filter((e) => e.tracked && inEquipmentTab(e) && lines(d, [keyOf(e)]).length && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e));
   const all = [...new Set(main.map(grpOf))];
   const todo = main.filter((e) => stale.has(keyOf(e)));
   const shown = f === 'todo' ? todo : f === 'all' ? main : main.filter((e) => grpOf(e) === f);
@@ -658,7 +669,7 @@ function Handover({ d, now, done }: P) {
   const blocked = waiting.filter((x) => x.iso.state !== 'ready'), ready = waiting.filter((x) => x.iso.state === 'ready');
   const back = blinds.filter((b) => b.status === 'in');
   const [v, setV] = useState<'block' | 'neut' | 'blind' | 'list' | 'back'>(() => (blocked.length || openB.length || openL.length ? 'block' : 'back'));
-  const [showDone, setShowDone] = useState(false);
+  const [showDone, setShowDone] = useState(false); const [item, setItem] = useState<TrkEquipment | null>(null);
   const rank = (p: TrkPoint) => (p.status !== 'open' ? 0 : missingBlinds(p, pts).length ? 2 : 1);
   return (<>
     <div className="-mx-3 mb-2.5 flex gap-1.5 overflow-x-auto px-3 [scrollbar-width:none]">{([['block', `Blocking ${blocked.length}`], ['neut', `Neutralization ${openL.length}`], ['blind', `Blinds ${openB.length}`], ['list', 'Blind list'], ['back', `Return ${back.length}`]] as const).map(([k, l]) =>
@@ -689,7 +700,8 @@ function Handover({ d, now, done }: P) {
     {v === 'blind' && (['segregation', 'hp_critical'] as const).map((g) => { const xs = blinds.filter((b) => (g === 'hp_critical') === (b.grp === 'hp_critical')); if (!xs.length) return null;
       return <div key={g}><Sec>{g === 'hp_critical' ? 'HP critical loop' : 'Segregation'} · {xs.filter(pointComplete).length}/{xs.length} in</Sec>
         <List>{[...xs].sort((a, b) => Number(pointComplete(a)) - Number(pointComplete(b))).map((b) => <BlindRow key={b.id} b={b} done={done} />)}</List></div>; })}
-    {v === 'list' && <BlindList d={d} />}
+    {v === 'list' && <BlindList d={d} onItem={(tag) => setItem(d.equipment.find((e) => e.tag === tag) ?? (d.loopItems ?? []).find((e) => e.tag === tag) ?? null)} />}
+    {item && <ItemSheet d={d} e={item} done={done} onClose={() => setItem(null)} />}
     {v === 'back' && <>
       <p className="mx-1 mb-2 text-[12px] text-slate-500">End of the shutdown: take the blinds out as each item is boxed up. {blinds.filter((b) => b.status === 'out').length}/{blinds.length} out.</p>
       {back.length > 0 && <List>{back.map((b) => <BlindRow key={b.id} b={b} done={done} out />)}</List>}
@@ -817,7 +829,7 @@ function HotWork({ d, now, done }: P) {
  *  item with many jobs (the OPR list) is a checklist of its jobs. */
 function SmallGroup({ d, now, items, stale, done, onBack, back = 'Back' }: { d: TrackerData; now: number; items: TrkEquipment[]; stale: Map<string, number>; done: Done; onBack?: () => void; back?: string }) {
   const [sel, setSel] = useState<Set<string>>(new Set());
-  const [open, setOpen] = useState<TrkEquipment | null>(null);
+  const [open, setOpen] = useState<TrkEquipment | null>(null); const openItem = useContext(OpenItemCtx);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const nextOf = (e: TrkEquipment) => { const ls = lines(d, [keyOf(e)]); return ls.find((a) => a.actualStart && !a.actualFinish) ?? ls.find((a) => !a.actualStart) ?? null; };
   const tick = (id: string) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -845,7 +857,7 @@ function SmallGroup({ d, now, items, stale, done, onBack, back = 'Back' }: { d: 
     <List>{items.map((e) => { const n = nextOf(e), ls = lines(d, [keyOf(e)]);
       return <div key={e.id} className={ROW}>
         {ls.length ? <input type="checkbox" className="h-5 w-5 shrink-0" disabled={!n} checked={sel.has(e.id)} onChange={() => tick(e.id)} /> : null}
-        <button type="button" onClick={() => setOpen(e)} className="flex min-w-0 flex-1 items-center gap-2 text-left"><b className={TAG}>{short(e.tag)}</b><span className="min-w-0 flex-1">
+        <button type="button" onClick={() => (openItem ? openItem(e.tag) : setOpen(e))} className="flex min-w-0 flex-1 items-center gap-2 text-left"><b className={TAG}>{short(e.tag)}</b><span className="min-w-0 flex-1">
           <span className="block truncate text-[12px] text-slate-700">{e.description && !ls.length ? `${e.description} · ` : ''}{e.remark?.trim() ? `${e.remark.trim()} · ` : ''}{!ls.length ? STAGE_SHORT[e.stage] : n ? `${n.actualStart ? '▶ ' : 'Next: '}${n.activity}` : '✓ all done'}</span>
           {(() => { const t = lastUpdate(d, [keyOf(e)]); return <span className={cx('block text-[11px]', stale.has(keyOf(e)) ? 'font-bold text-amber-700' : 'text-slate-500')}>{t ? ago(t, now) : 'no update yet'}</span>; })()}</span></button>
         {stale.has(keyOf(e)) ? age(stale.get(keyOf(e))!, 24) : <span className="rounded-md bg-slate-100 px-1.5 text-[11px] font-bold text-slate-600">{ls.length ? `${ls.filter((a) => a.actualFinish).length}/${ls.length}` : STAGE_SHORT[e.stage]}</span>}

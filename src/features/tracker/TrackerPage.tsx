@@ -4,15 +4,15 @@
 import { ReportImport } from './ReportImport';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { Printer, Share2, Copy, MessageCircle, Home, Lock, Wrench, Compass, ClipboardList, HardHat, Settings, type LucideIcon } from 'lucide-react';
-import { isNR, isOutOfScope, scopeImpact, shownGroup, daysAsHours, blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, relatedWork, shiftOf, shiftReport, staleItems, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
+import { Printer, Share2, Copy, MessageCircle, LayoutDashboard, Handshake, Wrench, Flame, ClipboardList, HardHat, Settings, type LucideIcon } from 'lucide-react';
+import { inEquipmentTab, isNR, isOutOfScope, scopeImpact, shownGroup, daysAsHours, blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, relatedWork, shiftOf, shiftReport, staleItems, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import { StageReview, StaleAlert } from './StageReview';
 import { CONFLICT_EVENT, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Spinner, Toast, cx } from '@/ui/components';
 import { AskUpdates } from './Ask';
 import { DrumQuick } from './Drums';
-import { EngineerView, ShutdownHero } from '@/features/engineer/EngineerApp';
+import { EngineerView, ScopeLists, ShutdownHero } from '@/features/engineer/EngineerApp';
 import { EventsCard } from './Events';
 import { EquipSheet, StepSheet } from './TrackerSheets';
 import { TrackerAdmin, clockKey } from './TrackerAdmin';
@@ -24,12 +24,13 @@ import { TodayTab, type Nav } from './TrackerToday';
 import { stepNow } from './actions';
 import { ISO_DOT, StageBar, StateChip } from './ui';
 
-type Tab = 'today' | 'isolation' | 'guideline' | 'equipment' | 'iats' | 'timing' | 'map' | 'report' | 'admin';
+type Tab = 'today' | 'isolation' | 'guideline' | 'equipment' | 'iats' | 'timing' | 'map' | 'scope' | 'pmr' | 'report' | 'admin';
 // the bar: Timing is a view of Equipment, Map a view of Sequence; Report and Admin open as sheets
-type Main = 'today' | 'isolation' | 'equipment' | 'guideline' | 'iats';
-const TABS: [Main, string, LucideIcon][] = [['today', 'Today', Home], ['isolation', 'Isolation', Lock], ['equipment', 'Equipment', Wrench], ['guideline', 'Sequence', Compass], ['iats', 'IATs', ClipboardList]];
-const MAIN: Record<Tab, Main> = { today: 'today', isolation: 'isolation', equipment: 'equipment', timing: 'equipment', guideline: 'guideline', map: 'guideline', iats: 'iats', report: 'today', admin: 'today' };
-const VIEWS: Partial<Record<Main, [Tab, string][]>> = { equipment: [['equipment', 'Items'], ['timing', 'Timing']], guideline: [['guideline', 'Gates'], ['map', 'Map']] };
+type Main = 'today' | 'equipment' | 'isolation' | 'scope' | 'iats';
+// the same tabs as the Engineer mode (25 Oct): Sequence and Map are views of Handover, Timing of Equipment, PMRs of Hot work
+const TABS: [Main, string, LucideIcon][] = [['today', 'Dashboard', LayoutDashboard], ['equipment', 'Equipment', Wrench], ['isolation', 'Handover', Handshake], ['scope', 'SD scope', ClipboardList], ['iats', 'Hot work', Flame]];
+const MAIN: Record<Tab, Main> = { today: 'today', isolation: 'isolation', equipment: 'equipment', timing: 'equipment', guideline: 'isolation', map: 'isolation', scope: 'scope', iats: 'iats', pmr: 'iats', report: 'today', admin: 'today' };
+const VIEWS: Partial<Record<Main, [Tab, string][]>> = { equipment: [['equipment', 'Items'], ['timing', 'Timing']], isolation: [['isolation', 'Isolation'], ['guideline', 'Sequence'], ['map', 'Map']], iats: [['iats', 'IATs'], ['pmr', 'PMRs']] };
 const today = () => new Date(Date.now() + 3 * 36e5).toISOString().slice(0, 10);
 
 /** The clock the tracker runs on: now, or (TEST, this device) the time set in Admin to try a scenario. */
@@ -132,10 +133,10 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       <div className="mb-2 flex items-center justify-between gap-2 print:hidden">
         <div className="min-w-0">
           <h1 className="truncate text-xl font-semibold text-brand-700">{tracker.title}</h1>
-          <p className="text-xs text-slate-500">{tracker.eventTitle ?? ''}{tracker.settings.workOrder ? ` · WO ${tracker.settings.workOrder}` : ''}</p>
+          <p className="text-xs text-slate-500">{isHead ? 'Section Head mode · ' : ''}{tracker.eventTitle ?? ''}{tracker.settings.workOrder ? ` · WO ${tracker.settings.workOrder}` : ''}</p>
         </div>
         <div className="flex shrink-0 gap-1.5">
-          <button type="button" onClick={() => toEng(true)} title="Engineer view" aria-label="Engineer view" className="flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl bg-white px-2.5 text-sm font-semibold text-brand-700 ring-1 ring-slate-300 active:bg-slate-50"><HardHat className="h-5 w-5" /><span className="hidden sm:inline">Engineer</span></button>
+          <button type="button" onClick={() => toEng(true)} title="Engineer view" aria-label="Engineer view" className="flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl bg-white px-2.5 text-sm font-semibold text-brand-700 ring-1 ring-slate-300 active:bg-slate-50"><HardHat className="h-5 w-5" /><span className="hidden sm:inline">Engineer mode</span></button>
           <button type="button" onClick={() => setTab('report')} className="flex min-h-11 items-center gap-1.5 rounded-xl bg-whatsapp px-3 text-sm font-bold text-white shadow-sm active:opacity-90"><MessageCircle className="h-4 w-4" />Report</button>
           {isHead && <button type="button" aria-label="Admin" title="Admin" onClick={() => setTab('admin')} className="flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-white text-brand-700 ring-1 ring-slate-300 active:bg-slate-50"><Settings className="h-5 w-5" /></button>}
         </div>
@@ -148,20 +149,21 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
             {badge > 0 && <span className={cx('absolute right-1 top-0.5 min-w-[18px] rounded-full px-1 text-[10px] font-bold leading-[18px] text-white', k === 'equipment' ? 'bg-status-red' : k === 'isolation' ? 'bg-brand-500' : 'bg-status-amber')}>{badge}</span>}
           </button>; })}
       </nav>
-      {VIEWS[MAIN[tab]] && <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-slate-200/60 p-1 print:hidden">
+      {VIEWS[MAIN[tab]] && <div className={cx('mb-3 grid gap-1 rounded-xl bg-slate-200/60 p-1 print:hidden', VIEWS[MAIN[tab]]!.length > 2 ? 'grid-cols-3' : 'grid-cols-2')}>
         {VIEWS[MAIN[tab]]!.map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={cx('min-h-10 rounded-lg text-sm font-semibold', tab === k ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-600')}>{l}</button>)}
       </div>}
       {refreshing && <div aria-hidden className="fixed inset-x-0 top-0 z-[80] h-1 overflow-hidden bg-brand-100"><div className="h-full w-1/3 animate-[trkbar_1s_ease-in-out_infinite] bg-brand-500" /></div>}
       {flash && <Toast msg={flash.msg} onUndo={flash.undo ? undoLast : undefined} />}
       {tab === 'today' && <StaleAlert data={data} now={now} onAsk={() => setTab('report')} />}
-      {tab === 'today' && <ShutdownHero d={data} now={now} onGroup={() => setTab('equipment')} onSmall={() => setTab('equipment')} />}
+      {tab === 'today' && <ShutdownHero d={data} now={now} onGroup={() => setTab('equipment')} onSmall={() => setTab('scope')} />}
       {tab === 'today' && eqs && <StageReview data={data} eqs={eqs} canEdit={canEdit} onOpen={(tag) => open({ kind: 'equipment', ref: tag })} onDone={() => load(true)} />}
       {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} now={now} onOpen={open} onNav={nav} />}
       {tab === 'isolation' && <IsolationTab key={`iso-${isoKind}`} items={[...data.equipment, ...(data.loopItems ?? [])]} rtj={data.rtj} trackerId={tracker.id} initialKind={isoKind} activities={data.activities} points={points} pointSteps={data.pointSteps} lineup={data.lineup} iats={data.iats} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} canAttach={isAdminStaff(profile.role_code)} focus={focus} onFocus={setFocus} onItem={(tag) => setSheet({ kind: 'eq', tag })} onStep={(id) => setSheet({ kind: 'step', id })} onDone={(m, u) => done(m, false, u)} />}
       {tab === 'guideline' && <SequenceTab steps={steps} auto={auto} onOpen={(id) => setSheet({ kind: 'step', id })} />}
-      {tab === 'equipment' && <EquipmentTab key={`eq-${lateFirst}`} initialLateFirst={lateFirst} eqs={eqs} activities={data.activities} points={points} now={now} spare={spare} stale={stale} canEdit={canEdit} engine={data.engine} events={data.events} trackerId={tracker.id} onDone={(m, u) => done(m, true, u)} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
+      {tab === 'equipment' && <EquipmentTab key={`eq-${lateFirst}`} initialLateFirst={lateFirst} eqs={eqs.filter((v) => inEquipmentTab(v.eq))} activities={data.activities} points={points} now={now} spare={spare} stale={stale} canEdit={canEdit} engine={data.engine} events={data.events} trackerId={tracker.id} onDone={(m, u) => done(m, true, u)} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={(m, u) => done(m, false, u)} />}
       {tab === 'iats' && <IatsTab iats={data.iats} tags={data.equipment.map((e) => e.tag)} lineup={data.lineup} lineupEq={data.lineupEq} points={points} canEdit={canEdit} canLabel={isHead || profile.role_code === 'engineer'} onDone={(m, u) => done(m, true, u)} onItem={(tag) => setSheet({ kind: 'eq', tag })} />}
+      {(tab === 'scope' || tab === 'pmr') && <ScopeLists d={data} now={now} pmr={tab === 'pmr'} role={isHead ? 'head' : profile.role_code === 'controller' ? 'controller' : 'engineer'} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {sheetTab === 'report' && <BottomSheet open onClose={closeSheetTab} title="💬 Shift report"><ReportTab data={data} now={now} canEdit={canEdit} isHead={isHead} onDone={(m) => done(m, false)} by={profile.display_name} onSaved={() => load(true)} /></BottomSheet>}
       {sheetTab === 'admin' && isHead && <BottomSheet open onClose={closeSheetTab} title="⚙️ Admin · Section Head">

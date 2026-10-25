@@ -139,6 +139,10 @@ export const isMisc = (group: string) => !(MAIN_GROUPS as readonly string[]).inc
 /** Small jobs in the M & I progress: the miscellaneous groups and the pumps' lube oil work (short jobs that the bar
  *  chart plans as long windows, Section Head decision 23 Oct), counted apart from the main equipment. */
 export const isSmallJob = (group: string) => isMisc(group) || group === 'Pumps / LO';
+/** Small jobs followed with the main equipment (Section Head, 23 Oct): they stay small jobs in the M & I %. */
+export const WITH_EQUIP = ['Pumps / LO', 'PSVs'];
+/** Where an item is listed: the Equipment tab, or the SD scope / Hot work lists (rotating scope, small jobs, PMRs). */
+export const inEquipmentTab = (e: Pick<TrkEquipment, 'list' | 'group' | 'system'>) => !e.list && (!isSmallJob(e.group) || WITH_EQUIP.includes(e.group) || !!e.system);
 export const STAGES = ['Not handed over', 'Handed over', 'Opened / cleaning', 'Inspection', 'Repair', 'Box-up', 'Deblinded / returned'] as const;
 export const STAGE_SHORT = ['Not HO', 'HO', 'Cleaning', 'Inspection', 'Repair', 'Box-up', 'Returned'] as const;
 export const PENDING_REASONS = ['Stuck / seized bolts', 'Waiting material', 'Waiting manpower', 'Waiting scaffolding', 'Waiting permit / gas test', 'Waiting inspection (IAT)',
@@ -1225,4 +1229,18 @@ export function blindList(d: Pick<TrkData, 'equipment' | 'loopItems' | 'activiti
   const tags = new Set(eqs.map((e) => e.tag));
   const byTag = (a: { tag: string }, b: { tag: string }) => a.tag.localeCompare(b.tag, 'en', { numeric: true });
   return { items: items.sort((a, b) => Number(a.positive) - Number(b.positive) || byTag(a.e, b.e)), opened: opened.sort(byTag), unlinked: lines.filter((p) => !p.items.some((t) => tags.has(t))) };
+}
+/** Every blind by type (segregation, HP critical, equipment, valves & PSVs) with what it is linked to: its items and
+ *  the neutralization loops that wait for it. */
+export type BlindType = 'segregation' | 'hp_critical' | 'equipment' | 'valve';
+export const BLIND_TYPE: [BlindType, string][] = [['segregation', 'Segregation'], ['hp_critical', 'HP critical'], ['equipment', 'Equipment'], ['valve', 'Valves & PSVs']];
+export interface BlindRow { id: string; type: BlindType; ref: string; name: string; state: 'in' | 'out' | 'not'; at: string | null; items: string[]; loops: string[] }
+export function blindsByType(d: Pick<TrkData, 'equipment' | 'loopItems' | 'activities' | 'points'>): BlindRow[] {
+  const eqs = [...d.equipment, ...(d.loopItems ?? [])].filter((e) => e.tracked && !isOutOfScope(e));
+  const pts = d.points ?? [];
+  const lines = pts.filter((p) => p.kind === 'blind').map((p): BlindRow => ({ id: p.id, type: p.grp === 'hp_critical' ? 'hp_critical' : 'segregation', ref: p.ref, name: p.name,
+    state: p.status === 'in' ? 'in' : p.status === 'out' ? 'out' : 'not', at: p.inAt, items: p.items, loops: pts.filter((n) => n.kind === 'neut' && (n.requires ?? []).includes(p.ref)).map((n) => n.ref) }));
+  const own = eqs.flatMap((e) => d.activities.filter((a) => a.key === (e.barchartKey ?? e.tag) && itemBlindLine(a)).map((a): BlindRow => ({ id: a.id, type: VALVE_KEY.test(e.tag) ? 'valve' : 'equipment',
+    ref: e.tag, name: capsOff(a.activity.replace(/\s+/g, ' ').trim()), state: a.actualFinish ? 'in' : 'not', at: a.actualFinish ?? null, items: [e.tag], loops: [] })));
+  return [...lines, ...own];
 }
