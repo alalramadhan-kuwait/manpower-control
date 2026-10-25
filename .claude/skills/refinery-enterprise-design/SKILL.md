@@ -107,20 +107,33 @@ component; a screen-local copy of one of these is a defect to fix.
 
 Tags are shown in full (C-12-201, not C-201) wherever there is room; shorten only inside fixed-width grids.
 
-**Unified app (audit 24 Oct 2026): the Engineer view is the visual base.** Where the code lives:
+**One interface (owner, 25 Oct 2026).** There is no Section Head / Engineer mode and no switch. Every role opens the same
+tracker (`/progress`, `TrackerPage.tsx`); the role decides what is shown. Never build a second screen, a "simple" copy
+or a mode for one role: add the control to the shared screen behind the role.
+
+| Role | Sees |
+|---|---|
+| Section Head | everything: Admin, the views Timing (Equipment), Sequence and Map (Handover), stage review and phases on the Dashboard, out of scope, revise drum estimate, Start anyway (locked loop), Add job, ops and field steps |
+| Engineer (and Coordinator) | the operational screens: steps (start, finish, rename, add, remove, order, time correction, not required for the head only), hold, issues, drums and vessel empty, loop requirement, IAT label |
+| Controller | the same screens with the update actions only (start / finish, hold, notes, drums, blinds, IAT status, order); no rename / add / remove step, loop requirement, IAT label or vessel empty. With the Manpower assignment, also the rest of the app |
+
+The role comes from `EngRole` (`RoleCtx` in `EngineerApp.tsx`, set by the `…Tab` wrappers); `useCanManage()` = not a
+Controller; `role === 'head'` for the Section Head tools. The database stays the final check.
 
 | Component | Use | File |
 |---|---|---|
-| Toast + Undo | every save, both views (Undo 7 s, plain 3 s) | `Toast` in `src/ui/components.tsx` |
-| Navigation | lucide icons, 11 px label, active `text-brand-700`; no emoji tabs | `Shell.tsx`, `TrackerPage.tsx` TABS, `EngineerApp.tsx` TABS |
-| Hero cards | end date · main equipment done · by group, the same on Engineer dashboard and Section Head Today | `ShutdownHero` in `EngineerApp.tsx` |
-| Equipment row | dot · tag · what now / stage · last update · ONE status chip · labelled `▶ Start` / `✓ Finish` / `Drums` | `ItemRow` (Engineer), `EquipmentTab` row (Section Head) |
-| Step action | start/finish now: twins together, hold ended, Undo restores both | `stepNow` in `src/features/tracker/actions.ts` (never a local copy) |
-| Segmented control | grey track, white selected — switches views; filters stay pills | `Seg` (Engineer), VIEWS bar (tracker) |
-| Report button | `bg-whatsapp`; Save is navy (green = status only) | — |
-| IAT operations label | the one Operations classification (owner): `OpsLabel` select with Undo, read-only chip for Controllers; old ticks shown read-only | `src/features/tracker/Iats.tsx` |
-| Hold | `PendingForm` (14 reasons + note) for equipment and loops in every view; Resume with Undo | `src/features/tracker/TrackerSheets.tsx` |
-| Role in the Engineer view | `EngRole` context: Controller gets no rename/add/remove step, loop requirement, IAT label, reactor empty | `EngineerView` |
+| Tabs | Dashboard · Equipment · Handover · SD scope · Hot work (lucide icons); views bar for the Section Head only | `TrackerPage.tsx` TABS / VIEWS / HEAD_VIEWS |
+| Badges | Equipment = items late or on hold (the same items as its `Late / hold` filter: `equipmentList` + `lateOrHold`); Handover = blinds not in or neutralizations not done; Hot work = open IATs. Each badge says what it counts (title) | `src/core/tracker` |
+| Dashboard | `DashboardTab`: alert, hero cards (`ShutdownHero`), issues, team; Section Head part below | `EngineerApp.tsx` |
+| Equipment list | `EquipmentListTab`: chips All · To update · Late / hold · groups; row = dot · tag · now · % / plan · `StepButton` | `EngineerApp.tsx`, `StepButton.tsx` |
+| Item sheet | `ItemSheetFor`: steps + main action, issues, worklist, hold, status, then `ItemMore` (flags, M & I %, drums, No change / Delay, isolation, stage, IATs, related, history, technical, scope) | `EngineerApp.tsx`, `TrackerSheets.tsx` |
+| Handover | `HandoverTab`: Blocking · Neutralization · Blinds · Blind list · Return; loop opens `LoopDetail`; de-blind only from Return | `EngineerApp.tsx`, `Isolation.tsx` |
+| Blind list | compact, one line per row, detail on tap, done folded; By item / By blind | `BlindList.tsx` |
+| Hot work | `HotWorkTab`: IAT cards (status + label), search, filter, completed folded, `IatDetail`; PMRs | `EngineerApp.tsx`, `Iats.tsx` |
+| Toast + Undo | every save (Undo 7 s, plain 3 s) | `Toast` in `src/ui/components.tsx` |
+| Step action | start / finish now: twins together, hold ended, Undo restores both | `stepNow` in `actions.ts` (never a local copy) |
+| Hold | `PendingForm` (reasons + note) for equipment and loops; Resume with Undo | `TrackerSheets.tsx` |
+| Report button | `bg-whatsapp` in the header; Save is navy (green = status only) | — |
 
 ## 4b. Technical information on equipment
 

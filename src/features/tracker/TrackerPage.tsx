@@ -4,14 +4,14 @@
 import { ReportImport } from './ReportImport';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { Printer, Share2, Copy, MessageCircle, LayoutDashboard, Handshake, Wrench, Flame, ClipboardList, HardHat, Settings, type LucideIcon } from 'lucide-react';
-import { isNR, totals, FO_NAMES, REACTORS, STAGE_SHORT, pointComplete, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, shiftOf, shiftReport, staleItems, stepViews, type StepView } from '@/core/tracker';
+import { Printer, Share2, Copy, MessageCircle, LayoutDashboard, Handshake, Wrench, Flame, ClipboardList, Settings, type LucideIcon } from 'lucide-react';
+import { equipmentList, lateOrHold, isNR, totals, FO_NAMES, REACTORS, STAGE_SHORT, pointComplete, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, shiftOf, shiftReport, staleItems, stepViews, type StepView } from '@/core/tracker';
 import { StageReview } from './StageReview';
 import { CONFLICT_EVENT, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Spinner, Toast, cx } from '@/ui/components';
 import { AskUpdates } from './Ask';
-import { DashboardTab, EngineerView, EquipmentListTab, HandoverTab, HotWorkTab, ItemSheetFor, ScopeLists } from '@/features/engineer/EngineerApp';
+import { DashboardTab, EquipmentListTab, HandoverTab, HotWorkTab, ItemSheetFor, ScopeLists } from '@/features/engineer/EngineerApp';
 import { StepSheet } from './TrackerSheets';
 import { TrackerAdmin, clockKey } from './TrackerAdmin';
 import { TimingTab } from './Timing';
@@ -25,6 +25,8 @@ type Main = 'today' | 'equipment' | 'isolation' | 'scope' | 'iats';
 const TABS: [Main, string, LucideIcon][] = [['today', 'Dashboard', LayoutDashboard], ['equipment', 'Equipment', Wrench], ['isolation', 'Handover', Handshake], ['scope', 'SD scope', ClipboardList], ['iats', 'Hot work', Flame]];
 const MAIN: Record<Tab, Main> = { today: 'today', isolation: 'isolation', equipment: 'equipment', timing: 'equipment', guideline: 'isolation', map: 'isolation', scope: 'scope', iats: 'iats', pmr: 'iats', report: 'today', admin: 'today' };
 const VIEWS: Partial<Record<Main, [Tab, string][]>> = { equipment: [['equipment', 'Items'], ['timing', 'Timing']], isolation: [['isolation', 'Isolation'], ['guideline', 'Sequence'], ['map', 'Map']] };
+const ROLE_NAME: Record<string, string> = { section_head: 'Section Head', engineer: 'Engineer', controller: 'Controller', manpower_coordinator: 'Coordinator' };
+const HEAD_VIEWS: Tab[] = ['timing', 'guideline', 'map'];
 const today = () => new Date(Date.now() + 3 * 36e5).toISOString().slice(0, 10);
 
 /** The clock the tracker runs on: now, or (TEST, this device) the time set in Admin to try a scenario. */
@@ -50,9 +52,10 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const sheetTab = raw === 'report' || raw === 'admin' ? raw : null;
   const [lastTab, setLastTab] = useState<Tab>('today');
   // the engineer view of the same tracker (remembered on this device until switched back)
-  const [eng, setEng] = useState(() => { try { return localStorage.getItem('trk-view') === 'engineer'; } catch { return false; } });
-  const toEng = (on: boolean) => { setEng(on); try { if (on) localStorage.setItem('trk-view', 'engineer'); else localStorage.removeItem('trk-view'); } catch { /* storage blocked */ } window.scrollTo(0, 0); };
-  const tab: Tab = sheetTab ? lastTab : raw in MAIN ? raw : 'today';
+  const isHead0 = profile.role_code === 'section_head';
+  const asked: Tab = sheetTab ? lastTab : raw in MAIN ? raw : 'today';
+  // one interface for every role: the Section Head's tools (Timing, Sequence, Map) are views only the Section Head sees
+  const tab: Tab = !isHead0 && HEAD_VIEWS.includes(asked) ? MAIN[asked] : asked;
   const setTab = (t: Tab) => { if (t !== 'report' && t !== 'admin') setLastTab(t); setSearch(t === 'today' ? {} : { tab: t }, { replace: true }); };
   const closeSheetTab = () => setTab(lastTab);
   const [trackers, setTrackers] = useState<Tracker[] | null>(null);
@@ -113,33 +116,34 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const toIsolation = (tag: string | null, kind?: 'blind' | 'neut') => { setSheet(null); setFocus(tag); setIsoKind(kind); setTab('isolation'); };
   const tot = totals(steps, eqs, data.iats);
   // the Isolation badge: blinds not in and neutralizations before handover not done (finished work drops off)
+  // the Equipment badge counts what its Late / hold filter lists
+  const lateN = lateOrHold(equipmentList(data, isHead), eqs).length;
   const isoOpen = points.filter((p) => (p.kind === 'blind' || p.beforeHo) && !pointComplete(p) && !isNR(p)).length;
   const open = (a: { kind: 'step' | 'equipment'; ref: string }) => setSheet(a.kind === 'step' ? { kind: 'step', id: a.ref } : { kind: 'eq', tag: a.ref });
 
-  if (eng) return <div className="fixed inset-0 z-[60] overflow-y-auto bg-canvas"><EngineerView trackerId={tracker.id} name={profile.display_name} title={tracker.title} role={role} me={profile.auth_user_id} onExit={() => toEng(false)} /></div>;
   return (
     <div className="mx-auto max-w-3xl pb-24">
       {test && <div className="mb-2 rounded-lg bg-amber-200 px-3 py-1.5 text-center text-xs font-bold tracking-wide text-amber-950">TEST · a copy for trying; nothing here is live{now !== Date.now() && Math.abs(now - Date.now()) > 120_000 ? ` · clock ${kwDay(now)} ${kwTime(now)}` : ''}{other.filter((o) => o.mode === 'live').map((o) => <Link key={o.id} to={`/progress/${o.id}`} className="ml-2 underline">Live ›</Link>)}</div>}
       <div className="mb-2 flex items-center justify-between gap-2 print:hidden">
         <div className="min-w-0">
           <h1 className="truncate text-xl font-semibold text-brand-700">{tracker.title}</h1>
-          <p className="text-xs text-slate-500">{isHead ? 'Section Head mode · ' : ''}{tracker.eventTitle ?? ''}{tracker.settings.workOrder ? ` · WO ${tracker.settings.workOrder}` : ''}</p>
+          <p className="text-xs text-slate-500">{ROLE_NAME[profile.role_code] ? `${ROLE_NAME[profile.role_code]} · ` : ''}{tracker.eventTitle ?? ''}{tracker.settings.workOrder ? ` · WO ${tracker.settings.workOrder}` : ''}</p>
         </div>
         <div className="flex shrink-0 gap-1.5">
-          <button type="button" onClick={() => toEng(true)} title="Engineer view" aria-label="Engineer view" className="flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl bg-white px-2.5 text-sm font-semibold text-brand-700 ring-1 ring-slate-300 active:bg-slate-50"><HardHat className="h-5 w-5" /><span className="hidden sm:inline">Engineer mode</span></button>
           <button type="button" onClick={() => setTab('report')} className="flex min-h-11 items-center gap-1.5 rounded-xl bg-whatsapp px-3 text-sm font-bold text-white shadow-sm active:opacity-90"><MessageCircle className="h-4 w-4" />Report</button>
           {isHead && <button type="button" aria-label="Admin" title="Admin" onClick={() => setTab('admin')} className="flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-white text-brand-700 ring-1 ring-slate-300 active:bg-slate-50"><Settings className="h-5 w-5" /></button>}
         </div>
       </div>
       <nav className="sticky top-0 z-20 mb-2 grid grid-cols-5 gap-0.5 rounded-2xl bg-slate-200/70 p-1 backdrop-blur print:hidden" aria-label="Progress">
-        {TABS.map(([k, label, Icon]) => { const on = MAIN[tab] === k; const badge = k === 'equipment' ? tot.late : k === 'iats' ? tot.iatOpen : k === 'isolation' ? isoOpen : 0;
+        {TABS.map(([k, label, Icon]) => { const on = MAIN[tab] === k; const badge = k === 'equipment' ? lateN : k === 'iats' ? tot.iatOpen : k === 'isolation' ? isoOpen : 0;
+          const what = k === 'equipment' ? 'late or on hold' : k === 'iats' ? 'open IATs' : 'blinds not in or neutralizations not done';
           return <button key={k} type="button" aria-current={on ? 'page' : undefined} onClick={() => setTab(k)}
             className={cx('relative flex min-h-14 flex-col items-center justify-center rounded-xl px-0.5 text-[11px] font-semibold', on ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 active:bg-white/60')}>
             <Icon className="h-5 w-5" aria-hidden /><span className="mt-0.5 truncate">{label}</span>
-            {badge > 0 && <span className={cx('absolute right-1 top-0.5 min-w-[18px] rounded-full px-1 text-[10px] font-bold leading-[18px] text-white', k === 'equipment' ? 'bg-status-red' : k === 'isolation' ? 'bg-brand-500' : 'bg-status-amber')}>{badge}</span>}
+            {badge > 0 && <span title={`${badge} ${what}`} aria-label={`${badge} ${what}`} className={cx('absolute right-1 top-0.5 min-w-[18px] rounded-full px-1 text-[10px] font-bold leading-[18px] text-white', k === 'equipment' ? 'bg-status-red' : k === 'isolation' ? 'bg-brand-500' : 'bg-status-amber')}>{badge}</span>}
           </button>; })}
       </nav>
-      {VIEWS[MAIN[tab]] && <div className={cx('mb-3 grid gap-1 rounded-xl bg-slate-200/60 p-1 print:hidden', VIEWS[MAIN[tab]]!.length > 2 ? 'grid-cols-3' : 'grid-cols-2')}>
+      {isHead && VIEWS[MAIN[tab]] && <div className={cx('mb-3 grid gap-1 rounded-xl bg-slate-200/60 p-1 print:hidden', VIEWS[MAIN[tab]]!.length > 2 ? 'grid-cols-3' : 'grid-cols-2')}>
         {VIEWS[MAIN[tab]]!.map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={cx('min-h-10 rounded-lg text-sm font-semibold', tab === k ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-600')}>{l}</button>)}
       </div>}
       {refreshing && <div aria-hidden className="fixed inset-x-0 top-0 z-[80] h-1 overflow-hidden bg-brand-100"><div className="h-full w-1/3 animate-[trkbar_1s_ease-in-out_infinite] bg-brand-500" /></div>}

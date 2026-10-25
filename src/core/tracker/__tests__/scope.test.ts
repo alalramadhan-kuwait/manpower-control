@@ -47,3 +47,15 @@ describe('equipment scope', () => {
     expect(loopHandover({ items: ['R-202 to R-203'] }, items).state).toBe('none');
   });
 });
+
+describe('equipment list and late / hold', () => {
+  it('the list keeps tracked Equipment items with steps (items with no steps for the Section Head only); late / hold counts the same items, latest first', async () => {
+    const { equipmentList, lateOrHold } = await import('..');
+    const items = [eq('A', 'Vessels'), eq('B', 'Vessels'), eq('C', 'PMRs'), eq('D', 'Vessels', { tracked: false })];
+    const acts = [act('A', 4), act('C', 2)];
+    expect(equipmentList({ equipment: items, activities: acts }, false).map((e) => e.tag)).toEqual(['A']);
+    expect(equipmentList({ equipment: items, activities: acts }, true).map((e) => e.tag)).toEqual(['A', 'B']);
+    const v = (tag: string, flag: string, lateBy = 0) => ({ eq: items.find((e) => e.tag === tag)!, flag, lateBy }) as never;
+    expect(lateOrHold(items, [v('A', 'PENDING'), v('B', 'LATE', 5), v('C', 'HO_LATE', 1), v('D', 'NONE')]).map((e) => e.tag)).toEqual(['C', 'B', 'A']);
+  });
+});

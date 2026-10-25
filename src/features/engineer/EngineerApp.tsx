@@ -14,7 +14,7 @@ import { BlindList } from '@/features/tracker/BlindList';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
-import { WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
+import { equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -84,11 +84,8 @@ function Frame({ title, sub, right, children }: { title: string; sub: string; ri
   );
 }
 
-/** The engineer view for someone signed in to the app (the Section Head trying it, or working from it): their own
- *  login instead of a link, a button back to the full tracker. */
-/** Who is using the view: the same screens, with the actions of the role (as on the Section Head tracker). An engineer
- *  link counts as an Engineer; a Controller does not rename, add or remove steps, mark loops not required, label IATs
- *  or confirm a reactor empty. The database stays the final check. */
+/** Who is using the page: the same screens, with the actions of the role. A Controller does not rename, add or remove
+ *  steps, mark loops not required, label IATs or confirm a reactor empty. The database stays the final check. */
 export type EngRole = 'head' | 'engineer' | 'controller';
 const RoleCtx = createContext<EngRole>('engineer');
 const useCanManage = () => useContext(RoleCtx) !== 'controller';
@@ -100,9 +97,6 @@ const IsoCtx = createContext<((tag: string) => void) | null>(null);
 /** The SD scope, the same lists in the Section Head mode (its item sheet opens on a tap). */
 export function ScopeLists({ d, now, done, role, onItem }: { d: TrackerData; now: number; done: Done; role: EngRole; onItem: (tag: string) => void }) {
   return <RoleCtx.Provider value={role}><OpenItemCtx.Provider value={onItem}><Scope d={d} now={now} done={done} go={() => {}} by="" /></OpenItemCtx.Provider></RoleCtx.Provider>;
-}
-export function EngineerView({ trackerId, name, title, role, me = null, onExit }: { trackerId: string; name: string; title: string; role: EngRole; me?: string | null; onExit: () => void }) {
-  return <RoleCtx.Provider value={role}><MeCtx.Provider value={me}><Tracker preset={{ login_id: name, tracker_id: trackerId, title }} onExit={onExit} /></MeCtx.Provider></RoleCtx.Provider>;
 }
 
 function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: string; title: string }; onExit?: () => void } = {}) {
@@ -347,16 +341,15 @@ function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string)
   const grpOf = useMemo(() => shownGroup(d.equipment), [d.equipment]);
   const [openSys, setOpenSys] = useState<Set<string>>(new Set());
   // the Section Head also sees the items followed by their handover only (no bar-chart steps)
-  const main = d.equipment.filter((e) => e.tracked && inEquipmentTab(e) && (head || lines(d, [keyOf(e)]).length) && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e));
+  const main = equipmentList(d, head);
   const all = [...new Set(main.map(grpOf))];
   const todo = main.filter((e) => stale.has(keyOf(e)));
   // late first: handover late, late, on hold, by how late
-  const RANK: Record<string, number> = { HO_LATE: 0, LATE: 1, PENDING: 2 };
-  const late = main.filter((e) => (RANK[views.get(e.tag)?.flag ?? ''] ?? 9) < 9).sort((a, b) => (RANK[views.get(a.tag)!.flag] - RANK[views.get(b.tag)!.flag]) || (views.get(b.tag)!.lateBy - views.get(a.tag)!.lateBy));
+  const late = lateOrHold(main, [...views.values()]);
   const outs = d.equipment.filter(isOutOfScope), off = d.equipment.filter((e) => !e.tracked && !isOutOfScope(e) && inEquipmentTab(e));
   const shown = f === 'todo' ? todo : f === 'late' ? late : f === 'all' ? main : main.filter((e) => grpOf(e) === f);
   const groups = f === 'late' ? ['Late first'] : [...new Set(shown.map(grpOf))];
-  const chips: [string, string][] = [['all', `All ${main.length}`], ['todo', `To update ${todo.length}`], ...(late.length ? [['late', `Late ${late.length}`] as [string, string]] : []), ...all.map((g): [string, string] => [g, `${g} ${main.filter((e) => grpOf(e) === g).length}`])];
+  const chips: [string, string][] = [['all', `All ${main.length}`], ['todo', `To update ${todo.length}`], ...(late.length ? [['late', `Late / hold ${late.length}`] as [string, string]] : []), ...all.map((g): [string, string] => [g, `${g} ${main.filter((e) => grpOf(e) === g).length}`])];
   return (<>
     <div className="-mx-3 mb-2.5 flex gap-1.5 overflow-x-auto px-3 pb-0.5 [scrollbar-width:none]">{chips.map(([k, l]) => <button key={k} type="button" onClick={() => setF(k)} ref={(el) => { if (el && f === k && f !== 'all') el.scrollIntoView({ inline: 'center', block: 'nearest' }); }}
       className={cx('min-h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-[12px] font-bold', f === k ? 'bg-brand-700 text-white' : k === 'todo' && todo.length ? 'bg-amber-50 text-amber-900 ring-1 ring-amber-300' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>)}</div>

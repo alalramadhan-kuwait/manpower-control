@@ -1244,3 +1244,17 @@ export function blindsByType(d: Pick<TrkData, 'equipment' | 'loopItems' | 'activ
     ref: e.tag, name: capsOff(a.activity.replace(/\s+/g, ' ').trim()), state: a.actualFinish ? 'in' : 'not', at: a.actualFinish ?? null, items: [e.tag], loops: [] })));
   return [...lines, ...own];
 }
+
+/** The items of the Equipment list: tracked, listed under Equipment (not SD scope / Hot work), one row for items worked as
+ *  one; those with no bar-chart steps (followed by their handover only) for the Section Head only. */
+export function equipmentList(d: Pick<TrkData, 'equipment' | 'activities'>, head: boolean): TrkEquipment[] {
+  const withSteps = new Set(d.activities.filter((a) => a.tracked && !a.detail && a.group !== 'Operations').map((a) => a.key));
+  return d.equipment.filter((e) => e.tracked && inEquipmentTab(e) && (head || withSteps.has(e.barchartKey ?? e.tag)) && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e));
+}
+const LATE_RANK: Record<string, number> = { HO_LATE: 0, LATE: 1, PENDING: 2 };
+/** Late or on hold, the latest first: the Equipment tab badge and its "Late / hold" filter count the same items. */
+export function lateOrHold(items: TrkEquipment[], views: EquipView[]): TrkEquipment[] {
+  const v = new Map(views.map((x) => [x.eq.tag, x]));
+  return items.filter((e) => (LATE_RANK[v.get(e.tag)?.flag ?? ''] ?? 9) < 9)
+    .sort((a, b) => LATE_RANK[v.get(a.tag)!.flag] - LATE_RANK[v.get(b.tag)!.flag] || v.get(b.tag)!.lateBy - v.get(a.tag)!.lateBy);
+}
