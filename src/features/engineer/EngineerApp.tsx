@@ -4,6 +4,7 @@
 // stamped with the ID; Undo for a few seconds after each one.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { ItemMore, PendingForm } from '@/features/tracker/TrackerSheets';
+import { ShutdownOverview } from '@/features/tracker/TrackerToday';
 import { ActivityRow } from '@/features/tracker/Timing';
 import { RowList } from '@/features/tracker/ui';
 import { StepButton } from '@/features/tracker/StepButton';
@@ -183,40 +184,44 @@ const GroupRow = ({ label, act, plan, onClick }: { label: string; act: number; p
 
 // ── Dashboard ───────────────────────────────────────────────────────────────────────────────────────────────────────
 /** Work running or due with no update for longer than its limit (critical path 6 h, others 12 h, small jobs 24 h). */
-function StaleAlert({ d, now, onOpen }: { d: TrackerData; now: number; onOpen: () => void }) {
-  const xs = useMemo(() => staleItems(d, now).filter((i) => !i.small || WITH_EQUIP.includes(i.section)).sort((a, b) => Number(b.critical) - Number(a.critical) || b.ageH - a.ageH), [d, now]);
-  if (!xs.length) return null;
-  const crit = xs.filter((i) => i.critical).length;
-  return (
-    <button type="button" onClick={onOpen} className={cx('mb-2.5 block w-full rounded-2xl p-3 text-left ring-1', crit ? 'bg-red-50 ring-red-200' : 'bg-amber-50 ring-amber-200')}>
-      <span className={cx('block text-[13px] font-bold', crit ? 'text-status-red' : 'text-amber-900')}>⏰ {xs.length} without a recent update{crit ? ` · ${crit} on the critical path` : ''}</span>
-      <span className="block text-[11px] text-slate-500">Main equipment, pumps and PSVs (small jobs under SD scope)</span>
-      <span className="block text-[12px] text-slate-700">{xs.slice(0, 3).map((i) => `${short(i.tag)} ${i.ageH} h`).join(' · ')}{xs.length > 3 ? ' …' : ''}</span>
-      <span className="block text-[11px] font-semibold text-brand-700">Update them ›</span>
-    </button>
-  );
-}
 
 /** The Dashboard, the same in both modes; the Section Head mode adds its part below (stage review, the phases) and
  *  keeps the report in its header. */
-export function DashboardTab({ d, now, done, role, by, go, more }: { d: TrackerData; now: number; done: Done; role: EngRole; by: string; go: (t: Tab, group?: string) => void; more?: React.ReactNode }) {
-  return <RoleCtx.Provider value={role}><Dashboard d={d} now={now} done={done} go={go} by={by} report={false} />{more}</RoleCtx.Provider>;
+export function DashboardTab({ d, now, done, role, by, go, more, onItem }: { d: TrackerData; now: number; done: Done; role: EngRole; by: string; go: (t: Tab, group?: string) => void; more?: React.ReactNode; onItem?: (tag: string) => void }) {
+  return <RoleCtx.Provider value={role}><OpenItemCtx.Provider value={onItem ?? null}><Dashboard d={d} now={now} done={done} go={go} by={by} report={false} more={more} /></OpenItemCtx.Provider></RoleCtx.Provider>;
 }
-function Dashboard({ d, now, go, by, done, report: withReport = true }: P & { report?: boolean }) {
-  const [report, setReport] = useState(false);
+/** The Dashboard: the shutdown at a glance (end, progress, what sets the end, Operations / M & I, needs attention), the
+ *  rest folded below (by group, issues, team; the Section Head's stage review and focus list). */
+function Dashboard({ d, now, go, by, done, report: withReport = true, more }: P & { report?: boolean; more?: React.ReactNode }) {
+  const [report, setReport] = useState(false); const [item, setItem] = useState<TrkEquipment | null>(null);
+  const openItem = useContext(OpenItemCtx), head = useContext(RoleCtx) === 'head';
+  const toItem = (tag: string) => (openItem ? openItem(tag) : setItem(d.equipment.find((e) => e.tag === tag) ?? null));
+  const issues = (d.events ?? []).filter((x) => !x.endedAt).length;
   return (<>
-    {withReport && <button type="button" onClick={() => setReport(true)} className="mb-2.5 flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-whatsapp text-[14px] font-bold text-white active:opacity-90">💬 WhatsApp report</button>}
+    {withReport && <button type="button" onClick={() => setReport(true)} className="mb-2 flex min-h-10 w-full items-center justify-center gap-2 rounded-2xl bg-whatsapp text-[14px] font-bold text-white active:opacity-90">💬 WhatsApp report</button>}
     {report && <ReportSheet d={d} now={now} by={by} onClose={() => setReport(false)} />}
-    <StaleAlert d={d} now={now} onOpen={() => go('equip', 'todo')} />
-    <ShutdownHero d={d} now={now} onGroup={(g) => go('equip', g)} onSmall={() => go('scope')} />
-    <Issues d={d} done={done} />
-    <TeamToday now={now} />
+    <ShutdownOverview data={d} now={now} head={head} onItem={toItem} onGo={(to) => (to === 'todo' || to === 'late' || to === 'all' ? go('equip', to) : to === 'ho' ? go('ho') : to === 'hot' ? go('hot') : head ? go('dash', 'focus') : undefined)} />
+    <DashFold title="Progress by group"><GroupProgress d={d} now={now} onGroup={(g) => go('equip', g)} onSmall={() => go('scope')} /></DashFold>
+    <DashFold title={`Issues · ${issues ? `${issues} open` : 'none open'}`} open={issues > 0}><Issues d={d} done={done} /></DashFold>
+    <DashFold title="Team today"><TeamToday now={now} /></DashFold>
+    {more}
+    {item && <ItemSheet d={d} e={item} done={done} onClose={() => setItem(null)} />}
   </>);
+}
+/** A folded section of the Dashboard: one header line, closed unless something needs action. */
+export function DashFold({ title, open: initial = false, children }: { title: string; open?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(initial);
+  return <div className="mb-1.5">
+    <button type="button" onClick={() => setOpen((x) => !x)} className="flex min-h-10 w-full items-center gap-2 rounded-xl bg-white px-3 text-left text-[13px] font-semibold text-slate-700 ring-1 ring-slate-200">
+      <span className="w-3 text-slate-500">{open ? '▾' : '▸'}</span><span className="min-w-0 flex-1 truncate">{title}</span></button>
+    {open && <div className="mt-1.5">{children}</div>}
+  </div>;
 }
 
 /** The three cards that answer "are we late": end date, main equipment done vs plan, done / plan by group. The same
  *  cards on the Engineer dashboard and the Section Head's Today. */
-export function ShutdownHero({ d, now, onGroup, onSmall }: { d: TrackerData; now: number; onGroup: (group: string) => void; onSmall: () => void }) {
+/** Done / plan by equipment group (each item weighed by its hours, as the main %), folded on the Dashboard. */
+export function GroupProgress({ d, now, onGroup, onSmall }: { d: TrackerData; now: number; onGroup: (group: string) => void; onSmall: () => void }) {
   const mi = useMemo(() => phases(d, now).mi, [d, now]);
   const w = mi.weighted;
   // done / plan by equipment group, each item weighed by its hours (as the main %)
@@ -228,28 +233,12 @@ export function ShutdownHero({ d, now, onGroup, onSmall }: { d: TrackerData; now
     return [...by].filter(([, g]) => g.h > 0).map(([g, x]) => ({ g, act: Math.round(x.a / x.h), plan: Math.round(x.p / x.h) }));
   }, [d, w]);
   if (!w) return <Card><p className="text-sm text-slate-600">M &amp; I has not started yet.</p></Card>;
-  const late = w.impactD > 0, cp = w.controlling;
-  return (<>
-    <Card className={cx('border-l-[6px]', late ? 'border-l-status-red' : (cp?.spareD ?? 9) <= 1 ? 'border-l-amber-400' : 'border-l-status-green')}>
-      <p className="text-[11px] font-bold text-slate-500">END DATE</p>
-      <p className={cx('text-[28px] font-extrabold leading-tight', late ? 'text-status-red' : 'text-brand-700')}>{late ? `Behind ${daysAsHours(w.impactD)}` : 'On time'}</p>
-      <p className="text-xs text-slate-600">{late ? 'forecast past the plan' : `${cp?.spareD ?? 0} days spare`} · forecast {when(w.estEnd)} · plan {kwDay(w.end)}</p>
-      {cp && <p className="mt-1.5 text-xs text-slate-600">Sets the end: <b>{short(cp.tag)}</b>{cp.driving ? ` · ${cp.driving}` : ''}</p>}
-    </Card>
-    <Card>
-      <p className="text-[11px] font-bold text-slate-500">MAIN EQUIPMENT DONE</p>
-      <p className="flex items-baseline gap-2"><span className="text-[28px] font-extrabold text-brand-700">{w.main.physPct}%</span>
-        <span className="text-xs text-slate-600">plan {w.main.planPct}% · <b className={w.main.physPct >= w.main.planPct ? 'text-status-green' : 'text-status-red'}>{w.main.physPct >= w.main.planPct ? 'ahead' : `behind ${w.main.planPct - w.main.physPct} pts`}</b></span></p>
-      <div className="flex"><Bar act={w.main.physPct} plan={w.main.planPct} tone={tone(w.main.physPct, w.main.planPct)} /></div>
-      <p className="mt-1.5 text-xs text-slate-600">Small jobs {w.small.physPct}% · plan {w.small.planPct}%</p>
-    </Card>
-    <Card>
-      <p className="mb-1 text-[11px] font-bold text-slate-500">BY GROUP · done / plan <span className="font-normal">· tap to open</span></p>
+  const byGroup = <Card>
       {groups.map((x) => <GroupRow key={x.g} label={x.g} act={x.act} plan={x.plan} onClick={() => onGroup(x.g)} />)}
       <GroupRow label="Small jobs" act={w.small.physPct} plan={w.small.planPct} onClick={onSmall} />
-      <p className="mt-1.5 text-[11px] text-slate-500">Black line = where the plan is today</p>
-    </Card>
-  </>);
+      <p className="mt-1.5 text-[11px] text-slate-500">done / plan · black line = where the plan is today · tap to open</p>
+    </Card>;
+  return byGroup;
 }
 
 /** The shutdown team on duty this shift (the same card as the Section Head's Today page). */

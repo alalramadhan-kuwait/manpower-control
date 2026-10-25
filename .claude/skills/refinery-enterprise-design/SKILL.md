@@ -124,7 +124,7 @@ Controller; `role === 'head'` for the Section Head tools. The database stays the
 |---|---|---|
 | Tabs | Dashboard · Equipment · Handover · SD scope · Hot work (lucide icons); views bar for the Section Head only | `TrackerPage.tsx` TABS / VIEWS / HEAD_VIEWS |
 | Badges | Equipment = items late or on hold (the same items as its `Late / hold` filter: `equipmentList` + `lateOrHold`); Handover = blinds not in or neutralizations not done; Hot work = open IATs. Each badge says what it counts (title) | `src/core/tracker` |
-| Dashboard | `DashboardTab`: alert, hero cards (`ShutdownHero`), issues, team; Section Head part below | `EngineerApp.tsx` |
+| Dashboard | the situation in 5 s, no scrolling on a phone: `ShutdownOverview` = 1 Shutdown end (forecast, vs P6, set by) · 2 Progress (main equipment % vs plan) · 3 Critical (top 3 items setting the end) · 4 Operations / M & I (one line each, tap = detail sheet) · 5 Needs attention (no update, late / hold, late steps). Everything else in `DashFold` below (by group, issues, team; Section Head: stage review, operations focus). Never add a card above the fold | `TrackerToday.tsx`, `EngineerApp.tsx` |
 | Equipment list | `EquipmentListTab`: chips All · To update · Late / hold · groups; row = dot · tag · now · % / plan · `StepButton` | `EngineerApp.tsx`, `StepButton.tsx` |
 | Item sheet | `ItemSheetFor`: steps + main action, issues, worklist, hold, status, then `ItemMore` (flags, M & I %, drums, No change / Delay, isolation, stage, IATs, related, history, technical, scope) | `EngineerApp.tsx`, `TrackerSheets.tsx` |
 | Handover | `HandoverTab`: Blocking · Neutralization · Blinds · Blind list · Return; loop opens `LoopDetail`; de-blind only from Return | `EngineerApp.tsx`, `Isolation.tsx` |

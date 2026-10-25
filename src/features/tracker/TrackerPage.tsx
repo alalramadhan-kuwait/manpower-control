@@ -11,11 +11,11 @@ import { CONFLICT_EVENT, currentTracker, fetchTrackerData, fetchTrackers, saveSh
 import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Spinner, Toast, cx } from '@/ui/components';
 import { AskUpdates } from './Ask';
-import { DashboardTab, EquipmentListTab, HandoverTab, HotWorkTab, ItemSheetFor, ScopeLists } from '@/features/engineer/EngineerApp';
+import { DashFold, DashboardTab, EquipmentListTab, HandoverTab, HotWorkTab, ItemSheetFor, ScopeLists } from '@/features/engineer/EngineerApp';
 import { StepSheet } from './TrackerSheets';
 import { TrackerAdmin, clockKey } from './TrackerAdmin';
 import { TimingTab } from './Timing';
-import { TodayTab, type Nav } from './TrackerToday';
+import { FocusList } from './TrackerToday';
 import { StateChip } from './ui';
 
 type Tab = 'today' | 'isolation' | 'guideline' | 'equipment' | 'iats' | 'timing' | 'map' | 'scope' | 'pmr' | 'report' | 'admin';
@@ -65,7 +65,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const [flash, setFlash] = useState<{ msg: string; undo?: () => Promise<unknown> } | null>(null);
   const flashTimer = useRef<number | undefined>(undefined);
   const [focus, setFocus] = useState<string | null>(null);
-  const [isoKind, setIsoKind] = useState<'blind' | 'neut' | undefined>(undefined); const [lateFirst, setLateFirst] = useState(false); const [eqInit, setEqInit] = useState('all');
+  const [isoKind, setIsoKind] = useState<'blind' | 'neut' | undefined>(undefined); const [eqInit, setEqInit] = useState('all');
   const [sheet, setSheet] = useState<{ kind: 'step'; id: string } | { kind: 'eq'; tag: string } | null>(null);
   const isHead = profile.role_code === 'section_head';
   const canEdit = ['section_head', 'manpower_coordinator', 'engineer', 'controller'].includes(profile.role_code);
@@ -111,7 +111,6 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const points = data.points ?? [];
   // a step ticked from elsewhere: its blinds / neutralization (Isolation) or its items handed over (Equipment)
   const auto = new Map<string, 'isolation' | 'equipment'>([...data.equipment.filter((e) => e.hoStep).map((e) => [e.hoStep!, 'equipment'] as const), ...points.filter((p) => p.stepId).map((p) => [p.stepId!, 'isolation'] as const)]);
-  const nav = (n: Nav) => { setFocus(null); setIsoKind(n.iso); setLateFirst(!!n.lateFirst); setEqInit('all'); setTab(n.tab); };
   const role = isHead ? 'head' : profile.role_code === 'controller' ? 'controller' : 'engineer';
   const toIsolation = (tag: string | null, kind?: 'blind' | 'neut') => { setSheet(null); setFocus(tag); setIsoKind(kind); setTab('isolation'); };
   const tot = totals(steps, eqs, data.iats);
@@ -149,12 +148,13 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {refreshing && <div aria-hidden className="fixed inset-x-0 top-0 z-[80] h-1 overflow-hidden bg-brand-100"><div className="h-full w-1/3 animate-[trkbar_1s_ease-in-out_infinite] bg-brand-500" /></div>}
       {flash && <Toast msg={flash.msg} onUndo={flash.undo ? undoLast : undefined} />}
       {tab === 'today' && <DashboardTab d={data} now={now} role={role} by={profile.display_name} done={(m, u) => done(m, true, u)}
-        go={(t, g) => { if (t === 'equip') { setEqInit(g ?? 'all'); setTab('equipment'); } else setTab(t === 'ho' ? 'isolation' : t === 'hot' ? 'iats' : t === 'scope' ? 'scope' : 'today'); }}
-        more={isHead ? <div className="mt-3 space-y-3"><StageReview data={data} eqs={eqs} canEdit={canEdit} onOpen={(tag) => open({ kind: 'equipment', ref: tag })} onDone={() => load(true)} />
-          <TodayTab steps={steps} eqs={eqs} data={data} now={now} onOpen={open} onNav={nav} /></div> : undefined} />}
+        go={(t, g) => { if (t === 'equip') { setEqInit(g ?? 'all'); setTab('equipment'); } else setTab(t === 'ho' ? 'isolation' : t === 'hot' ? 'iats' : t === 'scope' ? 'scope' : g === 'focus' ? 'guideline' : 'today'); }}
+        onItem={(tag) => setSheet({ kind: 'eq', tag })}
+        more={isHead ? <><DashFold title="Stage review"><StageReview data={data} eqs={eqs} canEdit={canEdit} onOpen={(tag) => open({ kind: 'equipment', ref: tag })} onDone={() => load(true)} /></DashFold>
+          <DashFold title="Operations focus"><FocusList data={data} now={now} onOpen={open} /></DashFold></> : undefined} />}
       {tab === 'isolation' && <HandoverTab key={`iso-${isoKind}-${focus}`} d={data} now={now} role={role} focus={focus} onClearFocus={() => setFocus(null)} initial={isoKind} onItem={(tag) => setSheet({ kind: 'eq', tag })} onStep={(id) => setSheet({ kind: 'step', id })} done={(m, u) => done(m, true, u)} />}
       {tab === 'guideline' && <SequenceTab steps={steps} auto={auto} onOpen={(id) => setSheet({ kind: 'step', id })} />}
-      {tab === 'equipment' && <EquipmentListTab key={`eq-${lateFirst}-${eqInit}`} initial={lateFirst ? 'late' : eqInit} d={data} now={now} role={role} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}
+      {tab === 'equipment' && <EquipmentListTab key={`eq-${eqInit}`} initial={eqInit} d={data} now={now} role={role} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}
       {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={(m, u) => done(m, false, u)} />}
       {(tab === 'iats' || tab === 'pmr') && <HotWorkTab d={data} now={now} role={role} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}
       {tab === 'scope' && <ScopeLists d={data} now={now} role={role} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}

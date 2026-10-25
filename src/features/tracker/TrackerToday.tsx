@@ -2,11 +2,11 @@
 // handover · M & I: the bar chart and the blinds it installs) with their planned and actual dates, and the late /
 // pending / IAT counts. Each card opens its detail; every line in it opens the step, item or page behind it.
 import { useMemo, useState } from 'react';
-import { daysAsHours, CRITICAL_SPARE_D, type MiItem, type MiPart, type MiWeighted, FO_NAMES, isMisc, attention, focusList, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, totals, neutLabel,
+import { equipmentList, lateOrHold, staleItems, stepViews, daysAsHours, CRITICAL_SPARE_D, type MiItem, FO_NAMES, isMisc, attention, focusList, banner, equipBlind, equipViews, kwDay, kwTime, miBlinds, opsResults, phases, pointComplete, neutLabel,
   type Attention, type Banner, type Focus, type NextStep, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import type { TrackerData } from '@/data/tracker';
 import { BottomSheet, cx } from '@/ui/components';
-import { FlagChip, Tile } from './ui';
+import { FlagChip } from './ui';
 
 const DAY = 864e5;
 const at = (t: number | null) => (t === null || Number.isNaN(t) ? '—' : `${kwDay(new Date(t).toISOString())} ${kwTime(new Date(t).toISOString())}`);
@@ -15,120 +15,94 @@ const hrs = (x: number) => `${Math.abs(x) >= 10 ? Math.round(Math.abs(x)) : Math
 
 export type Nav = { tab: 'isolation' | 'equipment' | 'iats' | 'timing' | 'report' | 'guideline'; iso?: 'blind' | 'neut'; lateFirst?: boolean };
 
-function Bar({ label, v, onClick }: { label: string; v: [number, number]; onClick?: () => void }) {
-  const pct = v[1] ? Math.round((v[0] / v[1]) * 100) : 0;
-  return (
-    <button type="button" onClick={(e) => { e.stopPropagation(); onClick?.(); }} className="block w-full pt-1.5 text-left">
-      <span className="flex justify-between text-[13px] text-slate-700"><span>{label}</span><b className="tabular-nums text-slate-900">{v[0]}/{v[1]}</b></span>
-      <span className="mt-1 block h-2 overflow-hidden rounded-full bg-slate-200"><span className="block h-full rounded-full bg-brand-500" style={{ width: `${pct}%` }} /></span>
-    </button>
-  );
-}
 
-/** Plan and actual start / end, an actual earlier than the plan in green, later in red. */
-function Dates({ plan, actual, endLabel = 'End' }: { plan: [number, number]; actual: [number | null, number | null, boolean?]; endLabel?: string }) {
-  const tone = (a: number | null, p: number) => (a === null || Number.isNaN(p) ? 'text-slate-900' : a <= p ? 'text-status-green' : 'text-status-red');
-  return (
-    <div className="mt-1.5 grid grid-cols-[3.2rem_1fr_1fr] gap-x-2 text-[12px] text-slate-700">
-      <span /><span className="text-[10px] font-bold uppercase text-slate-500">Start</span><span className="text-[10px] font-bold uppercase text-slate-500">{endLabel}</span>
-      <span>Plan</span><span>{at(plan[0])}</span><span>{at(plan[1])}</span>
-      <span>Actual</span><b className={tone(actual[0], plan[0])}>{at(actual[0])}</b><b className={tone(actual[1], plan[1])}>{actual[1] === null ? '—' : `${actual[2] ? 'est. ' : ''}${at(actual[1])}`}</b>
-    </div>
-  );
-}
 
-function Head({ dot, title, badge, tone }: { dot: string; title: string; badge: string; tone: 'green' | 'red' | 'amber' | 'grey' }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className={cx('h-3 w-3 rounded-full', dot)} />
-      <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{title}</span>
-      <span className={cx('ml-auto rounded-md px-2 py-0.5 text-[11px] font-bold', tone === 'green' ? 'bg-green-100 text-green-800' : tone === 'red' ? 'bg-red-100 text-red-800' : tone === 'amber' ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-600')}>{badge}</span>
-      <span className="text-sm font-bold text-brand-500">›</span>
-    </div>
-  );
-}
 
 const STATE_TONE: Record<Banner['state'], 'green' | 'red' | 'amber'> = { AHEAD: 'green', BEHIND: 'red', ON_PLAN: 'amber' };
 const STATE_WORD: Record<Banner['state'], string> = { AHEAD: 'AHEAD', BEHIND: 'BEHIND', ON_PLAN: 'ON PLAN' };
 
-export function TodayTab({ steps, eqs, data, now, onOpen, onNav }: { steps: Map<string, StepView>; eqs: EquipView[]; data: TrackerData; now: number;
-  onOpen: (a: { kind: 'step' | 'equipment'; ref: string }) => void; onNav: (n: Nav) => void }) {
+/** The shutdown at a glance (owner, 25 Oct: the situation in 5 seconds, no scrolling): the end, the progress, the 3 items
+ *  that set the end, Operations and M & I in one line each, and what needs attention. Each line opens its detail. */
+export function ShutdownOverview({ data, now, head = false, onItem, onGo }: { data: TrackerData; now: number; head?: boolean; onItem: (tag: string) => void;
+  onGo: (to: 'todo' | 'late' | 'all' | 'ho' | 'hot' | 'focus') => void }) {
   const [sheet, setSheet] = useState<'ops' | 'mi' | null>(null);
-  const { ops, mi } = phases(data, now, steps);
-  const s = data.settings;
-  const tot = totals(steps, eqs, data.iats); const att = attention(steps, eqs);
+  const steps = useMemo(() => stepViews(data, now), [data, now]);
+  const eqs = useMemo(() => equipViews(data, now, steps), [data, now, steps]);
+  const { ops, mi } = useMemo(() => phases(data, now, steps), [data, now, steps]);
+  const s = data.settings; const w = mi.weighted;
   const res = opsResults(data, eqs); const bl = miBlinds(data);
   const start = iso(s.opsStart), miPlan = iso(s.miStart ?? s.hoTarget), end = iso(s.miEnd);
-  const span = end - start;
-  const day = Math.max(1, Math.floor((now - start) / DAY) + 1), days = Math.round(span / DAY);
-  const pos = (t: number) => `${Math.min(100, Math.max(0, ((t - start) / span) * 100))}%`;
-  // the main items first, the miscellaneous ones (CV shells, PSVs, check valves …) after them
-  // M & I behind: the items handed over to it, measured from their own handover
+  const day = Math.max(1, Math.floor((now - start) / DAY) + 1), total = Math.round((end - start) / DAY);
   const behind = eqs.filter((e) => e.stage >= 1 && e.plan && e.plan.variance < 0 && e.eq.tracked).sort((a, b) => Number(isMisc(a.eq.group)) - Number(isMisc(b.eq.group)) || a.plan!.variance - b.plan!.variance || b.plan!.days - a.plan!.days);
-  const go = (n: Nav) => { setSheet(null); onNav(n); };
-  const open = (a: { kind: 'step' | 'equipment'; ref: string }) => { setSheet(null); onOpen(a); };
   const opsBadge = !ops ? null : ops.finishedAt !== null && ops.finishDelayH !== null
-    ? { text: ops.finishDelayH <= 0 ? `${hrs(ops.finishDelayH)} EARLY` : `${hrs(ops.finishDelayH)} LATE`, tone: ops.finishDelayH <= 0 ? 'green' as const : 'red' as const }
-    : ops.state === 'NOT_STARTED' ? { text: 'NOT STARTED', tone: 'grey' as const } : { text: STATE_WORD[ops.state as Banner['state']] ?? ops.state, tone: STATE_TONE[ops.state as Banner['state']] ?? 'grey' };
+    ? { text: ops.finishDelayH <= 0 ? `${hrs(ops.finishDelayH)} early` : `${hrs(ops.finishDelayH)} late`, tone: ops.finishDelayH <= 0 ? 'green' as const : 'red' as const }
+    : ops.state === 'NOT_STARTED' ? { text: 'not started', tone: 'grey' as const } : { text: (STATE_WORD[ops.state as Banner['state']] ?? ops.state).toLowerCase(), tone: STATE_TONE[ops.state as Banner['state']] ?? 'grey' };
+  // the items that set the end: the least float first (the controlling item, then near critical)
+  const top = w ? [...new Map([...(w.controlling ? [w.controlling] : []), ...w.critical, ...w.delays].map((i) => [i.key, i])).values()].sort((a, b) => a.spareD - b.spareD).slice(0, 3) : [];
+  const probs = new Set((data.events ?? []).filter((x) => !x.endedAt && x.key).map((x) => x.key));
+  const stale = staleItems(data, now).filter((i) => !i.small || ['Pumps / LO', 'PSVs'].includes(i.section)), crit = stale.filter((i) => i.critical).length;
+  const lateN = lateOrHold(equipmentList(data, head), eqs).length;
+  const lateSteps = head ? [...steps.values()].filter((v) => v.late).length : 0;
+  const late = !!w && w.impactD > 0;
+  const tone = (t: 'green' | 'red' | 'amber' | 'grey') => (t === 'green' ? 'bg-green-100 text-green-800' : t === 'red' ? 'bg-red-100 text-red-800' : t === 'amber' ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-600');
+  const H3 = ({ children }: { children: React.ReactNode }) => <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{children}</p>;
+  const Line = ({ onClick, children }: { onClick: () => void; children: React.ReactNode }) => <button type="button" onClick={onClick} className="flex min-h-9 w-full items-center gap-2 border-t border-slate-100 py-1 text-left first:border-t-0">{children}<span className="text-sm font-bold text-brand-500">›</span></button>;
   return (
-    <div className="space-y-3">
-      {!Number.isNaN(span) && span > 0 && (
-        <button type="button" onClick={() => onNav({ tab: 'report' })} className="block w-full rounded-2xl bg-white p-3 text-left ring-1 ring-slate-200">
-          <span className="flex items-baseline justify-between"><b className="text-lg text-slate-900">Day {Math.min(day, days)} / {days}</b><span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{kwDay(new Date(now).toISOString())}</span></span>
-          <span className="relative mt-3 block h-3 rounded-full bg-brand-200">
-            <span className="absolute inset-y-0 left-0 rounded-l-full bg-status-green" style={{ width: pos(mi.actualStart ?? Math.min(now, miPlan)) }} />
-            {mi.actualStart !== null && <span className="absolute inset-y-0 bg-brand-500" style={{ left: pos(mi.actualStart), width: `calc(${pos(now)} - ${pos(mi.actualStart)})` }} />}
-            <span className="absolute -top-1.5 h-6 w-0.5 bg-status-red" style={{ left: pos(now) }} />
-          </span>
-          <span className="mt-1.5 flex justify-between text-[11px] text-slate-500"><span>Ops {kwDay(s.opsStart ?? '')}</span><span>M &amp; I {kwDay(s.miStart ?? s.hoTarget ?? '')}</span><span>{kwDay(s.miEnd ?? '')}</span></span>
-        </button>
-      )}
-
-      {ops && res && (
-        <div role="button" tabIndex={0} onClick={() => setSheet('ops')} onKeyDown={(e) => e.key === 'Enter' && setSheet('ops')} className="cursor-pointer rounded-2xl bg-white p-3 ring-1 ring-slate-200 active:scale-[0.99]">
-          <Head dot={opsBadge?.tone === 'red' ? 'bg-status-red' : 'bg-status-green'} title="Operations" badge={opsBadge?.text ?? ''} tone={opsBadge?.tone ?? 'grey'} />
-          <Dates plan={[start, miPlan]} actual={[now >= start ? start : null, ops.finishedAt]} endLabel={`End (${mi.critical.map((c) => c.tag.replace('R-12-', 'R-')).join(', ') || 'critical'} HO)`} />
-          <Bar label="Neutralized" v={res.neut} onClick={() => onNav({ tab: 'isolation', iso: 'neut' })} />
-          <Bar label="Handed over" v={res.ho} onClick={() => onNav({ tab: 'equipment' })} />
-        </div>
-      )}
-
-      <div role="button" tabIndex={0} onClick={() => setSheet('mi')} onKeyDown={(e) => e.key === 'Enter' && setSheet('mi')} className="cursor-pointer rounded-2xl bg-white p-3 ring-1 ring-slate-200 active:scale-[0.99]">
-        {(() => { const st = mi.weighted?.state ?? mi.banner?.state; return <Head dot={st === 'BEHIND' ? 'bg-status-red' : st ? 'bg-status-green' : 'bg-slate-400'} title="M & I" badge={st ? STATE_WORD[st] : 'NOT STARTED'} tone={st ? STATE_TONE[st] : 'grey'} />; })()}
-        <Dates plan={[mi.planned, mi.plannedEnd]} actual={[mi.actualStart, mi.actualStart !== null ? mi.estEnd : null, true]} />
-        {mi.weighted && (
-          <div className="pt-1.5">
-            <PhysBar label="Main equipment" p={mi.weighted.main} state={mi.weighted.state} />
-            {mi.weighted.small.items > 0 && <PhysBar label="Small jobs (PSVs, CVs, pumps &amp; lube oil, piping)" p={mi.weighted.small} />}
-            {mi.weighted.controlling && <Controlling i={mi.weighted.controlling} onClick={() => onOpen({ kind: 'equipment', ref: mi.weighted!.controlling!.tag })} />}
-            {mi.weighted.critical.length > 0 && <>
-              <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">Near critical · {CRITICAL_SPARE_D * 24} h float or less</p>
-              <div className="mt-1 space-y-1">{mi.weighted.critical.slice(0, 4).map((i) => <SpareRow key={i.key} i={i} onClick={() => onOpen({ kind: 'equipment', ref: i.tag })} />)}</div>
-              {mi.weighted.critical.length > 4 && <p className="mt-1 text-[11px] text-slate-500">+ {mi.weighted.critical.length - 4} more in the M &amp; I sheet</p>}
-            </>}
-          </div>
-        )}
-        <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">Blinds installed</p>
-        <Bar label="Segregation" v={bl.segregation} onClick={() => onNav({ tab: 'isolation', iso: 'blind' })} />
-        <Bar label="HP critical" v={bl.hp} onClick={() => onNav({ tab: 'isolation', iso: 'blind' })} />
-        <Bar label="Equipment" v={bl.equipment} onClick={() => onNav({ tab: 'isolation', iso: 'blind' })} />
-        {behind.length > 0 && <div className="mt-2.5 flex flex-wrap gap-1.5">
-          {behind.slice(0, 3).map((e) => <button key={e.eq.tag} type="button" onClick={(x) => { x.stopPropagation(); onOpen({ kind: 'equipment', ref: e.eq.tag }); }} className="rounded-md bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">{e.eq.tag} −{-e.plan!.variance}</button>)}
-          {behind.length > 3 && <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">+{behind.length - 3}</span>}
-        </div>}
-      </div>
-
-      <div className="grid grid-cols-3 gap-2">
-        <Tile value={tot.late} label="late" tone={tot.late ? 'red' : undefined} onClick={() => onNav({ tab: 'equipment', lateFirst: true })} />
-        <Tile value={tot.pending} label="pending" tone={tot.pending ? 'amber' : undefined} onClick={() => onNav({ tab: 'equipment', lateFirst: true })} />
-        <Tile value={tot.iatOpen} label="IAT open" tone={tot.iatOpen ? 'amber' : undefined} onClick={() => onNav({ tab: 'iats' })} />
-      </div>
-      {att.length > 0 && <AttentionCard list={focusList(att, eqs, data.activities, data.points)} onOpen={onOpen} />}
-
-      {sheet === 'ops' && <OpsSheet data={data} eqs={eqs} plan={[start, miPlan]} finished={ops?.finishedAt ?? null} badge={opsBadge?.text ?? ''} onOpen={open} onNav={go} onClose={() => setSheet(null)} />}
-      {sheet === 'mi' && <MiSheet data={data} steps={steps} now={now} mi={mi} behind={behind} onOpen={open} onNav={go} onClose={() => setSheet(null)} />}
+    <div className="mb-2.5 space-y-2">
+      {/* 1 · the end */}
+      <section className={cx('rounded-2xl border-l-[6px] bg-white p-3 ring-1 ring-slate-200', !w ? 'border-l-slate-300' : late ? 'border-l-status-red' : 'border-l-status-green')}>
+        <div className="flex items-baseline justify-between gap-2"><H3>Shutdown end</H3>{total > 0 && <span className="text-[11px] font-semibold text-slate-500">Day {Math.min(day, total)} / {total}</span>}</div>
+        {w ? <>
+          <p className="flex flex-wrap items-baseline gap-x-2"><b className={cx('text-[22px] font-extrabold leading-tight', late ? 'text-status-red' : 'text-brand-700')}>{at(w.estEnd)}</b>
+            <span className={cx('rounded-md px-1.5 py-0.5 text-[12px] font-bold', late ? tone('red') : tone('green'))}>{late ? `${daysAsHours(w.impactD)} behind P6` : 'on P6'}</span></p>
+          <p className="text-[12px] text-slate-600">P6 {at(w.end)}{w.controlling ? <> · set by <b>{w.controlling.tag}</b>{w.controlling.driving ? ` · ${w.controlling.driving}` : ''}</> : null}</p>
+        </> : <p className="text-sm text-slate-600">M &amp; I has not started yet.</p>}
+      </section>
+      {/* 2 · progress */}
+      {w && <section className="rounded-2xl bg-white p-3 ring-1 ring-slate-200">
+        <div className="flex items-baseline justify-between gap-2"><H3>Progress · main equipment</H3>
+          <span className={cx('text-[12px] font-bold', w.main.physPct >= w.main.planPct ? 'text-status-green' : 'text-status-red')}>{w.main.physPct >= w.main.planPct ? 'on plan' : `${w.main.planPct - w.main.physPct} pts behind`}</span></div>
+        <p className="flex items-baseline gap-2"><b className="text-[22px] font-extrabold text-brand-700">{w.main.physPct}%</b><span className="text-[12px] text-slate-600">plan {w.main.planPct}%{w.main.physHiPct > w.main.physPct ? ` · up to ${w.main.physHiPct}%` : ''}</span></p>
+        <span className="relative mt-1 block h-2 rounded-full bg-slate-200"><span className={cx('block h-full rounded-full', w.main.physPct >= w.main.planPct ? 'bg-status-green' : 'bg-status-red')} style={{ width: `${Math.min(100, w.main.physPct)}%` }} />
+          <span className="absolute -top-1 h-4 w-0.5 bg-slate-900" style={{ left: `${Math.min(100, w.main.planPct)}%` }} /></span>
+        {w.small.items > 0 && <p className="mt-1 text-[11px] text-slate-500">Small jobs {w.small.physPct}% · plan {w.small.planPct}%</p>}
+      </section>}
+      {/* 3 · what sets the end */}
+      {top.length > 0 && <section className="rounded-2xl bg-white px-3 py-2 ring-1 ring-slate-200">
+        <H3>Critical · setting the end</H3>
+        {top.map((i) => <Line key={i.key} onClick={() => onItem(i.tag)}>
+          <b className="w-[92px] shrink-0 truncate text-[13px]">{i.tag}{probs.has(i.key) ? ' ⚠' : ''}</b>
+          <span className="min-w-0 flex-1 truncate text-[12px] text-slate-600">{i.driving ?? i.next ?? `${i.physPct}% / plan ${i.planPct}%`}</span>
+          <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold', i.spareD < 0 ? tone('red') : i.spareD <= 1 ? tone('amber') : tone('grey'))}>{i.spareD < 0 ? `delays ${daysAsHours(-i.spareD)}` : `${daysAsHours(i.spareD)} float`}</span>
+        </Line>)}
+      </section>}
+      {/* 4 · operations and M & I */}
+      <section className="rounded-2xl bg-white px-3 py-1 ring-1 ring-slate-200">
+        {ops && res && <Line onClick={() => setSheet('ops')}><b className="w-[92px] shrink-0 text-[13px]">Operations</b>
+          <span className="min-w-0 flex-1 truncate text-[12px] text-slate-600">HO {res.ho[0]}/{res.ho[1]} · neutralized {res.neut[0]}/{res.neut[1]}</span>
+          {opsBadge && <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold', tone(opsBadge.tone))}>{opsBadge.text}</span>}</Line>}
+        <Line onClick={() => setSheet('mi')}><b className="w-[92px] shrink-0 text-[13px]">M &amp; I</b>
+          <span className="min-w-0 flex-1 truncate text-[12px] text-slate-600">{mi.actualStart ? `since ${kwDay(new Date(mi.actualStart).toISOString())}` : 'not started'} · blinds {bl.segregation[0] + bl.hp[0] + bl.equipment[0]}/{bl.segregation[1] + bl.hp[1] + bl.equipment[1]}{behind.length ? ` · ${behind.length} behind` : ''}</span>
+          {(() => { const st = w?.state ?? mi.banner?.state; return <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold', st ? tone(STATE_TONE[st]) : tone('grey'))}>{st ? STATE_WORD[st].toLowerCase() : 'not started'}</span>; })()}</Line>
+      </section>
+      {/* 5 · needs attention */}
+      {(stale.length > 0 || lateN > 0 || lateSteps > 0) && <section className={cx('rounded-2xl px-3 py-1 ring-1', crit ? 'bg-red-50 ring-red-200' : 'bg-amber-50 ring-amber-200')}>
+        {stale.length > 0 && <Line onClick={() => onGo('todo')}><span className="min-w-0 flex-1 text-[13px]"><b className={crit ? 'text-status-red' : 'text-amber-900'}>⏰ {stale.length} without an update</b>{crit ? <span className="text-slate-600"> · {crit} critical</span> : null}</span></Line>}
+        {lateN > 0 && <Line onClick={() => onGo('late')}><span className="min-w-0 flex-1 text-[13px]"><b className="text-status-red">{lateN} late or on hold</b><span className="text-slate-600"> · equipment</span></span></Line>}
+        {lateSteps > 0 && <Line onClick={() => onGo('focus')}><span className="min-w-0 flex-1 text-[13px]"><b className="text-status-red">{lateSteps} guideline step{lateSteps > 1 ? 's' : ''} late</b><span className="text-slate-600"> · operations</span></span></Line>}
+      </section>}
+      {sheet === 'ops' && <OpsSheet data={data} eqs={eqs} plan={[start, miPlan]} finished={ops?.finishedAt ?? null} badge={opsBadge?.text ?? ''} onOpen={(a) => { setSheet(null); if (a.kind === 'equipment') onItem(a.ref); else onGo('focus'); }} onNav={(n) => { setSheet(null); onGo(n.tab === 'iats' ? 'hot' : n.tab === 'isolation' ? 'ho' : n.tab === 'equipment' ? (n.lateFirst ? 'late' : 'all') : 'focus'); }} onClose={() => setSheet(null)} />}
+      {sheet === 'mi' && <MiSheet data={data} steps={steps} now={now} mi={mi} behind={behind} onOpen={(a) => { setSheet(null); if (a.kind === 'equipment') onItem(a.ref); }} onNav={(n) => { setSheet(null); onGo(n.tab === 'iats' ? 'hot' : n.tab === 'isolation' ? 'ho' : n.tab === 'equipment' ? (n.lateFirst ? 'late' : 'all') : 'focus'); }} onClose={() => setSheet(null)} />}
     </div>
   );
+}
+
+/** The operations focus list (late or pending guideline steps and items with their next step), for the Section Head. */
+export function FocusList({ data, now, onOpen }: { data: TrackerData; now: number; onOpen: (a: Attention) => void }) {
+  const steps = useMemo(() => stepViews(data, now), [data, now]);
+  const eqs = useMemo(() => equipViews(data, now, steps), [data, now, steps]);
+  const att = attention(steps, eqs);
+  return att.length ? <AttentionCard list={focusList(att, eqs, data.activities, data.points)} onOpen={onOpen} /> : <p className="text-sm text-slate-500">Nothing late or pending.</p>;
 }
 
 function AttentionCard({ list, onOpen }: { list: Focus[]; onOpen: (a: Attention) => void }) {
@@ -209,33 +183,6 @@ function OpsSheet({ data, eqs, plan, finished, badge, onOpen, onNav, onClose }: 
 
 const pctText = (lo: number, hi: number) => (hi > lo ? `${lo}–${hi}%` : `${lo}%`);
 const days = (x: number) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${daysAsHours(x)}`;
-/** Physical progress against the plan: measured, up to (running work not measured), the plan marker. */
-function PhysBar({ label, p, state }: { label: string; p: MiPart; state?: MiWeighted['state'] }) {
-  const tone = (state ?? (p.physPct >= p.planPct + 2 ? 'AHEAD' : p.physHiPct < p.planPct - 2 ? 'BEHIND' : 'ON_PLAN')) === 'BEHIND' ? 'bg-status-red' : 'bg-status-green';
-  return (
-    <div className="mb-2">
-      <span className="flex justify-between text-[13px] text-slate-700"><span>{label}</span><span><b className="text-slate-900">{pctText(p.physPct, p.physHiPct)}</b> <span className="font-semibold text-slate-500">/ plan {p.planPct}%</span></span></span>
-      <span className="relative mt-1 block h-2 rounded-full bg-slate-200">
-        <span className={cx('absolute left-0 top-0 block h-full rounded-full opacity-30', tone)} style={{ width: `${p.physHiPct}%` }} />
-        <span className={cx('absolute left-0 top-0 block h-full rounded-full', tone)} style={{ width: `${p.physPct}%` }} />
-        <span className="absolute -top-1 h-4 w-0.5 bg-slate-900" style={{ left: `${p.planPct}%` }} />
-      </span>
-    </div>
-  );
-}
-/** The item that sets the end now: the latest forecast. */
-function Controlling({ i, onClick }: { i: MiItem; onClick: () => void }) {
-  const late = i.impactD > 0;
-  return (
-    <button type="button" onClick={(x) => { x.stopPropagation(); onClick(); }} className={cx('mt-1 block w-full rounded-lg px-2.5 py-2 text-left ring-1', late ? 'bg-red-50 ring-red-200' : 'bg-slate-50 ring-slate-200')}>
-      <span className="block text-[11px] font-bold uppercase tracking-wide text-slate-500">Controlling the end <span className="font-semibold normal-case tracking-normal text-amber-700">· unverified</span></span>
-      <span className="flex items-baseline justify-between gap-2"><b className="text-[14px]">{i.tag}</b>
-        <span className={cx('text-[12px] font-bold', late ? 'text-status-red' : 'text-slate-700')}>{late ? `delays end ${daysAsHours(i.impactD)}` : `${daysAsHours(i.spareD)} float`}</span></span>
-      <span className="block text-[12px] text-slate-600">Forecast {kwDay(i.forecast)} {kwTime(i.forecast)} · {daysAsHours(i.remainingD)} left · {pctText(i.physPct, i.physHiPct)} / plan {i.planPct}% · {days(i.svD)} vs P6</span>
-      {i.driving && <span className="block truncate text-[11px] text-slate-500">Driving: {i.driving}</span>}
-    </button>
-  );
-}
 /** An item near the critical path: physical vs plan, schedule variance, float (or the days it delays the end). */
 function SpareRow({ i, onClick }: { i: MiItem; onClick: () => void }) {
   return (
