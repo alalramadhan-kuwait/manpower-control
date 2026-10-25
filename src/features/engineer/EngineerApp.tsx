@@ -263,9 +263,13 @@ function TeamToday({ now }: { now: number }) {
 // ── Equipment (main) ────────────────────────────────────────────────────────────────────────────────────────────────
 function itemLine(d: TrackerData, e: TrkEquipment): string {
   if (e.pendingReason) return `On hold · ${e.pendingReason}`;
-  if (e.remark?.trim()) return e.remark.trim();
   const ls = lines(d, [keyOf(e)]); const r = ls.find((a) => a.actualStart && !a.actualFinish), n = ls.find((a) => !a.actualStart);
-  return r ? `${r.activity} I/P` : n ? `Next: ${n.activity}` : ls.length ? 'All steps done' : '—';
+  // the written status, unless a step was started or finished after it (the newer one is shown)
+  const t = (x?: string | null) => (x ? Date.parse(x) : 0);
+  const lastStep = Math.max(0, ...ls.flatMap((a) => [t(a.actualStart), t(a.actualFinish)]));
+  if (e.remark?.trim() && t(e.updatedAt) >= lastStep) return e.remark.trim();
+  const fin = [...ls].filter((a) => a.actualFinish).sort((a, b) => t(b.actualFinish) - t(a.actualFinish))[0];
+  return r ? `${r.activity} I/P` : fin && n ? `${fin.activity} done · next: ${n.activity}` : n ? `Next: ${n.activity}` : ls.length ? 'All steps done' : '—';
 }
 /** When the item was last updated: its steps, its remark / hold, its drums. */
 function lastUpdate(d: TrackerData, keys: string[]): number | null {
@@ -394,7 +398,7 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
       <div className="space-y-2.5">
         <button type="button" onClick={() => setSteps(true)} className="flex min-h-10 w-full items-center justify-between rounded-xl bg-slate-50 px-3 text-[13px] font-bold text-brand-700 ring-1 ring-slate-200">
           <span>📋 All steps{manage ? ' · view, edit, add, order' : ''}</span><span className="text-slate-500">{ls.filter((a) => a.actualFinish).length}/{ls.length} ›</span></button>
-        <p className="text-xs text-slate-600">Last: {e.pendingReason ? `On hold · ${e.pendingReason}` : e.remark?.trim() || (() => { const f = [...ls].filter((a) => a.actualFinish).sort((a, b) => Date.parse(b.actualFinish!) - Date.parse(a.actualFinish!))[0]; return f ? `${f.activity} done` : 'nothing recorded yet'; })()}{e.updatedAt ? ` · ${when(e.updatedAt)}` : ''}</p>
+        <p className="text-xs text-slate-600">Last: {itemLine(d, e)}{e.updatedAt ? ` · ${when(e.updatedAt)}` : ''}</p>
         {run.map((a) => <button key={a.id} type="button" disabled={busy} onClick={() => step(a, true)} className="w-full rounded-xl bg-amber-400 px-3 py-2 text-left text-amber-950"><span className="block text-[11px] font-bold uppercase tracking-wide opacity-80">✓ Finish</span><span className="line-clamp-2 text-[13px] font-semibold leading-snug">{a.activity}</span></button>)}
         {next && <button type="button" disabled={busy} onClick={() => step(next, false)} className="w-full rounded-xl bg-brand-700 px-3 py-2 text-left text-white"><span className="block text-[11px] font-bold uppercase tracking-wide opacity-80">▶ Start</span><span className="line-clamp-2 text-[13px] font-semibold leading-snug">{next.activity}</span></button>}
         {!ls.length ? <>{e.description && <p className="text-[13px] font-semibold">{e.description}</p>}
@@ -435,6 +439,9 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
  *  time, so they change neither the % nor the forecast. */
 function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipment; keys: string[]; done: Done; onClose: () => void }) {
   const manage = useCanManage();
+  // a bar-chart step not required: off the timing and the %, kept with its reason (Section Head, as on the tracker)
+  const isHead = useContext(RoleCtx) === 'head';
+  const [nr, setNr] = useState<{ id: string; why: string } | null>(null);
   const [order, setOrd] = useState<{ key: string; ids: string[] } | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [edit, setEdit] = useState<{ id: string; text: string } | null>(null);
@@ -530,13 +537,25 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
                     {a.actualStart && <button type="button" disabled={busy} onClick={() => step(a, 'undo')} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-slate-700 ring-1 ring-slate-300">↶ Undo {a.actualFinish ? 'finish' : 'start'}</button>}
                     {atIso && a.actualStart && <button type="button" disabled={busy || !why.trim()} onClick={() => retime(a, 'actual_start')} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-brand-700 ring-1 ring-slate-300">Set start to this time</button>}
                     {atIso && a.actualFinish && <button type="button" disabled={busy || !why.trim()} onClick={() => retime(a, 'actual_finish')} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-brand-700 ring-1 ring-slate-300">Set finish to this time</button>}
+                    {isHead && !eng && !a.actualStart && <button type="button" disabled={busy} onClick={() => setNr({ id: a.id, why: '' })} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-slate-700 ring-1 ring-slate-300">⊘ Not required</button>}
                     {manage && <button type="button" disabled={busy} onClick={() => setEdit({ id: a.id, text: a.activity })} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-brand-700 ring-1 ring-slate-300">✎ Edit name</button>}
                     {eng && manage && <button type="button" disabled={busy} onClick={() => { if (window.confirm(`Remove "${a.activity}"?`)) void act(() => setActivity(a.id, { tracked: false, disabled_reason: 'removed' }), 'Step removed.', () => setActivity(a.id, { tracked: true, disabled_reason: null })); }} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-red-700 ring-1 ring-red-200">🗑 Remove</button>}
                   </div>}</>}
+                  {nr?.id === a.id && <div className="space-y-1.5 rounded-xl bg-slate-50 p-2 ring-1 ring-slate-200">
+                    <input autoFocus className="input min-h-9 text-[13px]" placeholder="Why it is not required" value={nr.why} onChange={(x) => setNr({ ...nr, why: x.target.value })} />
+                    <div className="flex gap-2"><button type="button" onClick={() => setNr(null)} className="min-h-10 flex-1 rounded-xl bg-white font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button>
+                      <button type="button" disabled={busy || nr.why.trim().length < 3} onClick={() => { const w = nr.why.trim(); setNr(null); void act(() => setActivity(a.id, { tracked: false, disabled_reason: `not required: ${w}` }), `${a.activity}: not required.`, () => setActivity(a.id, { tracked: true, disabled_reason: null })); }} className="min-h-10 flex-1 rounded-xl bg-brand-700 font-bold text-white disabled:opacity-50">Save</button></div>
+                    <p className="text-[11px] text-slate-500">The step leaves the timing and the %; it is kept with the reason and can be made required again.</p></div>}
                   {!eng && !edit && <p className="text-[11px] text-slate-500">Bar-chart step: its plan dates stay as in P6.</p>}
                 </div>}
               </div>; })}</List>}
             {!shown.length && <Card><p className="text-sm text-slate-600">No steps yet. Add the first one.</p></Card>}
+            {(() => { const off = d.activities.filter((a) => a.key === k && !a.tracked && !a.outOfScope && !a.detail && /^not required/.test(a.disabledReason ?? ''));
+              return off.length > 0 && <details className="mb-2 rounded-2xl bg-white px-2.5 py-1.5 text-[12px] ring-1 ring-slate-200"><summary className="cursor-pointer font-semibold text-slate-600">Not required · {off.length}</summary>
+                {off.map((a) => <div key={a.id} className="flex items-center gap-2 border-t border-slate-100 py-1.5 first:border-t-0">
+                  <span className="min-w-0 flex-1"><span className="block text-slate-700 line-through decoration-slate-300">{a.activity}</span><span className="block text-[11px] text-slate-500">{(a.disabledReason ?? '').replace(/^not required:?\s*/, '') || 'not required'}</span></span>
+                  {isHead && <button type="button" disabled={busy} onClick={() => void act(() => setActivity(a.id, { tracked: true, disabled_reason: null }), `${a.activity}: required again.`, () => setActivity(a.id, { tracked: false, disabled_reason: a.disabledReason ?? 'not required' }))} className="shrink-0 rounded-lg px-2.5 py-1 text-[12px] font-bold text-brand-700 ring-1 ring-slate-300">Required again</button>}
+                </div>)}</details>; })()}
             {ids && <div className="sticky bottom-3 mt-2 flex gap-2 rounded-2xl bg-white p-2 shadow-lg ring-1 ring-slate-200">
               <button type="button" onClick={() => setOrd(null)} className="min-h-11 flex-1 rounded-xl bg-white font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button>
               <button type="button" disabled={busy} onClick={() => { const was = all.some((a) => a.seq != null) ? all.map((a) => a.id) : []; void act(() => setOrder(d.tracker.id, k, ids), `${short(k)}: order saved.`, () => setOrder(d.tracker.id, k, was)); }} className="min-h-11 flex-1 rounded-xl bg-brand-700 font-bold text-white">✓ Save order</button></div>}
