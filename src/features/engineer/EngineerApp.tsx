@@ -6,6 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { ItemMore, PendingForm } from '@/features/tracker/TrackerSheets';
 import { ActivityRow } from '@/features/tracker/Timing';
 import { RowList } from '@/features/tracker/ui';
+import { StepButton } from '@/features/tracker/StepButton';
 import { IatDetail, LABEL_CLS, OpsLabel } from '@/features/tracker/Iats';
 import { InspWork } from '@/features/tracker/ui';
 import { LoopDetail, LoopScope } from '@/features/tracker/Isolation';
@@ -13,7 +14,7 @@ import { BlindList } from '@/features/tracker/BlindList';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
-import { WITH_EQUIP, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
+import { WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -299,48 +300,75 @@ function VsPlan({ mi }: { mi?: MiItem }) {
   );
 }
 /** One item in two lines: tag, what is happening; done / plan and when it was last updated (orange when overdue). */
-function ItemRow({ d, e, now, ageH, mi, onOpen }: { d: TrackerData; e: TrkEquipment; now: number; ageH?: number; mi?: MiItem; onOpen: () => void }) {
+/** The next step of a row: finish the running one, else start the next (the blind and neutralization lines are done
+ *  in Handover); for items worked as one, the same-named step of the others goes with it. */
+function useRowStep(d: TrackerData, e: TrkEquipment, keys: string[]) {
+  const neut = (d.points ?? []).some((p) => p.kind === 'neut' && p.items.includes(e.tag));
+  const each = keys.map((k) => { const xs = lines(d, [k]).filter((a) => !blindLink(a) && !(neut && neutLink(a)) && !equipBlind(a));
+    const run = xs.filter((a) => a.actualStart && !a.actualFinish); if (run.length) return { a: run[0], finish: true, more: run.length - 1 };
+    const nx = xs.find((a) => !a.actualStart); return nx ? { a: nx, finish: false, more: 0 } : null; });
+  const lead = each.find((x) => x?.finish) ?? each.find((x) => x) ?? null; if (!lead) return null;
+  return { ...lead, also: each.filter((x) => x && x !== lead && x.a.activity === lead.a.activity && (x.finish === lead.finish || lead.finish)).map((x) => x!.a) };
+}
+function ItemRow({ d, e, now, ageH, mi, onOpen, done }: { d: TrackerData; e: TrkEquipment; now: number; ageH?: number; mi?: MiItem; onOpen: () => void; done: Done }) {
   const keys = e.combine ? d.equipment.filter((x) => x.combine === e.combine).map(keyOf) : [keyOf(e)];
   const t = lastUpdate(d, keys);
   const probs = (d.events ?? []).filter((x) => !x.endedAt && x.key && keys.includes(x.key)).length;
+  const step = useRowStep(d, e, keys);
   return (
-    <button type="button" onClick={onOpen} className={ROW}>
+    <div role="button" tabIndex={0} onClick={onOpen} onKeyDown={(x) => x.key === 'Enter' && onOpen()} className={cx(ROW, 'cursor-pointer')}>
       <span className={cx('h-2 w-2 shrink-0 rounded-full', e.pendingReason ? 'bg-status-red' : !mi ? 'bg-slate-300' : mi.done >= mi.lines || mi.svD >= 0.5 ? 'bg-status-green' : mi.svD > -0.5 ? 'bg-slate-400' : 'bg-status-red')} />
       <b className={TAG}>{short(e.combine ?? e.tag)}{probs > 0 && <span className="mt-0.5 block w-fit rounded bg-red-100 px-1 text-[10px] font-bold text-red-800">⚠ {probs}</span>}</b>
       <span className="min-w-0 flex-1"><span className="block truncate text-[13px] text-slate-700">{itemLine(d, e)}</span>
         <span className="block truncate text-[11px] text-slate-500">{mi ? `${mi.physPct}% / plan ${mi.planPct}% · ` : ''}<span className={ageH !== undefined ? 'font-bold text-amber-700' : ''}>{t ? ago(t, now) : 'no update yet'}</span></span></span>
-      <VsPlan mi={mi} />
-    </button>
+      {step ? <StepButton key={step.a.id} a={step.a} also={step.also} finish={step.finish} more={step.more} eq={e} onDone={done} /> : <VsPlan mi={mi} />}
+    </div>
   );
 }
+/** The Equipment list, the same in both modes (the Section Head's item sheet opens on a tap there). */
+export function EquipmentListTab({ d, now, done, role, onItem, initial = 'all' }: { d: TrackerData; now: number; done: Done; role: EngRole; onItem?: (tag: string) => void; initial?: string }) {
+  const [f, setF] = useState(initial);
+  return <RoleCtx.Provider value={role}><OpenItemCtx.Provider value={onItem ?? null}><Equipment d={d} now={now} done={done} go={() => {}} by="" f={f} setF={setF} /></OpenItemCtx.Provider></RoleCtx.Provider>;
+}
 function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string) => void }) {
-  const [open, setOpen] = useState<TrkEquipment | null>(null);
+  const [open, setOpen0] = useState<TrkEquipment | null>(null); const openItem = useContext(OpenItemCtx);
+  const setOpen = (e: TrkEquipment | null) => (e && openItem ? openItem(e.tag) : setOpen0(e));
+  const head = useContext(RoleCtx) === 'head';
+  const views = useMemo(() => new Map(equipViews(d, now).map((v) => [v.eq.tag, v])), [d, now]);
+  const [showOut, setShowOut] = useState(false);
   const stale = useMemo(() => new Map(staleItems(d, now).filter((i) => !i.small || WITH_EQUIP.includes(i.section)).map((i) => [i.key, i.ageH])), [d, now]);
   const mi = useMemo(() => new Map((phases(d, now).mi.weighted?.items ?? []).map((i) => [i.key, i])), [d, now]);
   // items of one machine (a compressor and its accessories) sit under the machine's heading, in one expandable block
   const grpOf = useMemo(() => shownGroup(d.equipment), [d.equipment]);
   const [openSys, setOpenSys] = useState<Set<string>>(new Set());
-  const main = d.equipment.filter((e) => e.tracked && inEquipmentTab(e) && lines(d, [keyOf(e)]).length && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e));
+  // the Section Head also sees the items followed by their handover only (no bar-chart steps)
+  const main = d.equipment.filter((e) => e.tracked && inEquipmentTab(e) && (head || lines(d, [keyOf(e)]).length) && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e));
   const all = [...new Set(main.map(grpOf))];
   const todo = main.filter((e) => stale.has(keyOf(e)));
-  const shown = f === 'todo' ? todo : f === 'all' ? main : main.filter((e) => grpOf(e) === f);
-  const groups = [...new Set(shown.map(grpOf))];
-  const chips: [string, string][] = [['all', `All ${main.length}`], ['todo', `To update ${todo.length}`], ...all.map((g): [string, string] => [g, `${g} ${main.filter((e) => grpOf(e) === g).length}`])];
+  // late first: handover late, late, on hold, by how late
+  const RANK: Record<string, number> = { HO_LATE: 0, LATE: 1, PENDING: 2 };
+  const late = main.filter((e) => (RANK[views.get(e.tag)?.flag ?? ''] ?? 9) < 9).sort((a, b) => (RANK[views.get(a.tag)!.flag] - RANK[views.get(b.tag)!.flag]) || (views.get(b.tag)!.lateBy - views.get(a.tag)!.lateBy));
+  const outs = d.equipment.filter(isOutOfScope), off = d.equipment.filter((e) => !e.tracked && !isOutOfScope(e) && inEquipmentTab(e));
+  const shown = f === 'todo' ? todo : f === 'late' ? late : f === 'all' ? main : main.filter((e) => grpOf(e) === f);
+  const groups = f === 'late' ? ['Late first'] : [...new Set(shown.map(grpOf))];
+  const chips: [string, string][] = [['all', `All ${main.length}`], ['todo', `To update ${todo.length}`], ...(late.length ? [['late', `Late ${late.length}`] as [string, string]] : []), ...all.map((g): [string, string] => [g, `${g} ${main.filter((e) => grpOf(e) === g).length}`])];
   return (<>
     <div className="-mx-3 mb-2.5 flex gap-1.5 overflow-x-auto px-3 pb-0.5 [scrollbar-width:none]">{chips.map(([k, l]) => <button key={k} type="button" onClick={() => setF(k)} ref={(el) => { if (el && f === k && f !== 'all') el.scrollIntoView({ inline: 'center', block: 'nearest' }); }}
       className={cx('min-h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-[12px] font-bold', f === k ? 'bg-brand-700 text-white' : k === 'todo' && todo.length ? 'bg-amber-50 text-amber-900 ring-1 ring-amber-300' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>)}</div>
     {f === 'todo' && <p className="mx-1 mb-2 text-[12px] text-slate-500">Work running (or due to start) with no update for {'>'}12 h · critical {'>'}6 h. Any step, note, status or drum entry counts as an update.</p>}
     {(f === 'all' || f === 'Reactors') && <Reactors d={d} now={now} done={done} />}
-    {groups.map((g) => { const xs = shown.filter((e) => grpOf(e) === g); const seen = new Set<string>();
-      const item = (e: TrkEquipment) => <ItemRow key={e.id} d={d} e={e} now={now} ageH={stale.get(keyOf(e))} mi={mi.get(keyOf(e))} onOpen={() => setOpen(e)} />;
-      return <div key={g}><Sec>{g}</Sec><List>{xs.flatMap((e) => { const sys = e.system; if (!sys || f === 'todo') return [item(e)]; if (seen.has(sys)) return []; seen.add(sys);
+    {groups.map((g) => { const xs = f === 'late' ? shown : shown.filter((e) => grpOf(e) === g); const seen = new Set<string>();
+      const item = (e: TrkEquipment) => <ItemRow key={e.id} d={d} e={e} now={now} ageH={stale.get(keyOf(e))} mi={mi.get(keyOf(e))} onOpen={() => setOpen(e)} done={done} />;
+      return <div key={g}><Sec>{g}</Sec><List>{xs.flatMap((e) => { const sys = e.system; if (!sys || f === 'todo' || f === 'late') return [item(e)]; if (seen.has(sys)) return []; seen.add(sys);
         const ms = xs.filter((m) => m.system === sys); if (ms.length < 2) return [item(e)]; const isOpen = openSys.has(sys); const ho = ms.filter((m) => m.stage >= 1).length;
         return [<button key={`sys:${sys}`} type="button" aria-expanded={isOpen} onClick={() => setOpenSys((s) => { const n = new Set(s); if (n.has(sys)) n.delete(sys); else n.add(sys); return n; })}
           className="flex w-full items-center gap-2 bg-slate-50 px-3 py-2 text-left active:bg-slate-100">
           <span className="w-3 text-[12px] text-slate-500">{isOpen ? '▾' : '▸'}</span>
           <span className="min-w-0 flex-1"><b className="block truncate text-[14px] text-slate-900">{sys}</b><span className="text-[12px] text-slate-600">{ms.length} items · {ho} handed over · tap to {isOpen ? 'close' : 'open'}</span></span></button>,
           ...(isOpen ? ms.map((m) => <div key={`in:${m.id}`} className="border-l-4 border-slate-200">{item(m)}</div>) : [])]; })}</List></div>; })}
-    {!shown.length && <Card><p className="text-sm font-semibold text-green-800">{f === 'todo' ? '✓ Everything has a recent update.' : 'Nothing here.'}</p></Card>}
+    {!shown.length && <Card><p className="text-sm font-semibold text-green-800">{f === 'todo' ? '✓ Everything has a recent update.' : f === 'late' ? '✓ Nothing late.' : 'Nothing here.'}</p></Card>}
+    {head && outs.length + off.length > 0 && <button type="button" onClick={() => setShowOut((x) => !x)} className="mx-1 mb-2 block text-[12px] font-semibold text-slate-500">{showOut ? '▾' : '▸'} Out of scope {outs.length}{off.length ? ` · switched off ${off.length}` : ''}</button>}
+    {head && showOut && <List>{[...outs, ...off].map((e) => <button key={e.id} type="button" onClick={() => setOpen(e)} className={cx(ROW, 'opacity-70')}><b className={TAG}>{short(e.tag)}</b><span className="min-w-0 flex-1 truncate text-[12px] text-slate-600">{isOutOfScope(e) ? `⊘ ${scopeReasonText(e.disabledReason)}` : 'switched off (Admin)'}</span></button>)}</List>}
     {open && <ItemSheet d={d} e={open} done={done} onClose={() => setOpen(null)} />}
   </>);
 }

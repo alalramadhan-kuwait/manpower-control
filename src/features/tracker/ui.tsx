@@ -81,7 +81,6 @@ export const MenuBtn = ({ children, onClick, disabled, danger }: { children: Rea
 
 /** The isolation colours, the same on every page: blind missing · not started · neutralizing · ready to hand over · handed over. */
 export const ISO_CLS = { blind: 'bg-red-100 text-red-800', idle: 'bg-slate-100 text-slate-600', neut: 'bg-amber-100 text-amber-800', ready: 'bg-teal-100 text-teal-800', ho: 'bg-blue-100 text-blue-800' } as const;
-export const ISO_DOT = { blind: 'red', idle: 'grey', neut: 'amber', ready: 'teal', ho: 'blue' } as const;
 export const IsoChip = ({ state, children }: { state: keyof typeof ISO_CLS; children: ReactNode }) =>
   <span className={cx('max-w-full break-words rounded px-1.5 py-px text-[10px] font-bold', ISO_CLS[state])}>{children}</span>;
 

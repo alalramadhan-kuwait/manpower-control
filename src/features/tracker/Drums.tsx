@@ -146,19 +146,6 @@ export function DrumEntry({ scope, entries, now, onDone, autoFocus = false }: { 
   );
 }
 
-/** The drums of a reactor in one sheet, from the equipment list: progress and the shift entry, nothing else. */
-export function DrumQuick({ scope, entries, now, canEdit, onOpen, onDone }: { scope: TrkQtyScope; entries: TrkQtyEntry[]; now: number; canEdit: boolean; onOpen: () => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
-  const p = qtyProgress({ working: scope.working, initial: scope.initial, completeAt: scope.completeAt }, entries);
-  const last = [...entries].reverse().find((e) => e.kind !== 'transfer' && e.verify !== 'rejected');
-  return (
-    <div className="space-y-2">
-      <p className="text-[13px] text-slate-800"><b className="tabular-nums">{fmt(p.verified)}</b> of {scope.working ? fmt(scope.working) : '—'} drums{p.actualPct !== null ? ` · ${p.actualPct}%` : ''}{p.pending ? <span className="text-amber-800"> · {fmt(p.pending)} awaiting verification</span> : null}</p>
-      {last && <p className="text-[12px] text-slate-500">Last entry: {fmt(last.qty)} · {dayLabel(last.shiftDate, last.shift)} · {METHOD_LABEL[last.method].toLowerCase()}</p>}
-      {canEdit && !scope.completeAt && <DrumEntry scope={scope} entries={entries} now={now} onDone={onDone} />}
-      <button type="button" onClick={onOpen} className="text-xs font-semibold text-brand-500">Open {scope.key} (correct, vessel empty) ›</button>
-    </div>
-  );
-}
 
 /** The quick update of any item: nothing changed this shift, or a delay with its reason and the new expected date. */
 export function ItemUpdate({ trackerId, itemKey, updates, canEdit, onDone }: { trackerId: string; itemKey: string; updates: TrkUpdate[]; canEdit: boolean; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {

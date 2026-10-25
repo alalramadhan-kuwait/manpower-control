@@ -1,9 +1,9 @@
 // Mechanical activity timing: the actual start and finish of each bar-chart activity (two taps, the time can be
 // corrected), plan vs actual durations, and the record exported for future shutdowns.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Download } from 'lucide-react';
-import { STAGES, sortActs, blindLink, neutLink, kwDay, kwTime, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type StepTiming, type Timing as T, type TrkActivity, type TrkStep } from '@/core/tracker';
-import { addActivity, setActivity, setOrder, setStep } from '@/data/tracker';
+import { sortActs, blindLink, neutLink, kwDay, kwTime, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type StepTiming, type Timing as T, type TrkActivity, type TrkStep } from '@/core/tracker';
+import { setActivity, setStep } from '@/data/tracker';
 import { Button, ErrorBox, Field, cx } from '@/ui/components';
 import { CRow, MenuBtn, RowBtn, RowList, Tile } from './ui';
 
@@ -127,118 +127,8 @@ function MechTiming({ activities, now, canEdit, isHead, title, neutKeys, onDone 
   );
 }
 
-/** The item's work steps (bar chart, and procedure steps added by the Section Head) inside the equipment sheet: open,
- *  the one running and the next one on top. */
-export function EquipActivities({ trackerId, itemKey, activities, now, canEdit, isHead, neutCovered = false, neutLabel, onNeut, onDone }: { trackerId: string; itemKey: string; activities: TrkActivity[]; now: number; canEdit: boolean; isHead: boolean; neutCovered?: boolean; neutLabel?: string; onNeut?: () => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
-  const [open, setOpen] = useState(true); const [add, setAdd] = useState(false);
-  const [showDone, setShowDone] = useState(false); const [showField, setShowField] = useState(false); const [order, setOrderIds] = useState<string[] | null>(null);
-  // the Section Head follows the milestones: the field-operator detail steps are hidden (one tap shows them)
-  const all = sortActs(activities.filter((a) => a.tracked).map((a) => timing(a, now)), (t) => t.a);
-  const ts = all.filter((t) => !t.a.detail), field = all.filter((t) => t.a.detail);
-  const running = ts.filter((t) => t.state === 'RUNNING'), fin = ts.filter((t) => t.state === 'FINISHED'), rest = ts.filter((t) => t.state !== 'FINISHED');
-  const next = ts.find((t) => t.state === 'NOT_STARTED');
-  const off = activities.filter((a) => !a.tracked).map((a) => timing(a, now));
-  const row = (t: T) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} neutCovered={neutCovered} neutLabel={neutLabel} onNeut={onNeut} onDone={onDone} />;
-  return (
-    <div className="rounded-xl bg-slate-50 p-2 ring-1 ring-slate-200">
-      <div className="flex items-center gap-2">
-        <button type="button" onClick={() => setOpen((x) => !x)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[11px] font-extrabold uppercase tracking-wider text-slate-500"><span className="w-3">{open ? '▾' : '▸'}</span><span className="truncate">Steps · {fin.length}/{ts.length} done{running.length ? ` · ${running.length} running` : ''}</span></button>
-        {canEdit && open && ts.length > 1 && !order && <button type="button" onClick={() => setOrderIds(all.map((t) => t.a.id))} className="shrink-0 text-xs font-bold text-brand-500">↕ Reorder</button>}
-      </div>
-      {!ts.length && !off.length && <p className="mt-1 text-xs text-slate-500">None yet: import the bar chart (Admin){isHead ? ' or add the procedure steps here' : ''}.</p>}
-      {ts.length > 0 && !order && <p className="mt-1 text-xs text-slate-700">{running.length ? <>Now: <b>{running.map((t) => t.a.activity).join(' · ')}</b></> : null}{running.length && next ? ' · ' : ''}{next ? <>Next: <b>{next.a.activity}</b></> : null}</p>}
-      {open && order && <Reorder trackerId={trackerId} itemKey={itemKey} rows={all} ids={order} setIds={setOrderIds} onDone={(m) => { setOrderIds(null); onDone(m); }} />}
-      {open && !order && <>
-        {fin.length > 0 && <button type="button" onClick={() => setShowDone((x) => !x)} className="mt-1.5 flex w-full justify-between rounded-lg bg-green-50 px-2.5 py-1.5 text-xs font-semibold text-status-green ring-1 ring-green-100"><span>{showDone ? '▾' : '▸'} ✓ Done ({fin.length})</span><span className="font-normal text-slate-500">{showDone ? 'hide' : 'show'}</span></button>}
-        {showDone && fin.length > 0 && <RowList className="mt-1">{fin.map(row)}</RowList>}
-        {rest.length > 0 && <RowList className="mt-1.5">{rest.map(row)}</RowList>}
-        {field.length > 0 && <button type="button" onClick={() => setShowField((x) => !x)} className="mt-1.5 text-[11px] font-semibold text-slate-500">{showField ? '▾' : '▸'} Field steps ({field.length}) · for the field operator</button>}
-        {showField && <RowList className="mt-1 opacity-80">{field.map(row)}</RowList>}
-      </>}
-      {open && !order && off.length > 0 && <div className="mt-1.5 space-y-1.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Not required · {off.length}</p>
-        <RowList>{off.map((t) => <ActivityRow key={t.a.id} t={t} canEdit={canEdit} isHead={isHead} onDone={onDone} />)}</RowList></div>}
-      {isHead && !order && (add ? <AddActivity trackerId={trackerId} itemKey={itemKey} onDone={(m) => { setAdd(false); onDone(m); }} onCancel={() => setAdd(false)} />
-        : <Button variant="ghost" className="mt-1 min-h-9 px-2 text-xs" onClick={() => setAdd(true)}>+ Add work step (procedure)</Button>)}
-    </div>
-  );
-}
 
-/** Put the work steps in order: hold a step (or press its ⋮⋮ handle) and drag it to its place, then save. The field
- *  steps keep their place among them, hidden. Saved and logged. */
-function Reorder({ trackerId, itemKey, rows, ids, setIds, onDone }: { trackerId: string; itemKey: string; rows: T[]; ids: string[]; setIds: (x: string[] | null) => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null); const [drag, setDrag] = useState<string | null>(null);
-  const by = new Map(rows.map((t) => [t.a.id, t])); const start = rows.map((t) => t.a.id).filter((x) => !by.get(x)?.a.detail);
-  const shown = ids.filter((id) => !by.get(id)?.a.detail);
-  const els = useRef(new Map<string, HTMLDivElement>()); const list = useRef<HTMLDivElement>(null);
-  const hold = useRef<{ id: string; y: number; timer: number } | null>(null); const dragRef = useRef<string | null>(null); const idsRef = useRef(ids); idsRef.current = ids;
-  // while dragging, the page must not scroll under the finger
-  useEffect(() => { const el = list.current; if (!el) return; const stop = (e: TouchEvent) => { if (dragRef.current) e.preventDefault(); };
-    el.addEventListener('touchmove', stop, { passive: false }); return () => el.removeEventListener('touchmove', stop); }, []);
-  const begin = (id: string, target: HTMLDivElement, pointer: number) => { dragRef.current = id; setDrag(id); try { target.setPointerCapture(pointer); } catch { /* not captured: moves still arrive */ } navigator.vibrate?.(15); };
-  const down = (e: React.PointerEvent<HTMLDivElement>, id: string) => {
-    const target = e.currentTarget; const pointer = e.pointerId;
-    if ((e.target as HTMLElement).closest('[data-handle]')) { e.preventDefault(); begin(id, target, pointer); return; }
-    hold.current = { id, y: e.clientY, timer: window.setTimeout(() => begin(id, target, pointer), 280) };
-  };
-  const move = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragRef.current) { if (hold.current && Math.abs(e.clientY - hold.current.y) > 8) { clearTimeout(hold.current.timer); hold.current = null; } return; }
-    const id = dragRef.current; const cur = idsRef.current.filter((x) => !by.get(x)?.a.detail);
-    // the place under the finger: past the middle of a row means after it
-    let to = cur.length;
-    for (let k = 0; k < cur.length; k++) { const r = els.current.get(cur[k])?.getBoundingClientRect(); if (r && e.clientY < r.top + r.height / 2) { to = k; break; } }
-    const from = cur.indexOf(id);
-    if (to !== from && to !== from + 1) {
-      const next = cur.filter((x) => x !== id); next.splice(to > from ? to - 1 : to, 0, id);
-      // put the moved visible order back among the hidden field steps (they keep their slots)
-      let n = 0; setIds(idsRef.current.map((x) => (by.get(x)?.a.detail ? x : next[n++])));
-    }
-    // near the top or bottom of the screen, scroll the list along
-    const vh = window.innerHeight; const dy = e.clientY < 90 ? -14 : e.clientY > vh - 90 ? 14 : 0;
-    if (dy) { let p = list.current?.parentElement ?? null; while (p && !/(auto|scroll)/.test(getComputedStyle(p).overflowY)) p = p.parentElement; (p ?? document.scrollingElement)?.scrollBy(0, dy); }
-  };
-  const up = () => { if (hold.current) { clearTimeout(hold.current.timer); hold.current = null; } dragRef.current = null; setDrag(null); };
-  async function save(order: string[], msg: string) { setBusy(true); setErr(null); try { await setOrder(trackerId, itemKey, order); onDone(msg); } catch (e) { setErr(e); setBusy(false); } }
-  return (
-    <div className="mt-1.5 space-y-1.5">
-      <p className="text-[11px] font-semibold text-slate-500">Hold a step and drag it to its place, then save.</p>
-      <div ref={list} className="divide-y divide-slate-100 overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">{shown.map((id, i) => { const t = by.get(id)!; const moved = start.indexOf(id) - i;
-        return <div key={id} ref={(el) => { if (el) els.current.set(id, el); else els.current.delete(id); }} onPointerDown={(e) => down(e, id)} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
-          onContextMenu={(e) => e.preventDefault()} style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' }}
-          className={cx('flex items-center gap-2 px-2.5 py-2 transition-colors', drag === id ? 'relative z-10 scale-[1.02] bg-brand-100 shadow-lg' : moved !== 0 ? 'bg-amber-50' : '')}>
-          <span data-handle className="-my-2 -ml-2.5 flex w-9 shrink-0 items-center justify-center self-stretch text-lg text-slate-500" style={{ touchAction: 'none' }}>⋮⋮</span>
-          <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-semibold text-slate-900">{t.a.activity}</span>{moved !== 0 && !drag && <span className="block text-[11px] text-amber-800">moved {moved > 0 ? '↑' : '↓'} {Math.abs(moved)}</span>}</span>
-        </div>; })}</div>
-      {err != null && <ErrorBox error={err} />}
-      <div className="flex gap-1.5">
-        <Button variant="secondary" className="flex-1" disabled={busy} onClick={() => setIds(null)}>Cancel</Button>
-        <Button variant="secondary" className="flex-1" disabled={busy} onClick={() => save([], `${itemKey}: back to the plan order.`)}>Reset to plan</Button>
-        <Button className="flex-1" disabled={busy} onClick={() => save(ids, `${itemKey}: order saved.`)}>✓ Save order</Button>
-      </div>
-    </div>
-  );
-}
 
-function AddActivity({ trackerId, itemKey, onDone, onCancel }: { trackerId: string; itemKey: string; onDone: (msg: string, undo?: () => Promise<unknown>) => void; onCancel: () => void }) {
-  const [name, setName] = useState(''); const [start, setStart] = useState(''); const [hours, setHours] = useState(''); const [stage, setStage] = useState('');
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  async function save() {
-    setBusy(true); setErr(null);
-    try { await addActivity(trackerId, { key: itemKey, activity: name.trim(), start: fromLocal(start), hours: hours ? Number(hours) : null, stage: stage === '' ? null : Number(stage) }); onDone(`${itemKey}: work step added.`); }
-    catch (e) { setErr(e); setBusy(false); }
-  }
-  return (
-    <div className="mt-2 space-y-1.5 rounded-lg bg-white p-2 ring-1 ring-slate-200">
-      <input className="input" placeholder="Work step (e.g. Gas test for basket removal)" value={name} onChange={(e) => setName(e.target.value)} />
-      <div className="grid grid-cols-3 gap-1.5">
-        <Field label="Planned start"><input type="datetime-local" className="input" value={start} onChange={(e) => setStart(e.target.value)} /></Field>
-        <Field label="Hours"><input inputMode="decimal" className="input" value={hours} onChange={(e) => setHours(e.target.value.replace(/[^\d.]/g, ''))} /></Field>
-        <Field label="Stage"><select className="input" value={stage} onChange={(e) => setStage(e.target.value)}><option value="">–</option>{STAGES.map((x, i) => <option key={x} value={i}>{i} {x}</option>)}</select></Field>
-      </div>
-      {err != null && <ErrorBox error={err} />}
-      <div className="flex gap-2"><Button variant="secondary" className="flex-1" onClick={onCancel}>Cancel</Button><Button className="flex-1" disabled={busy || !name.trim()} onClick={save}>Add</Button></div>
-    </div>
-  );
-}
 
 
 /** Step times inside the step sheet: estimate vs taken; the times can be corrected, the estimate by the Section Head. */
