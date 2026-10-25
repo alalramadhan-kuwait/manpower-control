@@ -4,6 +4,7 @@
 // stamped with the ID; Undo for a few seconds after each one.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { DrumEntry } from '@/features/tracker/Drums';
+import { PendingForm } from '@/features/tracker/TrackerSheets';
 import { LABEL_CLS, OpsLabel } from '@/features/tracker/Iats';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
@@ -358,12 +359,12 @@ function Reactors({ d, now, done }: Pick<P, 'd' | 'now' | 'done'>) {
   );
 }
 
-const HOLDS: [string, string | null][] = [['In progress', null], ['Waiting gas test', 'Waiting permit / gas test'], ['Waiting crane', 'Waiting crane / equipment'], ['Waiting material', 'Waiting material'], ['Waiting manpower', 'Waiting manpower'], ['Stopped', 'Other']];
+// holds: the Section Head's reason list (PendingForm) in every view (owner, 25 Oct 2026)
 /** One item: finish the running step / start the next, its status and a short note; drums for a reactor dumping. */
 function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; done: Done; onClose: () => void }) {
   const keys = e.combine ? d.equipment.filter((x) => x.combine === e.combine).map(keyOf) : [keyOf(e)];
   const ls = lines(d, keys); const run = ls.filter((a) => a.actualStart && !a.actualFinish); const next = ls.find((a) => !a.actualStart);
-  const [hold, setHold] = useState<string | null | undefined>(undefined);
+  const [holdOpen, setHoldOpen] = useState(false);
   const [note, setNote] = useState('');
   const [stage, setStage] = useState<number | null>(null);
   const [steps, setSteps] = useState(false);
@@ -383,7 +384,7 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
   };
   const closeOut = async () => { await confirmEmpty(scope!.id); const at = new Date().toISOString(); for (const a of dumping) await setActivity(a.id, { actual_finish: at }); };
   const save = () => run1(async () => {
-    for (const t of twins) await setEquipment(t.id, { ...(hold !== undefined ? { pending_reason: hold } : {}), ...(note.trim() ? { remark: note.trim() } : {}), ...(stage !== null ? { stage } : {}) });
+    for (const t of twins) await setEquipment(t.id, { ...(note.trim() ? { remark: note.trim() } : {}), ...(stage !== null ? { stage } : {}) });
   }, `${short(e.tag)} saved.`, async () => { for (const t of twins) await setEquipment(t.id, { pending_reason: t.pendingReason, remark: t.remark, stage: t.stage }); });
   if (steps) return <StepsPage d={d} e={e} keys={keys} done={done} onClose={() => setSteps(false)} />;
   return (
@@ -409,12 +410,15 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
             : <button type="button" disabled={busy} onClick={() => setEmpty(true)} className="min-h-10 w-full rounded-xl bg-white text-sm font-bold text-status-green ring-1 ring-green-300">Reactor empty…</button>)}
         </div>}
         <p className="pt-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Status</p>
-        <div className="flex flex-wrap gap-1.5">{HOLDS.map(([l, r]) => { const on = hold === undefined ? (r === null ? !e.pendingReason : e.pendingReason === r) : hold === r;
-          return <button key={l} type="button" onClick={() => setHold(r)} className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', on ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{l}</button>; })}</div>
+        {e.pendingReason
+          ? <div className="flex items-center gap-2 rounded-xl bg-red-50 px-2.5 py-1.5 text-[13px] text-red-900 ring-1 ring-red-200"><span className="min-w-0 flex-1">⏸ On hold: {e.pendingReason}</span>
+              <button type="button" disabled={busy} onClick={() => run1(async () => { for (const t of twins) await setEquipment(t.id, { pending_reason: null }); }, `${short(e.tag)}: resumed.`, async () => { for (const t of twins) await setEquipment(t.id, { pending_reason: t.pendingReason }); })} className="shrink-0 rounded-lg bg-white px-2.5 py-1 text-[12px] font-bold text-brand-700 ring-1 ring-red-200">▶ Resume</button></div>
+          : holdOpen ? <PendingForm initial={null} busy={busy} onSave={(r) => run1(async () => { for (const t of twins) await setEquipment(t.id, { pending_reason: r }); }, `${short(e.tag)}: on hold.`, async () => { for (const t of twins) await setEquipment(t.id, { pending_reason: t.pendingReason }); })} />
+          : <button type="button" onClick={() => setHoldOpen(true)} className="min-h-9 w-full rounded-xl bg-white text-[13px] font-semibold text-slate-700 ring-1 ring-slate-300">⏸ Hold (with reason)</button>}
         <input className="input text-[14px]" placeholder="Status now, e.g. Bolt removal I/P" value={note} onChange={(x) => setNote(x.target.value)} />
         {(() => { const n = note.trim().split(/\s+/).filter(Boolean).length;
-          return <p className={cx('-mt-1.5 text-[11px]', n > 10 ? 'font-semibold text-amber-700' : 'text-slate-500')}>{n > 10 ? `${n} words: keep it to the status (about 8 words); a problem goes under ⚠ Issues.` : 'Status only: what · I/P / done / stopped. Waiting? use Status above.'}</p>; })()}
-        <button type="button" disabled={busy || (hold === undefined && !note.trim() && (stage === null || stage === e.stage))} onClick={save} className="min-h-11 w-full rounded-xl bg-brand-700 text-[15px] font-bold text-white disabled:opacity-50">Save</button>
+          return <p className={cx('-mt-1.5 text-[11px]', n > 10 ? 'font-semibold text-amber-700' : 'text-slate-500')}>{n > 10 ? `${n} words: keep it to the status (about 8 words); a problem goes under ⚠ Issues.` : 'Status only: what · I/P / done / stopped. Waiting? use Hold above.'}</p>; })()}
+        <button type="button" disabled={busy || (!note.trim() && (stage === null || stage === e.stage))} onClick={save} className="min-h-11 w-full rounded-xl bg-brand-700 text-[15px] font-bold text-white disabled:opacity-50">Save</button>
         {err != null && <ErrorBox error={err} />}
       </div>
     </BottomSheet>
@@ -695,6 +699,7 @@ function Loop({ d, p, now, done }: { d: TrackerData; p: TrkPoint; now: number; d
   const run = async (f: () => Promise<unknown>, msg: string, undo?: () => Promise<unknown>) => { setBusy(true); setErr(null); try { await f(); done(msg, undo); setNr(null); } catch (x) { setErr(x); } finally { setBusy(false); } };
   // the loop's requirement: Required · Pending decision · N/R (with a reason); N/R only before it starts
   const [nr, setNr] = useState<string | null>(null);
+  const [holdOpen, setHoldOpen] = useState(false);
   const diagram = <LoopDiagramButton trackerId={d.tracker.id} loop={p} data={{ points: d.points ?? [], steps: d.pointSteps ?? [], lineup: d.lineup ?? [] }} />; const [reqOpen, setReqOpen] = useState(false);
   const req = p.requirement ?? 'required', was = { requirement: req, requirement_reason: p.requirementReason ?? null };
   const setReq = (to: 'required' | 'pending' | 'not_required', why?: string) => run(() => setPoint(p.id, { requirement: to, requirement_reason: to === 'not_required' ? why!.trim() : null }),
@@ -721,10 +726,11 @@ function Loop({ d, p, now, done }: { d: TrackerData; p: TrkPoint; now: number; d
       {req !== 'not_required' && <div className="mt-2 flex gap-1.5">
         {job && <button type="button" disabled={busy} onClick={() => jobTap(job)} className={cx('min-h-9 flex-1 rounded-xl px-2 text-[13px] font-bold', job.startAt ? 'bg-amber-400 text-amber-950' : 'bg-white text-brand-700 ring-1 ring-slate-300')}>{job.startAt ? '✓ Job done' : '▶ Start job'}</button>}
         {nx && !missing.length && !before && !waiting.length && <button type="button" disabled={busy} onClick={() => run(() => setPoint(p.id, { status: nx[0], [nx[2]]: new Date().toISOString() }), `${p.ref}: ${nx[1].replace(/^[▶✓] /, '')}.`, () => setPoint(p.id, { status: p.status, [nx[2]]: null }))} className="min-h-9 flex-1 rounded-xl bg-brand-700 px-2 text-[13px] font-bold text-white">{nx[1]}</button>}
-        <button type="button" disabled={busy} onClick={() => run(() => setPoint(p.id, { hold_reason: p.holdReason ? null : 'Waiting (engineer)' }), `${p.ref}: ${p.holdReason ? 'resumed' : 'on hold'}.`, () => setPoint(p.id, { hold_reason: p.holdReason ?? null }))} className="min-h-9 rounded-xl px-3 text-[12px] font-semibold text-slate-700 ring-1 ring-slate-300">{p.holdReason ? 'Resume' : 'Hold'}</button>
+        <button type="button" disabled={busy} onClick={() => (p.holdReason ? run(() => setPoint(p.id, { hold_reason: null }), `${p.ref}: resumed.`, () => setPoint(p.id, { hold_reason: p.holdReason ?? null })) : setHoldOpen((x) => !x))} className="min-h-9 rounded-xl px-3 text-[12px] font-semibold text-slate-700 ring-1 ring-slate-300">{p.holdReason ? 'Resume' : 'Hold'}</button>
         {diagram}
       </div>}
       {req === 'not_required' && <div className="mt-1 flex justify-end">{diagram}</div>}
+      {holdOpen && !p.holdReason && <div className="mt-2"><PendingForm initial={null} busy={busy} onSave={(r) => { setHoldOpen(false); void run(() => setPoint(p.id, { hold_reason: r }), `${p.ref}: on hold.`, () => setPoint(p.id, { hold_reason: null })); }} /></div>}
       {p.status === 'open' && manage && (nr !== null
         ? <div className="mt-2 flex gap-1.5"><input autoFocus className="input min-h-9 flex-1 text-[13px]" placeholder="Why not required" value={nr} onChange={(x) => setNr(x.target.value)} />
             <button type="button" disabled={busy || !nr.trim()} onClick={() => setReq('not_required', nr)} className="min-h-9 rounded-lg bg-slate-700 px-3 text-[12px] font-bold text-white disabled:opacity-50">Save N/R</button>

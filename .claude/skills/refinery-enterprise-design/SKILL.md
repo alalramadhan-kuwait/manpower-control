@@ -119,6 +119,7 @@ Tags are shown in full (C-12-201, not C-201) wherever there is room; shorten onl
 | Segmented control | grey track, white selected — switches views; filters stay pills | `Seg` (Engineer), VIEWS bar (tracker) |
 | Report button | `bg-whatsapp`; Save is navy (green = status only) | — |
 | IAT operations label | the one Operations classification (owner): `OpsLabel` select with Undo, read-only chip for Controllers; old ticks shown read-only | `src/features/tracker/Iats.tsx` |
+| Hold | `PendingForm` (14 reasons + note) for equipment and loops in every view; Resume with Undo | `src/features/tracker/TrackerSheets.tsx` |
 | Role in the Engineer view | `EngRole` context: Controller gets no rename/add/remove step, loop requirement, IAT label, reactor empty | `EngineerView` |
 
 ## 4b. Technical information on equipment
