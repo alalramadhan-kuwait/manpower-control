@@ -122,9 +122,9 @@ function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: 
   useEffect(() => { if (!flash) return; const t = window.setTimeout(() => setFlash(null), flash.undo ? 7000 : 3000); return () => window.clearTimeout(t); }, [flash]);
   if (me === 'off') return (
     <Frame title="U-12 Shutdown" sub="Progress update">
-      <div className="mx-auto max-w-sm p-6 text-center"><p className="font-semibold text-brand-700">This link is off, or the ID does not match it.</p>
-        <p className="mt-2 text-sm text-slate-600">Check your ID, or ask the Section Head for a new link.</p>
-        <button type="button" className="mt-5 min-h-11 w-full rounded-xl bg-white font-semibold text-brand-700 ring-1 ring-slate-300" onClick={() => { const l = engineerLink(); setEngineerLink(null); window.location.replace(`${window.location.pathname}${l ? `?sd=${encodeURIComponent(l.key)}` : ''}`); }}>Type the ID again</button></div>
+      <div className="mx-auto max-w-sm p-6 text-center"><p className="font-semibold text-brand-700">Engineer links are no longer used.</p>
+        <p className="mt-2 text-sm text-slate-600">Sign in to the app with your own login to update the shutdown progress.</p>
+        <button type="button" className="mt-5 min-h-11 w-full rounded-xl bg-brand-700 font-semibold text-white" onClick={() => { setEngineerLink(null); window.location.replace('/progress'); }}>Go to sign in</button></div>
     </Frame>
   );
   if (err && !data) return <Frame title="U-12 Shutdown" sub="Progress update"><div className="p-4"><ErrorBox error={err} /></div></Frame>;
