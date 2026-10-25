@@ -9,6 +9,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // the first view says what the site is; the sign-in form opens on request (not a bare login box)
+  const [form, setForm] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setError(null);
@@ -22,7 +24,14 @@ export default function LoginPage() {
       <div className="flex flex-1 flex-col justify-center px-4 py-10 safe-top">
         <div className="mx-auto w-full max-w-sm">
           <BrandLockup stacked product="Manpower Control" className="mb-8" />
-          <form onSubmit={submit} className="space-y-4 rounded-2xl bg-white/95 p-5 shadow-lg shadow-brand-900/5 ring-1 ring-slate-200 backdrop-blur">
+          {!form && <div className="space-y-4 rounded-2xl bg-white/95 p-5 shadow-lg shadow-brand-900/5 ring-1 ring-slate-200 backdrop-blur">
+            <div>
+              <h1 className="text-[17px] font-bold text-brand-700">Internal operations tool</h1>
+              <p className="mt-1 text-sm leading-6 text-slate-600">Shift manpower, leave and shutdown progress for the Area 4 · Unit 12 operations team. For staff with an account from the Section Head only.</p>
+            </div>
+            <Button className="w-full" onClick={() => setForm(true)}>Sign in</Button>
+          </div>}
+          {form && <form onSubmit={submit} className="space-y-4 rounded-2xl bg-white/95 p-5 shadow-lg shadow-brand-900/5 ring-1 ring-slate-200 backdrop-blur">
             <Field label="Username">
               <input className="input" type="text" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="e.g. ajr015" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </Field>
@@ -31,8 +40,8 @@ export default function LoginPage() {
             </Field>
             {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
             <Button type="submit" disabled={busy} className="w-full">{busy ? 'Signing in…' : 'Sign in'}</Button>
-          </form>
-          <p className="mt-5 text-center text-xs text-slate-500">Internal operations app. Access is given by the Section Head.</p>
+          </form>}
+          <p className="mt-5 text-center text-xs text-slate-500">Internal operations app. Access is given by the Section Head. · <a href="/about.html" className="font-semibold text-brand-700 underline">About this site</a></p>
         </div>
       </div>
     </BrandBackdrop>

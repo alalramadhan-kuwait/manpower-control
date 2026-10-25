@@ -12,7 +12,7 @@ for (const [w, h] of [[1280, 900], [393, 852]]) {
   const p = await ctx.newPage();
   p.on('pageerror', (e) => problems.push(`${w}px page error: ${e.message}`));
   p.on('response', (r) => { if (r.status() >= 400 && r.url().includes('/rest/v1/') && r.request().method() === 'GET') problems.push(`${w}px ${r.status()} ${r.url().split('?')[0].split('/').pop()}`); });
-  await p.goto(`${BASE}/`); await p.fill('input[autocomplete="username"], input[type="text"]', SH_EMAIL.split('@')[0]); await p.fill('input[type="password"]', SH_PASSWORD);
+  await p.goto(`${BASE}/`); await p.getByRole('button', { name: 'Sign in' }).first().click().catch(() => {}); await p.fill('input[autocomplete="username"], input[type="text"]', SH_EMAIL.split('@')[0]); await p.fill('input[type="password"]', SH_PASSWORD);
   await p.click('button[type="submit"]'); await p.waitForTimeout(5000);
   await p.goto(`${BASE}/progress`); await p.waitForTimeout(8000);
   for (const t of ['Today', 'Isolation', 'Equipment', 'Sequence', 'IATs']) {
