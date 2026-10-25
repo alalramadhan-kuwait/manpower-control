@@ -6,6 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { DrumEntry } from '@/features/tracker/Drums';
 import { PendingForm } from '@/features/tracker/TrackerSheets';
 import { LABEL_CLS, OpsLabel } from '@/features/tracker/Iats';
+import { InspWork } from '@/features/tracker/ui';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
@@ -364,7 +365,7 @@ function Reactors({ d, now, done }: Pick<P, 'd' | 'now' | 'done'>) {
 function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; done: Done; onClose: () => void }) {
   const keys = e.combine ? d.equipment.filter((x) => x.combine === e.combine).map(keyOf) : [keyOf(e)];
   const ls = lines(d, keys); const run = ls.filter((a) => a.actualStart && !a.actualFinish); const next = ls.find((a) => !a.actualStart);
-  const [holdOpen, setHoldOpen] = useState(false);
+  const [holdOpen, setHoldOpen] = useState(false); const [insp, setInsp] = useState(false);
   const [note, setNote] = useState('');
   const [stage, setStage] = useState<number | null>(null);
   const [steps, setSteps] = useState(false);
@@ -400,6 +401,9 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
           <div className="flex flex-wrap gap-1.5">{STAGE_SHORT.map((l, i) => <button key={l} type="button" onClick={() => setStage(i)} className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', (stage ?? e.stage) === i ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{l}</button>)}</div></>
           : !run.length && !next && <p className="rounded-xl bg-green-50 p-2 text-sm font-semibold text-green-800">✓ All steps done</p>}
         <Issues d={d} done={done} item={e} keys={keys} />
+        {(e.inspWork || e.inspRef) && <div className="rounded-2xl bg-white p-2.5 ring-1 ring-slate-200">
+          <button type="button" onClick={() => setInsp((x) => !x)} className="flex w-full items-center gap-1.5 text-left text-[11px] font-extrabold uppercase tracking-wider text-slate-500"><span className="w-3">{insp ? '▾' : '▸'}</span>Inspection worklist</button>
+          {insp && <div className="mt-1.5"><InspWork ref_={e.inspRef} work={e.inspWork} /></div>}</div>}
         {scope && <div className="space-y-1.5">
           <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Drums</p>
           <DrumEntry scope={scope} entries={entries} now={Date.now()} onDone={(m, u) => { done(m, u); onClose(); }} />

@@ -26,6 +26,8 @@ export interface TrkEquipment {
   /** where the item is listed: 'rotating' = Rotating scope (routine cleaning / servicing only, no inspection or
    *  handover of its own) instead of the main Equipment list. Display only: steps, hours and counts unchanged */
   list?: 'rotating' | null;
+  /** the inspection worklist for this item: where it comes from (document, item, last inspection) and the work lines */
+  inspRef?: string | null; inspWork?: string | null;
 }
 export interface TrkIat { id: string; tag: string; iatNo: string; jobText: string | null; discipline: string | null; issuedAt: string; status: 'open' | 'closed'; closedAt: string | null;
   /** from the daily IAT tracking sheet: work order, the line it is on, the status as written in the sheet, a remark */

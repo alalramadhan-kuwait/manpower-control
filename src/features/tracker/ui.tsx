@@ -84,3 +84,15 @@ export const ISO_CLS = { blind: 'bg-red-100 text-red-800', idle: 'bg-slate-100 t
 export const ISO_DOT = { blind: 'red', idle: 'grey', neut: 'amber', ready: 'teal', ho: 'blue' } as const;
 export const IsoChip = ({ state, children }: { state: keyof typeof ISO_CLS; children: ReactNode }) =>
   <span className={cx('max-w-full break-words rounded px-1.5 py-px text-[10px] font-bold', ISO_CLS[state])}>{children}</span>;
+
+/** The inspection worklist's work for an item (Inspection & Corrosion): where it comes from, then one line per job.
+ *  Reference only; the same block in the Section Head sheet and the Engineer sheet. */
+export function InspWork({ ref_, work }: { ref_?: string | null; work?: string | null }) {
+  if (!work && !ref_) return null;
+  return (
+    <div className="space-y-1 text-[12px] text-slate-700">
+      {ref_ && <p className="text-[11px] text-slate-500">{ref_}</p>}
+      {work && <ul className="space-y-0.5">{work.split('\n').map((l, i) => <li key={i} className="flex gap-1.5"><span className="text-slate-400">•</span><span className="min-w-0">{l.replace(/^•\s*/, '')}</span></li>)}</ul>}
+    </div>
+  );
+}

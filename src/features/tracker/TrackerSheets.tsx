@@ -6,7 +6,7 @@ import { EquipActivities, StepTimes } from './Timing';
 import { DrumPanel, ItemUpdate } from './Drums';
 import { addIat, closeIat, fetchItemLog, setEquipment, setStep } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, Field, cx } from '@/ui/components';
-import { FlagChip, IsoChip, PlanChip, StageBar, StateChip } from './ui';
+import { FlagChip, InspWork, IsoChip, PlanChip, StageBar, StateChip } from './ui';
 import { IatDetail, OpsLabel } from './Iats';
 import { stepNow } from './actions';
 
@@ -202,6 +202,7 @@ export function EquipSheet({ system = [], groups = [], systems = [], canManage =
             : <ul className="space-y-1">{log.slice(0, logAll ? 200 : 12).map((l, i) => { const t = logText(l, activities); return <li key={i} className="grid grid-cols-[86px_minmax(0,1fr)] gap-2 text-[12px] text-slate-700"><span className="text-[11px] text-slate-500">{when(l.at)}</span><span className="min-w-0">{l.ref !== e.tag ? <b className="text-slate-500">step · </b> : null}{t.what}{l.reason && !/^(out of scope|not required)/.test(l.reason) ? <i className="text-slate-500"> · {l.reason}</i> : null}<span className="text-slate-400"> · {l.byName ?? 'system'}</span></span></li>; })}
               {!logAll && log.length > 12 && <li><button type="button" onClick={() => setLogAll(true)} className="text-[11px] font-semibold text-brand-500">Show all {log.length}</button></li>}</ul>}
         </Fold>
+        {(e.inspWork || e.inspRef) && <Fold title="Inspection worklist"><InspWork ref_={e.inspRef} work={e.inspWork} /></Fold>}
         <Fold title="Technical details">
           <dl className="space-y-1 text-xs text-slate-700">
             <div><dt className="font-semibold">Name</dt><dd>{e.description ?? '—'}</dd></div>

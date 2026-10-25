@@ -267,3 +267,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261024170609_trk_eq_guard_system_writes` | `trk_eq_guard`: direct database work (no user, no link) passes the guard |
 | `20261024171324_trk_eq_guard_scope_head_only` | Out of scope / restore: Section Head only (as tracked on/off already was); name, group, system: Section Head or Engineers; reason required |
 | `20261024181348_trk_equipment_list_rotating` | `trk_equipment.list` ('rotating' = Rotating scope, display only); list changes logged and limited like name/group/system; 10 routine rotating items moved off the main Equipment list |
+| `20261025033908_trk_inspection_worklist_nov2026` | Inspection worklist Nov 2026: `trk_equipment.insp_ref` / `insp_work` (display only) on 53 items; 12-PSV-0516 and 12-PSV-0587 added with added steps (no plan time); P-12-203-E-01A step reads Offer for Inspection / NDT (P6 text kept); C-12-201-F-01B to Rotating scope |
