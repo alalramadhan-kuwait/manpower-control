@@ -5,7 +5,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { DrumEntry } from '@/features/tracker/Drums';
 import { PendingForm } from '@/features/tracker/TrackerSheets';
-import { LABEL_CLS, OpsLabel } from '@/features/tracker/Iats';
+import { IatDetail, LABEL_CLS, OpsLabel } from '@/features/tracker/Iats';
 import { InspWork } from '@/features/tracker/ui';
 import { LoopDetail, LoopScope } from '@/features/tracker/Isolation';
 import { BlindList } from '@/features/tracker/BlindList';
@@ -92,16 +92,9 @@ const RoleCtx = createContext<EngRole>('engineer');
 const useCanManage = () => useContext(RoleCtx) !== 'controller';
 /** Opens an item in the page around (the Section Head mode opens its own item sheet); none = the Engineer item sheet. */
 const OpenItemCtx = createContext<((tag: string) => void) | null>(null);
-/** The SD scope and the PMRs, the same lists in the Section Head mode (its item sheet opens on a tap). */
-export function ScopeLists({ d, now, done, role, onItem, pmr = false }: { d: TrackerData; now: number; done: Done; role: EngRole; onItem: (tag: string) => void; pmr?: boolean }) {
-  const pmrs = smallItems(d).filter((e) => e.group === 'PMRs');
-  const stale = new Map(staleItems(d, now).filter((i) => i.small).map((i) => [i.key, i.ageH]));
-  return <RoleCtx.Provider value={role}><OpenItemCtx.Provider value={onItem}>
-    {pmr ? <>
-      <p className="mx-1 mb-2 text-[12px] text-slate-600">{pmrs.filter(finishedOf(d)).length}/{pmrs.length} returned · tap one to open it</p>
-      {pmrs.length ? <SmallGroup d={d} now={now} items={pmrs} stale={stale} done={done} /> : <Card><p className="text-sm text-slate-600">No PMRs on this shutdown.</p></Card>}
-    </> : <Scope d={d} now={now} done={done} go={() => {}} by="" />}
-  </OpenItemCtx.Provider></RoleCtx.Provider>;
+/** The SD scope, the same lists in the Section Head mode (its item sheet opens on a tap). */
+export function ScopeLists({ d, now, done, role, onItem }: { d: TrackerData; now: number; done: Done; role: EngRole; onItem: (tag: string) => void }) {
+  return <RoleCtx.Provider value={role}><OpenItemCtx.Provider value={onItem}><Scope d={d} now={now} done={done} go={() => {}} by="" /></OpenItemCtx.Provider></RoleCtx.Provider>;
 }
 export function EngineerView({ trackerId, name, title, role, onExit }: { trackerId: string; name: string; title: string; role: EngRole; onExit: () => void }) {
   return <RoleCtx.Provider value={role}><Tracker preset={{ login_id: name, tracker_id: trackerId, title }} onExit={onExit} /></RoleCtx.Provider>;
@@ -889,20 +882,43 @@ function Scope({ d, now, done }: P) {
         <span className="min-w-0 flex-1"><b className="block text-[13px]">{g === 'CV shells' ? 'Control valves' : g}</b><span className="block text-[11px] text-slate-500">{one.length ? `${one.filter((a) => a.actualFinish).length}/${one.length} jobs done` : `${xs.length} items${late ? ` · ${late} need an update` : ''}`}</span></span>
         <span className={cx('rounded-md px-1.5 py-0.5 text-[12px] font-bold', n === xs.length ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-900')}>{one.length ? `${one.filter((a) => a.actualFinish).length}/${one.length}` : `${n}/${xs.length}`}</span></button>; })}</List></div>; })}</>);
 }
+/** Hot work, the same page in both modes: the IATs (status and Operations label on the card, a tap opens the full
+ *  IAT) and the PMRs. */
+export function HotWorkTab({ d, now, done, role, onItem }: { d: TrackerData; now: number; done: Done; role: EngRole; onItem?: (tag: string) => void }) {
+  return <RoleCtx.Provider value={role}><OpenItemCtx.Provider value={onItem ?? null}><HotWork d={d} now={now} done={done} go={() => {}} by="" /></OpenItemCtx.Provider></RoleCtx.Provider>;
+}
+type IatFilter = 'open' | 'items' | 'lines' | 'material' | 'all';
 function HotWork({ d, now, done }: P) {
   const [v, setV] = useState<'iat' | 'pmr'>('iat');
   const [lf, setLf] = useState<IatLabel | 'none' | 'all'>('all');
+  const [q, setQ] = useState(''); const [f, setF] = useState<IatFilter>('open'); const [showClosed, setShowClosed] = useState(false);
+  const [iat, setIat] = useState<TrkIat | null>(null); const [item, setItem] = useState<TrkEquipment | null>(null);
+  const manage = useCanManage(), openItem = useContext(OpenItemCtx);
+  const toItem = (tag: string) => { setIat(null); if (openItem) return openItem(tag); setItem(d.equipment.find((e) => e.tag === tag) ?? null); };
   const pmrs = smallItems(d).filter((e) => e.group === 'PMRs');
   const stale = useMemo(() => new Map(staleItems(d, now).filter((i) => i.small).map((i) => [i.key, i.ageH])), [d, now]);
   const st = d.iats.map(iatStatus), count = (x: string) => st.filter((y) => y === x).length;
   const pDone = pmrs.filter(finishedOf(d)).length;
+  const tags = new Set(d.equipment.map((e) => e.tag));
+  const isOpen = (i: TrkIat) => i.status === 'open';
+  const pick: Record<IatFilter, (i: TrkIat) => boolean> = { open: isOpen, items: (i) => isOpen(i) && tags.has(i.tag), lines: (i) => isOpen(i) && !tags.has(i.tag), material: (i) => isOpen(i) && !!i.material, all: () => true };
+  const match = (i: TrkIat) => (!q || `${i.iatNo} ${i.line ?? ''} ${i.tag} ${i.jobText ?? ''}`.toLowerCase().includes(q.trim().toLowerCase())) && (lf === 'all' || (lf === 'none' ? !i.opsLabel : i.opsLabel === lf));
+  const shown = d.iats.filter(pick[f]).filter(match), closed = f === 'all' ? [] : d.iats.filter((i) => !isOpen(i)).filter(match);
   return (<>
     <Seg v={v} set={setV} opts={[['iat', `IATs ${d.iats.length}`], ['pmr', `PMRs ${pmrs.length}`]]} />
     {v === 'iat' ? <>
       {d.iats.length > 0 && <p className="mx-1 mb-2 text-[12px] text-slate-600">In progress <b>{count('In progress')}</b> · to start <b>{count('To start') + count('New IAT')}</b> · hold <b>{count('Hold')}</b> · completed <b>{count('Completed')}</b></p>}
+      {d.iats.length > 0 && <div className="mb-2 flex gap-1.5"><input className="input min-h-9 min-w-0 flex-1 text-[13px]" placeholder="🔎 IAT no., line, tag…" value={q} onChange={(x) => setQ(x.target.value)} />
+        <select aria-label="Show" value={f} onChange={(x) => setF(x.target.value as IatFilter)} className="min-h-9 rounded-lg border-0 bg-white px-2 text-[12px] font-semibold ring-1 ring-slate-200">
+          {([['open', 'Open'], ['items', 'On items'], ['lines', 'On lines'], ['material', 'Material'], ['all', 'All']] as const).map(([k, l]) => <option key={k} value={k}>{l} ({d.iats.filter(pick[k]).length})</option>)}</select></div>}
       {d.iats.length > 0 && <div className="-mx-3 mb-2.5 flex gap-1.5 overflow-x-auto px-3 [scrollbar-width:none]">{([['all', `All ${d.iats.length}`], ...IAT_LABELS.map(([k, l]) => [k, `${l} ${d.iats.filter((i) => i.opsLabel === k).length}`]), ['none', `Not set ${d.iats.filter((i) => !i.opsLabel).length}`]] as [IatLabel | 'none' | 'all', string][]).map(([k, l]) =>
         <button key={k} type="button" onClick={() => setLf(k)} className={cx('min-h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-[12px] font-bold', lf === k ? 'bg-brand-700 text-white' : k !== 'all' && k !== 'none' ? LABEL_CLS[k].chip : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>)}</div>}
-      {d.iats.length ? d.iats.filter((i) => lf === 'all' || (lf === 'none' ? !i.opsLabel : i.opsLabel === lf)).map((i) => <IatCard key={i.id} d={d} i={i} done={done} />) : <Card><p className="text-sm text-slate-600">No IATs on this shutdown yet.</p></Card>}
+      {!d.iats.length ? <Card><p className="text-sm text-slate-600">No IATs on this shutdown yet.</p></Card>
+        : shown.length ? shown.map((i) => <IatCard key={i.id} d={d} i={i} done={done} onOpen={() => setIat(i)} />) : <Card><p className="text-sm text-slate-600">No IAT here.</p></Card>}
+      {closed.length > 0 && <button type="button" onClick={() => setShowClosed((x) => !x)} className="mx-1 mb-2 block text-[12px] font-semibold text-status-green">{showClosed ? '▾' : '▸'} ✓ Completed / cancelled ({closed.length})</button>}
+      {showClosed && closed.map((i) => <IatCard key={i.id} d={d} i={i} done={done} onOpen={() => setIat(i)} />)}
+      {iat && <IatDetail i={d.iats.find((x) => x.id === iat.id) ?? iat} items={tags} lineup={d.lineup ?? []} lineupEq={d.lineupEq ?? []} points={d.points ?? []} canEdit canLabel={manage} onDone={done} onItem={toItem} onClose={() => setIat(null)} />}
+      {item && <ItemSheet d={d} e={item} done={done} onClose={() => setItem(null)} />}
     </> : <>
       <p className="mx-1 mb-2 text-[12px] text-slate-600">{pDone}/{pmrs.length} returned · tap one to set its stage, status or an issue</p>
       {pmrs.length ? <SmallGroup d={d} now={now} items={pmrs} stale={stale} done={done} /> : <Card><p className="text-sm text-slate-600">No PMRs on this shutdown.</p></Card>}
@@ -955,8 +971,8 @@ function SmallGroup({ d, now, items, stale, done, onBack, back = 'Back' }: { d: 
   </>);
 }
 const IAT_CLS: Record<string, string> = { 'In progress': 'bg-blue-100 text-blue-800', 'To start': 'bg-amber-100 text-amber-800', 'New IAT': 'bg-slate-100 text-slate-700', Hold: 'bg-red-100 text-red-800', Completed: 'bg-green-100 text-green-800', Cancelled: 'bg-slate-100 text-slate-500' };
-function IatCard({ d, i, done }: { d: TrackerData; i: TrkIat; done: Done }) {
-  const st = iatStatus(i); const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null); const [more, setMore] = useState(false);
+function IatCard({ d, i, done, onOpen }: { d: TrackerData; i: TrkIat; done: Done; onOpen: () => void }) {
+  const st = iatStatus(i); const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const was = { sheetStatus: i.sheetStatus ?? null, status: i.status, closedAt: i.closedAt, remark: i.remark ?? null };
   // where it is, from the P&ID lineup: the connection the line is on (from → to, service), or the equipment
   const streams = lineStreams(i.line, d.lineup ?? []), onEq = streams.length ? [] : lineOnEquipment(i.line, d.lineupEq ?? []);
@@ -966,19 +982,13 @@ function IatCard({ d, i, done }: { d: TrackerData; i: TrkIat; done: Done }) {
   const lab = i.opsLabel ?? null; const manage = useCanManage();
   return (
     <Card className={cx(lab && `border-l-[6px] ${LABEL_CLS[lab].edge}`)}>
-      <button type="button" onClick={() => setMore((x) => !x)} className="block w-full text-left">
-        <p className="flex items-baseline justify-between gap-2"><span className="flex items-center gap-1.5"><b className="text-[14px]">{i.iatNo}</b>{lab && <span className={cx('rounded-md px-1.5 py-0.5 text-[11px] font-bold', LABEL_CLS[lab].chip)}>{IAT_LABELS.find(([k]) => k === lab)![1]}</span>}</span><span className="text-[11px] font-semibold text-brand-500">{more ? 'Less ▴' : 'Details ▾'}</span></p>
+      <button type="button" onClick={onOpen} className="block w-full text-left">
+        <p className="flex items-baseline justify-between gap-2"><span className="flex items-center gap-1.5"><b className="text-[14px]">{i.iatNo}</b>{lab && <span className={cx('rounded-md px-1.5 py-0.5 text-[11px] font-bold', LABEL_CLS[lab].chip)}>{IAT_LABELS.find(([k]) => k === lab)![1]}</span>}</span><span className="text-[11px] font-semibold text-brand-500">Details ›</span></p>
         <p className="mt-0.5 text-[13px] font-semibold text-slate-900">📍 {where}</p>
         {service && <p className="text-[12px] text-slate-600">{service}</p>}
         <p className="mt-0.5 text-[12px] text-slate-600">{i.jobText}{i.remark ? <> · <b className="text-slate-800">{i.remark}</b></> : ''}</p>
         {i.line && <p className="text-[11px] text-slate-500">Line {i.line}{i.lineClass ? ` · ${i.lineClass}` : ''}</p>}
       </button>
-      {more && <div className="mt-2 space-y-1.5 rounded-xl bg-slate-50 p-2.5 text-[12px] text-slate-700 ring-1 ring-slate-200">
-        {i.finding && <p><b className="text-slate-500">Finding: </b>{i.finding}</p>}
-        {i.recommendation && <p className="whitespace-pre-line"><b className="text-slate-500">Recommendation: </b>{i.recommendation}</p>}
-        {i.material && <p><b className="text-slate-500">Material: </b>{i.material}</p>}
-        <p><b className="text-slate-500">WO: </b>{i.wo ?? '—'}{streams[0]?.sheets[0] ? <> · <b className="text-slate-500">P&amp;ID </b>{streams[0].sheets[0]}</> : null}</p>
-      </div>}
       {/* status and the operations label: one control each (the same choices as before, Cancelled included) */}
       <div className="mt-2 flex items-center gap-1.5">
         <select aria-label={`Status of IAT ${i.iatNo}`} disabled={busy} value={st} onChange={async (x) => { const to = x.target.value as typeof st; if (to === st) return; setBusy(true); setErr(null); try { await setIatStatus(i.id, to, iatClosedBy(to)); done(`IAT ${i.iatNo}: ${to}.`, () => restoreIat(i.id, was)); } catch (e) { setErr(e); } finally { setBusy(false); } }}

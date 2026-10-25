@@ -12,12 +12,11 @@ import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Spinner, Toast, cx } from '@/ui/components';
 import { AskUpdates } from './Ask';
 import { DrumQuick } from './Drums';
-import { EngineerView, HandoverTab, ScopeLists, ShutdownHero } from '@/features/engineer/EngineerApp';
+import { EngineerView, HandoverTab, HotWorkTab, ScopeLists, ShutdownHero } from '@/features/engineer/EngineerApp';
 import { EventsCard } from './Events';
 import { EquipSheet, StepSheet } from './TrackerSheets';
 import { TrackerAdmin, clockKey } from './TrackerAdmin';
 import { TimingTab } from './Timing';
-import { IatsTab } from './Iats';
 import { TodayTab, type Nav } from './TrackerToday';
 import { stepNow } from './actions';
 import { ISO_DOT, StageBar, StateChip } from './ui';
@@ -28,7 +27,7 @@ type Main = 'today' | 'equipment' | 'isolation' | 'scope' | 'iats';
 // the same tabs as the Engineer mode (25 Oct): Sequence and Map are views of Handover, Timing of Equipment, PMRs of Hot work
 const TABS: [Main, string, LucideIcon][] = [['today', 'Dashboard', LayoutDashboard], ['equipment', 'Equipment', Wrench], ['isolation', 'Handover', Handshake], ['scope', 'SD scope', ClipboardList], ['iats', 'Hot work', Flame]];
 const MAIN: Record<Tab, Main> = { today: 'today', isolation: 'isolation', equipment: 'equipment', timing: 'equipment', guideline: 'isolation', map: 'isolation', scope: 'scope', iats: 'iats', pmr: 'iats', report: 'today', admin: 'today' };
-const VIEWS: Partial<Record<Main, [Tab, string][]>> = { equipment: [['equipment', 'Items'], ['timing', 'Timing']], isolation: [['isolation', 'Isolation'], ['guideline', 'Sequence'], ['map', 'Map']], iats: [['iats', 'IATs'], ['pmr', 'PMRs']] };
+const VIEWS: Partial<Record<Main, [Tab, string][]>> = { equipment: [['equipment', 'Items'], ['timing', 'Timing']], isolation: [['isolation', 'Isolation'], ['guideline', 'Sequence'], ['map', 'Map']] };
 const today = () => new Date(Date.now() + 3 * 36e5).toISOString().slice(0, 10);
 
 /** The clock the tracker runs on: now, or (TEST, this device) the time set in Admin to try a scenario. */
@@ -160,8 +159,8 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {tab === 'guideline' && <SequenceTab steps={steps} auto={auto} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {tab === 'equipment' && <EquipmentTab key={`eq-${lateFirst}`} initialLateFirst={lateFirst} eqs={eqs.filter((v) => inEquipmentTab(v.eq))} activities={data.activities} points={points} now={now} spare={spare} stale={stale} canEdit={canEdit} engine={data.engine} events={data.events} trackerId={tracker.id} onDone={(m, u) => done(m, true, u)} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={(m, u) => done(m, false, u)} />}
-      {tab === 'iats' && <IatsTab iats={data.iats} tags={data.equipment.map((e) => e.tag)} lineup={data.lineup} lineupEq={data.lineupEq} points={points} canEdit={canEdit} canLabel={isHead || profile.role_code === 'engineer'} onDone={(m, u) => done(m, true, u)} onItem={(tag) => setSheet({ kind: 'eq', tag })} />}
-      {(tab === 'scope' || tab === 'pmr') && <ScopeLists d={data} now={now} pmr={tab === 'pmr'} role={isHead ? 'head' : profile.role_code === 'controller' ? 'controller' : 'engineer'} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}
+      {(tab === 'iats' || tab === 'pmr') && <HotWorkTab d={data} now={now} role={isHead ? 'head' : profile.role_code === 'controller' ? 'controller' : 'engineer'} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}
+      {tab === 'scope' && <ScopeLists d={data} now={now} role={isHead ? 'head' : profile.role_code === 'controller' ? 'controller' : 'engineer'} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {sheetTab === 'report' && <BottomSheet open onClose={closeSheetTab} title="💬 Shift report"><ReportTab data={data} now={now} canEdit={canEdit} isHead={isHead} onDone={(m) => done(m, false)} by={profile.display_name} onSaved={() => load(true)} /></BottomSheet>}
       {sheetTab === 'admin' && isHead && <BottomSheet open onClose={closeSheetTab} title="⚙️ Admin · Section Head">
