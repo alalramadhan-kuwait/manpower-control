@@ -157,3 +157,9 @@ changes database logic, calculations, permissions or workflows. Mock-up first fo
 IT rule (25 Oct 2026): the app must not show the company's name, logo, colours or letterhead, nor the refinery
 name, anywhere (screens, printouts, Excel files, page titles, icons). Use "ARDS Operations · Area 4 · Unit 12". The
 staff classification shows "Company / Contractor"; the stored value `knpc` is an internal code only.
+
+## No company login (permanent)
+
+IT rule (25 Oct 2026): nobody uses their company ID or company password here. Usernames that look like a company ID,
+staff number or outside email are refused (Users screen and the manage-users function); everyone sets their own app
+password at first sign-in, ticking "not my company password"; a password set by the Section Head is temporary.

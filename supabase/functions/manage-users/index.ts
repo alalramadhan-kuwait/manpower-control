@@ -5,7 +5,7 @@
 // A login can be linked to one staff member. A one-holder role (Manpower Coordinator) moves with the person:
 // giving it to a login takes it from the previous holder (set_login_role), and that change is audited too.
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { accountEmail, lockoutProblem, passwordProblem, usernameOf } from './rules.ts';
+import { accountEmail, lockoutProblem, passwordProblem, usernameOf, usernameProblem } from './rules.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -110,8 +110,9 @@ Deno.serve(async (req) => {
         return reply(200, { users: await listUsers() });
 
       case 'create': {
+        const un = usernameProblem(str('username') ?? ''); if (un) throw new Refused(un);
         const email = accountEmail(str('username') ?? '');
-        if (!email) throw new Refused('Username: 2–32 letters, digits, dot, dash or underscore (or a full email address).');
+        if (!email) throw new Refused('Username: 2–32 letters, digits, dot, dash or underscore.');
         const password = str('password') ?? '';
         const pw = passwordProblem(password); if (pw) throw new Refused(pw);
         const staffId = str('employee_id') || null;
@@ -155,12 +156,15 @@ Deno.serve(async (req) => {
         const newUsername = str('username');
         let email = target.user.email ?? null;
         if (newUsername !== undefined && accountEmail(newUsername) !== email) {
+          const un = usernameProblem(newUsername); if (un) throw new Refused(un);
           const e = accountEmail(newUsername);
-          if (!e) throw new Refused('Username: 2–32 letters, digits, dot, dash or underscore (or a full email address).');
+          if (!e) throw new Refused('Username: 2–32 letters, digits, dot, dash or underscore.');
           authChange.email = e; authChange.email_confirm = true; email = e;
         }
         const password = str('password');
-        if (password) { const pw = passwordProblem(password); if (pw) throw new Refused(pw); authChange.password = password; }
+        if (password) { const pw = passwordProblem(password); if (pw) throw new Refused(pw); authChange.password = password;
+          // a password set by the Section Head is temporary: the person sets their own at the next sign-in
+          authChange.user_metadata = { ...(target.user.user_metadata ?? {}), own_pw: false }; }
         if (isActive !== undefined) authChange.ban_duration = isActive ? 'none' : FOREVER;
         if (Object.keys(authChange).length) {
           const { error } = await admin.auth.admin.updateUserById(id, authChange);

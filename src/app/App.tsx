@@ -4,6 +4,7 @@ import { recordVisit } from '@/data/activity';
 import { useSession } from '@/features/auth/useSession';
 import { appAccess, isAdminStaff } from '@/core/users/access';
 import LoginPage from '@/features/auth/LoginPage';
+import { OwnLogin, ownLoginStep } from '@/features/auth/OwnLogin';
 import DayOverviewPage from '@/features/day/DayOverviewPage';
 import EmployeesPage from '@/features/employees/EmployeesPage';
 import EmployeeProfilePage from '@/features/employees/EmployeeProfilePage';
@@ -51,6 +52,9 @@ function MainApp() {
       </div>
     );
   }
+  // IT rule: no company login here; own app password first
+  const own = ownLoginStep(session, profile.role_code);
+  if (own) return <OwnLogin session={session} step={own} />;
   const level = appAccess(profile.role_code, tasks), admin = isAdminStaff(profile.role_code);
   if (profile.employee_id && !access && appAccess(profile.role_code) !== 'none') {
     return (

@@ -33,11 +33,12 @@ export default function LoginPage() {
           </div>}
           {form && <form onSubmit={submit} className="space-y-4 rounded-2xl bg-white/95 p-5 shadow-lg shadow-brand-900/5 ring-1 ring-slate-200 backdrop-blur">
             <Field label="Username">
-              <input className="input" type="text" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="e.g. ajr015" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <input className="input" type="text" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="your app username" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </Field>
             <Field label="Password">
               <input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </Field>
+            <p className="text-xs font-semibold text-slate-600">App login only. Never your company ID or company password.</p>
             {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
             <Button type="submit" disabled={busy} className="w-full">{busy ? 'Signing in…' : 'Sign in'}</Button>
           </form>}

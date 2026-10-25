@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { accountEmail, lockoutProblem, passwordProblem, usernameOf } from '../rules';
+import { accountEmail, lockoutProblem, looksLikeCompanyId, ownPasswordProblem, passwordProblem, usernameOf, usernameProblem } from '../rules';
 
 const ME = 'me', OTHER = 'other';
 const head = (id: string) => ({ authUserId: id, roleCode: 'section_head', isActive: true });
@@ -18,6 +18,19 @@ describe('account usernames', () => {
   it('requires 8-character passwords', () => {
     expect(passwordProblem('12345')).toMatch(/at least 6/);
     expect(passwordProblem('123456')).toBeNull();
+  });
+});
+
+describe('no company login (IT rule)', () => {
+  it('refuses usernames that look like a company ID, a staff number or an email', () => {
+    for (const bad of ['ajr015', 'AB1234', '12345', '123456', 'x@company.com']) { expect(looksLikeCompanyId(bad)).toBe(true); expect(usernameProblem(bad)).toMatch(/company ID/); }
+    for (const ok of ['u12.ali', 'ops-ahmad', 'shift.lead2']) expect(usernameProblem(ok)).toBeNull();
+    expect(looksLikeCompanyId('coordinator@area4-manpower.local')).toBe(false);
+  });
+  it('asks for an own password of 8+ characters without the username', () => {
+    expect(ownPasswordProblem('short', 'u12.ali')).toMatch(/8/);
+    expect(ownPasswordProblem('my-u12.ali-pass', 'u12.ali')).toMatch(/username/);
+    expect(ownPasswordProblem('Blue-river-42', 'u12.ali')).toBeNull();
   });
 });
 

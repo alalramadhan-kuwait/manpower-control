@@ -21,6 +21,27 @@ export function usernameOf(email: string | null | undefined): string {
   return v.endsWith(`@${USERNAME_DOMAIN}`) ? v.slice(0, -USERNAME_DOMAIN.length - 1) : v;
 }
 
+/** IT rule: the company login is never used here. A username that looks like a company ID (letters then digits,
+ *  e.g. "abc015"), a staff / badge number or an email address is refused. */
+export function looksLikeCompanyId(username: string): boolean {
+  const v = username.trim().toLowerCase();
+  // an address on this app's own local domains (e.g. coordinator@area4-manpower.local) is an app login, not a company one
+  if (v.includes('@')) return !v.endsWith('.local');
+  return /^[a-z]{2,4}\d{2,4}$/.test(v) || /^\d+$/.test(v);
+}
+export function usernameProblem(username: string): string | null {
+  const v = username.trim().toLowerCase();
+  if (looksLikeCompanyId(v)) return 'Not a company ID, staff number or email. Example: u12.ali';
+  return USERNAME.test(v) ? null : 'Username: 2–32 letters, digits, dot, dash or underscore.';
+}
+/** The person's own app password: 8+ characters, not the username. */
+export const OWN_PASSWORD_MIN = 8;
+export function ownPasswordProblem(password: string, username: string): string | null {
+  if (password.length < OWN_PASSWORD_MIN) return `At least ${OWN_PASSWORD_MIN} characters.`;
+  if (username && password.toLowerCase().includes(username.toLowerCase())) return 'Do not use your username in it.';
+  return null;
+}
+
 export function passwordProblem(password: string): string | null {
   return password.length < MIN_PASSWORD ? `Password must be at least ${MIN_PASSWORD} characters.` : null;
 }

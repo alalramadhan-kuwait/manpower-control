@@ -4,7 +4,7 @@ import type { EmployeeDirectoryRow, UserProfile } from '@/data/types';
 import { fetchDirectory } from '@/data/queries';
 import { createUser, deleteUser, endTask, fetchAssignments, fetchRoles, grantTask, listUsers, updateUser, type AppRole, type Assignment, type ManagedUser } from '@/data/users';
 import { TASK_LABEL } from '@/core/users/access';
-import { MIN_PASSWORD, accountEmail, passwordProblem } from '@/core/users/rules';
+import { MIN_PASSWORD, looksLikeCompanyId, passwordProblem, usernameProblem } from '@/core/users/rules';
 import { BottomSheet, Button, Card, Chip, EmptyState, ErrorBox, Field, PageHeader, Spinner, cx, fmtDate } from '@/ui/components';
 
 const lastSeen = (iso: string | null) => (iso ? `${fmtDate(iso.slice(0, 10))}` : 'Never signed in');
@@ -93,7 +93,7 @@ function CreateSheet({ roles, staff, users, onClose, onDone }: { roles: AppRole[
   const [name, setName] = useState(''); const [username, setUsername] = useState(''); const [password, setPassword] = useState('');
   const [employee, setEmployee] = useState('');
   const [role, setRole] = useState('manpower_coordinator'); const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  const problem = !name.trim() ? 'Enter a name.' : !accountEmail(username) ? 'Username: 2–32 letters, digits, dot, dash or underscore.' : passwordProblem(password);
+  const problem = !name.trim() ? 'Enter a name.' : usernameProblem(username) ? usernameProblem(username)! : passwordProblem(password);
   async function save() {
     setBusy(true); setErr(null);
     try {
@@ -107,7 +107,7 @@ function CreateSheet({ roles, staff, users, onClose, onDone }: { roles: AppRole[
       <div className="space-y-4">
         <Field label="Staff member" hint="Inactive staff = no access"><StaffPicker staff={staff} users={users} self={null} value={employee} onChange={(id, n) => { setEmployee(id); if (id && !name.trim()) setName(n); }} /></Field>
         <Field label="Name shown in the app"><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Manpower Coordinator" /></Field>
-        <Field label="Username" hint="e.g. ajr015"><input className="input" autoCapitalize="none" autoCorrect="off" value={username} onChange={(e) => setUsername(e.target.value)} /></Field>
+        <Field label="Username" hint="Not a company ID. Example: u12.ali"><input className="input" autoCapitalize="none" autoCorrect="off" value={username} onChange={(e) => setUsername(e.target.value)} /></Field>
         <Field label="Password" hint={`Min ${MIN_PASSWORD} characters · 🔑 makes one`}><PasswordInput value={password} onChange={setPassword} /></Field>
         <Field label="Role"><RolePicker roles={roles} value={role} onChange={setRole} /></Field>
         <RoleMoveNote roles={roles} role={role} users={users} self={null} />
@@ -128,7 +128,7 @@ function EditSheet({ user, roles, staff, users, tasks, me, isMe, onClose, onDone
   const [role, setRole] = useState(user.role_code ?? ''); const [active, setActive] = useState(user.role_code ? user.is_active && !user.banned : true);
   const [password, setPassword] = useState(''); const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  const problem = !name.trim() ? 'Enter a name.' : !accountEmail(username) ? 'Username: 2–32 letters, digits, dot, dash or underscore.' : !role ? 'Choose a role.' : password ? passwordProblem(password) : null;
+  const problem = !name.trim() ? 'Enter a name.' : usernameProblem(username) ? usernameProblem(username)! : !role ? 'Choose a role.' : password ? passwordProblem(password) : null;
   async function run(fn: () => Promise<unknown>, msg: string) {
     setBusy(true); setErr(null);
     try { const r = await fn(); onDone(msg + moved(r, roles.find((x) => x.code === role)?.label ?? '')); } catch (e) { setErr(e); } finally { setBusy(false); }
@@ -215,7 +215,7 @@ export default function UsersPage({ profile }: { profile: UserProfile }) {
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700"><UserCog className="h-5 w-5" /></span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium text-slate-800">{u.display_name ?? u.username}{u.auth_user_id === profile.auth_user_id && <span className="ml-1 text-xs font-normal text-slate-500">(you)</span>}</span>
-                  <span className="block truncate text-xs text-slate-500">{u.username} · {roleLabel(u.role_code)}{taskText(u)}</span>
+                  <span className="block truncate text-xs text-slate-500">{u.username}{looksLikeCompanyId(u.username) && <span className="ml-1 rounded bg-red-100 px-1 text-[10px] font-bold text-red-800">change username</span>} · {roleLabel(u.role_code)}{taskText(u)}</span>
                   <span className="block truncate text-xs text-slate-500">{u.employee_name ? `Staff: ${u.employee_name}` : 'Not linked to a staff member'}</span>
                   <span className="mt-1 flex flex-wrap items-center gap-1.5 whitespace-nowrap"><StatusChip u={u} /><span className="text-[11px] text-slate-500">{lastSeen(u.last_sign_in_at)}</span></span>
                 </span>
@@ -232,7 +232,7 @@ export default function UsersPage({ profile }: { profile: UserProfile }) {
                   <tr key={u.auth_user_id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 font-medium text-slate-800">{u.display_name ?? '—'}{u.auth_user_id === profile.auth_user_id && <span className="ml-1 text-xs font-normal text-slate-500">(you)</span>}</td>
                     <td className="px-4 py-3 text-slate-600">{u.employee_name ?? '—'}</td>
-                    <td className="px-4 py-3 text-slate-600">{u.username}</td>
+                    <td className="px-4 py-3 text-slate-600">{u.username}{looksLikeCompanyId(u.username) && <span className="ml-1 rounded bg-red-100 px-1 text-[10px] font-bold text-red-800">change username</span>}</td>
                     <td className="px-4 py-3 text-slate-600">{roleLabel(u.role_code)}{taskText(u)}</td>
                     <td className="px-4 py-3"><StatusChip u={u} /></td>
                     <td className="px-4 py-3 text-slate-600">{lastSeen(u.last_sign_in_at)}</td>
