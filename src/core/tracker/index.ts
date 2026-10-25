@@ -68,7 +68,7 @@ export interface TrkActivity {
 export interface TrkLog { kind: 'step' | 'equipment' | 'iat' | 'activity' | 'point' | 'event' | 'qty' | 'shift'; ref: string; field: string; oldValue: string | null; newValue: string | null; reason?: string | null; byName: string | null; at: string }
 import { qtyForecast, qtyProgress, type TrkEngine } from './qty';
 export * from './qty';
-export interface TrkSettings { hoTarget?: string; end?: string; workOrder?: string; whatsapp?: string; opsStart?: string; miStart?: string; miEnd?: string;
+export interface TrkSettings { /** the P6 activity relationships validated: the end forecast is no longer labelled Unverified */ p6LinksVerified?: boolean; hoTarget?: string; end?: string; workOrder?: string; whatsapp?: string; opsStart?: string; miStart?: string; miEnd?: string;
   /** the progress engine (drums, updates) on this tracker, and its forecast window / freshness rules */
   progressV2?: boolean; fcWindow?: number; fcMin?: number; staleH?: number; miscDays?: number }
 /** A critical blind (segregation point) or a neutralization (loop or item), entered once on the Isolation page. */

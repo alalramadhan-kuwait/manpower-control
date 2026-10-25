@@ -51,7 +51,10 @@ export function ShutdownOverview({ data, now, head = false, onItem, onGo }: { da
     <div className="mb-2.5 space-y-2">
       {/* 1 · the end */}
       <section className={cx('rounded-2xl border-l-[6px] bg-white p-3 ring-1 ring-slate-200', !w ? 'border-l-slate-300' : late ? 'border-l-status-red' : 'border-l-status-green')}>
-        <div className="flex items-baseline justify-between gap-2"><H3>Shutdown end</H3>{total > 0 && <span className="text-[11px] font-semibold text-slate-500">Day {Math.min(day, total)} / {total}</span>}</div>
+        <div className="flex items-baseline justify-between gap-2"><H3>Shutdown end · forecast</H3><span className="flex items-baseline gap-1.5">
+          {/* the forecast follows the P6 dates without the activity links: unverified until they are validated */}
+          {!s.p6LinksVerified && <span title="P6 activity relationships not validated yet" className="rounded bg-amber-100 px-1.5 py-px text-[10px] font-bold uppercase text-amber-900">Unverified</span>}
+          {total > 0 && <span className="text-[11px] font-semibold text-slate-500">Day {Math.min(day, total)} / {total}</span>}</span></div>
         {w ? <>
           <p className="flex flex-wrap items-baseline gap-x-2"><b className={cx('text-[22px] font-extrabold leading-tight', late ? 'text-status-red' : 'text-brand-700')}>{at(w.estEnd)}</b>
             <span className={cx('rounded-md px-1.5 py-0.5 text-[12px] font-bold', late ? tone('red') : tone('green'))}>{late ? `${daysAsHours(w.impactD)} behind P6` : 'on P6'}</span></p>
@@ -60,7 +63,7 @@ export function ShutdownOverview({ data, now, head = false, onItem, onGo }: { da
       </section>
       {/* 2 · progress */}
       {w && <section className="rounded-2xl bg-white p-3 ring-1 ring-slate-200">
-        <div className="flex items-baseline justify-between gap-2"><H3>Progress · main equipment</H3>
+        <div className="flex items-baseline justify-between gap-2"><H3>M&amp;I work progress · main equipment</H3>
           <span className={cx('text-[12px] font-bold', w.main.physPct >= w.main.planPct ? 'text-status-green' : 'text-status-red')}>{w.main.physPct >= w.main.planPct ? 'on plan' : `${w.main.planPct - w.main.physPct} pts behind`}</span></div>
         <p className="flex items-baseline gap-2"><b className="text-[22px] font-extrabold text-brand-700">{w.main.physPct}%</b><span className="text-[12px] text-slate-600">plan {w.main.planPct}%{w.main.physHiPct > w.main.physPct ? ` · up to ${w.main.physHiPct}%` : ''}</span></p>
         <span className="relative mt-1 block h-2 rounded-full bg-slate-200"><span className={cx('block h-full rounded-full', w.main.physPct >= w.main.planPct ? 'bg-status-green' : 'bg-status-red')} style={{ width: `${Math.min(100, w.main.physPct)}%` }} />
