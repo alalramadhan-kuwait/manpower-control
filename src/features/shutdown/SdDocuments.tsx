@@ -20,24 +20,23 @@ const MONTH = (ym: string) => new Date(`${ym}-01T00:00:00Z`).toLocaleDateString(
 const monthName = (ym: string) => new Date(`${ym}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' });
 const hrs = (label: string | null) => label?.replace(/(\d\d:\d\d)/g, '$1 HRS').replace(/\s*-\s*/, ' TO ') ?? '';
 
-const KNPC_BLUE = 'var(--color-knpc-blue)';
-/** The KNPC letterhead, as on the Excel sheets: the logo, the title, the refinery and unit, the period and the flame's colours. */
+/** The document heading, as on the Excel sheets: the title, the unit, the period and a navy rule (no company name or logo). */
 export function Letterhead({ title, sub }: { title: string; sub: string }) {
   return (
     <header className="mb-3">
       <div className="flex items-center gap-3">
-        <img src={`${import.meta.env.BASE_URL}brand/knpc-logo.png`} alt="KNPC" className="h-10 w-auto shrink-0 sm:h-12" />
+        <div className="hidden w-24 shrink-0 sm:block" />
         <div className="min-w-0 flex-1 text-center">
-          <h1 className="text-sm font-bold" style={{ color: KNPC_BLUE }}>{title}</h1>
+          <h1 className="text-sm font-bold text-brand-700">{title}</h1>
           <p className="text-[10px] text-slate-500">{sub}</p>
         </div>
         <div className="hidden w-24 shrink-0 sm:block" />
       </div>
-      <div className="mt-2 flex h-1 overflow-hidden rounded-full"><span className="w-[12%] bg-knpc-red" /><span className="w-[12%] bg-knpc-green" /><span className="flex-1 bg-knpc-blue" /></div>
+      <div className="mt-2 h-1 rounded-full bg-brand-700" />
     </header>
   );
 }
-const unitLine = 'Mina Abdullah Refinery · ARDS Operations · Area 4 · Unit 12';
+const unitLine = 'ARDS Operations · Area 4 · Unit 12';
 const periodOf = (p: SdPlan) => { const f = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }); return `${f(p.start)} – ${f(p.end)} ${p.end.slice(0, 4)}`; };
 
 /** A row: the member, the group it is printed under (Controller, an area, Operators) and its number within the team. */
@@ -126,7 +125,7 @@ export function ScheduleBody({ doc }: { doc: Doc }) {
       {blocks.map((b, bi) => (
         <table key={bi} className="mb-3 w-full border-collapse text-center text-[10px] text-slate-900 print:break-inside-avoid">
           <thead>
-            <tr><th colSpan={4} className={cx(th, 'bg-knpc-blue text-white')}>EMPLOYEES</th><th colSpan={b.length} className={cx(th, 'bg-knpc-blue text-white')}>DAYS</th></tr>
+            <tr><th colSpan={4} className={cx(th, 'bg-brand-700 text-white')}>EMPLOYEES</th><th colSpan={b.length} className={cx(th, 'bg-brand-700 text-white')}>DAYS</th></tr>
             <tr><th colSpan={4} className={th} />{b.map((d) => <th key={d} className={cx(th, 'font-medium')}>{new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' })}</th>)}</tr>
             <tr><th className={cx(th, 'w-px')} /><th className={cx(th, 'w-px')}>S.NO</th><th className={cx(th, 'w-px')}>E NO.</th><th className={cx(th, 'w-px min-w-40 text-left')}>E. NAME</th>
               {b.map((d) => <th key={d} className={cx(th, 'w-8 whitespace-nowrap')}>{Number(d.slice(8))}-{new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })}</th>)}</tr>
@@ -185,7 +184,7 @@ export function SdOvertimePage() {
     <Page back={`/shutdown/${plan.id}`} title={plan.title} actions={<Button variant="secondary" className="min-h-9 px-3 text-xs" onClick={() => setEditSigs(true)}><Pencil className="h-3.5 w-3.5" />Signatures</Button>}>
       {months.map((ym, mi) => (
         <section key={ym} className={cx(mi > 0 && 'mt-8 border-t border-dashed border-slate-300 pt-4 print:mt-0 print:border-0 print:pt-0', mi < months.length - 1 && 'print:break-after-page')}>
-          <Letterhead title={`KNPC-MAB - ARDS UNIT-12 ${doc.name} SHUTDOWN MANPOWER OVERTIME`} sub={`${unitLine} · ${MONTH(ym)}`} />
+          <Letterhead title={`ARDS UNIT-12 ${doc.name} SHUTDOWN MANPOWER OVERTIME`} sub={`${unitLine} · ${MONTH(ym)}`} />
           {teams.map((t) => {
             const list = rows.filter((x) => x.team.id === t.id && inMonth(x, ym));
             const days = dates.filter((d) => d.startsWith(ym));

@@ -27,7 +27,7 @@ export async function setQualificationBulk(employeeIds: string[], qualification:
   return targets.length;
 }
 
-/** Confirms the current KNPC / Contractor classification (keeps the type, marks it confirmed). */
+/** Confirms the current company / contractor classification (keeps the type, marks it confirmed). */
 export async function confirmEmploymentTypeBulk(employeeIds: string[], note: string, profile: UserProfile): Promise<number> {
   if (employeeIds.length === 0) return 0;
   const { data, error } = await supabase.from('employees').update({ employment_type_source: 'confirmed' })

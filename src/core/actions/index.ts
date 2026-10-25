@@ -21,7 +21,7 @@ export interface ActionItem { code: ActionCode; label: string; bulk: BulkAction 
 export const ACTION_LABEL: Record<ActionCode, string> = {
   take_charge: 'Take-Charge not confirmed',
   panel_qualification: 'Panel qualification not confirmed',
-  employment_type: 'KNPC / Contractor not confirmed',
+  employment_type: 'Company / Contractor not confirmed',
   grade_missing: 'Grade not recorded',
   controller_grade: 'Controller below Grade 15',
   unresolved_absences: 'Unresolved absence'

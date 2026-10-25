@@ -40,7 +40,7 @@ describe('G16 · one overtime calculation everywhere', () => {
     }
   });
   it('the Excel OT sheet carries the same totals', async () => {
-    const wb = await buildSdWorkbook(doc, new Map(), undefined, '1 Oct 2026');
+    const wb = await buildSdWorkbook(doc, new Map(), '1 Oct 2026');
     const ws = wb.getWorksheet('OT hrs')!;
     let seen = 0;
     ws.eachRow((row) => {

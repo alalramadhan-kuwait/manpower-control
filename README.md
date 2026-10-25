@@ -1,8 +1,8 @@
 # ARDS Operations · Manpower Control
 
-Area 4 · Unit 12 internal operations app (KNPC Mina Abdullah Refinery). Project rules: [CLAUDE.md](CLAUDE.md) · knowledge: [docs/APP_KNOWLEDGE.md](docs/APP_KNOWLEDGE.md) · design: [docs/BRAND.md](docs/BRAND.md).
+Area 4 · Unit 12 internal operations app. Project rules: [CLAUDE.md](CLAUDE.md) · knowledge: [docs/APP_KNOWLEDGE.md](docs/APP_KNOWLEDGE.md) · design: [docs/BRAND.md](docs/BRAND.md).
 
-Operations manpower planning and control for **KNPC — Mina Abdullah Refinery — Area 4 — Unit 12 — Section 1**.
+Operations manpower planning and control for **Area 4 — Unit 12 — Section 1**.
 
 This project is standalone. It shares **nothing** with Time Keeper / Time Gallery: separate repository,
 separate Supabase project (`fhnqaurtryfmmomvzrpl`), separate authentication, separate employees.
@@ -38,13 +38,13 @@ logins exist but have no app access yet. Logins are managed only through the `ma
 | File | Import type | What it provides |
 |---|---|---|
 | `ARD's U-12 Manpower 2026.xlsx` | `u12_manpower_workbook` | Section 1 population, crews (from `PV Scheduled`), approved annual-leave plan, monthly absence grid |
-| `Promotion October 2026.xlsm.xlsx` | `promotion_master` | Grade, position, HR dates, performance, sick-leave totals for Area-4 KNPC staff; matched by Employee Number, rows outside Section 1 ignored |
+| `Promotion October 2026.xlsm.xlsx` | `promotion_master` | Grade, position, HR dates, performance, sick-leave totals for Area-4 company staff; matched by Employee Number, rows outside Section 1 ignored |
 
 Rules the importer follows:
 
 - Employee Number is the only matching key. Names are never used to match.
 - The 60 people on the U-12 workbook define the Section 1 scope. Cost Center is never used for scope.
-- KNPC / Contractor is a classification only, inferred from the number length (5 digits KNPC, 6 digits contractor) and
+- Company / Contractor is a classification only, inferred from the number length (5 digits company, 6 digits contractor) and
   marked "inferred" until confirmed. Eligibility for manpower will depend on role, qualification, grade, Take-Charge and availability.
 - Take-Charge is `not_yet_confirmed` for every imported Field Operator until the Section Head confirms it.
 - Panel / Controller qualification is recorded from block membership as *import inference*; it is its own record and can be corrected.

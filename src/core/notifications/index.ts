@@ -126,7 +126,7 @@ export function buildNotices(i: NoticeInput): Notice[] {
 
   // 4. staff records needing action
   if (i.needsAction > 0) out.push({ id: 'staff-action', level: 'watch', area: 'data', title: `${plural(i.needsAction, 'staff record')} to complete`,
-    detail: 'Grade · Take-Charge · Panel · KNPC / contractor', date: null, to: '/employees?view=action' });
+    detail: 'Grade · Take-Charge · Panel · company / contractor', date: null, to: '/employees?view=action' });
 
   // 5a. unit sections down now or within 14 days (the minimums drop with them)
   for (const o of (i.plan.outages ?? []).filter((x) => x.end >= i.today && daysBetween(i.today, x.start) <= 14)) {

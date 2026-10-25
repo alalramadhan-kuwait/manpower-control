@@ -2,7 +2,7 @@
   "name": "area4-manpower-control",
   "private": true,
   "version": "0.1.0",
-  "description": "KNPC MAB Area 4 / Unit 12 Section 1 operations manpower planning and control",
+  "description": "Area 4 / Unit 12 Section 1 operations manpower planning and control",
   "type": "module",
   "scripts": {
     "dev": "vite",

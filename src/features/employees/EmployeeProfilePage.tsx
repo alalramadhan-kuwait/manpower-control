@@ -110,7 +110,7 @@ export default function EmployeeProfilePage({ profile, editId }: { profile: User
           {leaveNow && <OnLeaveChip leave={leaveNow} />}
           {isCrew(emp.crew_code) && <span className="inline-flex items-center rounded-full bg-white py-0.5 pe-2.5 ps-0.5 text-xs font-semibold text-slate-800 ring-1 ring-slate-200"><CrewTag crew={emp.crew_code} /></span>}
           {shiftToday && <Chip>{t('Today')}: {shiftToday}</Chip>}
-          <Chip tone={emp.employment_type_source === 'confirmed' ? 'neutral' : 'amber'}>{emp.employment_type === 'knpc' ? 'KNPC' : t('Contractor')}{emp.employment_type_source === 'inferred' ? ` (${t('inferred')})` : ''}</Chip>
+          <Chip tone={emp.employment_type_source === 'confirmed' ? 'neutral' : 'amber'}>{emp.employment_type === 'knpc' ? t('Company') : t('Contractor')}{emp.employment_type_source === 'inferred' ? ` (${t('inferred')})` : ''}</Chip>
           {emp.grade && <Chip>{t('Grade')} {emp.grade}</Chip>}
           {(emp.position_code === 'field_operator' || emp.position_code === 'panel_operator') && emp.fo_level && <Chip tone={emp.fo_level === 'below' ? 'amber' : 'blue'}>{t(({ senior: 'Senior FO', good: 'Good FO', new: 'New FO', below: 'Below-average FO' } as const)[emp.fo_level])}</Chip>}
           {emp.position_code === 'panel_operator' && (emp.can_cover_field || (emp.grade ?? 0) >= 13) && <Chip tone="blue">{t('Can cover Field')}</Chip>}
@@ -186,8 +186,8 @@ export default function EmployeeProfilePage({ profile, editId }: { profile: User
         <Row label={t('Section')} value={emp.section_name} />
       </Collapsible>
 
-      <Collapsible title="KNPC master data" count={1}>
-        {emp.employment_type === 'contractor' && <p className="mb-2 text-xs text-slate-500">{t('Contractor · no KNPC HR data')}</p>}
+      <Collapsible title="HR master data" count={1}>
+        {emp.employment_type === 'contractor' && <p className="mb-2 text-xs text-slate-500">{t('Contractor · no HR master data')}</p>}
         <Row label={t('Grade')} value={emp.grade} />
         <Row label={t('Master position')} value={emp.master_position} />
         <Row label={t('Cost center')} value={emp.cost_center} />
@@ -394,7 +394,7 @@ function BasicsSheet({ emp, onClose, onSaved }: { emp: EmployeeDirectoryRow; onC
   return (
     <BottomSheet open onClose={onClose} title="Edit employee">
       <div className="space-y-3">
-        <Field label="Official name" hint="As in the KNPC Promotion Master"><input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} /></Field>
+        <Field label="Official name" hint="As in the Promotion Master"><input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} /></Field>
         <Field label="Display name" hint="Empty = first and last name"><input className="input" value={displayName} onChange={(e) => setDisplayName(e.target.value)} /></Field>
         <Field label="Workbook name" hint="As on the U-12 sheets"><input className="input" value={shortName} onChange={(e) => setShortName(e.target.value)} /></Field>
         <Field label="Name in Arabic" hint="For search: the Arabic name finds him in Employees, Leave plan and Requests"><input className="input" dir="rtl" lang="ar" value={arabicName} onChange={(e) => setArabicName(e.target.value)} /></Field>
@@ -411,7 +411,7 @@ function BasicsSheet({ emp, onClose, onSaved }: { emp: EmployeeDirectoryRow; onC
           <Field label="Last promotion"><input type="date" className="input" value={promoted} onChange={(e) => setPromoted(e.target.value)} /></Field>
         </div>
         <Field label="Employment classification" >
-          <div className="flex gap-2">{(['knpc', 'contractor'] as const).map((t) => <button key={t} type="button" onClick={() => { setType(t); setConfirmed(true); }} className={`flex-1 rounded-xl py-2.5 text-sm font-medium ring-1 ${type === t ? 'bg-brand-700 text-white ring-brand-700' : 'ring-slate-300'}`}>{t === 'knpc' ? 'KNPC' : 'Contractor'}</button>)}</div>
+          <div className="flex gap-2">{(['knpc', 'contractor'] as const).map((t) => <button key={t} type="button" onClick={() => { setType(t); setConfirmed(true); }} className={`flex-1 rounded-xl py-2.5 text-sm font-medium ring-1 ${type === t ? 'bg-brand-700 text-white ring-brand-700' : 'ring-slate-300'}`}>{t === 'knpc' ? 'Company' : 'Contractor'}</button>)}</div>
         </Field>
         {emp.position_code === 'panel_operator' && (
           <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={fieldCover} onChange={(e) => setFieldCover(e.target.checked)} />

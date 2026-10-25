@@ -74,6 +74,6 @@ export function syntheticPromotionWorkbook(): XLSX.WorkBook {
   rows[6] = [1, 10001, 'CTRL ONE FULL NAME', 1, 71122, 16, 'Controller', new Date(2005, 10, 4), new Date(2004, 8, 25), new Date(2020, 3, 2), new Date(2019, 3, 2), '12 Yr. At School', 22, 7.5, 3, 0, 8.75, 8.75, 3.52, 3.71, 'No', 0, 'Yes'];
   rows[7] = [2, 30001, 'SOMEONE ELSEWHERE', 1, 71015, 16, 'Controller', new Date(2005, 10, 4), new Date(2004, 8, 25), null, null, null, 22, 1, 12, 3, 8.5, 8, 3.3, 3.16, 'No', 0, 'Yes'];
   rows[8] = [3, 10001, 'CTRL ONE DUPLICATE', 1, 71122, 16, 'Controller', null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows.map((r) => r ?? [])), 'KNPC_Oper_Prom_01__Personnel_D_');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows.map((r) => r ?? [])), 'Oper_Prom_01__Personnel_D_');
   return wb;
 }

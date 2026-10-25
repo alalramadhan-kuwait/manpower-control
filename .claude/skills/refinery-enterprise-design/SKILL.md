@@ -35,7 +35,7 @@ Colours: use the `@theme` tokens in `src/index.css`. Do not add new hex values.
 | Shift M / A / N | amber / orange / indigo, only for shift identity |
 | Running step marker | `amber-400` fill, `amber-950` text |
 | WhatsApp buttons / preview | `whatsapp` / `whatsapp-soft` |
-| Printed KNPC documents only | `knpc-blue` / `knpc-red` / `knpc-green` |
+| Printed documents | `brand-700` heading and rule only (no company name, logo or colours) |
 
 Soft fills for states use the Tailwind palette at 50–200 (`green-100`, `red-100`, `amber-200`). No `-[#hex]` classes
 anywhere except the logo artwork (`src/ui/brand.tsx`). The same colour means the same thing everywhere. Colour is

@@ -71,7 +71,7 @@ export function BrandBackdrop({ children }: { children: React.ReactNode }) {
       <div className="relative flex flex-1 flex-col">{children}</div>
       <footer className="relative flex items-center justify-center gap-3 px-6 pb-6 pt-2 safe-bottom">
         <span className="h-px flex-1 max-w-24 bg-slate-300" />
-        <span className="flex items-center gap-1.5 text-[11px] font-medium tracking-[0.12em] text-slate-500"><Lock className="h-3 w-3" /> KNPC · Mina Abdullah Refinery</span>
+        <span className="flex items-center gap-1.5 text-[11px] font-medium tracking-[0.12em] text-slate-500"><Lock className="h-3 w-3" /> Internal use · Area 4 · Unit 12</span>
         <span className="h-px flex-1 max-w-24 bg-slate-300" />
       </footer>
     </div>

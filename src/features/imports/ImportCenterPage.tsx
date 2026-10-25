@@ -22,7 +22,7 @@ export default function ImportCenterPage({ profile }: { profile: UserProfile }) 
       const buf = await file.arrayBuffer();
       const wb = openWorkbook(buf);
       const det = detectImportType(wb);
-      if (!det.importType) throw new Error(`This workbook is not recognised. ${det.reason}. Expected the U-12 manpower workbook (PV Scheduled + monthly sheets) or the KNPC promotion list.`);
+      if (!det.importType) throw new Error(`This workbook is not recognised. ${det.reason}. Expected the U-12 manpower workbook (PV Scheduled + monthly sheets) or the promotion list.`);
       const parsed = parseWorkbook(wb, file.name);
       const year = parsed.kind === 'u12_manpower_workbook' ? parsed.year : Number((parsed.asOfDate ?? new Date().toISOString()).slice(0, 4));
       const existing = await fetchExistingForPlanning(year);

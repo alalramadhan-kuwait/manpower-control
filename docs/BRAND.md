@@ -1,6 +1,6 @@
 # ARDS Operations — design system
 
-Internal operations app for **Area 4 · Unit 12** (KNPC Mina Abdullah Refinery). This module: **Manpower Control**.
+Internal operations app for **Area 4 · Unit 12**. This module: **Manpower Control**.
 The system below is built from the U12 brand reference and is what the app actually uses.
 
 ## Logo
@@ -51,7 +51,7 @@ Only the Latin files are bundled (≈ 86 KB together) and they are cached with t
 ## Screens
 
 - **Loading**: white-to-canvas gradient, faint sweep in the logo colours (top right), stacked lockup, navy spinner,
-  "Loading operational data…", faint refinery line drawing, footer "KNPC · Mina Abdullah Refinery". The same screen is
+  "Loading operational data…", faint refinery line drawing, footer "Internal use · Area 4 · Unit 12". The same screen is
   painted by `index.html` before the app code arrives, so there is no blank flash.
 - **Sign in**: the same backdrop with the lockup and "Manpower Control" above the form.
 - **Header**: navy bar, mark on a white tile, "ARDS Operations" (Montserrat Bold) and "Manpower Control · person · role".

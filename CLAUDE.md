@@ -1,6 +1,6 @@
 # ARDS Operations — project rules (mandatory)
 
-Area 4 · Unit 12 operations app (KNPC Mina Abdullah Refinery): manpower, leave, shift control, shutdown teams and the
+Area 4 · Unit 12 operations app: manpower, leave, shift control, shutdown teams and the
 Shutdown Progress Tracker. Live at https://ops12ards.com (Vercel, deploys from `main`; check `/version.json`).
 Supabase project `fhnqaurtryfmmomvzrpl` — its own project. It shares **nothing** with Time Keeper.
 
@@ -151,3 +151,9 @@ changes database logic, calculations, permissions or workflows. Mock-up first fo
   functions and gates but use the same rows, hero cards, toast, icons and step action (table in the design skill §4a).
 - The Engineer view takes the user's role (`EngRole`); never show an action there that the Section Head tracker
   hides from that role.
+
+## No company name or logo (permanent)
+
+IT rule (25 Oct 2026): the app must not show the company's name, logo, colours or letterhead, nor the refinery
+name, anywhere (screens, printouts, Excel files, page titles, icons). Use "ARDS Operations · Area 4 · Unit 12". The
+staff classification shows "Company / Contractor"; the stored value `knpc` is an internal code only.

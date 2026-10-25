@@ -25,7 +25,7 @@ const CHOICES: Choice[] = [
   { key: 'tc_no', action: 'take_charge', status: 'no', label: 'Take-Charge = No', tone: 'red' },
   { key: 'panel_yes', action: 'panel_qualification', status: 'yes', label: 'Panel qualification = Yes', tone: 'green' },
   { key: 'panel_no', action: 'panel_qualification', status: 'no', label: 'Panel qualification = No', tone: 'red' },
-  { key: 'emp', action: 'employment_type', label: 'Confirm KNPC / Contractor classification as shown', tone: 'blue' }
+  { key: 'emp', action: 'employment_type', label: 'Confirm Company / Contractor classification as shown', tone: 'blue' }
 ];
 
 export default function EmployeesPage({ profile }: { profile: UserProfile }) {
@@ -107,7 +107,7 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
         <div className="mt-3 space-y-1.5 lg:mt-0">
           <div className="flex flex-wrap gap-1.5">{ROLE_FILTERS.map(([v, l]) => <FilterChip key={v} active={role === v} onClick={() => set('role', v)}>{l}</FilterChip>)}</div>
           <div className="flex flex-wrap gap-1.5">{CREW_FILTERS.map((v) => <FilterChip key={v || 'all'} active={crew === v} onClick={() => set('crew', v)}>{v ? <span className="inline-flex items-center gap-1"><span className={cx('h-2.5 w-2.5 rounded-full', CREW_IDENTITY[v].bg)} />{v}</span> : 'All crews'}</FilterChip>)}</div>
-          <div className="flex flex-wrap gap-1.5">{[['', 'KNPC + Contractor'], ['knpc', 'KNPC'], ['contractor', 'Contractor']].map(([v, l]) => <FilterChip key={v || 'both'} active={emp === v} onClick={() => set('type', v)}>{l}</FilterChip>)}</div>
+          <div className="flex flex-wrap gap-1.5">{[['', 'Company + Contractor'], ['knpc', 'Company'], ['contractor', 'Contractor']].map(([v, l]) => <FilterChip key={v || 'both'} active={emp === v} onClick={() => set('type', v)}>{l}</FilterChip>)}</div>
         </div>
       </div>
 
@@ -141,7 +141,7 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
                     <td className="px-2 py-2 text-slate-700">{r.position_label ?? '—'}</td>
                     <td className="px-2 py-2 text-slate-700">{isCrew(r.crew_code) ? <CrewBadge crew={r.crew_code} size="sm" /> : r.position_code === 'vr_controller' ? 'VR' : r.position_code === 'morning_controller' ? 'M' : '—'}</td>
                     <td className="px-2 py-2 tabular-nums text-slate-700">{r.grade ?? '—'}</td>
-                    <td className="whitespace-nowrap px-2 py-2"><span className="text-slate-700">{r.employment_type === 'knpc' ? 'KNPC' : 'Contractor'}</span>{r.employment_type_source !== 'confirmed' && <span className="ml-1 text-[11px] text-amber-700">inferred</span>}</td>
+                    <td className="whitespace-nowrap px-2 py-2"><span className="text-slate-700">{r.employment_type === 'knpc' ? 'Company' : 'Contractor'}</span>{r.employment_type_source !== 'confirmed' && <span className="ml-1 text-[11px] text-amber-700">inferred</span>}</td>
                     <td className="px-2 py-2"><ActionChips actions={r.actions} /></td>
                   </tr>
                 ))}

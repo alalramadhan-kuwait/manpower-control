@@ -8,7 +8,7 @@ import type {
   PlanSummary, RoleCode, StagedRow
 } from './types';
 
-/** KNPC employee numbers are 5 digits; contractor badge numbers are 6 digits. Recorded as "inferred". */
+/** Company employee numbers are 5 digits; contractor badge numbers are 6 digits. Recorded as "inferred". */
 export function inferEmploymentType(employeeNumber: string): 'knpc' | 'contractor' {
   return employeeNumber.replace(/^0+/, '').length >= 6 ? 'contractor' : 'knpc';
 }
@@ -427,7 +427,7 @@ export function planPromotionImport(parsed: ParsedPromotionMaster, existing: Exi
       if (!sameValue(from, to)) { diff[f.key] = { from, to }; payload[f.key] = to; }
     }
     if (ex.employment_type !== 'knpc' || ex.employment_type_source !== 'confirmed') {
-      diff.employment_type = { from: `${ex.employment_type} (${ex.employment_type_source})`, to: 'knpc (confirmed: present in KNPC promotion master)' };
+      diff.employment_type = { from: `${ex.employment_type === 'knpc' ? 'company' : ex.employment_type} (${ex.employment_type_source})`, to: 'company (confirmed: present in the promotion master)' };
       payload.employment_type = 'knpc'; payload.employment_type_source = 'confirmed';
     }
     const display = displayNameFor({ officialName: rec.fullName || ex.official_name, shortName: ex.short_name, employmentType: 'knpc', employmentTypeSource: 'confirmed' });
@@ -452,11 +452,11 @@ export function planPromotionImport(parsed: ParsedPromotionMaster, existing: Exi
       }
     }
   }
-  // scope employees missing from the master (KNPC only)
+  // scope employees missing from the master (company employees only)
   for (const ex of existing) {
     if (!ex.in_unit12_scope || seen.has(ex.employee_number)) continue;
     if (ex.employment_type === 'contractor') continue;
-    b.add({ sheet: null, row_ref: null, entity_kind: 'note', employee_number: ex.employee_number, matched_employee_id: ex.id, outcome: 'unmatched', needs_review: true, raw: null, payload: null, diff: null, message: `${ex.short_name ?? ex.official_name} (${ex.employee_number}) is in Unit-12 scope as KNPC but is not in this promotion master` });
+    b.add({ sheet: null, row_ref: null, entity_kind: 'note', employee_number: ex.employee_number, matched_employee_id: ex.id, outcome: 'unmatched', needs_review: true, raw: null, payload: null, diff: null, message: `${ex.short_name ?? ex.official_name} (${ex.employee_number}) is in Unit-12 scope as a company employee but is not in this promotion master` });
   }
   return { importType: 'promotion_master', fileName, sourceAsOfDate: parsed.asOfDate, periodStart: null, periodEnd: null, rows: b.rows, summary: summarize(b.rows), warnings };
 }

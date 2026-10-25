@@ -77,7 +77,7 @@ Two import batches were committed through `commit_import_batch()` acting as the 
 
 | Batch | Source | Result |
 |---|---|---|
-| `11111111-…-0001` | `ARD's U-12 Manpower 2026.xlsx` (PV Scheduled + Jan–Dec grids) | 60 employees (48 KNPC, 12 contractors), 60 role assignments, 60 qualification records, 230 approved planned-leave records, 3 unresolved absences for review |
+| `11111111-…-0001` | `ARD's U-12 Manpower 2026.xlsx` (PV Scheduled + Jan–Dec grids) | 60 employees (48 company, 12 contractors), 60 role assignments, 60 qualification records, 230 approved planned-leave records, 3 unresolved absences for review |
 | `11111111-…-0002` | `Promotion October 2026.xlsm.xlsx` (as of 01-OCT-2026) | 48 employees updated with grade / position / dates / education, 96 performance rows (2025, 2026), 96 sick-leave totals, 49 Area-4 rows ignored as outside Section 1 |
 
 Every operational row references its batch and its workbook / sheet / cell.

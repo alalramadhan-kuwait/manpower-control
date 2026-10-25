@@ -1,8 +1,8 @@
 /**
  * Employee naming rule shared by the app and the import planner.
  *
- * official_name  – the full name exactly as the KNPC Promotion Master lists it (never shortened).
- * display_name   – what screens show: for a KNPC employee confirmed against the master, the first and
+ * official_name  – the full name exactly as the Promotion Master lists it (never shortened).
+ * display_name   – what screens show: for a company employee confirmed against the master, the first and
  *                  last word of the official name in title case ("AHMAD ALI SAMPLE HASSAN" → "Ahmad Hassan");
  *                  for everyone else (contractors, unconfirmed) the workbook short name.
  * Employee number stays the matching key everywhere.

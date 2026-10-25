@@ -12,7 +12,7 @@ import { ScheduleBody, useDoc, type Doc } from './SdDocuments';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const dmy = (d: string) => `${d.slice(8)}-${d.slice(5, 7)}-${d.slice(0, 4)}`;
-export const DEFAULT_CC = ['Refinery Shift Leader - MAB', 'Controller-I (Area-4) - MAB', 'Operations Area-4 Controller - MAB'];
+export const DEFAULT_CC = ['Refinery Shift Leader', 'Controller-I (Area-4)', 'Operations Area-4 Controller'];
 
 const cell = 'border border-slate-700 px-2 py-0.5';
 
@@ -68,7 +68,7 @@ export function SdMemoPage() {
   const perNo = personnel.length ? next() : '';
   const header = (
     <div className="pb-4 text-center">
-      <img src={`${import.meta.env.BASE_URL}brand/knpc-logo.png`} alt="KNPC" className="mx-auto h-14 w-auto" />
+      <p className="text-[13px] font-bold tracking-wide text-brand-700">ARDS Operations · Area 4 · Unit 12</p>
     </div>
   );
   return (
@@ -87,7 +87,7 @@ export function SdMemoPage() {
           <thead><tr><td className="px-6 pt-6 print:px-0 print:pt-0">{header}</td></tr></thead>
           <tbody><tr><td className="px-6 pb-8 print:px-0 print:pb-0">
             <div className="text-center font-bold">
-              <p className="text-[16px]">MAB Refinery – Operations Area-4</p>
+              <p className="text-[16px]">Operations Area-4</p>
               <p className="text-[16px]">{memo.heading}</p>
               <p className="mt-2 text-[16px]">Turnaround Manpower Coverage</p>
             </div>
@@ -173,7 +173,7 @@ function MemoSheet({ doc, onClose, onDone }: { doc: Doc; onClose: () => void; on
           <Field label="Signed by"><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></Field>
           <Field label="Title"><input className="input" value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
         </div>
-        <Field label="cc (one a line, “Title - MAB”)"><textarea className="input min-h-24" value={cc} onChange={(e) => setCc(e.target.value)} /></Field>
+        <Field label="cc (one a line)"><textarea className="input min-h-24" value={cc} onChange={(e) => setCc(e.target.value)} /></Field>
         <Field label="More instructions under Personnel (one a line, optional)"><textarea className="input min-h-20" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Name #number to …" /></Field>
         <p className="text-[11px] text-slate-500">The groups, the controllers left on the crews and each person&rsquo;s day of joining are written from the plan.</p>
         {err != null && <ErrorBox error={err} />}

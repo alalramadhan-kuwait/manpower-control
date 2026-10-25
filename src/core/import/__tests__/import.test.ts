@@ -14,7 +14,7 @@ describe('detection', () => {
 });
 
 describe('employment type inference', () => {
-  it('treats 5-digit numbers as KNPC and 6-digit badge numbers as contractors', () => {
+  it('treats 5-digit numbers as company employees and 6-digit badge numbers as contractors', () => {
     expect(inferEmploymentType('20001')).toBe('knpc');
     expect(inferEmploymentType('400001')).toBe('contractor');
   });
@@ -257,7 +257,7 @@ describe('promotion master', () => {
     expect(parsed.asOfDate).toBe('2026-10-01');
     expect(parsed.records[0]).toMatchObject({ employeeNumber: '10001', grade: 16, blockPosition: 'Controller', joinDate: '2004-09-25', warnings: false });
   });
-  it('matches by employee number only, ignores out-of-scope rows, reports duplicates and missing KNPC staff', () => {
+  it('matches by employee number only, ignores out-of-scope rows, reports duplicates and missing company staff', () => {
     const existing: ExistingEmployee[] = [
       { id: 'c1', employee_number: '10001', official_name: 'Ctrl One', display_name: 'Ctrl One', short_name: 'Ctrl One', employment_type: 'knpc', employment_type_source: 'inferred', in_unit12_scope: true, grade: null, master_position: null, cost_center: null, join_date: null, normalization_date: null, last_promotion_date: null, position_start_date: null, education: null, service_years: null, years_in_grade: null, current_role: null, qualifications: {} },
       { id: 'f1', employee_number: '20001', official_name: 'Field One', display_name: 'Field One', short_name: 'Field One', employment_type: 'knpc', employment_type_source: 'inferred', in_unit12_scope: true, grade: null, master_position: null, cost_center: null, join_date: null, normalization_date: null, last_promotion_date: null, position_start_date: null, education: null, service_years: null, years_in_grade: null, current_role: null, qualifications: {} },
@@ -270,7 +270,7 @@ describe('promotion master', () => {
     expect(plan.rows.filter((r) => r.entity_kind === 'performance').map((r) => (r.payload as any).year)).toEqual([2026, 2025]);
     expect(plan.rows.filter((r) => r.entity_kind === 'sick_total').map((r) => (r.payload as any).days)).toEqual([3, 0]);
     const unmatched = plan.rows.filter((r) => r.outcome === 'unmatched');
-    expect(unmatched).toHaveLength(1); // Field One is KNPC but missing; the contractor is not reported
+    expect(unmatched).toHaveLength(1); // Field One is a company employee but missing; the contractor is not reported
     expect(unmatched[0].employee_number).toBe('20001');
   });
 });

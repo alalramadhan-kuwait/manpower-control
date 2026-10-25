@@ -54,9 +54,9 @@ export default function DataQualityPage({ profile }: { profile: UserProfile }) {
         <PeopleList people={tc} extra={() => <Chip tone="amber">Not yet confirmed</Chip>} />
       </Section>
 
-      <Section title={`Employment type to confirm (${inferred.length})`} help="5-digit = KNPC, 6-digit = contractor was assumed. KNPC master matches confirm KNPC automatically; contractors need a manual confirmation.">
+      <Section title={`Employment type to confirm (${inferred.length})`} help="5-digit = company employee, 6-digit = contractor was assumed. Promotion master matches confirm company employees automatically; contractors need a manual confirmation.">
         {inferred.length === 0 && <Ok />}
-        <PeopleList people={inferred} extra={(e) => <Chip tone="amber">{e.employment_type === 'knpc' ? 'KNPC' : 'Contractor'} (inferred)</Chip>} />
+        <PeopleList people={inferred} extra={(e) => <Chip tone="amber">{e.employment_type === 'knpc' ? 'Company' : 'Contractor'} (inferred)</Chip>} />
       </Section>
 
       <Section title={`Contractors · no HR data (${contractorsNoMaster.length})`} help="Expected: contractors are not in the promotion master. Grade and HR dates must be entered manually if needed.">

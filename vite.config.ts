@@ -27,7 +27,7 @@ export default defineConfig({
       manifest: {
         name: 'ARDS Operations · Manpower Control',
         short_name: 'ARDS Ops',
-        description: 'ARDS Operations · Area 4 · Unit 12: manpower planning and control (KNPC Mina Abdullah Refinery, internal use)',
+        description: 'ARDS Operations · Area 4 · Unit 12: manpower planning and control (internal use)',
         theme_color: '#0e2a63',
         background_color: '#ffffff',
         display: 'standalone',

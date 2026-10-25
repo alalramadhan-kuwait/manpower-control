@@ -37,10 +37,6 @@
   /* WhatsApp actions and the message preview */
   --color-whatsapp: #25d366;
   --color-whatsapp-soft: #e7f8e9;
-  /* KNPC document colours: printed documents that follow the company's own letterhead only */
-  --color-knpc-blue: #005daa;
-  --color-knpc-red: #e31e24;
-  --color-knpc-green: #009a3e;
   /* Crew identity (A/B/C/D). Never used for manpower status. */
   --color-crew-a: #2563eb;
   --color-crew-b: #047857;

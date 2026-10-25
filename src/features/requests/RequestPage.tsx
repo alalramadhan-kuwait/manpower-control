@@ -117,7 +117,7 @@ function EmployeeRows({ emp }: { emp: EmployeeDirectoryRow | null }) {
       <Row label="Unit" value={emp.section_name ?? 'U-12 Section 1'} />
       <Row label="Job title" value={emp.master_position ?? emp.position_label} />
       <Row label="Shift" value={isCrew(emp.crew_code) ? <CrewTag crew={emp.crew_code} /> : 'Day staff'} />
-      <Row label="Joined KNPC" value={fmtDate(emp.join_date)} />
+      <Row label="Joined" value={fmtDate(emp.join_date)} />
     </>
   );
 }

@@ -52,7 +52,7 @@ Use the following as reference frameworks:
 * ISO 10628-2 — Equipment and piping graphical symbols.
 * ANSI/ISA-5.1 — Instrumentation identification and graphical symbols.
 * ISA-TR5.1.04 — PFD and P&ID content guidance.
-* Existing KNPC P&ID conventions, when documented and available.
+* Existing plant P&ID conventions, when documented and available.
 
 Do not claim formal compliance with a standard unless the implementation has actually been checked against its requirements.
 
