@@ -1,7 +1,8 @@
 -- Tracker access rules and data integrity: run in the SQL editor (or the MCP) as the database owner.
 -- Everything runs in one transaction that always rolls back: it ends by raising either
 --   'ALL PASS (n checks)'  or  'FAIL: <first failed check>'. No data is changed.
--- Needs: the live tracker, an active engineer link for it (login Aad323), one Section Head and one Coordinator login.
+-- Needs: the live tracker, the (now turned off) engineer link Aad323 — switched on here only, inside this transaction —,
+-- one Section Head and one Coordinator login.
 do $$
 declare
   live uuid := '406998dc-a9ce-47ca-9a4f-fe74845b4b6a';
@@ -30,6 +31,10 @@ begin
   if n > 0 then raise exception 'FAIL: % functions callable without a login beyond the allowed list', n; end if; ok := ok + 1;
 
   select id into a from public.trk_activities where tracker_id = live and tracked and actual_start is null and not detail and grp <> 'Operations' limit 1;
+  -- engineer links are no longer used (all off since 25 Oct 2026): the link checks switch one on, rolled back at the end
+  update public.trk_access set active = true, expires_at = greatest(expires_at, now() + interval '1 day') where lower(login_id) = 'aad323';
+  select count(*) into n from public.trk_access where active and lower(login_id) <> 'aad323';
+  if n > 0 then raise exception 'FAIL: % engineer links still on', n; end if; ok := ok + 1;
   -- a drawing on the TEST tracker (rolled back with the rest)
   insert into public.trk_drawing (tracker_id, items, sheet, rev, source, path, mime)
   values ('2e9c8262-20e9-4274-bd52-87c156a3a487', array['H-12-201'], 'CHECK', '1', 'Approved P&ID', '2e9c8262-20e9-4274-bd52-87c156a3a487/check.png', 'image/png');

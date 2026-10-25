@@ -36,7 +36,7 @@ export function TrackerAdmin({ data, eqs, by = 'Section Head', onDone }: { data:
     <div className="space-y-3">
       {err != null && <ErrorBox error={err} />}
       <Section title="Change log · who edited what" open><ChangeLog trackerId={t.id} acts={data.activities} /></Section>
-      <Section title="Engineer links (update without login)" open><EngineerLinks trackerId={t.id} by={by} /></Section>
+      <Section title="Engineer links (no longer used)"><EngineerLinks trackerId={t.id} by={by} /></Section>
       <Section title={`${t.mode === 'test' ? 'TEST' : 'LIVE'} · reset and publish`} open>
         {t.mode === 'test' ? <>
           <Field label="Clock for trying the scenarios (this device only)">
