@@ -25,7 +25,7 @@ import { OPEN_END, onLeaveOn } from '@/core/leave';
 import { lapsedLeave, type OracleStatus } from '@/core/oracle';
 import { PlanCard } from '@/features/day/ShutdownToday';
 
-type Tab = 'dash' | 'equip' | 'ho' | 'scope' | 'hot';
+export type Tab = 'dash' | 'equip' | 'ho' | 'scope' | 'hot';
 type Done = (msg: string, undo?: () => Promise<unknown>) => void;
 const TABS: [Tab, LucideIcon, string][] = [['dash', LayoutDashboard, 'Dashboard'], ['equip', Wrench, 'Equipment'], ['ho', Handshake, 'Handover'], ['scope', ClipboardList, 'SD scope'], ['hot', Flame, 'Hot work']];
 /** The SD scope lists by discipline; PMRs are hot work. */
@@ -203,10 +203,15 @@ function StaleAlert({ d, now, onOpen }: { d: TrackerData; now: number; onOpen: (
   );
 }
 
-function Dashboard({ d, now, go, by, done }: P) {
+/** The Dashboard, the same in both modes; the Section Head mode adds its part below (stage review, the phases) and
+ *  keeps the report in its header. */
+export function DashboardTab({ d, now, done, role, by, go, more }: { d: TrackerData; now: number; done: Done; role: EngRole; by: string; go: (t: Tab, group?: string) => void; more?: React.ReactNode }) {
+  return <RoleCtx.Provider value={role}><Dashboard d={d} now={now} done={done} go={go} by={by} report={false} />{more}</RoleCtx.Provider>;
+}
+function Dashboard({ d, now, go, by, done, report: withReport = true }: P & { report?: boolean }) {
   const [report, setReport] = useState(false);
   return (<>
-    <button type="button" onClick={() => setReport(true)} className="mb-2.5 flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-whatsapp text-[14px] font-bold text-white active:opacity-90">💬 WhatsApp report</button>
+    {withReport && <button type="button" onClick={() => setReport(true)} className="mb-2.5 flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-whatsapp text-[14px] font-bold text-white active:opacity-90">💬 WhatsApp report</button>}
     {report && <ReportSheet d={d} now={now} by={by} onClose={() => setReport(false)} />}
     <StaleAlert d={d} now={now} onOpen={() => go('equip', 'todo')} />
     <ShutdownHero d={d} now={now} onGroup={(g) => go('equip', g)} onSmall={() => go('scope')} />

@@ -6,12 +6,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle, LayoutDashboard, Handshake, Wrench, Flame, ClipboardList, HardHat, Settings, type LucideIcon } from 'lucide-react';
 import { isNR, totals, FO_NAMES, REACTORS, STAGE_SHORT, pointComplete, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, shiftOf, shiftReport, staleItems, stepViews, type StepView } from '@/core/tracker';
-import { StageReview, StaleAlert } from './StageReview';
+import { StageReview } from './StageReview';
 import { CONFLICT_EVENT, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Spinner, Toast, cx } from '@/ui/components';
 import { AskUpdates } from './Ask';
-import { EngineerView, EquipmentListTab, HandoverTab, HotWorkTab, ItemSheetFor, ScopeLists, ShutdownHero } from '@/features/engineer/EngineerApp';
+import { DashboardTab, EngineerView, EquipmentListTab, HandoverTab, HotWorkTab, ItemSheetFor, ScopeLists } from '@/features/engineer/EngineerApp';
 import { StepSheet } from './TrackerSheets';
 import { TrackerAdmin, clockKey } from './TrackerAdmin';
 import { TimingTab } from './Timing';
@@ -62,7 +62,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const [flash, setFlash] = useState<{ msg: string; undo?: () => Promise<unknown> } | null>(null);
   const flashTimer = useRef<number | undefined>(undefined);
   const [focus, setFocus] = useState<string | null>(null);
-  const [isoKind, setIsoKind] = useState<'blind' | 'neut' | undefined>(undefined); const [lateFirst, setLateFirst] = useState(false);
+  const [isoKind, setIsoKind] = useState<'blind' | 'neut' | undefined>(undefined); const [lateFirst, setLateFirst] = useState(false); const [eqInit, setEqInit] = useState('all');
   const [sheet, setSheet] = useState<{ kind: 'step'; id: string } | { kind: 'eq'; tag: string } | null>(null);
   const isHead = profile.role_code === 'section_head';
   const canEdit = ['section_head', 'manpower_coordinator', 'engineer', 'controller'].includes(profile.role_code);
@@ -108,14 +108,15 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const points = data.points ?? [];
   // a step ticked from elsewhere: its blinds / neutralization (Isolation) or its items handed over (Equipment)
   const auto = new Map<string, 'isolation' | 'equipment'>([...data.equipment.filter((e) => e.hoStep).map((e) => [e.hoStep!, 'equipment'] as const), ...points.filter((p) => p.stepId).map((p) => [p.stepId!, 'isolation'] as const)]);
-  const nav = (n: Nav) => { setFocus(null); setIsoKind(n.iso); setLateFirst(!!n.lateFirst); setTab(n.tab); };
+  const nav = (n: Nav) => { setFocus(null); setIsoKind(n.iso); setLateFirst(!!n.lateFirst); setEqInit('all'); setTab(n.tab); };
+  const role = isHead ? 'head' : profile.role_code === 'controller' ? 'controller' : 'engineer';
   const toIsolation = (tag: string | null, kind?: 'blind' | 'neut') => { setSheet(null); setFocus(tag); setIsoKind(kind); setTab('isolation'); };
   const tot = totals(steps, eqs, data.iats);
   // the Isolation badge: blinds not in and neutralizations before handover not done (finished work drops off)
   const isoOpen = points.filter((p) => (p.kind === 'blind' || p.beforeHo) && !pointComplete(p) && !isNR(p)).length;
   const open = (a: { kind: 'step' | 'equipment'; ref: string }) => setSheet(a.kind === 'step' ? { kind: 'step', id: a.ref } : { kind: 'eq', tag: a.ref });
 
-  if (eng) return <div className="fixed inset-0 z-[60] overflow-y-auto bg-canvas"><EngineerView trackerId={tracker.id} name={profile.display_name} title={tracker.title} role={isHead ? 'head' : profile.role_code === 'controller' ? 'controller' : 'engineer'} me={profile.auth_user_id} onExit={() => toEng(false)} /></div>;
+  if (eng) return <div className="fixed inset-0 z-[60] overflow-y-auto bg-canvas"><EngineerView trackerId={tracker.id} name={profile.display_name} title={tracker.title} role={role} me={profile.auth_user_id} onExit={() => toEng(false)} /></div>;
   return (
     <div className="mx-auto max-w-3xl pb-24">
       {test && <div className="mb-2 rounded-lg bg-amber-200 px-3 py-1.5 text-center text-xs font-bold tracking-wide text-amber-950">TEST · a copy for trying; nothing here is live{now !== Date.now() && Math.abs(now - Date.now()) > 120_000 ? ` · clock ${kwDay(now)} ${kwTime(now)}` : ''}{other.filter((o) => o.mode === 'live').map((o) => <Link key={o.id} to={`/progress/${o.id}`} className="ml-2 underline">Live ›</Link>)}</div>}
@@ -143,16 +144,16 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       </div>}
       {refreshing && <div aria-hidden className="fixed inset-x-0 top-0 z-[80] h-1 overflow-hidden bg-brand-100"><div className="h-full w-1/3 animate-[trkbar_1s_ease-in-out_infinite] bg-brand-500" /></div>}
       {flash && <Toast msg={flash.msg} onUndo={flash.undo ? undoLast : undefined} />}
-      {tab === 'today' && <StaleAlert data={data} now={now} onAsk={() => setTab('report')} />}
-      {tab === 'today' && <ShutdownHero d={data} now={now} onGroup={() => setTab('equipment')} onSmall={() => setTab('scope')} />}
-      {tab === 'today' && eqs && <StageReview data={data} eqs={eqs} canEdit={canEdit} onOpen={(tag) => open({ kind: 'equipment', ref: tag })} onDone={() => load(true)} />}
-      {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} now={now} onOpen={open} onNav={nav} />}
-      {tab === 'isolation' && <HandoverTab key={`iso-${isoKind}-${focus}`} d={data} now={now} role={isHead ? 'head' : profile.role_code === 'controller' ? 'controller' : 'engineer'} focus={focus} onClearFocus={() => setFocus(null)} initial={isoKind} onItem={(tag) => setSheet({ kind: 'eq', tag })} onStep={(id) => setSheet({ kind: 'step', id })} done={(m, u) => done(m, true, u)} />}
+      {tab === 'today' && <DashboardTab d={data} now={now} role={role} by={profile.display_name} done={(m, u) => done(m, true, u)}
+        go={(t, g) => { if (t === 'equip') { setEqInit(g ?? 'all'); setTab('equipment'); } else setTab(t === 'ho' ? 'isolation' : t === 'hot' ? 'iats' : t === 'scope' ? 'scope' : 'today'); }}
+        more={isHead ? <div className="mt-3 space-y-3"><StageReview data={data} eqs={eqs} canEdit={canEdit} onOpen={(tag) => open({ kind: 'equipment', ref: tag })} onDone={() => load(true)} />
+          <TodayTab steps={steps} eqs={eqs} data={data} now={now} onOpen={open} onNav={nav} /></div> : undefined} />}
+      {tab === 'isolation' && <HandoverTab key={`iso-${isoKind}-${focus}`} d={data} now={now} role={role} focus={focus} onClearFocus={() => setFocus(null)} initial={isoKind} onItem={(tag) => setSheet({ kind: 'eq', tag })} onStep={(id) => setSheet({ kind: 'step', id })} done={(m, u) => done(m, true, u)} />}
       {tab === 'guideline' && <SequenceTab steps={steps} auto={auto} onOpen={(id) => setSheet({ kind: 'step', id })} />}
-      {tab === 'equipment' && <EquipmentListTab key={`eq-${lateFirst}`} initial={lateFirst ? 'late' : 'all'} d={data} now={now} role={isHead ? 'head' : profile.role_code === 'controller' ? 'controller' : 'engineer'} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}
+      {tab === 'equipment' && <EquipmentListTab key={`eq-${lateFirst}-${eqInit}`} initial={lateFirst ? 'late' : eqInit} d={data} now={now} role={role} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}
       {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={(m, u) => done(m, false, u)} />}
-      {(tab === 'iats' || tab === 'pmr') && <HotWorkTab d={data} now={now} role={isHead ? 'head' : profile.role_code === 'controller' ? 'controller' : 'engineer'} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}
-      {tab === 'scope' && <ScopeLists d={data} now={now} role={isHead ? 'head' : profile.role_code === 'controller' ? 'controller' : 'engineer'} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}
+      {(tab === 'iats' || tab === 'pmr') && <HotWorkTab d={data} now={now} role={role} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}
+      {tab === 'scope' && <ScopeLists d={data} now={now} role={role} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {sheetTab === 'report' && <BottomSheet open onClose={closeSheetTab} title="💬 Shift report"><ReportTab data={data} now={now} canEdit={canEdit} isHead={isHead} onDone={(m) => done(m, false)} by={profile.display_name} onSaved={() => load(true)} /></BottomSheet>}
       {sheetTab === 'admin' && isHead && <BottomSheet open onClose={closeSheetTab} title="⚙️ Admin · Section Head">
@@ -161,7 +162,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
         <TrackerAdmin data={data} eqs={eqs} by={profile.display_name} onDone={done} /></BottomSheet>}
       {openStep && <StepSheet v={openStep} isHead={isHead} canEdit={canEdit} points={points.filter((p) => p.stepId === openStep.step.stepId)} items={eqs.filter((e) => e.eq.hoStep === openStep.step.stepId && e.eq.tracked)}
         onIsolation={() => toIsolation(null)} onClose={() => setSheet(null)} onDone={(m, u) => done(m, false, u)} />}
-      {openEq && <ItemSheetFor key={openEq.eq.tag} d={data} tag={openEq.eq.tag} now={now} role={isHead ? 'head' : profile.role_code === 'controller' ? 'controller' : 'engineer'} me={profile.auth_user_id} onIsolation={(tag) => toIsolation(tag)} onClose={() => setSheet(null)} done={(m, u) => done(m, true, u)} />}
+      {openEq && <ItemSheetFor key={openEq.eq.tag} d={data} tag={openEq.eq.tag} now={now} role={role} me={profile.auth_user_id} onIsolation={(tag) => toIsolation(tag)} onClose={() => setSheet(null)} done={(m, u) => done(m, true, u)} />}
     </div>
   );
 }
