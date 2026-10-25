@@ -1200,3 +1200,29 @@ export function loopHandover(p: Pick<TrkPoint, 'items'>, items: TrkEquipment[]):
   const done = mine.filter((e) => e.stage >= 1).length;
   return { state: !mine.length ? 'unknown' : done === mine.length ? 'ho' : done ? 'partial' : 'none', done, total: mine.length, open: mine.filter((e) => e.stage < 1).map((e) => e.tag) };
 }
+
+/** The blind list for the startup: each item with its blinds (the line blinds linked to it and its own blind lines in
+ *  the bar chart). Positively isolated = it has blinds and every one is recorded in. Also: items opened (stage 2+) with
+ *  no blind recorded, and line blinds linked to no item. Read only: the blinds are entered in the blind lists. */
+export interface BlindRef { ref: string; name: string; state: 'in' | 'out' | 'not'; at: string | null; kind: 'line' | 'item'; id: string }
+export interface BlindItem { e: TrkEquipment; blinds: BlindRef[]; inN: number; positive: boolean }
+export const itemBlindLine = (a: Pick<TrkActivity, 'activity' | 'stage' | 'tracked' | 'group' | 'detail'>) =>
+  a.tracked && !a.detail && a.stage === 1 && a.group !== 'Operations' && /blind/i.test(a.activity) && !/deblind|de-blind|remove blind/i.test(a.activity);
+const capsOff = (t: string) => (t === t.toUpperCase() ? t.charAt(0) + t.slice(1).toLowerCase() : t);
+export function blindList(d: Pick<TrkData, 'equipment' | 'loopItems' | 'activities' | 'points'>): { items: BlindItem[]; opened: TrkEquipment[]; unlinked: TrkPoint[] } {
+  const eqs = [...d.equipment, ...(d.loopItems ?? [])].filter((e) => e.tracked && !isOutOfScope(e));
+  const lines = (d.points ?? []).filter((p) => p.kind === 'blind');
+  const items: BlindItem[] = [], opened: TrkEquipment[] = [];
+  for (const e of eqs) {
+    const key = e.barchartKey ?? e.tag;
+    const blinds: BlindRef[] = [
+      ...lines.filter((p) => p.items.includes(e.tag)).map((p): BlindRef => ({ id: p.id, kind: 'line', ref: p.ref, name: p.name, state: p.status === 'in' ? 'in' : p.status === 'out' ? 'out' : 'not', at: p.inAt })),
+      ...d.activities.filter((a) => a.key === key && itemBlindLine(a)).map((a): BlindRef => ({ id: a.id, kind: 'item', ref: a.activityId, name: capsOff(a.activity.replace(/\s+/g, ' ').trim()), state: a.actualFinish ? 'in' : 'not', at: a.actualFinish ?? null })),
+    ];
+    if (blinds.length) { const inN = blinds.filter((b) => b.state === 'in').length; items.push({ e, blinds, inN, positive: inN === blinds.length }); }
+    else if (e.stage >= 2) opened.push(e);
+  }
+  const tags = new Set(eqs.map((e) => e.tag));
+  const byTag = (a: { tag: string }, b: { tag: string }) => a.tag.localeCompare(b.tag, 'en', { numeric: true });
+  return { items: items.sort((a, b) => Number(a.positive) - Number(b.positive) || byTag(a.e, b.e)), opened: opened.sort(byTag), unlinked: lines.filter((p) => !p.items.some((t) => tags.has(t))) };
+}

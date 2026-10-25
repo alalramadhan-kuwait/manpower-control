@@ -8,6 +8,7 @@ import { PendingForm } from '@/features/tracker/TrackerSheets';
 import { LABEL_CLS, OpsLabel } from '@/features/tracker/Iats';
 import { InspWork } from '@/features/tracker/ui';
 import { LoopScope } from '@/features/tracker/Isolation';
+import { BlindList } from '@/features/tracker/BlindList';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
@@ -656,11 +657,11 @@ function Handover({ d, now, done }: P) {
     .map((e) => ({ e, iso: isoState(e.tag, 0, pts) })).filter((x): x is { e: TrkEquipment; iso: NonNullable<ReturnType<typeof isoState>> } => !!x.iso && x.iso.state !== 'ho');
   const blocked = waiting.filter((x) => x.iso.state !== 'ready'), ready = waiting.filter((x) => x.iso.state === 'ready');
   const back = blinds.filter((b) => b.status === 'in');
-  const [v, setV] = useState<'block' | 'neut' | 'blind' | 'back'>(() => (blocked.length || openB.length || openL.length ? 'block' : 'back'));
+  const [v, setV] = useState<'block' | 'neut' | 'blind' | 'list' | 'back'>(() => (blocked.length || openB.length || openL.length ? 'block' : 'back'));
   const [showDone, setShowDone] = useState(false);
   const rank = (p: TrkPoint) => (p.status !== 'open' ? 0 : missingBlinds(p, pts).length ? 2 : 1);
   return (<>
-    <div className="-mx-3 mb-2.5 flex gap-1.5 overflow-x-auto px-3 [scrollbar-width:none]">{([['block', `Blocking ${blocked.length}`], ['neut', `Neutralization ${openL.length}`], ['blind', `Blinds ${openB.length}`], ['back', `Return ${back.length}`]] as const).map(([k, l]) =>
+    <div className="-mx-3 mb-2.5 flex gap-1.5 overflow-x-auto px-3 [scrollbar-width:none]">{([['block', `Blocking ${blocked.length}`], ['neut', `Neutralization ${openL.length}`], ['blind', `Blinds ${openB.length}`], ['list', 'Blind list'], ['back', `Return ${back.length}`]] as const).map(([k, l]) =>
       <button key={k} type="button" onClick={() => setV(k)} className={cx('min-h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-[12px] font-bold', v === k ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>)}</div>
     {v === 'block' && <>
       <p className="mx-1 mb-2 text-[12px] text-slate-500">Items not handed over yet, and what each one waits for. Tap a line to update it.</p>
@@ -688,6 +689,7 @@ function Handover({ d, now, done }: P) {
     {v === 'blind' && (['segregation', 'hp_critical'] as const).map((g) => { const xs = blinds.filter((b) => (g === 'hp_critical') === (b.grp === 'hp_critical')); if (!xs.length) return null;
       return <div key={g}><Sec>{g === 'hp_critical' ? 'HP critical loop' : 'Segregation'} · {xs.filter(pointComplete).length}/{xs.length} in</Sec>
         <List>{[...xs].sort((a, b) => Number(pointComplete(a)) - Number(pointComplete(b))).map((b) => <BlindRow key={b.id} b={b} done={done} />)}</List></div>; })}
+    {v === 'list' && <BlindList d={d} />}
     {v === 'back' && <>
       <p className="mx-1 mb-2 text-[12px] text-slate-500">End of the shutdown: take the blinds out as each item is boxed up. {blinds.filter((b) => b.status === 'out').length}/{blinds.length} out.</p>
       {back.length > 0 && <List>{back.map((b) => <BlindRow key={b.id} b={b} done={done} out />)}</List>}

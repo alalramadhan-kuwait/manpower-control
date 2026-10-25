@@ -7,6 +7,7 @@ import { addPointStep, setActivity, setEquipment, setPoint, setPointStep, setPoi
 import { BottomSheet, Button, ErrorBox, cx } from '@/ui/components';
 import { CRow, IsoChip, MenuBtn, RowBtn, RowList, Tile } from './ui';
 import { PendingForm } from './TrackerSheets';
+import { BlindList } from './BlindList';
 import { LoopDiagrams } from './LoopDiagram';
 
 /** The SOP lines the Section Head follows: the timed field jobs (crane, blinds, elbows, scaffolding) and the lab pH.
@@ -289,7 +290,7 @@ const GRP: [string, string][] = [['segregation', 'Segregation'], ['hp_critical',
 export function IsolationTab({ items = [], rtj = [], trackerId, initialKind, activities = [], points, pointSteps = [], lineup = [], iats = [], steps, now, canEdit, isHead = false, canAttach = false, focus, onFocus, onItem, onStep, onDone }: {
   items?: TrkEquipment[]; rtj?: TrkRtj[]; trackerId?: string; initialKind?: 'blind' | 'neut'; activities?: TrkActivity[]; points: TrkPoint[]; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; iats?: TrkIat[]; steps: TrkStep[]; now: number; canEdit: boolean; isHead?: boolean; canAttach?: boolean; focus: string | null; onFocus: (tag: string | null) => void; onItem: (tag: string) => void; onStep?: (id: string) => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void;
 }) {
-  const [kind, setKind] = useState<'blind' | 'neut'>(() => initialKind ?? (focus && !points.some((p) => p.kind === 'blind' && p.items.includes(focus)) ? 'neut' : 'blind'));
+  const [kind, setKind] = useState<'blind' | 'neut' | 'list'>(() => initialKind ?? (focus && !points.some((p) => p.kind === 'blind' && p.items.includes(focus)) ? 'neut' : 'blind'));
   const [grp, setGrp] = useState('segregation');
   const eqBlinds = activities.filter(equipBlind).filter((a) => !focus || a.key === focus).sort((a, b) => (a.start ?? '').localeCompare(b.start ?? '') || a.key.localeCompare(b.key));
   const [fo, setFo] = useState('All'); const [showDone, setShowDone] = useState(false);
@@ -315,12 +316,12 @@ export function IsolationTab({ items = [], rtj = [], trackerId, initialKind, act
         <Tile value={`${gate.filter(pointComplete).length}/${gate.length}`} label="neutralized" tone={gate.every(pointComplete) ? 'green' : undefined} onClick={() => setKind('neut')} />
         <Tile value={soaking} label="soaking now" tone={soaking ? 'amber' : undefined} onClick={() => setKind('neut')} />
       </div>
-      <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-200/60 p-1">
-        {([['blind', 'Blinds (M & I)'], ['neut', 'Neutralization']] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setKind(k)} className={cx('min-h-10 rounded-lg text-xs font-semibold', kind === k ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-600')}>{l}</button>)}
+      <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-200/60 p-1">
+        {([['blind', 'Blinds (M & I)'], ['neut', 'Neutralization'], ['list', 'Blind list']] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setKind(k)} className={cx('min-h-10 rounded-lg text-xs font-semibold', kind === k ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-600')}>{l}</button>)}
       </div>
       {kind === 'blind' && <div className="flex gap-1.5">{GRP.map(([k, l]) => { const n = k === 'equipment' ? `${eqBlinds.filter((a) => a.actualFinish).length}/${eqBlinds.length}` : `${blinds.filter((p) => (p.grp ?? 'segregation') === k && pointComplete(p)).length}/${blinds.filter((p) => (p.grp ?? 'segregation') === k).length}`;
         return <button key={k} type="button" onClick={() => setGrp(k)} className={cx('min-h-9 flex-1 rounded-lg px-2 text-xs font-semibold ring-1', grp === k ? 'bg-brand-600 text-white ring-brand-600' : 'bg-white text-slate-700 ring-slate-200')}>{l} <span className="opacity-70">{n}</span></button>; })}</div>}
-      {eqView ? <div>{eqBlinds.length > 0 && <RowList>{eqBlinds.map((a) => <EquipBlindRow key={a.id} a={a} canEdit={canEdit} onItem={onItem} onDone={onDone} />)}</RowList>}{!eqBlinds.length && <p className="py-3 text-center text-sm text-slate-500">No blind lines in the bar chart{focus ? ` for ${focus}` : ''}.</p>}</div> : <>
+      {kind === 'list' ? <BlindList d={{ equipment: items, activities, points }} onItem={onItem} /> : eqView ? <div>{eqBlinds.length > 0 && <RowList>{eqBlinds.map((a) => <EquipBlindRow key={a.id} a={a} canEdit={canEdit} onItem={onItem} onDone={onDone} />)}</RowList>}{!eqBlinds.length && <p className="py-3 text-center text-sm text-slate-500">No blind lines in the bar chart{focus ? ` for ${focus}` : ''}.</p>}</div> : <>
       <div className="flex flex-wrap gap-1.5">
         {['All', 'FO1', 'FO2', 'FO3'].map((x) => <button key={x} type="button" onClick={() => setFo(x)} className={cx('min-h-9 rounded-full px-3 text-xs font-semibold', fo === x ? 'bg-brand-500 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{x}</button>)}
         {focus && <button type="button" onClick={() => onFocus(null)} className="min-h-9 rounded-full bg-amber-100 px-3 text-xs font-semibold text-amber-900">{focus} ✕</button>}
