@@ -1,14 +1,13 @@
 // The two input sheets of the controllers: a guideline step (Start · Done · Pending) and an equipment item (stage,
 // blinded = handed over, IATs, pending). Big buttons, the time and the name are stamped by the database.
 import { useState } from 'react';
-import { isOutOfScope, logText, scopeReasonText, type TrkLog, daysAsHours, connectionsOf, iatsOf, type LuEquip, type LuStream, type TrkIat, PENDING_REASONS, neutLabel, neutName, partsOf, waitingSteps, isoState, missingBlinds, STAGES, kwDay, kwTime, pointComplete, sortActs, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint, type TrkEngine, type TrkSettings, type MiItem } from '@/core/tracker';
-import { EquipActivities, StepTimes } from './Timing';
+import { isOutOfScope, logText, scopeReasonText, type TrkLog, daysAsHours, connectionsOf, iatsOf, type LuEquip, type LuStream, type TrkIat, PENDING_REASONS, neutLabel, neutName, partsOf, waitingSteps, isoState, missingBlinds, STAGES, kwDay, kwTime, pointComplete, stepTiming, type EquipView, type Isolation, type StepView, type TrkActivity, type TrkPoint, type TrkEngine, type TrkSettings, type MiItem } from '@/core/tracker';
+import { StepTimes } from './Timing';
 import { DrumPanel, ItemUpdate } from './Drums';
 import { addIat, closeIat, fetchItemLog, setEquipment, setStep } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, Field, cx } from '@/ui/components';
-import { FlagChip, InspWork, IsoChip, PlanChip, StageBar, StateChip } from './ui';
+import { FlagChip, IsoChip, PlanChip, StageBar, StateChip } from './ui';
 import { IatDetail, OpsLabel } from './Iats';
-import { stepNow } from './actions';
 
 const when = (iso: string | null) => (iso ? `${kwDay(iso)} ${kwTime(iso)}` : '');
 
@@ -88,16 +87,17 @@ export function StepSheet({ v, isHead, canEdit, points = [], items = [], onIsola
 // a spray that waits for work steps, in a few words (the reactor body spray waits for the catalyst dumping)
 const waitAfter = (steps: string[]) => (!steps.length ? [] : [steps.every((x) => /dump/i.test(x)) ? 'after dumping' : steps.length === 1 ? `after ${steps[0]}` : `after ${steps.length} steps`]);
 
-export function EquipSheet({ system = [], groups = [], systems = [], canManage = false, canScope = false, totalH = 0, onItem, mi, related = [], allIats = [], lineup = [], lineupEq = [], tags = [], v, trackerId, canEdit, isHead, activities, now, iso = null, points = [], engine, settings = {}, me = null, twins = [], onTwin, onIsolation, onNeut, onClose, onDone }: { system?: EquipView[]; groups?: string[]; systems?: string[]; canManage?: boolean; canScope?: boolean; totalH?: number; onItem?: (tag: string) => void; mi?: MiItem; related?: TrkActivity[]; allIats?: TrkIat[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; tags?: string[]; twins?: string[]; onTwin?: (tag: string) => void; v: EquipView; trackerId: string; canEdit: boolean; isHead: boolean; activities: TrkActivity[]; now: number; iso?: Isolation | null; points?: TrkPoint[]; engine?: TrkEngine; settings?: TrkSettings; me?: string | null; onIsolation?: () => void; onNeut?: () => void; onClose: () => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
-  // the neutralization the soda-ash lines stand for: the item's own soda ash first, else its loop
+/** The Section Head part of the item sheet, shared by both modes: on top the flags and the M & I % (part 'top'); below
+ *  the drums, No change / Delay, isolation, stage correction, IATs, related equipment, history, technical details and
+ *  scope. The Engineer item sheet holds the rest (steps, issues, hold, status). */
+export function ItemMore({ part = 'rest', system = [], groups = [], systems = [], canManage = false, canScope = false, totalH = 0, onItem, mi, related = [], allIats = [], lineup = [], lineupEq = [], tags = [], v, trackerId, canEdit, isHead, activities, now, iso = null, points = [], engine, settings = {}, me = null, onIsolation, onDone }: { part?: 'top' | 'rest'; system?: EquipView[]; groups?: string[]; systems?: string[]; canManage?: boolean; canScope?: boolean; totalH?: number; onItem?: (tag: string) => void; mi?: MiItem; related?: TrkActivity[]; allIats?: TrkIat[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; tags?: string[]; v: EquipView; trackerId: string; canEdit: boolean; isHead: boolean; activities: TrkActivity[]; now: number; iso?: Isolation | null; points?: TrkPoint[]; engine?: TrkEngine; settings?: TrkSettings; me?: string | null; onIsolation?: () => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
   // the item's bar-chart steps by stage (what moves the stage), the field-detail steps left out
   const stageLines = activities.filter((a) => a.tracked && !a.detail && a.group !== 'Operations' && a.stage !== null);
-  const soda = iso?.neut.find((p) => !p.stepId && p.method !== 'spray') ?? iso?.neut.find((p) => p.method !== 'spray');
   // a reactor's lines and the piping between the reactors: neutralized on their own, shown with it
   const parts = partsOf(v.eq.tag, points);
   const e = v.eq;
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  const [pending, setPending] = useState(false); const [iat, setIat] = useState(false); const [fixStage, setFixStage] = useState(false);
+  const [iat, setIat] = useState(false); const [fixStage, setFixStage] = useState(false);
   // scope (Section Head / Engineers): out of scope keeps everything, only stops counting; the item's share of the planned work
   const out = isOutOfScope(e);
   const [scopeOpen, setScopeOpen] = useState(false); const [scopeWhy, setScopeWhy] = useState('');
@@ -109,27 +109,16 @@ export function EquipSheet({ system = [], groups = [], systems = [], canManage =
   const [log, setLog] = useState<TrkLog[] | null>(null); const [logAll, setLogAll] = useState(false);
   const loadLog = () => { if (log === null) fetchItemLog(trackerId, e.tag, e.barchartKey ?? e.tag).then(setLog, () => setLog([])); };
   const [iatNo, setIatNo] = useState(''); const [job, setJob] = useState(''); const [disc, setDisc] = useState('');
-  async function run(f: () => Promise<void>, msg: string, undo?: () => Promise<unknown>) { setBusy(true); setErr(null); try { await f(); setPending(false); setIat(false); setIatNo(''); setJob(''); setDisc(''); onDone(msg, undo); } catch (x) { setErr(x); } finally { setBusy(false); } }
+  async function run(f: () => Promise<void>, msg: string, undo?: () => Promise<unknown>) { setBusy(true); setErr(null); try { await f(); setIat(false); setIatNo(''); setJob(''); setDisc(''); onDone(msg, undo); } catch (x) { setErr(x); } finally { setBusy(false); } }
   // its IATs: its own and those on a line to or from it (P&ID lineup)
   const rel = iatsOf(e.tag, allIats.length ? allIats : v.iatsOpen, lineup);
   const [iatOpen, setIatOpen] = useState<TrkIat | null>(null);
   return (
-    <BottomSheet open onClose={onClose} title={e.tag}>
-      <div className="space-y-3">
-        {twins.length > 1 && <div className="flex gap-1">{twins.map((t) => <button key={t} type="button" onClick={() => t !== e.tag && onTwin?.(t)} className={cx('min-h-9 rounded-full px-3 text-xs font-semibold', t === e.tag ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{t}</button>)}<span className="self-center text-[11px] text-slate-500">worked as one</span></div>}
+    part === 'top' ? <div className="space-y-1.5">
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600"><FlagChip flag={v.flag} />{v.plan && !mi && <PlanChip variance={v.plan.variance} days={v.plan.days} />}{e.critical && <span className="font-bold text-status-red">★ Critical</span>}<span>{e.description}</span></div>
-        {v.reason && <div className="flex items-center gap-2 rounded-lg bg-red-100 px-2.5 py-1.5 text-sm text-red-900"><span className="min-w-0 flex-1">⏸ On hold: {v.reason}</span>
-          {canEdit && e.pendingReason && <button type="button" disabled={busy} onClick={() => { const was = e.pendingReason; run(() => setEquipment(e.id, { pending_reason: null }), `${e.tag}: resumed.`, () => setEquipment(e.id, { pending_reason: was })); }} className="shrink-0 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-brand-700 ring-1 ring-red-200">▶ Resume</button>}</div>}
         {mi && <MiLine i={mi} />}
-        {canEdit && !out && (() => { const key = e.barchartKey ?? e.tag; const xs = sortActs(activities.filter((a) => a.tracked && !a.detail && a.key === key && a.group !== 'Operations'));
-          const run1 = xs.find((a) => a.actualStart && !a.actualFinish), nx = xs.find((a) => !a.actualStart);
-          const go = async (a: TrkActivity, fin: boolean) => { setBusy(true); setErr(null); try { const r = await stepNow(a, [], fin, [e]); onDone(r.msg, r.undo); } catch (x) { setErr(x); } finally { setBusy(false); } };
-          // the main action on top, the same as the Engineer sheet: finish what is running, start what is next
-          return (run1 || nx) ? <div className="space-y-1.5">
-            {run1 && <button type="button" disabled={busy} onClick={() => go(run1, true)} className="w-full rounded-xl bg-amber-400 px-3 py-2 text-left text-amber-950 disabled:opacity-50"><span className="block text-[11px] font-bold uppercase tracking-wide opacity-80">✓ Finish</span><span className="line-clamp-2 text-[13px] font-semibold leading-snug">{run1.activity}</span></button>}
-            {nx && <button type="button" disabled={busy} onClick={() => go(nx, false)} className="w-full rounded-xl bg-brand-700 px-3 py-2 text-left text-white disabled:opacity-50"><span className="block text-[11px] font-bold uppercase tracking-wide opacity-80">▶ Start{run1 ? ' next' : ''}</span><span className="line-clamp-2 text-[13px] font-semibold leading-snug">{nx.activity}</span></button>}
-          </div> : null; })()}
-        <EquipActivities trackerId={trackerId} itemKey={e.barchartKey ?? e.tag} activities={activities} now={now} canEdit={canEdit} isHead={isHead} neutCovered={!!iso?.neut.length} neutLabel={soda ? `${neutName(soda)} · ${neutLabel(soda)}` : undefined} onNeut={onNeut} onDone={onDone} />
+    </div> :
+      <div className="space-y-3">
         {engine && (() => { const key = e.barchartKey ?? e.tag; const sc = engine.scopes.find((x) => x.key === key && x.scope === 'removal' && x.unit);
           return <>
             {sc && <DrumPanel scope={sc} entries={engine.entries.filter((x) => x.scopeId === sc.id)} estimates={engine.estimates.filter((x) => x.scopeId === sc.id)} activities={activities} settings={settings} now={now} canEdit={canEdit} isHead={isHead} canEmpty={canManage} me={me} onDone={onDone} />}
@@ -165,8 +154,6 @@ export function EquipSheet({ system = [], groups = [], systems = [], canManage =
               {canEdit && <button type="button" onClick={() => setFixStage((x) => !x)} className="shrink-0 font-semibold text-brand-500">{fixStage ? 'Done' : 'Correct stage'}</button>}</p>
           </div>
         </Field>
-        {canEdit && !e.pendingReason && !pending && <Button variant="secondary" className="w-full" disabled={busy} onClick={() => setPending(true)}>⏸ Hold (with reason)</Button>}
-        {pending && <PendingForm initial={e.pendingReason} busy={busy} onSave={(r) => run(() => setEquipment(e.id, { pending_reason: r }), `${e.tag}: on hold.`)} />}
         {iatOpen && <IatDetail i={allIats.find((x) => x.id === iatOpen.id) ?? iatOpen} items={new Set(tags)} lineup={lineup} lineupEq={lineupEq} points={points} canEdit={canEdit} canLabel={canManage} onDone={(m, u) => onDone(m, u)} onItem={() => setIatOpen(null)} onClose={() => setIatOpen(null)} />}
         {err != null && <ErrorBox error={err} />}
         <Fold title={`IATs · ${rel.filter((x) => x.status === 'open').length} open${rel.some((x) => x.status === 'open' && x.opsLabel === 'spool') ? ` · ${rel.filter((x) => x.status === 'open' && x.opsLabel === 'spool').length} spool to drop` : ''}`} open={rel.some((x) => x.status === 'open' && x.opsLabel === 'spool')}>
@@ -202,7 +189,6 @@ export function EquipSheet({ system = [], groups = [], systems = [], canManage =
             : <ul className="space-y-1">{log.slice(0, logAll ? 200 : 12).map((l, i) => { const t = logText(l, activities); return <li key={i} className="grid grid-cols-[86px_minmax(0,1fr)] gap-2 text-[12px] text-slate-700"><span className="text-[11px] text-slate-500">{when(l.at)}</span><span className="min-w-0">{l.ref !== e.tag ? <b className="text-slate-500">step · </b> : null}{t.what}{l.reason && !/^(out of scope|not required)/.test(l.reason) ? <i className="text-slate-500"> · {l.reason}</i> : null}<span className="text-slate-400"> · {l.byName ?? 'system'}</span></span></li>; })}
               {!logAll && log.length > 12 && <li><button type="button" onClick={() => setLogAll(true)} className="text-[11px] font-semibold text-brand-500">Show all {log.length}</button></li>}</ul>}
         </Fold>
-        {(e.inspWork || e.inspRef) && <Fold title="Inspection worklist"><InspWork ref_={e.inspRef} work={e.inspWork} /></Fold>}
         <Fold title="Technical details">
           <dl className="space-y-1 text-xs text-slate-700">
             <div><dt className="font-semibold">Name</dt><dd>{e.description ?? '—'}</dd></div>
@@ -240,7 +226,7 @@ export function EquipSheet({ system = [], groups = [], systems = [], canManage =
             <Button className="flex-1" disabled={busy || scopeWhy.trim().length < 3} onClick={() => run(() => setEquipment(e.id, { tracked: false, disabled_reason: `out of scope: ${scopeWhy.trim()}` }), `${e.tag}: out of scope.`, () => setEquipment(e.id, { tracked: true, disabled_reason: null })).then(() => setScopeOpen(false))}>Out of scope</Button></div>
         </div>}
       </div>
-    </BottomSheet>
+
   );
 }
 

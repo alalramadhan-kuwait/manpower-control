@@ -5,16 +5,16 @@ import { ReportImport } from './ReportImport';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle, LayoutDashboard, Handshake, Wrench, Flame, ClipboardList, HardHat, Settings, type LucideIcon } from 'lucide-react';
-import { inEquipmentTab, isNR, isOutOfScope, scopeImpact, shownGroup, daysAsHours, blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isolationOf, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, relatedWork, shiftOf, shiftReport, staleItems, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
+import { inEquipmentTab, isNR, isOutOfScope, scopeImpact, shownGroup, daysAsHours, blindLink, neutLink, phases, totals, FO_NAMES, sortActs, isMisc, REACTORS, STAGE_SHORT, hoursText, isoState, ISO_LABEL, pointComplete, soakLeft, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, shiftOf, shiftReport, staleItems, stepViews, type EquipView, type StepView, type TrkPoint } from '@/core/tracker';
 import { StageReview, StaleAlert } from './StageReview';
 import { CONFLICT_EVENT, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Spinner, Toast, cx } from '@/ui/components';
 import { AskUpdates } from './Ask';
 import { DrumQuick } from './Drums';
-import { EngineerView, HandoverTab, HotWorkTab, ScopeLists, ShutdownHero } from '@/features/engineer/EngineerApp';
+import { EngineerView, HandoverTab, HotWorkTab, ItemSheetFor, ScopeLists, ShutdownHero } from '@/features/engineer/EngineerApp';
 import { EventsCard } from './Events';
-import { EquipSheet, StepSheet } from './TrackerSheets';
+import { StepSheet } from './TrackerSheets';
 import { TrackerAdmin, clockKey } from './TrackerAdmin';
 import { TimingTab } from './Timing';
 import { TodayTab, type Nav } from './TrackerToday';
@@ -123,7 +123,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const spare = new Map([...miItems.values()].filter((i) => i.done < i.lines).map((i) => [i.tag, i.spareD]));
   const open = (a: { kind: 'step' | 'equipment'; ref: string }) => setSheet(a.kind === 'step' ? { kind: 'step', id: a.ref } : { kind: 'eq', tag: a.ref });
 
-  if (eng) return <div className="fixed inset-0 z-[60] overflow-y-auto bg-canvas"><EngineerView trackerId={tracker.id} name={profile.display_name} title={tracker.title} role={isHead ? 'head' : profile.role_code === 'controller' ? 'controller' : 'engineer'} onExit={() => toEng(false)} /></div>;
+  if (eng) return <div className="fixed inset-0 z-[60] overflow-y-auto bg-canvas"><EngineerView trackerId={tracker.id} name={profile.display_name} title={tracker.title} role={isHead ? 'head' : profile.role_code === 'controller' ? 'controller' : 'engineer'} me={profile.auth_user_id} onExit={() => toEng(false)} /></div>;
   return (
     <div className="mx-auto max-w-3xl pb-24">
       {test && <div className="mb-2 rounded-lg bg-amber-200 px-3 py-1.5 text-center text-xs font-bold tracking-wide text-amber-950">TEST · a copy for trying; nothing here is live{now !== Date.now() && Math.abs(now - Date.now()) > 120_000 ? ` · clock ${kwDay(now)} ${kwTime(now)}` : ''}{other.filter((o) => o.mode === 'live').map((o) => <Link key={o.id} to={`/progress/${o.id}`} className="ml-2 underline">Live ›</Link>)}</div>}
@@ -169,9 +169,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
         <TrackerAdmin data={data} eqs={eqs} by={profile.display_name} onDone={done} /></BottomSheet>}
       {openStep && <StepSheet v={openStep} isHead={isHead} canEdit={canEdit} points={points.filter((p) => p.stepId === openStep.step.stepId)} items={eqs.filter((e) => e.eq.hoStep === openStep.step.stepId && e.eq.tracked)}
         onIsolation={() => toIsolation(null)} onClose={() => setSheet(null)} onDone={(m, u) => done(m, false, u)} />}
-      {openEq && <EquipSheet system={openEq.eq.system ? eqs.filter((x) => x.eq.system === openEq.eq.system && x.eq.tag !== openEq.eq.tag) : []} groups={[...new Set(data.equipment.map((x) => x.group))]} systems={[...new Set(data.equipment.map((x) => x.system).filter((x): x is string => !!x))]}
-        canManage={isHead || profile.role_code === 'engineer'} canScope={isHead} totalH={scopeImpact(data).totalH} onItem={(tag) => setSheet({ kind: 'eq', tag })} mi={miItems.get(openEq.eq.tag)} related={relatedWork(openEq.eq.tag, openEq.eq.barchartKey ?? openEq.eq.tag, data.activities)} allIats={data.iats} lineup={data.lineup} lineupEq={data.lineupEq} tags={data.equipment.map((e) => e.tag)} twins={openEq.eq.combine ? eqs.filter((x) => x.eq.combine === openEq.eq.combine).map((x) => x.eq.tag) : []} onTwin={(tag) => setSheet({ kind: 'eq', tag })} v={openEq} trackerId={tracker.id} canEdit={canEdit} isHead={isHead} activities={data.activities.filter((a) => a.key === (openEq.eq.barchartKey ?? openEq.eq.tag))} now={now}
-        iso={isolationOf(openEq.eq.tag, points)} points={points} engine={data.engine} settings={data.settings} me={profile.auth_user_id} onIsolation={() => toIsolation(openEq.eq.tag)} onNeut={() => toIsolation(openEq.eq.tag, 'neut')} onClose={() => setSheet(null)} onDone={(m, u) => done(m, true, u)} />}
+      {openEq && <ItemSheetFor key={openEq.eq.tag} d={data} tag={openEq.eq.tag} now={now} role={isHead ? 'head' : profile.role_code === 'controller' ? 'controller' : 'engineer'} me={profile.auth_user_id} onIsolation={(tag) => toIsolation(tag)} onClose={() => setSheet(null)} done={(m, u) => done(m, true, u)} />}
     </div>
   );
 }

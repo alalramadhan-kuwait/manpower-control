@@ -3,8 +3,9 @@
 // reactors' issues and temperatures), Isolation (neutralization and blinds), Small jobs & IATs. Every change is
 // stamped with the ID; Undo for a few seconds after each one.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { DrumEntry } from '@/features/tracker/Drums';
-import { PendingForm } from '@/features/tracker/TrackerSheets';
+import { ItemMore, PendingForm } from '@/features/tracker/TrackerSheets';
+import { ActivityRow } from '@/features/tracker/Timing';
+import { RowList } from '@/features/tracker/ui';
 import { IatDetail, LABEL_CLS, OpsLabel } from '@/features/tracker/Iats';
 import { InspWork } from '@/features/tracker/ui';
 import { LoopDetail, LoopScope } from '@/features/tracker/Isolation';
@@ -12,9 +13,9 @@ import { BlindList } from '@/features/tracker/BlindList';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
-import { WITH_EQUIP, equipBlind, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
+import { WITH_EQUIP, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
-import { BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, confirmEmpty, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
+import { BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
 import { BottomSheet, ErrorBox, Spinner, Toast, cx } from '@/ui/components';
 import { fetchSdTeamOn } from '@/data/shutdown';
@@ -92,12 +93,15 @@ const RoleCtx = createContext<EngRole>('engineer');
 const useCanManage = () => useContext(RoleCtx) !== 'controller';
 /** Opens an item in the page around (the Section Head mode opens its own item sheet); none = the Engineer item sheet. */
 const OpenItemCtx = createContext<((tag: string) => void) | null>(null);
+/** The signed-in person (a second person verifies drum entries) and where an item's isolation opens (Handover). */
+const MeCtx = createContext<string | null>(null);
+const IsoCtx = createContext<((tag: string) => void) | null>(null);
 /** The SD scope, the same lists in the Section Head mode (its item sheet opens on a tap). */
 export function ScopeLists({ d, now, done, role, onItem }: { d: TrackerData; now: number; done: Done; role: EngRole; onItem: (tag: string) => void }) {
   return <RoleCtx.Provider value={role}><OpenItemCtx.Provider value={onItem}><Scope d={d} now={now} done={done} go={() => {}} by="" /></OpenItemCtx.Provider></RoleCtx.Provider>;
 }
-export function EngineerView({ trackerId, name, title, role, onExit }: { trackerId: string; name: string; title: string; role: EngRole; onExit: () => void }) {
-  return <RoleCtx.Provider value={role}><Tracker preset={{ login_id: name, tracker_id: trackerId, title }} onExit={onExit} /></RoleCtx.Provider>;
+export function EngineerView({ trackerId, name, title, role, me = null, onExit }: { trackerId: string; name: string; title: string; role: EngRole; me?: string | null; onExit: () => void }) {
+  return <RoleCtx.Provider value={role}><MeCtx.Provider value={me}><Tracker preset={{ login_id: name, tracker_id: trackerId, title }} onExit={onExit} /></MeCtx.Provider></RoleCtx.Provider>;
 }
 
 function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: string; title: string }; onExit?: () => void } = {}) {
@@ -107,7 +111,7 @@ function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: 
   const [tab, setTab] = useState<Tab>('dash');
   // with the other hooks, before any early return (a hook after one breaks the page once the data loads)
   useEffect(() => { if (!preset) recordVisit(`/engineer/${tab}`); }, [tab, preset]);
-  const [eqf, setEqf] = useState('all');
+  const [eqf, setEqf] = useState('all'); const [hoFocus, setHoFocus] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const [flash, setFlash] = useState<{ msg: string; undo?: () => Promise<unknown> } | null>(null);
   const load = useCallback(async (trackerId: string) => { try { setData(await fetchTrackerData(trackerId)); setNow(Date.now()); setErr(null); } catch (e) { setErr(e); } }, []);
@@ -142,14 +146,14 @@ function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: 
     <Frame title={`Hi ${me.login_id}`} sub={`${kwDay(now)} · ${sh.shift === 'D' ? 'Day' : 'Night'} shift · ${data.tracker.title}`}
       right={<>{onExit && <button type="button" onClick={onExit} className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-brand-700">Section Head mode</button>}
         <button type="button" aria-label="Refresh" onClick={() => void load(me.tracker_id)} className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-semibold">↻</button></>}>
-      <main className="mx-auto max-w-xl px-3 pt-3">
+      <IsoCtx.Provider value={(tag) => { setHoFocus(tag); setTab('ho'); window.scrollTo(0, 0); }}><main className="mx-auto max-w-xl px-3 pt-3">
         {err != null && <div className="mb-2"><ErrorBox error={err} /></div>}
         {tab === 'dash' && <Dashboard {...props} />}
         {tab === 'equip' && <Equipment {...props} f={eqf} setF={setEqf} />}
-        {tab === 'ho' && <Handover {...props} />}
+        {tab === 'ho' && <Handover key={hoFocus ?? ''} {...props} focus={hoFocus} onClearFocus={() => setHoFocus(null)} />}
         {tab === 'scope' && <Scope {...props} />}
         {tab === 'hot' && <HotWork {...props} />}
-      </main>
+      </main></IsoCtx.Provider>
       {flash && <Toast msg={flash.msg} onUndo={flash.undo ? async () => { const u = flash.undo!; setFlash(null); try { await u(); done('Undone.'); } catch (e) { setErr(e); } } : undefined} />}
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 pb-[max(6px,env(safe-area-inset-bottom))] backdrop-blur" aria-label="Tracker">
         <div className="mx-auto flex max-w-xl">{TABS.map(([k, Icon, l]) => <button key={k} type="button" aria-current={tab === k ? 'page' : undefined} onClick={() => setTab(k)} className={cx('flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[11px]', tab === k ? 'font-semibold text-brand-700' : 'text-slate-500')}><Icon className="h-5 w-5" aria-hidden />{l}</button>)}</div>
@@ -372,7 +376,22 @@ function Reactors({ d, now, done }: Pick<P, 'd' | 'now' | 'done'>) {
 
 // holds: the Section Head's reason list (PendingForm) in every view (owner, 25 Oct 2026)
 /** One item: finish the running step / start the next, its status and a short note; drums for a reactor dumping. */
-function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; done: Done; onClose: () => void }) {
+/** The item sheet, the same in both modes: the steps and the main action, issues, inspection worklist, hold and status
+ *  (Engineer base), with the Section Head part (flags, M & I %, drums, No change / Delay, isolation, stage, IATs,
+ *  related equipment, history, technical details, scope) shown by role. */
+export function ItemSheetFor({ d, tag, now, role, me = null, done, onClose, onIsolation }: { d: TrackerData; tag: string; now: number; role: EngRole; me?: string | null; done: Done; onClose: () => void; onIsolation: (tag: string) => void }) {
+  const e = d.equipment.find((x) => x.tag === tag) ?? (d.loopItems ?? []).find((x) => x.tag === tag);
+  if (!e) return null;
+  return <RoleCtx.Provider value={role}><MeCtx.Provider value={me}><IsoCtx.Provider value={onIsolation}><ItemSheet d={d} e={e} now={now} done={done} onClose={onClose} /></IsoCtx.Provider></MeCtx.Provider></RoleCtx.Provider>;
+}
+function ItemSheet({ d, e: e0, now = Date.now(), done, onClose }: { d: TrackerData; e: TrkEquipment; now?: number; done: Done; onClose: () => void }) {
+  // a related item opens in the same sheet
+  const [tag, setTag] = useState(e0.tag);
+  const e = d.equipment.find((x) => x.tag === tag) ?? (d.loopItems ?? []).find((x) => x.tag === tag) ?? e0;
+  const role = useContext(RoleCtx), me = useContext(MeCtx), toIso = useContext(IsoCtx);
+  const views = useMemo(() => equipViews(d, now), [d, now]);
+  const miAll = useMemo(() => new Map((phases(d, now).mi.weighted?.items ?? []).map((i) => [i.tag, i])), [d, now]);
+  const v = views.find((x) => x.eq.tag === e.tag);
   const keys = e.combine ? d.equipment.filter((x) => x.combine === e.combine).map(keyOf) : [keyOf(e)];
   const ls = lines(d, keys); const run = ls.filter((a) => a.actualStart && !a.actualFinish); const next = ls.find((a) => !a.actualStart);
   const [holdOpen, setHoldOpen] = useState(false); const [insp, setInsp] = useState(false);
@@ -380,11 +399,7 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
   const [stage, setStage] = useState<number | null>(null);
   const [steps, setSteps] = useState(false);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  const scope = (d.engine?.scopes ?? []).find((s) => keys.includes(s.key) && s.scope === 'removal' && !s.completeAt);
-  const entries = scope ? (d.engine?.entries ?? []).filter((x) => x.scopeId === scope.id && x.kind !== 'transfer') : [];
   const manage = useCanManage();
-  const [empty, setEmpty] = useState(false);
-  const dumping = scope ? d.activities.filter((a) => a.key === scope.key && scope.activityIds.includes(a.activityId) && a.actualStart && !a.actualFinish) : [];
   const twins = keys.map((k) => d.equipment.find((x) => keyOf(x) === k)!).filter(Boolean);
   async function run1(f: () => Promise<unknown>, msg: string, undo?: () => Promise<unknown>) { setBusy(true); setErr(null); try { await f(); done(msg, undo); onClose(); } catch (x) { setErr(x); } finally { setBusy(false); } }
   // the tracker's step action: twins move together, starting ends the hold, Undo restores both
@@ -393,7 +408,6 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
     setBusy(true); setErr(null);
     try { const r = await stepNow(a, also, finish, twins); done(r.msg, r.undo); onClose(); } catch (x) { setErr(x); } finally { setBusy(false); }
   };
-  const closeOut = async () => { await confirmEmpty(scope!.id); const at = new Date().toISOString(); for (const a of dumping) await setActivity(a.id, { actual_finish: at }); };
   const save = () => run1(async () => {
     for (const t of twins) await setEquipment(t.id, { ...(note.trim() ? { remark: note.trim() } : {}), ...(stage !== null ? { stage } : {}) });
   }, `${short(e.tag)} saved.`, async () => { for (const t of twins) await setEquipment(t.id, { pending_reason: t.pendingReason, remark: t.remark, stage: t.stage }); });
@@ -404,6 +418,10 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
         <button type="button" onClick={() => setSteps(true)} className="flex min-h-10 w-full items-center justify-between rounded-xl bg-slate-50 px-3 text-[13px] font-bold text-brand-700 ring-1 ring-slate-200">
           <span>📋 All steps{manage ? ' · view, edit, add, order' : ''}</span><span className="text-slate-500">{ls.filter((a) => a.actualFinish).length}/{ls.length} ›</span></button>
         <p className="text-xs text-slate-600">Last: {itemLine(d, e)}{e.updatedAt ? ` · ${when(e.updatedAt)}` : ''}</p>
+        {v && <ItemMore part="top" v={v} system={e.system ? views.filter((x) => x.eq.system === e.system && x.eq.tag !== e.tag) : []} groups={[...new Set(d.equipment.map((x) => x.group))]} systems={[...new Set(d.equipment.map((x) => x.system).filter((x): x is string => !!x))]}
+          canManage={manage} canScope={role === 'head'} totalH={scopeImpact(d).totalH} onItem={setTag} mi={miAll.get(e.tag)} related={relatedWork(e.tag, keyOf(e), d.activities)} allIats={d.iats} lineup={d.lineup} lineupEq={d.lineupEq} tags={d.equipment.map((x) => x.tag)}
+          trackerId={d.tracker.id} canEdit isHead={role === 'head'} activities={d.activities.filter((a) => a.key === keyOf(e))} now={now} iso={isolationOf(e.tag, d.points ?? [])} points={d.points ?? []} engine={d.engine} settings={d.settings} me={me}
+          onIsolation={() => { onClose(); toIso?.(e.tag); }} onDone={done} />}
         {run.map((a) => <button key={a.id} type="button" disabled={busy} onClick={() => step(a, true)} className="w-full rounded-xl bg-amber-400 px-3 py-2 text-left text-amber-950"><span className="block text-[11px] font-bold uppercase tracking-wide opacity-80">✓ Finish</span><span className="line-clamp-2 text-[13px] font-semibold leading-snug">{a.activity}</span></button>)}
         {next && <button type="button" disabled={busy} onClick={() => step(next, false)} className="w-full rounded-xl bg-brand-700 px-3 py-2 text-left text-white"><span className="block text-[11px] font-bold uppercase tracking-wide opacity-80">▶ Start</span><span className="line-clamp-2 text-[13px] font-semibold leading-snug">{next.activity}</span></button>}
         {!ls.length ? <>{e.description && <p className="text-[13px] font-semibold">{e.description}</p>}
@@ -414,15 +432,6 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
         {(e.inspWork || e.inspRef) && <div className="rounded-2xl bg-white p-2.5 ring-1 ring-slate-200">
           <button type="button" onClick={() => setInsp((x) => !x)} className="flex w-full items-center gap-1.5 text-left text-[11px] font-extrabold uppercase tracking-wider text-slate-500"><span className="w-3">{insp ? '▾' : '▸'}</span>Inspection worklist</button>
           {insp && <div className="mt-1.5"><InspWork ref_={e.inspRef} work={e.inspWork} /></div>}</div>}
-        {scope && <div className="space-y-1.5">
-          <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Drums</p>
-          <DrumEntry scope={scope} entries={entries} now={Date.now()} onDone={(m, u) => { done(m, u); onClose(); }} />
-          {manage && (empty
-            ? <div className="rounded-xl bg-green-50 p-2.5 text-xs text-green-900">Confirm that {scope.key} is physically empty? The recorded drums stay as they are; this closes the removal at 100%{dumping.length ? `, finishes ${dumping.map((a) => a.activity).join(' and ')} now` : ''} and cannot be undone.
-                <div className="mt-1.5 flex gap-1.5"><button type="button" disabled={busy} onClick={() => run1(closeOut, `${short(e.tag)}: reactor empty${dumping.length ? ', dumping finished' : ''}.`)} className="min-h-9 flex-1 rounded-lg bg-status-green px-3 text-[13px] font-bold text-white">Confirm empty</button>
-                  <button type="button" onClick={() => setEmpty(false)} className="min-h-9 flex-1 rounded-lg bg-white px-3 text-[13px] font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button></div></div>
-            : <button type="button" disabled={busy} onClick={() => setEmpty(true)} className="min-h-10 w-full rounded-xl bg-white text-sm font-bold text-status-green ring-1 ring-green-300">Reactor empty…</button>)}
-        </div>}
         <p className="pt-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Status</p>
         {e.pendingReason
           ? <div className="flex items-center gap-2 rounded-xl bg-red-50 px-2.5 py-1.5 text-[13px] text-red-900 ring-1 ring-red-200"><span className="min-w-0 flex-1">⏸ On hold: {e.pendingReason}</span>
@@ -433,6 +442,10 @@ function ItemSheet({ d, e, done, onClose }: { d: TrackerData; e: TrkEquipment; d
         {(() => { const n = note.trim().split(/\s+/).filter(Boolean).length;
           return <p className={cx('-mt-1.5 text-[11px]', n > 10 ? 'font-semibold text-amber-700' : 'text-slate-500')}>{n > 10 ? `${n} words: keep it to the status (about 8 words); a problem goes under ⚠ Issues.` : 'Status only: what · I/P / done / stopped. Waiting? use Hold above.'}</p>; })()}
         <button type="button" disabled={busy || (!note.trim() && (stage === null || stage === e.stage))} onClick={save} className="min-h-11 w-full rounded-xl bg-brand-700 text-[15px] font-bold text-white disabled:opacity-50">Save</button>
+        {v && <ItemMore part="rest" v={v} system={e.system ? views.filter((x) => x.eq.system === e.system && x.eq.tag !== e.tag) : []} groups={[...new Set(d.equipment.map((x) => x.group))]} systems={[...new Set(d.equipment.map((x) => x.system).filter((x): x is string => !!x))]}
+          canManage={manage} canScope={role === 'head'} totalH={scopeImpact(d).totalH} onItem={setTag} mi={miAll.get(e.tag)} related={relatedWork(e.tag, keyOf(e), d.activities)} allIats={d.iats} lineup={d.lineup} lineupEq={d.lineupEq} tags={d.equipment.map((x) => x.tag)}
+          trackerId={d.tracker.id} canEdit isHead={role === 'head'} activities={d.activities.filter((a) => a.key === keyOf(e))} now={now} iso={isolationOf(e.tag, d.points ?? [])} points={d.points ?? []} engine={d.engine} settings={d.settings} me={me}
+          onIsolation={() => { onClose(); toIso?.(e.tag); }} onDone={done} />}
         {err != null && <ErrorBox error={err} />}
       </div>
     </BottomSheet>
@@ -565,9 +578,22 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
               <button type="button" onClick={() => setOrd(null)} className="min-h-11 flex-1 rounded-xl bg-white font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button>
               <button type="button" disabled={busy} onClick={() => { const was = all.some((a) => a.seq != null) ? all.map((a) => a.id) : []; void act(() => setOrder(d.tracker.id, k, ids), `${short(k)}: order saved.`, () => setOrder(d.tracker.id, k, was)); }} className="min-h-11 flex-1 rounded-xl bg-brand-700 font-bold text-white">✓ Save order</button></div>}
           </section>; })}
+        {isHead && <OpsFieldSteps d={d} keys={keys} done={done} />}
       </main>
     </div>
   );
+}
+/** The operations steps and the field-operator detail steps of an item: for the Section Head, folded (hidden in the
+ *  Engineer mode, owner 25 Oct). */
+function OpsFieldSteps({ d, keys, done }: { d: TrackerData; keys: string[]; done: Done }) {
+  const [open, setOpen] = useState(false);
+  const xs = sortActs(d.activities.filter((a) => keys.includes(a.key) && a.tracked && (a.detail || a.group === 'Operations')));
+  if (!xs.length) return null;
+  const now = Date.now();
+  return <section className="mt-3">
+    <button type="button" onClick={() => setOpen((x) => !x)} className="mx-1 text-[12px] font-semibold text-slate-500">{open ? '▾' : '▸'} Operations and field steps ({xs.filter((a) => a.actualFinish).length}/{xs.length}) · Section Head</button>
+    {open && <RowList className="mt-1">{xs.map((a) => <ActivityRow key={a.id} t={timing(a, now)} canEdit isHead onDone={done} />)}</RowList>}
+  </section>;
 }
 
 /** The shutdown progress report for WhatsApp, in the plant's format, from what is in the tracker now; a note for the
