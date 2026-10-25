@@ -1,7 +1,7 @@
 // Shutdown progress tracker: the trackers of the calendar shutdowns (template / test / live), their steps, equipment,
 // IATs, bar chart, shift log and change log. Who and when are stamped by the database on every change.
 import { supabase } from './supabase';
-import type { QtyKind, QtyMethod, Shift, TrkEngine, TrkQtyEntry, TrkUpdate, PointStatus, StepStatus, TrkActivity, TrkData, TrkEquipment, TrkIat, TrkLog, LuEquip, LuStream, TrkPoint, TrkPointStep, TrkEvent, TrkSettings, TrkStep } from '@/core/tracker';
+import type { QtyKind, QtyMethod, Shift, TrkEngine, TrkQtyEntry, TrkUpdate, PointStatus, StepStatus, TrkActivity, TrkData, TrkEquipment, TrkIat, TrkRtj, TrkLog, LuEquip, LuStream, TrkPoint, TrkPointStep, TrkEvent, TrkSettings, TrkStep } from '@/core/tracker';
 
 export interface Tracker { id: string; eventId: string | null; title: string; mode: 'template' | 'test' | 'live'; settings: TrkSettings; status: 'active' | 'closed'; eventStart: string | null; eventEnd: string | null; eventTitle: string | null }
 interface TrackerRow { id: string; event_id: string | null; title: string; mode: Tracker['mode']; settings: TrkSettings | null; status: Tracker['status']; unit_events?: { start_date: string; end_date: string; unit: string | null; title: string | null } | null }
@@ -21,7 +21,7 @@ export function currentTracker(list: Tracker[], today: string): Tracker | null {
 }
 
 interface StepRow { id: string; step_id: string; fo: string; gate: number; gate_name: string | null; short_name: string; step_text: string | null; procedure: string | null; prereq: string[] | null; est_hours: number | null; note: string | null; target_at: string | null; status: StepStatus; pending_reason: string | null; remark: string | null; updated_by_name: string | null; updated_at: string | null; started_at: string | null; done_at: string | null }
-interface EqRow { id: string; tag: string; grp: string; description: string | null; fo: string | null; ho_step: string | null; procedure: string | null; barchart_key: string | null; ops_item: boolean; critical: boolean; tracked: boolean; disabled_reason: string | null; planned_ho: string | null; planned_finish: string | null; sort: number; stage: number; pending_reason: string | null; remark: string | null; blinds_in_at: string | null; blinds_out_at: string | null; updated_by_name: string | null; updated_at: string | null; combine?: string | null; system?: string | null; list?: string | null; insp_ref?: string | null; insp_work?: string | null }
+interface EqRow { id: string; tag: string; grp: string; description: string | null; fo: string | null; ho_step: string | null; procedure: string | null; barchart_key: string | null; ops_item: boolean; critical: boolean; tracked: boolean; disabled_reason: string | null; planned_ho: string | null; planned_finish: string | null; sort: number; stage: number; pending_reason: string | null; remark: string | null; blinds_in_at: string | null; blinds_out_at: string | null; updated_by_name: string | null; updated_at: string | null; combine?: string | null; system?: string | null; list?: string | null; insp_ref?: string | null; insp_work?: string | null; covered_by?: string | null }
 interface IatRow { ops_label?: string | null; updated_by_name?: string | null; updated_at?: string | null; ops_none?: boolean | null; spool_only?: boolean | null; ops_action?: boolean | null; ho_required?: boolean | null; id: string; tag: string; iat_no: string; job_text: string | null; discipline: string | null; issued_at: string; status: 'open' | 'closed'; closed_at: string | null; wo?: string | null; line?: string | null; sheet_status?: string | null; remark?: string | null;
   finding?: string | null; recommendation?: string | null; line_class?: string | null; material?: string | null; checks?: Record<string, string> | null; painting?: Record<string, string> | null; action_by?: string | null }
 interface ActRow { id: string; activity_id: string; grp: string | null; equipment_key: string; activity: string; duration_h: number | null; planned_start: string | null; planned_finish: string | null; stage: number | null; tracked: boolean; baseline: number; actual_start: string | null; actual_finish: string | null; actual_note: string | null; disabled_reason: string | null; seq?: number | null; detail?: boolean | null; p6_activity?: string | null; updated_by_name: string | null; updated_at: string | null }
@@ -46,7 +46,9 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     // the SOP field steps of each neutralization: optional as well
     supabase.from('trk_point_step').select('id,point_id,seq,phase,text,source,done_at,done_by_name,crane,kind,start_at,start_by_name,link_acts,link_points').eq('tracker_id', id).order('seq').limit(2000),
     // the shutdown's events (nitrogen, reactors): optional too
-    supabase.from('trk_event').select('id,category,text,started_at,ended_at,by_name,ended_by_name,equipment_key').eq('tracker_id', id).order('started_at', { ascending: false }).limit(300)]);
+    supabase.from('trk_event').select('id,category,text,started_at,ended_at,by_name,ended_by_name,equipment_key').eq('tracker_id', id).order('started_at', { ascending: false }).limit(300),
+    // the worklist RTJs, linked to their loops (reference only): optional
+    supabase.from('trk_rtj').select('id,seq,point_id,line,iso_sheet,rtj_no,size,fitting,link,link_note').eq('tracker_id', id).order('seq').limit(2000)]);
   const [t, s, e, i, a, l, sl, pt] = await Promise.all([
     supabase.from('trk_trackers').select('id,event_id,title,mode,settings,status,unit_events(start_date,end_date,unit,title)').eq('id', id).single(),
     supabase.from('trk_steps').select('*').eq('tracker_id', id).order('step_id'),
@@ -58,7 +60,7 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     supabase.from('trk_points').select('*').eq('tracker_id', id).eq('removed', false).order('sort'),
   ]);
   // the U-12 process lineup (P&ID streams): optional, the tracker works without it
-  const [[lu, le], ps, ev] = await extraP;
+  const [[lu, le], ps, ev, rj] = await extraP;
   const err = [t, s, e, i, a, l, sl, pt].find((r) => r.error)?.error; if (err) throw err;
   // what this screen has seen: a later save checks the fields it changes still hold these values
   seen('trk_steps', s.data); seen('trk_equipment', e.data); seen('trk_iat', i.data); seen('trk_activities', a.data); seen('trk_points', pt.data);
@@ -67,8 +69,16 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
   const acts = a.data as ActRow[]; const base = Math.max(0, ...acts.map((x) => x.baseline));
   // an item out of the shutdown scope: its P6 lines stay as they are in the database, but are not counted
   const outKeys = new Set((e.data as EqRow[]).filter((r) => (r.disabled_reason ?? '').startsWith('out of scope')).map((r) => r.barchart_key ?? r.tag));
+  const eqMap = (r: EqRow): TrkEquipment => ({ id: r.id, tag: r.tag, group: r.grp, description: r.description, fo: r.fo, hoStep: r.ho_step, procedure: r.procedure, barchartKey: r.barchart_key,
+    opsItem: r.ops_item, critical: r.critical, tracked: r.tracked, disabledReason: r.disabled_reason, plannedHo: r.planned_ho, plannedFinish: r.planned_finish, sort: r.sort, stage: r.stage,
+    pendingReason: r.pending_reason, remark: r.remark, blindsIn: r.blinds_in_at, blindsOut: r.blinds_out_at, updatedBy: r.updated_by_name, updatedAt: r.updated_at, combine: r.combine ?? null, system: r.system ?? null,
+    list: r.list === 'rotating' ? 'rotating' : null, inspRef: r.insp_ref ?? null, inspWork: r.insp_work ?? null, coveredBy: r.covered_by ?? null });
   return {
     engine,
+    // RTJ / injection locations covered by their loop: off the Equipment list, kept for the loop's handover
+    loopItems: (e.data as EqRow[]).filter((r) => r.covered_by).map(eqMap),
+    rtj: rj.error ? [] : (rj.data as { id: string; seq: number; point_id: string | null; line: string; iso_sheet: string | null; rtj_no: string; size: string | null; fitting: string | null; link: string | null; link_note: string | null }[])
+      .map((r): TrkRtj => ({ id: r.id, seq: r.seq, pointId: r.point_id, line: r.line, isoSheet: r.iso_sheet, rtjNo: r.rtj_no, size: r.size, fitting: r.fitting, link: r.link === 'lineup' || r.link === 'unverified' ? r.link : null, linkNote: r.link_note })),
     events: ev.error ? [] : (ev.data as { id: string; category: TrkEvent['category']; text: string; started_at: string; ended_at: string | null; by_name: string | null; ended_by_name: string | null; equipment_key: string | null }[])
       .map((r): TrkEvent => ({ id: r.id, category: r.category, text: r.text, startedAt: r.started_at, endedAt: r.ended_at, by: r.by_name, endedBy: r.ended_by_name, key: r.equipment_key })),
     pointSteps: ps.error ? [] : (ps.data as { id: string; point_id: string; seq: number; phase: TrkPointStep['phase']; text: string; source: string | null; done_at: string | null; done_by_name: string | null; crane: boolean | null; kind: string | null; start_at: string | null; start_by_name: string | null; link_acts: string[] | null; link_points: string[] | null }[])
@@ -80,9 +90,7 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     tracker: toTracker(t.data as unknown as TrackerRow),
     steps: (s.data as StepRow[]).map((r): TrkStep => ({ id: r.id, stepId: r.step_id, fo: r.fo, gate: r.gate, gateName: r.gate_name, shortName: r.short_name, text: r.step_text, procedure: r.procedure,
       prereq: r.prereq ?? [], estHours: r.est_hours, note: r.note, target: r.target_at, status: r.status, pendingReason: r.pending_reason, remark: r.remark, updatedBy: r.updated_by_name, updatedAt: r.updated_at, startedAt: r.started_at, doneAt: r.done_at })),
-    equipment: (e.data as EqRow[]).map((r): TrkEquipment => ({ id: r.id, tag: r.tag, group: r.grp, description: r.description, fo: r.fo, hoStep: r.ho_step, procedure: r.procedure, barchartKey: r.barchart_key,
-      opsItem: r.ops_item, critical: r.critical, tracked: r.tracked, disabledReason: r.disabled_reason, plannedHo: r.planned_ho, plannedFinish: r.planned_finish, sort: r.sort, stage: r.stage,
-      pendingReason: r.pending_reason, remark: r.remark, blindsIn: r.blinds_in_at, blindsOut: r.blinds_out_at, updatedBy: r.updated_by_name, updatedAt: r.updated_at, combine: r.combine ?? null, system: r.system ?? null, list: r.list === 'rotating' ? 'rotating' : null, inspRef: r.insp_ref ?? null, inspWork: r.insp_work ?? null })),
+    equipment: (e.data as EqRow[]).filter((r) => !r.covered_by).map(eqMap),
     iats: (i.data as IatRow[]).map((r): TrkIat => ({ id: r.id, tag: r.tag, iatNo: r.iat_no, jobText: r.job_text, discipline: r.discipline, issuedAt: r.issued_at, status: r.status, closedAt: r.closed_at, wo: r.wo ?? null, line: r.line ?? null, sheetStatus: r.sheet_status ?? null, remark: r.remark ?? null,
       finding: r.finding ?? null, recommendation: r.recommendation ?? null, lineClass: r.line_class ?? null, material: r.material ?? null, checks: r.checks ?? {}, painting: r.painting ?? {}, actionBy: r.action_by ?? null, opsAction: !!r.ops_action, hoRequired: !!r.ho_required, opsLabel: (r.ops_label ?? null) as TrkIat['opsLabel'], opsNone: !!r.ops_none, spoolOnly: !!r.spool_only, updatedBy: r.updated_by_name ?? null, updatedAt: r.updated_at ?? null })),
     // a combined bar-chart line split into its jobs (the database keeps it, off) is not shown: its parts are

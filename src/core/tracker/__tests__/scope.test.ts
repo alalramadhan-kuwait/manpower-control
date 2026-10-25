@@ -1,6 +1,6 @@
 // Equipment scope: out of scope keeps the records and stops counting; grouping by system is display only.
 import { describe, expect, it } from 'vitest';
-import { isOutOfScope, logText, scopeImpact, scopeReasonText, shownGroup, ROTATING, type TrkActivity, type TrkEquipment } from '..';
+import { isOutOfScope, logText, scopeImpact, scopeReasonText, shownGroup, ROTATING, loopHandover, type TrkActivity, type TrkEquipment } from '..';
 
 const eq = (tag: string, group: string, more: Partial<TrkEquipment> = {}): TrkEquipment => ({ id: tag, tag, group, description: null, fo: null, hoStep: null, procedure: null, barchartKey: tag, opsItem: true, critical: false, tracked: true,
   disabledReason: null, plannedHo: null, plannedFinish: null, sort: 0, stage: 0, pendingReason: null, remark: null, blindsIn: null, blindsOut: null, updatedBy: null, updatedAt: null, ...more });
@@ -38,5 +38,12 @@ describe('equipment scope', () => {
     expect(all).toEqual(plain);
     const l = (n: string | null) => logText({ id: '1', at: '', kind: 'equipment', ref: 'C-12-201-E-03', field: 'list', oldValue: null, newValue: n, byName: null } as never);
     expect(JSON.stringify(l('rotating'))).toContain(ROTATING);
+  });
+  it('a loop is handed over only when its items are recorded handed over, never because it is neutralized', () => {
+    const items = [eq('R-201 to R-202', 'RTJ & injection', { stage: 1, coveredBy: 'S113' }), eq('R-202 to R-203', 'RTJ & injection', { stage: 0, coveredBy: 'S113' })];
+    expect(loopHandover({ items: ['R-201 to R-202', 'R-202 to R-203'] }, items)).toMatchObject({ state: 'partial', done: 1, total: 2, open: ['R-202 to R-203'] });
+    expect(loopHandover({ items: ['R-201 to R-202'] }, items).state).toBe('ho');
+    expect(loopHandover({ items: [] }, items).state).toBe('unknown');
+    expect(loopHandover({ items: ['R-202 to R-203'] }, items).state).toBe('none');
   });
 });

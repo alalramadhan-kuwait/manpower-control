@@ -7,6 +7,7 @@ import { DrumEntry } from '@/features/tracker/Drums';
 import { PendingForm } from '@/features/tracker/TrackerSheets';
 import { LABEL_CLS, OpsLabel } from '@/features/tracker/Iats';
 import { InspWork } from '@/features/tracker/ui';
+import { LoopScope } from '@/features/tracker/Isolation';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
@@ -725,6 +726,7 @@ function Loop({ d, p, now, done }: { d: TrackerData; p: TrkPoint; now: number; d
       {req === 'pending' && <p className="text-xs font-semibold text-amber-800">Neutralization decision pending</p>}
       {missing.length > 0 && <p className="mt-1 text-xs text-slate-600">Waiting blinds: {missing.join(', ')}</p>}
       {waiting.length > 0 && <p className="mt-1 text-xs text-slate-600">Waiting for: {waiting.join(', ')}</p>}
+      <LoopScope p={p} items={[...d.equipment, ...(d.loopItems ?? [])]} rtj={d.rtj ?? []} canEdit={false} onDone={done} compact />
       {jobs.length > 0 && <p className="mt-1 text-xs text-slate-600">Jobs {jobs.filter((c) => c.doneAt).length}/{jobs.length}{job ? ` · next: ${job.crane ? '🏗 ' : ''}${job.text.split(/,|:/)[0]}` : ''}</p>}
       {p.status === 'soaking' && p.soakAt && <p className="mt-1 text-xs text-slate-600">Soaking since {when(p.soakAt)} ({Math.round((now - Date.parse(p.soakAt)) / H)} h)</p>}
       {req !== 'not_required' && <div className="mt-2 flex gap-1.5">

@@ -28,7 +28,15 @@ export interface TrkEquipment {
   list?: 'rotating' | null;
   /** the inspection worklist for this item: where it comes from (document, item, last inspection) and the work lines */
   inspRef?: string | null; inspWork?: string | null;
+  /** covered by this neutralization loop (ref): not in the Equipment list, no follow-up of its own; its handover is
+   *  recorded from the loop (an RTJ / injection location that is part of the loop) */
+  coveredBy?: string | null;
 }
+/** An RTJ flange of the inspection worklist, linked to its neutralization loop. Reference only: no progress, steps or
+ *  alerts of its own; handed over with its loop (the loop's items recorded handed over), which does not mean the RTJ
+ *  inspection or maintenance is done (new work goes on an IAT). */
+export interface TrkRtj { id: string; seq: number; pointId: string | null; line: string; isoSheet: string | null; rtjNo: string; size: string | null; fitting: string | null;
+  link: 'lineup' | 'unverified' | null; linkNote: string | null }
 export interface TrkIat { id: string; tag: string; iatNo: string; jobText: string | null; discipline: string | null; issuedAt: string; status: 'open' | 'closed'; closedAt: string | null;
   /** from the daily IAT tracking sheet: work order, the line it is on, the status as written in the sheet, a remark */
   wo?: string | null; line?: string | null; sheetStatus?: string | null; remark?: string | null;
@@ -101,7 +109,7 @@ export interface TrkEvent { id: string; category: 'nitrogen' | 'reactors' | 'oth
   /** the item a problem is on (its bar-chart key); none for an event of the shutdown */
   key?: string | null }
 export const EVENT_LABEL: Record<TrkEvent['category'], string> = { nitrogen: 'N₂ supply', reactors: 'Reactors', other: 'Other' };
-export interface TrkData { events?: TrkEvent[]; engine?: TrkEngine; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
+export interface TrkData { loopItems?: TrkEquipment[]; rtj?: TrkRtj[]; events?: TrkEvent[]; engine?: TrkEngine; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
 
 /** The main equipment groups; the rest (control valve shells, PSVs, check valves, RTJ & injection points, piping, OPR
  *  list, PMRs …) is miscellaneous, shown after them. */
@@ -1183,4 +1191,12 @@ export function logText(l: TrkLog, acts: TrkActivity[] = []): { item: string; wh
     return { item: 'Shift', what: `📝 notes ${q(l.newValue)}` };
   }
   return { item: l.ref, what: `${l.field}: ${t(l.oldValue) ?? '—'} → ${t(l.newValue) ?? '—'}` };
+}
+
+/** A loop's handover to M & I, from what is recorded on its items (their stage), never from the neutralization:
+ *  handed over when every item of the loop is recorded handed over; unknown when the loop has no item records. */
+export function loopHandover(p: Pick<TrkPoint, 'items'>, items: TrkEquipment[]): { state: 'ho' | 'partial' | 'none' | 'unknown'; done: number; total: number; open: string[] } {
+  const mine = p.items.map((t) => items.find((e) => e.tag === t)).filter((e): e is TrkEquipment => !!e && e.tracked && !isOutOfScope(e));
+  const done = mine.filter((e) => e.stage >= 1).length;
+  return { state: !mine.length ? 'unknown' : done === mine.length ? 'ho' : done ? 'partial' : 'none', done, total: mine.length, open: mine.filter((e) => e.stage < 1).map((e) => e.tag) };
 }

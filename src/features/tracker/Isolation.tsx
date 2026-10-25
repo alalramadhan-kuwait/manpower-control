@@ -1,9 +1,9 @@
 // Isolation & neutralization: the critical blinds (segregation points) and the neutralization loops and items, entered
 // once here. The database moves the rest: the items (handed over when all their blinds are in and the neutralization
 // before handover is done), the guideline step of each row and the soda-ash bar-chart lines.
-import { useEffect, useState, type ReactNode } from 'react';
-import { linkedStep, withReactor, NEUT_FLOW, NEUT_LABEL, neutLabel, equipBlind, loopLines, missingBlinds, waitingSteps, type LuStream, type TrkIat, hoursText, kwDay, kwTime, pointComplete, soakLeft, type PointStatus, type TrkActivity, type TrkPoint, type TrkPointStep, type TrkStep } from '@/core/tracker';
-import { addPointStep, setActivity, setPoint, setPointStep, setPointStepTime } from '@/data/tracker';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { loopHandover, type TrkEquipment, type TrkRtj, linkedStep, withReactor, NEUT_FLOW, NEUT_LABEL, neutLabel, equipBlind, loopLines, missingBlinds, waitingSteps, type LuStream, type TrkIat, hoursText, kwDay, kwTime, pointComplete, soakLeft, type PointStatus, type TrkActivity, type TrkPoint, type TrkPointStep, type TrkStep } from '@/core/tracker';
+import { addPointStep, setActivity, setEquipment, setPoint, setPointStep, setPointStepTime } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, cx } from '@/ui/components';
 import { CRow, IsoChip, MenuBtn, RowBtn, RowList, Tile } from './ui';
 import { PendingForm } from './TrackerSheets';
@@ -145,6 +145,7 @@ function JobButton({ c, busy, onStart, onFinish }: { c: TrkPointStep; busy: bool
 /** A neutralization opened: its procedure (the guideline step), the steps of the loop with their times, and the next action. */
 function LoopSheet({ acts = [], p, points, lineup, iats, steps, checks, canEdit, isHead, canAttach = false, trackerId, onDone, now, missing, waiting, action, err, onClose, onItem, onStep }: { p: TrkPoint; points: TrkPoint[]; lineup: LuStream[]; iats: TrkIat[]; steps: TrkStep[]; checks: TrkPointStep[]; canEdit: boolean; isHead: boolean; canAttach?: boolean; trackerId?: string; onDone: (msg: string, undo?: () => Promise<unknown>) => void; now: number;
   missing: string[]; waiting: string[]; action: ReactNode; err: unknown; acts?: TrkActivity[]; onClose: () => void; onItem: (tag: string) => void; onStep?: (id: string) => void }) {
+  const scope = useContext(LoopScopeCtx);
   const spray = p.method === 'spray';
   const step = p.stepId ? steps.find((x) => x.stepId === p.stepId) : undefined;
   const left = soakLeft(p, now);
@@ -252,9 +253,12 @@ function LoopSheet({ acts = [], p, points, lineup, iats, steps, checks, canEdit,
         {hold && <PendingForm initial={null} busy={false} onSave={async (r) => { try { await setPoint(p.id, { hold_reason: r }); setHold(false); onDone(`${p.ref}: on hold.`); } catch (e) { setCErr(e); } }} />}
         {err != null && <ErrorBox error={err} />}
         {trackerId && <LoopDiagrams trackerId={trackerId} loop={p} canAttach={canAttach} data={{ points, steps: checks, lineup }} />}
+        <LoopScope p={p} items={scope.items} rtj={scope.rtj} canEdit={canEdit} onDone={onDone} />
         {p.items.length > 0 && <section>
           <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Items{(p.partOf ?? []).length ? ` · part of ${p.partOf!.join(', ')}` : ''}</h3>
-          <div className="flex flex-wrap gap-1">{p.items.map((t) => <button key={t} type="button" onClick={() => onItem(t)} className="rounded bg-white px-1.5 py-0.5 text-[12px] font-semibold text-brand-600 ring-1 ring-slate-200">{t} ›</button>)}</div>
+          <div className="flex flex-wrap gap-1">{p.items.map((t) => scope.items.find((e) => e.tag === t)?.coveredBy
+            ? <span key={t} className="rounded bg-slate-50 px-1.5 py-0.5 text-[12px] text-slate-600 ring-1 ring-slate-200" title="Covered by this loop">{t}</span>
+            : <button key={t} type="button" onClick={() => onItem(t)} className="rounded bg-white px-1.5 py-0.5 text-[12px] font-semibold text-brand-600 ring-1 ring-slate-200">{t} ›</button>)}</div>
         </section>}
         {ll.length > 0 && <p className="text-[12px] text-slate-600">P&amp;ID lines: <b>{ll.join(', ')}</b>{onLine.map((i) => <span key={i.id} className="ml-1 rounded bg-amber-200 px-1 font-bold text-slate-800">IAT {i.iatNo} on {i.line}</span>)}</p>}
         {p.remark && <p className="text-[12px] italic text-slate-600">📝 {p.remark}</p>}
@@ -282,8 +286,8 @@ function EquipBlindRow({ a, canEdit, onItem, onDone }: { a: TrkActivity; canEdit
 
 const GRP: [string, string][] = [['segregation', 'Segregation'], ['hp_critical', 'HP critical'], ['equipment', 'Equipment']];
 
-export function IsolationTab({ trackerId, initialKind, activities = [], points, pointSteps = [], lineup = [], iats = [], steps, now, canEdit, isHead = false, canAttach = false, focus, onFocus, onItem, onStep, onDone }: {
-  trackerId?: string; initialKind?: 'blind' | 'neut'; activities?: TrkActivity[]; points: TrkPoint[]; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; iats?: TrkIat[]; steps: TrkStep[]; now: number; canEdit: boolean; isHead?: boolean; canAttach?: boolean; focus: string | null; onFocus: (tag: string | null) => void; onItem: (tag: string) => void; onStep?: (id: string) => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void;
+export function IsolationTab({ items = [], rtj = [], trackerId, initialKind, activities = [], points, pointSteps = [], lineup = [], iats = [], steps, now, canEdit, isHead = false, canAttach = false, focus, onFocus, onItem, onStep, onDone }: {
+  items?: TrkEquipment[]; rtj?: TrkRtj[]; trackerId?: string; initialKind?: 'blind' | 'neut'; activities?: TrkActivity[]; points: TrkPoint[]; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; iats?: TrkIat[]; steps: TrkStep[]; now: number; canEdit: boolean; isHead?: boolean; canAttach?: boolean; focus: string | null; onFocus: (tag: string | null) => void; onItem: (tag: string) => void; onStep?: (id: string) => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void;
 }) {
   const [kind, setKind] = useState<'blind' | 'neut'>(() => initialKind ?? (focus && !points.some((p) => p.kind === 'blind' && p.items.includes(focus)) ? 'neut' : 'blind'));
   const [grp, setGrp] = useState('segregation');
@@ -305,7 +309,7 @@ export function IsolationTab({ trackerId, initialKind, activities = [], points, 
   const sections = (() => { const m = new Map<string, TrkPoint[]>(); for (const p of open) m.set(secOf(p), [...(m.get(secOf(p)) ?? []), p]); return [...m.entries()]; })();
   if (!points.length) return <p className="py-6 text-center text-sm text-slate-500">No blinds or neutralization set up for this shutdown.</p>;
   return (
-    <div className="space-y-3">
+    <LoopScopeCtx.Provider value={{ items, rtj }}><div className="space-y-3">
       <div className="grid grid-cols-3 gap-2">
         <Tile value={`${blinds.filter(pointComplete).length + activities.filter(equipBlind).filter((a) => a.actualFinish).length}/${blinds.length + activities.filter(equipBlind).length}`} label="blinds in" onClick={() => setKind('blind')} />
         <Tile value={`${gate.filter(pointComplete).length}/${gate.length}`} label="neutralized" tone={gate.every(pointComplete) ? 'green' : undefined} onClick={() => setKind('neut')} />
@@ -332,6 +336,43 @@ export function IsolationTab({ trackerId, initialKind, activities = [], points, 
       {showDone && <RowList>{closed.map((p) => <PointRow key={p.id} p={p} points={points} acts={activities} lineup={lineup} iats={iats} steps={steps} checks={pointSteps.filter((c) => c.pointId === p.id)} trackerId={trackerId} isHead={isHead} canAttach={canAttach} now={now} canEdit={canEdit} onItem={onItem} onStep={onStep} onDone={onDone} />)}</RowList>}
       </>}
       <p className="text-[11px] text-slate-500">One tap here updates the rest: operations hands an item over when its neutralization is done, M &amp; I then installs the blinds (an item blinded counts as handed over), the guideline step ticks when all its rows are done, and the soda-ash and blind bar-chart lines take the times.</p>
-    </div>
+    </div></LoopScopeCtx.Provider>
+  );
+}
+
+/** The items and RTJs of every loop (equipment, the RTJ / injection locations covered by their loop, the worklist RTJs). */
+const LoopScopeCtx = createContext<{ items: TrkEquipment[]; rtj: TrkRtj[] }>({ items: [], rtj: [] });
+
+/** A loop's handover to M & I and its RTJs. The handover is what is recorded on the loop's items (never the
+ *  neutralization); the RTJs have no progress of their own: handed over with the loop. A location covered by the loop
+ *  (off the Equipment list) is recorded handed over here. */
+export function LoopScope({ p, items, rtj, canEdit, onDone, compact = false }: { p: TrkPoint; items: TrkEquipment[]; rtj: TrkRtj[]; canEdit: boolean; onDone: (msg: string, undo?: () => Promise<unknown>) => void; compact?: boolean }) {
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null); const [open, setOpen] = useState(false);
+  const ho = loopHandover(p, items);
+  const mine = rtj.filter((r) => r.pointId === p.id);
+  const lines = [...new Set(mine.map((r) => r.line))];
+  const unver = mine.filter((r) => r.link === 'unverified').length;
+  const hoText = ho.state === 'ho' ? 'Handed over to M & I' : ho.state === 'unknown' ? 'No handover record for this loop' : `Not handed over yet${ho.open.length ? ` · ${ho.open.join(', ')}` : ''}`;
+  const rtjText = mine.length ? `RTJs ${mine.length} · ${ho.state === 'ho' ? 'handed over with the loop' : 'not handed over yet'}${unver ? ` · ${unver} link unverified` : ''}` : '';
+  if (compact) return mine.length || ho.state !== 'unknown' ? <p className="mt-1 text-xs text-slate-600">{ho.state === 'ho' ? '✓ ' : ''}{hoText}{rtjText ? ` · ${rtjText}` : ''}</p> : null;
+  const mark = async (e: TrkEquipment) => { setBusy(true); setErr(null);
+    try { await setEquipment(e.id, { stage: 1 }); onDone(`${e.tag}: handed over (${p.ref}).`, () => setEquipment(e.id, { stage: e.stage })); } catch (x) { setErr(x); } finally { setBusy(false); } };
+  const own = p.items.map((t) => items.find((e) => e.tag === t)).filter((e): e is TrkEquipment => !!e);
+  if (!own.length && !mine.length) return null;
+  return (
+    <section className="space-y-1.5">
+      <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Handover to M &amp; I</h3>
+      <p className={cx('rounded-lg px-2.5 py-1.5 text-[12px] font-semibold', ho.state === 'ho' ? 'bg-green-50 text-green-800' : 'bg-slate-50 text-slate-700')}>{ho.state === 'ho' ? '✓ ' : ''}{hoText}{ho.total ? ` (${ho.done}/${ho.total} items)` : ''}</p>
+      {own.length > 0 && <div className="flex flex-wrap gap-1">{own.map((e) => <span key={e.id} className={cx('inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] font-semibold ring-1', e.stage >= 1 ? 'bg-green-50 text-green-800 ring-green-200' : 'bg-white text-slate-700 ring-slate-200')}>
+        {e.tag}{e.stage >= 1 ? ' ✓' : ''}{e.coveredBy && e.stage < 1 && canEdit && <button type="button" disabled={busy} onClick={() => void mark(e)} className="ml-1 rounded px-1.5 text-[11px] font-bold text-brand-700 ring-1 ring-brand-200">Record handover</button>}</span>)}</div>}
+      {mine.length > 0 && <div className="rounded-lg bg-slate-50 px-2.5 py-1.5 text-[12px] text-slate-700">
+        <button type="button" onClick={() => setOpen((x) => !x)} className="w-full text-left font-semibold">{open ? '▾' : '▸'} {rtjText}</button>
+        <p className="text-[11px] text-slate-500">Lines {lines.join(', ')} · inspection worklist. Handed over is not the RTJ inspection or repair: new work goes on an IAT.</p>
+        {open && <ul className="mt-1 space-y-0.5">{lines.map((l) => { const xs = mine.filter((r) => r.line === l);
+          return <li key={l}><b>{l}</b> · {xs.length} · {xs.map((r) => `${r.rtjNo.replace('RTJ # ', '#')}${r.size ? ` ${r.size}` : ''}${r.fitting && r.fitting !== 'Flange RTJ' ? ` ${r.fitting.replace(' RTJ', '').toLowerCase()}` : ''}`).join(', ')}
+            {xs[0].link === 'unverified' && <span className="block text-[11px] text-amber-800">Link unverified: {xs[0].linkNote}</span>}</li>; })}</ul>}
+      </div>}
+      {err != null && <ErrorBox error={err} />}
+    </section>
   );
 }
