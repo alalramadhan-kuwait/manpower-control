@@ -12,13 +12,11 @@ import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Spinner, Toast, cx } from '@/ui/components';
 import { AskUpdates } from './Ask';
 import { DrumQuick } from './Drums';
-import { EngineerView, ScopeLists, ShutdownHero } from '@/features/engineer/EngineerApp';
+import { EngineerView, HandoverTab, ScopeLists, ShutdownHero } from '@/features/engineer/EngineerApp';
 import { EventsCard } from './Events';
 import { EquipSheet, StepSheet } from './TrackerSheets';
 import { TrackerAdmin, clockKey } from './TrackerAdmin';
 import { TimingTab } from './Timing';
-import { IsolationTab } from './Isolation';
-import { isAdminStaff } from '@/core/users/access';
 import { IatsTab } from './Iats';
 import { TodayTab, type Nav } from './TrackerToday';
 import { stepNow } from './actions';
@@ -158,7 +156,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {tab === 'today' && <ShutdownHero d={data} now={now} onGroup={() => setTab('equipment')} onSmall={() => setTab('scope')} />}
       {tab === 'today' && eqs && <StageReview data={data} eqs={eqs} canEdit={canEdit} onOpen={(tag) => open({ kind: 'equipment', ref: tag })} onDone={() => load(true)} />}
       {tab === 'today' && <TodayTab steps={steps} eqs={eqs} data={data} now={now} onOpen={open} onNav={nav} />}
-      {tab === 'isolation' && <IsolationTab key={`iso-${isoKind}`} items={[...data.equipment, ...(data.loopItems ?? [])]} rtj={data.rtj} trackerId={tracker.id} initialKind={isoKind} activities={data.activities} points={points} pointSteps={data.pointSteps} lineup={data.lineup} iats={data.iats} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} canAttach={isAdminStaff(profile.role_code)} focus={focus} onFocus={setFocus} onItem={(tag) => setSheet({ kind: 'eq', tag })} onStep={(id) => setSheet({ kind: 'step', id })} onDone={(m, u) => done(m, false, u)} />}
+      {tab === 'isolation' && <HandoverTab key={`iso-${isoKind}-${focus}`} d={data} now={now} role={isHead ? 'head' : profile.role_code === 'controller' ? 'controller' : 'engineer'} focus={focus} onClearFocus={() => setFocus(null)} initial={isoKind} onItem={(tag) => setSheet({ kind: 'eq', tag })} onStep={(id) => setSheet({ kind: 'step', id })} done={(m, u) => done(m, true, u)} />}
       {tab === 'guideline' && <SequenceTab steps={steps} auto={auto} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {tab === 'equipment' && <EquipmentTab key={`eq-${lateFirst}`} initialLateFirst={lateFirst} eqs={eqs.filter((v) => inEquipmentTab(v.eq))} activities={data.activities} points={points} now={now} spare={spare} stale={stale} canEdit={canEdit} engine={data.engine} events={data.events} trackerId={tracker.id} onDone={(m, u) => done(m, true, u)} onOpen={(tag) => setSheet({ kind: 'eq', tag })} />}
       {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={(m, u) => done(m, false, u)} />}

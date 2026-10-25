@@ -7,12 +7,12 @@ import { DrumEntry } from '@/features/tracker/Drums';
 import { PendingForm } from '@/features/tracker/TrackerSheets';
 import { LABEL_CLS, OpsLabel } from '@/features/tracker/Iats';
 import { InspWork } from '@/features/tracker/ui';
-import { LoopScope } from '@/features/tracker/Isolation';
+import { LoopDetail, LoopScope } from '@/features/tracker/Isolation';
 import { BlindList } from '@/features/tracker/BlindList';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
-import { WITH_EQUIP, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
+import { WITH_EQUIP, equipBlind, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, confirmEmpty, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -656,30 +656,52 @@ function Issues({ d, done, item, keys }: { d: TrackerData; done: Done; item?: Tr
 // ── Isolation ───────────────────────────────────────────────────────────────────────────────────────────────────────
 const NEXT: Partial<Record<PointStatus, [PointStatus, string, 'fill_at' | 'soak_at' | 'drain_at' | 'done_at']>> = { open: ['filling', '▶ Fill', 'fill_at'], filling: ['soaking', '▶ Soak', 'soak_at'], soaking: ['draining', '▶ Drain', 'drain_at'], draining: ['done', '✓ Neutralized', 'done_at'] };
 const SPRAY: Partial<Record<PointStatus, [PointStatus, string, 'fill_at' | 'done_at']>> = { open: ['filling', '▶ Spray', 'fill_at'], filling: ['done', '✓ Done', 'done_at'] };
-/** Handover: what holds each item from being handed over (blinds, neutralization) with the chain behind it, the
- *  loops, the blinds, and at the end the return (de-blinding). */
-function Handover({ d, now, done }: P) {
-  const pts = d.points ?? [];
-  const loops = pts.filter((p) => p.kind === 'neut' && !withReactor(p) && (p.stepId || (!p.items.includes(p.ref) && (p.method !== 'spray' || p.status !== 'open'))));
+/** Handover, the same page in both modes: what holds each item from being handed over (blinds, neutralization) with
+ *  the chain behind it, the loops, the blinds (segregation, HP critical, the items' own blind lines), the blind list,
+ *  and at the end the return (de-blinding). Opened for one item (from its sheet) it shows only that item's. */
+export function HandoverTab({ d, now, done, role, onItem, onStep, focus = null, onClearFocus, initial }: { d: TrackerData; now: number; done: Done; role: EngRole; onItem?: (tag: string) => void;
+  onStep?: (id: string) => void; focus?: string | null; onClearFocus?: () => void; initial?: 'blind' | 'neut' }) {
+  return <RoleCtx.Provider value={role}><OpenItemCtx.Provider value={onItem ?? null}><StepCtx.Provider value={onStep ?? null}>
+    <Handover d={d} now={now} done={done} go={() => {}} by="" focus={focus} onClearFocus={onClearFocus} initial={initial} />
+  </StepCtx.Provider></OpenItemCtx.Provider></RoleCtx.Provider>;
+}
+const StepCtx = createContext<((id: string) => void) | null>(null);
+const FOS = ['All', 'FO1', 'FO2', 'FO3'];
+function Handover({ d, now, done, focus = null, onClearFocus, initial }: P & { focus?: string | null; onClearFocus?: () => void; initial?: 'blind' | 'neut' }) {
+  const all = d.points ?? [];
+  const [fo, setFo] = useState('All');
+  const mine = (p: TrkPoint) => (fo === 'All' || p.fo === fo) && (!focus || p.items.includes(focus) || (p.partOf ?? []).includes(focus));
+  const pts = all.filter(mine);
+  const loops = pts.filter((p) => p.kind === 'neut' && !withReactor(p) && (p.stepId || (!p.items.includes(p.ref) && (p.method !== 'spray' || p.status !== 'open')) || p.items.includes(focus ?? '\u0000')));
   const blinds = pts.filter((p) => p.kind === 'blind');
-  const openL = loops.filter((p) => !pointComplete(p) && !isNR(p)), nrL = loops.filter(isNR), openB = blinds.filter((p) => !pointComplete(p));
+  const eqLines = d.activities.filter(equipBlind).filter((a) => !focus || a.key === focus).sort((a, b) => a.key.localeCompare(b.key, 'en', { numeric: true }));
+  const openL = loops.filter((p) => !pointComplete(p) && !isNR(p)), nrL = loops.filter(isNR), openB = blinds.filter((p) => !pointComplete(p)), openE = eqLines.filter((a) => !a.actualFinish);
   const [showNR, setShowNR] = useState(false);
-  const waiting = d.equipment.filter((e) => e.tracked && e.stage === 0 && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e))
-    .map((e) => ({ e, iso: isoState(e.tag, 0, pts) })).filter((x): x is { e: TrkEquipment; iso: NonNullable<ReturnType<typeof isoState>> } => !!x.iso && x.iso.state !== 'ho');
+  const waiting = d.equipment.filter((e) => e.tracked && e.stage === 0 && (!focus || e.tag === focus) && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e))
+    .map((e) => ({ e, iso: isoState(e.tag, 0, all) })).filter((x): x is { e: TrkEquipment; iso: NonNullable<ReturnType<typeof isoState>> } => !!x.iso && x.iso.state !== 'ho');
   const blocked = waiting.filter((x) => x.iso.state !== 'ready'), ready = waiting.filter((x) => x.iso.state === 'ready');
   const back = blinds.filter((b) => b.status === 'in');
-  const [v, setV] = useState<'block' | 'neut' | 'blind' | 'list' | 'back'>(() => (blocked.length || openB.length || openL.length ? 'block' : 'back'));
+  const [v, setV] = useState<'block' | 'neut' | 'blind' | 'list' | 'back'>(() => initial ?? (blocked.length || openB.length || openL.length ? 'block' : 'back'));
   const [showDone, setShowDone] = useState(false); const [item, setItem] = useState<TrkEquipment | null>(null);
-  const rank = (p: TrkPoint) => (p.status !== 'open' ? 0 : missingBlinds(p, pts).length ? 2 : 1);
+  const openItem = useContext(OpenItemCtx);
+  const toItem = (tag: string) => { if (openItem) return openItem(tag); setItem(d.equipment.find((e) => e.tag === tag) ?? (d.loopItems ?? []).find((e) => e.tag === tag) ?? null); };
+  const rank = (p: TrkPoint) => (p.status !== 'open' ? 0 : missingBlinds(p, all).length ? 2 : 1);
+  const gate = all.filter((p) => p.kind === 'neut' && p.beforeHo), soaking = all.filter((p) => p.kind === 'neut' && p.status === 'soaking').length;
+  const bAll = all.filter((p) => p.kind === 'blind'), eAll = d.activities.filter(equipBlind);
   return (<>
-    <div className="-mx-3 mb-2.5 flex gap-1.5 overflow-x-auto px-3 [scrollbar-width:none]">{([['block', `Blocking ${blocked.length}`], ['neut', `Neutralization ${openL.length}`], ['blind', `Blinds ${openB.length}`], ['list', 'Blind list'], ['back', `Return ${back.length}`]] as const).map(([k, l]) =>
+    <p className="mx-1 mb-2 text-[12px] text-slate-600">Blinds in <b>{bAll.filter(pointComplete).length + eAll.filter((a) => a.actualFinish).length}/{bAll.length + eAll.length}</b> · neutralized <b>{gate.filter(pointComplete).length}/{gate.length}</b>{soaking ? <> · soaking <b>{soaking}</b></> : null}</p>
+    <div className="-mx-3 mb-2 flex gap-1.5 overflow-x-auto px-3 [scrollbar-width:none]">{([['block', `Blocking ${blocked.length}`], ['neut', `Neutralization ${openL.length}`], ['blind', `Blinds ${openB.length + openE.length}`], ['list', 'Blind list'], ['back', `Return ${back.length}`]] as const).map(([k, l]) =>
       <button key={k} type="button" onClick={() => setV(k)} className={cx('min-h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-[12px] font-bold', v === k ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>)}</div>
+    {(v === 'neut' || v === 'blind' || focus) && <div className="mb-2 flex flex-wrap gap-1.5">
+      {v !== 'block' && FOS.map((x) => <button key={x} type="button" onClick={() => setFo(x)} className={cx('min-h-8 rounded-full px-3 text-[12px] font-semibold', fo === x ? 'bg-brand-500 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{x}</button>)}
+      {focus && <button type="button" onClick={onClearFocus} className="min-h-8 rounded-full bg-amber-100 px-3 text-[12px] font-semibold text-amber-900">{focus} ✕</button>}
+    </div>}
     {v === 'block' && <>
       <p className="mx-1 mb-2 text-[12px] text-slate-500">Items not handed over yet, and what each one waits for. Tap a line to update it.</p>
       {blocked.length > 0 && <List>{blocked.map(({ e, iso }) => { const loopsOpen = iso.loops.filter((p) => !pointComplete(p));
         return <div key={e.id} className={cx(ROW, 'items-start')}>
           <Tagged tag={short(e.combine ?? e.tag)}>
-            {iso.missing.map((r) => { const b = blinds.find((x) => x.ref === r); const job = b && (d.pointSteps ?? []).find((c) => (c.linkPoints ?? []).includes(b.id) && c.startAt && !c.doneAt);
+            {iso.missing.map((r) => { const b = bAll.find((x) => x.ref === r); const job = b && (d.pointSteps ?? []).find((c) => (c.linkPoints ?? []).includes(b.id) && c.startAt && !c.doneAt);
               return <button key={r} type="button" onClick={() => setV('blind')} className="block w-full truncate text-left text-[12px] text-slate-700">🔒 <b>{r}</b> not in{job ? ` · ${job.crane ? '🏗 ' : ''}${job.text.split(/,|:/)[0]} I/P` : ''}</button>; })}
             {loopsOpen.map((p) => { const left = soakLeft(p, now);
               return <button key={p.id} type="button" onClick={() => setV('neut')} className="block w-full truncate text-left text-[12px] text-slate-700">💧 <b>{p.ref}</b> {p.holdReason ? `on hold · ${p.holdReason}` : neutLabel(p).toLowerCase()}{p.status === 'soaking' && left !== null ? ` · ${left > 0 ? `${hoursText(left)} left` : 'soak time reached'}` : ''}</button>; })}
@@ -690,41 +712,98 @@ function Handover({ d, now, done }: P) {
       {!blocked.length && !ready.length && <Card><p className="text-sm font-semibold text-green-800">✓ Everything is handed over.</p></Card>}
     </>}
     {v === 'neut' && <>
-      {[...openL].sort((a, b) => rank(a) - rank(b) || a.sort - b.sort).map((p) => <Loop key={p.id} d={d} p={p} now={now} done={done} />)}
+      {[...openL].sort((a, b) => rank(a) - rank(b) || a.sort - b.sort).map((p) => <Loop key={p.id} d={d} p={p} now={now} done={done} toItem={toItem} />)}
       {!openL.length && <Card><p className="text-sm font-semibold text-green-800">✓ All required loops neutralized.</p></Card>}
       {nrL.length > 0 && <button type="button" onClick={() => setShowNR((x) => !x)} className="mx-1 mt-1 block text-[12px] font-semibold text-slate-500">{showNR ? '▾' : '▸'} Not required (N/R) · {nrL.length}</button>}
-      {showNR && <div className="mt-2 space-y-2">{nrL.map((p) => <Loop key={p.id} d={d} p={p} now={now} done={done} />)}</div>}
-      <button type="button" onClick={() => setShowDone((x) => !x)} className="mx-1 mt-1 text-[12px] font-semibold text-slate-500">{showDone ? '▾' : '▸'} Neutralized ({loops.length - openL.length})</button>
-      {showDone && <div className="mt-2"><List>{loops.filter(pointComplete).map((p) => <div key={p.id} className={ROW}><span className="min-w-0 flex-1"><b className="block truncate text-[13px]">{p.ref} · {p.name}</b><span className="block text-[11px] text-slate-500">Neutralized {when(p.doneAt)}</span></span><span className="shrink-0 rounded-md bg-green-100 px-1.5 text-[11px] font-bold text-green-800">✓</span></div>)}</List></div>}
+      {showNR && <div className="mt-2 space-y-2">{nrL.map((p) => <Loop key={p.id} d={d} p={p} now={now} done={done} toItem={toItem} />)}</div>}
+      <button type="button" onClick={() => setShowDone((x) => !x)} className="mx-1 mt-1 text-[12px] font-semibold text-slate-500">{showDone ? '▾' : '▸'} Neutralized ({loops.filter(pointComplete).length})</button>
+      {showDone && <div className="mt-2"><List>{loops.filter(pointComplete).map((p) => <DoneLoop key={p.id} d={d} p={p} now={now} done={done} toItem={toItem} />)}</List></div>}
     </>}
-    {v === 'blind' && (['segregation', 'hp_critical'] as const).map((g) => { const xs = blinds.filter((b) => (g === 'hp_critical') === (b.grp === 'hp_critical')); if (!xs.length) return null;
-      return <div key={g}><Sec>{g === 'hp_critical' ? 'HP critical loop' : 'Segregation'} · {xs.filter(pointComplete).length}/{xs.length} in</Sec>
-        <List>{[...xs].sort((a, b) => Number(pointComplete(a)) - Number(pointComplete(b))).map((b) => <BlindRow key={b.id} b={b} done={done} />)}</List></div>; })}
-    {v === 'list' && <BlindList d={d} onItem={(tag) => setItem(d.equipment.find((e) => e.tag === tag) ?? (d.loopItems ?? []).find((e) => e.tag === tag) ?? null)} />}
-    {item && <ItemSheet d={d} e={item} done={done} onClose={() => setItem(null)} />}
+    {v === 'blind' && <>
+      {(['segregation', 'hp_critical'] as const).map((g) => { const xs = blinds.filter((b) => (g === 'hp_critical') === (b.grp === 'hp_critical')); if (!xs.length) return null;
+        return <BlindGroup key={g} title={g === 'hp_critical' ? 'HP critical loop' : 'Segregation'} n={xs.filter(pointComplete).length} total={xs.length}
+          open={xs.filter((b) => !pointComplete(b)).map((b) => <BlindRow key={b.id} b={b} done={done} toItem={toItem} />)} closed={xs.filter(pointComplete).map((b) => <BlindRow key={b.id} b={b} done={done} toItem={toItem} />)} />; })}
+      {eqLines.length > 0 && fo === 'All' && <BlindGroup title="Equipment" n={eqLines.length - openE.length} total={eqLines.length}
+        open={openE.map((a) => <EqBlindRow key={a.id} a={a} done={done} toItem={toItem} />)} closed={eqLines.filter((a) => a.actualFinish).map((a) => <EqBlindRow key={a.id} a={a} done={done} toItem={toItem} />)} />}
+    </>}
+    {v === 'list' && <BlindList d={d} onItem={toItem} />}
     {v === 'back' && <>
       <p className="mx-1 mb-2 text-[12px] text-slate-500">End of the shutdown: take the blinds out as each item is boxed up. {blinds.filter((b) => b.status === 'out').length}/{blinds.length} out.</p>
-      {back.length > 0 && <List>{back.map((b) => <BlindRow key={b.id} b={b} done={done} out />)}</List>}
+      {back.length > 0 && <List>{back.map((b) => <BlindRow key={b.id} b={b} done={done} toItem={toItem} out />)}</List>}
       {!back.length && <Card><p className="text-sm text-slate-600">No blind in.</p></Card>}
     </>}
+    {item && <ItemSheet d={d} e={item} done={done} onClose={() => setItem(null)} />}
   </>);
 }
-function BlindRow({ b, done, out = false }: { b: TrkPoint; done: Done; out?: boolean }) {
-  const [busy, setBusy] = useState(false);
+/** A group of blinds: those not in listed, those in folded (there are many). */
+function BlindGroup({ title, n, total, open, closed }: { title: string; n: number; total: number; open: React.ReactNode[]; closed: React.ReactNode[] }) {
+  const [show, setShow] = useState(false);
+  return <div><Sec>{title} · {n}/{total} in</Sec>
+    {open.length > 0 && <List>{open}</List>}
+    {closed.length > 0 && <button type="button" onClick={() => setShow((x) => !x)} className="mx-1 mb-2 block text-[12px] font-semibold text-status-green">{show ? '▾' : '▸'} ✓ In ({closed.length})</button>}
+    {show && <List>{closed}</List>}
+  </div>;
+}
+/** One blind, one line: in / out (out only from the Return list); a tap on the name shows its items, note and undo. */
+function BlindRow({ b, done, toItem, out = false }: { b: TrkPoint; done: Done; toItem: (tag: string) => void; out?: boolean }) {
+  const [busy, setBusy] = useState(false); const [more, setMore] = useState(false); const [err, setErr] = useState<unknown>(null);
   const back = { status: b.status, in_at: b.inAt ?? null, out_at: b.outAt ?? null };
-  const go = async (patch: Parameters<typeof setPoint>[1], msg: string) => { setBusy(true); try { await setPoint(b.id, patch); done(msg, () => setPoint(b.id, back)); } finally { setBusy(false); } };
+  const go = async (patch: Parameters<typeof setPoint>[1], msg: string) => { setBusy(true); setErr(null); try { await setPoint(b.id, patch); done(msg, () => setPoint(b.id, back)); } catch (x) { setErr(x); } finally { setBusy(false); } };
   const at = new Date().toISOString();
   return (
-    <div className={ROW}>
-      <b className={TAG}>{b.ref}</b><span className="min-w-0 flex-1"><span className="block truncate text-[12px] text-slate-700">{b.name}</span>{b.inAt && <span className="block text-[11px] text-slate-500">in {when(b.inAt)}</span>}</span>
-      {b.status === 'open' ? <button type="button" disabled={busy} onClick={() => go({ status: 'in', in_at: at }, `${b.ref} in.`)} className="min-h-8 rounded-lg bg-brand-700 px-3 text-[13px] font-bold text-white">✓ In</button>
-        : b.status === 'in' ? <><span className="rounded-md bg-green-100 px-1.5 py-0.5 text-[11px] font-bold text-green-800">✓ In</span>{out && <button type="button" disabled={busy} onClick={() => go({ status: 'out', out_at: at }, `${b.ref} out (de-blinded).`)} className="min-h-9 rounded-xl px-3 text-xs font-bold text-brand-700 ring-1 ring-slate-300">Out</button>}</>
-        : <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-600">Out</span>}
+    <div className="border-b border-slate-100 last:border-b-0">
+      <div className={cx(ROW, 'border-b-0')}>
+        <button type="button" onClick={() => setMore((x) => !x)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+          <b className="w-[60px] shrink-0 text-[12px]">{b.ref}</b>
+          <span className="min-w-0 flex-1 truncate text-[12px] text-slate-700">{b.name}{b.remark ? ' · 📝' : ''}</span>
+          {b.inAt && b.status !== 'open' && <span className="shrink-0 text-[10px] text-slate-500">{when(b.inAt)}</span>}
+        </button>
+        {b.status === 'open' ? <button type="button" disabled={busy} onClick={() => go({ status: 'in', in_at: at }, `${b.ref} in.`)} className="min-h-8 shrink-0 rounded-lg bg-brand-700 px-3 text-[12px] font-bold text-white">In</button>
+          : b.status === 'in' ? (out ? <button type="button" disabled={busy} onClick={() => go({ status: 'out', out_at: at }, `${b.ref} out (de-blinded).`)} className="min-h-8 shrink-0 rounded-lg px-3 text-[12px] font-bold text-brand-700 ring-1 ring-slate-300">Out</button>
+            : <span className="shrink-0 rounded-md bg-green-100 px-1.5 py-0.5 text-[11px] font-bold text-green-800">✓ In</span>)
+          : <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-600">Out</span>}
+      </div>
+      {more && <div className="mx-2.5 mb-1.5 space-y-1.5 rounded-lg bg-slate-50 p-2 text-[12px]">
+        {b.detail && b.detail !== b.name && <p className="text-slate-600">{b.detail}</p>}
+        <div className="flex flex-wrap gap-1">{b.items.length ? b.items.map((t) => <button key={t} type="button" onClick={() => toItem(t)} className="rounded bg-white px-1.5 py-0.5 text-[11px] font-semibold text-brand-700 ring-1 ring-slate-200">{t} ›</button>) : <span className="text-amber-800">No item linked</span>}{b.fo && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">{b.fo}</span>}</div>
+        <PointNote p={b} done={done} />
+        {b.status !== 'open' && <button type="button" disabled={busy} onClick={() => go(b.status === 'out' ? { status: 'in', out_at: null } : { status: 'open', in_at: null }, `${b.ref} back to ${b.status === 'out' ? 'in' : 'not in'}.`)} className="text-[11px] font-semibold text-red-700">↶ Undo {b.status === 'out' ? 'out' : 'in'}</button>}
+      </div>}
+      {err != null && <ErrorBox error={err} />}
     </div>
   );
 }
-function Loop({ d, p, now, done }: { d: TrackerData; p: TrkPoint; now: number; done: Done }) {
-  const manage = useCanManage();
+/** An item's own blind line (bar chart, M & I): In stamps it finished. */
+function EqBlindRow({ a, done, toItem }: { a: TrkActivity; done: Done; toItem: (tag: string) => void }) {
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const back = { actual_start: a.actualStart ?? null, actual_finish: a.actualFinish ?? null, time_reason: 'Undo' };
+  const go = async (patch: Parameters<typeof setActivity>[1], msg: string) => { setBusy(true); setErr(null); try { await setActivity(a.id, patch); done(msg, () => setActivity(a.id, back)); } catch (x) { setErr(x); } finally { setBusy(false); } };
+  return <div className="border-b border-slate-100 last:border-b-0"><div className={cx(ROW, 'border-b-0')}>
+    <button type="button" onClick={() => toItem(a.key)} className="flex min-w-0 flex-1 items-center gap-2 text-left"><b className="w-[84px] shrink-0 truncate text-[12px]">{short(a.key)}</b><span className="min-w-0 flex-1 truncate text-[12px] text-slate-700">{a.activity}</span>
+      {a.actualFinish && <span className="shrink-0 text-[10px] text-slate-500">{when(a.actualFinish)}</span>}</button>
+    {a.actualFinish ? <button type="button" disabled={busy} onClick={() => go({ actual_start: null, actual_finish: null }, `${a.key}: blind back to not in.`)} title="Undo" className="shrink-0 rounded-md bg-green-100 px-1.5 py-0.5 text-[11px] font-bold text-green-800">✓ In</button>
+      : <button type="button" disabled={busy} onClick={() => { const t = new Date().toISOString(); void go({ actual_start: a.actualStart ?? t, actual_finish: t }, `${a.key} blinded.`); }} className="min-h-8 shrink-0 rounded-lg bg-brand-700 px-3 text-[12px] font-bold text-white">In</button>}
+  </div>{err != null && <ErrorBox error={err} />}</div>;
+}
+function PointNote({ p, done }: { p: TrkPoint; done: Done }) {
+  const [note, setNote] = useState(p.remark ?? ''); const [busy, setBusy] = useState(false); const was = p.remark ?? null;
+  return <div className="flex gap-1.5"><input className="input min-h-8 flex-1 text-[12px]" placeholder="Note" value={note} onChange={(x) => setNote(x.target.value)} />
+    <button type="button" disabled={busy || (note.trim() || null) === was} onClick={async () => { setBusy(true); try { await setPoint(p.id, { remark: note.trim() || null }); done(`${p.ref}: note saved.`, () => setPoint(p.id, { remark: was })); } finally { setBusy(false); } }} className="min-h-8 rounded-lg bg-white px-2.5 text-[12px] font-bold text-brand-700 ring-1 ring-slate-300 disabled:opacity-50">Save</button></div>;
+}
+/** A neutralized loop, one line; a tap opens it. */
+function DoneLoop({ d, p, now, done, toItem }: { d: TrackerData; p: TrkPoint; now: number; done: Done; toItem: (tag: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return <><button type="button" onClick={() => setOpen(true)} className={ROW}><span className="min-w-0 flex-1"><b className="block truncate text-[13px]">{p.ref} · {p.name}</b><span className="block text-[11px] text-slate-500">Neutralized {when(p.doneAt)}</span></span><span className="shrink-0 rounded-md bg-green-100 px-1.5 text-[11px] font-bold text-green-800">✓</span></button>
+    {open && <LoopOpen d={d} p={p} now={now} done={done} toItem={toItem} onClose={() => setOpen(false)} />}</>;
+}
+/** The loop's full sheet (shared with the Section Head mode). */
+function LoopOpen({ d, p, now, done, toItem, onClose }: { d: TrackerData; p: TrkPoint; now: number; done: Done; toItem: (tag: string) => void; onClose: () => void }) {
+  const role = useContext(RoleCtx), onStep = useContext(StepCtx);
+  return <LoopDetail p={p} d={{ ...d, trackerId: d.tracker.id }} isHead={role === 'head'} canEdit canAttach={role !== 'controller'} now={now} onClose={onClose} onItem={(t) => { onClose(); toItem(t); }} onStep={onStep ?? undefined} onDone={done} />;
+}
+function Loop({ d, p, now, done, toItem }: { d: TrackerData; p: TrkPoint; now: number; done: Done; toItem: (tag: string) => void }) {
+  const manage = useCanManage(), head = useContext(RoleCtx) === 'head';
+  const [sheet, setSheet] = useState(false); const [force, setForce] = useState(false);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const jobs = (d.pointSteps ?? []).filter((c) => c.pointId === p.id && c.kind === 'step').map((c) => linkedStep(c, d.activities, d.points ?? []));
   const missing = missingBlinds(p, d.points ?? []);
@@ -753,7 +832,7 @@ function Loop({ d, p, now, done }: { d: TrackerData; p: TrkPoint; now: number; d
   };
   return (
     <Card>
-      <div className="flex items-start justify-between gap-2"><b className="text-[14px] leading-snug">{p.ref} · {p.name}</b><span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold', isNR(p) ? 'bg-slate-100 text-slate-700' : p.status === 'open' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{isNR(p) ? 'N/R' : p.holdReason ? 'On hold' : neutLabel(p)}</span></div>
+      <div className="flex items-start justify-between gap-2"><button type="button" onClick={() => setSheet(true)} className="min-w-0 text-left text-[14px] font-bold leading-snug">{p.ref} · {p.name} <span className="font-normal text-brand-600">›</span></button><span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold', isNR(p) ? 'bg-slate-100 text-slate-700' : p.status === 'open' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{isNR(p) ? 'N/R' : p.holdReason ? 'On hold' : neutLabel(p)}</span></div>
       {p.holdReason && <p className="text-xs font-semibold text-red-700">⏸ {p.holdReason}</p>}
       {req === 'not_required' && <p className="text-xs font-semibold text-slate-700">N/R · {p.requirementReason}{p.requirementBy ? ` · ${p.requirementBy}` : ''}{p.requirementAt ? ` ${when(p.requirementAt)}` : ''}</p>}
       {req === 'pending' && <p className="text-xs font-semibold text-amber-800">Neutralization decision pending</p>}
@@ -765,10 +844,15 @@ function Loop({ d, p, now, done }: { d: TrackerData; p: TrkPoint; now: number; d
       {req !== 'not_required' && <div className="mt-2 flex gap-1.5">
         {job && <button type="button" disabled={busy} onClick={() => jobTap(job)} className={cx('min-h-9 flex-1 rounded-xl px-2 text-[13px] font-bold', job.startAt ? 'bg-amber-400 text-amber-950' : 'bg-white text-brand-700 ring-1 ring-slate-300')}>{job.startAt ? '✓ Job done' : '▶ Start job'}</button>}
         {nx && !missing.length && !before && !waiting.length && <button type="button" disabled={busy} onClick={() => run(() => setPoint(p.id, { status: nx[0], [nx[2]]: new Date().toISOString() }), `${p.ref}: ${nx[1].replace(/^[▶✓] /, '')}.`, () => setPoint(p.id, { status: p.status, [nx[2]]: null }))} className="min-h-9 flex-1 rounded-xl bg-brand-700 px-2 text-[13px] font-bold text-white">{nx[1]}</button>}
+        {nx && head && p.status === 'open' && (missing.length > 0 || before > 0 || waiting.length > 0) && <button type="button" disabled={busy} onClick={() => setForce(true)} className="min-h-9 flex-1 rounded-xl bg-slate-200 px-2 text-[13px] font-bold text-slate-700">🔒 Start anyway</button>}
         <button type="button" disabled={busy} onClick={() => (p.holdReason ? run(() => setPoint(p.id, { hold_reason: null }), `${p.ref}: resumed.`, () => setPoint(p.id, { hold_reason: p.holdReason ?? null })) : setHoldOpen((x) => !x))} className="min-h-9 rounded-xl px-3 text-[12px] font-semibold text-slate-700 ring-1 ring-slate-300">{p.holdReason ? 'Resume' : 'Hold'}</button>
         {diagram}
       </div>}
       {req === 'not_required' && <div className="mt-1 flex justify-end">{diagram}</div>}
+      {force && nx && <div className="mt-2 rounded-lg bg-red-50 p-2 text-xs text-red-900">Start {p.ref} {missing.length ? `without ${missing.join(', ')}` : waiting.length ? `before ${waiting.join(', ')}` : `before ${before} job${before > 1 ? 's are' : ' is'} finished`}? It is logged as a Section Head override.
+        <div className="mt-1.5 flex gap-1.5"><button type="button" disabled={busy} onClick={() => { setForce(false); void run(() => setPoint(p.id, { status: nx[0], [nx[2]]: new Date().toISOString() }), `${p.ref}: ${p.method === 'spray' ? 'spraying' : 'filling'} (override).`, () => setPoint(p.id, { status: p.status, [nx[2]]: null })); }} className="min-h-8 rounded-lg bg-brand-700 px-3 font-bold text-white">Start anyway</button>
+          <button type="button" onClick={() => setForce(false)} className="min-h-8 rounded-lg bg-white px-3 font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button></div></div>}
+      {sheet && <LoopOpen d={d} p={p} now={now} done={done} toItem={toItem} onClose={() => setSheet(false)} />}
       {holdOpen && !p.holdReason && <div className="mt-2"><PendingForm initial={null} busy={busy} onSave={(r) => { setHoldOpen(false); void run(() => setPoint(p.id, { hold_reason: r }), `${p.ref}: on hold.`, () => setPoint(p.id, { hold_reason: null })); }} /></div>}
       {p.status === 'open' && manage && (nr !== null
         ? <div className="mt-2 flex gap-1.5"><input autoFocus className="input min-h-9 flex-1 text-[13px]" placeholder="Why not required" value={nr} onChange={(x) => setNr(x.target.value)} />

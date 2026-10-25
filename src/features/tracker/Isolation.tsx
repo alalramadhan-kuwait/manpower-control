@@ -1,13 +1,11 @@
-// Isolation & neutralization: the critical blinds (segregation points) and the neutralization loops and items, entered
-// once here. The database moves the rest: the items (handed over when all their blinds are in and the neutralization
-// before handover is done), the guideline step of each row and the soda-ash bar-chart lines.
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { loopHandover, type TrkEquipment, type TrkRtj, linkedStep, withReactor, NEUT_FLOW, NEUT_LABEL, neutLabel, equipBlind, loopLines, missingBlinds, waitingSteps, type LuStream, type TrkIat, hoursText, kwDay, kwTime, pointComplete, soakLeft, type PointStatus, type TrkActivity, type TrkPoint, type TrkPointStep, type TrkStep } from '@/core/tracker';
+// Isolation & neutralization pieces shared by the Handover page of both modes: a loop opened (its procedure, steps with
+// times, field jobs, diagrams, items and RTJs, note) and the loop scope (its items handed over and its RTJs).
+import { createContext, useContext, useState, type ReactNode } from 'react';
+import { loopHandover, type TrkEquipment, type TrkRtj, linkedStep, NEUT_FLOW, neutLabel, loopLines, missingBlinds, waitingSteps, type LuStream, type TrkIat, hoursText, kwDay, kwTime, pointComplete, soakLeft, type TrkActivity, type TrkPoint, type TrkPointStep, type TrkStep } from '@/core/tracker';
 import { addPointStep, setActivity, setEquipment, setPoint, setPointStep, setPointStepTime } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, cx } from '@/ui/components';
-import { CRow, IsoChip, MenuBtn, RowBtn, RowList, Tile } from './ui';
+import { RowBtn } from './ui';
 import { PendingForm } from './TrackerSheets';
-import { BlindList } from './BlindList';
 import { LoopDiagrams } from './LoopDiagram';
 
 /** The SOP lines the Section Head follows: the timed field jobs (crane, blinds, elbows, scaffolding) and the lab pH.
@@ -15,101 +13,6 @@ import { LoopDiagrams } from './LoopDiagram';
 export const followed = (c: TrkPointStep) => c.kind === 'step' || /\bpH\b/.test(c.text);
 
 const when = (iso: string | null) => (iso ? `${kwDay(iso)} ${kwTime(iso)}` : '');
-const BLIND_LABEL: Record<string, string> = { open: 'Not blinded', in: 'Blinded', out: 'Deblinded' };
-const SPRAY: Record<string, [PointStatus, string] | undefined> = { open: ['filling', '▶ Spray'], filling: ['done', '✓ Done'] };
-const NEXT: Record<string, [PointStatus, string] | undefined> = {
-  open: ['filling', '▶ Fill'], filling: ['soaking', 'Soaking'], soaking: ['draining', 'Draining'], draining: ['done', '✓ Done'],
-};
-
-function PointRow({ p, points, acts = [], lineup = [], iats = [], steps = [], checks: raw = [], trackerId, isHead, canAttach = false, now, canEdit, onItem, onStep, onDone }: { p: TrkPoint; points: TrkPoint[]; acts?: TrkActivity[]; lineup?: LuStream[]; iats?: TrkIat[]; steps?: TrkStep[]; checks?: TrkPointStep[]; trackerId?: string; isHead: boolean; canAttach?: boolean; now: number; canEdit: boolean; onItem: (tag: string) => void; onStep?: (id: string) => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
-  const [force, setForce] = useState(false); const [sheet, setSheet] = useState(false);
-  const checks = raw.map((c) => linkedStep(c, acts, points));
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  const [note, setNote] = useState(p.remark ?? '');
-  useEffect(() => { setBusy(false); }, [p.status, p.holdReason, p.remark, p.inAt, p.outAt]);
-  async function run(patch: Parameters<typeof setPoint>[1], msg: string, close?: () => void, undo?: Parameters<typeof setPoint>[1]) { setBusy(true); setErr(null); try { await setPoint(p.id, patch); close?.(); onDone(msg, undo ? () => setPoint(p.id, undo) : undefined); window.setTimeout(() => setBusy(false), 8000); } catch (e) { setErr(e); setBusy(false); } }
-  const blind = p.kind === 'blind';
-  const left = soakLeft(p, now);
-  const back = blind ? (p.status === 'out' ? 'in' : 'open') : p.method === 'spray' ? (p.status === 'done' ? 'filling' : 'open') : NEUT_FLOW[Math.max(0, NEUT_FLOW.indexOf(p.status as typeof NEUT_FLOW[number]) - 1)];
-  const spray = p.method === 'spray';
-  const next = blind ? undefined : (spray ? SPRAY : NEXT)[p.status];
-  const items = p.items.join(', ');
-  // the name often starts with the ref (E-12-205 · E-12-205 neutralization), show it once
-  const name = p.name.startsWith(p.ref) ? p.name.slice(p.ref.length).trim() : p.name;
-  // a loop waits for its blinds: locked until M & I has them in (the Section Head may start it anyway)
-  const missing = !blind && p.status === 'open' ? missingBlinds(p, points) : [];
-  // the reactor body spray waits for the catalyst dumping
-  const waiting = !blind && p.status === 'open' ? waitingSteps(p, acts) : [];
-  // and for its field jobs before the fill (crane lifts, blinding, scaffolding): started and finished first
-  const jobs = !blind && p.status === 'open' ? checks.filter((c) => c.kind === 'step' && c.phase === 'before' && !c.doneAt) : [];
-  const locked = missing.length + waiting.length + jobs.length > 0;
-  const loopState = pointComplete(p) ? 'ready' : p.status !== 'open' ? 'neut' : locked ? 'blind' : 'idle';
-  const dot = pointComplete(p) ? 'green' : locked ? 'red' : left !== null && left <= 0 ? 'amber' : p.status !== 'open' ? 'amber' : 'grey';
-  const reqName = (r: string) => points.find((b) => b.kind === 'blind' && b.ref === r)?.name ?? '';
-  const sub = blind
-    ? (p.status === 'open' ? items || '—' : `✓ In ${when(p.inAt)}${p.outAt ? ` · out ${when(p.outAt)}` : ''}${p.updatedBy ? ` · ${p.updatedBy}` : ''}`)
-    : locked ? <b className="text-red-800">🔒 {missing.length ? `Needs blinds: ${missing.map((r) => `${r} ${reqName(r)}`.trim()).join(', ')}` : waiting.length ? `After: ${waiting.every((x) => /dump/i.test(x)) ? 'catalyst dumping' : waiting.join(', ')}` : `Needs ${jobs.length} job${jobs.length > 1 ? 's' : ''} done: ${jobs.map((c) => c.text.split(',')[0]).join(' · ')}`}</b>
-    : <>{p.holdReason ? <b className="text-red-800">⏸ On hold: {p.holdReason} · </b> : null}{(p.requires ?? []).length > 0 && p.status === 'open' ? 'Blinds ready ✓ · ' : ''}{neutLabel(p)}{left !== null ? <b className={left > 0 ? 'text-amber-800' : 'text-green-800'}> · {left > 0 ? `${hoursText(left)} left` : 'soak reached'}</b> : null}{p.status === 'done' && p.doneAt ? ` ${when(p.doneAt)}` : ''}</>;
-  const extra = blind ? null : <>
-    {locked && (p.requires ?? []).map((r) => <IsoChip key={r} state={missing.includes(r) ? 'blind' : 'ready'}>{r} {missing.includes(r) ? '✗' : '✓'}</IsoChip>)}
-    {p.items.map((t) => <IsoChip key={t} state={loopState}>{t}</IsoChip>)}
-    {checks.some((c) => c.kind === 'step' && c.startAt && !c.doneAt) && <span className="rounded bg-brand-600 px-1 text-[10px] font-bold text-white">▶ {checks.filter((c) => c.kind === 'step' && c.startAt && !c.doneAt).length} running</span>}
-    {checks.some((c) => c.crane && !c.doneAt) && <span className="rounded bg-status-red px-1 text-[10px] font-bold text-white">🏗 Crane</span>}
-    {checks.some(followed) && <span className={cx('rounded px-1 text-[10px] font-bold', checks.filter(followed).every((c) => c.doneAt) ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-600')}>📋 {checks.filter(followed).filter((c) => c.doneAt).length}/{checks.filter(followed).length}</span>}
-    {(p.partOf ?? []).length > 0 && <span className="text-[11px] font-semibold text-slate-500">part of {p.partOf!.map((t) => t.replace('-12-', '-')).join(', ')} · on its own</span>}
-  </>;
-  const action = !canEdit ? null
-    : blind ? (p.status === 'open' ? <RowBtn disabled={busy} onClick={() => run({ status: 'in' }, `${p.ref} blinded.`)}>Blinded</RowBtn>
-      : p.status === 'in' ? <RowBtn tone="ghost" disabled={busy} onClick={() => run({ status: 'out' }, `${p.ref} deblinded.`)}>Deblinded</RowBtn> : <span className="shrink-0 text-[11px] font-bold text-brand-600">Out</span>)
-    : locked && !force ? <RoundBtn kind="lock" label={spray ? 'Spray' : 'Fill'} disabled={busy || !isHead} onClick={() => setForce(true)} />
-    : next ? <RoundBtn kind={p.status === 'open' ? 'start' : 'finish'} label={next[1].replace(/^[▶✓]\s*/, '')} disabled={busy}
-        onClick={() => run({ status: next[0], ...(p.holdReason ? { hold_reason: null } : {}) }, `${p.ref}: ${(next[0] === 'filling' && spray ? 'spraying' : NEUT_LABEL[next[0]].toLowerCase())}.${p.holdReason ? ' Hold ended.' : ''}`, undefined,
-          { status: p.status, ...(p.holdReason ? { hold_reason: p.holdReason } : {}) })} />
-    : <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100 text-sm font-bold text-status-green">✓</span>;
-  return (
-    <>
-      {force && locked && <div className="mx-2.5 mt-1 rounded-lg bg-red-50 p-2 text-xs text-red-900">Start {p.ref} {missing.length ? `without ${missing.join(', ')}` : waiting.length ? `before ${waiting.join(', ')}` : `before ${jobs.length} job${jobs.length > 1 ? 's are' : ' is'} finished`}? It is logged as a Section Head override.
-        <div className="mt-1.5 flex gap-1.5"><RowBtn tone="navy" disabled={busy} onClick={() => run({ status: 'filling' }, `${p.ref}: ${spray ? 'spraying' : 'filling'} (override).`, () => setForce(false))}>Start anyway</RowBtn><RowBtn tone="ghost" onClick={() => setForce(false)}>Cancel</RowBtn></div></div>}
-      <CRow dot={dot} extra={extra} title={<>{p.ref}{name ? ` · ${name}` : ''}{p.remark ? <span className="font-normal text-slate-500"> · 📝</span> : null}</>} sub={blind ? sub : <span className="flex items-center gap-2"><PhaseDots p={p} /><span className="min-w-0 truncate">{sub}</span></span>} action={action}
-        onTitle={!blind ? () => setSheet(true) : p.items.length === 1 ? () => onItem(p.items[0]) : undefined}
-        menu={(close) => (
-          <>
-            {p.detail && p.detail !== p.name && <p className="text-[11px] text-slate-600">{p.detail}</p>}
-            {p.remark && <p className="text-xs italic text-slate-600">{p.remark}</p>}
-            {p.kind === 'neut' && (() => { const ll = loopLines(p, lineup).lines; const onLine = iats.filter((i) => i.status === 'open' && i.line && ll.includes(i.line));
-              return ll.length > 0 ? <p className="text-[11px] text-slate-600">P&amp;ID lines: <b>{ll.join(', ')}</b>{onLine.map((i) => <span key={i.id} className="ml-1 rounded bg-amber-200 px-1 font-bold text-slate-800">IAT {i.iatNo} on {i.line}</span>)}</p> : null; })()}
-            {p.items.length > 0 && <div className="flex flex-wrap gap-1">{p.items.map((t) => <button key={t} type="button" onClick={() => onItem(t)} className="rounded bg-white px-1.5 py-0.5 text-[11px] font-semibold text-brand-600 ring-1 ring-slate-200">{t} ›</button>)}</div>}
-            {canEdit && <div className="flex flex-wrap gap-1.5">
-              {p.status !== 'open' && <MenuBtn danger disabled={busy} onClick={() => run({ status: back as PointStatus }, `${p.ref} back to ${(blind ? BLIND_LABEL[back] : NEUT_LABEL[back]).toLowerCase()}.`, close)}>↶ Undo</MenuBtn>}
-            </div>}
-            {canEdit && <div className="flex gap-1.5"><input className="input" placeholder="Note: pH, remark…" value={note} onChange={(e) => setNote(e.target.value)} /><Button variant="secondary" disabled={busy} onClick={() => run({ remark: note.trim() || null }, `${p.ref}: note saved.`, close)}>Save</Button></div>}
-          </>
-        )} />
-      {err != null && <ErrorBox error={err} />}
-      {sheet && <LoopSheet acts={acts} p={p} points={points} lineup={lineup} iats={iats} steps={steps} checks={checks} canEdit={canEdit} isHead={isHead} canAttach={canAttach} trackerId={trackerId} onDone={onDone} now={now} missing={missing} waiting={waiting} action={action} err={err}
-        onClose={() => setSheet(false)} onItem={(t) => { setSheet(false); onItem(t); }} onStep={onStep ? (id) => { setSheet(false); onStep(id); } : undefined} />}
-    </>
-  );
-}
-
-/** The round step button of the rows (as on the equipment list): ▶ starts, ✓ finishes the phase, 🔒 waits. */
-function RoundBtn({ kind, label, disabled, onClick }: { kind: 'start' | 'finish' | 'lock'; label: string; disabled?: boolean; onClick: () => void }) {
-  return (
-    <span className="flex shrink-0 flex-col items-center">
-      <button type="button" disabled={disabled} onClick={onClick} aria-label={label} title={label}
-        className={cx('flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold shadow-sm disabled:opacity-60', kind === 'lock' ? 'bg-slate-200 text-slate-500' : kind === 'finish' ? 'bg-amber-400 text-slate-900 ring-1 ring-amber-500' : 'bg-brand-700 text-white')}>
-        {kind === 'lock' ? '🔒' : kind === 'finish' ? '✓' : '▶'}
-      </button>
-      <span className="mt-0.5 text-[10px] font-semibold text-slate-500">{label}</span>
-    </span>
-  );
-}
-/** A loop's phases as dots (like the equipment stage bar): fill, soak, drain, done (spray: spray, done). */
-function PhaseDots({ p }: { p: TrkPoint }) {
-  const n = p.method === 'spray' ? 2 : 4;
-  const at = p.status === 'done' ? n : p.method === 'spray' ? (p.status === 'open' ? 0 : 1) : Math.max(0, NEUT_FLOW.indexOf(p.status as typeof NEUT_FLOW[number]));
-  return <span className="flex shrink-0 gap-0.5">{Array.from({ length: n }, (_, i) => <span key={i} className={cx('h-1.5 w-3 rounded-full', i < at ? 'bg-status-green' : i === at && p.status !== 'open' ? 'bg-amber-400' : 'bg-slate-200')} />)}</span>;
-}
 
 /** The Section Head adds a field job to a loop (scaffolding and the like): a timed step, before the fill unless said. */
 function AddJob({ onAdd }: { onAdd: (text: string, crane: boolean, after: boolean) => Promise<void> }) {
@@ -262,82 +165,10 @@ function LoopSheet({ acts = [], p, points, lineup, iats, steps, checks, canEdit,
             : <button key={t} type="button" onClick={() => onItem(t)} className="rounded bg-white px-1.5 py-0.5 text-[12px] font-semibold text-brand-600 ring-1 ring-slate-200">{t} ›</button>)}</div>
         </section>}
         {ll.length > 0 && <p className="text-[12px] text-slate-600">P&amp;ID lines: <b>{ll.join(', ')}</b>{onLine.map((i) => <span key={i.id} className="ml-1 rounded bg-amber-200 px-1 font-bold text-slate-800">IAT {i.iatNo} on {i.line}</span>)}</p>}
-        {p.remark && <p className="text-[12px] italic text-slate-600">📝 {p.remark}</p>}
+        {canEdit ? <LoopNote p={p} onDone={onDone} /> : p.remark && <p className="text-[12px] italic text-slate-600">📝 {p.remark}</p>}
         {p.updatedBy && <p className="text-[11px] text-slate-500">Last update {p.updatedBy}{p.updatedAt ? ` · ${when(p.updatedAt)}` : ''}</p>}
       </div>
     </BottomSheet>
-  );
-}
-
-/** An item's blind (its blind line in the bar chart), installed by M & I: Blinded stamps the line finished. */
-function EquipBlindRow({ a, canEdit, onItem, onDone }: { a: TrkActivity; canEdit: boolean; onItem: (tag: string) => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  async function run(patch: Parameters<typeof setActivity>[1], msg: string, close?: () => void) { setBusy(true); setErr(null); try { await setActivity(a.id, patch); close?.(); onDone(msg); } catch (e) { setErr(e); } finally { setBusy(false); } }
-  const done = !!a.actualFinish;
-  return (
-    <>
-      <CRow dot={done ? 'green' : 'grey'} title={<>{a.key} · {a.activity}</>} onTitle={() => onItem(a.key)}
-        sub={done ? `✓ In ${when(a.actualFinish ?? null)}${a.updatedBy ? ` · ${a.updatedBy}` : ''}` : a.start ? `Plan ${when(a.start)}` : '—'}
-        action={canEdit && !done ? <RowBtn disabled={busy} onClick={() => { const t = new Date().toISOString(); run({ actual_start: a.actualStart ?? t, actual_finish: t }, `${a.key} blinded.`); }}>Blinded</RowBtn> : done ? <span className="shrink-0 text-[11px] font-bold text-status-green">Done</span> : null}
-        menu={canEdit && done ? (close) => <MenuBtn danger disabled={busy} onClick={() => run({ actual_finish: null, actual_start: null }, `${a.key} back to not blinded.`, close)}>↶ Undo</MenuBtn> : undefined} />
-      {err != null && <ErrorBox error={err} />}
-    </>
-  );
-}
-
-const GRP: [string, string][] = [['segregation', 'Segregation'], ['hp_critical', 'HP critical'], ['equipment', 'Equipment']];
-
-export function IsolationTab({ items = [], rtj = [], trackerId, initialKind, activities = [], points, pointSteps = [], lineup = [], iats = [], steps, now, canEdit, isHead = false, canAttach = false, focus, onFocus, onItem, onStep, onDone }: {
-  items?: TrkEquipment[]; rtj?: TrkRtj[]; trackerId?: string; initialKind?: 'blind' | 'neut'; activities?: TrkActivity[]; points: TrkPoint[]; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; iats?: TrkIat[]; steps: TrkStep[]; now: number; canEdit: boolean; isHead?: boolean; canAttach?: boolean; focus: string | null; onFocus: (tag: string | null) => void; onItem: (tag: string) => void; onStep?: (id: string) => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void;
-}) {
-  const [kind, setKind] = useState<'blind' | 'neut' | 'list'>(() => initialKind ?? (focus && !points.some((p) => p.kind === 'blind' && p.items.includes(focus)) ? 'neut' : 'blind'));
-  const [grp, setGrp] = useState('segregation');
-  const eqBlinds = activities.filter(equipBlind).filter((a) => !focus || a.key === focus).sort((a, b) => (a.start ?? '').localeCompare(b.start ?? '') || a.key.localeCompare(b.key));
-  const [fo, setFo] = useState('All'); const [showDone, setShowDone] = useState(false);
-  const blinds = points.filter((p) => p.kind === 'blind'), neut = points.filter((p) => p.kind === 'neut');
-  const gate = neut.filter((p) => p.beforeHo);
-  const soaking = neut.filter((p) => p.status === 'soaking').length;
-  // the reactor body sprays stay with their reactor (covered there), not listed here
-  const list = points.filter((p) => p.kind === kind && !(kind === 'neut' && withReactor(p)) && (kind === 'neut' || (p.grp ?? 'segregation') === grp) && (fo === 'All' || p.fo === fo) && (!focus || p.items.includes(focus) || (p.partOf ?? []).includes(focus))).sort((a, b) => a.sort - b.sort);
-  const eqView = kind === 'blind' && grp === 'equipment';
-  const open = list.filter((p) => !pointComplete(p)), closed = list.filter(pointComplete);
-  const stepName = (id: string) => `${id} · ${steps.find((s) => s.stepId === id)?.shortName ?? ''}`;
-  // a step with one row is shown in a shared section (the row already names the step), a step with 2+ rows keeps its own header
-  const keyOf = (p: TrkPoint) => p.stepId ?? '';
-  const per = new Map<string, number>(); for (const p of list) per.set(keyOf(p), (per.get(keyOf(p)) ?? 0) + 1);
-  const secOf = (p: TrkPoint) => (!p.stepId ? (kind === 'neut' ? 'items' : 'loose') : (per.get(p.stepId) ?? 0) > 1 ? `step:${p.stepId}` : 'loose');
-  const secTitle = (k: string) => (k.startsWith('step:') ? stepName(k.slice(5)) : k === 'items' ? 'Items' : kind === 'neut' ? 'Loops' : GRP.find(([g]) => g === grp)?.[1] ?? 'Blinds');
-  const sections = (() => { const m = new Map<string, TrkPoint[]>(); for (const p of open) m.set(secOf(p), [...(m.get(secOf(p)) ?? []), p]); return [...m.entries()]; })();
-  if (!points.length) return <p className="py-6 text-center text-sm text-slate-500">No blinds or neutralization set up for this shutdown.</p>;
-  return (
-    <LoopScopeCtx.Provider value={{ items, rtj }}><div className="space-y-3">
-      <div className="grid grid-cols-3 gap-2">
-        <Tile value={`${blinds.filter(pointComplete).length + activities.filter(equipBlind).filter((a) => a.actualFinish).length}/${blinds.length + activities.filter(equipBlind).length}`} label="blinds in" onClick={() => setKind('blind')} />
-        <Tile value={`${gate.filter(pointComplete).length}/${gate.length}`} label="neutralized" tone={gate.every(pointComplete) ? 'green' : undefined} onClick={() => setKind('neut')} />
-        <Tile value={soaking} label="soaking now" tone={soaking ? 'amber' : undefined} onClick={() => setKind('neut')} />
-      </div>
-      <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-200/60 p-1">
-        {([['blind', 'Blinds (M & I)'], ['neut', 'Neutralization'], ['list', 'Blind list']] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setKind(k)} className={cx('min-h-10 rounded-lg text-xs font-semibold', kind === k ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-600')}>{l}</button>)}
-      </div>
-      {kind === 'blind' && <div className="flex gap-1.5">{GRP.map(([k, l]) => { const n = k === 'equipment' ? `${eqBlinds.filter((a) => a.actualFinish).length}/${eqBlinds.length}` : `${blinds.filter((p) => (p.grp ?? 'segregation') === k && pointComplete(p)).length}/${blinds.filter((p) => (p.grp ?? 'segregation') === k).length}`;
-        return <button key={k} type="button" onClick={() => setGrp(k)} className={cx('min-h-9 flex-1 rounded-lg px-2 text-xs font-semibold ring-1', grp === k ? 'bg-brand-600 text-white ring-brand-600' : 'bg-white text-slate-700 ring-slate-200')}>{l} <span className="opacity-70">{n}</span></button>; })}</div>}
-      {kind === 'list' ? <BlindList d={{ equipment: items, activities, points }} onItem={onItem} /> : eqView ? <div>{eqBlinds.length > 0 && <RowList>{eqBlinds.map((a) => <EquipBlindRow key={a.id} a={a} canEdit={canEdit} onItem={onItem} onDone={onDone} />)}</RowList>}{!eqBlinds.length && <p className="py-3 text-center text-sm text-slate-500">No blind lines in the bar chart{focus ? ` for ${focus}` : ''}.</p>}</div> : <>
-      <div className="flex flex-wrap gap-1.5">
-        {['All', 'FO1', 'FO2', 'FO3'].map((x) => <button key={x} type="button" onClick={() => setFo(x)} className={cx('min-h-9 rounded-full px-3 text-xs font-semibold', fo === x ? 'bg-brand-500 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{x}</button>)}
-        {focus && <button type="button" onClick={() => onFocus(null)} className="min-h-9 rounded-full bg-amber-100 px-3 text-xs font-semibold text-amber-900">{focus} ✕</button>}
-      </div>
-      {sections.map(([k, xs]) => { const all = list.filter((p) => secOf(p) === k); return (
-        <section key={k} className="space-y-1">
-          <h3 className="flex justify-between text-[11px] font-bold uppercase tracking-wide text-slate-500"><span className="truncate">{secTitle(k)}</span><span>{all.filter(pointComplete).length}/{all.length}</span></h3>
-          <RowList>{xs.map((p) => <PointRow key={p.id} p={p} points={points} acts={activities} lineup={lineup} iats={iats} steps={steps} checks={pointSteps.filter((c) => c.pointId === p.id)} trackerId={trackerId} isHead={isHead} canAttach={canAttach} now={now} canEdit={canEdit} onItem={onItem} onStep={onStep} onDone={onDone} />)}</RowList>
-        </section>
-      ); })}
-      {!open.length && <p className="py-3 text-center text-sm text-status-green">All {kind === 'blind' ? 'blinds are in' : 'neutralization is done'}{fo !== 'All' ? ` for ${fo}` : ''}.</p>}
-      {closed.length > 0 && <button type="button" onClick={() => setShowDone((x) => !x)} className="text-sm font-semibold text-status-green">{showDone ? '▾' : '▸'} ✓ {kind === 'blind' ? 'Blinded' : 'Neutralized'} ({closed.length})</button>}
-      {showDone && <RowList>{closed.map((p) => <PointRow key={p.id} p={p} points={points} acts={activities} lineup={lineup} iats={iats} steps={steps} checks={pointSteps.filter((c) => c.pointId === p.id)} trackerId={trackerId} isHead={isHead} canAttach={canAttach} now={now} canEdit={canEdit} onItem={onItem} onStep={onStep} onDone={onDone} />)}</RowList>}
-      </>}
-      <p className="text-[11px] text-slate-500">One tap here updates the rest: operations hands an item over when its neutralization is done, M &amp; I then installs the blinds (an item blinded counts as handed over), the guideline step ticks when all its rows are done, and the soda-ash and blind bar-chart lines take the times.</p>
-    </div></LoopScopeCtx.Provider>
   );
 }
 
@@ -376,4 +207,27 @@ export function LoopScope({ p, items, rtj, canEdit, onDone, compact = false }: {
       {err != null && <ErrorBox error={err} />}
     </section>
   );
+}
+
+/** A loop's note (pH, remark), saved on the loop. */
+function LoopNote({ p, onDone }: { p: TrkPoint; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
+  const [note, setNote] = useState(p.remark ?? ''); const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const was = p.remark ?? null;
+  return <div><div className="flex gap-1.5"><input className="input" placeholder="Note: pH, remark…" value={note} onChange={(e) => setNote(e.target.value)} />
+    <Button variant="secondary" disabled={busy || (note.trim() || null) === was} onClick={async () => { setBusy(true); setErr(null); try { await setPoint(p.id, { remark: note.trim() || null }); onDone(`${p.ref}: note saved.`, () => setPoint(p.id, { remark: was })); } catch (e) { setErr(e); } finally { setBusy(false); } }}>Save</Button></div>
+    {err != null && <ErrorBox error={err} />}</div>;
+}
+
+/** A loop opened from the Handover list: its procedure, steps with times, field jobs, diagrams, items and RTJs, note. */
+export function LoopDetail({ p, d, isHead, canEdit, canAttach, now, onClose, onItem, onStep, onDone }: {
+  p: TrkPoint; d: { trackerId: string; points?: TrkPoint[]; pointSteps?: TrkPointStep[]; activities: TrkActivity[]; lineup?: LuStream[]; iats: TrkIat[]; steps: TrkStep[]; equipment: TrkEquipment[]; loopItems?: TrkEquipment[]; rtj?: TrkRtj[] };
+  isHead: boolean; canEdit: boolean; canAttach: boolean; now: number; onClose: () => void; onItem: (tag: string) => void; onStep?: (id: string) => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void;
+}) {
+  const points = d.points ?? [];
+  const checks = (d.pointSteps ?? []).filter((c) => c.pointId === p.id).map((c) => linkedStep(c, d.activities, points));
+  const missing = p.status === 'open' ? missingBlinds(p, points) : [], waiting = p.status === 'open' ? waitingSteps(p, d.activities) : [];
+  return <LoopScopeCtx.Provider value={{ items: [...d.equipment, ...(d.loopItems ?? [])], rtj: d.rtj ?? [] }}>
+    <LoopSheet acts={d.activities} p={p} points={points} lineup={d.lineup ?? []} iats={d.iats} steps={d.steps} checks={checks} canEdit={canEdit} isHead={isHead} canAttach={canAttach} trackerId={d.trackerId}
+      onDone={onDone} now={now} missing={missing} waiting={waiting} action={null} err={null} onClose={onClose} onItem={onItem} onStep={onStep} />
+  </LoopScopeCtx.Provider>;
 }
