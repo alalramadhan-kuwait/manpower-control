@@ -13,7 +13,7 @@ import { nameFilter } from '@/ui/nameSearch';
 export type CrewF = 'all' | 'A' | 'B' | 'C' | 'D' | 'day';
 export type PosF = 'all' | 'controller' | 'panel' | 'field' | 'other';
 export type TypeF = 'all' | 'pv' | 'ul' | 'sick' | 'other';
-export type StatusF = 'all' | 'approved' | 'awaiting' | 'requested';
+export type StatusF = 'all' | 'approved' | 'awaiting' | 'requested' | 'changed';
 export interface CalFilters { crew: CrewF; pos: PosF; type: TypeF; status: StatusF; q: string; risk: boolean }
 /** The address keys the filters own; every view keeps them when it moves. */
 export const FILTER_KEYS = ['f', 'pos', 'type', 'st', 'q', 'risk'] as const;
@@ -21,7 +21,7 @@ export const FILTER_KEYS = ['f', 'pos', 'type', 'st', 'q', 'risk'] as const;
 const CREW_OPTS: [CrewF, string][] = [['all', 'All crews'], ...CREWS.map((c) => [c, c] as [CrewF, string]), ['day', 'Day / VR']];
 const POS_OPTS: [PosF, string][] = [['all', 'All positions'], ['controller', 'Controller'], ['panel', 'Panel'], ['field', 'Field'], ['other', 'Others']];
 const TYPE_OPTS: [TypeF, string][] = [['all', 'All types'], ['pv', 'PV'], ['ul', 'UL'], ['sick', 'Sick'], ['other', 'Other']];
-const STATUS_OPTS: [StatusF, string][] = [['all', 'All status'], ['approved', 'Approved'], ['awaiting', 'Not approved'], ['requested', 'Requested']];
+const STATUS_OPTS: [StatusF, string][] = [['all', 'All status'], ['approved', 'Approved'], ['awaiting', 'Not approved'], ['requested', 'Requested'], ['changed', 'Changed (cancelled / rescheduled)']];
 const pick = <T extends string>(v: string | null, opts: [T, string][], d: T): T => (opts.find(([k]) => k === v)?.[0] ?? d);
 
 export function useCalFilters(): [CalFilters, (p: Partial<CalFilters>) => void] {
@@ -53,12 +53,13 @@ export function typeGroup(code: string | null | undefined): Exclude<TypeF, 'all'
   return leaveGroup(code) === 'Sick leave' ? 'sick' : 'other';
 }
 /** One leave (or request) against the filters. Crew matches the own or the actual crew; "day" = no crew. */
-export function matchLeave(f: CalFilters, x: { pos: string | null; typeCode: string | null; approval: ApprovalState | 'requested'; home: string | null; actual: string | null; names: (string | null | undefined)[] }) {
+export function matchLeave(f: CalFilters, x: { pos: string | null; typeCode: string | null; approval: ApprovalState | 'requested'; home: string | null; actual: string | null; names: (string | null | undefined)[]; /** a cancelled or replaced version: shown only under Changed */ changed?: boolean }) {
+  if (!!x.changed !== (f.status === 'changed')) return false;
   if (f.crew !== 'all' && (f.crew === 'day' ? !!(x.home || x.actual) : x.home !== f.crew && x.actual !== f.crew)) return false;
   if (f.pos !== 'all' && posGroup(x.pos) !== f.pos) return false;
   if (f.type !== 'all' && typeGroup(x.typeCode) !== f.type) return false;
   if (f.status === 'requested' ? x.approval !== 'requested' : f.status === 'approved' ? x.approval !== 'approved' && x.approval !== 'not_required'
-    : f.status === 'awaiting' ? !['awaiting', 'lapsed', 'declined'].includes(x.approval) : false) return false;
+    : f.status === 'awaiting' ? !['awaiting', 'lapsed'].includes(x.approval) : false) return false;
   return !f.q || nameFilter(f.q)(x.names);
 }
 

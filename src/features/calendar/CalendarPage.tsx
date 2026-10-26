@@ -5,6 +5,7 @@ import { MONTH_NAMES, WEEKDAY_SHORT, attentionPeriods, crewMarks, leaveScenarios
 import { personOn } from '@/core/manpower';
 import { isPlanPv } from '@/core/oracle';
 import { fetchLeaveContext, type LeaveContext } from '@/data/leave';
+import type { UserProfile } from '@/data/types';
 import { FILTER_KEYS, FilterBar, matchLeave, useCalFilters, useScrollMemory } from './filters';
 import { fillWeek, shortfall, weekBars, weekStartOf } from '@/core/calendar/board';
 import { evaluateRange, type DayResult } from '@/core/manpower';
@@ -28,7 +29,8 @@ const withFilters = (params: URLSearchParams, set: Record<string, string | null>
   return n;
 };
 
-export default function CalendarPage() {
+export default function CalendarPage({ profile }: { profile?: UserProfile }) {
+  const isHead = profile?.role_code === 'section_head';
   const [params, setParams] = useSearchParams();
   const today = localToday();
   const go = (set: Record<string, string | null>) => setParams(withFilters(params, set), { replace: true });
@@ -38,7 +40,7 @@ export default function CalendarPage() {
     const m = /^(\d{4})-(\d{2})$/.exec(params.get('month') ?? '');
     const [y, mo] = m ? [Number(m[1]), Number(m[2])] : [Number(today.slice(0, 4)), Number(today.slice(5, 7))];
     const k = `${y}-${String(mo).padStart(2, '0')}`;
-    return <LeaveListView year={y} month={mo} onMonth={(yy, mm) => go({ view: 'list', month: monthKey(`${yy}-${String(mm).padStart(2, '0')}`) })}
+    return <LeaveListView year={y} month={mo} isHead={isHead} onMonth={(yy, mm) => go({ view: 'list', month: monthKey(`${yy}-${String(mm).padStart(2, '0')}`) })}
       onView={(v) => (v === 'week' ? go({ view: 'week', week: weekStartOf(k === today.slice(0, 7) ? today : `${k}-01`) }) : go({ month: monthKey(k) }))} />;
   }
   if (params.get('view') !== 'week') return <MonthView go={go} />;

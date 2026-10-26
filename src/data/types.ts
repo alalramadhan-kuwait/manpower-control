@@ -32,7 +32,7 @@ export interface EmployeeDirectoryRow {
 
 export interface Position { id: string; code: string; label: string; category: string; sort_order: number }
 export interface Crew { id: string; code: 'A' | 'B' | 'C' | 'D'; name: string; sort_order: number }
-export interface AbsenceType { code: string; label: string; short_code: string; reduces_manpower: boolean; requires_approval: boolean; is_active: boolean; sort_order: number }
+export interface AbsenceType { code: string; label: string; short_code: string; reduces_manpower: boolean; requires_approval: boolean; is_active: boolean; sort_order: number; /** fixed / tracked / statistics: only fixed leave is cancelled through a request */ entry_mode?: string }
 
 export interface Qualification {
   id: string; employee_id: string; qualification: QualificationCode; status: QualificationStatus; effective_from: string; effective_to: string | null;
@@ -59,6 +59,8 @@ export interface LeaveRecord {
   oracle_status: OracleStatus; oracle_ref: string | null; oracle_updated_at: string | null;
   /** The Section Head's approval as the app counts it (approved, or not_submitted = planned PV not approved yet). */
   approval_state?: OracleStatus; approved_at?: string | null; approved_by_name?: string | null;
+  /** The Section Head did not approve it (reason kept), or sent it back to the Coordinator to fix (note kept). */
+  declined_at?: string | null; declined_by_name?: string | null; declined_reason?: string | null; fix_note?: string | null; fix_sent_at?: string | null;
   /** The plan the leave belongs to (kept by every later version). */
   plan_year: number;
   /** How this version came to be. */

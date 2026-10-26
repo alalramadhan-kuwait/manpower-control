@@ -8,6 +8,7 @@ import { isPlanPv } from '@/core/oracle';
 import { fetchLeaveContext, type LeaveContext } from '@/data/leave';
 import { isCrew } from '@/ui/crew';
 import { FilterBar, matchLeave, useCalFilters, useScrollMemory } from './filters';
+import { REQUEST_BAR, ROW_STYLE, SHORT_LABEL, absenceState } from './rowStyle';
 import { WEEKDAY_SHORT, attentionPeriods, crewMarks, leaveScenarios, shortageKinds } from '@/core/calendar';
 import { leaveInRange, shortfall, weekBars, weekDates, weekStartOf } from '@/core/calendar/board';
 import { evaluateRange } from '@/core/manpower';
@@ -17,7 +18,6 @@ import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { Card, ErrorBox, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { shortDate } from '@/ui/leave';
-import { OracleDot } from '@/ui/oracle';
 import { bySeniority } from '@/ui/positions';
 import { DaySheet } from './DaySheet';
 import { EventSheet, HolidaySheet } from './InfoSheets';
@@ -180,15 +180,14 @@ export function WeekView({ start, today, onWeek, onMonth, onList }: { start: str
 
           <Section title="Needs attention"><AttentionList items={view.attention} onOpen={setOpen} past={addDaysIso(start, 6) < today} /></Section>
 
-          <Section title={`On leave (${view.onLeave})`} action={<Link to="/requests?view=leave" className="flex items-center gap-1.5 text-[10px] text-slate-500">Oracle
-            {(['approved', 'not_submitted'] as const).map((s) => <OracleDot key={s} status={s} />)}<ChevronRight className="h-3 w-3" /></Link>}>
+          <Section title={`On leave (${view.onLeave})`}>
             {view.requests.length > 0 && (
               <div className="py-1.5">
-                <div className="mb-0.5 text-xs font-semibold text-brand-700">Requested · waiting for the Section Head</div>
+                <div className="mb-0.5 text-xs font-semibold text-amber-800">Requested · waiting for the Section Head</div>
                 {view.requests.map((r) => { const p = inputs!.people.find((x) => x.id === r.employeeId)!;
-                  return <Link key={r.id} to={`/calendar?view=list&month=${r.start.slice(0, 7)}&leave=rq-${r.id}`} className="flex items-center gap-1.5 py-1 pl-8 text-sm">
+                  return <Link key={r.id} to={`/calendar?view=list&month=${r.start.slice(0, 7)}&leave=rq-${r.id}`} className={cx('mb-0.5 ml-6 flex items-center gap-1.5 rounded border-l-[3px] px-2 py-1 text-sm', ROW_STYLE.pending.row, REQUEST_BAR)}>
                     <span className="min-w-0 flex-1 truncate text-slate-900">{p.name}</span>
-                    <span className="shrink-0 rounded border border-dashed border-brand-600 px-1 text-xs font-semibold text-brand-700">Requested</span>
+                    <span className={cx('shrink-0 text-[11px] font-bold', ROW_STYLE.pending.text)}>requested</span>
                     <span className="shrink-0 text-xs tabular-nums text-slate-500">{range(r.start, r.end ?? r.start)}</span></Link>; })}
               </div>
             )}
@@ -198,12 +197,12 @@ export function WeekView({ start, today, onWeek, onMonth, onList }: { start: str
                   {g.crew ? <CrewBadge crew={g.crew} size="sm" /> : <span className="text-xs font-semibold text-slate-500">No crew</span>}
                   <span className="text-xs text-slate-500">{new Set(g.rows.map((r) => r.person.id)).size}</span>
                 </div>
-                {g.rows.map(({ block, person }) => (
-                  <Link key={block.employeeId + block.start} to={`/calendar?view=list&month=${(block.start < start ? start : block.start).slice(0, 7)}&leave=${block.id ?? ''}`} className="flex items-center gap-1.5 py-1 pl-8 text-sm">
-                    <OracleDot status={block.oracle} /><span className="min-w-0 flex-1 truncate text-slate-900">{person.name}</span>
+                {g.rows.map(({ block, person }) => { const rs = absenceState(block, today); return (
+                  <Link key={block.employeeId + block.start} to={`/calendar?view=list&month=${(block.start < start ? start : block.start).slice(0, 7)}&leave=${block.id ?? ''}`} className={cx('mb-0.5 ml-6 flex items-center gap-1.5 rounded border-l-[3px] px-2 py-1 text-sm', ROW_STYLE[rs].row)}>
+                    <span className="min-w-0 flex-1 truncate text-slate-900">{person.name}</span><span className={cx('shrink-0 text-[11px] font-bold', ROW_STYLE[rs].text)}>{SHORT_LABEL[rs]}</span>
                     <span className="shrink-0 text-xs tabular-nums text-slate-500">{block.typeShort ? <span className={`mr-1 rounded px-1 font-semibold ring-1 ${leaveToneShort(block.typeShort).chip}`}>{block.typeShort}</span> : null}{range(block.start, block.end)}</span>
                   </Link>
-                ))}
+                ); })}
               </div>
             ))}
           </Section>

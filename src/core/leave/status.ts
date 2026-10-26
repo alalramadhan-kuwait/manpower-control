@@ -118,3 +118,31 @@ export function shutdownCancellable(r: StatusRecord, approval: ApprovalState, pl
   if (planState(r) !== 'current') return null;
   return plans.find((p) => p.start <= r.end_date && p.end >= r.start_date) ?? null;
 }
+
+/**
+ * The one state a leave row shows (owner, 26 Oct 2026), first that applies: cancelled or not approved → rescheduled →
+ * pending approval (a request, awaiting, or started without approval) → on leave now → approved, upcoming → taken.
+ * "Approved" is the Section Head's approval in the app (or a type that needs none). Display only.
+ */
+export type RowState = 'cancelled' | 'rescheduled' | 'pending' | 'now' | 'next' | 'done';
+export function rowState(x: { plan: PlanState; approval: ApprovalState | null; requested: boolean; time: TimeState | null }): RowState {
+  if (x.plan === 'cancelled' || x.approval === 'declined') return 'cancelled';
+  if (x.plan === 'rescheduled') return 'rescheduled';
+  if (x.requested || x.approval === 'awaiting' || x.approval === 'lapsed') return 'pending';
+  if (x.time === 'on_leave' || x.time === 'open') return 'now';
+  if (x.time === 'upcoming') return 'next';
+  return 'done';
+}
+const DAY_MS = 86_400_000;
+/** The word a row shows for its state, e.g. "On leave · back 5 Nov", "Approved · in 4 d", "On leave · Not approved". */
+export function rowLabel(s: RowState, x: { approval: ApprovalState | null; requested: boolean; time: TimeState | null; start: string; end: string }, today: string, short: (iso: string) => string): string {
+  const inDays = Math.round((Date.parse(x.start) - Date.parse(today)) / DAY_MS);
+  switch (s) {
+    case 'cancelled': return x.approval === 'declined' ? 'Not approved' : 'Cancelled';
+    case 'rescheduled': return 'Rescheduled';
+    case 'pending': return x.requested ? 'Requested' : x.approval === 'lapsed' ? (x.time === 'taken' ? 'Ended · Not approved' : 'On leave · Not approved') : 'Awaiting approval';
+    case 'now': return x.time === 'open' ? 'On leave · return open' : `On leave · back ${short(addDaysIso(x.end, 1))}`;
+    case 'next': return inDays <= 0 ? 'Approved' : `Approved · in ${inDays} d`;
+    case 'done': return 'Taken';
+  }
+}

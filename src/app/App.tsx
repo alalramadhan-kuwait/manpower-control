@@ -81,7 +81,7 @@ function MainApp() {
       <div className="sm:pl-44 lg:pl-0 print:pl-0">
         <Routes>
           <Route path="/" element={<DayOverviewPage />} />
-          <Route path="/calendar" element={<CalendarPage />} />
+          <Route path="/calendar" element={<CalendarPage profile={profile} />} />
           <Route path="/requests" element={<RequestsPage profile={profile} />} />
           <Route path="/requests/:id" element={<RequestPage profile={profile} />} />
           <Route path="/employees" element={<EmployeesPage profile={profile} />} />

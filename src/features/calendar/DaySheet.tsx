@@ -9,7 +9,8 @@ import type { ManpowerInputs } from '@/data/manpower';
 import { BottomSheet, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { shortDate } from '@/ui/leave';
-import { OracleDot } from '@/ui/oracle';
+import { localToday } from '@/ui/leave';
+import { ROW_STYLE, absenceState } from './rowStyle';
 import type { Bar } from './parts';
 
 const STATUS: Record<string, { text: string; cls: string }> = {
@@ -27,7 +28,10 @@ export function DaySheet({ date, day, kinds, inputs, holiday, bars, onClose, onA
 }) {
   const title = new Date(`${date}T00:00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
   const people = new Map(inputs.people.map((p) => [p.id, p]));
+  const today = localToday();
   const onLeave = inputs.absences.filter((a) => (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && a.start <= date && date <= a.end && people.has(a.employeeId));
+  // a planned PV started without approval: not counted (planned availability), shown apart so it is not missed
+  const notCounted = inputs.absences.filter((a) => a.lapsed && a.start <= date && date <= a.end && people.has(a.employeeId));
   const groups = new Map<LeaveGroup, typeof onLeave>();
   for (const a of onLeave) groups.set(leaveGroup(a.typeCode), [...(groups.get(leaveGroup(a.typeCode)) ?? []), a]);
   const count = new Set(onLeave.map((a) => a.employeeId)).size;
@@ -88,10 +92,18 @@ export function DaySheet({ date, day, kinds, inputs, holiday, bars, onClose, onA
                   <div className="text-[11px] font-semibold text-slate-600">{g} · {groups.get(g)!.length}</div>
                   <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-slate-800">
                     {groups.get(g)!.map((a) => { const p = people.get(a.employeeId)!; const q = personOn(p, date);
-                      return <Link key={a.employeeId + a.start} to={`/calendar?view=list&month=${date.slice(0, 7)}&leave=${a.id ?? ''}`} className="inline-flex items-center gap-1 underline decoration-slate-300 underline-offset-2"><OracleDot status={a.oracle} />{p.name}<span className="text-slate-500"> · {POS[p.role ?? ''] ?? '—'}{q.crew ? ` · ${q.crew}` : ''} · until {shortDate(a.end)}</span></Link>; })}
+                      const rs = absenceState(a, today);
+                      return <Link key={a.employeeId + a.start} to={`/calendar?view=list&month=${date.slice(0, 7)}&leave=${a.id ?? ''}`} className={cx('inline-flex items-center gap-1 rounded border-l-[3px] px-1.5 py-px', ROW_STYLE[rs].row)}>{p.name}<span className="text-slate-500"> · {POS[p.role ?? ''] ?? '—'}{q.crew ? ` · ${q.crew}` : ''} · until {shortDate(a.end)}</span>{rs === 'pending' && <span className={cx('text-[11px] font-bold', ROW_STYLE[rs].text)}>· not approved</span>}</Link>; })}
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+          {notCounted.length > 0 && (
+            <div className={cx('mt-1.5 rounded-lg border-l-[3px] px-2.5 py-1.5 text-xs', ROW_STYLE.pending.row)}>
+              <div className={cx('text-[11px] font-semibold', ROW_STYLE.pending.text)}>Started, not approved · counted as planned available · {notCounted.length}</div>
+              <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-slate-800">{notCounted.map((a) => { const p = people.get(a.employeeId)!; const q = personOn(p, date);
+                return <Link key={a.employeeId + a.start} to={`/calendar?view=list&month=${date.slice(0, 7)}&leave=${a.id ?? ''}`} className="underline decoration-amber-300 underline-offset-2">{p.name}<span className="text-slate-500"> · {POS[p.role ?? ''] ?? '—'}{q.crew ? ` · ${q.crew}` : ''}</span></Link>; })}</div>
             </div>
           )}
         </div>

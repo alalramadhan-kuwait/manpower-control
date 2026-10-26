@@ -132,3 +132,12 @@ export async function fetchRecordedNotices(since: string): Promise<{ id: string;
   if (error) throw error;
   return (data as Record<string, string | null>[]).map((r) => ({ id: r.id!, employeeId: r.employee_id!, label: r.summary!, start: r.start_date!, end: r.end_date }));
 }
+
+/** The request type a leave becomes (the same mapping as Requests › Entry). */
+export const leaveEntryType = (code: string) => (code === 'annual_leave_unscheduled' ? 'unscheduled_pv' : code === 'personal_qb' ? 'personal_pc' : 'absence') as 'unscheduled_pv' | 'personal_pc' | 'absence';
+/** Cancel one leave through the same request as Requests › Entry › Cancel a leave: reason required, server check,
+ *  the Section Head decides (their own is recorded), history kept. */
+export function cancelLeaveEntry(v: { employeeId: string; recordId: string; code: string; label: string; start: string; end: string; reason: string; summaryDates: string }) {
+  return submitEntry({ type: leaveEntryType(v.code), employeeId: v.employeeId, summary: `${v.label} ${v.summaryDates} cancelled`, remarks: v.reason,
+    detail: { absence_type_code: v.code, start_date: v.start, end_date: v.end, action: 'cancel', target_record_id: v.recordId }, workflow: 'approval' });
+}

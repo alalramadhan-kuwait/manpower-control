@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { approvalState, crewPlace, shutdownCancellable, joinTouching, leaveState, oracleState, planState, timeState, type OracleLogEntry, type StatusRecord } from '../status';
+import { approvalState, crewPlace, rowLabel, rowState, shutdownCancellable, joinTouching, leaveState, oracleState, planState, timeState, type OracleLogEntry, type StatusRecord } from '../status';
 
 const rec = (o: Partial<StatusRecord> = {}): StatusRecord => ({
   root_id: 'r1', start_date: '2026-11-10', end_date: '2026-11-20', status: 'approved', in_current_plan: true, absence_type_code: 'annual_leave_planned', ...o
@@ -78,5 +78,27 @@ describe('shutdownCancellable', () => {
     expect(shutdownCancellable(rec({ absence_type_code: 'sick_leave' }), 'not_required', sd)).toBeNull();
     expect(shutdownCancellable(rec({ start_date: '2026-12-01', end_date: '2026-12-10' }), 'awaiting', sd)).toBeNull();
     expect(shutdownCancellable(rec({ status: 'rescheduled', in_current_plan: false }), 'awaiting', sd)).toBeNull();
+  });
+});
+
+describe('rowState', () => {
+  const base = { plan: 'current' as const, approval: 'approved' as const, requested: false, time: 'upcoming' as const };
+  it('orders cancelled, rescheduled, pending, on leave, upcoming, taken', () => {
+    expect(rowState({ ...base, plan: 'cancelled' })).toBe('cancelled');
+    expect(rowState({ ...base, approval: 'declined' })).toBe('cancelled');
+    expect(rowState({ ...base, plan: 'rescheduled' })).toBe('rescheduled');
+    expect(rowState({ ...base, approval: 'awaiting' })).toBe('pending');
+    expect(rowState({ ...base, approval: 'lapsed', time: 'on_leave' })).toBe('pending');
+    expect(rowState({ ...base, approval: null, requested: true, time: null })).toBe('pending');
+    expect(rowState({ ...base, time: 'on_leave' })).toBe('now');
+    expect(rowState({ ...base, approval: 'not_required', time: 'upcoming' })).toBe('next');
+    expect(rowState({ ...base, time: 'taken' })).toBe('done');
+  });
+  it('labels: started without approval reads On leave · Not approved', () => {
+    const sh = (d: string) => d.slice(5);
+    expect(rowLabel('pending', { approval: 'lapsed', requested: false, time: 'on_leave', start: '2026-10-16', end: '2026-11-06' }, '2026-10-26', sh)).toBe('On leave · Not approved');
+    expect(rowLabel('now', { approval: 'approved', requested: false, time: 'on_leave', start: '2026-10-20', end: '2026-11-04' }, '2026-10-26', sh)).toBe('On leave · back 11-05');
+    expect(rowLabel('next', { approval: 'approved', requested: false, time: 'upcoming', start: '2026-10-30', end: '2026-11-04' }, '2026-10-26', sh)).toBe('Approved · in 4 d');
+    expect(rowLabel('cancelled', { approval: 'declined', requested: false, time: 'upcoming', start: 'x', end: 'x' }, '2026-10-26', sh)).toBe('Not approved');
   });
 });

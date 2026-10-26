@@ -14,7 +14,7 @@ import { OPEN_CHECK_DAYS, type GateVerdict } from '@/core/requests/gate';
 import { CREWS, addDaysIso, isValidIsoDate, type Crew } from '@/core/roster';
 import type { Proposal } from '@/core/validation';
 import { fetchLeaveApprovals } from '@/data/controllers';
-import { deleteDraft, fetchCancellableLeave, fetchDrafts, fetchEntryDetail, fetchEntryTypes, fetchMyEntries, fetchTrackedCases, previewEntry, saveDraft, submitEntry, withdrawEntry,
+import { deleteDraft, fetchCancellableLeave, leaveEntryType, fetchDrafts, fetchEntryDetail, fetchEntryTypes, fetchMyEntries, fetchTrackedCases, previewEntry, saveDraft, submitEntry, withdrawEntry,
   type Draft, type EntryDetail, type EntryType, type MyEntry, type TrackedCase } from '@/data/entry';
 import { GateBlocked } from '@/data/gate';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
@@ -227,7 +227,7 @@ function PersonCard({ person, data, today, onChange }: { person: MpPerson; data:
 
 // ── Leave / Absence ────────────────────────────────────────────────────────────────────────────────────────────────
 type Mode = 'new' | 'extend' | 'return' | 'cancel';
-const leaveType = (code: string) => (code === 'annual_leave_unscheduled' ? 'unscheduled_pv' : code === 'personal_qb' ? 'personal_pc' : 'absence') as 'unscheduled_pv' | 'personal_pc' | 'absence';
+const leaveType = leaveEntryType;
 
 function LeaveForm({ person, data, today, isHead, draft, prefill, replaces, onDone, onDraft }: { person: MpPerson; data: Data; today: string; isHead: boolean; draft: Draft | null; prefill: Record<string, unknown> | null; replaces: string | null; onDone: (m: string) => void; onDraft: (m: string) => void }) {
   const p = (prefill ?? {}) as Record<string, string | null | undefined>;
