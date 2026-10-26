@@ -17,6 +17,7 @@ import { ViewToggle } from './parts';
 
 const POSITIONS = [['all', 'All positions'], ['controller', 'Controller'], ['panel', 'Panel'], ['field', 'Field'], ['other', 'Others']] as const;
 type Pos = (typeof POSITIONS)[number][0];
+const POS_SHORT: Record<string, string> = { controller: 'Controller', vr_controller: 'VR', morning_controller: 'Morning', panel_operator: 'Panel', field_operator: 'Field' };
 const counts = (l: LeaveRecord) => l.in_current_plan && (l.status === 'approved' || l.status === 'planned');
 const days = (s: string, e: string) => Math.round((Date.parse(e) - Date.parse(s)) / 864e5) + 1;
 const range = (s: string, e: string) => (s === e ? shortDate(s) : `${shortDate(s)} – ${shortDate(e)}`);
@@ -70,13 +71,11 @@ export function LeaveListView({ year, month, crew, onMonth, onCrew, onView }: { 
         <p className="mb-1.5 px-1 text-xs text-slate-500">{rows.length} leave{rows.length === 1 ? '' : 's'} in {MONTH_NAMES[month - 1]} · by start date</p>
         {rows.length ? <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200">
           {rows.map(({ l, p }) => { const t = typeOf(l.absence_type_code); const before = l.start_date < from;
-            return <li key={l.id}><button type="button" onClick={() => open(l)} className="flex w-full items-center gap-2.5 px-3 py-2 text-left active:bg-slate-50">
-              <span className="w-10 shrink-0 text-center leading-tight"><b className={cx('block text-base tabular-nums', before ? 'text-slate-400' : 'text-brand-800')}>{l.start_date.slice(8)}</b>
-                <span className="text-[10px] text-slate-500">{MONTH_NAMES[Number(l.start_date.slice(5, 7)) - 1].slice(0, 3)}</span></span>
-              <span className="min-w-0 flex-1"><b className="block truncate text-[13px] text-slate-900">{p.display_name}</b>
-                <span className="block truncate text-[11px] text-slate-500">#{p.employee_number ?? '—'} · {p.position_label ?? '—'} · {isCrew(p.crew_code) ? `Crew ${p.crew_code}` : 'Day'}</span></span>
-              <span className="shrink-0 text-right"><span className={cx('inline-block rounded px-1.5 py-px text-[10px] font-bold', leaveTone(l.absence_type_code).chip)} title={t?.label}>{t?.short_code ?? t?.label ?? 'Leave'}</span>
-                <span className="block text-[11px] tabular-nums text-slate-500">{range(l.start_date, l.end_date)} · {days(l.start_date, l.end_date)} d</span></span>
+            return <li key={l.id}><button type="button" onClick={() => open(l)} className="block w-full px-3 py-1.5 text-left active:bg-slate-50">
+              <span className="flex items-center gap-2"><b className="min-w-0 flex-1 truncate text-[13px] text-slate-900">{p.display_name}</b>
+                <span className={cx('shrink-0 rounded px-1.5 py-px text-[10px] font-bold', leaveTone(l.absence_type_code).chip)} title={t?.label}>{t?.short_code ?? t?.label ?? 'Leave'}</span></span>
+              <span className="flex items-center gap-2 text-[11px] text-slate-500"><span className="min-w-0 flex-1 truncate">#{p.employee_number ?? '—'} · {POS_SHORT[p.position_code ?? ''] ?? p.position_label ?? '—'} · {isCrew(p.crew_code) ? p.crew_code : 'Day'}</span>
+                <span className={cx('shrink-0 tabular-nums', before ? 'text-slate-400' : 'font-semibold text-slate-700')}>{range(l.start_date, l.end_date)} · {days(l.start_date, l.end_date)} d</span></span>
             </button></li>; })}
         </ul> : <p className="py-6 text-center text-sm text-slate-500">No leave in {MONTH_NAMES[month - 1]} for this selection.</p>}
       </>}
