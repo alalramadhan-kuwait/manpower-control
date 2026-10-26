@@ -55,7 +55,7 @@ export function StatusBar({ mark, thick = false }: { mark: Exclude<DayMark, 'off
 
 const SUMMARY: { key: Exclude<DayMark, 'off'>; label: string; dot: string }[] = [
   { key: 'red', label: 'Short', dot: 'bg-status-red' }, { key: 'amber', label: 'At min', dot: 'bg-status-amber' },
-  { key: 'green', label: 'Safe', dot: 'bg-status-green' }, { key: 'pending', label: 'Pending', dot: 'bg-slate-400' }
+  { key: 'green', label: 'Safe', dot: 'bg-status-green' }, { key: 'pending', label: 'Cover / data', dot: 'bg-slate-400' }
 ];
 
 /** Days by their worst crew: Short / At min / Safe / Pending. */
@@ -100,7 +100,7 @@ export function Legend({ rows = 'M / A / N rows:', sample = 'B' }: { rows?: stri
         <span className="flex items-center gap-1">{bar('green')}safe</span>
         <span className="flex items-center gap-1">{bar('amber')}at minimum</span>
         <span className="flex items-center gap-1">{bar('red')}short (−1)</span>
-        <span className="flex items-center gap-1">{bar('pending')}pending</span>
+        <span className="flex items-center gap-1">{bar('pending')}cover needed / data missing</span>
       </div>
     </div>
   );

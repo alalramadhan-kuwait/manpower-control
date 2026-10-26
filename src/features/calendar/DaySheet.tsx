@@ -1,7 +1,8 @@
 import { ChevronRight, Star } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { LEAVE_GROUPS, leaveGroup, shortfall, type LeaveGroup } from '@/core/calendar/board';
-import type { CrewDay, DayResult } from '@/core/manpower';
+import { personOn, type CrewDay, type DayResult } from '@/core/manpower';
+import { backHere } from './filters';
 import type { Holiday } from '@/data/calendar';
 import type { ManpowerInputs } from '@/data/manpower';
 import { BottomSheet, cx } from '@/ui/components';
@@ -14,6 +15,9 @@ const STATUS: Record<string, { text: string; cls: string }> = {
   green: { text: 'Safe', cls: 'bg-green-100 text-green-900' }, amber: { text: 'At minimum', cls: 'bg-amber-100 text-amber-900' },
   red: { text: 'Short', cls: 'bg-status-red text-white' }, pending: { text: 'Pending', cls: 'bg-slate-200 text-slate-700' }
 };
+// grey says why: Controller cover not recorded, or qualification data missing (never a confirmed shortage)
+const pendingText = (c: CrewDay) => (c.pending.includes('coverage_required') ? 'Cover needed' : 'Data missing');
+const POS: Record<string, string> = { controller: 'Ctl', vr_controller: 'VR', morning_controller: 'Morning', panel_operator: 'Panel', field_operator: 'Field' };
 const markOf = (c: CrewDay) => (c.finalStatus ?? (c.pending.length ? 'pending' : c.status) ?? 'pending') as keyof typeof STATUS;
 
 /** Everything about one date, over the calendar: shifts, manpower against the minimum, leave by reason, holiday, events. */
@@ -55,12 +59,16 @@ export function DaySheet({ date, day, inputs, holiday, bars, onClose, onAddEvent
                   <span className="w-7 text-xs font-semibold text-slate-700">{c.state}</span>
                   <CrewBadge crew={c.crew} size="sm" />
                   <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">{c.crew} Shift <span className="font-normal text-slate-500">· {c.dutyLabel}</span></span>
-                  <span className={cx('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold', STATUS[mark].cls)}>{mark === 'red' && n > 0 ? `Short −${n}` : STATUS[mark].text}</span>
+                  <span className={cx('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold', STATUS[mark].cls)}>{mark === 'red' && n > 0 ? `Short −${n}` : mark === 'pending' ? pendingText(c) : STATUS[mark].text}</span>
                 </div>
                 <div className="mt-1 flex flex-wrap gap-x-3 pl-9 text-xs tabular-nums text-slate-600">
                   {[c.controller, c.panel, c.field].map((p) => <span key={p.key} className={cx(p.finding === 'shortage' && 'font-semibold text-status-red')}>{p.label} {p.count}/{p.min}</span>)}
                   {mark !== 'red' && mark !== 'pending' && <span className="text-slate-500">{buffer > 0 ? `buffer +${buffer}` : 'no buffer'}</span>}
                 </div>
+                {c.controller.count < c.controller.min && (
+                  <div className="mt-1 pl-9 text-xs"><span className="text-slate-600">{c.controller.onLeave.map((x) => x.name).concat(c.controller.away.map((x) => x.person.name)).join(', ') || 'No Controller'} away · </span>
+                    <Link to={`/requests?view=entry&card=controller&kind=cover&crew=${c.crew}&from=${date}&to=${date}&back=${backHere()}`} className="font-semibold text-brand-700">Assign cover ›</Link></div>
+                )}
               </div>
             );
           })}
@@ -74,7 +82,8 @@ export function DaySheet({ date, day, inputs, holiday, bars, onClose, onAddEvent
                 <div key={g} className="rounded-lg bg-slate-50 px-2.5 py-1.5">
                   <div className="text-[11px] font-semibold text-slate-600">{g} · {groups.get(g)!.length}</div>
                   <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-slate-800">
-                    {groups.get(g)!.map((a) => { const p = people.get(a.employeeId)!; return <span key={a.employeeId + a.start} className="inline-flex items-center gap-1"><OracleDot status={a.oracle} />{p.name}{p.crew ? <span className="text-slate-500"> · {p.crew}</span> : ''}<span className="text-slate-500"> · until {shortDate(a.end)}</span></span>; })}
+                    {groups.get(g)!.map((a) => { const p = people.get(a.employeeId)!; const q = personOn(p, date);
+                      return <Link key={a.employeeId + a.start} to={`/calendar?view=list&month=${date.slice(0, 7)}&leave=${a.id ?? ''}`} className="inline-flex items-center gap-1 underline decoration-slate-300 underline-offset-2"><OracleDot status={a.oracle} />{p.name}<span className="text-slate-500"> · {POS[p.role ?? ''] ?? '—'}{q.crew ? ` · ${q.crew}` : ''} · until {shortDate(a.end)}</span></Link>; })}
                   </div>
                 </div>
               ))}

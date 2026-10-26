@@ -6,7 +6,7 @@
 // Sick leave, absence without reason (AB) and escort leave are Oracle statistics: they are not entered here.
 import { ArrowLeftRight, CalendarClock, CheckCircle2, ClipboardList, Eye, FileText, OctagonX, Pencil, Plane, Search, Trash2, Undo2, UserCheck, UserMinus, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { LeaveApproval } from '@/core/controllers/leaveRules';
 import { POSITION_LABEL, type CrewImpact } from '@/core/entry';
 import { personOn, type MpPerson } from '@/core/manpower';
@@ -67,11 +67,16 @@ export function EntryPage({ profile }: { profile: UserProfile }) {
   const [resume, setResume] = useState<{ draft: Draft | null; prefill: Record<string, unknown> | null; replaces: string | null }>({ draft: null, prefill: null, replaces: null });
   const card = (CARDS.find((c) => c.k === params.get('card'))?.k ?? null) as Card | null;
   const personId = params.get('emp');
+  // opened from the Calendar (…&back=<address>): Save, Cancel and Close return there, with its view, month, filters and open item
+  const back = params.get('back');
+  const navigate = useNavigate();
+  const leave = () => { if (back) navigate(back); };
   const setCard = (k: Card | null, emp: string | null = personId, extra: Record<string, string> = {}) => {
     const n = new URLSearchParams({ view: 'entry' });
     if (k) n.set('card', k);
     if (k && emp) n.set('emp', emp);
     for (const [a, b] of Object.entries(extra)) n.set(a, b);
+    if (back) n.set('back', back);
     setParams(n, { replace: true });
   };
 
@@ -84,7 +89,7 @@ export function EntryPage({ profile }: { profile: UserProfile }) {
   }, [today, profile.auth_user_id]);
   useEffect(load, [load]);
 
-  const done = (m: string) => { setNotice(m); setResume({ draft: null, prefill: null, replaces: null }); setCard(null, null); load(); };
+  const done = (m: string) => { if (back) { leave(); return; } setNotice(m); setResume({ draft: null, prefill: null, replaces: null }); setCard(null, null); load(); };
   if (err) return <ErrorBox error={err} />;
   if (!data) return <Spinner />;
   const person = personId ? data.inputs.people.find((p) => p.id === personId) ?? null : null;
@@ -124,14 +129,14 @@ export function EntryPage({ profile }: { profile: UserProfile }) {
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-2">
             <h2 className="flex items-center gap-2 text-base font-semibold text-brand-800"><active.icon className="h-5 w-5" />{t(active.label)}</h2>
-            <button type="button" onClick={() => { setResume({ draft: null, prefill: null, replaces: null }); setCard(null, null); }} className="flex min-h-10 items-center gap-1 rounded-lg px-2 text-sm text-slate-600 hover:bg-slate-100"><X className="h-4 w-4" />{t('Close')}</button>
+            <button type="button" onClick={() => { if (back) { leave(); return; } setResume({ draft: null, prefill: null, replaces: null }); setCard(null, null); }} className="flex min-h-10 items-center gap-1 rounded-lg px-2 text-sm text-slate-600 hover:bg-slate-100"><X className="h-4 w-4" />{t('Close')}</button>
           </div>
           {active.person && !person && <PersonPicker people={data.inputs.people} today={today} onPick={(p) => setCard(active.k, p.id, Object.fromEntries([...params].filter(([k]) => !['view', 'card', 'emp'].includes(k))))} />}
           {active.person && person && <PersonCard person={person} data={data} today={today} onChange={() => setCard(active.k, null)} />}
           {card === 'leave' && person && <LeaveForm key={`${person.id}${resume.draft?.id ?? ''}${resume.replaces ?? ''}`} person={person} data={data} today={today} isHead={isHead} draft={resume.draft} prefill={resume.prefill} replaces={resume.replaces} onDone={done} onDraft={(m) => { setNotice(m); load(); }} />}
-          {card === 'pv' && person && <PvCard person={person} data={data} today={today} isHead={isHead} wanted={params.get('leave')} onDone={done} onClose={() => setCard(null, null)} />}
-          {card === 'shift' && person && <MovementSheet target={{ kind: 'new', employeeId: person.id }} people={data.inputs.people.map((p) => ({ id: p.id, name: p.name, crew: personOn(p, today).crew }))} onClose={() => setCard(null, null)} onDone={done} />}
-          {card === 'controller' && <ControllerAssign kind={(['cover', 'morning', 'vr'] as const).find((k) => k === params.get('kind')) ?? 'cover'} crew={params.get('crew')} from={params.get('from')} to={params.get('to')} who={params.get('who')} emp={personId} onClose={() => setCard(null, null)} onDone={done} />}
+          {card === 'pv' && person && <PvCard person={person} data={data} today={today} isHead={isHead} wanted={params.get('leave')} onDone={done} onClose={() => (back ? leave() : setCard(null, null))} />}
+          {card === 'shift' && person && <MovementSheet target={{ kind: 'new', employeeId: person.id }} people={data.inputs.people.map((p) => ({ id: p.id, name: p.name, crew: personOn(p, today).crew }))} onClose={() => (back ? leave() : setCard(null, null))} onDone={done} />}
+          {card === 'controller' && <ControllerAssign kind={(['cover', 'morning', 'vr'] as const).find((k) => k === params.get('kind')) ?? 'cover'} crew={params.get('crew')} from={params.get('from')} to={params.get('to')} who={params.get('who')} emp={personId} onClose={() => (back ? leave() : setCard(null, null))} onDone={done} />}
           {card === 'controller' && !params.get('kind') && (
             <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
               {(['cover', 'morning', 'vr'] as const).map((k) => <button key={k} type="button" onClick={() => setCard('controller', null, { kind: k })} className="min-h-10 rounded-lg bg-white font-medium text-slate-700 shadow-sm">{t(k === 'cover' ? 'Shift cover' : k === 'morning' ? 'Morning rotation' : 'VR placement')}</button>)}

@@ -12,6 +12,7 @@ import { fetchLeaveApprovals } from '@/data/controllers';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { Spinner, cx } from '@/ui/components';
 import { shortDate } from '@/ui/leave';
+import { backHere } from './filters';
 import { SHIFT_STYLE, StatusBar } from './parts';
 
 export interface PreviewLeave { employeeId: string; start: string; end: string; typeCode: string | null; recordIds: string[] }
@@ -71,7 +72,7 @@ export function ImpactPreview({ leave, counted = true }: { leave: PreviewLeave; 
                 const q = people.get(c.id); const at = q ? personOn(q, leave.start) : null;
                 return `${c.name} (${at?.role === 'vr_controller' ? (at.crew ? `VR in ${at.crew}` : 'VR') : at?.crew ?? 'Day'}${c.warnings.length ? ', see warning' : ''})`;
               }).join(' · ') : 'none recorded'}</p>
-              <Link to={`/requests?view=entry&card=controller&kind=cover&crew=${crew}&from=${leave.start}&to=${last}`} className="font-medium text-brand-700">Assign cover ›</Link>
+              <Link to={`/requests?view=entry&card=controller&kind=cover&crew=${crew}&from=${leave.start}&to=${last}&back=${backHere()}`} className="font-medium text-brand-700">Assign cover ›</Link>
             </div>
           )}
         </div>

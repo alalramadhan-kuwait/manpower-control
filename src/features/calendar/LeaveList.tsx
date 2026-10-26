@@ -7,21 +7,19 @@
 // requests waiting for the Section Head are listed dashed, and a pending cancellation is marked on its leave.
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { MONTH_NAMES, monthEnd, monthStart, shiftMonth } from '@/core/calendar';
 import { isOpenEnd } from '@/core/leave';
 import { APPROVAL_LABEL, ORACLE_SHORT, TIME_LABEL, approvalState, crewPlace, joinTouching, oracleState, shutdownCancellable, timeState, type ApprovalState, type OracleState } from '@/core/leave/status';
-import { CREWS } from '@/core/roster';
 import { fetchLeaveContext, fetchLeavePlan, type LeaveContext, type LeavePlanData } from '@/data/leave';
 import type { EmployeeDirectoryRow, LeaveRecord } from '@/data/types';
 import { ErrorBox, Spinner, cx } from '@/ui/components';
 import { localToday, shortDate } from '@/ui/leave';
 import { leaveTone } from '@/ui/leaveTypes';
-import { nameFilter } from '@/ui/nameSearch';
 import { LeaveDetail, type LeaveItem } from './LeaveDetail';
+import { FilterBar, matchLeave, useCalFilters, useScrollMemory } from './filters';
 import { ViewToggle } from './parts';
 
-const POSITIONS = [['all', 'All positions'], ['controller', 'Controller'], ['panel', 'Panel'], ['field', 'Field'], ['other', 'Others']] as const;
-type Pos = (typeof POSITIONS)[number][0];
 const POS_SHORT: Record<string, string> = { controller: 'Controller', vr_controller: 'VR', morning_controller: 'Morning', panel_operator: 'Panel', field_operator: 'Field' };
 const counts = (l: LeaveRecord) => l.in_current_plan && (l.status === 'approved' || l.status === 'planned');
 const days = (s: string, e: string) => Math.round((Date.parse(e) - Date.parse(s)) / 864e5) + 1;
@@ -32,15 +30,15 @@ type Row = LeaveItem;
 // one label for a joined leave: the same state on every record, else the one that needs attention
 const one = <T extends string>(xs: T[], attention: T[]): T => (xs.every((x) => x === xs[0]) ? xs[0] : attention.find((a) => xs.includes(a)) ?? xs[0]);
 
-export function LeaveListView({ year, month, crew, onMonth, onCrew, onView }: { year: number; month: number; crew: string; onMonth: (y: number, m: number) => void;
-  onCrew: (c: string) => void; onView: (v: 'month' | 'week') => void }) {
+export function LeaveListView({ year, month, onMonth, onView }: { year: number; month: number; onMonth: (y: number, m: number) => void; onView: (v: 'month' | 'week') => void }) {
   const today = localToday();
   const from = monthStart(year, month), to = monthEnd(year, month);
   const [data, setData] = useState<(LeavePlanData & { year: number }) | null>(null);
   const [ctx, setCtx] = useState<(LeaveContext & { from: string }) | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [pos, setPos] = useState<Pos>('all'); const [query, setQuery] = useState('');
-  const [sel, setSel] = useState<Row | null>(null); const [reload, setReload] = useState(0);
+  const [f, setF] = useCalFilters();
+  const [params, setParams] = useSearchParams();
+  const [reload, setReload] = useState(0);
   useEffect(() => { let live = true; setError(null); fetchLeavePlan(year).then((d) => live && setData({ ...d, year })).catch((e) => live && setError(e)); return () => { live = false; }; }, [year]);
   useEffect(() => { let live = true; fetchLeaveContext(from, to).then((c) => live && setCtx({ ...c, from })).catch((e) => live && setError(e)); return () => { live = false; }; }, [from, to, reload]);
   const rows = useMemo(() => {
@@ -74,18 +72,18 @@ export function LeaveListView({ year, month, crew, onMonth, onCrew, onView }: { 
       out.push({ key: `rq-${r.id}`, p, start: r.start, end, codes: [typeOf(r.typeCode)?.short_code ?? 'Leave'], typeCode: r.typeCode, place: place.text, home: place.home, actual: place.actual,
         records: [], movedFrom: null, approval: null, oracle: null, request: r, cancelAsked: false, sd: null });
     }
-    const match = nameFilter(query);
-    const posOf = (p: EmployeeDirectoryRow) => p.position_category ?? 'other';
-    return out.filter((r) => (pos === 'all' || posOf(r.p) === pos)
-        && (crew === 'all' || (crew === 'day' ? !r.home && !r.actual : r.home === crew || r.actual === crew))
-        && match([r.p.display_name, r.p.official_name, r.p.employee_number, r.p.arabic_name]))
-      .sort((a, b) => a.start.localeCompare(b.start) || a.p.display_name.localeCompare(b.p.display_name));
-  }, [data, ctx, year, from, to, pos, crew, query, today]);
+    return out.sort((a, b) => a.start.localeCompare(b.start) || a.p.display_name.localeCompare(b.p.display_name));
+  }, [data, ctx, year, from, to, today]);
+  const shown = useMemo(() => rows?.filter((r) => matchLeave(f, { pos: r.p.position_code, typeCode: r.typeCode, approval: r.request ? 'requested' : r.approval!, home: r.home, actual: r.actual,
+    names: [r.p.display_name, r.p.official_name, r.p.employee_number, r.p.arabic_name] })) ?? null, [rows, f]);
+  // the open leave is in the address (…&leave=<record id>), so Back from a page it opens shows it again
+  const want = params.get('leave');
+  const sel = want && rows ? rows.find((r) => r.key === want || r.records.some((x) => x.id === want)) ?? null : null;
+  const open = (r: Row | null) => setParams((prev) => { const n = new URLSearchParams(prev); if (r) n.set('leave', r.key); else n.delete('leave'); return n; }, { replace: true });
+  useScrollMemory(!!shown);
   const [py, pm] = shiftMonth(year, month, -1); const [ny, nm] = shiftMonth(year, month, 1);
   const isThisMonth = today.slice(0, 7) === from.slice(0, 7);
-  const open = (r: Row) => setSel(r);
-  const chip = (on: boolean) => cx('shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-medium ring-1', on ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-600 ring-slate-200');
-  const requested = rows?.filter((r) => r.request).length ?? 0;
+  const requested = shown?.filter((r) => r.request).length ?? 0;
   return (
     <div>
       <div className="mb-2 flex items-center gap-2">
@@ -97,20 +95,14 @@ export function LeaveListView({ year, month, crew, onMonth, onCrew, onView }: { 
         <button aria-label="Next month" onClick={() => onMonth(ny, nm)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-300 active:bg-slate-50"><ChevronRight className="h-5 w-5" /></button>
       </div>
       <ViewToggle view="list" onChange={(v) => v !== 'list' && onView(v)} />
-      <div className="-mx-4 mb-1.5 flex gap-1 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none]">
-        {POSITIONS.map(([k, l]) => <button key={k} type="button" aria-pressed={pos === k} onClick={() => setPos(k)} className={chip(pos === k)}>{l}</button>)}
-      </div>
-      <div className="-mx-4 mb-2 flex gap-1 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none]">
-        {[['all', 'All crews'], ...CREWS.map((c) => [c, c]), ['day', 'Day']].map(([k, l]) => <button key={k} type="button" aria-pressed={crew === k} onClick={() => onCrew(k)} className={chip(crew === k)}>{l}</button>)}
-      </div>
-      <input className="input mb-2 min-h-10 text-sm" type="search" placeholder="Name or employee no." value={query} onChange={(e) => setQuery(e.target.value)} />
-      {error ? <ErrorBox error={error} /> : !rows ? <Spinner /> : <>
-        <p className="mb-1.5 px-1 text-xs text-slate-500">{rows.length - requested} leave{rows.length - requested === 1 ? '' : 's'}{requested ? <> · <b className="text-brand-700">{requested} requested</b></> : null} in {MONTH_NAMES[month - 1]} · by start date</p>
-        {rows.length ? <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200">
-          {rows.map((r) => <li key={r.key}><LeaveRow r={r} today={today} before={r.start < from} onOpen={() => open(r)} /></li>)}
+      <FilterBar f={f} set={setF} />
+      {error ? <ErrorBox error={error} /> : !shown ? <Spinner /> : <>
+        <p className="mb-1.5 px-1 text-xs text-slate-500">{shown.length - requested} leave{shown.length - requested === 1 ? '' : 's'}{requested ? <> · <b className="text-brand-700">{requested} requested</b></> : null} in {MONTH_NAMES[month - 1]} · by start date</p>
+        {shown.length ? <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200">
+          {shown.map((r) => <li key={r.key}><LeaveRow r={r} today={today} before={r.start < from} onOpen={() => open(r)} /></li>)}
         </ul> : <p className="py-6 text-center text-sm text-slate-500">No leave in {MONTH_NAMES[month - 1]} for this selection.</p>}
       </>}
-      {sel && data && <LeaveDetail item={sel} today={today} onClose={() => setSel(null)} onChanged={() => setReload((n) => n + 1)}
+      {sel && data && <LeaveDetail item={sel} today={today} onClose={() => open(null)} onChanged={() => setReload((n) => n + 1)}
         around={joinTouching(data.leaves.filter((l) => counts(l) && l.employee_id === sel.p.id)).map((j) => ({ start: j.start, end: j.end, codes: [...new Set(j.records.map((r) => data.types.find((t) => t.code === r.absence_type_code)?.short_code ?? 'Leave'))] }))} />}
     </div>
   );

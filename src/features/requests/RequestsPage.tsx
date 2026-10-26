@@ -1,6 +1,6 @@
 import { Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { UserProfile } from '@/data/types';
 import { countPendingApprovals } from '@/data/approvals';
 import { t } from '@/i18n';
@@ -31,7 +31,10 @@ export default function RequestsPage({ profile }: { profile: UserProfile }) {
     return () => window.removeEventListener('requests-changed', load);
   }, []);
   const view: View = VIEWS.includes(v as View) ? (v as View) : params.get('q') ? 'leave' : open ? 'approvals' : 'leave';
-  const go = (x: View) => setParams({ view: x }, { replace: true });
+  // opened from the Calendar (…&back=): keep the way back while moving between the Requests views
+  const back = params.get('back');
+  const navigate = useNavigate();
+  const go = (x: View) => setParams(back ? { view: x, back } : { view: x }, { replace: true });
   const tile = (x: View, n: number | null, label: string, cls: string) => (
     <button type="button" aria-pressed={view === x} onClick={() => go(x)} className={cx('flex-1 rounded-xl bg-white px-1.5 py-2 text-center', view === x ? 'ring-2 ring-brand-800' : 'ring-1 ring-slate-200')}>
       <span className={cx('block text-2xl font-extrabold tabular-nums leading-tight', n ? cls : 'text-slate-500')}>{n ?? '…'}</span>
@@ -51,11 +54,12 @@ export default function RequestsPage({ profile }: { profile: UserProfile }) {
       </div>
       {view === 'entry' ? (
         <>
-          <button type="button" onClick={() => go(open ? 'approvals' : 'leave')} className="mb-2 text-sm font-semibold text-brand-700">‹ {t('Requests')}</button>
+          <button type="button" onClick={() => (back ? navigate(back) : go(open ? 'approvals' : 'leave'))} className="mb-2 text-sm font-semibold text-brand-700">‹ {t(back ? 'Calendar' : 'Requests')}</button>
           <EntryPage profile={profile} />
         </>
       ) : (
         <>
+          {back && <button type="button" onClick={() => navigate(back)} className="mb-2 text-sm font-semibold text-brand-700">‹ {t('Calendar')}</button>}
           <div className="mb-3 flex gap-2">
             {tile('approvals', open, 'Approvals', 'text-brand-800')}
             {tile('leave', leaveN, isHead ? 'Leave to approve' : 'Leave to fix', isHead ? 'text-amber-600' : 'text-sky-700')}

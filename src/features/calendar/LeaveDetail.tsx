@@ -12,6 +12,7 @@ import { VersionList } from '@/features/leave/LeaveVersions';
 import { BottomSheet, ErrorBox, cx } from '@/ui/components';
 import { shortDate } from '@/ui/leave';
 import { leaveTone } from '@/ui/leaveTypes';
+import { backHere } from './filters';
 import { ImpactPreview } from './ImpactPreview';
 
 /** One leave as the Calendar lists it: joined records, or a request waiting for the Section Head. */
@@ -49,7 +50,8 @@ export function LeaveDetail({ item, around, today, onClose, onChanged }: {
     try { for (const r of records) await recordOracle(r.id, status, ref); setDone(`Oracle ${status} recorded.`); setOracleOpen(false); onChanged(); }
     catch (e) { setErr(e); } finally { setBusy(false); }
   }
-  const change = isPv(item.typeCode) ? `/requests?view=entry&card=pv&emp=${p.id}&leave=${records[0]?.start_date ?? item.start}` : `/requests?view=entry&card=leave&emp=${p.id}`;
+  const back = `&back=${backHere()}`;
+  const change = (isPv(item.typeCode) ? `/requests?view=entry&card=pv&emp=${p.id}&leave=${records[0]?.start_date ?? item.start}` : `/requests?view=entry&card=leave&emp=${p.id}`) + back;
   return (
     <BottomSheet open onClose={onClose} title={p.display_name}>
       <div className="space-y-2.5 text-sm">
@@ -107,10 +109,10 @@ export function LeaveDetail({ item, around, today, onClose, onChanged }: {
         )}
 
         <div className="flex flex-wrap gap-1.5 text-xs font-medium">
-          {request ? <Link to="/requests?view=approvals" className="rounded-lg bg-brand-700 px-3 py-2 text-white">Review in Approvals ›</Link> : <>
-            {(item.approval === 'awaiting' || item.approval === 'lapsed') && <Link to="/requests?view=leave" className="rounded-lg bg-brand-700 px-3 py-2 text-white">Approve in Requests › Leave</Link>}
+          {request ? <Link to={`/requests?view=approvals${back}`} className="rounded-lg bg-brand-700 px-3 py-2 text-white">Review in Approvals ›</Link> : <>
+            {(item.approval === 'awaiting' || item.approval === 'lapsed') && <Link to={`/requests?view=leave${back}`} className="rounded-lg bg-brand-700 px-3 py-2 text-white">Approve in Requests › Leave</Link>}
             <Link to={change} className="rounded-lg px-3 py-2 text-brand-700 ring-1 ring-slate-200">Change dates</Link>
-            {!item.cancelAsked && time !== 'taken' && <Link to={`/requests?view=entry&card=leave&emp=${p.id}&cancel=${records[0].id}`} className="rounded-lg px-3 py-2 text-status-red ring-1 ring-slate-200">Cancel leave…</Link>}
+            {!item.cancelAsked && time !== 'taken' && <Link to={`/requests?view=entry&card=leave&emp=${p.id}&cancel=${records[0].id}${back}`} className="rounded-lg px-3 py-2 text-status-red ring-1 ring-slate-200">Cancel leave…</Link>}
           </>}
           <Link to={`/employees/${p.id}`} className="rounded-lg px-3 py-2 text-slate-700 ring-1 ring-slate-200">Profile</Link>
         </div>

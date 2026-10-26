@@ -2,9 +2,13 @@ import { ChevronLeft, ChevronRight, Star, UserMinus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { MONTH_NAMES, WEEKDAY_SHORT, attentionPeriods, crewMarks, monthEnd, monthStart, monthWeeks, shiftMonth, summarizeMonth, type DayMark } from '@/core/calendar';
+import { personOn } from '@/core/manpower';
+import { isPlanPv } from '@/core/oracle';
+import { fetchLeaveContext, type LeaveContext } from '@/data/leave';
+import { FILTER_KEYS, FilterBar, matchLeave, useCalFilters, useScrollMemory } from './filters';
 import { fillWeek, shortfall, weekBars, weekStartOf } from '@/core/calendar/board';
 import { evaluateRange, type DayResult } from '@/core/manpower';
-import { CREWS, addDaysIso, type Crew } from '@/core/roster';
+import { addDaysIso, type Crew } from '@/core/roster';
 import { EVENT_CATEGORY_LABEL, fetchCalendarInfo, type Holiday, type UnitEvent } from '@/data/calendar';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { Card, ErrorBox, Spinner, cx } from '@/ui/components';
@@ -16,56 +20,55 @@ import { AttentionList, Legend, SHIFT_STYLE, Section, StatusBar, SummaryTiles, V
 import { WeekView } from './WeekView';
 import { LeaveListView } from './LeaveList';
 
-type Filter = 'all' | Crew | 'shutdowns' | 'holidays' | 'shortage';
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'all', label: 'All' }, ...CREWS.map((c) => ({ key: c as Filter, label: c })),
-  { key: 'shutdowns', label: 'Events' }, { key: 'holidays', label: 'Holidays' }, { key: 'shortage', label: 'Shortage' }
-];
+// view, month / week, the open day or leave and the filters all live in the address: every move keeps the filters
+const withFilters = (params: URLSearchParams, set: Record<string, string | null>) => {
+  const n = new URLSearchParams();
+  for (const k of FILTER_KEYS) { const v = params.get(k); if (v) n.set(k, v); }
+  for (const [k, v] of Object.entries(set)) if (v) n.set(k, v);
+  return n;
+};
 
 export default function CalendarPage() {
   const [params, setParams] = useSearchParams();
   const today = localToday();
+  const go = (set: Record<string, string | null>) => setParams(withFilters(params, set), { replace: true });
+  const monthKey = (k: string) => (k === today.slice(0, 7) ? null : k);
   if (params.get('view') === 'list') {
-    // the leave list of a month (same month and crew as the calendar)
+    // the leave list of a month (same month and filters as the calendar)
     const m = /^(\d{4})-(\d{2})$/.exec(params.get('month') ?? '');
     const [y, mo] = m ? [Number(m[1]), Number(m[2])] : [Number(today.slice(0, 4)), Number(today.slice(5, 7))];
-    const crew = params.get('f') ?? 'all';
-    const set = (yy: number, mm: number, c = crew) => { const n = new URLSearchParams({ view: 'list' }); const k = `${yy}-${String(mm).padStart(2, '0')}`; if (k !== today.slice(0, 7)) n.set('month', k); if (c !== 'all') n.set('f', c); setParams(n, { replace: true }); };
-    return <LeaveListView year={y} month={mo} crew={isCrew(crew) || crew === 'day' ? crew : 'all'} onMonth={(yy, mm) => set(yy, mm)} onCrew={(c) => set(y, mo, c)}
-      onView={(v) => { const k = `${y}-${String(mo).padStart(2, '0')}`; if (v === 'week') setParams({ view: 'week', week: weekStartOf(k === today.slice(0, 7) ? today : `${k}-01`) }, { replace: true });
-        else { const n = new URLSearchParams(); if (k !== today.slice(0, 7)) n.set('month', k); if (isCrew(crew)) n.set('f', crew); setParams(n, { replace: true }); } }} />;
+    const k = `${y}-${String(mo).padStart(2, '0')}`;
+    return <LeaveListView year={y} month={mo} onMonth={(yy, mm) => go({ view: 'list', month: monthKey(`${yy}-${String(mm).padStart(2, '0')}`) })}
+      onView={(v) => (v === 'week' ? go({ view: 'week', week: weekStartOf(k === today.slice(0, 7) ? today : `${k}-01`) }) : go({ month: monthKey(k) }))} />;
   }
-  if (params.get('view') !== 'week') return <MonthView />;
+  if (params.get('view') !== 'week') return <MonthView go={go} />;
   const w = params.get('week') ?? '';
   const start = /^\d{4}-\d{2}-\d{2}$/.test(w) && !Number.isNaN(Date.parse(w)) ? weekStartOf(w) : weekStartOf(today);
+  const mid = addDaysIso(start, 3).slice(0, 7);
   return <WeekView start={start} today={today}
-    onWeek={(s) => { const n = new URLSearchParams({ view: 'week' }); if (s !== weekStartOf(today)) n.set('week', s); setParams(n, { replace: true }); }}
-    onMonth={() => { const mid = addDaysIso(start, 3).slice(0, 7); setParams(mid === today.slice(0, 7) ? {} : { month: mid }, { replace: true }); }}
-    onList={() => { const mid = addDaysIso(start, 3).slice(0, 7); setParams(mid === today.slice(0, 7) ? { view: 'list' } : { view: 'list', month: mid }, { replace: true }); }} />;
+    onWeek={(st) => go({ view: 'week', week: st === weekStartOf(today) ? null : st })}
+    onMonth={() => go({ month: monthKey(mid) })}
+    onList={() => go({ view: 'list', month: monthKey(mid) })} />;
 }
 
-function MonthView() {
+function MonthView({ go: goView }: { go: (set: Record<string, string | null>) => void }) {
   const [params, setParams] = useSearchParams();
   const today = localToday();
   const m = /^(\d{4})-(\d{2})$/.exec(params.get('month') ?? '');
   const [year, month] = m ? [Number(m[1]), Number(m[2])] : [Number(today.slice(0, 4)), Number(today.slice(5, 7))];
-  const f = params.get('f') ?? params.get('crew') ?? 'all';
-  const filter: Filter = FILTERS.some((x) => x.key === f) ? (f as Filter) : 'all';
-  const crew = isCrew(filter) ? filter : null;
-  const go = (y: number, mo: number, fl: Filter = filter) => {
-    const n = new URLSearchParams();
-    const key = `${y}-${String(mo).padStart(2, '0')}`;
-    if (key !== today.slice(0, 7)) n.set('month', key);
-    if (fl !== 'all') n.set('f', fl);
-    setParams(n, { replace: true });
-  };
+  const [f, setF] = useCalFilters();
+  const crew = isCrew(f.crew) ? f.crew : null;
+  const go = (y: number, mo: number) => { const key = `${y}-${String(mo).padStart(2, '0')}`; goView({ month: key === today.slice(0, 7) ? null : key }); };
 
   const from = monthStart(year, month), to = monthEnd(year, month);
   const gridFrom = addDaysIso(from, -7), gridTo = addDaysIso(to, 7);
   const [inputs, setInputs] = useState<(ManpowerInputs & { key: string }) | null>(null);
   const [info, setInfo] = useState<(Awaited<ReturnType<typeof fetchCalendarInfo>> & { key: string }) | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [open, setOpen] = useState<string | null>(null);
+  // the open day is in the address (…&day=), so Back from the page it opens shows it again
+  const open = params.get('day');
+  const setOpen = (d: string | null) => setParams((prev) => { const n = new URLSearchParams(prev); if (d) n.set('day', d); else n.delete('day'); return n; }, { replace: true });
+  const [ctx, setCtx] = useState<(LeaveContext & { key: string }) | null>(null);
   const [sheet, setSheet] = useState<null | { kind: 'event'; event: UnitEvent | null; date?: string } | { kind: 'holiday'; holiday: Holiday | null; date?: string }>(null);
   const loadInfo = useCallback(() => fetchCalendarInfo(gridFrom, gridTo).then((r) => setInfo({ ...r, key: from })).catch(setError), [gridFrom, gridTo, from]);
   useEffect(() => {
@@ -73,6 +76,7 @@ function MonthView() {
     setError(null);
     fetchManpowerInputs(addDaysIso(gridFrom, -1), addDaysIso(gridTo, 1)).then((r) => live && setInputs({ ...r, key: from })).catch((e) => live && setError(e));
     loadInfo();
+    fetchLeaveContext(gridFrom, gridTo).then((c) => live && setCtx({ ...c, key: from })).catch(() => live && setCtx({ oracleLog: [], pending: [], moves: [], shutdowns: [], key: from }));
     return () => { live = false; };
   }, [from, gridFrom, gridTo, loadInfo]);
 
@@ -81,20 +85,28 @@ function MonthView() {
     const days = evaluateRange(gridFrom, gridTo, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments);
     const byDate = new Map(days.map((d) => [d.date, d]));
     const monthDays = days.filter((d) => d.date >= from && d.date <= to);
-    const crewOf = new Map(inputs.people.map((p) => [p.id, p.crew]));
-    const counted = inputs.absences.filter((a) => (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && (!crew || crewOf.get(a.employeeId) === crew));
-    const away = (d: string) => new Set(counted.filter((a) => a.start <= d && d <= a.end).map((a) => a.employeeId)).size;
+    const byPerson = new Map(inputs.people.map((p) => [p.id, p]));
+    // leave per day, by the filters (crew: own or actual crew on that day)
+    const counted = inputs.absences.filter((a) => (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && byPerson.has(a.employeeId));
+    const fits = (id: string, d: string, typeCode: string | null, approval: Parameters<typeof matchLeave>[1]['approval']) => {
+      const p = byPerson.get(id)!; const q = personOn(p, d);
+      return matchLeave(f, { pos: p.role, typeCode, approval, home: p.role === 'vr_controller' ? null : p.crew, actual: q.crew, names: [p.name, p.employeeNumber, p.arabicName] });
+    };
+    const away = (d: string) => new Set(counted.filter((a) => a.start <= d && d <= a.end && fits(a.employeeId, d, a.typeCode, isPlanPv(a.typeCode) ? (a.oracle === 'approved' ? 'approved' : 'awaiting') : 'not_required')).map((a) => a.employeeId)).size;
+    const pend = (ctx?.key === from ? ctx.pending : []).filter((r) => r.action === 'new' || r.action === 'extend');
+    const requested = (d: string) => new Set(pend.filter((r) => r.start <= d && d <= (r.end ?? '9999-12-31') && byPerson.has(r.employeeId) && fits(r.employeeId, d, r.typeCode, 'requested')).map((r) => r.employeeId)).size;
     const holidayOn = (d: string) => info.holidays.find((h) => h.start <= d && d <= h.end) ?? null;
     const bars = calendarBars(inputs, info);
     const filtered: DayResult[] = crew ? monthDays.map((d) => ({ ...d, crews: d.crews.filter((c) => c.crew === crew) })) : monthDays;
-    return { byDate, away, holidayOn, bars, summary: summarizeMonth(monthDays, crew), attention: attentionPeriods(filtered.filter((d) => d.date >= today)),
+    return { byDate, away, requested, holidayOn, bars, summary: summarizeMonth(monthDays, crew), attention: attentionPeriods(filtered.filter((d) => d.date >= today)),
       monthHolidays: info.holidays.filter((h) => h.start <= to && h.end >= from), monthBars: bars.filter((b) => b.start <= to && b.end >= from) };
-  }, [inputs, info, from, to, gridFrom, gridTo, crew, today]);
+  }, [inputs, info, ctx, f, from, to, gridFrom, gridTo, crew, today]);
+  useScrollMemory(!!view);
 
   const [py, pm] = shiftMonth(year, month, -1); const [ny, nm] = shiftMonth(year, month, 1);
   const isThisMonth = today.slice(0, 7) === from.slice(0, 7);
-  const showPills = filter !== 'shutdowns' && filter !== 'holidays';
-  const showBars = filter === 'all' || filter === 'shutdowns' || isCrew(filter);
+  const showPills = true;
+  const showBars = true;
 
   return (
     <div>
@@ -107,18 +119,13 @@ function MonthView() {
         <button aria-label="Next month" onClick={() => go(ny, nm)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-300 active:bg-slate-50"><ChevronRight className="h-5 w-5" /></button>
       </div>
 
-      <ViewToggle view="month" onChange={(v) => { if (v === 'week') setParams({ view: 'week', week: weekStartOf(isThisMonth ? today : from) }, { replace: true });
-        else if (v === 'list') { const n = new URLSearchParams({ view: 'list' }); if (!isThisMonth) n.set('month', from.slice(0, 7)); if (crew) n.set('f', crew); setParams(n, { replace: true }); } }} />
+      <ViewToggle view="month" onChange={(v) => { if (v === 'week') goView({ view: 'week', week: weekStartOf(isThisMonth ? today : from) });
+        else if (v === 'list') goView({ view: 'list', month: isThisMonth ? null : from.slice(0, 7) }); }} />
+      <FilterBar f={f} set={setF} risk />
       {error ? <ErrorBox error={error} /> : !view ? <Spinner /> : (
         <>
           <SummaryTiles summary={view.summary} />
 
-          <div className="-mx-4 mb-2 flex gap-1 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none]">
-            {FILTERS.map((x) => (
-              <button key={x.key} type="button" aria-pressed={filter === x.key} onClick={() => go(year, month, x.key)}
-                className={cx('shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-medium ring-1', filter === x.key ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-600 ring-slate-200')}>{x.label}</button>
-            ))}
-          </div>
 
           <Card className="p-1.5">
             <div className="grid grid-cols-[12px_repeat(7,minmax(0,1fr))] gap-x-0.5 text-center text-[10px] font-medium text-slate-500">
@@ -135,8 +142,8 @@ function MonthView() {
                       {showPills && !crew ? (
                         <div className="flex flex-col pt-[15px] text-[9px] font-semibold leading-[14px] text-slate-500"><span className="mb-px">M</span><span className="mb-px">A</span><span>N</span></div>
                       ) : <div />}
-                      {week.map((d, di) => d ? <DayCell key={d} date={d} day={view.byDate.get(d)!} today={today} crew={crew} filter={filter} showPills={showPills}
-                        away={view.away(d)} holiday={view.holidayOn(d)} inEvent={view.bars.some((b) => b.start <= d && d <= b.end)} onOpen={() => setOpen(d)} /> : <div key={`x${di}`} />)}
+                      {week.map((d, di) => d ? <DayCell key={d} date={d} day={view.byDate.get(d)!} today={today} crew={crew} risk={f.risk} showPills={showPills}
+                        away={view.away(d)} requested={view.requested(d)} holiday={view.holidayOn(d)} inEvent={view.bars.some((b) => b.start <= d && d <= b.end)} onOpen={() => setOpen(d)} /> : <div key={`x${di}`} />)}
                     </div>
                     {lanes > 0 && (
                       <div className="mt-0.5 grid grid-cols-[12px_repeat(7,minmax(0,1fr))] gap-x-0.5 gap-y-px" style={{ gridTemplateRows: `repeat(${lanes}, 14px)` }}>
@@ -159,7 +166,7 @@ function MonthView() {
           </Card>
           <Legend />
 
-          {filter === 'holidays' || view.monthHolidays.length > 0 ? (
+          {view.monthHolidays.length > 0 ? (
             <Section title={`Holidays (${view.monthHolidays.length})`} action={<button type="button" className="text-xs font-medium text-brand-700" onClick={() => setSheet({ kind: 'holiday', holiday: null, date: from })}>+ Holiday</button>}>
               {view.monthHolidays.length === 0 ? <p className="py-2 text-sm text-slate-500">None this month</p> : view.monthHolidays.map((h) => (
                 <button key={h.id} type="button" onClick={() => setSheet({ kind: 'holiday', holiday: h })} className="flex w-full items-center gap-2 py-2 text-left">
@@ -182,11 +189,9 @@ function MonthView() {
             })}
           </Section>
 
-          {filter !== 'holidays' && filter !== 'shutdowns' && (
-            <Section title="Needs attention">
-              <AttentionList items={view.attention} onOpen={setOpen} past={to < today} />
-            </Section>
-          )}
+          <Section title="Needs attention">
+            <AttentionList items={view.attention} onOpen={setOpen} past={to < today} />
+          </Section>
           <Link to={`/leave-planning?tab=annual&year=${year}${crew ? `&crew=${crew}` : ''}`} className="mt-3 flex items-center justify-between rounded-2xl bg-white p-4 text-sm font-medium text-brand-700 shadow-sm ring-1 ring-slate-200">Annual Leave Plan {year}<ChevronRight className="h-4 w-4" /></Link>
         </>
       )}
@@ -201,18 +206,18 @@ function MonthView() {
   );
 }
 
-function DayCell({ date, day, today, crew, filter, showPills, away, holiday, inEvent, onOpen }: {
-  date: string; day: DayResult; today: string; crew: Crew | null; filter: Filter; showPills: boolean; away: number; holiday: Holiday | null; inEvent: boolean; onOpen: () => void;
+function DayCell({ date, day, today, crew, risk, showPills, away, requested, holiday, onOpen }: {
+  date: string; day: DayResult; today: string; crew: Crew | null; risk: boolean; showPills: boolean; away: number; requested: number; holiday: Holiday | null; inEvent: boolean; onOpen: () => void;
 }) {
   const marks = crewMarks(day);
   const byCrew = new Map(day.crews.map((c) => [c.crew, c]));
   const duty = (s: 'M' | 'A' | 'N') => marks.find((x) => x.shift === s);
   const mine = crew ? marks.find((x) => x.crew === crew) : null;
   const short = marks.some((x) => x.mark === 'red' || x.mark === 'pending');
-  const dim = (filter === 'shortage' && !short) || (filter === 'holidays' && !holiday) || (filter === 'shutdowns' && !inEvent);
+  const dim = risk && !short;
   const pill = (x: { crew: Crew; shift: string; mark: DayMark } | undefined, text?: string, shiftKey?: 'M' | 'A' | 'N') => {
     if (!x) return <span className="h-[14px]" />;
-    const hide = filter === 'shortage' && x.mark !== 'red' && x.mark !== 'pending';
+    const hide = risk && x.mark !== 'red' && x.mark !== 'pending';
     const n = x.mark === 'red' ? shortfall(byCrew.get(x.crew)!) : 0;
     return (
       <span className={cx('relative flex h-[14px] items-center justify-center overflow-hidden rounded text-[10px] font-bold leading-none tabular-nums', x.mark === 'off' || !shiftKey ? 'bg-slate-100 text-slate-500' : SHIFT_STYLE[shiftKey].cell, hide && 'invisible')}>
@@ -226,7 +231,7 @@ function DayCell({ date, day, today, crew, filter, showPills, away, holiday, inE
       aria-current={date === today ? 'date' : undefined}
       className={cx('flex min-w-0 flex-col gap-px rounded-md px-0.5 pb-0.5 pt-px text-left active:bg-slate-50',
         date === today ? cx('ring-[2.5px] ring-brand-700 shadow-md', holiday ? 'bg-pink-50' : 'bg-brand-50') : holiday ? 'bg-pink-50 ring-1 ring-pink-300' : 'ring-1 ring-slate-200',
-        date < today && !holiday && 'bg-slate-50', dim && 'opacity-30')}>
+        date < today && !holiday && 'bg-slate-50', requested > 0 && 'outline-dashed outline-1 outline-brand-600', dim && 'opacity-30')}>
       <span className="flex h-[13px] items-center justify-between gap-px">
         <span className="flex items-center text-[11px] font-semibold leading-none text-slate-700">
           {date === today
@@ -234,7 +239,7 @@ function DayCell({ date, day, today, crew, filter, showPills, away, holiday, inE
             : Number(date.slice(8))}
           {holiday && <Star className="ml-px h-2.5 w-2.5 fill-pink-500 text-pink-600" />}
         </span>
-        {away > 0 && <span className="flex items-center text-[9px] leading-none text-slate-500"><UserMinus className="h-2.5 w-2.5" />{away}</span>}
+        {(away > 0 || requested > 0) && <span className="flex items-center text-[9px] leading-none text-slate-500"><UserMinus className="h-2.5 w-2.5" />{away}{requested > 0 && <span className="ml-px font-bold text-brand-700">+{requested}</span>}</span>}
       </span>
       {showPills && (crew
         ? pill(mine ?? undefined, mine?.shift === 'Off' ? 'Off' : mine?.shift, mine && (mine.shift === 'M' || mine.shift === 'A' || mine.shift === 'N') ? mine.shift : undefined)

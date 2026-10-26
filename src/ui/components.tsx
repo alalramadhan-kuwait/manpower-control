@@ -164,6 +164,14 @@ export function BottomSheet({ open, onClose, title, children }: { open: boolean;
     return () => { el.removeEventListener('touchstart', start); el.removeEventListener('touchmove', move); el.removeEventListener('touchend', end); el.removeEventListener('touchcancel', end); };
   }, [open]);
 
+  // Escape closes the sheet (keyboard and desktop)
+  useEffect(() => {
+    if (!open) return;
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') close.current(); };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [open]);
+
   // the on-screen keyboard (iOS lays it over the page): lift the sheet above it and fit it to the space left
   const [kb, setKb] = useState(0);
   useEffect(() => {

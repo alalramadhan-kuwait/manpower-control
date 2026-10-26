@@ -2,7 +2,12 @@
 // leave per day, events, what needs attention and who is on leave that week.
 import { ChevronLeft, ChevronRight, Star, UserMinus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import { personOn } from '@/core/manpower';
+import { isPlanPv } from '@/core/oracle';
+import { fetchLeaveContext, type LeaveContext } from '@/data/leave';
+import { isCrew } from '@/ui/crew';
+import { FilterBar, matchLeave, useCalFilters, useScrollMemory } from './filters';
 import { WEEKDAY_SHORT, attentionPeriods, crewMarks, summarizeMonth } from '@/core/calendar';
 import { leaveInRange, shortfall, weekBars, weekDates, weekStartOf } from '@/core/calendar/board';
 import { evaluateRange } from '@/core/manpower';
@@ -31,7 +36,11 @@ export function WeekView({ start, today, onWeek, onMonth, onList }: { start: str
   const [inputs, setInputs] = useState<(ManpowerInputs & { key: string }) | null>(null);
   const [info, setInfo] = useState<(Awaited<ReturnType<typeof fetchCalendarInfo>> & { key: string }) | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [open, setOpen] = useState<string | null>(null);
+  const [params, setParams] = useSearchParams();
+  const [f, setF] = useCalFilters();
+  const open = params.get('day');
+  const setOpen = (d: string | null) => setParams((prev) => { const n = new URLSearchParams(prev); if (d) n.set('day', d); else n.delete('day'); return n; }, { replace: true });
+  const [ctx, setCtx] = useState<(LeaveContext & { key: string }) | null>(null);
   const [sheet, setSheet] = useState<null | { kind: 'event'; event: UnitEvent | null; date?: string } | { kind: 'holiday'; holiday: Holiday | null; date?: string }>(null);
   const loadInfo = useCallback(() => fetchCalendarInfo(start, end).then((r) => setInfo({ ...r, key: start })).catch(setError), [start, end]);
   useEffect(() => {
@@ -39,6 +48,7 @@ export function WeekView({ start, today, onWeek, onMonth, onList }: { start: str
     setError(null);
     fetchManpowerInputs(addDaysIso(start, -1), addDaysIso(end, 1)).then((r) => live && setInputs({ ...r, key: start })).catch((e) => live && setError(e));
     loadInfo();
+    fetchLeaveContext(start, end).then((c) => live && setCtx({ ...c, key: start })).catch(() => live && setCtx({ oracleLog: [], pending: [], moves: [], shutdowns: [], key: start }));
     return () => { live = false; };
   }, [start, end, loadInfo]);
 
@@ -47,7 +57,13 @@ export function WeekView({ start, today, onWeek, onMonth, onList }: { start: str
     const results = evaluateRange(start, end, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments);
     const byDate = new Map(results.map((d) => [d.date, d]));
     const people = new Map(inputs.people.map((p) => [p.id, p]));
-    const leave = leaveInRange(inputs.absences, start, end).filter((b) => people.has(b.employeeId));
+    // leave of the week by the filters (crew: own crew or where the person actually works that week)
+    const fits = (id: string, typeCode: string | null, approval: Parameters<typeof matchLeave>[1]['approval']) => {
+      const p = people.get(id)!; const q = personOn(p, start < today && today <= end ? today : start);
+      return matchLeave(f, { pos: p.role, typeCode, approval, home: p.role === 'vr_controller' ? null : p.crew, actual: q.crew, names: [p.name, p.employeeNumber, p.arabicName] });
+    };
+    const leave = leaveInRange(inputs.absences, start, end).filter((b) => people.has(b.employeeId) && fits(b.employeeId, b.typeCode, isPlanPv(b.typeCode) ? (b.oracle === 'approved' ? 'approved' : 'awaiting') : 'not_required'));
+    const requests = (ctx?.key === start ? ctx.pending : []).filter((r) => (r.action === 'new' || r.action === 'extend') && r.start <= end && (r.end ?? '9999-12-31') >= start && people.has(r.employeeId) && fits(r.employeeId, r.typeCode, 'requested'));
     const away = (d: string) => new Set(leave.filter((b) => b.start <= d && d <= b.end).map((b) => b.employeeId)).size;
     const holidayOn = (d: string) => info.holidays.find((h) => h.start <= d && d <= h.end) ?? null;
     // who is on leave, by crew (people without a crew last), most senior first
@@ -55,9 +71,10 @@ export function WeekView({ start, today, onWeek, onMonth, onList }: { start: str
     for (const block of leave) { const person = people.get(block.employeeId)!; groups.set(person.crew, [...(groups.get(person.crew) ?? []), { block, person }]); }
     for (const g of groups.values()) g.sort((a, b) => bySeniority(a.person, b.person) || a.block.start.localeCompare(b.block.start));
     return { byDate, away, holidayOn, bars: calendarBars(inputs, info), summary: summarizeMonth(results), attention: attentionPeriods(results.filter((d) => d.date >= today)),
-      groups: [...CREWS, null].filter((c) => groups.has(c)).map((c) => ({ crew: c, rows: groups.get(c)! })),
+      groups: [...CREWS, null].filter((c) => groups.has(c)).map((c) => ({ crew: c, rows: groups.get(c)! })), requests,
       onLeave: new Set(leave.map((b) => b.employeeId)).size, holidays: info.holidays.filter((h) => h.start <= end && h.end >= start) };
-  }, [inputs, info, start, end, today]);
+  }, [inputs, info, ctx, f, start, end, today]);
+  useScrollMemory(!!view);
 
   const thisWeek = weekStartOf(today);
   const bars = view ? weekBars(days, view.bars, days) : [];
@@ -75,6 +92,7 @@ export function WeekView({ start, today, onWeek, onMonth, onList }: { start: str
         <button aria-label="Next week" onClick={() => onWeek(addDaysIso(start, 7))} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-300 active:bg-slate-50"><ChevronRight className="h-5 w-5" /></button>
       </div>
       <ViewToggle view="week" onChange={(v) => (v === 'list' ? onList() : v === 'month' && onMonth())} />
+      <FilterBar f={f} set={setF} risk />
 
       {error ? <ErrorBox error={error} /> : !view ? <Spinner /> : (
         <>
@@ -98,7 +116,7 @@ export function WeekView({ start, today, onWeek, onMonth, onList }: { start: str
             </div>
 
             <div className="space-y-0.5">
-              {CREWS.map((crew) => (
+              {CREWS.filter((crew) => !isCrew(f.crew) || f.crew === crew).map((crew) => (
                 <div key={crew} className={grid}>
                   <div className="flex items-center"><CrewBadge crew={crew} size="sm" /></div>
                   {days.map((d) => {
@@ -107,7 +125,7 @@ export function WeekView({ start, today, onWeek, onMonth, onList }: { start: str
                     const n = m.mark === 'red' ? shortfall(day.crews.find((c) => c.crew === crew)!) : 0;
                     return (
                       <button key={d} type="button" onClick={() => setOpen(d)} aria-label={`${crew} Shift ${shortDate(d)}: ${m.shift}`}
-                        className={cx('relative flex h-9 flex-col items-center justify-center overflow-hidden rounded-md text-sm font-bold leading-none tabular-nums',
+                        className={cx('relative flex h-9 flex-col items-center justify-center overflow-hidden rounded-md text-sm font-bold leading-none tabular-nums', f.risk && m.mark !== 'red' && m.mark !== 'pending' && 'opacity-30',
                           m.mark === 'off' || !isShiftLetter(m.shift) ? 'text-slate-300 ring-1 ring-slate-100' : SHIFT_STYLE[m.shift].cell, d === today && 'ring-2 ring-brand-700')}>
                         {m.shift === 'Off' ? '·' : m.shift}
                         {n > 0 && <span className="mt-0.5 text-[9px]">−{n}</span>}
@@ -154,14 +172,24 @@ export function WeekView({ start, today, onWeek, onMonth, onList }: { start: str
 
           <Section title={`On leave (${view.onLeave})`} action={<Link to="/requests?view=leave" className="flex items-center gap-1.5 text-[10px] text-slate-500">Oracle
             {(['approved', 'not_submitted'] as const).map((s) => <OracleDot key={s} status={s} />)}<ChevronRight className="h-3 w-3" /></Link>}>
-            {view.groups.length === 0 ? <p className="py-2 text-sm text-slate-500">Nobody this week</p> : view.groups.map((g) => (
+            {view.requests.length > 0 && (
+              <div className="py-1.5">
+                <div className="mb-0.5 text-xs font-semibold text-brand-700">Requested · waiting for the Section Head</div>
+                {view.requests.map((r) => { const p = inputs!.people.find((x) => x.id === r.employeeId)!;
+                  return <Link key={r.id} to={`/calendar?view=list&month=${r.start.slice(0, 7)}&leave=rq-${r.id}`} className="flex items-center gap-1.5 py-1 pl-8 text-sm">
+                    <span className="min-w-0 flex-1 truncate text-slate-900">{p.name}</span>
+                    <span className="shrink-0 rounded border border-dashed border-brand-600 px-1 text-xs font-semibold text-brand-700">Requested</span>
+                    <span className="shrink-0 text-xs tabular-nums text-slate-500">{range(r.start, r.end ?? r.start)}</span></Link>; })}
+              </div>
+            )}
+            {view.groups.length === 0 ? (view.requests.length ? null : <p className="py-2 text-sm text-slate-500">Nobody this week</p>) : view.groups.map((g) => (
               <div key={g.crew ?? 'none'} className="py-1.5">
                 <div className="mb-0.5 flex items-center gap-1.5">
                   {g.crew ? <CrewBadge crew={g.crew} size="sm" /> : <span className="text-xs font-semibold text-slate-500">No crew</span>}
                   <span className="text-xs text-slate-500">{new Set(g.rows.map((r) => r.person.id)).size}</span>
                 </div>
                 {g.rows.map(({ block, person }) => (
-                  <Link key={block.employeeId + block.start} to={`/employees/${person.id}`} className="flex items-center gap-1.5 py-1 pl-8 text-sm">
+                  <Link key={block.employeeId + block.start} to={`/calendar?view=list&month=${(block.start < start ? start : block.start).slice(0, 7)}&leave=${block.id ?? ''}`} className="flex items-center gap-1.5 py-1 pl-8 text-sm">
                     <OracleDot status={block.oracle} /><span className="min-w-0 flex-1 truncate text-slate-900">{person.name}</span>
                     <span className="shrink-0 text-xs tabular-nums text-slate-500">{block.typeShort ? <span className={`mr-1 rounded px-1 font-semibold ring-1 ${leaveToneShort(block.typeShort).chip}`}>{block.typeShort}</span> : null}{range(block.start, block.end)}</span>
                   </Link>
