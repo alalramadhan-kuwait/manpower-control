@@ -1,6 +1,6 @@
 # Manpower calculation consistency — correction plan
 
-Status (26 Oct 2026): **items 1 and 2 applied** (owner approval); items 3 and 4 proposed, not applied. Nothing below changes an approval rule. Each item needs the
+Status (26 Oct 2026): **all four items applied** (owner approval, 1–2 then 3–4). Nothing below changes an approval rule. Each item needs the
 owner's separate approval before it is deployed.
 
 | # | Priority | Finding | Correction | Changes | Risk | Rollback |
@@ -27,3 +27,14 @@ gives the same verdict in Approvals and on the server.
   (rolled back): before 13 PASS + the 2 bypasses FAIL as found; after 15 PASS — checked approval and not-approve by the
   Section Head, approval without a check refused, the four functions not callable, leave approve / undo / reject with a
   reason / undo, Coordinator and anon refused. Integrity test ALL PASS (46). No record or rule changed.
+- **Item 3.** Request check finding `controller_coverage` (severity warning, on by default; `src/data/validation.ts`
+  `controllerCover`): "B Shift: Controller cover needed on N duties, from d/m." for duties that need Controller cover
+  only because of the change. Never blocks (`gateVerdict` and `request_check_allows` block only hard stops and a new
+  shortage). `request-gate` v7, `sd-plan-approve` v13, `shift-alerts` v12 from commit `003bd95` (sha256 checked; the
+  last two only carry the new default rule entry). Tests: unit (`src/data/__tests__/controllerCoverage.test.ts`), the
+  read-only harness (the warning shows in Approvals, Approve stays on), `approval_paths_checks.sql` 15 PASS with a
+  warning in the stored check.
+- **Item 4.** `RequestPage` (`requestImpact`) and `leaveTools.leaveImpact` use `absencesAll` (leave + task releases).
+  Test `src/features/requests/__tests__/leaveTools.test.ts`. Left leave-only on purpose: leave lists, the Controller
+  leave rules, "leave starting soon" notices. Not changed (needs a separate decision): the shutdown team check
+  (`core/shutdown/v2.ts`, also on the server approval path) reads leave only.

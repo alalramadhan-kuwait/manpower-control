@@ -26,11 +26,11 @@ begin
     values ('absence', emp, 'normal_request', 'approval', 'submitted', extract(year from d)::int, d + 3, d + 3, 'TEST bypass 2 (rolled back)', coord) returning id into hid4;
   insert into public.request_leave (header_id, absence_type_code, start_date, end_date, action) values (hid4, 'short_leave', d + 3, d + 3, 'new');
   insert into public.server_checks (created_for, stamp, request_id, employee_id, type, start_date, end_date, allowed, factual, reason, check_body)
-    values (head, (select v from public.manpower_version where id = 1), hid, emp, 'absence', d, d, true, false, null, '{"findings":[],"existing":[]}'::jsonb) returning id into chk;
+    values (head, (select v from public.manpower_version where id = 1), hid, emp, 'absence', d, d, true, false, null, '{"findings":[{"rule":"controller_coverage","severity":"warning","message":"test warning"}],"existing":[]}'::jsonb) returning id into chk;
 
-  -- 1. Section Head: checked approval works
+  -- 1. Section Head: checked approval works (with a Controller cover warning: a warning never blocks)
   perform set_config('request.jwt.claims', json_build_object('sub', head, 'role', 'authenticated')::text, true); execute 'set local role authenticated';
-  begin perform public.request_header_decide_checked(chk, hid, true, 'test', '[]'::jsonb); out := out || 'PASS checked approval (Section Head)' || E'\n';
+  begin perform public.request_header_decide_checked(chk, hid, true, 'test', '[]'::jsonb); out := out || 'PASS checked approval with a warning (Section Head)' || E'\n';
   exception when others then out := out || 'FAIL checked approval: ' || sqlerrm || E'\n'; end;
   -- 2. Section Head: checked "not approve" works (no check needed)
   begin perform public.request_header_decide_checked(null, hid2, false, 'test', '[]'::jsonb); out := out || 'PASS checked not-approve (Section Head)' || E'\n';
