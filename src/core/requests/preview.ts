@@ -102,3 +102,14 @@ export function leavePreview(
     controller
   };
 }
+
+/**
+ * Confirmed vs potential shortage on this leave's duties, the Calendar's two plans (`leaveScenarios`) read through two
+ * previews: confirmed = short with approved leave only (this leave counted only when it is approved); potential = short
+ * only once planned leave is approved, this one included. No rule of its own.
+ */
+export function shortSplit(approvedOnly: LeavePreview, allPlanned: LeavePreview, thisApproved: boolean): { confirmed: string[]; potential: string[] } {
+  const confirmed = approvedOnly.duties.filter((d) => (thisApproved ? d.after : d.before) === 'red').map((d) => d.date);
+  const potential = allPlanned.duties.filter((d) => d.after === 'red' && !confirmed.includes(d.date)).map((d) => d.date);
+  return { confirmed, potential };
+}

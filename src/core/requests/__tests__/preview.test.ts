@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { FULL_OPERATION, type MpAbsence, type MpPerson } from '../../manpower';
 import { addDaysIso, isWorkingDay } from '../../roster';
-import { leavePreview } from '../preview';
+import { leavePreview, shortSplit } from '../preview';
+import { leaveScenarios } from '../../calendar';
 
 const person = (id: string, role: MpPerson['role'], grade: number, o: Partial<MpPerson> = {}): MpPerson => ({
   id, employeeNumber: id, name: id, role, crew: 'A', grade, employmentType: 'knpc', takeCharge: 'yes', panelQualified: 'yes', actingController: null, ...o
@@ -44,4 +45,18 @@ describe('leavePreview', () => {
     expect(r.nextDuty && r.nextDuty.date > d).toBe(true);
     expect(isWorkingDay(r.nextDuty!.date, 'A')).toBe(true);
   });
+});
+
+describe('shortSplit: confirmed vs potential, the Calendar\'s two plans', () => {
+  const d = firstWork('2026-12-01');
+  const pv = (who: string, approved: boolean): MpAbsence => ({ id: `pv-${who}`, employeeId: who, start: d, end: d, status: 'planned', typeCode: 'annual_leave_planned', typeLabel: 'PV', inCurrentPlan: true, oracle: approved ? 'approved' : 'not_submitted' });
+  const split = (mine: MpAbsence, others: MpAbsence[], thisApproved: boolean) => {
+    const sc = leaveScenarios([mine, ...others]);
+    const leave = { employeeId: mine.employeeId, start: d, end: d, typeCode: mine.typeCode, recordIds: [mine.id!] };
+    return shortSplit(leavePreview(leave, crewA, sc.approvedOnly, [], FULL_OPERATION, []), leavePreview(leave, crewA, sc.allPlanned, [], FULL_OPERATION, []), thisApproved);
+  };
+  it('not approved, at the minimum: potential only', () => { expect(split(pv('f1', false), [], false)).toEqual({ confirmed: [], potential: [d] }); });
+  it('approved: confirmed', () => { expect(split(pv('f1', true), [], true)).toEqual({ confirmed: [d], potential: [] }); });
+  it('not approved, but the crew is already short with approved leave: confirmed', () => { expect(split(pv('f1', false), [pv('f2', true)], false)).toEqual({ confirmed: [d], potential: [] }); });
+  it('nobody short: neither', () => { expect(split(pv('ctl', false), [], false)).toEqual({ confirmed: [], potential: [] }); });
 });

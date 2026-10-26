@@ -6,7 +6,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CONTROLLER_LEAVE_RULES, type LeaveApproval } from '@/core/controllers/leaveRules';
 import { personOn } from '@/core/manpower';
-import { leavePreview, PREVIEW_MAX_DAYS, type DutyIssue, type PreviewDuty } from '@/core/requests/preview';
+import { leaveScenarios } from '@/core/calendar';
+import { leavePreview, PREVIEW_MAX_DAYS, shortSplit, type DutyIssue, type PreviewDuty } from '@/core/requests/preview';
 import { addDaysIso } from '@/core/roster';
 import { fetchLeaveApprovals } from '@/data/controllers';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
@@ -23,11 +24,14 @@ const DOT = { green: 'bg-green-600', amber: 'bg-amber-500', red: 'bg-status-red'
 const wd = (d: string) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(`${d}T00:00:00Z`).getUTCDay()];
 const nth = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th'}`;
 
-export function ImpactPreview({ leave, counted = true }: { leave: PreviewLeave; /** false: the leave does not count yet (request, or started without approval) */ counted?: boolean }) {
+/**
+ * The staffing preview of one leave, read once for the sheet and Approvals: `p` on the plan as the screens count it
+ * (leave + task releases), and the Calendar's confirmed / potential split (`leaveScenarios` + `shortSplit`).
+ */
+export function useLeaveImpact(leave: PreviewLeave, thisApproved = false) {
   const [inputs, setInputs] = useState<ManpowerInputs | null>(null);
   const [approvals, setApprovals] = useState<LeaveApproval[]>([]);
   const [error, setError] = useState(false);
-  const [all, setAll] = useState(false);
   const last = leave.end >= '9999' ? addDaysIso(leave.start, PREVIEW_MAX_DAYS) : leave.end;
   useEffect(() => {
     let live = true;
@@ -36,6 +40,21 @@ export function ImpactPreview({ leave, counted = true }: { leave: PreviewLeave; 
     return () => { live = false; };
   }, [leave.start, last]);
   const p = useMemo(() => (inputs ? leavePreview(leave, inputs.people, inputs.absencesAll, inputs.assignments, inputs.rules, approvals) : null), [inputs, approvals, leave]);
+  const split = useMemo(() => {
+    if (!inputs) return null;
+    const sc = leaveScenarios(inputs.absencesAll);
+    return shortSplit(leavePreview(leave, inputs.people, sc.approvedOnly, inputs.assignments, inputs.rules, approvals),
+      leavePreview(leave, inputs.people, sc.allPlanned, inputs.assignments, inputs.rules, approvals), thisApproved);
+  }, [inputs, approvals, leave, thisApproved]);
+  return { inputs, p, split, error, last };
+}
+
+export const ROLE_SHORT: Record<string, string> = { controller: 'Controller', vr_controller: 'VR', morning_controller: 'Morning Ctl', panel_operator: 'Panel', field_operator: 'Field', other: 'Other' };
+export { nth };
+
+export function ImpactPreview({ leave, counted = true }: { leave: PreviewLeave; /** false: the leave does not count yet (request, or started without approval) */ counted?: boolean }) {
+  const [all, setAll] = useState(false);
+  const { inputs, p, error, last } = useLeaveImpact(leave);
   if (error) return <p className="text-xs text-amber-800">The staffing check could not run. Do not decide on it until it does.</p>;
   if (!p || !inputs) return <Spinner label="Checking the crews…" />;
   const people = new Map(inputs.people.map((x) => [x.id, x]));
@@ -81,7 +100,8 @@ export function ImpactPreview({ leave, counted = true }: { leave: PreviewLeave; 
   );
 }
 
-function DutyRow({ d }: { d: PreviewDuty }) {
+/** One duty: date, shift, counts before → after against the minimum, and its issue (`kind` marks confirmed / potential). */
+export function DutyRow({ d, kind }: { d: PreviewDuty; kind?: 'confirmed' | 'potential' | null }) {
   const pos = (label: string, x: { before: number; after: number; min: number }) =>
     <span className={cx(x.after < x.min && 'font-semibold text-status-red')}>{label} {x.before !== x.after ? <>{x.before}→<b>{x.after}</b></> : x.after}/{x.min}</span>;
   return (
@@ -89,7 +109,8 @@ function DutyRow({ d }: { d: PreviewDuty }) {
       <span className="w-[52px] shrink-0 text-slate-600">{wd(d.date)} {Number(d.date.slice(8))}</span>
       <span className={cx('relative flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded text-[10px] font-bold', SHIFT_STYLE[d.shift].cell)}>{d.shift}{d.after !== 'off' && <StatusBar mark={d.after} />}</span>
       <span className="flex min-w-0 flex-1 flex-wrap gap-x-1.5 text-slate-700">{pos('Ctl', d.controller)}{pos('P', d.panel)}{pos('F', d.field)}</span>
-      {d.issue ? <span className={cx('shrink-0 rounded px-1 text-[10px] font-semibold', ISSUE[d.issue].cls)}>{ISSUE[d.issue].text}</span>
+      {kind ? <span className={cx('shrink-0 rounded px-1 text-[10px] font-semibold', kind === 'confirmed' ? 'bg-status-red text-white' : 'border border-dashed border-amber-500 text-amber-800')}>{kind === 'confirmed' ? 'Short' : 'Short?'}</span>
+        : d.issue ? <span className={cx('shrink-0 rounded px-1 text-[10px] font-semibold', ISSUE[d.issue].cls)}>{ISSUE[d.issue].text}</span>
         : <span className="flex shrink-0 items-center gap-0.5"><span className={cx('h-2 w-2 rounded-full', DOT[d.before])} />→<span className={cx('h-2 w-2 rounded-full', DOT[d.after])} /></span>}
     </li>
   );

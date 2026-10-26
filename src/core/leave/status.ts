@@ -140,9 +140,9 @@ export function rowLabel(s: RowState, x: { approval: ApprovalState | null; reque
   switch (s) {
     case 'cancelled': return x.approval === 'declined' ? 'Not approved' : 'Cancelled';
     case 'rescheduled': return 'Rescheduled';
-    case 'pending': return x.requested ? 'Requested' : x.approval === 'lapsed' ? (x.time === 'taken' ? 'Ended · Not approved' : 'On leave · Not approved') : 'Awaiting approval';
+    case 'pending': return x.requested ? 'Requested' : x.approval === 'lapsed' ? (x.time === 'taken' ? 'Ended · Not approved' : 'On leave · Not approved') : 'Awaiting';
     case 'now': return x.time === 'open' ? 'On leave · return open' : `On leave · back ${short(addDaysIso(x.end, 1))}`;
-    case 'next': return inDays <= 0 ? 'Approved' : `Approved · in ${inDays} d`;
+    case 'next': return inDays <= 0 ? 'Approved' : `Approved · ${inDays} d`;
     case 'done': return 'Taken';
   }
 }

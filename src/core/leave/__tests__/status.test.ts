@@ -98,7 +98,7 @@ describe('rowState', () => {
     const sh = (d: string) => d.slice(5);
     expect(rowLabel('pending', { approval: 'lapsed', requested: false, time: 'on_leave', start: '2026-10-16', end: '2026-11-06' }, '2026-10-26', sh)).toBe('On leave · Not approved');
     expect(rowLabel('now', { approval: 'approved', requested: false, time: 'on_leave', start: '2026-10-20', end: '2026-11-04' }, '2026-10-26', sh)).toBe('On leave · back 11-05');
-    expect(rowLabel('next', { approval: 'approved', requested: false, time: 'upcoming', start: '2026-10-30', end: '2026-11-04' }, '2026-10-26', sh)).toBe('Approved · in 4 d');
+    expect(rowLabel('next', { approval: 'approved', requested: false, time: 'upcoming', start: '2026-10-30', end: '2026-11-04' }, '2026-10-26', sh)).toBe('Approved · 4 d');
     expect(rowLabel('cancelled', { approval: 'declined', requested: false, time: 'upcoming', start: 'x', end: 'x' }, '2026-10-26', sh)).toBe('Not approved');
   });
 });

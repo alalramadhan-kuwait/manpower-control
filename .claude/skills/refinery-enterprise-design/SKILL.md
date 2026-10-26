@@ -99,6 +99,9 @@ Touch: primary buttons `min-h-11` (44px) · secondary/row actions `min-h-9` (36p
 - **Manpower / Today:** who is on, who is in charge, who is away. Two shifts at a time, colour per shift.
 - **Leave / Requests:** a decision list (To approve / To fix / …), two-line rows, ✓ action on the row, ⋯ for the rest,
   person card in a bottom sheet.
+  Decision sheet (Calendar leave sheet, 26 Oct 2026): who + state chip · the leave line · three figures (duties, short
+  confirmed + potential, this year) · one conclusion (confirmed solid red, potential dashed amber) · warnings that need
+  the approver never folded · primary actions + ⋯ · every detail in `Fold` rows with a one-line summary value.
 - **Shutdown tracker:** item list → item detail with steps. Keep **P6 baseline, actual, forecast, work done and critical
   path** visibly separate; say "unverified" when the logic behind a forecast is not imported.
 - **IATs / hot work:** job, location (from the line-up), status, ops label.

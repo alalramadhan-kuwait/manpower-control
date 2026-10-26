@@ -121,27 +121,25 @@ export function LeaveListView({ year, month, isHead, onMonth, onView }: { year: 
 
 function LeaveRow({ r, before, onOpen }: { r: Row; before: boolean; onOpen: () => void }) {
   const st = ROW_STYLE[r.state];
-  // line 3 only for a note: the shutdown, where it moved from / to, joined records, a cancellation asked, sent back to fix
-  const fix = r.records.find((x) => x.fix_sent_at)?.fix_note ?? null;
-  const notes: [string, string?][] = [
-    ...(r.sd ? [['Shutdown — Cancellation possible', 'font-semibold text-amber-800'] as [string, string]] : []),
-    ...(r.movedFrom !== null ? [[r.movedFrom ? `↻ from ${r.movedFrom}` : '↻ rescheduled'] as [string]] : []),
-    ...(r.movedTo ? [[`→ now ${r.movedTo}`] as [string]] : []),
-    ...(r.records.length > 1 ? [[`${r.records.length} records`] as [string]] : []),
-    ...(r.cancelAsked ? [['Cancellation requested', 'text-red-700'] as [string, string]] : []),
-    ...(r.records.some((x) => x.fix_sent_at) ? [[`Sent back to fix${fix ? `: ${fix}` : ''}`, 'text-amber-800'] as [string, string]] : [])];
+  // always two lines: the states that need someone are chips on line 1; where it moved from, joined records and the
+  // fix note are in the sheet
+  const chips: [string, string, string][] = [
+    ...(r.sd ? [['SD', 'bg-amber-100 text-amber-800', 'Shutdown: cancellation possible']] as [string, string, string][] : []),
+    ...(r.cancelAsked ? [['Cancel?', 'bg-red-100 text-red-800', 'Cancellation requested']] as [string, string, string][] : []),
+    ...(r.records.some((x) => x.fix_sent_at) ? [['Fix', 'bg-amber-100 text-amber-800', 'Sent back to fix']] as [string, string, string][] : [])];
   return (
     <button type="button" onClick={onOpen} className={cx('block w-full border-l-[3px] px-2.5 py-1.5 text-left active:brightness-95', st.row, r.request && REQUEST_BAR)}>
       <span className="flex items-center gap-2">
-        <b className={cx('min-w-0 flex-1 truncate text-[13px] text-slate-900', r.state === 'cancelled' && 'line-through decoration-red-300', r.state === 'rescheduled' && 'text-slate-600')}>{r.p.display_name}</b>
+        <b className={cx('min-w-0 truncate text-[13px] text-slate-900', r.state === 'cancelled' && 'line-through decoration-red-300', r.state === 'rescheduled' && 'text-slate-600')}>{r.p.display_name}</b>
+        {chips.map(([t, c, title]) => <span key={t} title={title} aria-label={title} className={cx('shrink-0 rounded px-1 text-[10px] font-bold', c)}>{t}</span>)}
+        <span className="flex-1" />
         <span className={cx('shrink-0 whitespace-nowrap text-[11px] font-bold', st.text)}>{r.label}</span>
       </span>
       <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
-        <span className="min-w-0 flex-1 truncate">#{r.p.employee_number ?? '—'} · {POS_SHORT[r.p.position_code ?? ''] ?? r.p.position_label ?? '—'} · {r.place}</span>
+        <span className="min-w-0 flex-1 truncate">#{r.p.employee_number ?? '—'} · {POS_SHORT[r.p.position_code ?? ''] ?? r.p.position_label ?? '—'} · {r.place.replace(' · day duty', '·Day')}</span>
         {r.codes.map((c) => <span key={c} className={cx('shrink-0 rounded px-1 py-px text-[10px] font-bold', leaveTone(r.typeCode).chip)}>{c}{r.movedFrom !== null ? ' ↻' : ''}</span>)}
         <span className={cx('shrink-0 tabular-nums', before ? 'text-slate-500' : 'font-semibold text-slate-700')}>{isOpenEnd(r.end) ? `${shortDate(r.start)} – open` : `${range(r.start, r.end)} · ${days(r.start, r.end)} d`}</span>
       </span>
-      {notes.length > 0 && <span className="flex flex-wrap gap-x-1 text-[11px] leading-tight text-slate-500">{notes.map(([t, c], i) => <span key={t} className={c}>{i ? '· ' : ''}{t}</span>)}</span>}
     </button>
   );
 }
