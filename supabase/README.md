@@ -272,3 +272,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261025045905_trk_engineer_links_off` | All engineer links (login IDs) turned off: no longer used; rows and history kept |
 | `20261026024553_trk_put_back_list` | `trk_return_item`: the Put back list (small parts removed → serviced → installed, Handover › Return), RLS for the tracker roles, changes logged (kind `return`); the 13 parts of the 25 Oct 19:00 report not tracked as items |
 | `20261026025500_trk_put_back_grants` | `trk_return_item`: the default grants of a new table removed (no anon access, no delete) — found by the integrity checks |
+| `20261026043937_trk_note_clears_on_step` | `trk_equipment.remark_at`; a status note is cleared when one of the item's steps starts or finishes after the note was written (same-transaction notes kept); V-12-209 old note cleared |
