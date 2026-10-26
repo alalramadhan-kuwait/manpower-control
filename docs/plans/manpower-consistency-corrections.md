@@ -1,6 +1,6 @@
 # Manpower calculation consistency — correction plan
 
-Status: **proposed, not applied** (audit 26 Oct 2026). Nothing below changes an approval rule. Each item needs the
+Status (26 Oct 2026): **items 1 and 2 applied** (owner approval); items 3 and 4 proposed, not applied. Nothing below changes an approval rule. Each item needs the
 owner's separate approval before it is deployed.
 
 | # | Priority | Finding | Correction | Changes | Risk | Rollback |
@@ -15,3 +15,15 @@ Order: 1 and 2 together (one approval: deploy + migration), then 3 (rides on the
 Tests before deploy: unit tests for the warning and the inputs; the integrity SQL test ends ALL PASS; a rolled-back
 transaction shows the revoked functions refuse a direct call and the checked path still approves; the first-day case
 gives the same verdict in Approvals and on the server.
+
+## Applied 26 Oct 2026
+
+- **Item 1.** `request-gate` v6, `sd-plan-approve` v12, `shift-alerts` v11 deployed from the committed bundles at commit
+  `c886300` (byte-identical to the repository files, sha256 checked). Each deployed entry imports its bundle pinned by
+  commit, so the code that runs is exactly the reviewed file. Smoke tests: each answers its sign-in check (nothing sent).
+  Next deploys: `npm run functions:build`, commit, then deploy the entry with the new commit. This needs the repository
+  to be reachable; if it is made private, deploy with the Supabase CLI and an access token instead.
+- **Item 2.** Migration `20261026094736_approval_paths_checked_only`. Tests `supabase/tests/approval_paths_checks.sql`
+  (rolled back): before 13 PASS + the 2 bypasses FAIL as found; after 15 PASS — checked approval and not-approve by the
+  Section Head, approval without a check refused, the four functions not callable, leave approve / undo / reject with a
+  reason / undo, Coordinator and anon refused. Integrity test ALL PASS (46). No record or rule changed.
