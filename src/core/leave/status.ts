@@ -105,3 +105,16 @@ export function crewPlace(p: { role: string | null; crew: string | null }, date:
   if (q.movedFrom && q.crew) return { home, actual: q.crew, text: `${home} · with ${q.crew}` };
   return { home, actual: home, text: home ?? 'Day' };
 }
+
+/** A planned shutdown (an active shutdown plan) with its dates. */
+export interface ShutdownPeriod { id: string; title: string; start: string; end: string }
+/**
+ * Shutdown — cancellation possible (owner, 26 Oct 2026): a plan PV not approved by the Section Head that overlaps an
+ * active planned shutdown may still be cancelled for the shutdown's manpower. Display only: it never cancels, and an
+ * approved leave is never marked. Returns the shutdown it overlaps.
+ */
+export function shutdownCancellable(r: StatusRecord, approval: ApprovalState, plans: ShutdownPeriod[]): ShutdownPeriod | null {
+  if (approval !== 'awaiting' && approval !== 'lapsed') return null;
+  if (planState(r) !== 'current') return null;
+  return plans.find((p) => p.start <= r.end_date && p.end >= r.start_date) ?? null;
+}

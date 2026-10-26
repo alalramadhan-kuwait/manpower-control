@@ -5,7 +5,7 @@ import { supabase } from './supabase';
 import { openFrom, withOpenEnd } from './openEnd';
 import { dataChanged } from './changes';
 import type { OracleStatus } from '@/core/oracle';
-import type { OracleLogEntry, PendingLeaveRequest } from '@/core/leave/status';
+import type { OracleLogEntry, PendingLeaveRequest, ShutdownPeriod } from '@/core/leave/status';
 import type { AbsenceType, ControllerAssignment, EmployeeDirectoryRow, LeavePlanChange, LeaveRecord } from './types';
 
 const plain = (error: { message: string }) => new Error(error.message);
@@ -124,14 +124,15 @@ export async function fetchLeaveVersions(rootId: string): Promise<LeaveRecord[]>
 export interface CrewMove { employeeId: string; start: string; end: string | null; crew: string; kind: 'temporary' | 'placement' }
 /** What the leave lists need besides the records: the Oracle log (recorded applications only), leave requests waiting
  *  for the Section Head, and the shift movements (VR placements, temporary covers, day duty) for the actual crew. */
-export interface LeaveContext { oracleLog: OracleLogEntry[]; pending: PendingLeaveRequest[]; moves: CrewMove[] }
+export interface LeaveContext { oracleLog: OracleLogEntry[]; pending: PendingLeaveRequest[]; moves: CrewMove[]; shutdowns: ShutdownPeriod[] }
 export async function fetchLeaveContext(from: string, to: string): Promise<LeaveContext> {
-  const [ol, rq, mv] = await Promise.all([
+  const [ol, rq, mv, sd] = await Promise.all([
     supabase.from('oracle_requests').select('leave_root_id,start_date,end_date,status,source,status_at,recorded_at').lte('start_date', to).gte('end_date', from).limit(5000),
     supabase.from('request_headers').select('id,employee_id,summary,requested_at,start_date,end_date,request_leave(absence_type_code,start_date,end_date,action,target_record_id)')
       .eq('status', 'submitted').lte('start_date', to).or(`end_date.is.null,end_date.gte.${from}`).limit(500),
     supabase.from('crew_movements').select('employee_id,start_date,end_date,to_crew,kind').eq('status', 'active').in('kind', ['temporary', 'placement'])
-      .lte('start_date', to).or(`end_date.is.null,end_date.gte.${from}`)
+      .lte('start_date', to).or(`end_date.is.null,end_date.gte.${from}`),
+    supabase.from('sd_plans').select('id,title,start_date,end_date').eq('status', 'active').lte('start_date', to).gte('end_date', from)
   ]);
   // the Oracle log and the request queue are staff data: a reader without them still gets the list
   const err = mv.error; if (err) throw err;
@@ -145,7 +146,8 @@ export async function fetchLeaveContext(from: string, to: string): Promise<Leave
       const action = (['new', 'extend', 'return', 'cancel'] as const).find((a) => a === (l.action ?? 'new')) ?? 'new';
       return [{ id: h.id, employeeId: h.employee_id, typeCode: l.absence_type_code, start: l.start_date ?? h.start_date, end: l.end_date ?? h.end_date, action, targetRecordId: l.target_record_id, requestedAt: h.requested_at, summary: h.summary }]; }),
     moves: (mv.data as { employee_id: string; start_date: string; end_date: string | null; to_crew: string; kind: CrewMove['kind'] }[])
-      .map((m) => ({ employeeId: m.employee_id, start: m.start_date, end: m.end_date, crew: m.to_crew, kind: m.kind }))
+      .map((m) => ({ employeeId: m.employee_id, start: m.start_date, end: m.end_date, crew: m.to_crew, kind: m.kind })),
+    shutdowns: ((sd.data ?? []) as { id: string; title: string; start_date: string; end_date: string }[]).map((x) => ({ id: x.id, title: x.title, start: x.start_date, end: x.end_date }))
   };
 }
 

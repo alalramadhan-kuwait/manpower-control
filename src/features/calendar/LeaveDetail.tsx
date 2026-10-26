@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { isOpenEnd } from '@/core/leave';
-import { APPROVAL_LABEL, ORACLE_STATE_LABEL, TIME_LABEL, timeState, type ApprovalState, type OracleState, type PendingLeaveRequest } from '@/core/leave/status';
+import { APPROVAL_LABEL, ORACLE_STATE_LABEL, TIME_LABEL, timeState, type ApprovalState, type OracleState, type PendingLeaveRequest, type ShutdownPeriod } from '@/core/leave/status';
 import { fetchLeaveVersions, recordOracle } from '@/data/leave';
 import type { EmployeeDirectoryRow, LeaveRecord } from '@/data/types';
 import { VersionList } from '@/features/leave/LeaveVersions';
@@ -18,6 +18,8 @@ import { ImpactPreview } from './ImpactPreview';
 export interface LeaveItem {
   key: string; p: EmployeeDirectoryRow; start: string; end: string; codes: string[]; typeCode: string | null; place: string; home: string | null; actual: string | null;
   records: LeaveRecord[]; movedFrom: string | null; approval: ApprovalState | null; oracle: OracleState | 'mixed' | null; request: PendingLeaveRequest | null; cancelAsked: boolean;
+  /** Not approved and overlapping a planned shutdown: may still be cancelled for it (display only). */
+  sd: ShutdownPeriod | null;
 }
 const range = (s: string, e: string) => (isOpenEnd(e) ? `${shortDate(s)} – return open` : s === e ? shortDate(s) : `${shortDate(s)} – ${shortDate(e)}`);
 const days = (s: string, e: string) => Math.round((Date.parse(e) - Date.parse(s)) / 864e5) + 1;
@@ -68,7 +70,11 @@ export function LeaveDetail({ item, around, today, onClose, onChanged }: {
               {records.length > 1 && <><dt className="text-slate-500">Records</dt><dd>{records.length} back to back, one leave</dd></>}
             </dl>
           )}
-          {item.approval === 'lapsed' && <p className="mt-1 text-xs text-status-red">Started without approval: by the current rule the manpower count treats {p.display_name.split(' ')[0]} as at work.</p>}
+          {item.sd && <p className="mt-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-900">Shutdown — Cancellation possible · {item.sd.title} {shortDate(item.sd.start)}–{shortDate(item.sd.end)}</p>}
+          {item.approval === 'lapsed' && <p className="mt-1 text-xs text-slate-700">{item.sd
+            ? 'Counted as planned available manpower until you decide (shutdown rule): approve it, or cancel it with a reason. This is planned availability, not confirmed attendance.'
+            : 'Started without approval, outside a shutdown: the current rule still counts this person as planned available. Not confirmed attendance.'}</p>}
+          {item.approval === 'awaiting' && item.sd && <p className="mt-1 text-xs text-slate-700">Counted as on leave until its first day; if still not approved then, counted as planned available for the shutdown.</p>}
           {item.oracle === 'rejected' && counted && <p className="mt-1 text-xs text-status-red">Rejected in Oracle but still in the plan: check whether it was taken.</p>}
           {item.cancelAsked && <p className="mt-1 text-xs text-status-red">A cancellation is waiting for the Section Head.</p>}
           {oracleOpen && (

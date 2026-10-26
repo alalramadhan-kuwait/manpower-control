@@ -9,7 +9,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { MONTH_NAMES, monthEnd, monthStart, shiftMonth } from '@/core/calendar';
 import { isOpenEnd } from '@/core/leave';
-import { APPROVAL_LABEL, ORACLE_SHORT, TIME_LABEL, approvalState, crewPlace, joinTouching, oracleState, timeState, type ApprovalState, type OracleState } from '@/core/leave/status';
+import { APPROVAL_LABEL, ORACLE_SHORT, TIME_LABEL, approvalState, crewPlace, joinTouching, oracleState, shutdownCancellable, timeState, type ApprovalState, type OracleState } from '@/core/leave/status';
 import { CREWS } from '@/core/roster';
 import { fetchLeaveContext, fetchLeavePlan, type LeaveContext, type LeavePlanData } from '@/data/leave';
 import type { EmployeeDirectoryRow, LeaveRecord } from '@/data/types';
@@ -63,7 +63,8 @@ export function LeaveListView({ year, month, crew, onMonth, onCrew, onView }: { 
         movedFrom: moved ? range(moved.start_date, moved.end_date) : rescheduled ? '' : null,
         approval: one<ApprovalState>(j.records.map((r) => approvalState(r, today)), ['declined', 'lapsed', 'awaiting']),
         oracle: oracles.every((x) => x === oracles[0]) ? oracles[0] : 'mixed',
-        request: null, cancelAsked: j.records.some((r) => cancelAsked.has(r.id)) };
+        request: null, cancelAsked: j.records.some((r) => cancelAsked.has(r.id)),
+        sd: j.records.map((r) => shutdownCancellable(r, approvalState(r, today), ctx.shutdowns)).find(Boolean) ?? null };
     });
     // requests still waiting for the Section Head: a new leave or an extension, not yet in the plan
     for (const r of ctx.pending) {
@@ -71,7 +72,7 @@ export function LeaveListView({ year, month, crew, onMonth, onCrew, onView }: { 
       if (!p || r.action === 'cancel' || r.action === 'return' || r.start > to || (!isOpenEnd(end) && end < from)) continue;
       const place = placeOf(p, r.start < from ? from : r.start);
       out.push({ key: `rq-${r.id}`, p, start: r.start, end, codes: [typeOf(r.typeCode)?.short_code ?? 'Leave'], typeCode: r.typeCode, place: place.text, home: place.home, actual: place.actual,
-        records: [], movedFrom: null, approval: null, oracle: null, request: r, cancelAsked: false });
+        records: [], movedFrom: null, approval: null, oracle: null, request: r, cancelAsked: false, sd: null });
     }
     const match = nameFilter(query);
     const posOf = (p: EmployeeDirectoryRow) => p.position_category ?? 'other';
@@ -128,7 +129,8 @@ function LeaveRow({ r, today, before, onOpen }: { r: Row; today: string; before:
       [r.oracle === 'mixed' ? 'Oracle differs by part' : ORACLE_SHORT[r.oracle!], ORACLE_TONE[r.oracle!]],
       ...(r.movedFrom !== null ? [[r.movedFrom ? `↻ moved from ${r.movedFrom}` : '↻ rescheduled'] as [string]] : []),
       ...(r.records.length > 1 ? [[`${r.records.length} records`] as [string]] : []),
-      ...(r.cancelAsked ? [['Cancellation requested', 'text-status-red'] as [string, string]] : [])];
+      ...(r.cancelAsked ? [['Cancellation requested', 'text-status-red'] as [string, string]] : []),
+      ...(r.sd ? [['Shutdown — Cancellation possible', 'font-semibold text-amber-800'] as [string, string]] : [])];
   return (
     <button type="button" onClick={onOpen} className={cx('block w-full px-3 py-1.5 text-left active:bg-slate-50', r.request && 'bg-brand-50/50')}>
       <span className="flex items-center gap-2"><b className="min-w-0 flex-1 truncate text-[13px] text-slate-900">{r.p.display_name}</b>

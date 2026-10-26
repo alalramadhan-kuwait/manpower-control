@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { approvalState, crewPlace, joinTouching, leaveState, oracleState, planState, timeState, type OracleLogEntry, type StatusRecord } from '../status';
+import { approvalState, crewPlace, shutdownCancellable, joinTouching, leaveState, oracleState, planState, timeState, type OracleLogEntry, type StatusRecord } from '../status';
 
 const rec = (o: Partial<StatusRecord> = {}): StatusRecord => ({
   root_id: 'r1', start_date: '2026-11-10', end_date: '2026-11-20', status: 'approved', in_current_plan: true, absence_type_code: 'annual_leave_planned', ...o
@@ -64,5 +64,19 @@ describe('crewPlace', () => {
     expect(crewPlace({ role: 'field_operator', crew: 'B' }, '2026-11-02', [{ start: '2026-10-01', end: null, crew: 'DAY', kind: 'temporary' }]).text).toBe('B · day duty');
     expect(crewPlace({ role: 'controller', crew: 'A' }, '2026-11-02', [], 'B').text).toBe('A · covering B');
     expect(crewPlace({ role: 'panel_operator', crew: 'C' }, '2026-11-02', []).text).toBe('C');
+  });
+});
+
+describe('shutdownCancellable', () => {
+  const sd = [{ id: 's', title: 'Train-2 SD', start: '2026-10-18', end: '2026-11-16' }];
+  it('marks a plan PV not approved that overlaps a planned shutdown', () => {
+    expect(shutdownCancellable(rec(), 'awaiting', sd)?.id).toBe('s');
+    expect(shutdownCancellable(rec(), 'lapsed', sd)?.id).toBe('s');
+  });
+  it('never marks an approved leave, other leave types, leave outside the shutdown, or a replaced version', () => {
+    expect(shutdownCancellable(rec({ approved_at: 'x' }), 'approved', sd)).toBeNull();
+    expect(shutdownCancellable(rec({ absence_type_code: 'sick_leave' }), 'not_required', sd)).toBeNull();
+    expect(shutdownCancellable(rec({ start_date: '2026-12-01', end_date: '2026-12-10' }), 'awaiting', sd)).toBeNull();
+    expect(shutdownCancellable(rec({ status: 'rescheduled', in_current_plan: false }), 'awaiting', sd)).toBeNull();
   });
 });
