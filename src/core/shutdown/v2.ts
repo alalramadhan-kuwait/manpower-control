@@ -440,8 +440,8 @@ export interface Issue { level: IssueLevel; code: string; message: string; emplo
 export interface PlanCheckInput {
   plan: SdPlan; teams: SdTeam[]; members: SdMember[];
   people: MpPerson[]; absences: MpAbsence[]; assignments: MpAssignment[]; rules: RuleConfig[];
-  /** Task releases: away from the crew's duty, so counted in the crews' minimums and the cover candidates (not in the
-   *  person's own schedule, the team cover or the fingerprint, which stay leave only). */
+  /** Task releases: away from the crew's duty and off the team that day, so counted in the crews' minimums, the cover
+   *  candidates, the team cover and the planner (not in the person's own schedule, overtime or the fingerprint). */
   releases?: MpAbsence[];
   info: Map<string, PersonInfo>;
   /** Active shutdown plans with their members (for two-in-a-row) and the duties of the others (overtime counted once). */
@@ -469,6 +469,11 @@ const crewAway = (inp: Pick<PlanCheckInput, 'absences' | 'releases'>): MpAbsence
 
 /** Leave that takes the person off the team on a date: leave already approved in Oracle (leave not yet approved is postponed). */
 export const awayOn = (absences: MpAbsence[]) => (employeeId: string, date: string) => absences.some((a) => a.employeeId === employeeId && a.oracle === 'approved' && (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && a.start <= date && date <= a.end);
+/** Off the team on a date: approved leave, or a task release (released to a task, not on the shutdown duty that day). */
+export const awayFromTeam = (absences: MpAbsence[], releases: MpAbsence[] = []) => {
+  const leave = awayOn(absences);
+  return (employeeId: string, date: string) => leave(employeeId, date) || releases.some((r) => r.employeeId === employeeId && r.start <= date && date <= r.end);
+};
 
 /**
  * A member's recorded rest day off his crew: does his crew still meet its minimum for his position that day (with the
@@ -556,6 +561,8 @@ export function checkPlan(inp: PlanCheckInput): PlanCheck {
   const name = (id: string) => info.get(id)?.name ?? 'Member';
   const teamOf = new Map(teams.map((t) => [t.id, t]));
   const away = awayOn(inp.absences);
+  // the team's cover and its rest-day offers: a task release is off the team too (overtime stays on leave only)
+  const offTeam = awayFromTeam(inp.absences, inp.releases);
   if (!members.length) issues.push({ level: 'block', code: 'empty', message: 'Nobody is on the teams yet.' });
 
   // eligibility of everyone on the plan
@@ -589,7 +596,7 @@ export function checkPlan(inp: PlanCheckInput): PlanCheck {
   }
 
   // continuous 12-hour coverage
-  const gaps = coverageGaps(p, teams, members, info, away, inp.phases ?? []);
+  const gaps = coverageGaps(p, teams, members, info, offTeam, inp.phases ?? []);
   const byGap = new Map<string, CoverGap[]>();
   for (const g of gaps) { const k = `${g.teamId}|${g.role}`; byGap.set(k, [...(byGap.get(k) ?? []), g]); }
   for (const list of byGap.values()) {
@@ -646,8 +653,8 @@ export function checkPlan(inp: PlanCheckInput): PlanCheck {
       if ((fix?.kind === 'sd_day' && !fix.works) || fix?.kind === 'sd_move') {
         const mv = fix; const off = mv.kind === 'sd_move' ? mv.off : mv.date;
         const changed = members.map((x) => (x.id === m.id ? { ...x, days: { ...(x.days ?? {}), [off]: { works: false, hours: null }, ...(mv.kind === 'sd_move' ? { [mv.work]: { works: true, hours: p.shiftHours } } : {}) } } : x));
-        const before = coverageGaps(p, teams, members, info, away, inp.phases ?? []).length;
-        if (coverageGaps(p, teams, changed, info, away, inp.phases ?? []).length > before) { note = ` Giving ${fmtDay(off)} off would leave the team below its minimum: not offered.`; fix = undefined; }
+        const before = coverageGaps(p, teams, members, info, offTeam, inp.phases ?? []).length;
+        if (coverageGaps(p, teams, changed, info, offTeam, inp.phases ?? []).length > before) { note = ` Giving ${fmtDay(off)} off would leave the team below its minimum: not offered.`; fix = undefined; }
       }
       const what = !fix ? '' : fix.kind === 'rest' ? `one more day off before rejoining (${fmtDay(fix.date)})` : fix.kind === 'sd_move' ? `move his day off ${fmtDay(fix.work)} → ${fmtDay(fix.off)}`
         : fix.works ? `work ${fmtDay(fix.date)} (his shutdown day off)` : `${fmtDay(fix.date)} off (a shutdown duty)`;
@@ -744,7 +751,7 @@ export function plannerContext(inp: PlanCheckInput): { levelOf: (employeeId: str
     return null;
   };
   return {
-    away: awayOn(inp.absences),
+    away: awayFromTeam(inp.absences, inp.releases),
     levelOf: (e) => inp.info.get(e)?.foLevel ?? null,
     crewOn: (e, d) => effectiveCrew(people.get(e), byEmp.get(e) ?? null, d),
     crewOf: (e) => { const m = byEmp.get(e); return effectiveCrew(people.get(e), m ?? null, m ? (m.start > p.start ? m.start : p.start) : p.start); },

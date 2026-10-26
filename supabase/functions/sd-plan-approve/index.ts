@@ -942,6 +942,10 @@ function transferHours(person, m, ls, firstSd, hardCount) {
 }
 var crewAway = (inp) => inp.releases?.length ? [...inp.absences, ...inp.releases] : inp.absences;
 var awayOn = (absences) => (employeeId, date) => absences.some((a) => a.employeeId === employeeId && a.oracle === "approved" && (a.status === "approved" || a.status === "planned") && a.inCurrentPlan !== false && a.start <= date && date <= a.end);
+var awayFromTeam = (absences, releases = []) => {
+  const leave = awayOn(absences);
+  return (employeeId, date) => leave(employeeId, date) || releases.some((r) => r.employeeId === employeeId && r.start <= date && date <= r.end);
+};
 function restDayShortage(inp, person, m, date) {
   const crew = effectiveCrew(person, null, date);
   if (!crew) return null;
@@ -1010,6 +1014,7 @@ function checkPlan(inp) {
   const name = (id) => info.get(id)?.name ?? "Member";
   const teamOf = new Map(teams.map((t) => [t.id, t]));
   const away = awayOn(inp.absences);
+  const offTeam = awayFromTeam(inp.absences, inp.releases);
   if (!members.length) issues.push({ level: "block", code: "empty", message: "Nobody is on the teams yet." });
   const around = adjacent(inp.plans, p);
   for (const m of members) {
@@ -1040,7 +1045,7 @@ function checkPlan(inp) {
       message: `${name(m.employeeId)}: the days were planned for other dates (${missing.length ? `${missing.length} day${missing.length === 1 ? "" : "s"} of ${fmtDay(m.start)} – ${fmtDay(m.end)} not planned` : ""}${missing.length && outside.length ? "; " : ""}${outside.length ? `${outside.length} duty day${outside.length === 1 ? "" : "s"} outside them` : ""}). Plan the days again (Set days & hours).`
     });
   }
-  const gaps = coverageGaps(p, teams, members, info, away, inp.phases ?? []);
+  const gaps = coverageGaps(p, teams, members, info, offTeam, inp.phases ?? []);
   const byGap = /* @__PURE__ */ new Map();
   for (const g of gaps) {
     const k = `${g.teamId}|${g.role}`;
@@ -1101,8 +1106,8 @@ function checkPlan(inp) {
         const mv = fix;
         const off = mv.kind === "sd_move" ? mv.off : mv.date;
         const changed = members.map((x) => x.id === m.id ? { ...x, days: { ...x.days ?? {}, [off]: { works: false, hours: null }, ...mv.kind === "sd_move" ? { [mv.work]: { works: true, hours: p.shiftHours } } : {} } } : x);
-        const before = coverageGaps(p, teams, members, info, away, inp.phases ?? []).length;
-        if (coverageGaps(p, teams, changed, info, away, inp.phases ?? []).length > before) {
+        const before = coverageGaps(p, teams, members, info, offTeam, inp.phases ?? []).length;
+        if (coverageGaps(p, teams, changed, info, offTeam, inp.phases ?? []).length > before) {
           note = ` Giving ${fmtDay(off)} off would leave the team below its minimum: not offered.`;
           fix = void 0;
         }

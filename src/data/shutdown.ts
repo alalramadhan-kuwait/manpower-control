@@ -403,7 +403,12 @@ export async function fetchIncompleteShutdowns(today: string): Promise<{ plan: S
           .in('status', ['approved', 'planned']).lte('start_date', sd.plan.end).or(openFrom(sd.plan.start))
       : { data: [], error: null };
     if (error) throw error;
-    const leave = withOpenEnd(data as { employee_id: string; start_date: string; end_date: string | null }[]);
+    // task releases take the person off the team for the day, like approved leave
+    const tr = ids.length
+      ? await supabase.from('task_releases').select('employee_id,start_date,end_date').in('employee_id', ids).eq('status', 'active').lte('start_date', sd.plan.end).gte('end_date', sd.plan.start)
+      : { data: [], error: null };
+    if (tr.error) throw tr.error;
+    const leave = [...withOpenEnd(data as { employee_id: string; start_date: string; end_date: string | null }[]), ...(tr.data as { employee_id: string; start_date: string; end_date: string }[])];
     const gaps = teamGaps(sd.plan, sd.teams, sd.members, sd.phases, (e, d) => leave.some((l) => l.employee_id === e && l.start_date <= d && d <= l.end_date));
     if (gaps.length) out.push({ plan: sd.plan, gaps });
   }

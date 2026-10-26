@@ -43,3 +43,8 @@ gives the same verdict in Approvals and on the server.
   plan fingerprint (an approved plan is not marked changed). Same minimums and approval authority. Test
   `src/core/shutdown/__tests__/releases.test.ts`; `sd-plan-approve` redeployed. No active task release today: the
   active plan's check is unchanged.
+- **Shutdown team cover (owner).** A task release takes the person off the shutdown team for the day, like approved
+  leave (`awayFromTeam` in `core/shutdown/v2.ts`): the plan check's team cover and rest-day offers, the planner, the
+  shutdown page's team days and gaps, and the incomplete-shutdown notice. A person is counted once: off the team, never
+  also on duty. Unchanged: overtime and the leave-clash counts (leave only), team minimums, approval authority, the
+  fingerprint. Tests in `coverage.test.ts`; `sd-plan-approve` redeployed. Impact today: none (no active task release).

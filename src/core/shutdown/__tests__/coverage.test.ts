@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { planDates, type SdMember, type SdPhase, type SdPlan, type SdTeam } from '..';
-import { coverageGaps, type PersonInfo } from '../v2';
+import { awayFromTeam, coverageGaps, type PersonInfo } from '../v2';
 
 // Coverage by the clock: at every moment of each team shift, at least the place's minimum on duty. An 8-hour duty
 // (07:00–15:00 / 19:00–03:00) counts only for its own hours.
@@ -100,5 +100,19 @@ describe('coverage hour by hour · counts, not just presence (a place needing 6)
   it('a headcount of 6 is not enough when two work 8 h: 4 of 6 from 15:00', () => {
     const gaps = coverageGaps(total, [day], ops(6, 2), TI, nobodyAway, phases);
     expect(gaps[0]).toMatchObject({ from: '15:00', to: '19:00', have: 4, need: 6 });
+  });
+});
+
+describe('a task release takes the person off the team for the day (counted once, like approved leave)', () => {
+  const rel = (id: string, d: string) => ({ id: `release-${id}`, employeeId: id, start: d, end: d, status: 'approved' as const, typeCode: 'task_release', typeLabel: 'Task release', inCurrentPlan: true });
+  const team = day12(['c', 'controller'], ['e1', 'senior'], ['g1', 'good']);
+  it('the team is short on the release day only', () => {
+    const g = coverageGaps(train, [day], team, I, awayFromTeam([], [rel('e1', '2026-11-02')]));
+    expect([...new Set(g.map((x) => x.date))]).toEqual(['2026-11-02']);
+  });
+  it('no release: no gap; leave not yet approved is still not away', () => {
+    expect(coverageGaps(train, [day], team, I, awayFromTeam([], []))).toEqual([]);
+    const pending = { ...rel('e1', '2026-11-02'), id: 'lv', typeCode: 'annual_leave_planned', typeLabel: 'PV', status: 'planned' as const };
+    expect(coverageGaps(train, [day], team, I, awayFromTeam([pending], []))).toEqual([]);
   });
 });

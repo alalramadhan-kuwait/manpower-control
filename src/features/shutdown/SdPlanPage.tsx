@@ -2,6 +2,7 @@ import { AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronRight, ChevronUp, 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { COVER_GRADE } from '@/core/controllers';
+import { RELEASE_TYPE } from '@/core/release';
 import { evaluateRange, personOn, SD_TEAM, type MpAbsence, type MpAssignment, type MpPerson } from '@/core/manpower';
 import { CREWS, addDaysIso, type Crew } from '@/core/roster';
 import { dateRuns, teamGaps, FO_LEVEL_LABEL, SD_PO_MAX_GRADE, SD_SLOTS, SD_SLOT_LABEL, areasOf, groupOf, dayOvertime, dayShort, dayState, isDutyDay, isRampDay, neighbours, memberHours, memberWorks, nextOffset, planDates, sdOperatorEligible, slotLabel, teamDay, cycleOf, type SdDay, type SdKind, type SdMember, type PhaseNeed, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
@@ -164,19 +165,21 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
     const hours = new Map(members.map((m) => [m.id, memberHours(plan, m, dutyCrew(m))]));
     // leave already approved needs a decision now; leave not yet approved is postponed and coordinated later
     const approvedOn = (emp: string, d: string) => inputs.absences.some((a) => a.employeeId === emp && a.oracle === 'approved' && (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && a.start <= d && d <= a.end);
+    // off the team: approved leave or a task release (the release is not a leave clash, so the leave counts above stay leave only)
+    const offTeam = (emp: string, d: string) => approvedOn(emp, d) || inputs.absencesAll.some((a) => a.employeeId === emp && a.typeCode === RELEASE_TYPE && a.start <= d && d <= a.end);
     // leave on a day he works the shutdown; a leave day the plan already gives him off is no clash (rules v2: the
     // shutdown has its own days off, so the plan's day decides; before v2: his crew's duty day)
     const clashOn = (m: SdMember, d: string) => (data.v2 ? memberWorks(plan, m, d) : plan.kind === 'total' || isDutyDay(dutyCrew(m), d));
     const leaveDays = (m: SdMember) => dates.filter((d) => d >= m.start && d <= m.end && leaveOn(m.employeeId, d) && clashOn(m, d)).length;
     const approvedLeaveDays = (m: SdMember) => dates.filter((d) => d >= m.start && d <= m.end && approvedOn(m.employeeId, d) && clashOn(m, d)).length;
     // the team's days count leave already approved as away; leave not yet approved is postponed
-    const teamDays = new Map(teams.map((t) => [t.id, dates.map((d) => ({ date: d, slots: teamDay(plan, t, members, d, approvedOn, data.phases) }))]));
+    const teamDays = new Map(teams.map((t) => [t.id, dates.map((d) => ({ date: d, slots: teamDay(plan, t, members, d, offTeam, data.phases) }))]));
     const overlaps = plan.kind === 'total' ? [] : suggestFollow(plan, teams, members, data.phases, dutyCrew, (m) => data.dir.get(m.employeeId)?.position_code === 'vr_controller', (m) => homeCrew(m.employeeId, plan.start));
     // places short on some day (approved leave counts as away; leave not yet approved is postponed)
-    const gaps = teamGaps(plan, teams, members, data.phases, approvedOn);
+    const gaps = teamGaps(plan, teams, members, data.phases, offTeam);
     // plans on the earlier rules have no plan check: the minimum on duty is still checked hour by hour here (an 8-hour
     // duty covers only its own 8 hours of the 12-hour shift)
-    const clockGaps = data.v2 ? [] : coverageGaps(plan, teams, members, new Map([...data.dir].map(([k, r]) => [k, personInfo(r)])), approvedOn, data.phases);
+    const clockGaps = data.v2 ? [] : coverageGaps(plan, teams, members, new Map([...data.dir].map(([k, r]) => [k, personInfo(r)])), offTeam, data.phases);
     return { people, leaveOn, approvedOn, homeCrew, dutyCrew, dates, crewImpact, hours, leaveDays, approvedLeaveDays, teamDays, overlaps, gaps, clockGaps };
   }, [data]);
 
