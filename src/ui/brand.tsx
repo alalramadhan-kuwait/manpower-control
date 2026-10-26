@@ -79,14 +79,18 @@ export function BrandBackdrop({ children }: { children: React.ReactNode }) {
 }
 
 /** Loading screen: shown while the app starts and checks the sign-in. */
-export function SplashScreen({ message = 'Loading operational data…' }: { message?: string }) {
+/** The neutral portal mark (a shield) for the screens seen before sign-in: no organisation or site named. */
+export function PortalMark({ className }: { className?: string }) {
+  return <img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" className={className} />;
+}
+/** The loading screen, also seen before sign-in: neutral. */
+export function SplashScreen({ message = 'Loading…' }: { message?: string }) {
   return (
-    <BrandBackdrop>
-      <div className="flex flex-1 flex-col items-center justify-center px-6 pb-24" role="status" aria-live="polite">
-        <BrandLockup stacked />
-        <span className="mt-10 h-9 w-9 animate-spin rounded-full border-[3px] border-slate-200 border-t-brand-600" aria-hidden />
-        <p className="mt-4 text-sm text-slate-500">{message}</p>
-      </div>
-    </BrandBackdrop>
+    <div className="flex min-h-full flex-1 flex-col items-center justify-center bg-white px-6 pb-24" role="status" aria-live="polite">
+      <PortalMark className="h-16 w-16" />
+      <p className="mt-4 text-[22px] font-bold text-brand-700">Operations Portal</p>
+      <span className="mt-10 h-9 w-9 animate-spin rounded-full border-[3px] border-slate-200 border-t-brand-600" aria-hidden />
+      <p className="mt-4 text-sm text-slate-500">{message}</p>
+    </div>
   );
 }

@@ -42,8 +42,8 @@ const keyOf = (e: TrkEquipment) => e.barchartKey ?? e.tag;
 function useEngineerHomeScreen() {
   useEffect(() => {
     document.querySelector('link[rel="manifest"]')?.remove();
-    document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute('content', 'U-12 SD');
-    document.title = 'U-12 Shutdown';
+    document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute('content', 'Operations');
+    document.title = 'Operations Portal';
     const key = engineerLink()?.key;
     if (key && !new URLSearchParams(window.location.search).get('sd')) window.history.replaceState(null, '', `${window.location.pathname}?sd=${encodeURIComponent(key)}`);
   }, []);
@@ -59,14 +59,14 @@ export default function EngineerApp() {
     // the address keeps the link: a Home Screen app saved from here opens with it (it has its own storage on iPhone)
     const open = () => { if (!id.trim()) return; setEngineerLink({ key: urlKey, id: id.trim() }); window.location.replace(`${window.location.pathname}?sd=${encodeURIComponent(urlKey)}`); };
     return (
-      <Frame title="U-12 Shutdown" sub="Progress update">
+      <Frame title="Operations Portal" sub="">
         <div className="mx-auto max-w-sm px-4 pt-16 text-center">
-          <div className="text-5xl">🛠️</div>
+          <img src="/icon.svg" alt="" className="mx-auto h-14 w-14" />
           <p className="mt-2 text-xl font-bold text-brand-700">Welcome</p>
-          <p className="text-sm text-slate-600">Enter your ID to update the shutdown progress</p>
+          <p className="text-sm text-slate-600">Enter your ID</p>
           <input className="input mt-5 text-center text-xl font-bold tracking-wider" autoCapitalize="none" autoCorrect="off" value={id} onChange={(e) => setId(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && open()} placeholder="Your ID" />
           <button type="button" onClick={open} disabled={!id.trim()} className="mt-3 min-h-12 w-full rounded-2xl bg-brand-700 text-base font-bold text-white disabled:opacity-50">Open</button>
-          <p className="mt-4 text-xs text-slate-500">This link is for you only. Ask the Section Head if it stops working.</p>
+          <p className="mt-4 text-xs text-slate-500">This link is for you only. Ask the administrator if it stops working.</p>
         </div>
       </Frame>
     );
@@ -126,14 +126,14 @@ function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: 
   useEffect(() => { const f = () => { if (me && me !== 'off') void load(me.tracker_id); }; window.addEventListener(CONFLICT_EVENT, f); return () => window.removeEventListener(CONFLICT_EVENT, f); }, [me, load]);
   useEffect(() => { if (!flash) return; const t = window.setTimeout(() => setFlash(null), flash.undo ? 7000 : 3000); return () => window.clearTimeout(t); }, [flash]);
   if (me === 'off') return (
-    <Frame title="U-12 Shutdown" sub="Progress update">
-      <div className="mx-auto max-w-sm p-6 text-center"><p className="font-semibold text-brand-700">Engineer links are no longer used.</p>
-        <p className="mt-2 text-sm text-slate-600">Sign in to the app with your own login to update the shutdown progress.</p>
+    <Frame title="Operations Portal" sub="">
+      <div className="mx-auto max-w-sm p-6 text-center"><p className="font-semibold text-brand-700">This link is no longer used.</p>
+        <p className="mt-2 text-sm text-slate-600">Sign in to the portal with your own account.</p>
         <button type="button" className="mt-5 min-h-11 w-full rounded-xl bg-brand-700 font-semibold text-white" onClick={() => { setEngineerLink(null); window.location.replace('/progress'); }}>Go to sign in</button></div>
     </Frame>
   );
-  if (err && !data) return <Frame title="U-12 Shutdown" sub="Progress update"><div className="p-4"><ErrorBox error={err} /></div></Frame>;
-  if (!me || !data) return <Frame title="U-12 Shutdown" sub="Loading…"><div className="p-10"><Spinner /></div></Frame>;
+  if (err && !data) return <Frame title="Operations Portal" sub=""><div className="p-4"><ErrorBox error={err} /></div></Frame>;
+  if (!me || !data) return <Frame title="Operations Portal" sub="Loading…"><div className="p-10"><Spinner /></div></Frame>;
   const sh = shiftOf(now);
   const done: Done = (msg, undo) => { setFlash({ msg, undo }); void load(me.tracker_id); };
   const go = (t: Tab, g?: string) => { setTab(t); if (g) setEqf(g); window.scrollTo(0, 0); };

@@ -25,9 +25,9 @@ export default defineConfig({
       injectRegister: false,
       includeAssets: ['icon.svg', 'favicon-32.png', 'apple-touch-icon.png', 'brand/mark.svg'],
       manifest: {
-        name: 'ARDS Operations · Manpower Control',
-        short_name: 'ARDS Ops',
-        description: 'ARDS Operations · Area 4 · Unit 12: manpower planning and control (internal use)',
+        name: 'Operations Portal',
+        short_name: 'Operations',
+        description: 'Secure access for authorized users',
         theme_color: '#0e2a63',
         background_color: '#ffffff',
         display: 'standalone',
