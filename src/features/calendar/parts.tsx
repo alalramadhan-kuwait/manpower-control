@@ -72,13 +72,13 @@ export function SummaryTiles({ summary }: { summary: MonthSummary }) {
   );
 }
 
-export type CalendarView = 'month' | 'week';
+export type CalendarView = 'month' | 'week' | 'list';
 export function ViewToggle({ view, onChange }: { view: CalendarView; onChange: (v: CalendarView) => void }) {
   return (
-    <div role="tablist" className="mb-2 grid grid-cols-2 rounded-xl bg-slate-200/70 p-0.5 text-sm">
-      {(['month', 'week'] as const).map((v) => (
+    <div role="tablist" className="mb-2 grid grid-cols-3 rounded-xl bg-slate-200/70 p-0.5 text-sm">
+      {(['month', 'week', 'list'] as const).map((v) => (
         <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => onChange(v)}
-          className={cx('min-h-8 rounded-lg font-medium', view === v ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{v === 'month' ? 'Month' : 'Week'}</button>
+          className={cx('min-h-8 rounded-lg font-medium', view === v ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{v === 'month' ? 'Month' : v === 'week' ? 'Week' : 'List'}</button>
       ))}
     </div>
   );

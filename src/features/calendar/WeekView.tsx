@@ -25,7 +25,7 @@ const range = (a: string, b: string) => {
   return a.slice(0, 7) === b.slice(0, 7) ? `${da.split(' ')[0]}–${db}` : `${da} – ${db}`;
 };
 
-export function WeekView({ start, today, onWeek, onMonth }: { start: string; today: string; onWeek: (start: string) => void; onMonth: () => void }) {
+export function WeekView({ start, today, onWeek, onMonth, onList }: { start: string; today: string; onWeek: (start: string) => void; onMonth: () => void; onList: () => void }) {
   const days = useMemo(() => weekDates(start), [start]);
   const end = days[6];
   const [inputs, setInputs] = useState<(ManpowerInputs & { key: string }) | null>(null);
@@ -74,7 +74,7 @@ export function WeekView({ start, today, onWeek, onMonth }: { start: string; tod
         </div>
         <button aria-label="Next week" onClick={() => onWeek(addDaysIso(start, 7))} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-300 active:bg-slate-50"><ChevronRight className="h-5 w-5" /></button>
       </div>
-      <ViewToggle view="week" onChange={onMonth} />
+      <ViewToggle view="week" onChange={(v) => (v === 'list' ? onList() : v === 'month' && onMonth())} />
 
       {error ? <ErrorBox error={error} /> : !view ? <Spinner /> : (
         <>

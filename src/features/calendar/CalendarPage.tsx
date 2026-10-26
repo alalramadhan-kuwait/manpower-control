@@ -14,6 +14,7 @@ import { DaySheet } from './DaySheet';
 import { EventSheet, HolidaySheet } from './InfoSheets';
 import { AttentionList, Legend, SHIFT_STYLE, Section, StatusBar, SummaryTiles, ViewToggle, calendarBars } from './parts';
 import { WeekView } from './WeekView';
+import { LeaveListView } from './LeaveList';
 
 type Filter = 'all' | Crew | 'shutdowns' | 'holidays' | 'shortage';
 const FILTERS: { key: Filter; label: string }[] = [
@@ -24,12 +25,23 @@ const FILTERS: { key: Filter; label: string }[] = [
 export default function CalendarPage() {
   const [params, setParams] = useSearchParams();
   const today = localToday();
+  if (params.get('view') === 'list') {
+    // the leave list of a month (same month and crew as the calendar)
+    const m = /^(\d{4})-(\d{2})$/.exec(params.get('month') ?? '');
+    const [y, mo] = m ? [Number(m[1]), Number(m[2])] : [Number(today.slice(0, 4)), Number(today.slice(5, 7))];
+    const crew = params.get('f') ?? 'all';
+    const set = (yy: number, mm: number, c = crew) => { const n = new URLSearchParams({ view: 'list' }); const k = `${yy}-${String(mm).padStart(2, '0')}`; if (k !== today.slice(0, 7)) n.set('month', k); if (c !== 'all') n.set('f', c); setParams(n, { replace: true }); };
+    return <LeaveListView year={y} month={mo} crew={isCrew(crew) || crew === 'day' ? crew : 'all'} onMonth={(yy, mm) => set(yy, mm)} onCrew={(c) => set(y, mo, c)}
+      onView={(v) => { const k = `${y}-${String(mo).padStart(2, '0')}`; if (v === 'week') setParams({ view: 'week', week: weekStartOf(k === today.slice(0, 7) ? today : `${k}-01`) }, { replace: true });
+        else { const n = new URLSearchParams(); if (k !== today.slice(0, 7)) n.set('month', k); if (isCrew(crew)) n.set('f', crew); setParams(n, { replace: true }); } }} />;
+  }
   if (params.get('view') !== 'week') return <MonthView />;
   const w = params.get('week') ?? '';
   const start = /^\d{4}-\d{2}-\d{2}$/.test(w) && !Number.isNaN(Date.parse(w)) ? weekStartOf(w) : weekStartOf(today);
   return <WeekView start={start} today={today}
     onWeek={(s) => { const n = new URLSearchParams({ view: 'week' }); if (s !== weekStartOf(today)) n.set('week', s); setParams(n, { replace: true }); }}
-    onMonth={() => { const mid = addDaysIso(start, 3).slice(0, 7); setParams(mid === today.slice(0, 7) ? {} : { month: mid }, { replace: true }); }} />;
+    onMonth={() => { const mid = addDaysIso(start, 3).slice(0, 7); setParams(mid === today.slice(0, 7) ? {} : { month: mid }, { replace: true }); }}
+    onList={() => { const mid = addDaysIso(start, 3).slice(0, 7); setParams(mid === today.slice(0, 7) ? { view: 'list' } : { view: 'list', month: mid }, { replace: true }); }} />;
 }
 
 function MonthView() {
@@ -95,7 +107,8 @@ function MonthView() {
         <button aria-label="Next month" onClick={() => go(ny, nm)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-300 active:bg-slate-50"><ChevronRight className="h-5 w-5" /></button>
       </div>
 
-      <ViewToggle view="month" onChange={() => setParams({ view: 'week', week: weekStartOf(isThisMonth ? today : from) }, { replace: true })} />
+      <ViewToggle view="month" onChange={(v) => { if (v === 'week') setParams({ view: 'week', week: weekStartOf(isThisMonth ? today : from) }, { replace: true });
+        else if (v === 'list') { const n = new URLSearchParams({ view: 'list' }); if (!isThisMonth) n.set('month', from.slice(0, 7)); if (crew) n.set('f', crew); setParams(n, { replace: true }); } }} />
       {error ? <ErrorBox error={error} /> : !view ? <Spinner /> : (
         <>
           <SummaryTiles summary={view.summary} />

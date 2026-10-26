@@ -93,6 +93,7 @@ export default function LeavePlanPage() {
     <div>
       <PageHeader title="Leave plan" subtitle={plan && <PlanBadge context={plan} />} info="The current plan: monthly sheets, PV plan and leave entered by hand. Tap a person for dates and history."
         action={<Link to="/requests?view=entry&card=leave" className="inline-flex min-h-10 shrink-0 items-center gap-1 rounded-xl bg-brand-700 px-3 text-sm font-medium text-white"><Plus className="h-4 w-4" /> {t('New entry')}</Link>} />
+      <Link to={`/calendar?view=list${mode === 'month' ? `&month=${year}-${String(month).padStart(2, '0')}` : ''}`} className="mb-1 block text-xs font-semibold text-brand-700">Leave list by date (Calendar ›)</Link>
       <p className="mb-2 text-xs text-slate-500">{t('The published plan is changed only through Requests → Entry (new leave, PV reschedule, cancellation); every change keeps its approval and history.')}</p>
 
       <div className="mb-2 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
