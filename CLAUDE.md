@@ -142,7 +142,10 @@ data in its `tasks` and `history` collections, written with the ArtifactData too
 
 ## One design system (permanent)
 
-Every screen follows `.claude/skills/refinery-enterprise-design/SKILL.md` §4a: one shared component per job (detail
+Every UI task (screen, mock-up, dashboard, list, form, report) applies the **Compact Operational UI** rules first:
+`.claude/skills/refinery-enterprise-design/SKILL.md` §0 (10 principles, rules, workflow, before → after numbers for
+visible rows, scrolling and taps). Maximum useful information, minimum visual noise, zero loss of clarity.
+Every screen also follows §4a: one shared component per job (detail
 sheet, stage vs work status, hold selector, step actions, edit, toast + Undo, issues, lists, folded sections).
 Equivalent actions look and behave the same in all modules; domains keep their own information. Visual work never
 changes database logic, calculations, permissions or workflows. Mock-up first for any layout change.
