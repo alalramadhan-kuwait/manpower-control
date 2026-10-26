@@ -36,5 +36,10 @@ gives the same verdict in Approvals and on the server.
   warning in the stored check.
 - **Item 4.** `RequestPage` (`requestImpact`) and `leaveTools.leaveImpact` use `absencesAll` (leave + task releases).
   Test `src/features/requests/__tests__/leaveTools.test.ts`. Left leave-only on purpose: leave lists, the Controller
-  leave rules, "leave starting soon" notices. Not changed (needs a separate decision): the shutdown team check
-  (`core/shutdown/v2.ts`, also on the server approval path) reads leave only.
+  leave rules, "leave starting soon" notices.
+- **Shutdown check (owner, follow-up to item 4).** `checkPlan` input `releases` (task releases): counted in the crews'
+  minimums for a member's rest day off his crew and in the Controller cover candidates (a released Controller is not
+  proposed). Unchanged on purpose: the person's own schedule (rest rules), the team cover (approved leave only) and the
+  plan fingerprint (an approved plan is not marked changed). Same minimums and approval authority. Test
+  `src/core/shutdown/__tests__/releases.test.ts`; `sd-plan-approve` redeployed. No active task release today: the
+  active plan's check is unchanged.

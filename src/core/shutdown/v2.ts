@@ -440,6 +440,9 @@ export interface Issue { level: IssueLevel; code: string; message: string; emplo
 export interface PlanCheckInput {
   plan: SdPlan; teams: SdTeam[]; members: SdMember[];
   people: MpPerson[]; absences: MpAbsence[]; assignments: MpAssignment[]; rules: RuleConfig[];
+  /** Task releases: away from the crew's duty, so counted in the crews' minimums and the cover candidates (not in the
+   *  person's own schedule, the team cover or the fingerprint, which stay leave only). */
+  releases?: MpAbsence[];
   info: Map<string, PersonInfo>;
   /** Active shutdown plans with their members (for two-in-a-row) and the duties of the others (overtime counted once). */
   plans: PlanRef[]; otherDuties: OtherDuty[];
@@ -461,6 +464,9 @@ export interface PlanCheck {
   fingerprint: string; rulesVersion: number; checkedOn: string;
 }
 
+/** Leave and task releases: who is away from a crew's duty (for the crews' minimums). */
+const crewAway = (inp: Pick<PlanCheckInput, 'absences' | 'releases'>): MpAbsence[] => (inp.releases?.length ? [...inp.absences, ...inp.releases] : inp.absences);
+
 /** Leave that takes the person off the team on a date: leave already approved in Oracle (leave not yet approved is postponed). */
 export const awayOn = (absences: MpAbsence[]) => (employeeId: string, date: string) => absences.some((a) => a.employeeId === employeeId && a.oracle === 'approved' && (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && a.start <= date && date <= a.end);
 
@@ -480,12 +486,12 @@ export function restDayShortage(inp: PlanCheckInput, person: MpPerson, m: SdMemb
   const people = isCtl ? inp.people : inp.people.map((x) => (x.id === person.id && !(x.moves ?? []).some((v) => v.crew === SD_TEAM && v.start <= date && (v.end === null || date <= v.end))
     ? { ...x, moves: [...(x.moves ?? []), { start: date, end: date, crew: SD_TEAM, kind: 'sd' as const }] } : x));
   const posOf = (c: ReturnType<typeof evaluateDay>['crews'][number]) => (isCtl ? c.controller : person.role === 'panel_operator' ? c.panel : c.field);
-  const day = evaluateDay(date, people, inp.absences, rules, assignments).crews.find((c) => c.crew === crew);
+  const day = evaluateDay(date, people, crewAway(inp), rules, assignments).crews.find((c) => c.crew === crew);
   if (!day || !day.working) return null;
   const pos = posOf(day);
   if (pos.count >= pos.min) return null;
   // only a shortage the rest day itself causes (a crew already short without it is the crew's own manpower finding)
-  const before = evaluateDay(date, inp.people, inp.absences, rules, base).crews.find((c) => c.crew === crew);
+  const before = evaluateDay(date, inp.people, crewAway(inp), rules, base).crews.find((c) => c.crew === crew);
   if (!before || posOf(before).count < posOf(before).min) return null;
   const head = `${crew} Shift ${pos.label} ${pos.count} of ${pos.min} that day.`;
   if (!isCtl) return { text: `${head} Record a cover for the shift before the rest day is given.` };
@@ -504,7 +510,7 @@ function proposeCover(inp: PlanCheckInput, people: MpPerson[], assignments: MpAs
   // nobody on this shutdown, nor on a team within two weeks (his own joining or return rest would change)
   const busy = (id: string, a: string, b: string) => inp.members.some((x) => x.employeeId === id)
     || assignments.some((x) => x.employeeId === id && (x.kind === 'sd_team' ? x.start <= addDaysIso(b, 14) && addDaysIso(a, -14) <= x.end : x.start <= b && a <= x.end));
-  const onLeave = (id: string, a: string, b: string) => inp.absences.some((x) => x.employeeId === id && ['approved', 'planned', 'unresolved'].includes(x.status) && x.inCurrentPlan !== false && x.start <= b && a <= x.end);
+  const onLeave = (id: string, a: string, b: string) => crewAway(inp).some((x) => x.employeeId === id && ['approved', 'planned', 'unresolved'].includes(x.status) && x.inCurrentPlan !== false && x.start <= b && a <= x.end);
   const hardIn = (ls: DayLine[], a: string, b: string) => checkSchedule(ls, inp.rules).filter((f) => f.severity === 'hard_stop' && f.date !== undefined && f.date >= a && f.date <= b).length;
   const out: (CoverFix & { rank: number })[] = [];
   for (const c of people) {
@@ -516,14 +522,14 @@ function proposeCover(inp: PlanCheckInput, people: MpPerson[], assignments: MpAs
       if (busy(c.id, a, b) || onLeave(c.id, a, b)) continue;
       const cover: MpAssignment = { id: `prop-${c.id}`, kind: 'shift_cover', employeeId: c.id, crew, start: a, end: b, coversEmployeeId: rester.id };
       const with2 = [...assignments, cover];
-      const target = evaluateDay(date, people, inp.absences, rules, with2).crews.find((x) => x.crew === crew);
+      const target = evaluateDay(date, people, crewAway(inp), rules, with2).crews.find((x) => x.crew === crew);
       if (!target || target.controller.count < target.controller.min) continue;
       // his own crew (or placement) keeps its Controller on every day of the cover
       let ownOk = true, overtime = false;
       for (let d = a; d <= b; d = addDaysIso(d, 1)) {
         const own = personOn(c, d).crew;
         if (own && own !== crew) {
-          const r = evaluateDay(d, people, inp.absences, rules, with2).crews.find((x) => x.crew === own);
+          const r = evaluateDay(d, people, crewAway(inp), rules, with2).crews.find((x) => x.crew === own);
           if (r && r.working && r.controller.count < r.controller.min) ownOk = false;
           if (d === date && r && !r.working) overtime = true;
         } else if (d === date && !own) overtime = false;

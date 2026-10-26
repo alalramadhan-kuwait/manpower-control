@@ -940,6 +940,7 @@ function transferHours(person, m, ls, firstSd, hardCount) {
   }
   return out;
 }
+var crewAway = (inp) => inp.releases?.length ? [...inp.absences, ...inp.releases] : inp.absences;
 var awayOn = (absences) => (employeeId, date) => absences.some((a) => a.employeeId === employeeId && a.oracle === "approved" && (a.status === "approved" || a.status === "planned") && a.inCurrentPlan !== false && a.start <= date && date <= a.end);
 function restDayShortage(inp, person, m, date) {
   const crew = effectiveCrew(person, null, date);
@@ -951,11 +952,11 @@ function restDayShortage(inp, person, m, date) {
   const assignments = isCtl ? [...base, { id: restId, kind: "sd_team", employeeId: person.id, crew: null, start: date, end: date, works: () => false, rest: true }] : base;
   const people = isCtl ? inp.people : inp.people.map((x) => x.id === person.id && !(x.moves ?? []).some((v) => v.crew === SD_TEAM && v.start <= date && (v.end === null || date <= v.end)) ? { ...x, moves: [...x.moves ?? [], { start: date, end: date, crew: SD_TEAM, kind: "sd" }] } : x);
   const posOf = (c) => isCtl ? c.controller : person.role === "panel_operator" ? c.panel : c.field;
-  const day = evaluateDay(date, people, inp.absences, rules, assignments).crews.find((c) => c.crew === crew);
+  const day = evaluateDay(date, people, crewAway(inp), rules, assignments).crews.find((c) => c.crew === crew);
   if (!day || !day.working) return null;
   const pos = posOf(day);
   if (pos.count >= pos.min) return null;
-  const before = evaluateDay(date, inp.people, inp.absences, rules, base).crews.find((c) => c.crew === crew);
+  const before = evaluateDay(date, inp.people, crewAway(inp), rules, base).crews.find((c) => c.crew === crew);
   if (!before || posOf(before).count < posOf(before).min) return null;
   const head = `${crew} Shift ${pos.label} ${pos.count} of ${pos.min} that day.`;
   if (!isCtl) return { text: `${head} Record a cover for the shift before the rest day is given.` };
@@ -965,7 +966,7 @@ function restDayShortage(inp, person, m, date) {
 function proposeCover(inp, people, assignments, rester, crew, date) {
   const rules = inp.crewRules ?? FULL_OPERATION;
   const busy = (id, a, b) => inp.members.some((x) => x.employeeId === id) || assignments.some((x) => x.employeeId === id && (x.kind === "sd_team" ? x.start <= addDaysIso(b, 14) && addDaysIso(a, -14) <= x.end : x.start <= b && a <= x.end));
-  const onLeave = (id, a, b) => inp.absences.some((x) => x.employeeId === id && ["approved", "planned", "unresolved"].includes(x.status) && x.inCurrentPlan !== false && x.start <= b && a <= x.end);
+  const onLeave = (id, a, b) => crewAway(inp).some((x) => x.employeeId === id && ["approved", "planned", "unresolved"].includes(x.status) && x.inCurrentPlan !== false && x.start <= b && a <= x.end);
   const hardIn = (ls, a, b) => checkSchedule(ls, inp.rules).filter((f) => f.severity === "hard_stop" && f.date !== void 0 && f.date >= a && f.date <= b).length;
   const out = [];
   for (const c of people) {
@@ -977,13 +978,13 @@ function proposeCover(inp, people, assignments, rester, crew, date) {
       if (busy(c.id, a, b) || onLeave(c.id, a, b)) continue;
       const cover = { id: `prop-${c.id}`, kind: "shift_cover", employeeId: c.id, crew, start: a, end: b, coversEmployeeId: rester.id };
       const with2 = [...assignments, cover];
-      const target = evaluateDay(date, people, inp.absences, rules, with2).crews.find((x) => x.crew === crew);
+      const target = evaluateDay(date, people, crewAway(inp), rules, with2).crews.find((x) => x.crew === crew);
       if (!target || target.controller.count < target.controller.min) continue;
       let ownOk = true, overtime = false;
       for (let d = a; d <= b; d = addDaysIso(d, 1)) {
         const own = personOn(c, d).crew;
         if (own && own !== crew) {
-          const r = evaluateDay(d, people, inp.absences, rules, with2).crews.find((x) => x.crew === own);
+          const r = evaluateDay(d, people, crewAway(inp), rules, with2).crews.find((x) => x.crew === own);
           if (r && r.working && r.controller.count < r.controller.min) ownOk = false;
           if (d === date && r && !r.working) overtime = true;
         } else if (d === date && !own) overtime = false;
@@ -1665,6 +1666,7 @@ async function loadPlanCheckInput(planId, today) {
     phases: sd.phases,
     people: inputs.people,
     absences: inputs.absences,
+    releases: inputs.absencesAll.filter((a) => a.typeCode === RELEASE_TYPE),
     assignments: inputs.assignments,
     rules,
     crewRules: inputs.rules,

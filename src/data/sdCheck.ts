@@ -9,6 +9,7 @@ import { fetchDirectory } from './queries';
 import { fetchAllSdMembers, fetchSdDuties, fetchSdPlan, fetchSdPlans } from './shutdown';
 import { fetchValidationRules } from './validation';
 import { addDaysIso } from '@/core/roster';
+import { RELEASE_TYPE } from '@/core/release';
 import { checkPlan, memberOvertime, type ExceptionKind, type OtEntry, type OtherDuty, type PersonInfo, type PlanCheck, type PlanCheckInput, type SdException, type SickEntry } from '@/core/shutdown/v2';
 
 export interface OtEntryRow { employee_id: string; as_of: string; ytd_hours: number; mtd_hours: number; verified_at: string | null; entered_at: string }
@@ -92,7 +93,7 @@ export async function loadPlanCheckInput(planId: string, today: string): Promise
     }
   }
   return {
-    plan, teams, members, phases: sd.phases, people: inputs.people, absences: inputs.absences, assignments: inputs.assignments, rules, crewRules: inputs.rules,
+    plan, teams, members, phases: sd.phases, people: inputs.people, absences: inputs.absences, releases: inputs.absencesAll.filter((a) => a.typeCode === RELEASE_TYPE), assignments: inputs.assignments, rules, crewRules: inputs.rules,
     info: new Map(dir.map((r) => [r.id, personInfo(r)])),
     plans: plans.map((p) => ({ plan: p, employeeIds: new Set(all.filter((m) => m.planId === p.id).map((m) => m.employeeId)) })),
     otherDuties, otherSdDuty, otEntries, sickEntries, exceptions, today,
