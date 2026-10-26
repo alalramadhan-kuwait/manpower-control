@@ -226,6 +226,7 @@ const leaveType = (code: string) => (code === 'annual_leave_unscheduled' ? 'unsc
 
 function LeaveForm({ person, data, today, isHead, draft, prefill, replaces, onDone, onDraft }: { person: MpPerson; data: Data; today: string; isHead: boolean; draft: Draft | null; prefill: Record<string, unknown> | null; replaces: string | null; onDone: (m: string) => void; onDraft: (m: string) => void }) {
   const p = (prefill ?? {}) as Record<string, string | null | undefined>;
+  const wantCancel = useSearchParams()[0].get('cancel');
   const [mode, setMode] = useState<Mode>('new');
   const [target, setTarget] = useState<TrackedCase | null>(null);
   const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string; label: string; start: string; end: string } | null>(null);
@@ -246,8 +247,13 @@ function LeaveForm({ person, data, today, isHead, draft, prefill, replaces, onDo
   const [blocked, setBlocked] = useState<GateBlocked | null>(null);
   useEffect(() => {
     fetchTrackedCases(person.id, today).then(setCases).catch(() => setCases([]));
-    fetchCancellableLeave(person.id, today).then(setCancellable).catch(() => setCancellable([]));
-  }, [person.id, today]);
+    fetchCancellableLeave(person.id, today).then((list) => {
+      setCancellable(list);
+      // opened from the Calendar's leave sheet (…&cancel=<record>): that leave pre-selected; the reason is still required
+      const want = list.find((x) => x.id === wantCancel);
+      if (want) { setMode('cancel'); setCancelTarget(want); }
+    }).catch(() => setCancellable([]));
+  }, [person.id, today, wantCancel]);
 
   const types = data.types;
   const type = types.find((x) => x.code === (mode === 'new' ? code : mode === 'cancel' ? cancelTarget?.code : target?.code)) ?? null;

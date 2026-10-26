@@ -148,3 +148,11 @@ export async function fetchLeaveContext(from: string, to: string): Promise<Leave
       .map((m) => ({ employeeId: m.employee_id, start: m.start_date, end: m.end_date, crew: m.to_crew, kind: m.kind }))
   };
 }
+
+/** Record the Oracle HR application of one leave version, as confirmed by a person (submitted / approved / rejected),
+ *  in the Oracle log (oracle_request_record: staff only, who and when kept). Never set without that confirmation. */
+export async function recordOracle(recordId: string, status: 'submitted' | 'approved' | 'rejected', ref?: string): Promise<void> {
+  const { error } = await supabase.rpc('oracle_request_record', { p_leave: recordId, p_status: status, p_ref: ref?.trim() || null, p_start: null, p_end: null, p_note: null });
+  if (error) throw plain(error);
+  dataChanged();
+}

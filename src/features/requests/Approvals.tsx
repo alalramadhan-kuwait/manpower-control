@@ -18,6 +18,7 @@ import { shortDate } from '@/ui/leave';
 import { nameFilter } from '@/ui/nameSearch';
 import { CHANGE_LABEL, ChangeRequestSheet } from './ChangeRequests';
 import { CheckPanel } from './CheckPanel';
+import { ImpactPreview } from '@/features/calendar/ImpactPreview';
 import type { Check } from '@/data/validation';
 import { previewEntry } from '@/data/entry';
 import { ImpactList } from './EntryPage';
@@ -182,6 +183,9 @@ function ApprovalSheet({ item, person, isHead, onClose, onDone }: { item: Item; 
         </dl>
         {a.kind === 'leave' && action !== 'new' && <Chip tone="blue">{t(action === 'extend' ? 'Extension' : action === 'return' ? 'Confirmed return' : 'Cancellation')}</Chip>}
         {a.status === 'pending' && impact && <ImpactList impact={impact} />}
+        {a.status === 'pending' && a.kind === 'leave' && (action === 'new' || action === 'extend') && (
+          <div className="rounded-xl p-2.5 ring-1 ring-slate-200"><ImpactPreview leave={{ employeeId: a.employee_id, start: a.start_date, end: a.end_date ?? '9999-12-31', typeCode: (p.type as string | null) ?? null, recordIds: [] }} counted={false} /></div>
+        )}
         {a.status === 'pending' && <CheckPanel check={check} error={checkErr} />}
         {isHead && a.status === 'pending' && <p className="text-[11px] text-slate-500">{t('Approving checks it again on the server, with every change approved meanwhile: a crew below its minimum is refused.')}</p>}
         {a.status === 'pending' && (

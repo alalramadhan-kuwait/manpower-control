@@ -7,10 +7,9 @@
 // requests waiting for the Section Head are listed dashed, and a pending cancellation is marked on its leave.
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { MONTH_NAMES, monthEnd, monthStart, shiftMonth } from '@/core/calendar';
 import { isOpenEnd } from '@/core/leave';
-import { APPROVAL_LABEL, ORACLE_SHORT, TIME_LABEL, approvalState, crewPlace, joinTouching, oracleState, timeState, type ApprovalState, type OracleState, type PendingLeaveRequest } from '@/core/leave/status';
+import { APPROVAL_LABEL, ORACLE_SHORT, TIME_LABEL, approvalState, crewPlace, joinTouching, oracleState, timeState, type ApprovalState, type OracleState } from '@/core/leave/status';
 import { CREWS } from '@/core/roster';
 import { fetchLeaveContext, fetchLeavePlan, type LeaveContext, type LeavePlanData } from '@/data/leave';
 import type { EmployeeDirectoryRow, LeaveRecord } from '@/data/types';
@@ -18,6 +17,7 @@ import { ErrorBox, Spinner, cx } from '@/ui/components';
 import { localToday, shortDate } from '@/ui/leave';
 import { leaveTone } from '@/ui/leaveTypes';
 import { nameFilter } from '@/ui/nameSearch';
+import { LeaveDetail, type LeaveItem } from './LeaveDetail';
 import { ViewToggle } from './parts';
 
 const POSITIONS = [['all', 'All positions'], ['controller', 'Controller'], ['panel', 'Panel'], ['field', 'Field'], ['other', 'Others']] as const;
@@ -28,24 +28,21 @@ const days = (s: string, e: string) => Math.round((Date.parse(e) - Date.parse(s)
 const range = (s: string, e: string) => (s === e ? shortDate(s) : `${shortDate(s)} – ${shortDate(e)}`);
 const RESCHEDULED = 'annual_leave_rescheduled';
 
-interface Row {
-  key: string; p: EmployeeDirectoryRow; start: string; end: string; codes: string[]; typeCode: string | null; place: string; home: string | null; actual: string | null;
-  records: LeaveRecord[]; movedFrom: string | null; approval: ApprovalState | null; oracle: OracleState | 'mixed' | null; request: PendingLeaveRequest | null; cancelAsked: boolean;
-}
+type Row = LeaveItem;
 // one label for a joined leave: the same state on every record, else the one that needs attention
 const one = <T extends string>(xs: T[], attention: T[]): T => (xs.every((x) => x === xs[0]) ? xs[0] : attention.find((a) => xs.includes(a)) ?? xs[0]);
 
 export function LeaveListView({ year, month, crew, onMonth, onCrew, onView }: { year: number; month: number; crew: string; onMonth: (y: number, m: number) => void;
   onCrew: (c: string) => void; onView: (v: 'month' | 'week') => void }) {
-  const navigate = useNavigate();
   const today = localToday();
   const from = monthStart(year, month), to = monthEnd(year, month);
   const [data, setData] = useState<(LeavePlanData & { year: number }) | null>(null);
   const [ctx, setCtx] = useState<(LeaveContext & { from: string }) | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [pos, setPos] = useState<Pos>('all'); const [query, setQuery] = useState('');
+  const [sel, setSel] = useState<Row | null>(null); const [reload, setReload] = useState(0);
   useEffect(() => { let live = true; setError(null); fetchLeavePlan(year).then((d) => live && setData({ ...d, year })).catch((e) => live && setError(e)); return () => { live = false; }; }, [year]);
-  useEffect(() => { let live = true; fetchLeaveContext(from, to).then((c) => live && setCtx({ ...c, from })).catch((e) => live && setError(e)); return () => { live = false; }; }, [from, to]);
+  useEffect(() => { let live = true; fetchLeaveContext(from, to).then((c) => live && setCtx({ ...c, from })).catch((e) => live && setError(e)); return () => { live = false; }; }, [from, to, reload]);
   const rows = useMemo(() => {
     if (!data || data.year !== year || !ctx || ctx.from !== from) return null;
     const people = new Map(data.people.map((p) => [p.id, p]));
@@ -85,8 +82,7 @@ export function LeaveListView({ year, month, crew, onMonth, onCrew, onView }: { 
   }, [data, ctx, year, from, to, pos, crew, query, today]);
   const [py, pm] = shiftMonth(year, month, -1); const [ny, nm] = shiftMonth(year, month, 1);
   const isThisMonth = today.slice(0, 7) === from.slice(0, 7);
-  const open = (r: Row) => navigate(r.request ? '/requests?view=approvals'
-    : r.typeCode?.startsWith('annual_leave_') && r.typeCode !== 'annual_leave_unscheduled' ? `/requests?view=entry&card=pv&emp=${r.p.id}&leave=${r.records[0].start_date}` : `/requests?view=entry&card=leave&emp=${r.p.id}`);
+  const open = (r: Row) => setSel(r);
   const chip = (on: boolean) => cx('shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-medium ring-1', on ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-600 ring-slate-200');
   const requested = rows?.filter((r) => r.request).length ?? 0;
   return (
@@ -113,6 +109,8 @@ export function LeaveListView({ year, month, crew, onMonth, onCrew, onView }: { 
           {rows.map((r) => <li key={r.key}><LeaveRow r={r} today={today} before={r.start < from} onOpen={() => open(r)} /></li>)}
         </ul> : <p className="py-6 text-center text-sm text-slate-500">No leave in {MONTH_NAMES[month - 1]} for this selection.</p>}
       </>}
+      {sel && data && <LeaveDetail item={sel} today={today} onClose={() => setSel(null)} onChanged={() => setReload((n) => n + 1)}
+        around={joinTouching(data.leaves.filter((l) => counts(l) && l.employee_id === sel.p.id)).map((j) => ({ start: j.start, end: j.end, codes: [...new Set(j.records.map((r) => data.types.find((t) => t.code === r.absence_type_code)?.short_code ?? 'Leave'))] }))} />}
     </div>
   );
 }
