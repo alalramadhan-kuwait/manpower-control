@@ -160,6 +160,7 @@ Controller; `role === 'head'` for the Section Head tools. The database stays the
 | Handover | `HandoverTab`: Blocking · Neutralization · Blinds · Blind list · Return; loop opens `LoopDetail`; de-blind only from Return | `EngineerApp.tsx`, `Isolation.tsx` |
 | Blind list | compact, one line per row, detail on tap, done folded; By item / By blind | `BlindList.tsx` |
 | Hot work | `HotWorkTab`: IAT cards (status + label), search, filter, completed folded, `IatDetail`; PMRs | `EngineerApp.tsx`, `Iats.tsx` |
+| Calendar | Month (where the risk is) · Week (who covers each shift) · List (who is away); one `FilterBar` (crew, position, type, status, search, Risk only) and the open day / leave in the address (`features/calendar/filters.tsx`); a leave opens `LeaveDetail` with `ImpactPreview` (also in Approvals); short = red (confirmed), dashed red = potential (planned leave not approved), grey = cover needed / data missing, `−C` = no Controller; links to Requests carry `back=` | `features/calendar/*` |
 | Toast + Undo | every save (Undo 7 s, plain 3 s) | `Toast` in `src/ui/components.tsx` |
 | Step action | start / finish now: twins together, hold ended, Undo restores both | `stepNow` in `actions.ts` (never a local copy) |
 | Hold | `PendingForm` (reasons + note) for equipment and loops; Resume with Undo | `TrackerSheets.tsx` |

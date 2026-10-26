@@ -8,7 +8,7 @@ import { isPlanPv } from '@/core/oracle';
 import { fetchLeaveContext, type LeaveContext } from '@/data/leave';
 import { isCrew } from '@/ui/crew';
 import { FilterBar, matchLeave, useCalFilters, useScrollMemory } from './filters';
-import { WEEKDAY_SHORT, attentionPeriods, crewMarks, summarizeMonth } from '@/core/calendar';
+import { WEEKDAY_SHORT, attentionPeriods, crewMarks, leaveScenarios, shortageKinds } from '@/core/calendar';
 import { leaveInRange, shortfall, weekBars, weekDates, weekStartOf } from '@/core/calendar/board';
 import { evaluateRange } from '@/core/manpower';
 import { CREWS, addDaysIso, type Crew } from '@/core/roster';
@@ -21,7 +21,7 @@ import { OracleDot } from '@/ui/oracle';
 import { bySeniority } from '@/ui/positions';
 import { DaySheet } from './DaySheet';
 import { EventSheet, HolidaySheet } from './InfoSheets';
-import { AttentionList, Legend, SHIFT_STYLE, Section, StatusBar, SummaryTiles, ViewToggle, calendarBars, isShiftLetter } from './parts';
+import { AttentionList, Legend, SHIFT_STYLE, Section, StatusBar, SummaryLine, ViewToggle, calendarBars, isShiftLetter, shownMark, summarizeShown } from './parts';
 import { leaveToneShort } from '@/ui/leaveTypes';
 
 const range = (a: string, b: string) => {
@@ -55,6 +55,8 @@ export function WeekView({ start, today, onWeek, onMonth, onList }: { start: str
   const view = useMemo(() => {
     if (!inputs || inputs.key !== start || !info || info.key !== start) return null;
     const results = evaluateRange(start, end, inputs.people, inputs.absencesAll, inputs.rules, inputs.assignments);
+    const sc = leaveScenarios(inputs.absencesAll);
+    const kinds = shortageKinds(results, evaluateRange(start, end, inputs.people, sc.approvedOnly, inputs.rules, inputs.assignments), evaluateRange(start, end, inputs.people, sc.allPlanned, inputs.rules, inputs.assignments));
     const byDate = new Map(results.map((d) => [d.date, d]));
     const people = new Map(inputs.people.map((p) => [p.id, p]));
     // leave of the week by the filters (crew: own crew or where the person actually works that week)
@@ -70,7 +72,12 @@ export function WeekView({ start, today, onWeek, onMonth, onList }: { start: str
     const groups = new Map<Crew | null, { block: (typeof leave)[number]; person: ManpowerInputs['people'][number] }[]>();
     for (const block of leave) { const person = people.get(block.employeeId)!; groups.set(person.crew, [...(groups.get(person.crew) ?? []), { block, person }]); }
     for (const g of groups.values()) g.sort((a, b) => bySeniority(a.person, b.person) || a.block.start.localeCompare(b.block.start));
-    return { byDate, away, holidayOn, bars: calendarBars(inputs, info), summary: summarizeMonth(results), attention: attentionPeriods(results.filter((d) => d.date >= today)),
+    return { byDate, kinds, away, holidayOn, bars: calendarBars(inputs, info),
+      summary: summarizeShown(results.map((d) => ({ marks: crewMarks(d).filter((x) => !isCrew(f.crew) || x.crew === f.crew).map((x) => (x.shift === 'Off' ? 'off' as const : shownMark(x.mark, kinds.get(`${d.date}|${x.crew}`)))) }))), attention: attentionPeriods(results.filter((d) => d.date >= today)).map((a) => {
+        if (a.kind !== 'shortage') return a;
+        let all = true; for (let d = a.start; d <= a.end; d = addDaysIso(d, 1)) if (kinds.get(`${d}|${a.crew}`) === 'confirmed') all = false;
+        return all ? { ...a, text: 'Potential shortage · planned leave not approved' } : a;
+      }),
       groups: [...CREWS, null].filter((c) => groups.has(c)).map((c) => ({ crew: c, rows: groups.get(c)! })), requests,
       onLeave: new Set(leave.map((b) => b.employeeId)).size, holidays: info.holidays.filter((h) => h.start <= end && h.end >= start) };
   }, [inputs, info, ctx, f, start, end, today]);
@@ -96,7 +103,7 @@ export function WeekView({ start, today, onWeek, onMonth, onList }: { start: str
 
       {error ? <ErrorBox error={error} /> : !view ? <Spinner /> : (
         <>
-          <SummaryTiles summary={view.summary} />
+          <SummaryLine c={view.summary} />
 
           <Card className="p-1.5">
             <div className={cx(grid, 'mb-1')}>
@@ -121,14 +128,17 @@ export function WeekView({ start, today, onWeek, onMonth, onList }: { start: str
                   <div className="flex items-center"><CrewBadge crew={crew} size="sm" /></div>
                   {days.map((d) => {
                     const day = view.byDate.get(d)!;
-                    const m = crewMarks(day).find((x) => x.crew === crew)!;
-                    const n = m.mark === 'red' ? shortfall(day.crews.find((c) => c.crew === crew)!) : 0;
+                    const m0 = crewMarks(day).find((x) => x.crew === crew)!;
+                    const m = { ...m0, mark: m0.shift === 'Off' ? m0.mark : shownMark(m0.mark, view.kinds.get(`${d}|${crew}`)) };
+                    const cd = day.crews.find((c) => c.crew === crew)!;
+                    const n = m.mark === 'red' ? shortfall(cd) : 0;
+                    const noCtl = cd.working && cd.controller.count < cd.controller.min;
                     return (
                       <button key={d} type="button" onClick={() => setOpen(d)} aria-label={`${crew} Shift ${shortDate(d)}: ${m.shift}`}
-                        className={cx('relative flex h-9 flex-col items-center justify-center overflow-hidden rounded-md text-sm font-bold leading-none tabular-nums', f.risk && m.mark !== 'red' && m.mark !== 'pending' && 'opacity-30',
+                        className={cx('relative flex h-9 flex-col items-center justify-center overflow-hidden rounded-md text-sm font-bold leading-none tabular-nums', f.risk && m.mark !== 'red' && m.mark !== 'potential' && m.mark !== 'pending' && 'opacity-30',
                           m.mark === 'off' || !isShiftLetter(m.shift) ? 'text-slate-300 ring-1 ring-slate-100' : SHIFT_STYLE[m.shift].cell, d === today && 'ring-2 ring-brand-700')}>
                         {m.shift === 'Off' ? '·' : m.shift}
-                        {n > 0 && <span className="mt-0.5 text-[9px]">−{n}</span>}
+                        {(n > 0 || noCtl) && <span className="mt-0.5 text-[9px]">{noCtl ? '−C' : ''}{n > 0 && !noCtl ? `−${n}` : ''}</span>}
                         {m.mark !== 'off' && <StatusBar mark={m.mark} thick />}
                       </button>
                     );
@@ -201,7 +211,7 @@ export function WeekView({ start, today, onWeek, onMonth, onList }: { start: str
       )}
 
       {open && view && inputs && (
-        <DaySheet date={open} day={view.byDate.get(open)!} inputs={inputs}
+        <DaySheet kinds={view.kinds} date={open} day={view.byDate.get(open)!} inputs={inputs}
           holiday={view.holidayOn(open)} bars={view.bars.filter((b) => b.start <= open && open <= b.end)} onClose={() => setOpen(null)}
           onAddEvent={() => { setSheet({ kind: 'event', event: null, date: open }); setOpen(null); }} onAddHoliday={() => { setSheet({ kind: 'holiday', holiday: null, date: open }); setOpen(null); }} />
       )}

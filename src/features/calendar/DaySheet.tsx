@@ -1,5 +1,6 @@
 import { ChevronRight, Star } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import type { ShortageKind } from '@/core/calendar';
 import { LEAVE_GROUPS, leaveGroup, shortfall, type LeaveGroup } from '@/core/calendar/board';
 import { personOn, type CrewDay, type DayResult } from '@/core/manpower';
 import { backHere } from './filters';
@@ -21,8 +22,8 @@ const POS: Record<string, string> = { controller: 'Ctl', vr_controller: 'VR', mo
 const markOf = (c: CrewDay) => (c.finalStatus ?? (c.pending.length ? 'pending' : c.status) ?? 'pending') as keyof typeof STATUS;
 
 /** Everything about one date, over the calendar: shifts, manpower against the minimum, leave by reason, holiday, events. */
-export function DaySheet({ date, day, inputs, holiday, bars, onClose, onAddEvent, onAddHoliday }: {
-  date: string; day: DayResult; inputs: ManpowerInputs; holiday: Holiday | null; bars: Bar[]; onClose: () => void; onAddEvent: () => void; onAddHoliday: () => void;
+export function DaySheet({ date, day, kinds, inputs, holiday, bars, onClose, onAddEvent, onAddHoliday }: {
+  date: string; /** confirmed / potential shortage per crew (display only) */ kinds?: Map<string, ShortageKind>; day: DayResult; inputs: ManpowerInputs; holiday: Holiday | null; bars: Bar[]; onClose: () => void; onAddEvent: () => void; onAddHoliday: () => void;
 }) {
   const title = new Date(`${date}T00:00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
   const people = new Map(inputs.people.map((p) => [p.id, p]));
@@ -50,6 +51,7 @@ export function DaySheet({ date, day, inputs, holiday, bars, onClose, onAddEvent
               <div key={c.crew} className="flex items-center gap-2 px-2.5 py-2 text-sm text-slate-500"><span className="w-7 text-xs font-semibold">Off</span><CrewBadge crew={c.crew} size="sm" muted /><span>{c.crew} Shift · rest day</span></div>
             );
             const mark = markOf(c);
+            const kind = kinds?.get(`${date}|${c.crew}`);
             const n = shortfall(c);
             // one Controller is the normal complement, so the buffer is the tighter of Panel and Field (incl. a Grade 13+ lent across)
             const buffer = Math.min(c.panel.buffer, c.field.buffer);
@@ -59,12 +61,15 @@ export function DaySheet({ date, day, inputs, holiday, bars, onClose, onAddEvent
                   <span className="w-7 text-xs font-semibold text-slate-700">{c.state}</span>
                   <CrewBadge crew={c.crew} size="sm" />
                   <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">{c.crew} Shift <span className="font-normal text-slate-500">· {c.dutyLabel}</span></span>
-                  <span className={cx('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold', STATUS[mark].cls)}>{mark === 'red' && n > 0 ? `Short −${n}` : mark === 'pending' ? pendingText(c) : STATUS[mark].text}</span>
+                  {kind === 'potential'
+                    ? <span className="shrink-0 rounded-full border border-dashed border-status-red px-2 py-0.5 text-[11px] font-semibold text-status-red">Potential short</span>
+                    : <span className={cx('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold', STATUS[kind === 'confirmed' ? 'red' : mark].cls)}>{(kind === 'confirmed' || mark === 'red') && n > 0 ? `Short −${n}` : kind === 'confirmed' ? 'Short' : mark === 'pending' ? pendingText(c) : STATUS[mark].text}</span>}
                 </div>
                 <div className="mt-1 flex flex-wrap gap-x-3 pl-9 text-xs tabular-nums text-slate-600">
                   {[c.controller, c.panel, c.field].map((p) => <span key={p.key} className={cx(p.finding === 'shortage' && 'font-semibold text-status-red')}>{p.label} {p.count}/{p.min}</span>)}
                   {mark !== 'red' && mark !== 'pending' && <span className="text-slate-500">{buffer > 0 ? `buffer +${buffer}` : 'no buffer'}</span>}
                 </div>
+                {kind === 'potential' && <p className="mt-0.5 pl-9 text-xs text-status-red">Short only if planned leave not yet approved is taken.</p>}
                 {c.controller.count < c.controller.min && (
                   <div className="mt-1 pl-9 text-xs"><span className="text-slate-600">{c.controller.onLeave.map((x) => x.name).concat(c.controller.away.map((x) => x.person.name)).join(', ') || 'No Controller'} away · </span>
                     <Link to={`/requests?view=entry&card=controller&kind=cover&crew=${c.crew}&from=${date}&to=${date}&back=${backHere()}`} className="font-semibold text-brand-700">Assign cover ›</Link></div>

@@ -1,6 +1,7 @@
 // Manpower Calendar and Annual Leave Plan (Stage E): month grids, per-crew day status and year strips.
 // Pure functions over the manpower engine's results; no I/O.
-import type { DayResult } from '../manpower';
+import type { DayResult, MpAbsence } from '../manpower';
+import { isPlanPv } from '../oracle';
 import { addDaysIso, type Crew } from '../roster';
 
 /** A crew's result on one day, as the calendar shows it. 'pending' = not final (coverage required / data incomplete). */
@@ -136,4 +137,33 @@ export function attentionPeriods(days: DayResult[]): AttentionPeriod[] {
   out.push(...open.values());
   const rank = { shortage: 0, coverage_required: 1, data_incomplete: 2 };
   return out.sort((a, b) => rank[a.kind] - rank[b.kind] || a.start.localeCompare(b.start) || a.crew.localeCompare(b.crew));
+}
+
+/**
+ * Confirmed vs potential shortage per crew duty (owner, 26 Oct 2026; display only, the manpower result is unchanged):
+ * - confirmed: short even when only approved leave counts (approved / recorded absences);
+ * - potential: short only because of planned leave not approved yet (it may still be taken, or cancelled).
+ * `base` is what the app counts today; `approvedOnly` drops planned PV not approved; `allPlanned` counts every planned
+ * leave (also one not approved by its first day). Key: `${date}|${crew}`.
+ */
+export type ShortageKind = 'confirmed' | 'potential';
+export function shortageKinds(base: DayResult[], approvedOnly: DayResult[], allPlanned: DayResult[]): Map<string, ShortageKind> {
+  const out = new Map<string, ShortageKind>();
+  base.forEach((day, i) => {
+    for (const c of day.crews) {
+      if (!c.working) continue;
+      const a = approvedOnly[i]?.crews.find((x) => x.crew === c.crew), p = allPlanned[i]?.crews.find((x) => x.crew === c.crew);
+      if (a?.confirmedShortage) out.set(`${day.date}|${c.crew}`, 'confirmed');
+      else if (c.confirmedShortage || p?.confirmedShortage) out.set(`${day.date}|${c.crew}`, 'potential');
+    }
+  });
+  return out;
+}
+
+/** The two plans `shortageKinds` compares against: only approved leave, and every planned leave. */
+export function leaveScenarios(absences: MpAbsence[]): { approvedOnly: MpAbsence[]; allPlanned: MpAbsence[] } {
+  return {
+    approvedOnly: absences.filter((a) => !(isPlanPv(a.typeCode) && a.oracle !== 'approved')),
+    allPlanned: absences.map((a) => (a.lapsed ? { ...a, inCurrentPlan: true } : a))
+  };
 }

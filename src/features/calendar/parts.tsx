@@ -1,7 +1,7 @@
 // Pieces shared by the month and week views of the calendar.
 import { ChevronRight, Star, UserMinus, type LucideIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
-import type { AttentionPeriod, DayMark, MonthSummary } from '@/core/calendar';
+import { useState, type ReactNode } from 'react';
+import type { AttentionPeriod, DayMark, MonthSummary, ShortageKind } from '@/core/calendar';
 import type { UnitEvent } from '@/data/calendar';
 import type { ManpowerInputs } from '@/data/manpower';
 import { EVENT_ICON, UNIT_BAR } from '@/ui/calendar';
@@ -49,8 +49,39 @@ export const SHIFT_STYLE: Record<'M' | 'A' | 'N', { cell: string; name: string }
 export const STATUS_BAR: Record<Exclude<DayMark, 'off'>, string> = { green: 'bg-green-600', amber: 'bg-amber-500', red: 'bg-status-red', pending: 'bg-slate-400' };
 export const isShiftLetter = (s: string): s is 'M' | 'A' | 'N' => s === 'M' || s === 'A' || s === 'N';
 /** The bar itself: put it inside a `relative overflow-hidden` shift cell. */
-export function StatusBar({ mark, thick = false }: { mark: Exclude<DayMark, 'off'>; thick?: boolean }) {
+export function StatusBar({ mark, thick = false }: { mark: Exclude<DayMark, 'off'> | 'potential'; thick?: boolean }) {
+  // potential shortage (only planned leave not approved makes it short): the red bar dashed
+  if (mark === 'potential') return <span aria-hidden className={cx('absolute inset-x-0 bottom-0 border-dashed border-status-red', thick ? 'border-b-4' : 'border-b-[3px]')} />;
   return <span aria-hidden className={cx('absolute inset-x-0 bottom-0', thick ? 'h-1' : 'h-[3px]', STATUS_BAR[mark])} />;
+}
+
+/** The mark a duty shows: confirmed shortage red, potential shortage (planned leave not approved) dashed red, else the app's result. */
+export type ShownMark = DayMark | 'potential';
+export function shownMark(mark: DayMark, kind: ShortageKind | undefined): ShownMark {
+  if (kind === 'confirmed') return 'red';
+  if (kind === 'potential') return 'potential';
+  return mark;
+}
+const DAY_RANK: Record<ShownMark, number> = { off: -1, green: 0, amber: 1, pending: 2, potential: 3, red: 4 };
+/** Days of a period by their worst shown duty: Short / Potential / Cover or data / At min / Safe. */
+export function summarizeShown(days: { marks: ShownMark[] }[]) {
+  const c = { red: 0, potential: 0, pending: 0, amber: 0, green: 0 };
+  for (const d of days) { const w = d.marks.reduce<ShownMark>((m, x) => (DAY_RANK[x] > DAY_RANK[m] ? x : m), 'off'); if (w !== 'off') c[w]++; }
+  return c;
+}
+/** One line: the period's days by their worst duty (replaces the four tiles). */
+export function SummaryLine({ c }: { c: ReturnType<typeof summarizeShown> }) {
+  const item = (n: number, label: string, dot: ReactNode, strong = false) =>
+    <span className={cx('flex items-center gap-1 whitespace-nowrap', n === 0 && 'text-slate-500')}>{dot}<b className={cx('tabular-nums', strong && n > 0 && 'text-status-red')}>{n}</b>{label}</span>;
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 px-1 text-[11px] text-slate-600" aria-label="Days by their worst shift" title="Days, by their worst shift">
+      {item(c.red, 'short', <span className="h-2 w-2 rounded-full bg-status-red" />, true)}
+      {item(c.potential, 'potential', <span className="h-0 w-2.5 border-b-2 border-dashed border-status-red" />)}
+      {item(c.pending, 'cover / data', <span className="h-2 w-2 rounded-full bg-slate-400" />)}
+      {item(c.amber, 'at min', <span className="h-2 w-2 rounded-full bg-status-amber" />)}
+      {item(c.green, 'safe', <span className="h-2 w-2 rounded-full bg-status-green" />)}
+    </div>
+  );
 }
 
 const SUMMARY: { key: Exclude<DayMark, 'off'>; label: string; dot: string }[] = [
@@ -86,9 +117,11 @@ export function ViewToggle({ view, onChange }: { view: CalendarView; onChange: (
 
 /** Colour key: the colour of a cell is its shift; the bar under it is the cover status. The month grid has a row per shift holding crew letters; the week grid a row per crew holding shift letters. */
 export function Legend({ rows = 'M / A / N rows:', sample = 'B' }: { rows?: string; sample?: string }) {
-  const bar = (mark: Exclude<DayMark, 'off'>) => <span className="relative inline-block h-3 w-4 overflow-hidden rounded bg-slate-100"><StatusBar mark={mark} thick /></span>;
+  const [open, setOpen] = useState(false);
+  const bar = (mark: Exclude<DayMark, 'off'> | 'potential') => <span className="relative inline-block h-3 w-4 overflow-hidden rounded bg-slate-100"><StatusBar mark={mark} thick /></span>;
+  if (!open) return <button type="button" onClick={() => setOpen(true)} className="mt-1 px-1 text-[11px] font-medium text-slate-500">Key ▸</button>;
   return (
-    <div className="mt-1.5 space-y-1 px-1 text-[10px] text-slate-500">
+    <div className="mt-1.5 space-y-1 px-1 text-[10px] text-slate-500" onClick={() => setOpen(false)}>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
         <span className="font-medium text-slate-600">{rows}</span>
         {(['M', 'A', 'N'] as const).map((k) => <span key={k} className="flex items-center gap-1"><span className={cx('rounded px-1 font-bold', SHIFT_STYLE[k].cell)}>{sample === 'B' ? k === 'M' ? 'B' : k === 'A' ? 'C' : 'D' : k}</span>{SHIFT_STYLE[k].name}</span>)}
@@ -100,6 +133,8 @@ export function Legend({ rows = 'M / A / N rows:', sample = 'B' }: { rows?: stri
         <span className="flex items-center gap-1">{bar('green')}safe</span>
         <span className="flex items-center gap-1">{bar('amber')}at minimum</span>
         <span className="flex items-center gap-1">{bar('red')}short (−1)</span>
+        <span className="flex items-center gap-1">{bar('potential')}potential short (planned leave not approved)</span>
+        <span className="flex items-center gap-1"><b className="text-slate-700">−C</b>no Controller</span>
         <span className="flex items-center gap-1">{bar('pending')}cover needed / data missing</span>
       </div>
     </div>

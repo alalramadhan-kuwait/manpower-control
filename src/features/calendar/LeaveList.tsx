@@ -97,7 +97,7 @@ export function LeaveListView({ year, month, onMonth, onView }: { year: number; 
       <ViewToggle view="list" onChange={(v) => v !== 'list' && onView(v)} />
       <FilterBar f={f} set={setF} />
       {error ? <ErrorBox error={error} /> : !shown ? <Spinner /> : <>
-        <p className="mb-1.5 px-1 text-xs text-slate-500">{shown.length - requested} leave{shown.length - requested === 1 ? '' : 's'}{requested ? <> · <b className="text-brand-700">{requested} requested</b></> : null} in {MONTH_NAMES[month - 1]} · by start date</p>
+        <p className="mb-1.5 px-1 text-xs text-slate-500">{shown.length - requested} leave{shown.length - requested === 1 ? '' : 's'}{requested ? <> · <b className="text-brand-700">{requested} requested</b></> : null} in {MONTH_NAMES[month - 1]} · by start date · tap for the full status</p>
         {shown.length ? <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200">
           {shown.map((r) => <li key={r.key}><LeaveRow r={r} today={today} before={r.start < from} onOpen={() => open(r)} /></li>)}
         </ul> : <p className="py-6 text-center text-sm text-slate-500">No leave in {MONTH_NAMES[month - 1]} for this selection.</p>}
@@ -113,13 +113,15 @@ const ORACLE_TONE: Partial<Record<OracleState | 'mixed', string>> = { submitted:
 
 function LeaveRow({ r, today, before, onOpen }: { r: Row; today: string; before: boolean; onOpen: () => void }) {
   const open = isOpenEnd(r.end);
-  // line 3: the separate facts, short; colour only where something needs attention
+  // line 3 only where something needs attention (compact list; the sheet shows every fact): on leave now, not approved,
+  // Oracle submitted / rejected, moved, joined records, a cancellation asked, the shutdown note
+  const time = r.request ? null : timeState({ start_date: r.start, end_date: r.end, return_confirmed_at: r.records.at(-1)?.return_confirmed_at ?? null }, today);
   const facts: [string, string?][] = r.request
     ? [[`${r.request.action === 'extend' ? 'Extension' : 'Request'} waiting for the Section Head`, 'text-brand-700']]
-    : [[TIME_LABEL[timeState({ start_date: r.start, end_date: r.end, return_confirmed_at: r.records.at(-1)?.return_confirmed_at ?? null }, today)]],
-      [APPROVAL_LABEL[r.approval!], APPROVAL_TONE[r.approval!]],
-      [r.oracle === 'mixed' ? 'Oracle differs by part' : ORACLE_SHORT[r.oracle!], ORACLE_TONE[r.oracle!]],
-      ...(r.movedFrom !== null ? [[r.movedFrom ? `↻ moved from ${r.movedFrom}` : '↻ rescheduled'] as [string]] : []),
+    : [...(time === 'on_leave' || time === 'open' ? [[TIME_LABEL[time]] as [string]] : []),
+      ...(r.approval && r.approval !== 'approved' && r.approval !== 'not_required' ? [[APPROVAL_LABEL[r.approval], APPROVAL_TONE[r.approval]] as [string, string?]] : []),
+      ...(r.oracle === 'submitted' || r.oracle === 'rejected' || r.oracle === 'mixed' ? [[r.oracle === 'mixed' ? 'Oracle differs by part' : ORACLE_SHORT[r.oracle], ORACLE_TONE[r.oracle]] as [string, string?]] : []),
+      ...(r.movedFrom !== null ? [[r.movedFrom ? `↻ from ${r.movedFrom}` : '↻ rescheduled'] as [string]] : []),
       ...(r.records.length > 1 ? [[`${r.records.length} records`] as [string]] : []),
       ...(r.cancelAsked ? [['Cancellation requested', 'text-status-red'] as [string, string]] : []),
       ...(r.sd ? [['Shutdown — Cancellation possible', 'font-semibold text-amber-800'] as [string, string]] : [])];
@@ -130,7 +132,7 @@ function LeaveRow({ r, today, before, onOpen }: { r: Row; today: string; before:
         {r.request && <span className="shrink-0 text-[10px] font-bold text-brand-700">Requested</span>}</span>
       <span className="flex items-center gap-2 text-[11px] text-slate-500"><span className="min-w-0 flex-1 truncate">#{r.p.employee_number ?? '—'} · {POS_SHORT[r.p.position_code ?? ''] ?? r.p.position_label ?? '—'} · {r.place}</span>
         <span className={cx('shrink-0 tabular-nums', before ? 'text-slate-500' : 'font-semibold text-slate-700')}>{open ? `${shortDate(r.start)} – return open` : `${range(r.start, r.end)} · ${days(r.start, r.end)} d`}</span></span>
-      <span className="flex flex-wrap gap-x-1 text-[11px] leading-tight text-slate-500">{facts.map(([t, c], i) => <span key={t} className={c}>{i ? '· ' : ''}{t}</span>)}</span>
+      {facts.length > 0 && <span className="flex flex-wrap gap-x-1 text-[11px] leading-tight text-slate-500">{facts.map(([t, c], i) => <span key={t} className={c}>{i ? '· ' : ''}{t}</span>)}</span>}
     </button>
   );
 }
