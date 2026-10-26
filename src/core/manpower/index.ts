@@ -29,6 +29,8 @@ export interface MpPerson {
   fieldCover?: boolean;
   /** The name in Arabic letters, for search. */
   arabicName?: string | null;
+  /** Sick-leave days in the rolling 12 months (latest confirmed figure); null / absent = not known. */
+  sick12?: number | null;
   takeCharge: QualStatus;
   panelQualified: QualStatus;
   actingController: QualStatus;
@@ -58,6 +60,16 @@ export const DAY_DUTY = 'DAY' as const;
 export const isDayDutyWorkday = (date: string) => new Date(date + 'T00:00:00Z').getUTCDay() <= 4;
 
 const CREW_ROLES: (Role | null)[] = ['controller', 'panel_operator', 'field_operator'];
+
+/** Acting Panel (owner rule, 27 Oct 2026): a Field Operator of Grade 13 or above may take a Panel seat unless their
+ *  rolling 12-month sick leave is over 30 days; the highest employee number goes first. Grade is not a Panel
+ *  qualification by itself: callers keep their own checks. Used by the daily engine and by vacation planning alike. */
+export const ACTING_PANEL = { grade: 13, sickMax: 30 } as const;
+export const sickExcludesActing = (p: { sick12?: number | null }) => p.sick12 != null && p.sick12 > ACTING_PANEL.sickMax;
+/** Highest employee number first (numbers compared as numbers; a missing number goes last). */
+export const byNumberDesc = (a: { employeeNumber: string }, b: { employeeNumber: string }) =>
+  (Number(b.employeeNumber) || 0) - (Number(a.employeeNumber) || 0) || b.employeeNumber.localeCompare(a.employeeNumber);
+
 
 /**
  * The person as they stand on `date`: role and crew from the dated role history (before the first period the first
@@ -415,12 +427,13 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
 
     // ---- Panel
     // Grade 13+ covers both: when Panel is short, Grade-13+ Field Operators on the shift take the empty Panel seats
-    // (highest grade first) as long as Field keeps its own minimum. They count in Panel, not in Field.
+    // (ACTING_PANEL: not over 30 sick days, highest employee number first) as long as Field keeps its own minimum.
+    // They count in Panel, not in Field.
     const fromField: MpPerson[] = [];
     {
       const qualified = pool.panel.filter((p) => p.panelQualified === 'yes').length;
       let fieldSpare = pool.field.filter((p) => p.takeCharge === 'yes').length - rules.fieldMin;
-      for (const c of pool.field.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade).sort((a, b) => (b.grade ?? 0) - (a.grade ?? 0) || a.name.localeCompare(b.name))) {
+      for (const c of pool.field.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade && !sickExcludesActing(p)).sort(byNumberDesc)) {
         if (qualified + fromField.length >= rules.panelMin) break;
         if (c.takeCharge === 'yes') { if (fieldSpare <= 0) continue; fieldSpare--; }
         fromField.push(c);
@@ -443,11 +456,11 @@ export function evaluateDay(date: string, allPeople: MpPerson[], absences: MpAbs
       panelIssues.push(panelPotentialMet ? `Panel qualification data incomplete: ${what} confirmed` : `Confirmed shortage: Panel ${short}`);
     }
     // Panel buffer from Field: at exactly the minimum, a Grade-13+ Field Operator on this shift can take a Panel seat,
-    // provided Field still meets its own minimum without them. Highest grade first.
+    // provided Field still meets its own minimum without them. Same order as above (ACTING_PANEL).
     const fieldTakeCharge = pool.field.filter((p) => p.takeCharge === 'yes');
     const backup = panelMet && panelCounted.length === rules.panelMin
-      ? pool.field.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade && (!fieldTakeCharge.includes(p) || fieldTakeCharge.length - 1 >= rules.fieldMin))
-          .sort((a, b) => (b.grade ?? 0) - (a.grade ?? 0) || a.name.localeCompare(b.name))[0] ?? null
+      ? pool.field.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade && !sickExcludesActing(p) && (!fieldTakeCharge.includes(p) || fieldTakeCharge.length - 1 >= rules.fieldMin))
+          .sort(byNumberDesc)[0] ?? null
       : null;
     for (const p of fromField) panelIssues.push(`Filled from Field: ${p.name} (Grade ${p.grade})`);
     if (backup) panelIssues.push(`Buffer: ${backup.name} (Field Operator, Grade ${backup.grade}) can take a Panel seat`);

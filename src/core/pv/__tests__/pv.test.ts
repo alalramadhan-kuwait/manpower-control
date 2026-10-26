@@ -23,12 +23,12 @@ describe('runsOf', () => {
 });
 
 describe('panelFill', () => {
-  it('fills to four seats with Grade 13 Field Operators: longest in grade, then least sick leave', () => {
+  it('fills to four seats with Grade 13+ Field Operators: over 30 sick days left out, highest employee number first', () => {
     const shift = [p('po1', 'panel_operator', { grade: 14 }), p('po2', 'panel_operator', { grade: 14 }),
-      p('f1', 'field_operator', { grade: 13, gradeSince: '2020-01-01', sick: 9 }), p('f2', 'field_operator', { grade: 13, gradeSince: '2018-01-01', sick: 30 }),
-      p('f3', 'field_operator', { grade: 13, gradeSince: '2018-01-01', sick: 4 }), p('f4', 'field_operator', { grade: 12, gradeSince: '2010-01-01' })];
+      p('f1', 'field_operator', { grade: 13, number: '20001', sick: 9 }), p('f2', 'field_operator', { grade: 13, number: '20300', sick: 30 }),
+      p('f3', 'field_operator', { grade: 13, number: '20200', sick: 4 }), p('f4', 'field_operator', { grade: 12, number: '29999' }), p('f5', 'field_operator', { grade: 13, number: '29000', sick: 31 })];
     const r = panelFill(shift);
-    expect(r.acting.map((x) => x.id)).toEqual(['f3', 'f2']);   // same year in grade: f3 has less sick leave
+    expect(r.acting.map((x) => x.id)).toEqual(['f2', 'f3']);   // f5 is over 30 sick days; then the highest numbers
     expect(r.short).toBe(0);
   });
   it('reports seats it cannot fill', () => {
@@ -75,7 +75,7 @@ describe('checkPv', () => {
 describe('blockReason', () => {
   const A = cyclesOf('A', 2027), B = cyclesOf('B', 2027);
   const names = new Map<string, string>([['p1', 'Pat'], ['ca', 'Cal'], ['cb', 'Cy']]);
-  const shifts: PvShift[] = [{ crew: 'A', cycles: A, controllers: ['ca'], panel: ['p1', 'p2'], field: ['f1', 'f2', 'f3'] }, { crew: 'B', cycles: B, controllers: ['cb'], panel: [], field: [] }];
+  const shifts: PvShift[] = [{ crew: 'A', cycles: A, controllers: ['ca'], panel: ['p1', 'p2', 'p3', 'p4'], field: ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8'] }, { crew: 'B', cycles: B, controllers: ['cb'], panel: [], field: [] }];
   it('is free when nothing is in the way', () => expect(blockReason({ shifts, picks: new Map(), names }, 'p2', 5)).toBeNull());
   it('names the Panel Operator already off', () => expect(blockReason({ shifts, picks: new Map([['p1', new Set([5])]]), names }, 'p2', 5)).toContain('Pat'));
   it('stops a third Field Operator and a Controller overlapping another shift', () => {

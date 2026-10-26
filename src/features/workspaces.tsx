@@ -15,6 +15,7 @@ import ShutdownListPage from '@/features/shutdown/ShutdownListPage';
 import FoLevelsPage from '@/features/shutdown/FoLevelsPage';
 import LeavePlanPage from '@/features/leave/LeavePlanPage';
 import PvPage from '@/features/pv/PvPage';
+import VacationPlanPage from '@/features/vacation/VacationPlanPage';
 import ControllersPage from '@/features/controllers/ControllersPage';
 import ControllersBoardPage from '@/features/controllers/ControllersBoardPage';
 import MorningPlanPage from '@/features/controllers/MorningPlanPage';
@@ -33,6 +34,7 @@ export function ControllersWorkspace({ profile }: { profile: UserProfile }) {
 export function LeavePlanningWorkspace({ profile }: { profile: UserProfile }) {
   return <Workspace title="Leave planning" tabs={[
     { key: 'annual', label: 'Annual plan', el: <LeavePlanPage /> },
+    { key: 'next', label: 'Plan next year', el: <VacationPlanPage profile={profile} /> },
     { key: 'pv', label: 'PV cycles', el: <PvPage isHead={head(profile)} /> }]} />;
 }
 

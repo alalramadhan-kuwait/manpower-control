@@ -2,10 +2,11 @@
 // a tap books or frees a whole cycle, back-to-back cycles make one longer leave. The Section Head's rules are checked as you tap.
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, Loader2, Sun } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { CREWS, addDaysIso, type Crew } from '@/core/roster';
+import { fieldSlots, panelSlots } from '@/core/vacation/rules';
 import { PV_RULES, blockReason, checkPv, cyclesOf, panelFill, runsOf, type PvContext, type PvCycle, type PvIssue, type PvPerson, type PvRole, type PvShift } from '@/core/pv';
-import { applyPvBlocks, decidePvPlan, fetchPv, publishPvPlan, submitPvPlan, type PvData, type PvPlan } from '@/data/pv';
+import { applyPvBlocks, fetchPv, type PvData, type PvPlan } from '@/data/pv';
 import { BottomSheet, Button, Card, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components';
 import { CrewBadge } from '@/ui/crew';
 import { shortDate } from '@/ui/leave';
@@ -35,7 +36,7 @@ function buildModel(data: PvData): Model {
   const people = new Map<string, PvPerson>();
   for (const r of data.people) {
     if (!r.position_code || !ROLES.has(r.position_code)) continue;
-    people.set(r.id, { id: r.id, name: r.display_name, number: r.employee_number, crew: r.crew_code, role: r.position_code as PvRole, grade: r.grade, gradeSince: r.last_promotion_date, sick: data.sick.get(r.id) ?? 0 });
+    people.set(r.id, { id: r.id, name: r.display_name, number: r.employee_number, crew: r.crew_code, role: r.position_code as PvRole, grade: r.grade, gradeSince: r.last_promotion_date, sick: data.sick.get(r.id) ?? null });
   }
   const cycles = Object.fromEntries(CREWS.map((c) => [c, cyclesOf(c, year)])) as Record<Crew, PvCycle[]>;
   const groups = {} as Model['groups'];
@@ -70,7 +71,7 @@ const shortName = (n: string) => { const w = n.split(' '); return w.length > 1 ?
 const overlaps = (a: { start: string; end: string }, b: { start: string; end: string }) => a.start <= b.end && b.start <= a.end;
 const rangeLabel = (c: PvCycle) => `${Number(c.start.slice(8))} ${MONTHS[Number(c.start.slice(5, 7)) - 1]} – ${Number(c.end.slice(8))} ${MONTHS[Number(c.end.slice(5, 7)) - 1]}`;
 
-export default function PvPage({ isHead = false }: { isHead?: boolean }) {
+export default function PvPage(_props: { isHead?: boolean }) {
   const [params, setParams] = useSearchParams();
   const year = Number(params.get('year')) || new Date().getFullYear() + 1;
   const span: Span = (SPANS.find((x) => x.key === params.get('span'))?.key) ?? 'q1';
@@ -88,7 +89,8 @@ export default function PvPage({ isHead = false }: { isHead?: boolean }) {
   const plan = planYears ? planContext(planYears, year) : null;
   const pv = data?.pvPlan ?? null;
   const inDraft = plan?.kind === 'draft' && pv?.status === 'draft';
-  const editable = !!plan?.writable || inDraft;
+  // next year's PV is planned in Leave planning › Plan next year (manpower first, checked on the server); here it is shown only
+  const editable = !!plan?.writable;
   const set = (k: string, v: string | null) => { const n = new URLSearchParams(params); if (v === null) n.delete(k); else n.set(k, v); setParams(n, { replace: true }); };
   const load = useCallback(() => fetchPv(year).then((d) => { setData(d); setLocal(new Map()); }).catch(setError), [year]);
   useEffect(() => { setData(null); load(); }, [load]);
@@ -123,7 +125,7 @@ export default function PvPage({ isHead = false }: { isHead?: boolean }) {
       <PageHeader title="PV plan" subtitle="Annual leave by whole cycle" info={<div className="space-y-2 text-sm text-slate-700">
         <p>A cycle is 8 days: 6 duty days as one block, then 2 off days. A leave starts on the first day of the crew&apos;s cycle and covers whole cycles; cycles side by side make one longer leave. Tap a cycle to book it, tap again to free it. Tap a name to see the whole year of that person.</p>
         <p><b>Rules:</b> two Controllers are never off together (all shifts) · Panel: one off at a time per shift · Field: two at most per shift · summer (June to September) is peak time: one leave of two cycles at the longest · a shutdown team member takes no leave in the shutdown.</p>
-        <p><b>Panel seats:</b> each shift keeps {PV_RULES.panelSeats}. When there are fewer Panel Operators than that, Grade 13 Field Operators fill the seats for the plan: longest in grade first, then the least sick leave.</p>
+        <p><b>Panel seats:</b> each shift keeps {PV_RULES.panelSeats}. When there are fewer Panel Operators than that, Grade 13+ Field Operators fill the seats for the plan: not over 30 sick days in the last 12 months, highest employee number first.</p>
         <p>A cycle that would break a rule is shown in pink with the reason. You can still book it after a confirmation; it stays red until it is approved or moved.</p>
       </div>} />
       <div className="mb-2 flex items-center gap-2">
@@ -135,9 +137,9 @@ export default function PvPage({ isHead = false }: { isHead?: boolean }) {
         {plan && <PlanBadge context={plan} className="shrink-0" />}
         <StatusLine issues={issues} saving={busy > 0} saved={saved} ready={!!model} />
       </div>
-      {plan && plan.kind === 'draft' && (pv ? <DraftBar pv={pv} isHead={isHead} onChanged={load} /> : (
-        <p role="note" className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-300"><b>{plan.label}</b> · view only: there is no PV plan for {year} yet.</p>
-      ))}
+      {plan && plan.kind === 'draft' && (
+        <p role="note" className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-300"><b>PV Plan · {year}</b>{pv ? ` · ${STATUS_LABEL[pv.status]}` : ''} · view only. Next year's vacations are planned in <Link to={`/leave-planning?tab=next&year=${year}`} className="font-semibold underline">Plan next year ›</Link> (manpower, A3 forms, selections, one approval).</p>
+      )}
       {plan && !plan.writable && plan.kind !== 'draft' && (
         <p role="note" className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-300"><b>{plan.label}</b> · view only.</p>
       )}
@@ -195,67 +197,6 @@ function StatusLine({ issues, saving, saved, ready }: { issues: PvIssue[]; savin
 }
 
 const STATUS_LABEL: Record<PvPlan['status'], string> = { draft: 'Draft', submitted: 'Waiting for the Section Head', approved: 'Approved · not published yet', published: 'Published' };
-const EVENT_LABEL: Record<PvPlan['events'][number]['action'], string> = { created: 'Draft started', submitted: 'Submitted', returned: 'Sent back', approved: 'Approved', published: 'Published into the live plan' };
-const when = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-
-/** Next year's PV plan: where it stands (Draft → Submitted → Approved → Published), what to do next, and its history. */
-function DraftBar({ pv, isHead, onChanged }: { pv: PvPlan; isHead: boolean; onChanged: () => void }) {
-  const [note, setNote] = useState('');
-  const [ask, setAsk] = useState<'submit' | 'return' | 'publish' | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [history, setHistory] = useState(false);
-  const returned = pv.status === 'draft' ? pv.events.find((e) => e.action === 'returned' && e.version === pv.version - 1) : undefined;
-  async function run(f: () => Promise<unknown>) {
-    setBusy(true); setErr(null);
-    try { await f(); setAsk(null); setNote(''); onChanged(); } catch (e) { setErr(e instanceof Error ? e.message : 'Could not save.'); } finally { setBusy(false); }
-  }
-  const tone = pv.status === 'published' ? 'bg-green-50 text-green-900 ring-green-300' : pv.status === 'approved' ? 'bg-sky-50 text-sky-900 ring-sky-300' : 'bg-amber-50 text-amber-900 ring-amber-300';
-  return (
-    <div className={cx('mb-2 space-y-2 rounded-xl px-3 py-2 text-sm ring-1', tone)}>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <b>PV Plan · {pv.year}</b><span className="rounded-full bg-white/70 px-2 py-0.5 text-xs font-semibold ring-1 ring-current/20">{STATUS_LABEL[pv.status]} · v{pv.version}</span>
-        <button type="button" onClick={() => setHistory((h) => !h)} className="ml-auto text-xs font-medium underline">{history ? 'Hide history' : 'History'}</button>
-      </div>
-      <p className="text-xs">
-        {pv.status === 'published' ? <>In the live plan: it counts for manpower, the calendar and Oracle. Changes now go through requests (reschedule).</>
-          : pv.status === 'draft' ? <>Taps are saved to the draft only. Until it is published it does <b>not</b> reduce manpower, create alerts or show in the calendar.</>
-          : <>Locked while it is {pv.status === 'submitted' ? 'with the Section Head' : 'waiting to be published'}. Not in use yet.</>}
-      </p>
-      {returned && <p className="rounded-lg bg-white/70 px-2 py-1 text-xs"><b>Sent back:</b> {returned.note}</p>}
-      {pv.status === 'draft' && <Button className="min-h-9 w-full text-sm sm:w-auto" onClick={() => setAsk('submit')}>Submit for approval</Button>}
-      {pv.status === 'submitted' && (isHead
-        ? <div className="flex gap-2"><Button variant="secondary" className="min-h-9 flex-1 text-sm" onClick={() => setAsk('return')}>Send back</Button><Button className="min-h-9 flex-1 text-sm" disabled={busy} onClick={() => run(() => decidePvPlan(pv.year, true, ''))}><Check className="h-4 w-4" />{busy ? 'Saving…' : 'Approve'}</Button></div>
-        : <p className="text-xs font-medium">Waiting for the Section Head to approve or send it back.</p>)}
-      {pv.status === 'approved' && (isHead
-        ? <Button className="min-h-9 w-full text-sm sm:w-auto" onClick={() => setAsk('publish')}>Publish into the live plan</Button>
-        : <p className="text-xs font-medium">Approved. The Section Head publishes it into the live plan.</p>)}
-      {err && <p role="alert" className="text-xs text-status-red">{err}</p>}
-      {history && (
-        <ol className="space-y-0.5 border-t border-current/20 pt-1.5 text-xs">
-          {pv.events.map((e, i) => <li key={i}><b>{EVENT_LABEL[e.action]}</b> · v{e.version}{e.action !== 'created' ? ` · ${e.blocks} leave${e.blocks === 1 ? '' : 's'}` : ''} · {when(e.at)}{e.note ? ` · ${e.note}` : ''}</li>)}
-        </ol>
-      )}
-      <BottomSheet open={ask !== null} onClose={() => setAsk(null)} title={ask === 'submit' ? `Submit PV Plan · ${pv.year}` : ask === 'return' ? 'Send back to the draft' : `Publish PV Plan · ${pv.year}`}>
-        <div className="space-y-3">
-          {ask === 'publish'
-            ? <p className="text-sm text-slate-700">Every leave of the plan goes into the live plan for {pv.year}: it will count for manpower and show in the calendar; each leave counts once the Section Head approves it. This is done once; later changes go through requests.</p>
-            : <>
-                <p className="text-sm text-slate-700">{ask === 'submit' ? 'The draft is locked and sent to the Section Head.' : `It goes back to the draft as v${pv.version + 1}, to be changed and submitted again.`}</p>
-                <textarea className="input min-h-20" value={note} onChange={(e) => setNote(e.target.value)} placeholder={ask === 'submit' ? 'Note (optional)' : 'What to change'} />
-              </>}
-          {err && <p role="alert" className="text-sm text-status-red">{err}</p>}
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="secondary" onClick={() => setAsk(null)}>Cancel</Button>
-            <Button disabled={busy || (ask === 'return' && !note.trim())} onClick={() => run(() => ask === 'submit' ? submitPvPlan(pv.year, note.trim()) : ask === 'return' ? decidePvPlan(pv.year, false, note.trim()) : publishPvPlan(pv.year))}>
-              {busy ? 'Saving…' : ask === 'submit' ? 'Submit' : ask === 'return' ? 'Send back' : 'Publish'}
-            </Button>
-          </div>
-        </div>
-      </BottomSheet>
-    </div>
-  );
-}
 
 function ShiftGrid({ model, crew, span, picks, issues, ctx, busy, onTap, onPerson }: { model: Model; crew: Crew; span: Span; picks: Map<string, Set<number>>; issues: PvIssue[]; ctx: PvContext; busy: boolean; onTap: (p: PvPerson, i: number) => void; onPerson: (p: PvPerson) => void }) {
   const cycles = model.cycles[crew], g = model.groups[crew];
@@ -275,8 +216,8 @@ function ShiftGrid({ model, crew, span, picks, issues, ctx, busy, onTap, onPerso
   const panelIds = [...g.panel, ...g.acting].map((p) => p.id);
   const sections: { title: string; sub?: string; people: PvPerson[]; ids: string[]; max?: number; acting?: Set<string> }[] = [
     { title: 'Controller', people: g.controllers, ids: g.controllers.map((p) => p.id) },
-    { title: `Panel · ${PV_RULES.panelSeats} seats`, sub: 'one at a time', people: [...g.panel, ...g.acting], ids: panelIds, max: PV_RULES.panelMaxOff, acting: new Set(g.acting.map((p) => p.id)) },
-    { title: 'Field', sub: 'two at most', people: g.field, ids: g.field.map((p) => p.id), max: PV_RULES.fieldMaxOff }
+    { title: `Panel · ${PV_RULES.panelSeats} seats`, sub: `${panelSlots(panelIds.length)} at a time`, people: [...g.panel, ...g.acting], ids: panelIds, max: panelSlots(panelIds.length), acting: new Set(g.acting.map((p) => p.id)) },
+    { title: 'Field', sub: `${fieldSlots(g.field.length)} at most`, people: g.field, ids: g.field.map((p) => p.id), max: fieldSlots(g.field.length) }
   ];
   const jump = (m: number) => {
     const i = cycles.findIndex((c) => Number(c.start.slice(5, 7)) >= m); const box = scroller.current; if (i < 0 || !box) return;
@@ -469,7 +410,7 @@ function PanelCard({ crew, g }: { crew: Crew; g: Model['groups'][Crew] }) {
   return (
     <Card className="space-y-1">
       <h2 className="text-sm font-semibold text-slate-800">Panel seats · {crew} Shift</h2>
-      <p className="text-xs text-slate-600">{g.panel.length} Panel Operator{g.panel.length === 1 ? '' : 's'} (Grade {g.panel.filter((p) => (p.grade ?? 0) >= 14).length} at 14+) · {fill} seat{fill === 1 ? '' : 's'} to fill from Grade 13 Field Operators, longest in grade first, then the least sick leave.</p>
+      <p className="text-xs text-slate-600">{g.panel.length} Panel Operator{g.panel.length === 1 ? '' : 's'} (Grade {g.panel.filter((p) => (p.grade ?? 0) >= 14).length} at 14+) · {fill} seat{fill === 1 ? '' : 's'} to fill from Grade 13+ Field Operators: not over 30 sick days, highest employee number first.</p>
       {g.short > 0 && <p className="text-xs font-semibold text-status-red">{g.short} seat{g.short === 1 ? '' : 's'} cannot be filled: not enough Grade 13 Field Operators on this shift.</p>}
       <ol className="divide-y divide-slate-100 text-xs">
         {g.ranked.map((p, i) => (
@@ -477,7 +418,7 @@ function PanelCard({ crew, g }: { crew: Crew; g: Model['groups'][Crew] }) {
             <span className="w-4 tabular-nums">{i + 1}</span>
             <span className="min-w-0 flex-1 truncate font-medium">{p.name} <span className="font-normal">#{p.number}</span></span>
             <span className="shrink-0 tabular-nums">in grade since {p.gradeSince ? p.gradeSince.slice(0, 7) : '—'}</span>
-            <span className="w-14 shrink-0 text-right tabular-nums">sick {p.sick} d</span>
+            <span className="w-14 shrink-0 text-right tabular-nums">sick {p.sick ?? '—'} d</span>
             {used.has(p.id) && <span className="rounded-full bg-brand-50 px-1.5 text-[10px] font-semibold text-brand-700">acting</span>}
           </li>
         ))}

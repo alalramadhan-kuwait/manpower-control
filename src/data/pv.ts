@@ -1,14 +1,15 @@
 import { fetchLeavePlan } from './leave';
 import { dataChanged } from './changes';
 import { supabase } from './supabase';
-import { fetchAllSdMembers, fetchSdPlans, fetchSickTotals } from './shutdown';
+import { fetchAllSdMembers, fetchSdPlans } from './shutdown';
+import { fetchSickEntries } from './sdCheck';
 import type { EmployeeDirectoryRow, LeaveRecord } from './types';
 
 export interface PvData {
   year: number;
   people: EmployeeDirectoryRow[];
   leaves: LeaveRecord[];
-  /** Sick-leave days per person over the two years before the plan year. */
+  /** Rolling 12-month sick-leave days per person (latest confirmed figure; absent = not known). */
   sick: Map<string, number>;
   shutdowns: { employeeId: string; start: string; end: string; title: string }[];
   /** The year's PV plan (draft until published). While it is not published, its blocks are shown as the PV, not leave_records. */
@@ -42,9 +43,10 @@ export async function publishPvPlan(year: number): Promise<number> { const { dat
 
 /** Everything the PV planner shows for one year. */
 export async function fetchPv(year: number): Promise<PvData> {
-  const [plan, totals, sdPlans, sdMembers, pvPlan] = await Promise.all([fetchLeavePlan(year), fetchSickTotals([year - 2, year - 1]), fetchSdPlans(), fetchAllSdMembers(), fetchPvPlan(year)]);
+  const [plan, sdPlans, sdMembers, pvPlan] = await Promise.all([fetchLeavePlan(year), fetchSdPlans(), fetchAllSdMembers(), fetchPvPlan(year)]);
+  const entries = await fetchSickEntries(plan.people.map((p) => p.id));
   const planOf = new Map(sdPlans.map((p) => [p.id, p]));
-  const sick = new Map([...totals].map(([id, byYear]) => [id, (byYear[year - 1] ?? 0) + (byYear[year - 2] ?? 0)]));
+  const sick = new Map([...entries].map(([id, e]) => [id, e.days]));
   const shutdowns = sdMembers.map((m) => ({ m, p: planOf.get(m.planId) })).filter((x) => x.p && x.m.start <= `${year}-12-31` && x.m.end >= `${year}-01-01`)
     .map(({ m, p }) => ({ employeeId: m.employeeId, start: m.start, end: m.end, title: p!.title }));
   // an unpublished plan: its draft blocks are the PV; the other leave of the year (sick, courses…) still shows beside them

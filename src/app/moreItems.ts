@@ -5,7 +5,7 @@ export type Item = { to: string; label: string; desc: string; icon: typeof Bell;
 /** The workspaces in More (each has its own tabs). */
 export const WORKSPACES: Item[] = [
   { to: '/controllers', label: 'Controllers', desc: 'Cover · Calendar · Morning rotation', icon: UserCheck },
-  { to: '/leave-planning', label: 'Leave planning', desc: 'Annual plan · PV cycles', icon: CalendarRange },
+  { to: '/leave-planning', label: 'Leave planning', desc: 'Annual plan · Plan next year · PV cycles', icon: CalendarRange },
   { to: '/shutdown', label: 'Shutdown planning', desc: 'Shutdown plans · Unit status', icon: HardHat },
   { to: '/progress', label: 'Shutdown progress', desc: 'Today · Guideline · Equipment · Report', icon: Gauge },
   { to: '/data-quality', label: 'Data quality', desc: 'Summary · Issues · Take-Charge · Records · Oracle statistics', icon: ClipboardCheck, admin: true },

@@ -50,6 +50,9 @@ var SD_TEAM = "SD";
 var DAY_DUTY = "DAY";
 var isDayDutyWorkday = (date) => (/* @__PURE__ */ new Date(date + "T00:00:00Z")).getUTCDay() <= 4;
 var CREW_ROLES = ["controller", "panel_operator", "field_operator"];
+var ACTING_PANEL = { grade: 13, sickMax: 30 };
+var sickExcludesActing = (p) => p.sick12 != null && p.sick12 > ACTING_PANEL.sickMax;
+var byNumberDesc = (a, b) => (Number(b.employeeNumber) || 0) - (Number(a.employeeNumber) || 0) || b.employeeNumber.localeCompare(a.employeeNumber);
 function personOn(p, date) {
   let role = p.role, crew = p.crew;
   if (p.history?.length) {
@@ -244,7 +247,7 @@ function evaluateDay(date, allPeople, absences, rulesSource = FULL_OPERATION, as
     {
       const qualified = pool.panel.filter((p) => p.panelQualified === "yes").length;
       let fieldSpare = pool.field.filter((p) => p.takeCharge === "yes").length - rules.fieldMin;
-      for (const c of pool.field.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade).sort((a, b) => (b.grade ?? 0) - (a.grade ?? 0) || a.name.localeCompare(b.name))) {
+      for (const c of pool.field.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade && !sickExcludesActing(p)).sort(byNumberDesc)) {
         if (qualified + fromField.length >= rules.panelMin) break;
         if (c.takeCharge === "yes") {
           if (fieldSpare <= 0) continue;
@@ -270,7 +273,7 @@ function evaluateDay(date, allPeople, absences, rulesSource = FULL_OPERATION, as
       panelIssues.push(panelPotentialMet ? `Panel qualification data incomplete: ${what} confirmed` : `Confirmed shortage: Panel ${short}`);
     }
     const fieldTakeCharge = pool.field.filter((p) => p.takeCharge === "yes");
-    const backup = panelMet && panelCounted.length === rules.panelMin ? pool.field.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade && (!fieldTakeCharge.includes(p) || fieldTakeCharge.length - 1 >= rules.fieldMin)).sort((a, b) => (b.grade ?? 0) - (a.grade ?? 0) || a.name.localeCompare(b.name))[0] ?? null : null;
+    const backup = panelMet && panelCounted.length === rules.panelMin ? pool.field.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade && !sickExcludesActing(p) && (!fieldTakeCharge.includes(p) || fieldTakeCharge.length - 1 >= rules.fieldMin)).sort(byNumberDesc)[0] ?? null : null;
     for (const p of fromField) panelIssues.push(`Filled from Field: ${p.name} (Grade ${p.grade})`);
     if (backup) panelIssues.push(`Buffer: ${backup.name} (Field Operator, Grade ${backup.grade}) can take a Panel seat`);
     const panel = {
@@ -1266,6 +1269,24 @@ function sickRolling(employeeId, asOf, snapshots, values, codes) {
   return { state: "verified", days: days3, snapshot: s, byCode, reason: `Rolling 12 months ${s.periodStart} – ${s.periodEnd} (Oracle, taken ${s.extractedOn}).` };
 }
 
+// src/data/sick.ts
+async function fetchSickEntries(ids) {
+  const out = /* @__PURE__ */ new Map();
+  if (!ids.length) return out;
+  const { data, error } = await supabase.from("sick_checks").select("employee_id,as_of,days,entered_at").in("employee_id", ids).order("entered_at", { ascending: false });
+  if (error) throw error;
+  for (const r of data) if (!out.has(r.employee_id)) out.set(r.employee_id, { asOf: r.as_of, days: r.days });
+  const [codes, stats] = await Promise.all([fetchStatCodes(), fetchStats(ids)]);
+  const today = new Date(Date.now() + 3 * 36e5).toISOString().slice(0, 10);
+  for (const id of ids) {
+    const r = sickRolling(id, today, stats.snapshots, stats.values, codes);
+    if (r.days === null || !r.snapshot) continue;
+    const prev = out.get(id);
+    if (!prev || prev.asOf < r.snapshot.extractedOn) out.set(id, { asOf: r.snapshot.extractedOn, days: r.days });
+  }
+  return out;
+}
+
 // src/core/leave/index.ts
 var OPEN_END = "9999-12-31";
 
@@ -1587,7 +1608,8 @@ async function fetchManpowerInputs(from, to) {
     }
   }
   const leaveAbsences = withOpenEnd(lv.data).map((l) => toMpAbsence(l));
-  const people = dir.data.map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id) }));
+  const sick = await fetchSickEntries(dir.data.map((r) => r.id)).catch(() => /* @__PURE__ */ new Map());
+  const people = dir.data.map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id), sick12: sick.get(r.id)?.days ?? null }));
   return { people, absences: leaveAbsences, absencesAll: [...leaveAbsences, ...tr.data.map(releaseAbsence)], assignments: [...ca.data.map(toMpAssignment), ...sdAssignments], plan: op.plan, rules: rulesByDate(op.plan) };
 }
 
@@ -1612,22 +1634,6 @@ async function fetchOtEntries(ids) {
   const { data, error } = await supabase.from("overtime_entries").select("employee_id,as_of,ytd_hours,mtd_hours,verified_at,entered_at").in("employee_id", ids).order("entered_at", { ascending: false });
   if (error) throw error;
   for (const r of data) if (!out.has(r.employee_id)) out.set(r.employee_id, { asOf: r.as_of, ytd: Number(r.ytd_hours), mtd: Number(r.mtd_hours), verified: !!r.verified_at });
-  return out;
-}
-async function fetchSickEntries(ids) {
-  const out = /* @__PURE__ */ new Map();
-  if (!ids.length) return out;
-  const { data, error } = await supabase.from("sick_checks").select("employee_id,as_of,days,entered_at").in("employee_id", ids).order("entered_at", { ascending: false });
-  if (error) throw error;
-  for (const r of data) if (!out.has(r.employee_id)) out.set(r.employee_id, { asOf: r.as_of, days: r.days });
-  const [codes, stats] = await Promise.all([fetchStatCodes(), fetchStats(ids)]);
-  const today = new Date(Date.now() + 3 * 36e5).toISOString().slice(0, 10);
-  for (const id of ids) {
-    const r = sickRolling(id, today, stats.snapshots, stats.values, codes);
-    if (r.days === null || !r.snapshot) continue;
-    const prev = out.get(id);
-    if (!prev || prev.asOf < r.snapshot.extractedOn) out.set(id, { asOf: r.snapshot.extractedOn, days: r.days });
-  }
   return out;
 }
 async function fetchExceptions(planId) {

@@ -90,6 +90,7 @@ function MainApp() {
           <Route path="/notifications" element={<NotificationsPage profile={profile} />} />
           <Route path="/controllers" element={<ControllersWorkspace profile={profile} />} />
           <Route path="/leave-planning" element={<LeavePlanningWorkspace profile={profile} />} />
+          <Route path="/vacation-plan" element={<Navigate to={`/leave-planning?tab=next${window.location.search.replace(/^\?/, '&')}`} replace />} />
           <Route path="/shutdown" element={<ShutdownWorkspace profile={profile} />} />
           <Route path="/shutdown/:id" element={<SdPlanPage isHead={profile.role_code === 'section_head'} />} />
           <Route path="/shutdown/:id/schedule" element={<SdSchedulePage />} />

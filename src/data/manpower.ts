@@ -6,6 +6,7 @@ import { fetchSdMembers, fetchSdWorkInfo } from './shutdown';
 import { releaseAbsence } from './releases';
 import { rulesByDate, type OperationPlan } from '@/core/modes';
 import { fetchOperationPlan } from './modes';
+import { fetchSickEntries } from './sick';
 import { toMpAssignment } from './controllers';
 import type { Crew } from '@/core/roster';
 import { kuwaitToday, lapsedLeave, type OracleStatus } from '@/core/oracle';
@@ -85,6 +86,8 @@ export async function fetchManpowerInputs(from: string, to: string): Promise<Man
     }
   }
   const leaveAbsences = (withOpenEnd(lv.data as { end_date: string | null }[]) as unknown as LeaveRow[]).map((l) => toMpAbsence(l));
-  const people = (dir.data as EmployeeDirectoryRow[]).map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id) }));
+  // the acting Panel rule leaves out anyone over 30 sick days in the rolling 12 months (not known: not left out)
+  const sick = await fetchSickEntries((dir.data as EmployeeDirectoryRow[]).map((r) => r.id)).catch(() => new Map<string, { days: number }>());
+  const people = (dir.data as EmployeeDirectoryRow[]).map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id), sick12: sick.get(r.id)?.days ?? null }));
   return { people, absences: leaveAbsences, absencesAll: [...leaveAbsences, ...(tr.data as { id: string; employee_id: string; start_date: string; end_date: string }[]).map(releaseAbsence)], assignments: [...(ca.data as ControllerAssignment[]).map(toMpAssignment), ...sdAssignments], plan: op.plan, rules: rulesByDate(op.plan) };
 }

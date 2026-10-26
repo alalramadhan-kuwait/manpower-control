@@ -52,6 +52,9 @@ var SD_TEAM = "SD";
 var DAY_DUTY = "DAY";
 var isDayDutyWorkday = (date) => (/* @__PURE__ */ new Date(date + "T00:00:00Z")).getUTCDay() <= 4;
 var CREW_ROLES = ["controller", "panel_operator", "field_operator"];
+var ACTING_PANEL = { grade: 13, sickMax: 30 };
+var sickExcludesActing = (p) => p.sick12 != null && p.sick12 > ACTING_PANEL.sickMax;
+var byNumberDesc = (a, b) => (Number(b.employeeNumber) || 0) - (Number(a.employeeNumber) || 0) || b.employeeNumber.localeCompare(a.employeeNumber);
 function personOn(p, date) {
   let role = p.role, crew = p.crew;
   if (p.history?.length) {
@@ -246,7 +249,7 @@ function evaluateDay(date, allPeople, absences, rulesSource = FULL_OPERATION, as
     {
       const qualified = pool.panel.filter((p) => p.panelQualified === "yes").length;
       let fieldSpare = pool.field.filter((p) => p.takeCharge === "yes").length - rules.fieldMin;
-      for (const c of pool.field.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade).sort((a, b) => (b.grade ?? 0) - (a.grade ?? 0) || a.name.localeCompare(b.name))) {
+      for (const c of pool.field.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade && !sickExcludesActing(p)).sort(byNumberDesc)) {
         if (qualified + fromField.length >= rules.panelMin) break;
         if (c.takeCharge === "yes") {
           if (fieldSpare <= 0) continue;
@@ -272,7 +275,7 @@ function evaluateDay(date, allPeople, absences, rulesSource = FULL_OPERATION, as
       panelIssues.push(panelPotentialMet ? `Panel qualification data incomplete: ${what} confirmed` : `Confirmed shortage: Panel ${short}`);
     }
     const fieldTakeCharge = pool.field.filter((p) => p.takeCharge === "yes");
-    const backup = panelMet && panelCounted.length === rules.panelMin ? pool.field.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade && (!fieldTakeCharge.includes(p) || fieldTakeCharge.length - 1 >= rules.fieldMin)).sort((a, b) => (b.grade ?? 0) - (a.grade ?? 0) || a.name.localeCompare(b.name))[0] ?? null : null;
+    const backup = panelMet && panelCounted.length === rules.panelMin ? pool.field.filter((p) => p.grade != null && p.grade >= rules.panelBackupGrade && !sickExcludesActing(p) && (!fieldTakeCharge.includes(p) || fieldTakeCharge.length - 1 >= rules.fieldMin)).sort(byNumberDesc)[0] ?? null : null;
     for (const p of fromField) panelIssues.push(`Filled from Field: ${p.name} (Grade ${p.grade})`);
     if (backup) panelIssues.push(`Buffer: ${backup.name} (Field Operator, Grade ${backup.grade}) can take a Panel seat`);
     const panel = {
@@ -629,6 +632,74 @@ async function fetchOperationPlan(from, to) {
   return { plan: { modes: m.data.map(toMode), periods: periods.map(toPeriod), units: u.data.map(toUnit), outages: o.data.map(toOutage) }, periods };
 }
 
+// src/data/oracleStats.ts
+async function fetchStatCodes() {
+  const { data, error } = await supabase.from("oracle_absence_codes").select("*").order("code");
+  if (error) throw error;
+  return data.map((c) => ({ code: c.code, label: c.label, countsAsSick: c.counts_as_sick, appType: c.app_type_code, verified: c.verified, source: c.source, note: c.note }));
+}
+async function fetchStats(employeeIds) {
+  const [s, v] = await Promise.all([
+    supabase.from("oracle_stat_snapshots").select("*").order("extracted_on", { ascending: false }).limit(500),
+    employeeIds ? supabase.from("oracle_stat_values").select("*").in("employee_id", employeeIds).limit(2e4) : supabase.from("oracle_stat_values").select("*").limit(2e4)
+  ]);
+  if (s.error) throw s.error;
+  if (v.error) throw v.error;
+  return {
+    snapshots: s.data.map((r) => ({ id: r.id, source: r.source_report, periodStart: r.period_start, periodEnd: r.period_end, extractedOn: r.extracted_on, codes: r.codes, employees: r.employees, importedAt: r.imported_at })),
+    values: v.data.map((r) => ({ snapshotId: r.snapshot_id, employeeId: r.employee_id, code: r.code, days: Number(r.days), occurrences: r.occurrences, status: r.status }))
+  };
+}
+
+// src/core/oracleStats/index.ts
+var span = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 864e5);
+var isTwelveMonths = (s) => span(s.periodStart, s.periodEnd) >= 364;
+var FRESH_DAYS = 45;
+function valueIn(s, values, employeeId, code) {
+  if (!s.employees.includes(employeeId) || !s.codes.includes(code)) return null;
+  const v = values.find((x) => x.snapshotId === s.id && x.employeeId === employeeId && x.code === code && x.status === "active");
+  if (v) return v.days;
+  if (values.some((x) => x.snapshotId === s.id && x.employeeId === employeeId && x.code === code)) return null;
+  return 0;
+}
+function sickRolling(employeeId, asOf, snapshots, values, codes) {
+  const sickCodes = codes.filter((c) => c.countsAsSick && c.verified).map((c) => c.code);
+  const mine = snapshots.filter((s2) => s2.employees.includes(employeeId) && sickCodes.some((c) => s2.codes.includes(c))).sort((a, b) => b.extractedOn.localeCompare(a.extractedOn) || b.importedAt.localeCompare(a.importedAt));
+  if (!mine.length) return { state: "missing", days: null, snapshot: null, reason: "No Oracle sick-leave figure for this person.", byCode: {} };
+  const rolling = mine.filter(isTwelveMonths);
+  if (!rolling.length) {
+    const s2 = mine[0];
+    return { state: "verification_needed", days: null, snapshot: s2, byCode: {}, reason: `Only a ${span(s2.periodStart, s2.periodEnd) + 1}-day figure (${s2.periodStart} – ${s2.periodEnd}), not a rolling 12 months.` };
+  }
+  const s = rolling[0];
+  const missing = sickCodes.filter((c) => !s.codes.includes(c));
+  if (missing.length) return { state: "verification_needed", days: null, snapshot: s, byCode: {}, reason: `The report does not cover ${missing.join(", ")}.` };
+  const byCode = {};
+  for (const c of sickCodes) byCode[c] = valueIn(s, values, employeeId, c) ?? 0;
+  const days2 = Object.values(byCode).reduce((a, b) => a + b, 0);
+  if (s.periodEnd < addDaysIso(asOf, -FRESH_DAYS) || s.extractedOn < addDaysIso(asOf, -FRESH_DAYS))
+    return { state: "outdated", days: days2, snapshot: s, byCode, reason: `Report taken ${s.extractedOn}: more than ${FRESH_DAYS} days old.` };
+  return { state: "verified", days: days2, snapshot: s, byCode, reason: `Rolling 12 months ${s.periodStart} – ${s.periodEnd} (Oracle, taken ${s.extractedOn}).` };
+}
+
+// src/data/sick.ts
+async function fetchSickEntries(ids) {
+  const out = /* @__PURE__ */ new Map();
+  if (!ids.length) return out;
+  const { data, error } = await supabase.from("sick_checks").select("employee_id,as_of,days,entered_at").in("employee_id", ids).order("entered_at", { ascending: false });
+  if (error) throw error;
+  for (const r of data) if (!out.has(r.employee_id)) out.set(r.employee_id, { asOf: r.as_of, days: r.days });
+  const [codes, stats] = await Promise.all([fetchStatCodes(), fetchStats(ids)]);
+  const today = new Date(Date.now() + 3 * 36e5).toISOString().slice(0, 10);
+  for (const id of ids) {
+    const r = sickRolling(id, today, stats.snapshots, stats.values, codes);
+    if (r.days === null || !r.snapshot) continue;
+    const prev = out.get(id);
+    if (!prev || prev.asOf < r.snapshot.extractedOn) out.set(id, { asOf: r.snapshot.extractedOn, days: r.days });
+  }
+  return out;
+}
+
 // src/data/controllers.ts
 var toMpAssignment = (a) => ({ id: a.id, kind: a.kind, employeeId: a.employee_id, crew: a.crew_code, start: a.start_date, end: a.end_date, coversEmployeeId: a.covers_employee_id });
 
@@ -705,7 +776,8 @@ async function fetchManpowerInputs(from, to) {
     }
   }
   const leaveAbsences = withOpenEnd(lv.data).map((l) => toMpAbsence(l));
-  const people = dir.data.map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id) }));
+  const sick = await fetchSickEntries(dir.data.map((r) => r.id)).catch(() => /* @__PURE__ */ new Map());
+  const people = dir.data.map((r) => ({ ...toMpPerson(r), history: history.get(r.id), moves: moves.get(r.id), sick12: sick.get(r.id)?.days ?? null }));
   return { people, absences: leaveAbsences, absencesAll: [...leaveAbsences, ...tr.data.map(releaseAbsence)], assignments: [...ca.data.map(toMpAssignment), ...sdAssignments], plan: op.plan, rules: rulesByDate(op.plan) };
 }
 
