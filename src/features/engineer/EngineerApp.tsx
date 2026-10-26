@@ -15,9 +15,9 @@ import { BlindList } from '@/features/tracker/BlindList';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
-import { equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
+import { putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
-import { BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
+import { addReturnItem, setReturnItem, BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
 import { BottomSheet, ErrorBox, Spinner, Toast, cx } from '@/ui/components';
 import { fetchSdTeamOn } from '@/data/shutdown';
@@ -724,7 +724,7 @@ function Handover({ d, now, done, focus = null, onClearFocus, initial }: P & { f
   const bAll = all.filter((p) => p.kind === 'blind'), eAll = d.activities.filter(equipBlind);
   return (<>
     <p className="mx-1 mb-2 text-[12px] text-slate-600">Blinds in <b>{bAll.filter(pointComplete).length + eAll.filter((a) => a.actualFinish).length}/{bAll.length + eAll.length}</b> · neutralized <b>{gate.filter(pointComplete).length}/{gate.length}</b>{soaking ? <> · soaking <b>{soaking}</b></> : null}</p>
-    <div className="-mx-3 mb-2 flex gap-1.5 overflow-x-auto px-3 [scrollbar-width:none]">{([['block', `Blocking ${blocked.length}`], ['neut', `Neutralization ${openL.length}`], ['blind', `Blinds ${openB.length + openE.length}`], ['list', 'Blind list'], ['back', `Return ${back.length}`]] as const).map(([k, l]) =>
+    <div className="-mx-3 mb-2 flex gap-1.5 overflow-x-auto px-3 [scrollbar-width:none]">{([['block', `Blocking ${blocked.length}`], ['neut', `Neutralization ${openL.length}`], ['blind', `Blinds ${openB.length + openE.length}`], ['list', 'Blind list'], ['back', `Return ${back.length + putBackRows(d).filter((x) => x.status !== 'installed').length}`]] as const).map(([k, l]) =>
       <button key={k} type="button" onClick={() => setV(k)} className={cx('min-h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-[12px] font-bold', v === k ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>)}</div>
     {(v === 'neut' || v === 'blind' || focus) && <div className="mb-2 flex flex-wrap gap-1.5">
       {v !== 'block' && FOS.map((x) => <button key={x} type="button" onClick={() => setFo(x)} className={cx('min-h-8 rounded-full px-3 text-[12px] font-semibold', fo === x ? 'bg-brand-500 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{x}</button>)}
@@ -762,12 +762,57 @@ function Handover({ d, now, done, focus = null, onClearFocus, initial }: P & { f
     </>}
     {v === 'list' && <BlindList d={d} onItem={toItem} />}
     {v === 'back' && <>
-      <p className="mx-1 mb-2 text-[12px] text-slate-500">End of the shutdown: take the blinds out as each item is boxed up. {blinds.filter((b) => b.status === 'out').length}/{blinds.length} out.</p>
+      <PutBack d={d} done={done} toItem={toItem} />
+      <Sec>Blinds out · {blinds.filter((b) => b.status === 'out').length}/{blinds.length}</Sec>
+      <p className="mx-1 mb-2 text-[12px] text-slate-500">Take the blinds out as each item is boxed up.</p>
       {back.length > 0 && <List>{back.map((b) => <BlindRow key={b.id} b={b} done={done} toItem={toItem} out />)}</List>}
       {!back.length && <Card><p className="text-sm text-slate-600">No blind in.</p></Card>}
     </>}
     {item && <ItemSheet d={d} e={item} done={done} onClose={() => setItem(null)} />}
   </>);
+}
+/** Put back before the startup (owner, 26 Oct): the small parts taken out (orifices, NRVs, control valves, PSVs) —
+ *  removed → serviced → installed. The tracked valves and PSVs follow their own steps (tap to open). */
+const PB_DOT = { removed: 'bg-status-red', serviced: 'bg-amber-500', installed: 'bg-status-green' } as const;
+const PB_CHIP = { removed: ['Removed', 'bg-red-100 text-red-800'], serviced: ['Serviced', 'bg-amber-100 text-amber-900'], installed: ['✓ Installed', 'bg-green-100 text-green-800'] } as const;
+function PutBack({ d, done, toItem }: { d: TrackerData; done: Done; toItem: (tag: string) => void }) {
+  const rows = putBackRows(d); const manage = useCanManage(), head = useContext(RoleCtx) === 'head';
+  const [showDone, setShowDone] = useState(false); const [add, setAdd] = useState(false); const [open, setOpen] = useState<string | null>(null);
+  const [tag, setTag] = useState(''); const [kind, setKind] = useState<TrkReturnItem['kind']>('orifice'); const [what, setWhat] = useState('');
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const run = async (f: () => Promise<unknown>, msg: string, undo?: () => Promise<unknown>) => { setBusy(true); setErr(null); try { await f(); done(msg, undo); } catch (x) { setErr(x); } finally { setBusy(false); } };
+  const left = rows.filter((x) => x.status !== 'installed'), fin = rows.filter((x) => x.status === 'installed');
+  const row = (x: PutBackRow) => { const it = x.item;
+    return <div key={x.key} className="border-b border-slate-100 last:border-b-0"><div className={cx(ROW, 'border-b-0')}>
+      <button type="button" onClick={() => (x.fromItem ? toItem(x.tag) : setOpen((o) => (o === x.key ? null : x.key)))} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+        <span className={cx('h-2 w-2 shrink-0 rounded-full', PB_DOT[x.status])} /><b className="w-[84px] shrink-0 truncate text-[12px]">{short(x.tag)}</b>
+        <span className="min-w-0 flex-1 truncate text-[12px] text-slate-600">{x.fromItem ? `${RETURN_KIND[x.kind]} · ${x.what}` : x.what}</span></button>
+      {it && x.status !== 'installed' ? <>
+        {x.status === 'removed' && <button type="button" disabled={busy} onClick={() => run(() => setReturnItem(it.id, { status: 'serviced' }), `${x.tag}: serviced.`, () => setReturnItem(it.id, { status: 'removed' }))} className="min-h-8 shrink-0 rounded-lg px-2 text-[11px] font-bold text-brand-700 ring-1 ring-slate-300">Serviced</button>}
+        <button type="button" disabled={busy} onClick={() => run(() => setReturnItem(it.id, { status: 'installed' }), `${x.tag}: installed.`, () => setReturnItem(it.id, { status: it.status }))} className="min-h-8 shrink-0 rounded-lg bg-brand-700 px-2.5 text-[12px] font-bold text-white">Installed</button></>
+        : <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold', PB_CHIP[x.status][1])}>{PB_CHIP[x.status][0]}</span>}
+    </div>
+    {open === x.key && it && <div className="mx-2.5 mb-1.5 space-y-1 rounded-lg bg-slate-50 p-2 text-[12px] text-slate-600">
+      <p>{it.removedAt ? `Removed ${when(it.removedAt)}` : ''}{it.servicedAt ? ` · serviced ${when(it.servicedAt)}` : ''}{it.installedAt ? ` · installed ${when(it.installedAt)}` : ''}{it.source ? ` · ${it.source}` : ''}{it.updatedBy ? ` · ${it.updatedBy}` : ''}</p>
+      <div className="flex flex-wrap gap-2">
+        {it.status !== 'removed' && <button type="button" disabled={busy} onClick={() => run(() => setReturnItem(it.id, { status: it.status === 'installed' ? 'serviced' : 'removed' }), `${x.tag}: back one step.`, () => setReturnItem(it.id, { status: it.status }))} className="font-semibold text-red-700">↶ Back one step</button>}
+        {head && <button type="button" disabled={busy} onClick={() => run(() => setReturnItem(it.id, { archived: true }), `${x.tag}: taken off the list.`, () => setReturnItem(it.id, { archived: false }))} className="font-semibold text-slate-500">Take off the list</button>}
+      </div></div>}
+    </div>; };
+  return <>
+    <Sec>Put back · {fin.length}/{rows.length} installed</Sec>
+    {left.length > 0 ? <List>{left.map(row)}</List> : <Card><p className="text-sm font-semibold text-green-800">✓ Everything taken out is back in.</p></Card>}
+    {fin.length > 0 && <button type="button" onClick={() => setShowDone((x) => !x)} className="mx-1 mb-2 block text-[12px] font-semibold text-status-green">{showDone ? '▾' : '▸'} ✓ Installed ({fin.length})</button>}
+    {showDone && <List>{fin.map(row)}</List>}
+    {manage && (add ? <Card>
+      <div className="flex gap-1.5"><input className="input min-h-9 w-28 text-[13px]" placeholder="Tag" value={tag} onChange={(x) => setTag(x.target.value)} />
+        <select aria-label="Kind" value={kind} onChange={(x) => setKind(x.target.value as TrkReturnItem['kind'])} className="min-h-9 flex-1 rounded-lg border-0 bg-white px-2 text-[12px] ring-1 ring-slate-200">{(Object.keys(RETURN_KIND) as TrkReturnItem['kind'][]).map((k) => <option key={k} value={k}>{RETURN_KIND[k]}</option>)}</select></div>
+      <input className="input mt-1.5 min-h-9 text-[13px]" placeholder="What (e.g. orifice removed)" value={what} onChange={(x) => setWhat(x.target.value)} />
+      <div className="mt-1.5 flex gap-1.5"><button type="button" onClick={() => setAdd(false)} className="min-h-9 flex-1 rounded-lg bg-white text-[13px] font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button>
+        <button type="button" disabled={busy || !tag.trim()} onClick={() => run(() => addReturnItem(d.tracker.id, { tag: tag.trim().toUpperCase(), kind, what: what.trim() || null }), `${tag.trim().toUpperCase()}: on the Put back list.`).then(() => { setAdd(false); setTag(''); setWhat(''); })} className="min-h-9 flex-1 rounded-lg bg-brand-700 text-[13px] font-bold text-white disabled:opacity-50">Add</button></div>
+    </Card> : <button type="button" onClick={() => setAdd(true)} className="mx-1 mb-2 text-[12px] font-semibold text-brand-700">+ Add a part taken out</button>)}
+    {err != null && <ErrorBox error={err} />}
+  </>;
 }
 /** A group of blinds: those not in listed, those in folded (there are many). */
 function BlindGroup({ title, n, total, open, closed }: { title: string; n: number; total: number; open: React.ReactNode[]; closed: React.ReactNode[] }) {

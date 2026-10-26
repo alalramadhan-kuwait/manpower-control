@@ -109,7 +109,12 @@ export interface TrkEvent { id: string; category: 'nitrogen' | 'reactors' | 'oth
   /** the item a problem is on (its bar-chart key); none for an event of the shutdown */
   key?: string | null }
 export const EVENT_LABEL: Record<TrkEvent['category'], string> = { nitrogen: 'N₂ supply', reactors: 'Reactors', other: 'Other' };
-export interface TrkData { loopItems?: TrkEquipment[]; rtj?: TrkRtj[]; events?: TrkEvent[]; engine?: TrkEngine; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
+/** A small part taken out for the shutdown (orifice, NRV, control valve, PSV): put back before the startup. Not
+ *  equipment and not in the M & I progress. */
+export interface TrkReturnItem { id: string; tag: string; kind: 'control_valve' | 'orifice' | 'nrv' | 'psv' | 'other'; what: string | null; status: 'removed' | 'serviced' | 'installed';
+  removedAt: string | null; servicedAt: string | null; installedAt: string | null; source: string | null; remark: string | null; updatedBy: string | null }
+export const RETURN_KIND: Record<TrkReturnItem['kind'], string> = { control_valve: 'Control valve', orifice: 'Orifice', nrv: 'NRV', psv: 'PSV', other: 'Other' };
+export interface TrkData { putBack?: TrkReturnItem[]; loopItems?: TrkEquipment[]; rtj?: TrkRtj[]; events?: TrkEvent[]; engine?: TrkEngine; pointSteps?: TrkPointStep[]; lineup?: LuStream[]; lineupEq?: LuEquip[]; steps: TrkStep[]; equipment: TrkEquipment[]; iats: TrkIat[]; activities: TrkActivity[]; log: TrkLog[]; settings: TrkSettings; points?: TrkPoint[] }
 
 /** The main equipment groups; the rest (control valve shells, PSVs, check valves, RTJ & injection points, piping, OPR
  *  list, PMRs …) is miscellaneous, shown after them. */
@@ -1257,4 +1262,21 @@ export function lateOrHold(items: TrkEquipment[], views: EquipView[]): TrkEquipm
   const v = new Map(views.map((x) => [x.eq.tag, x]));
   return items.filter((e) => (LATE_RANK[v.get(e.tag)?.flag ?? ''] ?? 9) < 9)
     .sort((a, b) => LATE_RANK[v.get(a.tag)!.flag] - LATE_RANK[v.get(b.tag)!.flag] || v.get(b.tag)!.lateBy - v.get(a.tag)!.lateBy);
+}
+
+/** The Put back list: the parts on the list, and the tracked valves and PSVs taken out (their removal step done) until
+ *  their refit step is done — the same record as their steps, not a copy. Not put back first. */
+export interface PutBackRow { key: string; tag: string; kind: TrkReturnItem['kind']; what: string; status: TrkReturnItem['status']; at: string | null; item?: TrkReturnItem; fromItem?: boolean }
+const REMOVED = /remove shell|remove psv|remove to service|isolate and remove|dropped/i, REFIT = /fixing b ?ack|fix(ed)? back|install psv|re-?install/i;
+export function putBackRows(d: Pick<TrkData, 'equipment' | 'activities' | 'putBack'>): PutBackRow[] {
+  const own: PutBackRow[] = (d.putBack ?? []).map((i) => ({ key: i.id, tag: i.tag, kind: i.kind, what: i.what ?? RETURN_KIND[i.kind], status: i.status, at: i.installedAt ?? i.servicedAt ?? i.removedAt, item: i }));
+  const kindOf = (e: TrkEquipment): TrkReturnItem['kind'] | null => (e.group === 'CV shells' ? 'control_valve' : e.group === 'PSVs' ? 'psv' : e.group === 'Check valves' ? 'nrv' : null);
+  const fromItems = d.equipment.filter((e) => e.tracked && kindOf(e)).flatMap((e): PutBackRow[] => {
+    const xs = d.activities.filter((a) => a.key === (e.barchartKey ?? e.tag) && a.tracked && !a.detail);
+    const out = xs.find((a) => REMOVED.test(a.activity) && a.actualFinish); if (!out) return [];
+    const back = xs.find((a) => REFIT.test(a.activity) && a.actualFinish);
+    return [{ key: e.id, tag: e.tag, kind: kindOf(e)!, what: back ? 'refitted (its steps)' : 'taken out (its steps)', status: back ? 'installed' : 'removed', at: back?.actualFinish ?? out.actualFinish ?? null, fromItem: true }];
+  });
+  const rank = { removed: 0, serviced: 1, installed: 2 } as const;
+  return [...own, ...fromItems].sort((a, b) => rank[a.status] - rank[b.status] || a.tag.localeCompare(b.tag, 'en', { numeric: true }));
 }

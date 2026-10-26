@@ -1,7 +1,7 @@
 // Shutdown progress tracker: the trackers of the calendar shutdowns (template / test / live), their steps, equipment,
 // IATs, bar chart, shift log and change log. Who and when are stamped by the database on every change.
 import { supabase } from './supabase';
-import type { QtyKind, QtyMethod, Shift, TrkEngine, TrkQtyEntry, TrkUpdate, PointStatus, StepStatus, TrkActivity, TrkData, TrkEquipment, TrkIat, TrkRtj, TrkLog, LuEquip, LuStream, TrkPoint, TrkPointStep, TrkEvent, TrkSettings, TrkStep } from '@/core/tracker';
+import type { TrkReturnItem, QtyKind, QtyMethod, Shift, TrkEngine, TrkQtyEntry, TrkUpdate, PointStatus, StepStatus, TrkActivity, TrkData, TrkEquipment, TrkIat, TrkRtj, TrkLog, LuEquip, LuStream, TrkPoint, TrkPointStep, TrkEvent, TrkSettings, TrkStep } from '@/core/tracker';
 
 export interface Tracker { id: string; eventId: string | null; title: string; mode: 'template' | 'test' | 'live'; settings: TrkSettings; status: 'active' | 'closed'; eventStart: string | null; eventEnd: string | null; eventTitle: string | null }
 interface TrackerRow { id: string; event_id: string | null; title: string; mode: Tracker['mode']; settings: TrkSettings | null; status: Tracker['status']; unit_events?: { start_date: string; end_date: string; unit: string | null; title: string | null } | null }
@@ -48,7 +48,9 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     // the shutdown's events (nitrogen, reactors): optional too
     supabase.from('trk_event').select('id,category,text,started_at,ended_at,by_name,ended_by_name,equipment_key').eq('tracker_id', id).order('started_at', { ascending: false }).limit(300),
     // the worklist RTJs, linked to their loops (reference only): optional
-    supabase.from('trk_rtj').select('id,seq,point_id,line,iso_sheet,rtj_no,size,fitting,link,link_note').eq('tracker_id', id).order('seq').limit(2000)]);
+    supabase.from('trk_rtj').select('id,seq,point_id,line,iso_sheet,rtj_no,size,fitting,link,link_note').eq('tracker_id', id).order('seq').limit(2000),
+    // the Put back list (small parts removed for the shutdown): optional
+    supabase.from('trk_return_item').select('id,tag,kind,what,status,removed_at,serviced_at,installed_at,source,remark,updated_by_name,by_name').eq('tracker_id', id).eq('archived', false).order('tag').limit(1000)]);
   const [t, s, e, i, a, l, sl, pt] = await Promise.all([
     supabase.from('trk_trackers').select('id,event_id,title,mode,settings,status,unit_events(start_date,end_date,unit,title)').eq('id', id).single(),
     supabase.from('trk_steps').select('*').eq('tracker_id', id).order('step_id'),
@@ -60,7 +62,7 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     supabase.from('trk_points').select('*').eq('tracker_id', id).eq('removed', false).order('sort'),
   ]);
   // the U-12 process lineup (P&ID streams): optional, the tracker works without it
-  const [[lu, le], ps, ev, rj] = await extraP;
+  const [[lu, le], ps, ev, rj, rb] = await extraP;
   const err = [t, s, e, i, a, l, sl, pt].find((r) => r.error)?.error; if (err) throw err;
   // what this screen has seen: a later save checks the fields it changes still hold these values
   seen('trk_steps', s.data); seen('trk_equipment', e.data); seen('trk_iat', i.data); seen('trk_activities', a.data); seen('trk_points', pt.data);
@@ -77,6 +79,8 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     engine,
     // RTJ / injection locations covered by their loop: off the Equipment list, kept for the loop's handover
     loopItems: (e.data as EqRow[]).filter((r) => r.covered_by).map(eqMap),
+    putBack: rb.error ? [] : (rb.data as { id: string; tag: string; kind: TrkReturnItem['kind']; what: string | null; status: TrkReturnItem['status']; removed_at: string | null; serviced_at: string | null; installed_at: string | null; source: string | null; remark: string | null; updated_by_name: string | null; by_name: string | null }[])
+      .map((r) => ({ id: r.id, tag: r.tag, kind: r.kind, what: r.what, status: r.status, removedAt: r.removed_at, servicedAt: r.serviced_at, installedAt: r.installed_at, source: r.source, remark: r.remark, updatedBy: r.updated_by_name ?? r.by_name })),
     rtj: rj.error ? [] : (rj.data as { id: string; seq: number; point_id: string | null; line: string; iso_sheet: string | null; rtj_no: string; size: string | null; fitting: string | null; link: string | null; link_note: string | null }[])
       .map((r): TrkRtj => ({ id: r.id, seq: r.seq, pointId: r.point_id, line: r.line, isoSheet: r.iso_sheet, rtjNo: r.rtj_no, size: r.size, fitting: r.fitting, link: r.link === 'lineup' || r.link === 'unverified' ? r.link : null, linkNote: r.link_note })),
     events: ev.error ? [] : (ev.data as { id: string; category: TrkEvent['category']; text: string; started_at: string; ended_at: string | null; by_name: string | null; ended_by_name: string | null; equipment_key: string | null }[])
@@ -284,3 +288,11 @@ export const setAccessActive = (id: string, active: boolean) => upd('trk_access'
 /** A correction, or a time more than this far back, needs a reason (the database trigger enforces the same); only
  *  Engineers, engineer links and the Section Head enter times that far back. */
 export const BACKDATE_LIMIT_H = 48;
+
+/** The Put back list: a part's status (removed → serviced → installed), a new part, or taken off the list (kept). */
+export async function setReturnItem(id: string, patch: { status?: TrkReturnItem['status']; remark?: string | null; archived?: boolean }) {
+  const { error } = await supabase.from('trk_return_item').update(patch).eq('id', id); if (error) throw error;
+}
+export async function addReturnItem(trackerId: string, v: { tag: string; kind: TrkReturnItem['kind']; what: string | null }) {
+  const { error } = await supabase.from('trk_return_item').insert({ tracker_id: trackerId, tag: v.tag, kind: v.kind, what: v.what, removed_at: new Date().toISOString() }); if (error) throw error;
+}

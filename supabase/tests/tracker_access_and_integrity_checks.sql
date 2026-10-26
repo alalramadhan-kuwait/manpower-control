@@ -79,6 +79,9 @@ begin
   perform set_config('request.headers', '{}', true);
   select count(*) into n from public.trk_activities;
   if n > 0 then raise exception 'FAIL: anonymous reads the tracker'; end if; ok := ok + 1;
+  -- the Put back list: no grant without a login (refused), or no row
+  begin select count(*) into n from public.trk_return_item; if n > 0 then raise exception 'FAIL: anonymous reads the Put back list'; end if; ok := ok + 1;
+    exception when insufficient_privilege then ok := ok + 1; end;
 
   -- ── Coordinator ─────────────────────────────────────────────────────────────────────────────────────────
   perform set_config('role', 'authenticated', true);
@@ -108,6 +111,12 @@ begin
     raise exception 'FAIL: a Controller may attach a drawing'; exception when insufficient_privilege then ok := ok + 1; end;
   begin update public.trk_activities set actual_start = now() - interval '80 hours', time_reason = 'x' where id = a; raise exception 'FAIL: a Controller enters 80 h back'; exception when insufficient_privilege then ok := ok + 1; end;
   begin insert into public.user_assignments (auth_user_id, task) values (head, 'manpower'); raise exception 'FAIL: a Controller may give assignments'; exception when insufficient_privilege or check_violation then ok := ok + 1; end;
+
+  -- a Controller updates the Put back list (logged) but cannot delete from it
+  update public.trk_return_item set status = 'installed' where id = (select id from public.trk_return_item where tracker_id = live and status <> 'installed' limit 1); get diagnostics n = row_count;
+  if n <> 1 then raise exception 'FAIL: a Controller cannot update the Put back list'; end if; ok := ok + 1;
+  if not exists (select 1 from public.trk_log where kind = 'return' and field = 'status' and new_value = 'installed' and at > now() - interval '1 minute') then raise exception 'FAIL: the Put back change is not logged'; end if; ok := ok + 1;
+  begin delete from public.trk_return_item where tracker_id = live; raise exception 'FAIL: the Put back list can be deleted'; exception when insufficient_privilege then ok := ok + 1; end;
 
   -- a Controller cannot take an item out of scope or change its details
   begin update public.trk_equipment set tracked = false, disabled_reason = 'out of scope: check' where id = (select id from public.trk_equipment where tracker_id = live and tracked limit 1);

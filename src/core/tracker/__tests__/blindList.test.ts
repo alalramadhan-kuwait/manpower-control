@@ -23,3 +23,14 @@ describe('blind list', () => {
     expect(r.unlinked.map((p) => p.ref)).toEqual(['SEG-3']);
   });
 });
+
+describe('put back list', () => {
+  it('lists the parts on the list and the tracked valves / PSVs taken out until their refit step is done; not put back first', async () => {
+    const { putBackRows } = await import('..');
+    const psv = eq('12-PSV-0519', { group: 'PSVs' }), cv = eq('12-HV-0534', { group: 'CV shells' }), vessel = eq('V-9');
+    const d = { equipment: [psv, cv, vessel], putBack: [{ id: 'x', tag: 'FE-534', kind: 'orifice' as const, what: 'Orifice removed', status: 'serviced' as const, removedAt: '2026-10-25T16:00:00Z', servicedAt: '2026-10-25T17:00:00Z', installedAt: null, source: null, remark: null, updatedBy: null }],
+      activities: [act('12-PSV-0519', 'ISOLATE AND REMOVE PSV TO SHOP', { actualFinish: '2026-10-22T00:00:00Z' }), act('12-PSV-0519', 'Install PSV'),
+        act('12-HV-0534', 'Remove Shell', { actualFinish: '2026-10-25T16:00:00Z' }), act('12-HV-0534', 'Shell Fixing B ack', { actualFinish: '2026-10-26T00:00:00Z' }), act('V-9', 'Remove Shell', { actualFinish: '2026-10-25T00:00:00Z' })] };
+    expect(putBackRows(d).map((r) => [r.tag, r.status])).toEqual([['12-PSV-0519', 'removed'], ['FE-534', 'serviced'], ['12-HV-0534', 'installed']]);
+  });
+});
