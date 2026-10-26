@@ -389,6 +389,7 @@ var DEFAULT_RULES = [
   { code: "leave_overlap", severity: "critical", enabled: true, params: {} },
   { code: "assignment_overlap", severity: "hard_stop", enabled: true, params: {} },
   { code: "crew_minimum", severity: "critical", enabled: true, params: {} },
+  { code: "controller_coverage", severity: "warning", enabled: true, params: {} },
   { code: "shift_times", severity: "info", enabled: true, params: { ...DEFAULT_SHIFT_TIMES } }
 ];
 function ruleOf(rules, code) {

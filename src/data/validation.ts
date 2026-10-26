@@ -33,6 +33,28 @@ function crewMinimum(inp: ManpowerInputs, before: ProposalInputs, after: Proposa
   return out;
 }
 
+/** Duties left without a Controller (cover needed) because of the change. A warning only: it never blocks a decision. */
+export function controllerCover(inp: ManpowerInputs, before: ProposalInputs, after: ProposalInputs, from: string, to: string, rules: RuleConfig[]): Finding[] {
+  const rule = ruleOf(rules, 'controller_coverage');
+  if (!rule.enabled) return [];
+  const need = (x: ProposalInputs) => {
+    const out = new Map<Crew, string[]>();
+    for (const day of evaluateRange(from, to, x.people, x.absences, inp.rules, x.assignments))
+      for (const y of day.crews) if (y.pending.includes('coverage_required')) out.set(y.crew, [...(out.get(y.crew) ?? []), `${day.date}|${y.shift}`]);
+    return out;
+  };
+  const was = need(before), now = need(after);
+  const out: Finding[] = [];
+  for (const c of CREWS) {
+    const extra = (now.get(c) ?? []).filter((k) => !(was.get(c) ?? []).includes(k)).sort();
+    if (!extra.length) continue;
+    const d = extra[0].slice(0, 10);
+    out.push({ rule: 'controller_coverage', severity: rule.severity, date: d, key: `cover:${c}`,
+      message: `${c} Shift: Controller cover needed on ${extra.length} dut${extra.length === 1 ? 'y' : 'ies'}, from ${Number(d.slice(8))}/${Number(d.slice(5, 7))}.` });
+  }
+  return out;
+}
+
 export interface Check extends Validation { ranAt: string; proposal: Proposal }
 
 /** Every check for one change: the person's schedule (days in a row, rest, overlaps) and the crews' minimums. */
@@ -42,7 +64,8 @@ export async function checkProposal(pr: Proposal): Promise<Check> {
   const [inputs, rules, sdDuty] = await Promise.all([fetchManpowerInputs(from, to), fetchValidationRules(), fetchSdDuties(from, to).catch(() => undefined)]);
   const base: ProposalInputs = { people: inputs.people, absences: inputs.absencesAll, assignments: inputs.assignments };
   const v = validateProposal(base, pr, rules, { times: shiftTimesOf(rules), sdDuty });
-  const findings = [...v.findings, ...crewMinimum(inputs, base, applyProposal(base, pr), span.start, span.end, rules)];
+  const after = applyProposal(base, pr);
+  const findings = [...v.findings, ...crewMinimum(inputs, base, after, span.start, span.end, rules), ...controllerCover(inputs, base, after, span.start, span.end, rules)];
   const worst = findings.reduce<Check['worst']>((w, f) => (w === null || SEVERITY_RANK[f.severity] > SEVERITY_RANK[w] ? f.severity : w), null);
   return { ...v, findings, worst, ranAt: new Date().toISOString(), proposal: pr };
 }

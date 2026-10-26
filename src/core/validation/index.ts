@@ -9,7 +9,7 @@ export type Severity = 'info' | 'warning' | 'critical' | 'hard_stop';
 export const SEVERITY_RANK: Record<Severity, number> = { info: 0, warning: 1, critical: 2, hard_stop: 3 };
 export const SEVERITY_LABEL: Record<Severity, string> = { info: 'Info', warning: 'Warning', critical: 'Critical', hard_stop: 'Hard stop' };
 
-export type RuleCode = 'max_consecutive_duty_days' | 'rest_between_duties' | 'shift_type_change_rest' | 'min_rest_hours' | 'leave_overlap' | 'assignment_overlap' | 'crew_minimum' | 'shift_times';
+export type RuleCode = 'max_consecutive_duty_days' | 'rest_between_duties' | 'shift_type_change_rest' | 'min_rest_hours' | 'leave_overlap' | 'assignment_overlap' | 'crew_minimum' | 'controller_coverage' | 'shift_times';
 export interface RuleConfig { code: RuleCode; severity: Severity; enabled: boolean; params: Record<string, unknown> }
 
 /** Duty start times (Asia/Kuwait, UTC+3, no daylight saving) and lengths. */
@@ -25,6 +25,7 @@ export const DEFAULT_RULES: RuleConfig[] = [
   { code: 'leave_overlap', severity: 'critical', enabled: true, params: {} },
   { code: 'assignment_overlap', severity: 'hard_stop', enabled: true, params: {} },
   { code: 'crew_minimum', severity: 'critical', enabled: true, params: {} },
+  { code: 'controller_coverage', severity: 'warning', enabled: true, params: {} },
   { code: 'shift_times', severity: 'info', enabled: true, params: { ...DEFAULT_SHIFT_TIMES } }
 ];
 

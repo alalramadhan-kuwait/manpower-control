@@ -27,11 +27,11 @@ export function mergedLeaves(absences: MpAbsence[], personId: string, estimated:
 }
 
 export interface LeaveImpact { short: number; dates: string[]; clash: string[] }
-/** What moving a leave to `start`–`end` does: duties of the person's crew that fall short (with their dates), and Controllers off together. */
+/** What moving a leave to `start`–`end` does: duties of the person's crew that fall short (with their dates, task releases counted), and Controllers off together. */
 export function leaveImpact(person: MpPerson, records: MpAbsence[], inputs: ManpowerInputs, approvals: LeaveApproval[], start: string, end: string, today: string): LeaveImpact {
   const ids = new Set(records.map((x) => x.id));
   const first = records[0];
-  const moved: MpAbsence[] = [...inputs.absences.filter((a) => !ids.has(a.id)), { ...first, id: `${first.id}-new`, start, end }];
+  const moved: MpAbsence[] = [...inputs.absencesAll.filter((a) => !ids.has(a.id)), { ...first, id: `${first.id}-new`, start, end }];
   const from = start < today ? today : start;
   const dates: string[] = [];
   for (const d of evaluateRange(from, end, inputs.people, moved, inputs.rules, inputs.assignments)) {

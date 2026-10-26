@@ -411,6 +411,7 @@ var DEFAULT_RULES = [
   { code: "leave_overlap", severity: "critical", enabled: true, params: {} },
   { code: "assignment_overlap", severity: "hard_stop", enabled: true, params: {} },
   { code: "crew_minimum", severity: "critical", enabled: true, params: {} },
+  { code: "controller_coverage", severity: "warning", enabled: true, params: {} },
   { code: "shift_times", severity: "info", enabled: true, params: { ...DEFAULT_SHIFT_TIMES } }
 ];
 function ruleOf(rules, code) {
@@ -976,13 +977,39 @@ function crewMinimum(inp, before, after, from, to, rules) {
   }
   return out;
 }
+function controllerCover(inp, before, after, from, to, rules) {
+  const rule = ruleOf(rules, "controller_coverage");
+  if (!rule.enabled) return [];
+  const need = (x) => {
+    const out2 = /* @__PURE__ */ new Map();
+    for (const day of evaluateRange(from, to, x.people, x.absences, inp.rules, x.assignments))
+      for (const y of day.crews) if (y.pending.includes("coverage_required")) out2.set(y.crew, [...out2.get(y.crew) ?? [], `${day.date}|${y.shift}`]);
+    return out2;
+  };
+  const was = need(before), now = need(after);
+  const out = [];
+  for (const c of CREWS) {
+    const extra = (now.get(c) ?? []).filter((k) => !(was.get(c) ?? []).includes(k)).sort();
+    if (!extra.length) continue;
+    const d = extra[0].slice(0, 10);
+    out.push({
+      rule: "controller_coverage",
+      severity: rule.severity,
+      date: d,
+      key: `cover:${c}`,
+      message: `${c} Shift: Controller cover needed on ${extra.length} dut${extra.length === 1 ? "y" : "ies"}, from ${Number(d.slice(8))}/${Number(d.slice(5, 7))}.`
+    });
+  }
+  return out;
+}
 async function checkProposal(pr) {
   const span = { start: pr.start, end: pr.end ?? addDaysIso(pr.start, 27) };
   const from = addDaysIso(span.start, -21), to = addDaysIso(span.end, 21);
   const [inputs, rules, sdDuty] = await Promise.all([fetchManpowerInputs(from, to), fetchValidationRules(), fetchSdDuties(from, to).catch(() => void 0)]);
   const base = { people: inputs.people, absences: inputs.absencesAll, assignments: inputs.assignments };
   const v = validateProposal(base, pr, rules, { times: shiftTimesOf(rules), sdDuty });
-  const findings = [...v.findings, ...crewMinimum(inputs, base, applyProposal(base, pr), span.start, span.end, rules)];
+  const after = applyProposal(base, pr);
+  const findings = [...v.findings, ...crewMinimum(inputs, base, after, span.start, span.end, rules), ...controllerCover(inputs, base, after, span.start, span.end, rules)];
   const worst2 = findings.reduce((w, f) => w === null || SEVERITY_RANK[f.severity] > SEVERITY_RANK[w] ? f.severity : w, null);
   return { ...v, findings, worst: worst2, ranAt: (/* @__PURE__ */ new Date()).toISOString(), proposal: pr };
 }

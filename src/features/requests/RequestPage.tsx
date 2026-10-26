@@ -55,7 +55,8 @@ export default function RequestPage({ profile }: { profile: UserProfile }) {
   const impact = useMemo(() => {
     if (!inputs || !valid || !form.employee_id || inputs.key !== `${form.start_date}|${form.end_date}`) return null;
     // once approved, the leave is already in the plan: show the impact without counting it twice
-    const absences = req?.leave_record_id ? inputs.absences.filter((a) => a.id !== req.leave_record_id) : inputs.absences;
+    // leave and task releases: a person released to a task is away from the crew as well
+    const absences = req?.leave_record_id ? inputs.absencesAll.filter((a) => a.id !== req.leave_record_id) : inputs.absencesAll;
     return requestImpact({ employeeId: form.employee_id, start: form.start_date, end: form.end_date, typeCode: REQUEST_TYPE_CODE[form.request_type] }, inputs.people, absences, inputs.assignments, inputs.rules);
   }, [inputs, valid, form, req]);
 
