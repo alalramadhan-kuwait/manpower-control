@@ -493,6 +493,7 @@ function checkSchedule(days3, rules) {
           severity: "hard_stop",
           date: day.date,
           key: `consec:${run[0].date}`,
+          run: { from: run[0].date, to: run[run.length - 1].date, sd: run.filter((d) => d.duty.note?.startsWith("Shutdown team")).map((d) => d.date) },
           message: `${run.length} duty days in a row (${fmt(run[0].date)} – ${fmt(run[run.length - 1].date)}${breakdown(run)}): ${fmt(day.date)} is day ${max + 1}. At most ${max}.`
         });
       }

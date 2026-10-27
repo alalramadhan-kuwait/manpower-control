@@ -26,6 +26,7 @@ describe('a temporary move', () => {
     const days = personDays(person('A'), '2026-11-10', '2026-11-24', { absences: [], assignments: [sd], sdDuty: (_, d) => (d >= '2026-11-15' ? { code: 'SD-D', start: '07:00', hours: 12 } : null) });
     const f = checkSchedule(days, DEFAULT_RULES).find((x) => x.rule === 'max_consecutive_duty_days');
     expect(f?.message).toContain('8 duty days in a row (15 Nov – 22 Nov — Shutdown team 15 Nov–16 Nov, then A Shift 17 Nov–22 Nov)');
+    expect(f?.run).toEqual({ from: '2026-11-15', to: '2026-11-22', sd: ['2026-11-15', '2026-11-16'] });
   });
   it('that makes the 7th duty day in a row is a hard stop', () => {
     // A → C from 6 Oct: the example where a move gives 12 duty days in a row

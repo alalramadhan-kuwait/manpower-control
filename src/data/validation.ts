@@ -58,11 +58,14 @@ export function controllerCover(inp: ManpowerInputs, before: ProposalInputs, aft
 export interface Check extends Validation { ranAt: string; proposal: Proposal }
 
 /** Every check for one change: the person's schedule (days in a row, rest, overlaps) and the crews' minimums. */
-export async function checkProposal(pr: Proposal): Promise<Check> {
+export async function checkProposal(pr: Proposal, opts: { /** as if the person had these days off his shutdown team */ sdOff?: string[] } = {}): Promise<Check> {
   const span = { start: pr.start, end: pr.end ?? addDaysIso(pr.start, 27) };
   const from = addDaysIso(span.start, -21), to = addDaysIso(span.end, 21);
-  const [inputs, rules, sdDuty] = await Promise.all([fetchManpowerInputs(from, to), fetchValidationRules(), fetchSdDuties(from, to).catch(() => undefined)]);
-  const base: ProposalInputs = { people: inputs.people, absences: inputs.absencesAll, assignments: inputs.assignments };
+  const [inputs, rules, sdDuty0] = await Promise.all([fetchManpowerInputs(from, to), fetchValidationRules(), fetchSdDuties(from, to).catch(() => undefined)]);
+  const off = new Set(opts.sdOff ?? []);
+  const sdDuty = off.size && sdDuty0 ? (id: string, d: string) => (id === pr.employeeId && off.has(d) ? null : sdDuty0(id, d)) : sdDuty0;
+  const assignments = off.size ? inputs.assignments.map((a) => (a.kind === 'sd_team' && a.employeeId === pr.employeeId && !a.rest ? { ...a, works: (d: string) => !off.has(d) && (a.works?.(d) ?? true) } : a)) : inputs.assignments;
+  const base: ProposalInputs = { people: inputs.people, absences: inputs.absencesAll, assignments };
   const v = validateProposal(base, pr, rules, { times: shiftTimesOf(rules), sdDuty });
   const after = applyProposal(base, pr);
   const findings = [...v.findings, ...crewMinimum(inputs, base, after, span.start, span.end, rules), ...controllerCover(inputs, base, after, span.start, span.end, rules)];

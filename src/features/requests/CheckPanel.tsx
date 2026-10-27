@@ -1,6 +1,6 @@
 // What a change breaks (by severity) and the person's days around it: Date | Duty | Other, the changed days marked.
 import { AlertTriangle, Check as CheckIcon, Info, OctagonX } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { SEVERITY_LABEL, SEVERITY_RANK, type Finding, type Severity } from '@/core/validation';
 import type { Check } from '@/data/validation';
 import { Spinner, cx } from '@/ui/components';
@@ -31,7 +31,7 @@ function Findings({ list }: { list: Finding[] }) {
 }
 
 /** The check of one change: problems it creates, problems already there, and the ±7-day timeline. */
-export function CheckPanel({ check, error }: { check: Check | null; error?: unknown }) {
+export function CheckPanel({ check, error, fix }: { check: Check | null; error?: unknown; /** the one-line fix of a hard stop, shown right under it */ fix?: ReactNode }) {
   const [showExisting, setShowExisting] = useState(false);
   if (error) return <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200">The check could not run. Do not approve until it does.</p>;
   if (!check) return <Spinner label="Checking the schedule and the crews…" />;
@@ -41,7 +41,7 @@ export function CheckPanel({ check, error }: { check: Check | null; error?: unkn
       {check.findings.length === 0
         ? <p className="flex items-center gap-1.5 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200"><CheckIcon className="h-4 w-4 shrink-0" />No rule broken: days in a row, rest, overlaps and crew minimums are fine.</p>
         : <Findings list={check.findings} />}
-      {hard && <p className="text-xs font-medium text-red-800">A hard stop cannot be approved. Change the dates or not approve it.</p>}
+      {hard && (fix ?? <p className="text-xs font-medium text-red-800">A hard stop cannot be approved. Change the dates or not approve it.</p>)}
       {check.existing.length > 0 && (
         <button type="button" onClick={() => setShowExisting(!showExisting)} className="text-xs font-medium text-slate-600 underline">
           {showExisting ? 'Hide' : 'Show'} {check.existing.length} problem{check.existing.length === 1 ? '' : 's'} already there before this change

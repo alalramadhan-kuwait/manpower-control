@@ -515,6 +515,7 @@ function checkSchedule(days2, rules) {
           severity: "hard_stop",
           date: day.date,
           key: `consec:${run[0].date}`,
+          run: { from: run[0].date, to: run[run.length - 1].date, sd: run.filter((d) => d.duty.note?.startsWith("Shutdown team")).map((d) => d.date) },
           message: `${run.length} duty days in a row (${fmt(run[0].date)} – ${fmt(run[run.length - 1].date)}${breakdown(run)}): ${fmt(day.date)} is day ${max + 1}. At most ${max}.`
         });
       }
@@ -1085,11 +1086,14 @@ function controllerCover(inp, before, after, from, to, rules) {
   }
   return out;
 }
-async function checkProposal(pr) {
+async function checkProposal(pr, opts = {}) {
   const span2 = { start: pr.start, end: pr.end ?? addDaysIso(pr.start, 27) };
   const from = addDaysIso(span2.start, -21), to = addDaysIso(span2.end, 21);
-  const [inputs, rules, sdDuty] = await Promise.all([fetchManpowerInputs(from, to), fetchValidationRules(), fetchSdDuties(from, to).catch(() => void 0)]);
-  const base = { people: inputs.people, absences: inputs.absencesAll, assignments: inputs.assignments };
+  const [inputs, rules, sdDuty0] = await Promise.all([fetchManpowerInputs(from, to), fetchValidationRules(), fetchSdDuties(from, to).catch(() => void 0)]);
+  const off = new Set(opts.sdOff ?? []);
+  const sdDuty = off.size && sdDuty0 ? (id, d) => id === pr.employeeId && off.has(d) ? null : sdDuty0(id, d) : sdDuty0;
+  const assignments = off.size ? inputs.assignments.map((a) => a.kind === "sd_team" && a.employeeId === pr.employeeId && !a.rest ? { ...a, works: (d) => !off.has(d) && (a.works?.(d) ?? true) } : a) : inputs.assignments;
+  const base = { people: inputs.people, absences: inputs.absencesAll, assignments };
   const v = validateProposal(base, pr, rules, { times: shiftTimesOf(rules), sdDuty });
   const after = applyProposal(base, pr);
   const findings = [...v.findings, ...crewMinimum(inputs, base, after, span2.start, span2.end, rules), ...controllerCover(inputs, base, after, span2.start, span2.end, rules)];

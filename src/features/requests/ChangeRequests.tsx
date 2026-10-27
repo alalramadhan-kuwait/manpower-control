@@ -10,6 +10,7 @@ import { addDaysIso, isValidIsoDate } from '@/core/roster';
 import { fetchLeaveApprovals } from '@/data/controllers';
 import { createChangeRequest, decideChangeRequest, fetchChangeCounts, fetchRequesterNames, withdrawChangeRequest, type ChangeRequest, type ChangeStatus } from '@/data/changeRequests';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
+import { saveWorkingPlan } from '@/data/workingPlan';
 import { BottomSheet, Button, Chip, ErrorBox, Field, Spinner, cx, type Tone } from '@/ui/components';
 import { localToday, shortDate } from '@/ui/leave';
 import { OraclePill } from '@/ui/oracle';
@@ -43,9 +44,9 @@ function ImpactBox({ impact, label }: { impact: LeaveImpact; label?: string }) {
 }
 
 /** The full check of new dates for a leave (the same check the server runs before approving), as the dates change. */
-function useDatesCheck(employeeId: string, recordIds: string[], typeCode: string | null | undefined, typeShort: string | null | undefined, start: string, end: string, on: boolean) {
+function useDatesCheck(employeeId: string, recordIds: string[], typeCode: string | null | undefined, typeShort: string | null | undefined, start: string, end: string, on: boolean, nonce = 0) {
   const [check, setCheck] = useState<ScheduleCheck | null>(null); const [err, setErr] = useState<unknown>(null);
-  const key = `${recordIds.join()}|${start}|${end}`;
+  const key = `${recordIds.join()}|${start}|${end}|${nonce}`;
   useEffect(() => {
     setCheck(null); setErr(null);
     if (!on) return;
@@ -58,6 +59,55 @@ function useDatesCheck(employeeId: string, recordIds: string[], typeCode: string
   }, [key, on]); // eslint-disable-line react-hooks/exhaustive-deps
   const verdict = check ? gateVerdict(check.findings, false) : null;
   return { check, err, verdict };
+}
+
+/**
+ * A hard stop made by a run of duty days that starts on his shutdown team: would a day (or two) off the team at the end
+ * of that part fix it? The same check runs as if; the first that passes is proposed. Null when it is not that case.
+ */
+function useSdFix(check: ScheduleCheck | null) {
+  const [fix, setFix] = useState<{ dates: string[]; check: ScheduleCheck } | null>(null);
+  const f = check?.findings.find((x) => x.rule === 'max_consecutive_duty_days' && x.severity === 'hard_stop' && x.run?.sd.length);
+  const key = f ? `${check!.ranAt}|${f.key}` : '';
+  useEffect(() => {
+    setFix(null);
+    if (!f || !check) return;
+    let live = true;
+    (async () => {
+      const sd = f.run!.sd;
+      for (const n of [1, 2]) {
+        if (sd.length < n) break;
+        const dates = sd.slice(-n);
+        const c = await checkProposal(check.proposal, { sdOff: dates });
+        if (!live) return;
+        if (!hasHardStop(c.findings)) { setFix({ dates, check: c }); return; }
+      }
+    })().catch(() => {});
+    return () => { live = false; };
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  return fix;
+}
+
+/** One line: the day off the shutdown team that would fix the hard stop, and Apply (the team day is set to off). */
+function SdFixLine({ fix, person, inputs, onApplied }: { fix: { dates: string[]; check: ScheduleCheck }; person: MpPerson; inputs: ManpowerInputs; onApplied: () => void }) {
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const member = inputs.assignments.find((a) => a.kind === 'sd_team' && a.employeeId === person.id && !a.rest && a.id.startsWith('sd-') && fix.dates.every((d) => a.start <= d && d <= a.end));
+  const worst = fix.check.worst;
+  async function apply() {
+    if (!member) return;
+    setBusy(true); setErr(null);
+    try { await saveWorkingPlan(fix.dates.map((d) => ({ memberId: member.id.slice(3), date: d, works: false, hours: null, locked: true, unavailable: false })), []); onApplied(); }
+    catch (e) { setErr(e); setBusy(false); }
+  }
+  return (
+    <div className="rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-900 ring-1 ring-brand-200">
+      <div className="flex items-center gap-2">
+        <span className="min-w-0 flex-1"><b>Fix:</b> {fix.dates.map(shortDate).join(' and ')} off the shutdown team → {worst === null ? 'no rule broken' : worst === 'critical' ? 'crew short: Section Head may accept' : 'only warnings'}.</span>
+        {member && <Button className="min-h-9 shrink-0" disabled={busy} onClick={apply}>{busy ? 'Applying…' : 'Apply'}</Button>}
+      </div>
+      {err != null && <ErrorBox error={err} />}
+    </div>
+  );
 }
 
 const EstimateSwitch = ({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) => (
@@ -87,8 +137,10 @@ export function ProposeSheet({ person, leave, inputs, approvals, today, changes,
   const first = leave.records[0];
   const impactRecords = replan ? [] : leave.records;
   const impact = useMemo(() => (valid && !unchanged ? leaveImpact(person, impactRecords.length ? impactRecords : [first], inputs, approvals, start, planEnd, today) : null), [valid, unchanged, person, leave, inputs, approvals, start, planEnd, today]); // eslint-disable-line react-hooks/exhaustive-deps
-  const { check, err: checkErr, verdict } = useDatesCheck(person.id, leave.records.map((r) => r.id!), first?.typeCode, first?.typeShort, start, planEnd, valid && !unchanged);
+  const [nonce, setNonce] = useState(0);
+  const { check, err: checkErr, verdict } = useDatesCheck(person.id, leave.records.map((r) => r.id!), first?.typeCode, first?.typeShort, start, planEnd, valid && !unchanged, nonce);
   const hard = !!check && hasHardStop(check.findings);
+  const sdFix = useSdFix(hard ? check : null);
   // the Section Head's own change is approved at once: only when the server would approve it
   const headBlocked = isHead && !!verdict && !verdict.allowed;
   async function send() {
@@ -119,7 +171,7 @@ export function ProposeSheet({ person, leave, inputs, approvals, today, changes,
         {valid && !unchanged && <>
           <p className="text-sm font-medium text-slate-800">New plan {range(start, planEnd)} · {oracleDays(start, end)} working days{replan && oracleDays(start, end) !== days ? ` (owed ${days})` : ''}{exp ? ` · back ${weekday(exp.backOn)} ${shortDate(exp.backOn)}` : ''}</p>
           {impact && <ImpactBox impact={impact} />}
-          <CheckPanel check={check} error={checkErr} />
+          <CheckPanel check={check} error={checkErr} fix={hard && sdFix ? <SdFixLine fix={sdFix} person={person} inputs={inputs} onApplied={() => setNonce((n) => n + 1)} /> : undefined} />
           {verdict && !verdict.allowed && !hard && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-900 ring-1 ring-red-200">{isHead ? 'Cover the crew first (Shift change / cover), then save these dates.' : 'The crew must be covered before the Section Head can approve these dates. You can send it: say how in the remark.'}</p>}
         </>}
         <EstimateSwitch value={estimated} onChange={setEstimated} />
@@ -131,7 +183,7 @@ export function ProposeSheet({ person, leave, inputs, approvals, today, changes,
           <Button className="flex-1" disabled={busy || !valid || unchanged || !remark.trim() || !check || hard || headBlocked} onClick={send}>{busy ? 'Saving…' : isHead ? 'Save' : 'Send request'}</Button>
         </div>
         {valid && !unchanged && !busy && (hard || headBlocked || !remark.trim()) && (
-          <p className="text-xs font-medium text-red-800">{hard ? `${isHead ? 'Save' : 'Send'} is off: a hard stop above. Choose dates that avoid it${isHead ? ', or give him a rest day first' : ''}.` : headBlocked ? 'Save is off: cover the crew first.' : `Add a remark to ${isHead ? 'save' : 'send'}.`}</p>
+          <p className="text-xs font-medium text-red-800">{hard ? `${isHead ? 'Save' : 'Send'} is off: a hard stop above. ${sdFix ? 'Apply the fix above, or choose other dates' : 'Choose dates that avoid it'}.` : headBlocked ? 'Save is off: cover the crew first.' : `Add a remark to ${isHead ? 'save' : 'send'}.`}</p>
         )}
       </div>
     </BottomSheet>

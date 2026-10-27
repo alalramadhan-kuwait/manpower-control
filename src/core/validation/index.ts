@@ -125,6 +125,8 @@ export interface Finding {
   hours?: number;
   /** Stable key: the same problem before and after a change has the same key. */
   key: string;
+  /** Consecutive duty days: the run, and the days of it worked on a shutdown team (a day off the team may fix it). */
+  run?: { from: string; to: string; sd: string[] };
 }
 
 const fmt = (d: string) => { const [, m, day] = d.split('-').map(Number); return `${day} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]}`; };
@@ -151,6 +153,7 @@ export function checkSchedule(days: DayLine[], rules: RuleConfig[]): Finding[] {
       if (run.length > max) {
         const day = run[max];
         out.push({ rule: consec.code, severity: 'hard_stop', date: day.date, key: `consec:${run[0].date}`,
+          run: { from: run[0].date, to: run[run.length - 1].date, sd: run.filter((d) => d.duty.note?.startsWith('Shutdown team')).map((d) => d.date) },
           message: `${run.length} duty days in a row (${fmt(run[0].date)} – ${fmt(run[run.length - 1].date)}${breakdown(run)}): ${fmt(day.date)} is day ${max + 1}. At most ${max}.` });
       }
       run = [];
