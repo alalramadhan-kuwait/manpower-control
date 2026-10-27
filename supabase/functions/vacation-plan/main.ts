@@ -7,6 +7,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { checkAllocation, checkVacationPlan } from '../../../src/data/vacationServer';
 import { supabase as admin } from './supabase-shim';
+import { loadAppRules } from '../../../src/data/rules';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -17,6 +18,8 @@ const reply = (status: number, body: unknown) => new Response(JSON.stringify(bod
 type Action = 'check_alloc' | 'approve_alloc' | 'check_plan' | 'approve_plan';
 
 Deno.serve(async (req) => {
+  // the organization rules as they stand now (Rules page), before anything is computed
+  if (req.method !== 'OPTIONS') await loadAppRules();
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return reply(405, { error: 'Use POST.' });
   try {

@@ -4,6 +4,7 @@
 import { Plus, Undo2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { CREWS, type Crew } from '@/core/roster';
+import { VAC_RULES } from '@/core/vacation/rules';
 import { GROUP_LABEL, RELIEF_LABEL, type AllocEval, type AllocIssue, type AllocRow, type PlanGroup, type PlanPerson, type ReliefKind } from '@/core/vacation';
 import { rowsOf, setAllocation, startAllocation, undoAllocation, type VacationData } from '@/data/vacation';
 import { BottomSheet, Button, ErrorBox, cx } from '@/ui/components';
@@ -112,7 +113,7 @@ function CrewPanel({ crew, ev, issuesOf, onOpen, editable, onAdd }: { crew: Crew
       <p className="px-3 pt-1 text-[11px] text-slate-500">Vacation slots per cycle: Panel {c.panelSlots} · Field {c.fieldSlots}</p>
       {crewIssues.length > 0 && <ul className="space-y-0.5 px-3 pt-1">{crewIssues.map((i) => <li key={i.code + i.text} className={cx('text-[11px] font-medium', i.level === 'error' ? 'text-red-700' : 'text-amber-800')}>{i.level === 'error' ? '⛔' : '⚠'} {i.text.replace(`${crew} Shift: `, '')}</li>)}</ul>}
       <Group title="Controller" people={c.controllers} issuesOf={issuesOf} onOpen={onOpen} editable={editable} onAdd={() => onAdd('controller')} />
-      <Group title={`Panel · ${c.panelGroup} of 4`} people={[...c.panel, ...c.acting]} acting={new Set(c.acting.map((p) => p.id))} issuesOf={issuesOf} onOpen={onOpen} editable={editable} onAdd={() => onAdd('panel')} />
+      <Group title={`Panel · ${c.panelGroup} of ${VAC_RULES.panelGroup}`} people={[...c.panel, ...c.acting]} acting={new Set(c.acting.map((p) => p.id))} issuesOf={issuesOf} onOpen={onOpen} editable={editable} onAdd={() => onAdd('panel')} />
       <Group title={`Field · ${c.fieldEligible.length}`} people={c.field} issuesOf={issuesOf} onOpen={onOpen} editable={editable} onAdd={() => onAdd('field')} />
     </section>
   );

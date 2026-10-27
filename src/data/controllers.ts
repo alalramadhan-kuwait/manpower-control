@@ -52,11 +52,7 @@ export async function fetchShiftCoverMaxDays(): Promise<number | null> {
   return (data as { shift_cover_max_days: number | null } | null)?.shift_cover_max_days ?? null;
 }
 
-export async function setShiftCoverMaxDays(days: number | null) {
-  const { error } = await supabase.from('controller_rules').update({ shift_cover_max_days: days, updated_at: new Date().toISOString() }).eq('id', 1);
-  if (error) throw error;
-  dataChanged();
-}
+// the shift cover length is changed on the Rules page (app_rule_set 'ctl.cover_max')
 
 // ------------------------------------------------------------------ Controller leave rules (approvals)
 

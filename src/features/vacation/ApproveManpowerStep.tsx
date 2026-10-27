@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { CREWS } from '@/core/roster';
 import { RELIEF_LABEL, type AllocEval, type ReliefKind } from '@/core/vacation';
+import { VAC_RULES } from '@/core/vacation/rules';
 import { reopenAllocation, vacationGate, type GateResult, type VacationData } from '@/data/vacation';
 import { Button, ErrorBox, cx } from '@/ui/components';
 import { CREW_IDENTITY } from '@/ui/crew';
@@ -38,7 +39,7 @@ export function ApproveManpowerStep({ d, ev, isHead, canEdit, onChanged, toast, 
                 <tr key={c}>
                   <td className="px-3 py-1.5"><span className={cx('inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-white', CREW_IDENTITY[c].bg)}>{c}</span></td>
                   <td className={cx('px-2', x.controllers.length !== 1 && 'font-bold text-red-700')}>{x.controllers.length}</td>
-                  <td className={cx('px-2', x.panelGroup < 4 && 'font-bold text-red-700')}>{x.panelGroup}{x.acting.length ? <span className="text-[11px] text-slate-500"> ({x.acting.length} act.)</span> : null}</td>
+                  <td className={cx('px-2', x.panelGroup < VAC_RULES.panelGroup && 'font-bold text-red-700')}>{x.panelGroup}{x.acting.length ? <span className="text-[11px] text-slate-500"> ({x.acting.length} act.)</span> : null}</td>
                   <td className={cx('px-2', x.fieldEligible.length < 7 && 'font-bold text-red-700')}>{x.fieldEligible.length}</td>
                   <td className="px-2">{x.panelSlots} / {x.fieldSlots}</td>
                   <td className="px-3 text-right"><StatusChip level={lv} label={lv === 'ok' ? 'OK' : undefined} /></td>

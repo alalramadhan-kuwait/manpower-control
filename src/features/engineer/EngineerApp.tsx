@@ -20,6 +20,7 @@ import { putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmen
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { addReturnItem, setReturnItem, BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
+import { ensureAppRules } from '@/data/rulesClient';
 import { BottomSheet, ErrorBox, Spinner, Toast, cx } from '@/ui/components';
 import { fetchSdTeamOn } from '@/data/shutdown';
 import { recordVisit } from '@/data/activity';
@@ -111,7 +112,7 @@ function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: 
   const [eqf, setEqf] = useState('all'); const [hoFocus, setHoFocus] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const [flash, setFlash] = useState<{ msg: string; undo?: () => Promise<unknown> } | null>(null);
-  const load = useCallback(async (trackerId: string) => { try { setData(await fetchTrackerData(trackerId)); setNow(Date.now()); setErr(null); } catch (e) { setErr(e); } }, []);
+  const load = useCallback(async (trackerId: string) => { try { await ensureAppRules(); setData(await fetchTrackerData(trackerId)); setNow(Date.now()); setErr(null); } catch (e) { setErr(e); } }, []);
   useEffect(() => {
     void (async () => {
       if (preset) { await load(preset.tracker_id); return; }

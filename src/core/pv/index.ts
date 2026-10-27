@@ -6,7 +6,7 @@
 // employee number first).
 // Pure functions, no I/O.
 import { addDaysIso, dutyFor, type Crew } from '../roster';
-import { fieldSlots, panelSlots } from '../vacation/rules';
+import { fieldSlots, panelSlots, slotFloor, VAC_RULES } from '../vacation/rules';
 import { byNumberDesc, sickExcludesActing } from '../manpower';
 
 export const PV_CYCLE_DAYS = 8;
@@ -127,12 +127,12 @@ export function blockReason(ctx: PvContext, personId: string, index: number): st
   const mine = ctx.picks.get(personId) ?? new Set<number>();
   if (cycle.summer) {
     const summer = [...mine].filter((i) => shift.cycles[i]?.summer);
-    if (summer.length >= PV_RULES.summerMaxCycles) return `Summer is peak time: already ${summer.length} cycles (two at the longest).`;
+    if (summer.length >= PV_RULES.summerMaxCycles) return `Summer is peak time: already ${summer.length} cycles (${PV_RULES.summerMaxCycles} at the longest).`;
     if (summer.length > 0 && !summer.some((i) => Math.abs(i - index) === 1)) return 'Summer is peak time: only one leave, and it must be one run of cycles.';
   }
   for (const sd of ctx.shutdowns ?? []) if (sd.employeeId === personId && overlap(cycle, sd)) return `In ${sd.title}: a shutdown team member takes no leave then.`;
-  if (shift.panel.includes(personId)) { const o = off(shift.panel), max = panelSlots(shift.panel.length); if (o.length >= max) return max === 0 ? 'Panel group under 4: no Panel vacation slot.' : `${o.map(nm).join(', ')} (Panel) is off then; ${max} at a time.`; }
-  if (shift.field.includes(personId)) { const o = off(shift.field), max = fieldSlots(shift.field.length); if (o.length >= max) return max === 0 ? 'Field under 7: no Field vacation slot.' : `${o.map(nm).join(' and ')} (Field) ${o.length === 1 ? 'is' : 'are'} off then; ${max} at most.`; }
+  if (shift.panel.includes(personId)) { const o = off(shift.panel), max = panelSlots(shift.panel.length); if (o.length >= max) return max === 0 ? `Panel group under ${slotFloor(VAC_RULES.panelMinOnDuty)}: no Panel vacation slot.` : `${o.map(nm).join(', ')} (Panel) is off then; ${max} at a time.`; }
+  if (shift.field.includes(personId)) { const o = off(shift.field), max = fieldSlots(shift.field.length); if (o.length >= max) return max === 0 ? `Field under ${slotFloor(VAC_RULES.fieldMinOnDuty)}: no Field vacation slot.` : `${o.map(nm).join(' and ')} (Field) ${o.length === 1 ? 'is' : 'are'} off then; ${max} at most.`; }
   if (shift.controllers.includes(personId)) {
     const clash: string[] = [];
     for (const s of ctx.shifts) for (const id of s.controllers) {

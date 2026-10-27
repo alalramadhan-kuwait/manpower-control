@@ -11,6 +11,9 @@ var VAC_RULES = {
   panelGroup: 4,
   /** One vacation slot per this many counted people (Panel group or counted Field). */
   perSlot: 4,
+  /** Panel and Field Operators left on duty while others are on leave, when no operating mode says otherwise. */
+  panelMinOnDuty: 3,
+  fieldMinOnDuty: 6,
   /** Controllers: one off at a time across the whole unit. */
   controllersOffUnit: 1,
   /** Summer (by the cycle's first day): June to September, one period of two cycles at the longest. */
@@ -19,9 +22,10 @@ var VAC_RULES = {
   summerMaxCycles: 2,
   summerMaxPeriods: 1
 };
+var slotFloor = (minimum) => Math.max(VAC_RULES.perSlot, minimum + 1);
 var slotsFor = (counted2, minimum) => Math.max(0, Math.min(Math.floor(counted2 / VAC_RULES.perSlot), counted2 - minimum));
-var fieldSlots = (counted2, minimum = 6) => slotsFor(counted2, minimum);
-var panelSlots = (group, minimum = 3) => slotsFor(group, minimum);
+var fieldSlots = (counted2, minimum = VAC_RULES.fieldMinOnDuty) => slotsFor(counted2, minimum);
+var panelSlots = (group, minimum = VAC_RULES.panelMinOnDuty) => slotsFor(group, minimum);
 
 // src/core/roster/index.ts
 var MORNING_ORDER = ["B", "C", "A", "D"];
@@ -206,11 +210,11 @@ function evaluateDay(date, allPeople, absences, rulesSource = FULL_OPERATION, as
         return a.sdV2 ? Number(!on) : Number(on);
       };
       const candidates = todays.filter((a) => a.kind === "sd_team" && !autoUsed.has(a.employeeId)).map((a) => ({ a, p: byId.get(a.employeeId) ?? null })).filter((x) => !!x.p && !x.a.rest && x.p.grade != null && x.p.grade >= rules.controllerGrade && !leaveOf(x.p) && assignmentOf(x.p)?.kind === "sd_team").filter((x) => !x.a.sdV2 || state === "A" || state === (x.a.sdV2.night ? "N" : "M")).sort((x, y) => offFirst(x.a) - offFirst(y.a) || Number(y.p.crew === crew) - Number(x.p.crew === crew) || x.p.name.localeCompare(y.p.name));
-      const pick = candidates[0];
-      if (pick) {
-        autoUsed.add(pick.p.id);
-        cover = { person: pick.p, assignment: pick.a, counted: true, absence: null };
-        ctrlCounted.push(pick.p);
+      const pick2 = candidates[0];
+      if (pick2) {
+        autoUsed.add(pick2.p.id);
+        cover = { person: pick2.p, assignment: pick2.a, counted: true, absence: null };
+        ctrlCounted.push(pick2.p);
       }
     }
     if (ctrlCounted.length < rules.controllerMin) {
@@ -490,14 +494,14 @@ function evaluateAllocation(people, rows, minimums = { panel: 3, field: 6 }) {
     }
     const passedOver = pool.filter((x) => x.p.sick && sickExcludesActing(x.mp));
     if (need > picks.length && passedOver.length) add("warning", "sick_excluded", `${crew} Shift: ${passedOver.map((x) => x.p.name).join(", ")} not eligible for acting Panel (over ${ACTING_PANEL.sickMax} sick days).`);
-    if (acting.length >= 2) add("warning", "acting_reliance", `${crew} Shift: ${acting.length} of the 4 Panel seats are acting Field Operators.`);
+    if (acting.length >= 2) add("warning", "acting_reliance", `${crew} Shift: ${acting.length} of the ${VAC_RULES.panelGroup} Panel seats are acting Field Operators.`);
     if (panelGroup < minimums.panel) add("error", "panel_short", `${crew} Shift: Panel ${panelGroup} of ${minimums.panel} on duty even with nobody on vacation.`);
-    else if (panelGroup < VAC_RULES.panelGroup) add(floats.length ? "warning" : "error", "panel_group", `${crew} Shift: Panel ${panelGroup} of 4: ${floats.length ? "Panel vacations need the floating relief." : "no Panel Operator can take vacation (no floating relief)."}`);
-    else if (panelGroup > VAC_RULES.panelGroup) add("warning", "panel_extra", `${crew} Shift: Panel ${panelGroup} (group of 4 + ${panelGroup - VAC_RULES.panelGroup}).`);
+    else if (panelGroup < VAC_RULES.panelGroup) add(floats.length ? "warning" : "error", "panel_group", `${crew} Shift: Panel ${panelGroup} of ${VAC_RULES.panelGroup}: ${floats.length ? "Panel vacations need the floating relief." : "no Panel Operator can take vacation (no floating relief)."}`);
+    else if (panelGroup > VAC_RULES.panelGroup) add("warning", "panel_extra", `${crew} Shift: Panel ${panelGroup} (group of ${VAC_RULES.panelGroup} + ${panelGroup - VAC_RULES.panelGroup}).`);
     if (grade14 === 0) add("error", "no_grade14", `${crew} Shift: no Grade 14+ in the Panel group.`);
     else if (grade14 === 1) add("warning", "one_grade14", `${crew} Shift: one Grade 14+ in Panel; their vacation needs another Grade 14+ on duty.`);
     if (fieldEligible.length < minimums.field) add("error", "field_short", `${crew} Shift: Field ${fieldEligible.length} of ${minimums.field} on duty even with nobody on vacation.`);
-    else if (c.fieldSlots === 0) add("error", "field_no_slot", `${crew} Shift: Field ${fieldEligible.length}: no Field vacation possible (7 needed for one slot).`);
+    else if (c.fieldSlots === 0) add("error", "field_no_slot", `${crew} Shift: Field ${fieldEligible.length}: no Field vacation possible (${slotFloor(minimums.field)} needed for one slot).`);
     for (const p of field) if (p.takeCharge !== "yes") add("warning", "take_charge", `${p.name}: Take-Charge ${p.takeCharge === "no" ? "No" : "not confirmed"}; not counted in Field.`, p.id);
     for (const p of [...controllers, ...panel, ...field]) {
       if (p.grade == null && p.employmentType === "knpc") add("warning", "no_grade", `${p.name}: grade not recorded.`, p.id);
@@ -905,6 +909,22 @@ function memberWorks(p, m, date) {
 // src/core/shutdown/overtime.ts
 var H = 36e5;
 var KW = 3 * H;
+
+// src/core/shutdown/v2.ts
+var V2_DEFAULTS = {
+  shiftHours: 12,
+  normalHours: 8,
+  reducedDays: 2,
+  reducedHours: 12,
+  monthWarn: 72,
+  monthHard: 80,
+  yearWarn: 380,
+  yearHard: 440,
+  teamNeeds: { controller: 2, senior: 2, good: 2, new: 1 },
+  reducedNeeds: { controller: 1, senior: 1, good: 1, new: 0 }
+};
+var SICK_RULES = { okMax: 21, warnMax: 35, freshDays: 45 };
+var SD_MINIMUM = { controller: 1, experienced: 1, qualifiedFo: 2 };
 
 // src/data/shutdown.ts
 var toPlan = (r) => ({
@@ -1354,6 +1374,83 @@ async function checkVacationPlan(year) {
   return { ok: errors.length === 0, issues: r.issues.map((i) => ({ level: i.level, text: i.text })), reason: errors.length ? `${errors.length} blocking: ${errors.slice(0, 3).map((i) => i.text).join(" ")}` : null };
 }
 
+// src/core/controllers/leaveRules.ts
+var CONTROLLER_LEAVE_RULES = { maxLeavesPerYear: 4, minDaysPerYear: 25 };
+
+// src/core/tracker/index.ts
+var H2 = 36e5;
+var KW2 = 3 * H2;
+var STALE_H = { normal: 12, critical: 6, small: 24 };
+
+// src/core/tracker/reportImport.ts
+var KW3 = 3 * 36e5;
+
+// src/core/tracker/intel/reconcile.ts
+var DEFAULT_TOLERANCE = { abs: 10, rel: 0.01 };
+var KW4 = 3 * 36e5;
+
+// src/core/rules/index.ts
+var set = (o, patch) => Object.assign(o, patch);
+var SNAPSHOT = {
+  ACTING_PANEL: { ...ACTING_PANEL },
+  PV_RULES: { ...PV_RULES },
+  VAC_RULES: { ...VAC_RULES },
+  CONTROLLER_LEAVE_RULES: { ...CONTROLLER_LEAVE_RULES },
+  V2_DEFAULTS: { monthWarn: V2_DEFAULTS.monthWarn, monthHard: V2_DEFAULTS.monthHard, yearWarn: V2_DEFAULTS.yearWarn, yearHard: V2_DEFAULTS.yearHard },
+  SD_MINIMUM: { ...SD_MINIMUM },
+  SICK_RULES: { ...SICK_RULES },
+  STALE_H: { ...STALE_H },
+  DEFAULT_TOLERANCE: { ...DEFAULT_TOLERANCE }
+};
+var num = (v) => typeof v === "number" && Number.isFinite(v) ? v : void 0;
+var pick = (v, map) => {
+  const out = {};
+  if (!v || typeof v !== "object") return out;
+  for (const [from, to] of Object.entries(map)) {
+    const x = num(v[from]);
+    if (x !== void 0) out[to] = x;
+  }
+  return out;
+};
+function applyRuleValues(values) {
+  const v = (k) => values[k];
+  const acting = pick(v("crew.acting_panel"), { grade: "grade", sickMax: "sickMax" });
+  set(ACTING_PANEL, acting);
+  if (acting.grade !== void 0) set(PV_RULES, { actingGrade: acting.grade });
+  set(PV_RULES, pick(v("leave.pv_seats"), { panelSeats: "panelSeats" }));
+  const duty = pick(v("leave.pv_on_duty"), { panel: "panelMinOnDuty", field: "fieldMinOnDuty" });
+  set(PV_RULES, duty);
+  set(VAC_RULES, pick(v("leave.pv_on_duty"), { panel: "panelMinOnDuty", field: "fieldMinOnDuty" }));
+  const summer = pick(v("leave.summer"), { fromMonth: "summerFromMonth", toMonth: "summerToMonth", maxCycles: "summerMaxCycles" });
+  set(PV_RULES, summer);
+  set(VAC_RULES, { ...summer, ...pick(v("leave.summer"), { maxPeriods: "summerMaxPeriods" }) });
+  set(VAC_RULES, pick(v("vac.periods"), { min: "minPeriods", max: "maxPeriods" }));
+  set(VAC_RULES, pick(v("vac.per_slot"), { perSlot: "perSlot" }));
+  set(VAC_RULES, pick(v("vac.panel_group"), { panelGroup: "panelGroup" }));
+  const ctl = pick(v("ctl.leaves"), { maxLeavesPerYear: "maxLeavesPerYear", minDaysPerYear: "minDaysPerYear" });
+  set(CONTROLLER_LEAVE_RULES, ctl);
+  if (ctl.maxLeavesPerYear !== void 0) set(PV_RULES, { controllerMaxLeaves: ctl.maxLeavesPerYear });
+  set(V2_DEFAULTS, pick(v("sd.ot_month"), { warn: "monthWarn", hard: "monthHard" }));
+  set(V2_DEFAULTS, pick(v("sd.ot_year"), { warn: "yearWarn", hard: "yearHard" }));
+  set(SD_MINIMUM, pick(v("sd.team_min"), { controller: "controller", experienced: "experienced", qualifiedFo: "qualifiedFo" }));
+  set(SICK_RULES, pick(v("sd.sick"), { okMax: "okMax", warnMax: "warnMax", freshDays: "freshDays" }));
+  set(STALE_H, pick(v("trk.stale"), { critical: "critical", normal: "normal", small: "small" }));
+  const tol = v("trk.qty_tol");
+  if (tol) {
+    const a = num(tol.abs), r = num(tol.relPct);
+    set(DEFAULT_TOLERANCE, { ...a !== void 0 ? { abs: a } : {}, ...r !== void 0 ? { rel: r / 100 } : {} });
+  }
+}
+
+// src/data/rules.ts
+async function loadAppRules() {
+  const { data, error } = await supabase.from("app_rules").select("key,value");
+  if (error || !data) return {};
+  const values = Object.fromEntries(data.map((r) => [r.key, r.value]));
+  applyRuleValues(values);
+  return values;
+}
+
 // supabase/functions/vacation-plan/main.ts
 var CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -1362,6 +1459,7 @@ var CORS = {
 };
 var reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 Deno.serve(async (req) => {
+  if (req.method !== "OPTIONS") await loadAppRules();
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return reply(405, { error: "Use POST." });
   try {

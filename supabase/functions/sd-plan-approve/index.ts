@@ -188,11 +188,11 @@ function evaluateDay(date, allPeople, absences, rulesSource = FULL_OPERATION, as
         return a.sdV2 ? Number(!on) : Number(on);
       };
       const candidates = todays.filter((a) => a.kind === "sd_team" && !autoUsed.has(a.employeeId)).map((a) => ({ a, p: byId.get(a.employeeId) ?? null })).filter((x) => !!x.p && !x.a.rest && x.p.grade != null && x.p.grade >= rules.controllerGrade && !leaveOf(x.p) && assignmentOf(x.p)?.kind === "sd_team").filter((x) => !x.a.sdV2 || state === "A" || state === (x.a.sdV2.night ? "N" : "M")).sort((x, y) => offFirst(x.a) - offFirst(y.a) || Number(y.p.crew === crew) - Number(x.p.crew === crew) || x.p.name.localeCompare(y.p.name));
-      const pick = candidates[0];
-      if (pick) {
-        autoUsed.add(pick.p.id);
-        cover = { person: pick.p, assignment: pick.a, counted: true, absence: null };
-        ctrlCounted.push(pick.p);
+      const pick2 = candidates[0];
+      if (pick2) {
+        autoUsed.add(pick2.p.id);
+        cover = { person: pick2.p, assignment: pick2.a, counted: true, absence: null };
+        ctrlCounted.push(pick2.p);
       }
     }
     if (ctrlCounted.length < rules.controllerMin) {
@@ -1704,6 +1704,107 @@ async function loadPlanCheckInput(planId, today) {
   };
 }
 
+// src/core/controllers/leaveRules.ts
+var CONTROLLER_LEAVE_RULES = { maxLeavesPerYear: 4, minDaysPerYear: 25 };
+
+// src/core/vacation/rules.ts
+var VAC_RULES = {
+  /** Vacation periods per person per year: a period is one run of consecutive whole cycles. */
+  minPeriods: 4,
+  maxPeriods: 5,
+  /** People in a shift's Panel group (assigned, not on duty). */
+  panelGroup: 4,
+  /** One vacation slot per this many counted people (Panel group or counted Field). */
+  perSlot: 4,
+  /** Panel and Field Operators left on duty while others are on leave, when no operating mode says otherwise. */
+  panelMinOnDuty: 3,
+  fieldMinOnDuty: 6,
+  /** Controllers: one off at a time across the whole unit. */
+  controllersOffUnit: 1,
+  /** Summer (by the cycle's first day): June to September, one period of two cycles at the longest. */
+  summerFromMonth: 6,
+  summerToMonth: 9,
+  summerMaxCycles: 2,
+  summerMaxPeriods: 1
+};
+
+// src/core/pv/index.ts
+var PV_RULES = { panelSeats: 4, panelMaxOff: 1, panelMinOnDuty: 3, fieldMaxOff: 2, fieldMinOnDuty: 6, summerFromMonth: 6, summerToMonth: 9, summerMaxCycles: 2, controllerMaxLeaves: 4, actingGrade: 13 };
+
+// src/core/tracker/index.ts
+var H4 = 36e5;
+var KW2 = 3 * H4;
+var STALE_H = { normal: 12, critical: 6, small: 24 };
+
+// src/core/tracker/reportImport.ts
+var KW3 = 3 * 36e5;
+
+// src/core/tracker/intel/reconcile.ts
+var DEFAULT_TOLERANCE = { abs: 10, rel: 0.01 };
+var KW4 = 3 * 36e5;
+
+// src/core/rules/index.ts
+var set = (o, patch) => Object.assign(o, patch);
+var SNAPSHOT = {
+  ACTING_PANEL: { ...ACTING_PANEL },
+  PV_RULES: { ...PV_RULES },
+  VAC_RULES: { ...VAC_RULES },
+  CONTROLLER_LEAVE_RULES: { ...CONTROLLER_LEAVE_RULES },
+  V2_DEFAULTS: { monthWarn: V2_DEFAULTS.monthWarn, monthHard: V2_DEFAULTS.monthHard, yearWarn: V2_DEFAULTS.yearWarn, yearHard: V2_DEFAULTS.yearHard },
+  SD_MINIMUM: { ...SD_MINIMUM },
+  SICK_RULES: { ...SICK_RULES },
+  STALE_H: { ...STALE_H },
+  DEFAULT_TOLERANCE: { ...DEFAULT_TOLERANCE }
+};
+var num = (v) => typeof v === "number" && Number.isFinite(v) ? v : void 0;
+var pick = (v, map) => {
+  const out = {};
+  if (!v || typeof v !== "object") return out;
+  for (const [from, to] of Object.entries(map)) {
+    const x = num(v[from]);
+    if (x !== void 0) out[to] = x;
+  }
+  return out;
+};
+function applyRuleValues(values) {
+  const v = (k) => values[k];
+  const acting = pick(v("crew.acting_panel"), { grade: "grade", sickMax: "sickMax" });
+  set(ACTING_PANEL, acting);
+  if (acting.grade !== void 0) set(PV_RULES, { actingGrade: acting.grade });
+  set(PV_RULES, pick(v("leave.pv_seats"), { panelSeats: "panelSeats" }));
+  const duty = pick(v("leave.pv_on_duty"), { panel: "panelMinOnDuty", field: "fieldMinOnDuty" });
+  set(PV_RULES, duty);
+  set(VAC_RULES, pick(v("leave.pv_on_duty"), { panel: "panelMinOnDuty", field: "fieldMinOnDuty" }));
+  const summer = pick(v("leave.summer"), { fromMonth: "summerFromMonth", toMonth: "summerToMonth", maxCycles: "summerMaxCycles" });
+  set(PV_RULES, summer);
+  set(VAC_RULES, { ...summer, ...pick(v("leave.summer"), { maxPeriods: "summerMaxPeriods" }) });
+  set(VAC_RULES, pick(v("vac.periods"), { min: "minPeriods", max: "maxPeriods" }));
+  set(VAC_RULES, pick(v("vac.per_slot"), { perSlot: "perSlot" }));
+  set(VAC_RULES, pick(v("vac.panel_group"), { panelGroup: "panelGroup" }));
+  const ctl = pick(v("ctl.leaves"), { maxLeavesPerYear: "maxLeavesPerYear", minDaysPerYear: "minDaysPerYear" });
+  set(CONTROLLER_LEAVE_RULES, ctl);
+  if (ctl.maxLeavesPerYear !== void 0) set(PV_RULES, { controllerMaxLeaves: ctl.maxLeavesPerYear });
+  set(V2_DEFAULTS, pick(v("sd.ot_month"), { warn: "monthWarn", hard: "monthHard" }));
+  set(V2_DEFAULTS, pick(v("sd.ot_year"), { warn: "yearWarn", hard: "yearHard" }));
+  set(SD_MINIMUM, pick(v("sd.team_min"), { controller: "controller", experienced: "experienced", qualifiedFo: "qualifiedFo" }));
+  set(SICK_RULES, pick(v("sd.sick"), { okMax: "okMax", warnMax: "warnMax", freshDays: "freshDays" }));
+  set(STALE_H, pick(v("trk.stale"), { critical: "critical", normal: "normal", small: "small" }));
+  const tol = v("trk.qty_tol");
+  if (tol) {
+    const a = num(tol.abs), r = num(tol.relPct);
+    set(DEFAULT_TOLERANCE, { ...a !== void 0 ? { abs: a } : {}, ...r !== void 0 ? { rel: r / 100 } : {} });
+  }
+}
+
+// src/data/rules.ts
+async function loadAppRules() {
+  const { data, error } = await supabase.from("app_rules").select("key,value");
+  if (error || !data) return {};
+  const values = Object.fromEntries(data.map((r) => [r.key, r.value]));
+  applyRuleValues(values);
+  return values;
+}
+
 // supabase/functions/sd-plan-approve/main.ts
 var CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -1713,6 +1814,7 @@ var CORS = {
 var reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 var kuwaitToday2 = () => new Date(Date.now() + 3 * 36e5).toISOString().slice(0, 10);
 Deno.serve(async (req) => {
+  if (req.method !== "OPTIONS") await loadAppRules();
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return reply(405, { error: "Use POST." });
   try {

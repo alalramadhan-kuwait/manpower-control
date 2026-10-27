@@ -5,7 +5,7 @@
 import { supabase } from './supabase';
 import { dataChanged } from './changes';
 import { addEngStep, addEvent, addQtyEntry, setActivity, setEquipment, setOrder, type TrackerData } from './tracker';
-import { fingerprint, reconcile, type Department, type PlanningRecord, type Proposal, type ProposalStatus, type ProposalType, type Reconciled, type ReportMeta, type Tolerance } from '@/core/tracker/intel';
+import { DEFAULT_TOLERANCE, fingerprint, reconcile, type Department, type PlanningRecord, type Proposal, type ProposalStatus, type ProposalType, type Reconciled, type ReportMeta, type Tolerance } from '@/core/tracker/intel';
 import { sortActs } from '@/core/tracker';
 
 export interface ReportRow { id: string; department: Department; reportDate: string; shift: 'D' | 'N' | null; reporter: string | null; body: string; status: 'read' | 'applied' | 'partial' | 'failed'; summary: Record<string, number>; submittedBy: string | null; submittedAt: string }
@@ -37,7 +37,8 @@ export async function fetchIntel(trackerId: string, days = 14): Promise<IntelDat
 }
 
 /** The tracker's tolerance for cumulative counts (settings), the software defaults until the site validates them. */
-export const toleranceOf = (d: TrackerData): Tolerance => ({ abs: Number((d.settings as { qtyTolAbs?: number }).qtyTolAbs ?? 10), rel: Number((d.settings as { qtyTolRel?: number }).qtyTolRel ?? 0.01) });
+/** The count tolerance is a rule (Rules page), the same for every tracker. */
+export const toleranceOf = (_d?: TrackerData): Tolerance => ({ ...DEFAULT_TOLERANCE });
 
 /** Read a pasted report against the tracker (no write): the proposals to review. */
 export function readAgainst(d: TrackerData, text: string, meta: ReportMeta, intel: IntelData): Reconciled {

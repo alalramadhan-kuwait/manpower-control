@@ -5,7 +5,7 @@
 // chosen by the same rule as the daily engine (ACTING_PANEL). Pure functions, no I/O.
 import { ACTING_PANEL, byNumberDesc, sickExcludesActing, DAY_DUTY, type MpPerson, type QualStatus, type Role } from '../manpower';
 import { CREWS, type Crew } from '../roster';
-import { VAC_RULES, fieldSlots, panelSlots } from './rules';
+import { VAC_RULES, fieldSlots, panelSlots, slotFloor } from './rules';
 
 export type PlanGroup = 'controller' | 'panel' | 'field' | 'relief' | 'excluded';
 /** vr: Vacation Relief Controller · day_supervisor: the Day Supervisor (Morning Controller post) · float_panel: floating
@@ -157,14 +157,14 @@ export function evaluateAllocation(people: PlanPerson[], rows: AllocRow[], minim
     }
     const passedOver = pool.filter((x) => x.p.sick && sickExcludesActing(x.mp));
     if (need > picks.length && passedOver.length) add('warning', 'sick_excluded', `${crew} Shift: ${passedOver.map((x) => x.p.name).join(', ')} not eligible for acting Panel (over ${ACTING_PANEL.sickMax} sick days).`);
-    if (acting.length >= 2) add('warning', 'acting_reliance', `${crew} Shift: ${acting.length} of the 4 Panel seats are acting Field Operators.`);
+    if (acting.length >= 2) add('warning', 'acting_reliance', `${crew} Shift: ${acting.length} of the ${VAC_RULES.panelGroup} Panel seats are acting Field Operators.`);
     if (panelGroup < minimums.panel) add('error', 'panel_short', `${crew} Shift: Panel ${panelGroup} of ${minimums.panel} on duty even with nobody on vacation.`);
-    else if (panelGroup < VAC_RULES.panelGroup) add(floats.length ? 'warning' : 'error', 'panel_group', `${crew} Shift: Panel ${panelGroup} of 4: ${floats.length ? 'Panel vacations need the floating relief.' : 'no Panel Operator can take vacation (no floating relief).'}`);
-    else if (panelGroup > VAC_RULES.panelGroup) add('warning', 'panel_extra', `${crew} Shift: Panel ${panelGroup} (group of 4 + ${panelGroup - VAC_RULES.panelGroup}).`);
+    else if (panelGroup < VAC_RULES.panelGroup) add(floats.length ? 'warning' : 'error', 'panel_group', `${crew} Shift: Panel ${panelGroup} of ${VAC_RULES.panelGroup}: ${floats.length ? 'Panel vacations need the floating relief.' : 'no Panel Operator can take vacation (no floating relief).'}`);
+    else if (panelGroup > VAC_RULES.panelGroup) add('warning', 'panel_extra', `${crew} Shift: Panel ${panelGroup} (group of ${VAC_RULES.panelGroup} + ${panelGroup - VAC_RULES.panelGroup}).`);
     if (grade14 === 0) add('error', 'no_grade14', `${crew} Shift: no Grade 14+ in the Panel group.`);
     else if (grade14 === 1) add('warning', 'one_grade14', `${crew} Shift: one Grade 14+ in Panel; their vacation needs another Grade 14+ on duty.`);
     if (fieldEligible.length < minimums.field) add('error', 'field_short', `${crew} Shift: Field ${fieldEligible.length} of ${minimums.field} on duty even with nobody on vacation.`);
-    else if (c.fieldSlots === 0) add('error', 'field_no_slot', `${crew} Shift: Field ${fieldEligible.length}: no Field vacation possible (7 needed for one slot).`);
+    else if (c.fieldSlots === 0) add('error', 'field_no_slot', `${crew} Shift: Field ${fieldEligible.length}: no Field vacation possible (${slotFloor(minimums.field)} needed for one slot).`);
     for (const p of field) if (p.takeCharge !== 'yes') add('warning', 'take_charge', `${p.name}: Take-Charge ${p.takeCharge === 'no' ? 'No' : 'not confirmed'}; not counted in Field.`, p.id);
     for (const p of [...controllers, ...panel, ...field]) {
       if (p.grade == null && p.employmentType === 'knpc') add('warning', 'no_grade', `${p.name}: grade not recorded.`, p.id);

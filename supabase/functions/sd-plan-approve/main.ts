@@ -7,6 +7,7 @@
 import { checkPlan, isV2 } from '../../../src/core/shutdown/v2';
 import { loadPlanCheckInput } from '../../../src/data/sdCheck';
 import { supabase as admin } from './supabase-shim';
+import { loadAppRules } from '../../../src/data/rules';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -18,6 +19,8 @@ const reply = (status: number, body: unknown) => new Response(JSON.stringify(bod
 const kuwaitToday = () => new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 10);
 
 Deno.serve(async (req) => {
+  // the organization rules as they stand now (Rules page), before anything is computed
+  if (req.method !== 'OPTIONS') await loadAppRules();
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return reply(405, { error: 'Use POST.' });
   try {

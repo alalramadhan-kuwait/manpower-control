@@ -6,7 +6,7 @@ import { checkCandidates, coverageNeeds, maxEndDate, shiftCoverMaxEnd, type Cove
 import { evaluateDay, personOn, type MpAbsence, type MpAssignment, type MpPerson } from '@/core/manpower';
 import { onLeaveOn, type OnLeave } from '@/core/leave';
 import { addDaysIso, isValidIsoDate, type Crew } from '@/core/roster';
-import { cancelAssignment, endAssignmentEarly, fetchAssignments, fetchShiftCoverMaxDays, setShiftCoverMaxDays } from '@/data/controllers';
+import { cancelAssignment, endAssignmentEarly, fetchAssignments, fetchShiftCoverMaxDays } from '@/data/controllers';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { fetchMovements, type CrewMovement } from '@/data/movements';
 import { submitApproval, submittedText } from '@/data/approvals';
@@ -342,25 +342,14 @@ function CancelSheet({ a, name, onClose, onDone }: { a: ControllerAssignment; na
   );
 }
 
-function RulesSheet({ current, onClose, onDone }: { current: number | null; onClose: () => void; onDone: (m: string) => void }) {
-  const [limited, setLimited] = useState(current !== null);
-  const [days, setDays] = useState(String(current ?? 60));
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  const n = Number(days);
-  const problem = limited && (!Number.isInteger(n) || n < 1) ? 'Enter a whole number of days.' : null;
-  async function save() {
-    setBusy(true); setErr(null);
-    try { await setShiftCoverMaxDays(limited ? n : null); onDone(limited ? `Shift cover now lasts at most ${n} days.` : 'Shift cover has no maximum: it lasts the actual leave period.'); } catch (e) { setErr(e); } finally { setBusy(false); }
-  }
+function RulesSheet({ current, onClose }: { current: number | null; onClose: () => void; onDone: (m: string) => void }) {
   return (
     <BottomSheet open onClose={onClose} title="Shift cover length">
       <div className="space-y-3">
-        <label className="flex items-center gap-3 rounded-xl px-3 py-2 ring-1 ring-slate-200"><input type="radio" checked={!limited} onChange={() => setLimited(false)} /><span className="text-sm">No maximum: a cover lasts the actual leave or coverage period (default)</span></label>
-        <label className="flex items-center gap-3 rounded-xl px-3 py-2 ring-1 ring-slate-200"><input type="radio" checked={limited} onChange={() => setLimited(true)} /><span className="text-sm">At most</span><input className="input w-24" inputMode="numeric" value={days} disabled={!limited} onChange={(e) => setDays(e.target.value)} /><span className="text-sm">days</span></label>
-        <p className="text-xs text-slate-500">Applies to new covers and to changes of an existing one. The Morning rotation limit (2 months) is fixed. The change is written to the audit history.</p>
-        {problem && <p className="text-xs text-slate-500">{problem}</p>}
-        {err != null && <ErrorBox error={err} />}
-        <div className="flex gap-2"><Button variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button><Button className="flex-1" disabled={busy || !!problem} onClick={save}>Save</Button></div>
+        <p className="text-sm text-slate-800">{current === null ? 'No maximum: a cover lasts the actual leave or coverage period.' : `At most ${current} days.`}</p>
+        <p className="text-xs text-slate-500">An organization rule: the Section Head changes it on the Rules page, with a reason. The Morning rotation limit (2 months) is fixed.</p>
+        <Link to="/rules?group=controllers" className="flex min-h-10 items-center justify-between rounded-xl bg-brand-50 px-3 text-[12px] font-semibold text-brand-700">Change on the Rules page<span>›</span></Link>
+        <Button variant="secondary" className="w-full" onClick={onClose}>Close</Button>
       </div>
     </BottomSheet>
   );

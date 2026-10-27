@@ -6,7 +6,11 @@ import { UpdatePrompt } from './app/UpdatePrompt';
 import { BusyIndicator } from './app/BusyIndicator';
 import { OfflineBanner } from './app/OfflineBanner';
 import { LangProvider } from './i18n';
+import { applyCachedRules } from './data/rulesClient';
 import './index.css';
+
+// the organization rules last seen on this device, before anything computes (the database's follow at sign-in)
+applyCachedRules();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

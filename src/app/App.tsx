@@ -22,6 +22,8 @@ import { Button } from '@/ui/components';
 import { SplashScreen } from '@/ui/brand';
 import { engineerLink, supabase } from '@/data/supabase';
 import EngineerApp from '@/features/engineer/EngineerApp';
+import RulesPage from '@/features/rules/RulesPage';
+import { useAppRules } from './useAppRules';
 
 /** An engineer's personal link (?sd=…) or one already opened on this device: the shutdown tracker only, no login. */
 export default function App() {
@@ -30,6 +32,7 @@ export default function App() {
 
 function MainApp() {
   const { loading, session, profile, profileError, access, tasks } = useSession();
+  const rulesReady = useAppRules(!!session && !!profile);
   if (loading) return <SplashScreen />;
   if (!session) return <LoginPage />;
   if (!profile) {
@@ -63,6 +66,7 @@ function MainApp() {
       </div>
     );
   }
+  if (!rulesReady) return <SplashScreen />;
   if (level === 'tracker') return <TrackerOnly profile={profile} />;
   if (level === 'none') {
     return (
@@ -87,6 +91,7 @@ function MainApp() {
           <Route path="/requests/:id" element={<RequestPage profile={profile} />} />
           <Route path="/employees" element={<Legacy to={(q) => rest('/manpower?tab=employees', q)} />} />
           <Route path="/employees/:id" element={<EmployeeProfilePage profile={profile} />} />
+          <Route path="/rules" element={<RulesPage profile={profile} />} />
           <Route path="/more" element={<MorePage profile={profile} />} />
           <Route path="/notifications" element={<NotificationsPage profile={profile} />} />
           <Route path="/controllers" element={<Legacy to={(q) => (q.get('tab') === 'calendar' ? rest('/calendar?board=controllers', q, ['tab']) : rest(`/manpower?tab=controllers&sub=${q.get('tab') === 'morning' ? 'morning' : 'cover'}`, q, ['tab']))} />} />

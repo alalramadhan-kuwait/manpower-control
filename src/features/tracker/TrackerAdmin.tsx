@@ -1,7 +1,7 @@
 // Admin of the progress tracker (Section Head): the bar chart (import, items and activities on / off), the step
 // pre-requisites and targets, the WhatsApp number, the TEST clock, Reset test and Publish, the engineer links, the change log.
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { STAGES, type EquipView } from '@/core/tracker';
 import { barchartRows, parseCsv } from '@/core/tracker/csv';
 import { importBarchart, publishTracker, resetTest, setActivity, setEquipment, setStep, setTrackerSettings, type TrackerData } from '@/data/tracker';
@@ -22,7 +22,6 @@ export function TrackerAdmin({ data, eqs, by = 'Section Head', onDone }: { data:
   const t = data.tracker; const nav = useNavigate();
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [wa, setWa] = useState(t.settings.whatsapp ?? '');
-  const [tolAbs, setTolAbs] = useState(String(t.settings.qtyTolAbs ?? 10)); const [tolRel, setTolRel] = useState(String((t.settings.qtyTolRel ?? 0.01) * 100));
   const [clock, setClock] = useState(() => { try { return localStorage.getItem(clockKey(t.id)) ?? ''; } catch { return ''; } });
   const [q, setQ] = useState('');
   async function run(f: () => Promise<unknown>, msg: string) { setBusy(true); setErr(null); try { await f(); onDone(msg); } catch (e) { setErr(e); } finally { setBusy(false); } }
@@ -53,13 +52,10 @@ export function TrackerAdmin({ data, eqs, by = 'Section Head', onDone }: { data:
         </> : <p className="text-sm text-slate-600">This is the live tracker. Try changes on the test one first.</p>}
       </Section>
 
-      <Section title="Update intelligence · count tolerance">
-        <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
-          <Field label="Absolute (units)"><input className="input" inputMode="numeric" value={tolAbs} onChange={(e) => setTolAbs(e.target.value)} /></Field>
-          <Field label="Relative (%)"><input className="input" inputMode="decimal" value={tolRel} onChange={(e) => setTolRel(e.target.value)} /></Field>
-          <Button variant="secondary" disabled={busy} onClick={() => run(() => setTrackerSettings(t.id, { ...t.settings, qtyTolAbs: Number(tolAbs) || 0, qtyTolRel: (Number(tolRel) || 0) / 100 }), 'Tolerance saved.')}>Save</Button></div>
-        <p className="text-[11px] text-slate-500">Two cumulative counts of the same work (drums) within either limit are one count, the higher kept, no warning. Software defaults 10 units / 1 %: not approved engineering limits, to be validated by the site. Never applied to readings, pressures, temperatures, lab results or inspection acceptance.</p>
-      </Section>
+      <section className="flex items-center gap-2 rounded-2xl bg-white p-3 text-sm ring-1 ring-slate-200">
+        <span className="min-w-0 flex-1"><b className="text-brand-600">Count tolerance and no-update hours</b><span className="block text-[11px] text-slate-500">Now organization rules, the same for every tracker.</span></span>
+        <Link to="/rules?group=tracker" className="shrink-0 text-[12px] font-semibold text-brand-700">Change on the Rules page ›</Link>
+      </section>
 
       <Section title="WhatsApp number">
         <div className="flex gap-2"><input className="input" inputMode="numeric" placeholder="965XXXXXXXX (no +)" value={wa} onChange={(e) => setWa(e.target.value.replace(/\D/g, ''))} />

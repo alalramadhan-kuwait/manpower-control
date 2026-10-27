@@ -1091,7 +1091,8 @@ const ASK_NAME: Record<string, string> = { 'CV shells': 'Control valves', 'Pumps
  *  steps' times, the item's own changes (remark, hold, stage) and drum entries all count as an update. Items on hold,
  *  finished or not yet due are not asked. Latest-first is the oldest update first. */
 export function staleItems(d: TrkData, now: number, limits: { normal?: number; critical?: number; small?: number } = {}): StaleItem[] {
-  const lim = { ...STALE_H, normal: d.settings.staleH ?? STALE_H.normal, ...limits };
+  // the hours are a rule (Rules page), the same for every tracker
+  const lim = { ...STALE_H, ...limits };
   const w = miWeighted(d, now, equipViews(d, now));
   const spare = new Map((w?.items ?? []).map((i) => [i.key, i.spareD]));
   const seen = new Set<string>(); const out: StaleItem[] = [];

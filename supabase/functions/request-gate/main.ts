@@ -10,6 +10,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import { requestFromHeader, serverCheck, typeInfo, recordOf } from '../../../src/data/gateServer';
 import type { GateRequest, GateType } from '../../../src/core/requests/gate';
 import { supabase as admin } from './supabase-shim';
+import { loadAppRules } from '../../../src/data/rules';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -23,6 +24,8 @@ interface SubmitBody { action: 'submit' | 'check'; type: GateType; employeeId: s
 interface DecideBody { action: 'decide'; id: string; approve: boolean; note?: string; accepted?: unknown[] }
 
 Deno.serve(async (req) => {
+  // the organization rules as they stand now (Rules page), before anything is computed
+  if (req.method !== 'OPTIONS') await loadAppRules();
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return reply(405, { error: 'Use POST.' });
   try {

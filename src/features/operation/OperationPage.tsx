@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { minimumsText, modeOn, unitsOn, type OperatingMode, type UnitSection } from '@/core/modes';
 import { isValidIsoDate } from '@/core/roster';
-import { cancelPeriod, fetchOperationPlan, saveMode, saveUnitSection, schedulePeriod, type PeriodRow } from '@/data/modes';
+import { cancelPeriod, fetchOperationPlan, saveMode, schedulePeriod, type PeriodRow } from '@/data/modes';
 import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, Card, ErrorBox, Field, PageHeader, Spinner, cx } from '@/ui/components';
 import { localToday, shortDate } from '@/ui/leave';
@@ -149,23 +149,22 @@ export default function OperationPage({ profile }: { profile: UserProfile }) {
   );
 }
 
-function UnitSheet({ unit, onClose, onDone }: { unit: UnitSection; onClose: () => void; onDone: (m: string) => void }) {
-  const { busy, err, run } = useRun(onDone);
-  const [panel, setPanel] = useState(unit.panelMin); const [field, setField] = useState(unit.fieldMin);
-  const num = (v: number, set: (n: number) => void, label: string, max: number) => (
-    <Field label={label}><input type="number" inputMode="numeric" min={0} max={max} className="input" value={v} onChange={(e) => set(Math.max(0, Math.min(max, Number(e.target.value) || 0)))} /></Field>
-  );
+function UnitSheet({ unit, onClose }: { unit: UnitSection; onClose: () => void; onDone: (m: string) => void }) {
   return (
     <BottomSheet open onClose={onClose} title={unit.label}>
-      <div className="space-y-4">
+      <div className="space-y-3">
         <p className="text-xs text-slate-500">Operators each crew needs for {unit.label} while it runs.</p>
-        <div className="grid grid-cols-2 gap-3">{num(panel, setPanel, 'Panel', 5)}{num(field, setField, 'Field', 10)}</div>
-        {err != null && <ErrorBox error={err} />}
-        <div className="flex gap-2"><Button variant="secondary" className="flex-1" onClick={onClose}>Close</Button>
-          <Button className="flex-1" disabled={busy} onClick={() => run(() => saveUnitSection(unit.code, { panelMin: panel, fieldMin: field }), `${unit.label}: Panel ${panel} · Field ${field} per crew.`)}>{busy ? 'Saving…' : 'Save'}</Button></div>
+        <p className="text-sm text-slate-800">Panel <b>{unit.panelMin}</b> · Field <b>{unit.fieldMin}</b> per crew</p>
+        <RulesLink to={`/rules?group=crew`} />
+        <Button variant="secondary" className="w-full" onClick={onClose}>Close</Button>
       </div>
     </BottomSheet>
   );
+}
+
+/** The minimums are organization rules now: changed on the Rules page, with a reason, kept in its history. */
+function RulesLink({ to }: { to: string }) {
+  return <Link to={to} className="flex min-h-10 items-center justify-between rounded-xl bg-brand-50 px-3 text-[12px] font-semibold text-brand-700">Change on the Rules page<span>›</span></Link>;
 }
 
 function useRun(onDone: (m: string) => void) {
@@ -216,7 +215,11 @@ function ModeSheet({ mode, fromSections, onClose, onDone }: { mode: OperatingMod
       <div className="space-y-4">
         <Field label="Name"><input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Shutdown, One train" /></Field>
         <p className="-mt-2 text-xs text-slate-500">Minimum per crew:</p>
-        <div className="-mt-2 grid grid-cols-2 gap-3">{num('controllerMin', 'Controller', 5)}{!(mode?.isDefault && fromSections) && num('panelMin', 'Panel', 10)}{num('panelGrade14Min', 'of them Grade 14+', 10)}{!(mode?.isDefault && fromSections) && num('fieldMin', 'Field', 20)}</div>
+        {mode ? <>
+          <p className="-mt-2 text-sm text-slate-800">{minimumsText({ controllerMin: mode.controllerMin, panelMin: mode.panelMin, panelGrade14Min: n.panelGrade14Min, fieldMin: mode.fieldMin })}</p>
+          <RulesLink to="/rules?group=crew" />
+          <div className="grid grid-cols-2 gap-3">{num('panelGrade14Min', 'of them Grade 14+', 10)}</div>
+        </> : <div className="-mt-2 grid grid-cols-2 gap-3">{num('controllerMin', 'Controller', 5)}{num('panelMin', 'Panel', 10)}{num('panelGrade14Min', 'of them Grade 14+', 10)}{num('fieldMin', 'Field', 20)}</div>}
         <Field label="Note (optional)"><input className="input" value={note} onChange={(e) => setNote(e.target.value)} /></Field>
         {mode && !mode.isDefault && <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Can be scheduled</label>}
         {mode?.isDefault && <p className="text-xs text-slate-500">{fromSections ? 'Applies while any unit section runs; Panel and Field are the sum of the sections running.' : 'Applies to every day without a period.'}</p>}

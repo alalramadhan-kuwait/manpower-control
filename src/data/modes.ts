@@ -41,14 +41,10 @@ const codeOf = (label: string) => label.trim().toLowerCase().replace(/[^a-z0-9]+
 
 export async function saveMode(v: { code?: string; label: string; controllerMin: number; panelMin: number; panelGrade14Min: number; fieldMin: number; note: string | null; isActive?: boolean }) {
   const row = { label: v.label.trim(), controller_min: v.controllerMin, panel_min: v.panelMin, panel_grade14_min: v.panelGrade14Min, field_min: v.fieldMin, note: v.note, ...(v.isActive !== undefined ? { is_active: v.isActive } : {}) };
-  const { error } = v.code ? await supabase.from('operating_modes').update(row).eq('code', v.code) : await supabase.from('operating_modes').insert({ ...row, code: codeOf(v.label) });
+  // an existing mode's Controller / Panel / Field minimums change only on the Rules page (with a reason, kept)
+  const { controller_min: _c, panel_min: _p, field_min: _f, ...kept } = row; void _c; void _p; void _f;
+  const { error } = v.code ? await supabase.from('operating_modes').update({ ...kept, panel_grade14_min: Math.min(v.panelGrade14Min, v.panelMin) }).eq('code', v.code) : await supabase.from('operating_modes').insert({ ...row, code: codeOf(v.label) });
   if (error) throw plain(error);
-  dataChanged();
-}
-/** Section Head: the Panel / Field Operators each crew needs for a unit section while it runs. */
-export async function saveUnitSection(code: string, v: { panelMin: number; fieldMin: number }) {
-  const { error } = await supabase.from('unit_sections').update({ panel_min: v.panelMin, field_min: v.fieldMin }).eq('code', code);
-  if (error) throw /row-level security/.test(error.message) ? new Error('Only the Section Head can change the unit sections.') : error;
   dataChanged();
 }
 export async function schedulePeriod(v: { modeCode: string; start: string; end: string; note: string | null }) {

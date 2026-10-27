@@ -12,6 +12,7 @@ import { addDaysIso, crewsByShift } from '../../../src/core/roster';
 import { DEFAULT_SHIFT_ALERTS, alertText, dueShifts, nextShift, type AlertFacts, type ShiftAlertSettings, type ShiftStart } from '../../../src/core/shiftAlerts';
 import { fetchManpowerInputs } from '../../../src/data/manpower';
 import { supabase as admin } from './supabase-shim';
+import { loadAppRules } from '../../../src/data/rules';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -113,6 +114,8 @@ async function staffUser(req: Request): Promise<string | null> {
 }
 
 Deno.serve(async (req) => {
+  // the organization rules as they stand now (Rules page), before anything is computed
+  if (req.method !== 'OPTIONS') await loadAppRules();
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   try {
     const cfg = await config();

@@ -18,7 +18,7 @@ export function AskUpdates({ data, now, by }: { data: TrackerData; now: number; 
   const picked = items.filter((i) => !off.has(i.key));
   const text = askText(picked, now, { name: `${data.tracker.title}${scope === 'all' ? '' : scope === 'main' ? ' · Main equipment' : ' · Small jobs'}`, test: data.tracker.mode === 'test', by });
   const wa = (data.settings.whatsapp ?? '').replace(/\D/g, '');
-  const normal = data.settings.staleH ?? STALE_H.normal;
+  const normal = STALE_H.normal;
   const count = (s: Scope) => all.filter((i) => s === 'all' || (s === 'small') === i.small).length;
   return (
     <div className="space-y-3">
