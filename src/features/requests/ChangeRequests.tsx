@@ -205,7 +205,8 @@ export function ChangeRequestSheet({ req, name, isHead, onClose, onDone }: { req
       .then(([inputs, approvals, names, counts]) => setState({ inputs, approvals, by: req.requested_by ? names.get(req.requested_by) ?? null : null, changes: counts.get(req.employee_id) ?? 0 })).catch(setErr);
   }, [req, today]);
   const person = state?.inputs.people.find((p) => p.id === req.employee_id) ?? null;
-  const records: MpAbsence[] = state ? state.inputs.absences.filter((a) => req.record_ids.includes(a.id ?? '') && a.inCurrentPlan !== false && (a.status === 'approved' || a.status === 'planned')) : [];
+  // a part that started without approval (lapsed) is still the leave this request moves
+  const records: MpAbsence[] = state ? state.inputs.absences.filter((a) => req.record_ids.includes(a.id ?? '') && (a.inCurrentPlan !== false || a.lapsed) && (a.status === 'approved' || a.status === 'planned')) : [];
   const stale = !!state && open && !req.replan && records.length !== req.record_ids.length;
   const valid = isValidIsoDate(start) && isValidIsoDate(end) && end >= start;
   const changed = start !== req.new_start || end !== req.new_end || estimated !== req.estimated;
