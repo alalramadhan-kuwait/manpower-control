@@ -1,7 +1,8 @@
 // The review list of update intelligence: one compact row per proposal, expandable; Apply · Edit · Dismiss · Source.
 // One tap applies an ordinary permitted change (a step time, a status line, drums, a planning figure); a new step, a
 // defect or a hold opens for a look first (the name or the reason can be edited); nothing safety-critical is changed here.
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { phases } from '@/core/tracker';
 import { CLASS_LABEL, DEPT_SHORT } from '@/core/tracker/intel';
 import { applyProposal, reviewProposal, type ProposalRow } from '@/data/trackerIntel';
 import type { TrackerData } from '@/data/tracker';
@@ -12,6 +13,21 @@ export const when = (iso: string) => { const d = new Date(Date.parse(iso) + KW);
 const DOT: Record<string, string> = { ready: 'bg-status-green', review: 'bg-amber-500', conflict: 'bg-status-red', info: 'bg-slate-300', applied: 'bg-brand-500', dismissed: 'bg-slate-200' };
 const STATUS_WORD: Record<string, string> = { older: 'Older', ready: 'Ready', review: 'Review', conflict: 'Conflict', info: 'Info', applied: 'Applied', dismissed: 'Dismissed' };
 const TYPE_ICON: Record<string, string> = { finish_step: '✓', start_step: '▶', status_line: '✎', drums: '🛢', new_step: '＋', defect: '⚠', hold: '⛔', hold_release: '▶', risk: '◔', planning: '％', info: 'ℹ', review: '?' };
+/** What applying the proposal does to the progress (owner, 27 Oct 2026: say how much the progress changes). Measured
+ *  progress counts a step when it is finished; a started step shows what it adds when it finishes. */
+function progressEffect(d: TrackerData, p: ProposalRow): string | null {
+  if (!['start_step', 'finish_step', 'new_step'].includes(p.type)) return p.type === 'status_line' || p.type === 'info' || p.type === 'review' ? 'No progress change (a note only).' : null;
+  if (p.type === 'new_step') return 'No progress change: an added step has no plan hours.';
+  const now = Date.now();
+  const snap = (x: TrackerData) => { const w = phases(x, now).mi.weighted; const it = w?.items.find((i) => i.key === p.key || i.tag === p.tag); return { item: it?.physPct ?? null, total: w?.actualPct ?? null }; };
+  const withAct = (patch: { actualStart?: string; actualFinish?: string }) => ({ ...d, activities: d.activities.map((a) => (a.id === p.activityId ? { ...a, actualStart: a.actualStart ?? patch.actualStart ?? null, actualFinish: patch.actualFinish ?? a.actualFinish } : a)) }) as TrackerData;
+  const t = new Date(now).toISOString();
+  const b = snap(d), done = snap(withAct({ actualStart: t, actualFinish: t }));
+  const fmt = (x: { item: number | null; total: number | null }, y: { item: number | null; total: number | null }) =>
+    [x.item != null && y.item != null ? `${p.tag} ${x.item}% → ${y.item}%` : null, x.total != null && y.total != null ? (x.total === y.total ? `M & I stays ${x.total}%` : `M & I ${x.total}% → ${y.total}%`) : null].filter(Boolean).join(' · ');
+  if (p.type === 'finish_step') return `Progress ${fmt(b, done)}`;
+  return `No progress change now. When this step finishes: ${fmt(b, done)}`;
+}
 const editable = (p: ProposalRow) => p.type === 'status_line' || p.type === 'new_step' || p.type === 'defect' || p.type === 'hold';
 const canApply = (p: ProposalRow) => ['finish_step', 'start_step', 'status_line', 'drums', 'new_step', 'defect', 'hold', 'hold_release', 'planning'].includes(p.type) && (p.status === 'ready' || p.status === 'review' || p.status === 'conflict');
 
@@ -34,19 +50,21 @@ export function ProposalRowView({ p, d, canEdit, onDone, defaultOpen = false, pi
     try { await reviewProposal(p.id, 'dismissed', note || 'dismissed'); onDone(`${p.tag ?? 'Proposal'}: dismissed.`); } catch (e) { setErr(e); } finally { setBusy(false); }
   }
   const done = p.status === 'applied' || p.status === 'dismissed';
+  const effect = useMemo(() => (open && !done && !pick ? progressEffect(d, p) : null), [open, done, pick, d, p]);
   return (
     <div className={cx('px-3 py-1.5', done && 'opacity-70')}>
       <button type="button" aria-pressed={pick ? pick.checked : undefined} onClick={() => (pick ? pick.toggle() : setOpen((x) => !x))} className="flex min-h-9 w-full items-start gap-2 text-left">
         {pick ? <span aria-hidden className={cx('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[12px] font-bold ring-1', pick.checked ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-transparent ring-slate-300')}>✓</span>
           : <span className={cx('mt-1.5 h-2 w-2 shrink-0 rounded-full', DOT[p.status])} />}
         <span className="min-w-0 flex-1">
-          <span className="block text-[13px] font-semibold leading-snug text-slate-900"><span className="mr-1 text-slate-500">{TYPE_ICON[p.type]}</span>{p.title}</span>
+          <span className="block text-[13px] font-semibold leading-snug text-slate-900">{!p.title.includes(TYPE_ICON[p.type]) && <span className="mr-1 text-slate-500">{TYPE_ICON[p.type]}</span>}{p.title}</span>
           <span className="block truncate text-[11px] text-slate-500">{CLASS_LABEL[p.classification]} · {DEPT_SHORT[p.department]} {p.reportDate}{p.issues.length ? ` · ${p.issues[0]}` : ''}{p.status === 'applied' && p.appliedRef ? ` · ${p.appliedRef}` : ''}</span>
         </span>
         <span className={cx('shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold', p.status === 'ready' ? 'bg-green-100 text-green-900' : p.status === 'review' ? 'bg-amber-100 text-amber-900' : p.status === 'conflict' ? 'bg-red-100 text-red-900' : p.status === 'applied' ? 'bg-brand-100 text-brand-700' : 'bg-slate-100 text-slate-600')}>{STATUS_WORD[(p as { superseded?: boolean }).superseded ? 'older' : p.status]}</span>
       </button>
       {open && !pick && (
         <div className="mb-1 ml-4 space-y-1.5 text-[12px] text-slate-700">
+          {effect && <p className="rounded-lg bg-brand-50 px-2 py-1 font-semibold tabular-nums text-brand-800">{effect}</p>}
           {p.detail && <p>{p.detail}</p>}
           {p.reason && <p className="text-slate-500">Why: {p.reason}</p>}
           {p.issues.length > 0 && <ul className="text-red-800">{p.issues.map((i) => <li key={i}>⚠ {i}</li>)}</ul>}

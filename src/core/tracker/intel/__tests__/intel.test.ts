@@ -55,13 +55,21 @@ describe('acceptance reports', () => {
   });
   it('3 · R-201/203/204 collector ring: location and repair status kept apart, nothing concluded complete', () => {
     const ops = run('R-201/203/204: Collector ring under repair.');
-    // repair family: the reactors' repair step starts, no step is added for the ring itself
-    expect(ops.proposals.filter((p) => p.type === 'start_step').map((p) => `${p.tag} ${p.activityName}`)).toEqual(['R-12-201 Repair of thermowell brackets', 'R-12-203 Repair of thermowell brackets', 'R-12-204 Repair of thermowell brackets']);
-    expect(ops.proposals.some((p) => p.type === 'new_step')).toBe(false);
+    // owner, 27 Oct 2026: a collector ring repair is not the thermowell bracket repair; that step is not started, a step
+    // for the ring is suggested for review on each reactor
+    expect(ops.proposals.filter((p) => p.type === 'start_step').length).toBe(0);
+    expect(ops.proposals.filter((p) => p.type === 'new_step' && p.status === 'review' && /collector ring/i.test(p.title)).map((p) => p.tag)).toEqual(['R-12-201', 'R-12-203', 'R-12-204']);
     expect(ops.proposals.filter((p) => p.type === 'finish_step').length).toBe(0);
     const mm = run('R-201/203/204: Collector ring shifted to site.', MM);
     expect(mm.proposals.filter((p) => p.classification === 'location').length).toBe(3);
     expect(mm.proposals.some((p) => p.type === 'finish_step' || p.type === 'start_step')).toBe(false);
+  });
+  it('3b · a general repair step ("Repair if required") takes any repair; a named one only its own object', () => {
+    const d = data(); const a = d.activities.find((x) => x.key === 'R-12-203' && /thermowell/i.test(x.activity))!; a.activity = 'Repair if required';
+    const r = run('R-203: Collector ring under repair.', META, d);
+    expect(r.proposals.filter((p) => p.type === 'start_step').map((p) => p.activityName)).toEqual(['Repair if required']);
+    const t = run('R-201: Thermowell brackets repair in progress.');
+    expect(t.proposals.filter((p) => p.type === 'start_step').map((p) => p.activityName)).toEqual(['Repair of thermowell brackets']);
   });
   it('4 · R-202: completed steps proposed, readiness shown, inspection not accepted', () => {
     const r = run('R-202: Internal cleaning done. Outlet de-choking done. Ready for inspection.');

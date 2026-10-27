@@ -75,6 +75,17 @@ const FAMILIES: [string, RegExp][] = [
   ['boxup', /\b(box[\s-]?up|fix(ing)? back|re-?fix\w*|re-?install\w*|install\w*|assembl\w*|tightening|de-?blind\w*|connect\w*)\b/i],
   ['opening', /\b(remov\w*|drop\w*|dismantl\w*|open\w*|pull(ed)? out|disconnect\w*|blind\w*|erect\w*|scaffold\w*|insulation)\b/i]];
 const familyOf = (text: string): string | null => FAMILIES.find(([, re]) => re.test(text))?.[0] ?? null;
+/** Families whose steps are about one object (owner, 27 Oct 2026: a collector ring repair is not the thermowell bracket
+ *  repair): a report joins such a step only when it names the same object or the step is general ("Repair if required").
+ *  Cleaning and inspection sub-items still join their family's step whatever they name (no micro-tracking). */
+const OBJECT_FAMILIES = new Set(['repair', 'opening', 'boxup']);
+const FILLER = new Set(['if', 'required', 'requir', 'possible', 'possibl', 'need', 'needed', 'any', 'per', 'work', 'job', 'progress', 'done', 'complet', 'pend', 'pending', 'start', 'start', 'from', 'into', 'out', 'back', 'item', 'equipment', 'side']);
+const objectWords = (text: string) => words(text).filter((w) => !FAMILIES.some(([, re]) => re.test(w))).map(stem).filter((w) => !FILLER.has(w) && w.length > 2);
+const fitsFamilyStep = (fam: string, report: string, step: string) => {
+  if (!OBJECT_FAMILIES.has(fam)) return true;
+  const st = objectWords(step), rp = objectWords(report);
+  return st.length === 0 || rp.length === 0 || rp.some((w) => st.includes(w));
+};
 const INSPECTION_SCOPE = /\b(rtj|ring[\s-]?(type )?joints?|flanges? (faces?|inspection|grooves?)|grooves?|gasket (face|seat))\b/i;
 const OPS_ACTION = /\b(handover|hand over|blind|gas test|permit|clearance|isolat|purge|n2|nitrogen|process)\b/i;
 
@@ -223,13 +234,13 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
         }
         // a sub-item of a work family → the item's step of that family, marked running (no new step)
         const fam = familyOf(f.text);
-        const famSteps = fam ? acts.filter((a) => familyOf(a.activity) === fam) : [];
+        const famSteps = fam ? acts.filter((a) => familyOf(a.activity) === fam && fitsFamilyStep(fam, nounOnly, a.activity)) : [];
         const byFit = (xs: TrkActivity[]) => [...xs].sort((a, b) => overlap(nounOnly, b.activity) - overlap(nounOnly, a.activity));
         const famStep = byFit(famSteps.filter((a) => a.actualStart && !a.actualFinish))[0] ?? byFit(famSteps.filter((a) => !a.actualStart))[0] ?? null;
         if (famStep) {
           const changed = later(famStep.updatedAt, at);
           if (!famStep.actualStart) out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: famStep.id, activityName: famStep.activity, type: 'start_step', status: changed ? 'conflict' : 'ready', classification: 'step_in_progress',
-            title: `${e.tag}: ▶ ${famStep.activity}`, detail: `${sentence(f.text)}: part of this ${fam} step, which starts with it. Sub-items are not tracked one by one; the step is finished when the whole work is reported done.`,
+            title: `${e.tag}: ▶ ${famStep.activity}`, detail: `"${sentence(f.text)}" starts this step. It finishes when the whole ${fam} work is reported done.`,
             current: { actualStart: null }, proposed: { actualStart: eventAt }, reason: `${dept} reports ${fam} work on the item`, evidence: ev, issues: changed ? [`the step changed in the tracker after the report (${fmt(famStep.updatedAt!)})`] : [] }));
           else out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: famStep.id, activityName: famStep.activity, type: 'info', status: 'info', classification: 'already_recorded',
             title: `${e.tag}: ${f.text} · part of ▶ ${famStep.activity}`, detail: `${fam} in progress since ${fmt(famStep.actualStart!)}; this sub-item is noted, not a step of its own.`, current: { actualStart: famStep.actualStart }, proposed: {}, reason: 'Sub-item of a running step', evidence: ev }));
@@ -237,7 +248,9 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
         }
         // a family with every step finished: more of the same work is a workflow change (re-test, additional cleaning); any
         // other sub-item with no step of its family on the item is noted, never a step of its own
-        if (fam && !(famSteps.length && WORKFLOW.test(f.text))) {
+        // an object family naming another object (collector ring, not the thermowell brackets): a step to suggest, below
+        const otherObject = !!fam && OBJECT_FAMILIES.has(fam) && objectWords(nounOnly).length > 0 && acts.some((a) => familyOf(a.activity) === fam);
+        if (fam && !otherObject && !(famSteps.length && WORKFLOW.test(f.text))) {
           out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: null, activityName: null, type: 'info', status: 'info', classification: 'info', title: `${e.tag}: ${f.text}`,
             detail: famSteps.length ? `${fam} already finished on this item; noted.` : `${fam} work noted on the item (no ${fam} step in its plan; sub-items are not tracked one by one).`, current: {}, proposed: {}, reason: 'Sub-item noted', evidence: ev }));
           continue;
