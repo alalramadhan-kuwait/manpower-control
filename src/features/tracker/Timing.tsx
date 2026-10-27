@@ -2,7 +2,7 @@
 // corrected), plan vs actual durations, and the record exported for future shutdowns.
 import { useEffect, useState } from 'react';
 import { Download } from 'lucide-react';
-import { sortActs, blindLink, neutLink, kwDay, kwTime, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type StepTiming, type Timing as T, type TrkActivity, type TrkStep } from '@/core/tracker';
+import { isBufferStep, sortActs, blindLink, neutLink, kwDay, kwTime, stepTiming, stepTimingCsv, timing, timingCsv, timingSummary, type StepTiming, type Timing as T, type TrkActivity, type TrkStep } from '@/core/tracker';
 import { setActivity, setStep } from '@/data/tracker';
 import { Button, ErrorBox, Field, cx } from '@/ui/components';
 import { CRow, MenuBtn, RowBtn, RowList, Tile } from './ui';
@@ -71,7 +71,7 @@ export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, n
   ) : undefined;
   return (
     <>
-      <CRow dot={dot} faded={!a.tracked} title={a.activity} sub={<><span className={cx(late && a.tracked && t.state !== 'FINISHED' && 'font-semibold text-status-red')}>{sub}</span>{a.actualNote ? <i> · {a.actualNote}</i> : null}</>} action={action}
+      <CRow dot={dot} faded={!a.tracked} title={a.activity} sub={<>{a.tracked && t.state !== 'FINISHED' && isBufferStep(a.activity) && <span className="mr-1 rounded border border-dashed border-amber-500 px-1 text-[10px] font-bold text-amber-800">Buffer</span>}<span className={cx(late && a.tracked && t.state !== 'FINISHED' && 'font-semibold text-status-red')}>{sub}</span>{a.actualNote ? <i> · {a.actualNote}</i> : null}</>} action={action}
         menu={menu} />
       {err != null && <ErrorBox error={err} />}
     </>

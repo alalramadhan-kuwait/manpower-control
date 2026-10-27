@@ -1289,3 +1289,21 @@ export function putBackRows(d: Pick<TrkData, 'equipment' | 'activities' | 'putBa
   const rank = { removed: 0, serviced: 1, installed: 2 } as const;
   return [...own, ...fromItems].sort((a, b) => rank[a.status] - rank[b.status] || a.tag.localeCompare(b.tag, 'en', { numeric: true }));
 }
+
+// ── Buffer steps (owner, 27 Oct 2026): "possible repair or scaffolding are not always needed; highlight them as buffer
+// to catch up if late, they can be skipped". A step is a buffer when its text says it is conditional (possible, if
+// required / needed, as required, optional) or it is scaffolding. A condition inside brackets that is about the
+// scaffolding ("Shell pull out (scaffolding modification as required)") does not make the step itself a buffer.
+// Nothing is skipped by itself: the Section Head marks a buffer step Not required when it is not needed.
+const BUFFER_RE = /\b(possibl[ey]|if (required|needed|any|found|necessary)|as (required|needed)|where required|optional|scaffold\w*)\b/i;
+export const isBufferStep = (activity: string) => BUFFER_RE.test(activity.replace(/\([^)]*scaffold[^)]*\)?/gi, ' '));
+export interface BufferCatchUp { steps: TrkActivity[]; hours: number; forecast: number | null; forecastIfSkipped: number | null; p6Finish: number | null; late: boolean }
+/** The item's open buffer steps and what skipping them all would do to its forecast finish (the tracker's own forecast). */
+export function bufferCatchUp(d: TrkData, now: number, key: string): BufferCatchUp | null {
+  const open = d.activities.filter((a) => a.key === key && a.tracked && !a.detail && a.group !== 'Operations' && !a.actualStart && isBufferStep(a.activity));
+  if (!open.length) return null;
+  const ids = new Set(open.map((a) => a.id));
+  const item = (x: TrkData) => phases(x, now).mi.weighted?.items.find((i) => i.key === key) ?? null;
+  const b = item(d), a = item({ ...d, activities: d.activities.map((x) => (ids.has(x.id) ? { ...x, tracked: false } : x)) });
+  return { steps: open, hours: open.reduce((t, x) => t + (x.durationH ?? 0), 0), forecast: b?.forecast ?? null, forecastIfSkipped: a?.forecast ?? null, p6Finish: b?.p6Finish ?? null, late: !!b && b.svD < -0.5 };
+}

@@ -16,7 +16,7 @@ import { BlindList } from '@/features/tracker/BlindList';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
-import { putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
+import { bufferCatchUp, isBufferStep, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { addReturnItem, setReturnItem, BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -281,6 +281,29 @@ function lastUpdate(d: TrackerData, keys: string[]): number | null {
   return ts.length ? Math.max(...ts) : null;
 }
 const ago = (t: number, now: number) => { const h = Math.round((now - t) / H); return h < 1 ? 'just now' : `${h} h ago`; };
+/** Buffer steps of the item (owner, 27 Oct 2026): not always needed; skipping them is the way to catch up when late.
+ *  Shows what skipping them all would do to the forecast finish; the Section Head skips one with one tap (Undo). */
+function BufferBox({ d, k, now, head, done }: { d: TrackerData; k: string; now: number; head: boolean; done: Done }) {
+  const b = useMemo(() => bufferCatchUp(d, now, k), [d, now, k]);
+  const [open, setOpen] = useState(false);
+  if (!b) return null;
+  const at = (t: number) => `${kwDay(t)} ${kwTime(t)}`;
+  const saves = b.forecast != null && b.forecastIfSkipped != null ? Math.round((b.forecast - b.forecastIfSkipped) / H) : null;
+  return (
+    <div className={cx('rounded-xl px-3 py-2 text-[12px] ring-1', b.late ? 'bg-amber-50 text-amber-950 ring-amber-300' : 'bg-slate-50 text-slate-700 ring-slate-200')}>
+      <button type="button" onClick={() => setOpen((x) => !x)} className="flex w-full items-start gap-2 text-left">
+        <span className="min-w-0 flex-1"><b>Buffer · {b.steps.length} step{b.steps.length === 1 ? '' : 's'} · {Math.round(b.hours)} h</b>{b.late ? ' · late: skip what is not needed to catch up' : ' · can be skipped if not needed'}
+          {saves != null && saves > 0 && <span className="block tabular-nums">If skipped: finish {at(b.forecast!)} → <b>{at(b.forecastIfSkipped!)}</b> ({saves} h earlier){b.p6Finish ? ` · P6 ${at(b.p6Finish)}` : ''}</span>}</span>
+        <span className="text-slate-500">{open ? '▾' : '▸'}</span></button>
+      {open && <ul className="mt-1.5 divide-y divide-amber-200/60">{b.steps.map((a) => (
+        <li key={a.id} className="flex items-center gap-2 py-1">
+          <span className="min-w-0 flex-1">{a.activity}{a.durationH ? <span className="text-slate-500"> · {a.durationH} h</span> : null}</span>
+          {head && <button type="button" onClick={async () => { await setActivity(a.id, { tracked: false, disabled_reason: 'not required: buffer step skipped' }); done(`${a.activity}: skipped (not required).`, () => setActivity(a.id, { tracked: true, disabled_reason: null })); }}
+            className="shrink-0 rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-slate-700 ring-1 ring-slate-300">Skip</button>}
+        </li>))}</ul>}
+    </div>
+  );
+}
 /** Against the bar chart: the item's forecast finish vs its P6 finish (+ ahead, − behind). */
 function VsPlan({ mi }: { mi?: MiItem }) {
   if (!mi) return null;
@@ -407,6 +430,7 @@ function ItemSheet({ d, e: e0, now = Date.now(), done, onClose }: { d: TrackerDa
           <span>📋 All steps{manage ? ' · view, edit, add, order' : ''}</span><span className="text-slate-500">{ls.filter((a) => a.actualFinish).length}/{ls.length} ›</span></button>
         <p className="text-xs text-slate-600">Last: {itemLine(d, e)}{e.updatedAt ? ` · ${when(e.updatedAt)}` : ''}</p>
         <LatestUpdate d={d} tag={e.tag} canEdit onDone={(m: string) => done(m)} />
+        <BufferBox d={d} k={keyOf(e)} now={now} head={role === 'head'} done={done} />
         {v && <ItemMore part="top" v={v} system={e.system ? views.filter((x) => x.eq.system === e.system && x.eq.tag !== e.tag) : []} groups={[...new Set(d.equipment.map((x) => x.group))]} systems={[...new Set(d.equipment.map((x) => x.system).filter((x): x is string => !!x))]}
           canManage={manage} canScope={role === 'head'} totalH={scopeImpact(d).totalH} onItem={setTag} mi={miAll.get(e.tag)} related={relatedWork(e.tag, keyOf(e), d.activities)} allIats={d.iats} lineup={d.lineup} lineupEq={d.lineupEq} tags={d.equipment.map((x) => x.tag)}
           trackerId={d.tracker.id} canEdit isHead={role === 'head'} activities={d.activities.filter((a) => a.key === keyOf(e))} now={now} iso={isolationOf(e.tag, d.points ?? [])} points={d.points ?? []} engine={d.engine} settings={d.settings} me={me}
@@ -519,7 +543,7 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
                 <div className="flex items-center gap-2 px-2.5 py-1.5">
                   <span className={cx('flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold', a.actualFinish ? 'bg-status-green text-white' : a.actualStart ? 'bg-amber-400 text-amber-950' : 'bg-slate-100 text-slate-600')}>{a.actualFinish ? '✓' : a.actualStart ? '▶' : i + 1}</span>
                   <button type="button" disabled={!!ids} onClick={() => { setOpen(on ? null : a.id); setEdit(null); setAt(''); setWhy(''); }} className="min-w-0 flex-1 text-left">
-                    <span className="block text-[13px] font-semibold leading-snug">{a.activity}</span>
+                    <span className="block text-[13px] font-semibold leading-snug">{a.activity}{!a.actualFinish && isBufferStep(a.activity) && <span title="Buffer: not always needed, can be skipped to catch up" className="ml-1.5 inline-block rounded border border-dashed border-amber-500 px-1 align-middle text-[10px] font-bold text-amber-800">Buffer</span>}</span>
                     <span className={cx('block text-[11px]', late ? 'font-semibold text-status-red' : 'text-slate-500')}>{a.actualFinish ? `Done ${ld(a.actualFinish)}${entered(a, 'actual_finish', a.actualFinish)}${tookOf(a)}` : a.actualStart ? `Started ${ld(a.actualStart)}${entered(a, 'actual_start', a.actualStart)}${spanText(a.actualStart, new Date().toISOString()) ? ` · running ${spanText(a.actualStart, new Date().toISOString())}` : ''}` : eng ? 'Added step · no plan time' : a.start ? `Plan ${ld(a.start)}${h ? ` · ${h} h` : ''}` : 'No plan time'}{late ? (lateStart ? ' · start late' : ` · finish late (plan ${ld(a.finish!)})`) : ''}{a.updatedBy && (a.actualStart || eng) ? ` · ${a.updatedBy}` : ''}</span>
                     {a.p6Activity && <span className="block text-[11px] italic text-slate-500">P6: {a.p6Activity}</span>}
                   </button>
