@@ -2,6 +2,7 @@
 // same live records as the Section Head's tracker: Dashboard (on time or not), Equipment (what needs an update, the
 // reactors' issues and temperatures), Isolation (neutralization and blinds), Small jobs & IATs. Every change is
 // stamped with the ID; Undo for a few seconds after each one.
+import { LatestUpdate } from '@/features/tracker/intel/LatestUpdate';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { ItemMore, PendingForm } from '@/features/tracker/TrackerSheets';
 import { ShutdownOverview } from '@/features/tracker/TrackerToday';
@@ -187,12 +188,12 @@ const GroupRow = ({ label, act, plan, onClick }: { label: string; act: number; p
 
 /** The Dashboard, the same in both modes; the Section Head mode adds its part below (stage review, the phases) and
  *  keeps the report in its header. */
-export function DashboardTab({ d, now, done, role, by, go, more, onItem }: { d: TrackerData; now: number; done: Done; role: EngRole; by: string; go: (t: Tab, group?: string) => void; more?: React.ReactNode; onItem?: (tag: string) => void }) {
-  return <RoleCtx.Provider value={role}><OpenItemCtx.Provider value={onItem ?? null}><Dashboard d={d} now={now} done={done} go={go} by={by} report={false} more={more} /></OpenItemCtx.Provider></RoleCtx.Provider>;
+export function DashboardTab({ d, now, done, role, by, go, more, onItem, intel }: { d: TrackerData; now: number; done: Done; role: EngRole; by: string; go: (t: Tab, group?: string) => void; more?: React.ReactNode; onItem?: (tag: string) => void; intel?: React.ReactNode }) {
+  return <RoleCtx.Provider value={role}><OpenItemCtx.Provider value={onItem ?? null}><Dashboard d={d} now={now} done={done} go={go} by={by} report={false} more={more} intel={intel} /></OpenItemCtx.Provider></RoleCtx.Provider>;
 }
 /** The Dashboard: the shutdown at a glance (end, progress, what sets the end, Operations / M & I, needs attention), the
  *  rest folded below (by group, issues, team; the Section Head's stage review and focus list). */
-function Dashboard({ d, now, go, by, done, report: withReport = true, more }: P & { report?: boolean; more?: React.ReactNode }) {
+function Dashboard({ d, now, go, by, done, report: withReport = true, more, intel }: P & { report?: boolean; more?: React.ReactNode; intel?: React.ReactNode }) {
   const [report, setReport] = useState(false); const [item, setItem] = useState<TrkEquipment | null>(null);
   const openItem = useContext(OpenItemCtx), head = useContext(RoleCtx) === 'head';
   const toItem = (tag: string) => (openItem ? openItem(tag) : setItem(d.equipment.find((e) => e.tag === tag) ?? null));
@@ -200,7 +201,8 @@ function Dashboard({ d, now, go, by, done, report: withReport = true, more }: P 
   return (<>
     {withReport && <button type="button" onClick={() => setReport(true)} className="mb-2 flex min-h-10 w-full items-center justify-center gap-2 rounded-2xl bg-whatsapp text-[14px] font-bold text-white active:opacity-90">💬 WhatsApp report</button>}
     {report && <ReportSheet d={d} now={now} by={by} onClose={() => setReport(false)} />}
-    <ShutdownOverview data={d} now={now} head={head} onItem={toItem} onGo={(to) => (to === 'todo' || to === 'late' || to === 'all' ? go('equip', to) : to === 'ho' ? go('ho') : to === 'hot' ? go('hot') : head ? go('dash', 'focus') : undefined)} />
+    {intel}
+    <ShutdownOverview data={d} now={now} head={head} onItem={toItem} onDone={(m) => done(m)} onGo={(to) => (to === 'todo' || to === 'late' || to === 'all' ? go('equip', to) : to === 'ho' ? go('ho') : to === 'hot' ? go('hot') : head ? go('dash', 'focus') : undefined)} />
     <DashFold title="Progress by group"><GroupProgress d={d} now={now} onGroup={(g) => go('equip', g)} onSmall={() => go('scope')} /></DashFold>
     <DashFold title={`Issues · ${issues ? `${issues} open` : 'none open'}`} open={issues > 0}><Issues d={d} done={done} /></DashFold>
     <DashFold title="Team today"><TeamToday now={now} /></DashFold>
@@ -433,6 +435,7 @@ function ItemSheet({ d, e: e0, now = Date.now(), done, onClose }: { d: TrackerDa
         <button type="button" onClick={() => setSteps(true)} className="flex min-h-10 w-full items-center justify-between rounded-xl bg-slate-50 px-3 text-[13px] font-bold text-brand-700 ring-1 ring-slate-200">
           <span>📋 All steps{manage ? ' · view, edit, add, order' : ''}</span><span className="text-slate-500">{ls.filter((a) => a.actualFinish).length}/{ls.length} ›</span></button>
         <p className="text-xs text-slate-600">Last: {itemLine(d, e)}{e.updatedAt ? ` · ${when(e.updatedAt)}` : ''}</p>
+        <LatestUpdate d={d} tag={e.tag} canEdit onDone={(m: string) => done(m)} />
         {v && <ItemMore part="top" v={v} system={e.system ? views.filter((x) => x.eq.system === e.system && x.eq.tag !== e.tag) : []} groups={[...new Set(d.equipment.map((x) => x.group))]} systems={[...new Set(d.equipment.map((x) => x.system).filter((x): x is string => !!x))]}
           canManage={manage} canScope={role === 'head'} totalH={scopeImpact(d).totalH} onItem={setTag} mi={miAll.get(e.tag)} related={relatedWork(e.tag, keyOf(e), d.activities)} allIats={d.iats} lineup={d.lineup} lineupEq={d.lineupEq} tags={d.equipment.map((x) => x.tag)}
           trackerId={d.tracker.id} canEdit isHead={role === 'head'} activities={d.activities.filter((a) => a.key === keyOf(e))} now={now} iso={isolationOf(e.tag, d.points ?? [])} points={d.points ?? []} engine={d.engine} settings={d.settings} me={me}

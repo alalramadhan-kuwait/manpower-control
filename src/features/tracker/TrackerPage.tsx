@@ -16,15 +16,18 @@ import { StepSheet } from './TrackerSheets';
 import { TrackerAdmin, clockKey } from './TrackerAdmin';
 import { TimingTab } from './Timing';
 import { FocusList } from './TrackerToday';
+import { PasteUpdate } from './intel/PasteUpdate';
+import { IntelSummary, UpdateIntelligence, useIntel } from './intel/UpdateIntelligence';
+import { planningView } from '@/core/tracker/intel';
 import { StateChip } from './ui';
 
-type Tab = 'today' | 'isolation' | 'guideline' | 'equipment' | 'iats' | 'timing' | 'map' | 'scope' | 'pmr' | 'report' | 'admin';
+type Tab = 'today' | 'updates' | 'isolation' | 'guideline' | 'equipment' | 'iats' | 'timing' | 'map' | 'scope' | 'pmr' | 'report' | 'admin';
 // the bar: Timing is a view of Equipment, Map a view of Sequence; Report and Admin open as sheets
 type Main = 'today' | 'equipment' | 'isolation' | 'scope' | 'iats';
 // the same tabs as the Engineer mode (25 Oct): Sequence and Map are views of Handover, Timing of Equipment, PMRs of Hot work
 const TABS: [Main, string, LucideIcon][] = [['today', 'Dashboard', LayoutDashboard], ['equipment', 'Equipment', Wrench], ['isolation', 'Handover', Handshake], ['scope', 'SD scope', ClipboardList], ['iats', 'Hot work', Flame]];
-const MAIN: Record<Tab, Main> = { today: 'today', isolation: 'isolation', equipment: 'equipment', timing: 'equipment', guideline: 'isolation', map: 'isolation', scope: 'scope', iats: 'iats', pmr: 'iats', report: 'today', admin: 'today' };
-const VIEWS: Partial<Record<Main, [Tab, string][]>> = { equipment: [['equipment', 'Items'], ['timing', 'Timing']], isolation: [['isolation', 'Isolation'], ['guideline', 'Sequence'], ['map', 'Map']] };
+const MAIN: Record<Tab, Main> = { today: 'today', updates: 'today', isolation: 'isolation', equipment: 'equipment', timing: 'equipment', guideline: 'isolation', map: 'isolation', scope: 'scope', iats: 'iats', pmr: 'iats', report: 'today', admin: 'today' };
+const VIEWS: Partial<Record<Main, [Tab, string][]>> = { today: [['today', 'Dashboard'], ['updates', 'Updates']], equipment: [['equipment', 'Items'], ['timing', 'Timing']], isolation: [['isolation', 'Isolation'], ['guideline', 'Sequence'], ['map', 'Map']] };
 const ROLE_NAME: Record<string, string> = { section_head: 'Section Head', engineer: 'Engineer', controller: 'Controller', manpower_coordinator: 'Coordinator' };
 const HEAD_VIEWS: Tab[] = ['timing', 'guideline', 'map'];
 const today = () => new Date(Date.now() + 3 * 36e5).toISOString().slice(0, 10);
@@ -67,6 +70,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const [focus, setFocus] = useState<string | null>(null);
   const [isoKind, setIsoKind] = useState<'blind' | 'neut' | undefined>(undefined); const [eqInit, setEqInit] = useState('all');
   const [sheet, setSheet] = useState<{ kind: 'step'; id: string } | { kind: 'eq'; tag: string } | null>(null);
+  const [paste, setPaste] = useState(false);
   const isHead = profile.role_code === 'section_head';
   const canEdit = ['section_head', 'manpower_coordinator', 'engineer', 'controller'].includes(profile.role_code);
   // a link to a tracker no longer active (e.g. the test copy after going live) opens the current one
@@ -129,6 +133,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
           <p className="text-xs text-slate-500">{ROLE_NAME[profile.role_code] ? `${ROLE_NAME[profile.role_code]} · ` : ''}{tracker.eventTitle ?? ''}{tracker.settings.workOrder ? ` · WO ${tracker.settings.workOrder}` : ''}</p>
         </div>
         <div className="flex shrink-0 gap-1.5">
+          {canEdit && <button type="button" onClick={() => setPaste(true)} title="Paste a departmental update" className="flex min-h-11 items-center gap-1 rounded-xl bg-brand-700 px-2.5 text-sm font-bold text-white shadow-sm active:opacity-90">📋<span className="hidden sm:inline"> Paste</span></button>}
           <button type="button" onClick={() => setTab('report')} className="flex min-h-11 items-center gap-1.5 rounded-xl bg-whatsapp px-3 text-sm font-bold text-white shadow-sm active:opacity-90"><MessageCircle className="h-4 w-4" />Report</button>
           {isHead && <button type="button" aria-label="Admin" title="Admin" onClick={() => setTab('admin')} className="flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-white text-brand-700 ring-1 ring-slate-300 active:bg-slate-50"><Settings className="h-5 w-5" /></button>}
         </div>
@@ -142,12 +147,14 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
             {badge > 0 && <span title={`${badge} ${what}`} aria-label={`${badge} ${what}`} className={cx('absolute right-1 top-0.5 min-w-[18px] rounded-full px-1 text-[10px] font-bold leading-[18px] text-white', k === 'equipment' ? 'bg-status-red' : k === 'isolation' ? 'bg-brand-500' : 'bg-status-amber')}>{badge}</span>}
           </button>; })}
       </nav>
-      {isHead && VIEWS[MAIN[tab]] && <div className={cx('mb-3 grid gap-1 rounded-xl bg-slate-200/60 p-1 print:hidden', VIEWS[MAIN[tab]]!.length > 2 ? 'grid-cols-3' : 'grid-cols-2')}>
+      {(isHead || MAIN[tab] === 'today') && VIEWS[MAIN[tab]] && <div className={cx('mb-3 grid gap-1 rounded-xl bg-slate-200/60 p-1 print:hidden', VIEWS[MAIN[tab]]!.length > 2 ? 'grid-cols-3' : 'grid-cols-2')}>
         {VIEWS[MAIN[tab]]!.map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={cx('min-h-10 rounded-lg text-sm font-semibold', tab === k ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-600')}>{l}</button>)}
       </div>}
       {refreshing && <div aria-hidden className="fixed inset-x-0 top-0 z-[80] h-1 overflow-hidden bg-brand-100"><div className="h-full w-1/3 animate-[trkbar_1s_ease-in-out_infinite] bg-brand-500" /></div>}
       {flash && <Toast msg={flash.msg} onUndo={flash.undo ? undoLast : undefined} />}
-      {tab === 'today' && <DashboardTab d={data} now={now} role={role} by={profile.display_name} done={(m, u) => done(m, true, u)}
+      {tab === 'updates' && <UpdateIntelligence d={data} canEdit={canEdit} onDone={(m) => done(m, true)} onPaste={() => setPaste(true)} />}
+      {paste && <PasteUpdate d={data} canEdit={canEdit} onClose={() => setPaste(false)} onDone={(m) => done(m, true)} />}
+      {tab === 'today' && <DashboardTab d={data} now={now} role={role} by={profile.display_name} done={(m, u) => done(m, true, u)} intel={<IntelSummary d={data} onOpen={() => setTab('updates')} />}
         go={(t, g) => { if (t === 'equip') { setEqInit(g ?? 'all'); setTab('equipment'); } else setTab(t === 'ho' ? 'isolation' : t === 'hot' ? 'iats' : t === 'scope' ? 'scope' : g === 'focus' ? 'guideline' : 'today'); }}
         onItem={(tag) => setSheet({ kind: 'eq', tag })}
         more={isHead ? <><DashFold title="Stage review"><StageReview data={data} eqs={eqs} canEdit={canEdit} onOpen={(tag) => open({ kind: 'equipment', ref: tag })} onDone={() => load(true)} /></DashFold>
@@ -275,7 +282,9 @@ function ShiftReportView({ data, now, canEdit, by, onSaved }: { data: TrackerDat
   const r = shiftReport(data, now, { notes, temps }, data.tracker.title);
   const test = data.tracker.mode === 'test';
   const [leader, setLeader] = useState(false);
-  const text = leader ? leaderReportText(data, now, { title: data.tracker.title, test, by }) : reportText(r, { test, by });
+  const { intel } = useIntel(data.tracker.id);
+  const pv = planningView(intel?.planning ?? []).latest; const planning = pv ? { planned: pv.planned, actual: pv.actual, date: pv.reportDate } : undefined;
+  const text = leader ? leaderReportText(data, now, { title: data.tracker.title, test, by, planning }) : reportText(r, { test, by, planning });
   const wa = (data.settings.whatsapp ?? '').replace(/\D/g, '');
   async function save() { setBusy(true); setErr(null); try { await saveShiftLog(data.tracker.id, sh.date, sh.shift, { notes, temps }); onSaved(); } catch (e) { setErr(e); } finally { setBusy(false); } }
   async function share() {

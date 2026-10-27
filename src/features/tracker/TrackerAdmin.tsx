@@ -22,6 +22,7 @@ export function TrackerAdmin({ data, eqs, by = 'Section Head', onDone }: { data:
   const t = data.tracker; const nav = useNavigate();
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const [wa, setWa] = useState(t.settings.whatsapp ?? '');
+  const [tolAbs, setTolAbs] = useState(String(t.settings.qtyTolAbs ?? 10)); const [tolRel, setTolRel] = useState(String((t.settings.qtyTolRel ?? 0.01) * 100));
   const [clock, setClock] = useState(() => { try { return localStorage.getItem(clockKey(t.id)) ?? ''; } catch { return ''; } });
   const [q, setQ] = useState('');
   async function run(f: () => Promise<unknown>, msg: string) { setBusy(true); setErr(null); try { await f(); onDone(msg); } catch (e) { setErr(e); } finally { setBusy(false); } }
@@ -50,6 +51,14 @@ export function TrackerAdmin({ data, eqs, by = 'Section Head', onDone }: { data:
           </div>
           <p className="text-[11px] text-slate-500">Run the test scenarios here first. Reset keeps the setup you made only if it is in the seed: set the pre-requisites and on/off after the last reset, then publish.</p>
         </> : <p className="text-sm text-slate-600">This is the live tracker. Try changes on the test one first.</p>}
+      </Section>
+
+      <Section title="Update intelligence · count tolerance">
+        <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+          <Field label="Absolute (units)"><input className="input" inputMode="numeric" value={tolAbs} onChange={(e) => setTolAbs(e.target.value)} /></Field>
+          <Field label="Relative (%)"><input className="input" inputMode="decimal" value={tolRel} onChange={(e) => setTolRel(e.target.value)} /></Field>
+          <Button variant="secondary" disabled={busy} onClick={() => run(() => setTrackerSettings(t.id, { ...t.settings, qtyTolAbs: Number(tolAbs) || 0, qtyTolRel: (Number(tolRel) || 0) / 100 }), 'Tolerance saved.')}>Save</Button></div>
+        <p className="text-[11px] text-slate-500">Two cumulative counts of the same work (drums) within either limit are one count, the higher kept, no warning. Software defaults 10 units / 1 %: not approved engineering limits, to be validated by the site. Never applied to readings, pressures, temperatures, lab results or inspection acceptance.</p>
       </Section>
 
       <Section title="WhatsApp number">

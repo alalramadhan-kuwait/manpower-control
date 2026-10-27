@@ -54,16 +54,17 @@ export type Change =
 export interface Skipped { tag: string; text: string; why: string }
 export interface ImportPlan { at: string; marker: string; changes: Change[]; skipped: Skipped[] }
 
-const words = (s: string) => s.toLowerCase().replace(/\bw\/s\b/g, 'workshop').replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !['the', 'and', 'for', 'all', 'with', 'using', 'under', 'start'].includes(w));
-const stem = (w: string) => w.replace(/(ing|ion|ed|s)$/, '').replace(/(.)\1$/, '$1');
+export const words = (s: string) => s.toLowerCase().replace(/\bw\/s\b/g, 'workshop').replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !['the', 'and', 'for', 'all', 'with', 'using', 'under', 'start'].includes(w));
+export const stem = (w: string) => w.replace(/(ing|ion|ed|s)$/, '').replace(/(.)\1$/, '$1');
 /** the step a phrase names: every main word of the phrase in the step's name (pass numbers must match); one only */
-function stepFor(phrase: string, acts: TrkActivity[]): TrkActivity | null {
+export function stepFor(phrase: string, acts: TrkActivity[]): TrkActivity | null {
   const ws = words(phrase.replace(/pass[\s-]*\d/i, 'pass')).map(stem); if (!ws.length) return null;
   const num = phrase.match(/pass[\s-]*(\d)/i)?.[1];
   const score = (a: TrkActivity) => { const aw = words(a.activity).map(stem); return (!num || new RegExp(`pass\\s*${num}\\b`, 'i').test(a.activity)) ? ws.filter((w) => aw.includes(w)).length : 0; };
   const all = acts.filter((a) => score(a) === ws.length);
   if (all.length === 1) return all[0];
-  if (all.length > 1) return null;
+  // several steps carry the words ("Dump catalyst", "Dump ceramic balls"): the one running now is the one meant
+  if (all.length > 1) { const run = all.filter((a) => a.actualStart && !a.actualFinish); return run.length === 1 ? run[0] : null; }
   // one word of the phrase missing (the item's own name: "Compressor shifted to w/s" → "Shift to workshop"), at least two found
   const near = acts.filter((a) => ws.length >= 3 && score(a) === ws.length - 1);
   // several: the one with the fewest other words ("Shift to workshop" before "Shift back from workshop")

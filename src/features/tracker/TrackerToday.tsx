@@ -7,6 +7,7 @@ import { equipmentList, lateOrHold, staleItems, stepViews, daysAsHours, CRITICAL
 import type { TrackerData } from '@/data/tracker';
 import { BottomSheet, cx } from '@/ui/components';
 import { FlagChip } from './ui';
+import { PlanningBlock } from './intel/PlanningBlock';
 
 const DAY = 864e5;
 const at = (t: number | null) => (t === null || Number.isNaN(t) ? '—' : `${kwDay(new Date(t).toISOString())} ${kwTime(new Date(t).toISOString())}`);
@@ -23,7 +24,7 @@ const STATE_WORD: Record<Banner['state'], string> = { AHEAD: 'AHEAD', BEHIND: 'B
 
 /** The shutdown at a glance (owner, 25 Oct: the situation in 5 seconds, no scrolling): the end, the progress, the 3 items
  *  that set the end, Operations and M & I in one line each, and what needs attention. Each line opens its detail. */
-export function ShutdownOverview({ data, now, head = false, onItem, onGo }: { data: TrackerData; now: number; head?: boolean; onItem: (tag: string) => void;
+export function ShutdownOverview({ data, now, head = false, onItem, onGo, onDone }: { data: TrackerData; now: number; head?: boolean; onItem: (tag: string) => void; onDone?: (msg: string) => void;
   onGo: (to: 'todo' | 'late' | 'all' | 'ho' | 'hot' | 'focus') => void }) {
   const [sheet, setSheet] = useState<'ops' | 'mi' | null>(null);
   const steps = useMemo(() => stepViews(data, now), [data, now]);
@@ -70,6 +71,8 @@ export function ShutdownOverview({ data, now, head = false, onItem, onGo }: { da
           <span className="absolute -top-1 h-4 w-0.5 bg-slate-900" style={{ left: `${Math.min(100, w.main.planPct)}%` }} /></span>
         {w.small.items > 0 && <p className="mt-1 text-[11px] text-slate-500">Small jobs {w.small.physPct}% · plan {w.small.planPct}%</p>}
       </section>}
+      {/* 2b · the official Maintenance Planning figure, apart from the tracker's own progress and forecast */}
+      <PlanningBlock d={data} tracker={w ? { planPct: w.main.planPct, actualPct: w.main.physPct } : null} onDone={onDone ?? (() => undefined)} />
       {/* 3 · what sets the end */}
       {top.length > 0 && <section className="rounded-2xl bg-white px-3 py-2 ring-1 ring-slate-200">
         <H3>Critical · setting the end</H3>

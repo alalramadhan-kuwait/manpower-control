@@ -70,7 +70,9 @@ import { qtyForecast, qtyProgress, type TrkEngine } from './qty';
 export * from './qty';
 export interface TrkSettings { /** the P6 activity relationships validated: the end forecast is no longer labelled Unverified */ p6LinksVerified?: boolean; hoTarget?: string; end?: string; workOrder?: string; whatsapp?: string; opsStart?: string; miStart?: string; miEnd?: string;
   /** the progress engine (drums, updates) on this tracker, and its forecast window / freshness rules */
-  progressV2?: boolean; fcWindow?: number; fcMin?: number; staleH?: number; miscDays?: number }
+  progressV2?: boolean; fcWindow?: number; fcMin?: number; staleH?: number; miscDays?: number;
+  /** update intelligence: the tolerance for a small difference between two cumulative counts (software defaults 10 / 1 %, site to validate) */
+  qtyTolAbs?: number; qtyTolRel?: number }
 /** A critical blind (segregation point) or a neutralization (loop or item), entered once on the Isolation page. */
 export type PointStatus = 'open' | 'in' | 'out' | 'filling' | 'soaking' | 'draining' | 'done';
 export interface TrkPoint {
@@ -733,11 +735,13 @@ function joinTags(tags: string[]): string {
   const m = xs.map((t) => t.match(/^([A-Z]{1,3}-)(\d[^-]*)$/));
   return m.every((x) => x && x[1] === m[0]![1]) ? m[0]![1] + m.map((x) => x![2]).join('/') : xs.join(', ');
 }
-export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string } = {}): string {
+export interface PlanningLine { planned: number; actual: number; date: string }
+export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string; planning?: PlanningLine } = {}): string {
   const unit = r.name.match(/U-?\s?(\d+)/i)?.[1], train = r.name.match(/TR(?:AIN)?-?\s?(\d+)/i)?.[1];
   const title = unit || train ? `${unit ? `Unit-${unit}` : ''}${unit && train ? ' ' : ''}${train ? `Train-${train}` : ''} shutdown report` : `${r.name} report`;
   const date = new Date(`${r.shift.date}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
   const out: string[] = [`*${opts.test ? '[TEST] ' : ''}${title}*`, `_${date} · ${r.shift.shift === 'D' ? 'Day' : 'Night'} shift · ${kwTime(new Date(r.at).toISOString())}_`];
+  if (opts.planning) out.push(`_Maintenance Planning (official, ${opts.planning.date}): plan ${opts.planning.planned}% · actual ${opts.planning.actual}%_`);
   const section = (head: string, lines: string[]) => { if (lines.length) out.push('', `*${head}*`, ...lines.map((l) => `- ${l}`)); };
   const merged = (sec: ReportSection) => { const by = new Map<string, string[]>(); for (const x of r.items.filter((i) => i.section === sec)) by.set(x.line, [...(by.get(x.line) ?? []), x.tag]);
     return [...by.entries()].map(([line, tags]) => `${joinTags(tags)}: ${line}`); };
@@ -775,7 +779,7 @@ export function reportText(r: ShiftReport, opts: { test?: boolean; by?: string }
 const LEADER_GROUPS = ['Reactors', 'Exchangers', 'Vessels', 'Heaters', 'Filters'];
 /** The SD scope groups, short; a 'key:' entry is a bar-chart line with no item of its own (counted by its jobs). */
 const SCOPE_SHORT: [string, string][] = [['key:RTJ / Inspection', 'RTJ'], ['Check valves', 'NRV'], ['Process piping', 'Piping'], ['CV shells', 'CV'], ['Pumps / LO', 'Pumps'], ['OPR list', 'OPR']];
-export function leaderReportText(d: TrkData, now: number, opts: { title?: string; test?: boolean; by?: string } = {}): string {
+export function leaderReportText(d: TrkData, now: number, opts: { title?: string; test?: boolean; by?: string; planning?: PlanningLine } = {}): string {
   const r = shiftReport(d, now, null, opts.title), w = r.mi.weighted;
   const unit = r.name.match(/U-?\s?(\d+)/i)?.[1], train = r.name.match(/TR(?:AIN)?-?\s?(\d+)/i)?.[1];
   const name = unit || train ? [unit && `U-${unit}`, train && `Train-${train}`].filter(Boolean).join(' ') + ' SD' : r.name;
@@ -798,6 +802,10 @@ export function leaderReportText(d: TrkData, now: number, opts: { title?: string
   out.push(`🛠 *Work done (hours):* ${w.main.physPct}% · plan ${w.main.planPct}%`,
     `📦 *Items completed:* ${main.filter((i) => i.done === i.lines).length} / ${main.length}`,
     `🟢 *Items within the end date:* ${main.filter((i) => i.forecast <= end).length} / ${main.length}`);
+  // the official Planning figure (apart from the tracker's own progress) and the holds recorded on items
+  if (opts.planning) out.push(`📐 *Maintenance Planning (official, ${opts.planning.date}):* plan ${opts.planning.planned}% · actual ${opts.planning.actual}% (${Math.round((opts.planning.actual - opts.planning.planned) * 100) / 100 >= 0 ? '+' : ''}${Math.round((opts.planning.actual - opts.planning.planned) * 100) / 100} pts)`);
+  const holds = d.equipment.filter((e) => e.tracked && e.pendingReason);
+  if (holds.length) out.push(`⛔ *Holds:* ${holds.length} · ${holds.slice(0, 4).map((e) => `${short(e.tag)} (${e.pendingReason})`).join(' · ')}${holds.length > 4 ? ` · +${holds.length - 4}` : ''}`);
   if (cp) { const s = status(cp.tag); out.push('', `🔴 *${short(cp.tag)}* (controls the end)`, ...(s ? [`• ${s}`] : [])); }
   // the items close to the end, those with the same float and status on one line
   const watch = new Map<string, { tags: string[]; line: string | null; h: string }>();
