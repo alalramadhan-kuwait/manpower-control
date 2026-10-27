@@ -231,7 +231,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
 
   return (
     <div>
-      <Link to="/shutdown" className="mb-2 inline-flex items-center gap-1 text-sm font-medium text-brand-700"><ArrowLeft className="h-4 w-4" />Shutdown teams</Link>
+      <Link to="/shutdowns?section=plans" className="mb-2 inline-flex items-center gap-1 text-sm font-medium text-brand-700"><ArrowLeft className="h-4 w-4" />Shutdown teams</Link>
       <div className="mb-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold text-brand-800">{plan.title}</h1>
@@ -268,7 +268,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
                 <ToolButton to={`/shutdown/${plan.id}/schedule`} label="Duty schedule" hint="Who works which day (print)" />
                 <ToolButton to={`/shutdown/${plan.id}/overtime`} label="Overtime sheet" hint="For approval (print)" />
                 <ToolButton to={`/shutdown/${plan.id}/memo`} label="Instruction memo" hint="For the staff, with the schedule (print)" />
-                <ToolButton to="/progress" label="Shutdown progress" hint="Steps, equipment, shift report" />
+                <ToolButton to="/shutdowns?section=progress" label="Shutdown progress" hint="Steps, equipment, shift report" />
                 <ToolButton onClick={generate} disabled={generating} label={generating ? 'Creating…' : 'Excel file'} hint="All 4 sheets in one file" />
                 <ToolButton onClick={() => setEditPattern(true)} label="Plan settings" hint="Dates, 3 on / 1 off, hours, limits" />
               </div>
@@ -334,7 +334,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
           <p>Already approved: decide now. Move the leave, or take the person off the team.</p>
           <Button className="my-1.5 min-h-9 w-full px-3 text-xs" onClick={() => setMoving(true)}>Propose new dates for all</Button>
           <ul className="mt-1 space-y-0.5">
-            {approvedLeave.map((c) => <li key={c.employeeId} className="flex items-center justify-between gap-2"><span className="truncate">{data.dir.get(c.employeeId)?.display_name ?? 'Employee'} · {c.days} {c.days === 1 ? 'day' : 'days'}</span><Link to={`/requests?view=leave&q=${encodeURIComponent(c.number)}`} className="shrink-0 font-semibold text-brand-700 underline">Move leave</Link></li>)}
+            {approvedLeave.map((c) => <li key={c.employeeId} className="flex items-center justify-between gap-2"><span className="truncate">{data.dir.get(c.employeeId)?.display_name ?? 'Employee'} · {c.days} {c.days === 1 ? 'day' : 'days'}</span><Link to={`/manpower?tab=requests&view=leave&q=${encodeURIComponent(c.number)}`} className="shrink-0 font-semibold text-brand-700 underline">Move leave</Link></li>)}
           </ul>
         </div>
       )}
@@ -1050,7 +1050,7 @@ function UnitStatusCard({ plan, opPlan, onDone }: { plan: SdPlan; opPlan: Operat
     <Card className={cx('mb-3 py-2', exact ? '' : 'bg-amber-50 ring-amber-200')}>
       <div className="flex items-baseline justify-between gap-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Unit status · crews' minimum</h2>
-        <Link to="/shutdown?tab=modes" className="text-[11px] font-medium text-brand-700">Unit status ›</Link>
+        <Link to="/shutdowns?section=modes" className="text-[11px] font-medium text-brand-700">Unit status ›</Link>
       </div>
       {exact
         ? <p className="mt-1 text-sm text-slate-800"><b>{name} down</b> {range(plan.start, plan.end)} · {mins.controllerMin === 0 ? 'unit down: the crews have no minimum' : `each crew needs ${minimumsText(mins)}`}</p>

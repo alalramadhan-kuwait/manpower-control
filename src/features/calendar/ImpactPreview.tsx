@@ -91,7 +91,7 @@ export function ImpactPreview({ leave, counted = true }: { leave: PreviewLeave; 
                 const q = people.get(c.id); const at = q ? personOn(q, leave.start) : null;
                 return `${c.name} (${at?.role === 'vr_controller' ? (at.crew ? `VR in ${at.crew}` : 'VR') : at?.crew ?? 'Day'}${c.warnings.length ? ', see warning' : ''})`;
               }).join(' · ') : 'none recorded'}</p>
-              <Link to={`/requests?view=entry&card=controller&kind=cover&crew=${crew}&from=${leave.start}&to=${last}&back=${backHere()}`} className="font-medium text-brand-700">Assign cover ›</Link>
+              <Link to={`/manpower?tab=requests&view=entry&card=controller&kind=cover&crew=${crew}&from=${leave.start}&to=${last}&back=${backHere()}`} className="font-medium text-brand-700">Assign cover ›</Link>
             </div>
           )}
         </div>

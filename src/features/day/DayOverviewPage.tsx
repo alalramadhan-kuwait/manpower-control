@@ -23,6 +23,7 @@ import { CREWS } from '@/core/roster';
 import { ShutdownToday } from './ShutdownToday';
 import { TrackerTodayCard } from '@/features/tracker/TrackerTodayCard';
 import { useLiveRefresh } from '@/data/live';
+import { countPendingApprovals } from '@/data/approvals';
 
 const weekday = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long' });
 
@@ -126,7 +127,7 @@ export default function DayOverviewPage() {
           </div>
         )}
         {period && result && (
-          <Link to="/shutdown?tab=modes" className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-brand-700 px-2.5 py-1 text-[11px] font-semibold text-white">
+          <Link to="/shutdowns?section=modes" className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-brand-700 px-2.5 py-1 text-[11px] font-semibold text-white">
             <span className="truncate">{result.rules.modeLabel} · {shortDate(period.start)} – {shortDate(period.end)}{period.note ? ` · ${period.note}` : ''}</span>
           </Link>
         )}
@@ -134,8 +135,9 @@ export default function DayOverviewPage() {
 
       {error ? <ErrorBox error={error} /> : !result ? <Spinner /> : (
         <>
-          {moved && <p role="status" className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-700">{t('That page has moved. Everything is now under Today, Calendar, Requests, Employees and More.')}</p>}
+          {moved && <p role="status" className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-700">{t('That page has moved. Everything is now under Today, Calendar, Manpower, Shutdowns and More.')}</p>}
           <OverallBanner result={result} />
+          <WaitingRow />
           <TodaySummary result={result} date={date} today={today} />
           <EventsCard date={date} events={info?.date === date ? info.events : []} />
           {tcPending > 0 && (
@@ -148,7 +150,7 @@ export default function DayOverviewPage() {
           {inputs && <ShutdownToday date={date} people={inputs.people} leave={leave} tick={tick} />}
           <AwayToday result={result} leave={leave} />
           {(() => { const n = new Set(inputs?.absences.filter((a) => a.lapsed && a.oracle !== 'rejected' && a.start <= date && date <= a.end).map((a) => a.employeeId)).size;
-            return n > 0 ? <Link to="/requests?view=leave&when=now&st=planned" className="mb-2 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-[12px] text-amber-900 ring-1 ring-amber-300"><span className="min-w-0 flex-1"><b>{n} PV not approved</b> · not counted as leave until you approve</span><span className="font-semibold">›</span></Link> : null; })()}
+            return n > 0 ? <Link to="/manpower?tab=requests&view=leave&when=now&st=planned" className="mb-2 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-[12px] text-amber-900 ring-1 ring-amber-300"><span className="min-w-0 flex-1"><b>{n} PV not approved</b> · not counted as leave until you approve</span><span className="font-semibold">›</span></Link> : null; })()}
           <OffToday result={result} leave={leave} date={date} />
         </>
       )}
@@ -183,7 +185,7 @@ function OverallBanner({ result }: { result: DayResult }) {
       )}
       {counts.morningCoverageRequired > 0 && (
         <div className={cx('mt-1.5 rounded-lg px-2 py-1.5 text-xs ring-1', CATEGORY.coverage_required.box)}>
-          <span className="font-semibold">Morning post empty</span> · <Link to={`/requests?view=entry&card=controller&kind=morning&from=${result.date}`} className="font-semibold text-brand-700 underline">Assign</Link>
+          <span className="font-semibold">Morning post empty</span> · <Link to={`/manpower?tab=requests&view=entry&card=controller&kind=morning&from=${result.date}`} className="font-semibold text-brand-700 underline">Assign</Link>
         </div>
       )}
     </div>
@@ -228,7 +230,7 @@ function notesFor(c: CrewDay, key: 'controller' | 'panel' | 'field', leave: Map<
     const whoIsOut = [...p.onLeave.map((x) => `${x.name}${leave.get(x.id) ? ` (${leaveShort(leave.get(x.id)!)})` : ''}`), ...p.away.map((w) => `${w.person.name} (${w.assignment.kind === 'morning_rotation' ? 'Morning rotation' : w.assignment.kind === 'sd_team' ? 'SD team' : `covering ${w.assignment.crew} Shift`})`)];
     if (p.cover?.counted) notes.push({ text: p.cover.assignment.kind === 'sd_team' ? `Cover: ${p.cover.person.name} (shutdown team Controller${p.cover.assignment.works?.(date) ?? true ? ', in addition to his team shift' : ', off the team today'})` : `Cover: ${p.cover.person.name} (${ROLE_SHORT[p.cover.person.role ?? ''] ?? 'Controller'}) · to ${shortDate(p.cover.assignment.end)}`, tone: 'good' });
     if (p.finding === 'coverage_required') {
-      notes.push({ text: `Cover needed · ${whoIsOut.join(', ')}${p.cover && !p.cover.counted ? ` · cover ${p.cover.person.name} on leave` : ''}`, tone: 'pending', to: `/requests?view=entry&card=controller&kind=cover&crew=${c.crew}&from=${date}`, link: 'Assign' });
+      notes.push({ text: `Cover needed · ${whoIsOut.join(', ')}${p.cover && !p.cover.counted ? ` · cover ${p.cover.person.name} on leave` : ''}`, tone: 'pending', to: `/manpower?tab=requests&view=entry&card=controller&kind=cover&crew=${c.crew}&from=${date}`, link: 'Assign' });
       if (need?.additional) notes.push({ text: 'Extra Controller needed', tone: 'red' });
       else if (need?.vr) notes.push({ text: need.vrNote ? `VR ${need.vr.name}: ${need.vrNote.replace(/^VR /, '').replace(/(\d{4}-\d{2}-\d{2})/g, (d) => shortDate(d))}` : `Move VR ${need.vr.name}${need.vrFrom ? ` from ${need.vrFrom}` : ''}`, tone: need.vrNote ? 'amber' : 'muted' });
     }
@@ -651,15 +653,39 @@ function OffToday({ result, date }: { result: DayResult; leave: Map<string, OnLe
       {result.morningPost.status === 'coverage_required' && (
         <p className={cx('m-2 rounded-lg p-2 text-[11px] ring-1', CATEGORY.coverage_required.box)}>
           <span className="font-semibold">Morning post empty</span> · Morning Controller on {result.morningPost.away?.crew} Shift{' '}
-          <Link to={`/requests?view=entry&card=controller&kind=morning&from=${date}`} className="font-semibold text-brand-700 underline">Assign ›</Link>
+          <Link to={`/manpower?tab=requests&view=entry&card=controller&kind=morning&from=${date}`} className="font-semibold text-brand-700 underline">Assign ›</Link>
         </p>
       )}
       {needing.length > 0 && (
         <p className={cx('m-2 rounded-lg p-2 text-[11px] ring-1', CATEGORY.coverage_required.box)}>
           Cover needed: {needing.map((c) => <span key={c.crew} className="mr-1 inline-flex items-center gap-1 align-middle"><CrewBadge crew={c.crew} size="sm" /> {c.shift}</span>)}{' '}
-          <Link to="/controllers" className="font-semibold text-brand-700 underline">Assign ›</Link>
+          <Link to="/manpower?tab=controllers" className="font-semibold text-brand-700 underline">Assign ›</Link>
         </p>
       )}
+      <Link to="/calendar?board=controllers" className="flex min-h-9 items-center justify-between border-t border-slate-100 px-3 text-[12px] font-semibold text-brand-700">{t('Controllers calendar')}<span>›</span></Link>
     </section>
+  );
+}
+
+/** What waits for the person's decision or entry, one line each, into the Requests views. */
+function WaitingRow() {
+  const [n, setN] = useState<number | null>(null);
+  useEffect(() => {
+    const load = () => countPendingApprovals().then(setN).catch(() => setN(0));
+    load(); window.addEventListener('requests-changed', load);
+    return () => window.removeEventListener('requests-changed', load);
+  }, []);
+  const items = [
+    { to: '/manpower?tab=requests&view=approvals', label: t('Approvals'), n, tone: n ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-600' },
+    { to: '/manpower?tab=requests&view=leave', label: t('Leave to approve'), n: null, tone: 'bg-slate-100 text-slate-600' },
+    { to: '/manpower?tab=requests&view=moves', label: t('Shift moves'), n: null, tone: 'bg-slate-100 text-slate-600' }];
+  return (
+    <div className="no-scrollbar mb-3 -mx-1 flex gap-1.5 overflow-x-auto px-1">
+      {items.map((x) => (
+        <Link key={x.to} to={x.to} className={cx('flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-semibold', x.tone)}>
+          {x.n !== null && <span className="tabular-nums">{x.n ?? '…'}</span>}{x.label} ›
+        </Link>
+      ))}
+    </div>
   );
 }

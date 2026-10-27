@@ -90,11 +90,11 @@ export default function EmployeeProfilePage({ profile, editId }: { profile: User
   const shiftToday = isCrew(emp.crew_code) ? t(SHIFT_LABEL[stateOf(dutyFor(today, emp.crew_code))]) : null;
   const statsCount = data.sick.length;
 
-  const entry = (card: string, extra = '') => `/requests?view=entry&card=${card}&emp=${emp.id}${extra}`;
+  const entry = (card: string, extra = '') => `/manpower?tab=requests&view=entry&card=${card}&emp=${emp.id}${extra}`;
   const open = leaveSplit.current && isOpenEnd(leaveSplit.current.until);
   return (
     <div className="lg:max-w-3xl">
-      {!edit && <Link to={from?.back ?? '/employees'} className="mb-3 inline-flex min-h-10 items-center gap-1 text-sm text-brand-700"><ArrowLeft className="h-4 w-4 rtl:rotate-180" /> {from?.backLabel ?? t('Employees')}</Link>}
+      {!edit && <Link to={from?.back ?? '/manpower?tab=employees'} className="mb-3 inline-flex min-h-10 items-center gap-1 text-sm text-brand-700"><ArrowLeft className="h-4 w-4 rtl:rotate-180" /> {from?.backLabel ?? t('Employees')}</Link>}
       <Card className="mb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

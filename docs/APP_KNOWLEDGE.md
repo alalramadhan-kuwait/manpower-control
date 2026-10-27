@@ -9,7 +9,7 @@ Last full review: 24 Oct 2026.
 |---|---|---|---|
 | Roster | `src/core/roster` (8-day cycle, anchor 2 Mar 2026 = B M1) | Calendar, Week | — |
 | Manpower rules | `src/core/manpower` (Controller 1 / Panel 3 / Field 6 minimums, GREEN/AMBER/RED) | Today (`features/day`) | employees, employee_role_assignments, employee_qualifications |
-| Leave plan & PV | `src/core/leave`, `pv`, `plan`, `vacation` | Leave planning (Annual plan · Plan next year · PV cycles) | leave_records, leave_plan_changes, pv_plans, pv_plan_blocks, pv_allocs, pv_alloc_rows, pv_alloc_events, pv_server_checks, pv_form_uploads, pv_day_rotation, sick_imports, employee_civil_ids |
+| Leave plan & PV | `src/core/leave`, `pv`, `plan`, `vacation` | Manpower › Leave (Annual plan · Plan next year · PV cycles) | leave_records, leave_plan_changes, pv_plans, pv_plan_blocks, pv_allocs, pv_alloc_rows, pv_alloc_events, pv_server_checks, pv_form_uploads, pv_day_rotation, sick_imports, employee_civil_ids |
 | Requests | `src/core/requests`, `entry` | Requests (Approvals / Leave to approve / Shift moves, + New) | request_*, leave_requests, leave_change_requests, approval_requests |
 | Leave approval (replaces Oracle) | `src/core/oracle` (`isPlanPv`, `lapsedLeave`) | Requests › Leave | leave_records.approved_* / declined_* / fix_* ; `approval_state()` |
 | Shift movements | — | Profile, Requests | crew_movements |
@@ -339,8 +339,10 @@ Estimate ~88 % (verified functionality). Recommendation: **ready for operational
 
 ## 10. Annual vacation planning (26 Oct 2026)
 
-- **Where**: Leave planning › Plan next year (`/leave-planning?tab=next&year=&step=`; `/vacation-plan` redirects). PV cycles shows a draft year read only and links here.
+- **Where**: Manpower › Leave › Plan next year (`/manpower?tab=leave&sub=next&year=&step=`; `/leave-planning` and `/vacation-plan` redirect). PV cycles shows a draft year read only and links here.
 - **Steps**: 1 Manpower (tabs A–D + Relief; Controller / Panel / Field; move, switch, role, relief, undo; versioned, never changes the directory; sick import by Civil ID, stored hashed + last 4) → 2 Approve (summary + checks; Section Head; locks the version; reopen with a reason) → 3 A3 forms (Controllers + Day Supervisor rotation, Panel, Field A–D; corner marks + ID strip) → 4 Selections (grid: whole cycles, Full / Conflict / Restricted with reason, keyboard, undo; or upload scans / photos: read, unclear left to decide, nothing saved until Save) → 5 Review (filters, fill missing periods = System Assigned) → 6 Approve & publish (server check, atomic, idempotent) → 7 Share (final PDFs from the Calendar's records; later changes marked *).
 - **Rules**: `src/core/vacation/rules.ts` `VAC_RULES`; slots `slotsFor(n, min) = max(0, min(floor(n/4), n − min))`; acting Panel = Grade ≥ 13, rolling-12-month sick ≤ 30, highest employee number first, only as many as needed (`ACTING_PANEL`, shared with the Today engine).
 - **Server**: migration `20261026132242_annual_vacation_planning`; edge function `vacation-plan` (`check_alloc`, `approve_alloc`, `check_plan`, `approve_plan`); test `supabase/tests/vacation_plan_checks.sql` (rolled back, year 2031).
 - **Limits**: OMR reads only forms printed by the app with all four corner squares and the strip visible; rolling sick data must be imported before the acting rule can exclude anyone; leave entitlement / balances are not checked by the plan.
+| 27 Oct 2026 | Navigation (owner, mock-up approved): bottom bar Today · Calendar · Manpower · Shutdowns · More. Manpower = Requests (waiting badge) · Employees · Controllers (Cover, Morning rotation) · Leave (Annual plan, Plan next year, PV cycles); Shutdowns (`?section=`) = Progress (the tracker, its own `?tab=`) · Plans · Unit status · FO levels (Head); Calendar has a Leave | Controllers switch (`?board=controllers`, last choice remembered per device); Today shows a Waiting-for-you row and a Controllers calendar link; More keeps Data quality, Excel import, Administration, Notifications. Every old address redirects (`Legacy` in App.tsx) with its query kept. Permissions, data and calculations unchanged |
+

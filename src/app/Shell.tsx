@@ -1,4 +1,4 @@
-import { Bell, CalendarDays, ClipboardList, Home, LogOut, MoreHorizontal, Plus, Users } from 'lucide-react';
+import { Bell, CalendarDays, HardHat, Home, LogOut, MoreHorizontal, Plus, Users } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { supabase } from '@/data/supabase';
@@ -15,11 +15,13 @@ import { SidePanel } from '@/features/side/SidePanel';
 import { ROLE_LABEL } from '@/features/auth/useSession';
 import type { UserProfile } from '@/data/types';
 
+// the bottom bar (27 Oct 2026): Manpower holds Requests, Employees, Controllers and Leave plan; Shutdowns holds the
+// tracker, the plans, Unit status and FO levels; the Controllers calendar is a switch inside Calendar
 const tabs = [
   { to: '/', label: 'Today', icon: Home },
   { to: '/calendar', label: 'Calendar', icon: CalendarDays },
-  { to: '/requests', label: 'Requests', icon: ClipboardList },
-  { to: '/employees', label: 'Employees', icon: Users },
+  { to: '/manpower', label: 'Manpower', icon: Users },
+  { to: '/shutdowns', label: 'Shutdowns', icon: HardHat },
   { to: '/more', label: 'More', icon: MoreHorizontal }
 ];
 
@@ -33,7 +35,7 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
     window.addEventListener('requests-changed', refresh);
     return () => window.removeEventListener('requests-changed', refresh);
   }, [pathname]);
-  const badge = (to: string) => (to === '/requests' && openRequests > 0 ? openRequests : 0);
+  const badge = (to: string) => (to === '/manpower' && openRequests > 0 ? openRequests : 0);
   // Notification Center badge: items needing action in the coming weeks (cached a few minutes)
   const [actions, setActions] = useState(0);
   useEffect(() => {
@@ -43,9 +45,11 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
     return () => { window.removeEventListener('notices-changed', refresh); window.removeEventListener('requests-changed', refresh); };
   }, [pathname, profile.role_code]);
   const isHead = profile.role_code === 'section_head';
-  const view = new URLSearchParams(search).get('view');
-  const onEntry = pathname === '/requests' && (view === 'entry' || (!view && !isHead));
-  const wide = WIDE.some((re) => re.test(pathname));
+  const q = new URLSearchParams(search);
+  const view = q.get('view');
+  const onEntry = pathname === '/manpower' && (q.get('tab') ?? 'requests') === 'requests' && (view === 'entry' || (!view && !isHead));
+  const onTracker = pathname.startsWith('/progress') || (pathname === '/shutdowns' && (q.get('section') ?? 'progress') === 'progress');
+  const wide = WIDE.some((re) => re.test(pathname + search));
   return (
     <div className="flex min-h-full flex-col print:block">
       <header className="sticky top-0 z-40 bg-brand-700 text-white safe-top print:hidden">
@@ -71,7 +75,7 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
             {tabs.filter((t) => t.to !== '/more').map(({ to, label, icon: Icon }) => <RailLink key={to} to={to} label={label} icon={Icon} end={to === '/'} count={badge(to)} />)}
           </div>
           <div className="mt-4">
-            <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{t('Workspaces')}</div>
+            <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{t('Administration')}</div>
             <div className="space-y-0.5">
               {WORKSPACES.filter((i) => !i.admin || isAdminStaff(profile.role_code)).map((i) => <RailLink key={i.to} to={i.to} label={t(i.label)} icon={i.icon} />)}
               <RailLink to="/more" label={t('More')} icon={MoreHorizontal} end />
@@ -94,8 +98,8 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
         </div>
       </nav>
       {/* Quick Add: opens Requests → Entry (the one place to add or change); not shown on Entry itself */}
-      {!onEntry && !pathname.startsWith('/progress') && (
-        <Link to="/requests?view=entry" aria-label={t('Quick add')}
+      {!onEntry && !onTracker && (
+        <Link to="/manpower?tab=requests&view=entry" aria-label={t('Quick add')}
           className="fixed bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] end-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-brand-700 text-white shadow-lg shadow-brand-900/30 active:scale-95 sm:hidden print:hidden">
           <Plus className="h-7 w-7" />
         </Link>
@@ -112,7 +116,7 @@ export function Shell({ profile, children }: { profile: UserProfile; children: R
 }
 
 /** Pages that need the whole width (grids, calendars, printed sheets): no side panel. */
-const WIDE = [/^\/progress/, /^\/calendar/, /^\/leave-planning/, /^\/controllers/, /^\/shutdown\/[^/]+\/(schedule|overtime)/, /^\/admin/];
+const WIDE = [/^\/progress/, /^\/calendar/, /^\/shutdowns/, /^\/manpower\?tab=leave/, /^\/shutdown\/[^/]+\/(schedule|overtime)/, /^\/admin/];
 
 function RailLink({ to, label, icon: Icon, end, count = 0 }: { to: string; label: string; icon: typeof Bell; end?: boolean; count?: number }) {
   return (

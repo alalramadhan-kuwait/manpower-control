@@ -76,7 +76,7 @@ export function DaySheet({ date, day, kinds, inputs, holiday, bars, onClose, onA
                 {kind === 'potential' && <p className="mt-0.5 pl-9 text-xs text-status-red">Short only if planned leave not yet approved is taken.</p>}
                 {c.controller.count < c.controller.min && (
                   <div className="mt-1 pl-9 text-xs"><span className="text-slate-600">{c.controller.onLeave.map((x) => x.name).concat(c.controller.away.map((x) => x.person.name)).join(', ') || 'No Controller'} away · </span>
-                    <Link to={`/requests?view=entry&card=controller&kind=cover&crew=${c.crew}&from=${date}&to=${date}&back=${backHere()}`} className="font-semibold text-brand-700">Assign cover ›</Link></div>
+                    <Link to={`/manpower?tab=requests&view=entry&card=controller&kind=cover&crew=${c.crew}&from=${date}&to=${date}&back=${backHere()}`} className="font-semibold text-brand-700">Assign cover ›</Link></div>
                 )}
               </div>
             );

@@ -82,9 +82,9 @@ export function buildNotices(i: NoticeInput): Notice[] {
   for (const n of i.needs) {
     const vr = n.additional ? 'Extra Controller needed' : n.vr ? `Move VR ${n.vr.name}${n.vrFrom ? ` from ${n.vrFrom}` : ''}` : n.vrNote ?? '';
     if (n.kind === 'crew') out.push({ id: `cover-${n.crew}-${n.start}`, level: 'action', area: 'controller', title: `Cover needed · ${n.crew} Shift`,
-      detail: [`${span(n.start, n.end)} · ${n.who.join(', ')} · ${when(i.today, n.start)}`, vr].filter(Boolean).join(' · '), date: n.start, to: `/requests?view=entry&card=controller&kind=cover&crew=${n.crew}&from=${n.start}` });
+      detail: [`${span(n.start, n.end)} · ${n.who.join(', ')} · ${when(i.today, n.start)}`, vr].filter(Boolean).join(' · '), date: n.start, to: `/manpower?tab=requests&view=entry&card=controller&kind=cover&crew=${n.crew}&from=${n.start}` });
     else out.push({ id: `morning-${n.start}`, level: 'action', area: 'controller', title: 'Morning Controller post empty',
-      detail: span(n.start, n.end), date: n.start, to: `/requests?view=entry&card=controller&kind=morning&from=${n.start}` });
+      detail: span(n.start, n.end), date: n.start, to: `/manpower?tab=requests&view=entry&card=controller&kind=morning&from=${n.start}` });
   }
 
   // 3. open leave requests: to review (Coordinator or Section Head), then the Section Head's decision
@@ -98,12 +98,12 @@ export function buildNotices(i: NoticeInput): Notice[] {
   // 3a. requests to move a leave: the Section Head decides
   for (const c of i.changes ?? []) {
     out.push({ id: `chg-${c.id}`, level: i.isSectionHead ? 'action' : 'watch', area: 'request', title: i.isSectionHead ? 'Reschedule request to decide' : 'Reschedule waiting for the Section Head',
-      detail: `${c.employeeName} · ${span(c.oldStart, c.oldEnd)} → ${span(c.newStart, c.newEnd)}${c.short > 0 ? ` · crew short ${c.short}d` : ''}${c.clash > 0 ? ' · 2 Controllers off' : ''}`, date: c.newStart, to: '/requests?view=approvals' });
+      detail: `${c.employeeName} · ${span(c.oldStart, c.oldEnd)} → ${span(c.newStart, c.newEnd)}${c.short > 0 ? ` · crew short ${c.short}d` : ''}${c.clash > 0 ? ' · 2 Controllers off' : ''}`, date: c.newStart, to: '/manpower?tab=requests&view=approvals' });
   }
 
   // 3a1. recorded with a notice (no approval): the Section Head is told
   if (i.isSectionHead) for (const r of i.recorded ?? []) {
-    out.push({ id: `rec-${r.id}`, level: 'info', area: 'request', title: 'Recorded by the Coordinator', detail: `${r.employeeName} · ${r.label} ${span(r.start, r.end)}`, date: r.start, to: '/requests?view=approvals' });
+    out.push({ id: `rec-${r.id}`, level: 'info', area: 'request', title: 'Recorded by the Coordinator', detail: `${r.employeeName} · ${r.label} ${span(r.start, r.end)}`, date: r.start, to: '/manpower?tab=requests&view=approvals' });
   }
 
   // 3a1b. open operational absences due for review: one reminder per case, updated in place (no daily repeats)
@@ -111,7 +111,7 @@ export function buildNotices(i: NoticeInput): Notice[] {
     if (!c.nextReview || c.nextReview > i.today) continue;
     out.push({ id: `review-${c.rootId}`, level: 'watch', area: 'leave', title: `Review: ${c.employeeName} · ${c.label}`,
       detail: `Unavailable since ${d(c.start)}, return not confirmed${c.estimatedReturn ? ` · estimated ${d(c.estimatedReturn)} (provisional)` : ''} · review due ${d(c.nextReview)}`,
-      date: c.nextReview, to: `/requests?view=entry&card=leave&emp=${c.employeeId}` });
+      date: c.nextReview, to: `/manpower?tab=requests&view=entry&card=leave&emp=${c.employeeId}` });
   }
 
   // 3a2. leave with estimated dates: to confirm at the final notice; an action once it is about to start or has started
@@ -122,7 +122,7 @@ export function buildNotices(i: NoticeInput): Notice[] {
 
   // 3b. every VR Controller works in a crew: one not placed in any crew today
   for (const v of i.people.filter((p) => p.role === 'vr_controller' && !personOn(p, i.today).crew))
-    out.push({ id: `vr-unplaced-${v.id}`, level: 'watch', area: 'controller', title: `${v.name} (VR) not placed in a crew`, detail: 'Place him in the crew he works with', date: null, to: '/controllers' });
+    out.push({ id: `vr-unplaced-${v.id}`, level: 'watch', area: 'controller', title: `${v.name} (VR) not placed in a crew`, detail: 'Place him in the crew he works with', date: null, to: '/manpower?tab=controllers' });
 
   // 4. staff records needing action
   if (i.needsAction > 0) out.push({ id: 'staff-action', level: 'watch', area: 'data', title: `${plural(i.needsAction, 'staff record')} to complete`,
@@ -132,14 +132,14 @@ export function buildNotices(i: NoticeInput): Notice[] {
   for (const o of (i.plan.outages ?? []).filter((x) => x.end >= i.today && daysBetween(i.today, x.start) <= 14)) {
     const m = modeOn(o.start < i.today ? i.today : o.start, i.plan);
     out.push({ id: `unit-${o.id}`, level: 'info', area: 'mode', title: `${m.label} ${o.start <= i.today ? 'now' : when(i.today, o.start)}`,
-      detail: `${span(o.start, o.end)} · Controller ${m.controllerMin} · Panel ${m.panelMin} · Field ${m.fieldMin} · ${o.title}`, date: o.start, to: '/shutdown?tab=modes' });
+      detail: `${span(o.start, o.end)} · Controller ${m.controllerMin} · Panel ${m.panelMin} · Field ${m.fieldMin} · ${o.title}`, date: o.start, to: '/shutdowns?section=modes' });
   }
 
   // 5b. manual override periods now or starting within 14 days
   for (const p of i.plan.periods.filter((x) => x.status === 'active' && x.end >= i.today && daysBetween(i.today, x.start) <= 14)) {
     const m = i.plan.modes.find((x) => x.code === p.modeCode);
     out.push({ id: `mode-${p.id}`, level: 'info', area: 'mode', title: `${m?.label ?? p.modeCode} ${p.start <= i.today ? 'now' : when(i.today, p.start)}`,
-      detail: `${span(p.start, p.end)}${m ? ` · Controller ${m.controllerMin} · Panel ${m.panelMin} · Field ${m.fieldMin}` : ''}${p.note ? ` · ${p.note}` : ''}`, date: p.start, to: '/shutdown?tab=modes' });
+      detail: `${span(p.start, p.end)}${m ? ` · Controller ${m.controllerMin} · Panel ${m.panelMin} · Field ${m.fieldMin}` : ''}${p.note ? ` · ${p.note}` : ''}`, date: p.start, to: '/shutdowns?section=modes' });
   }
 
   // 6. leave starting soon (counted leave only)
@@ -147,7 +147,7 @@ export function buildNotices(i: NoticeInput): Notice[] {
   const starting = i.absences.filter((a) => (a.status === 'approved' || a.status === 'planned') && a.inCurrentPlan !== false && a.start > i.today && daysBetween(i.today, a.start) <= soon && names.has(a.employeeId))
     .sort((a, b) => a.start.localeCompare(b.start));
   if (starting.length) out.push({ id: `leave-${i.today}`, level: 'info', area: 'leave', title: `${plural(starting.length, 'leave')} starting · next ${soon} days`,
-    detail: starting.slice(0, 6).map((a) => `${names.get(a.employeeId)} (${a.typeShort ?? 'Leave'}) ${d(a.start)}`).join(' · ') + (starting.length > 6 ? ` · and ${starting.length - 6} more` : ''), date: starting[0].start, to: '/leave-planning?tab=annual' });
+    detail: starting.slice(0, 6).map((a) => `${names.get(a.employeeId)} (${a.typeShort ?? 'Leave'}) ${d(a.start)}`).join(' · ') + (starting.length > 6 ? ` · and ${starting.length - 6} more` : ''), date: starting[0].start, to: '/manpower?tab=leave&sub=annual' });
 
   // 7. Oracle HR: no notice. Who has not submitted (or was rejected) is their own choice; the Oracle HR page lists the coming leaves to check.
 
@@ -157,9 +157,9 @@ export function buildNotices(i: NoticeInput): Notice[] {
   const ov = i.controllerLeave?.overlaps ?? [], ex = i.controllerLeave?.extras ?? [];
   const more = (n: number) => (n > 3 ? ` · +${n - 3} more` : '');
   if (ov.length) out.push({ id: `ctl2-${ov.map((o) => o.start).join()}`, level: lvl, area: 'controller', title: `2 Controllers on leave together · ${ov.length}×`,
-    detail: `${ov.slice(0, 3).map((o) => `${o.a.split(' ')[0]} + ${o.b.split(' ')[0]} ${span(o.start, o.end)}`).join(' · ')}${more(ov.length)} · ${ask}`, date: ov[0].start, to: `/controllers?tab=calendar&month=${ov[0].start.slice(0, 7)}` });
+    detail: `${ov.slice(0, 3).map((o) => `${o.a.split(' ')[0]} + ${o.b.split(' ')[0]} ${span(o.start, o.end)}`).join(' · ')}${more(ov.length)} · ${ask}`, date: ov[0].start, to: `/calendar?board=controllers&month=${ov[0].start.slice(0, 7)}` });
   if (ex.length) out.push({ id: `ctlx-${ex.map((x) => x.start).join()}`, level: lvl, area: 'controller', title: `Controller leave over 4 a year · ${ex.length}×`,
-    detail: `${ex.slice(0, 3).map((x) => `${x.name.split(' ')[0]} (leave ${x.nth}) ${d(x.start)}`).join(' · ')}${more(ex.length)} · ${ask}`, date: ex[0].start, to: `/controllers?tab=calendar&month=${ex[0].start.slice(0, 7)}` });
+    detail: `${ex.slice(0, 3).map((x) => `${x.name.split(' ')[0]} (leave ${x.nth}) ${d(x.start)}`).join(' · ')}${more(ex.length)} · ${ask}`, date: ex[0].start, to: `/calendar?board=controllers&month=${ex[0].start.slice(0, 7)}` });
 
   const rank: Record<NoticeLevel, number> = { action: 0, watch: 1, info: 2 };
   return out.sort((a, b) => rank[a.level] - rank[b.level] || (a.date ?? '9999').localeCompare(b.date ?? '9999') || a.title.localeCompare(b.title));

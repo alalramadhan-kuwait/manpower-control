@@ -138,7 +138,7 @@ export default function PvPage(_props: { isHead?: boolean }) {
         <StatusLine issues={issues} saving={busy > 0} saved={saved} ready={!!model} />
       </div>
       {plan && plan.kind === 'draft' && (
-        <p role="note" className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-300"><b>PV Plan · {year}</b>{pv ? ` · ${STATUS_LABEL[pv.status]}` : ''} · view only. Next year's vacations are planned in <Link to={`/leave-planning?tab=next&year=${year}`} className="font-semibold underline">Plan next year ›</Link> (manpower, A3 forms, selections, one approval).</p>
+        <p role="note" className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-300"><b>PV Plan · {year}</b>{pv ? ` · ${STATUS_LABEL[pv.status]}` : ''} · view only. Next year's vacations are planned in <Link to={`/manpower?tab=leave&sub=next&year=${year}`} className="font-semibold underline">Plan next year ›</Link> (manpower, A3 forms, selections, one approval).</p>
       )}
       {plan && !plan.writable && plan.kind !== 'draft' && (
         <p role="note" className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-300"><b>{plan.label}</b> · view only.</p>

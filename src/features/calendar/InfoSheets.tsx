@@ -34,7 +34,7 @@ export function EventSheet({ event, date, units, sections = [], onClose, onDone 
   return (
     <BottomSheet open onClose={onClose} title={event ? 'Unit event' : 'New unit event'}>
       <div className="space-y-4">
-        {event?.category === 'shutdown' && <Link to="/shutdown" className="flex items-center justify-between rounded-xl bg-slate-800 px-3 py-2.5 text-sm font-medium text-white">Shutdown team planner<ChevronRight className="h-4 w-4" /></Link>}
+        {event?.category === 'shutdown' && <Link to="/shutdowns?section=plans" className="flex items-center justify-between rounded-xl bg-slate-800 px-3 py-2.5 text-sm font-medium text-white">Shutdown team planner<ChevronRight className="h-4 w-4" /></Link>}
         <Field label="Type"><select className="input" value={category} onChange={(e) => setCategory(e.target.value as EventCategory)}>{(Object.keys(EVENT_CATEGORY_LABEL) as EventCategory[]).map((k) => <option key={k} value={k}>{EVENT_CATEGORY_LABEL[k]}</option>)}</select></Field>
         {takesDown && (
           <Field label="Sections down">

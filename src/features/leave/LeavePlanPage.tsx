@@ -92,7 +92,7 @@ export default function LeavePlanPage() {
   return (
     <div>
       <PageHeader title="Leave plan" subtitle={plan && <PlanBadge context={plan} />} info="The current plan: monthly sheets, PV plan and leave entered by hand. Tap a person for dates and history."
-        action={<Link to="/requests?view=entry&card=leave" className="inline-flex min-h-10 shrink-0 items-center gap-1 rounded-xl bg-brand-700 px-3 text-sm font-medium text-white"><Plus className="h-4 w-4" /> {t('New entry')}</Link>} />
+        action={<Link to="/manpower?tab=requests&view=entry&card=leave" className="inline-flex min-h-10 shrink-0 items-center gap-1 rounded-xl bg-brand-700 px-3 text-sm font-medium text-white"><Plus className="h-4 w-4" /> {t('New entry')}</Link>} />
       <Link to={`/calendar?view=list${mode === 'month' ? `&month=${year}-${String(month).padStart(2, '0')}` : ''}`} className="mb-1 block text-xs font-semibold text-brand-700">Leave list by date (Calendar ›)</Link>
       <p className="mb-2 text-xs text-slate-500">{t('The published plan is changed only through Requests → Entry (new leave, PV reschedule, cancellation); every change keeps its approval and history.')}</p>
 
@@ -156,7 +156,7 @@ export default function LeavePlanPage() {
                             : <MonthCells year={year} blocks={r.current} thisMonth={thisMonth} />}
                           <span className="w-6 shrink-0 text-right text-[11px] font-semibold tabular-nums text-slate-700">{r.days || '—'}</span>
                         </button>
-                        {open === r.p.id && data && <PersonDetail row={r} year={year} data={data} today={today} onEdit={(rec) => navigate(rec.absence_type_code?.startsWith('annual_leave_') && rec.absence_type_code !== 'annual_leave_unscheduled' ? `/requests?view=entry&card=pv&emp=${r.p.id}&leave=${rec.start_date}` : `/requests?view=entry&card=leave&emp=${r.p.id}`)} onAdd={() => navigate(`/requests?view=entry&card=leave&emp=${r.p.id}`)} />}
+                        {open === r.p.id && data && <PersonDetail row={r} year={year} data={data} today={today} onEdit={(rec) => navigate(rec.absence_type_code?.startsWith('annual_leave_') && rec.absence_type_code !== 'annual_leave_unscheduled' ? `/manpower?tab=requests&view=entry&card=pv&emp=${r.p.id}&leave=${rec.start_date}` : `/manpower?tab=requests&view=entry&card=leave&emp=${r.p.id}`)} onAdd={() => navigate(`/manpower?tab=requests&view=entry&card=leave&emp=${r.p.id}`)} />}
                       </li>
                     ))}
                   </ul>
@@ -260,7 +260,7 @@ function PersonDetail({ row, year, data, today, onEdit, onAdd }: { row: Row; yea
                 <span className="block text-xs text-slate-500">{type(l.absence_type_code)?.label ?? 'Leave'} · {l.hand_corrected ? (l.source_kind === 'manual' ? SOURCE_LABEL.manual : 'Corrected by hand') : SOURCE_LABEL[l.source_kind]}</span>
                 {cover && (cover.covers.length > 0
                   ? <span className="block text-xs text-slate-600">Covered by {[...new Set(cover.covers.map((c) => name(c.employeeId)))].join(', ')}{cover.uncoveredDutyDays ? ` · ${cover.uncoveredDutyDays} duty day${cover.uncoveredDutyDays === 1 ? '' : 's'} without cover` : ''}</span>
-                  : !past && cover.uncoveredDutyDays > 0 && <span className="block text-xs text-slate-700">No cover recorded · {cover.uncoveredDutyDays} duty day{cover.uncoveredDutyDays === 1 ? '' : 's'}{<> · <Link to={`/requests?view=entry&card=controller&kind=cover&crew=${crew}&from=${l.start_date}`} className="font-semibold text-brand-700 underline">Assign cover</Link></>}</span>)}
+                  : !past && cover.uncoveredDutyDays > 0 && <span className="block text-xs text-slate-700">No cover recorded · {cover.uncoveredDutyDays} duty day{cover.uncoveredDutyDays === 1 ? '' : 's'}{<> · <Link to={`/manpower?tab=requests&view=entry&card=controller&kind=cover&crew=${crew}&from=${l.start_date}`} className="font-semibold text-brand-700 underline">Assign cover</Link></>}</span>)}
               </span>
                <button type="button" aria-label={t('Change through Entry')} onClick={() => onEdit(l)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-brand-700 hover:bg-white"><Pencil className="h-4 w-4" /></button>
             </li>

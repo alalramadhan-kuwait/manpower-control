@@ -77,7 +77,7 @@ export default function ShutdownListPage() {
       </div>} action={<Button className="min-h-10 shrink-0 px-3" onClick={() => setAdding(true)}><Plus className="h-4 w-4" /> New</Button>} />
       <div className="mb-3 grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
         {(['plans', 'timeline', 'people'] as const).map((t) => (
-          <button key={t} type="button" aria-pressed={view === t} onClick={() => setParams(t === 'plans' ? {} : { view: t }, { replace: true })}
+          <button key={t} type="button" aria-pressed={view === t} onClick={() => setParams((p) => { const n = new URLSearchParams(p); if (t === 'plans') n.delete('view'); else n.set('view', t); return n; }, { replace: true })}
             className={cx('min-h-9 rounded-lg font-medium', view === t ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{t === 'plans' ? 'Shutdowns' : t === 'timeline' ? 'Timeline' : 'Who took part'}</button>
         ))}
       </div>

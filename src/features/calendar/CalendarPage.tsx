@@ -20,6 +20,8 @@ import { EventSheet, HolidaySheet } from './InfoSheets';
 import { AttentionList, Legend, SHIFT_STYLE, Section, StatusBar, SummaryLine, ViewToggle, calendarBars, shownMark, summarizeShown, type ShownMark } from './parts';
 import { WeekView } from './WeekView';
 import { LeaveListView } from './LeaveList';
+import ControllersBoardPage from '@/features/controllers/ControllersBoardPage';
+import { t } from '@/i18n';
 
 // view, month / week, the open day or leave and the filters all live in the address: every move keeps the filters
 const withFilters = (params: URLSearchParams, set: Record<string, string | null>) => {
@@ -29,7 +31,36 @@ const withFilters = (params: URLSearchParams, set: Record<string, string | null>
   return n;
 };
 
+const BOARD_KEY = 'calendar-board';
+/** Leave | Controllers: the Controllers calendar is a whole board of its own (crew cover, each Controller's day, the Morning post), one tap from the leave calendar. */
+function BoardSwitch({ board, onChange }: { board: 'leave' | 'controllers'; onChange: (b: 'leave' | 'controllers') => void }) {
+  return (
+    <div role="tablist" aria-label="Calendar" className="mb-2 flex rounded-lg bg-slate-200/60 p-0.5 text-[13px] font-semibold lg:max-w-xs">
+      {(['leave', 'controllers'] as const).map((b) => (
+        <button key={b} role="tab" type="button" aria-selected={board === b} onClick={() => onChange(b)}
+          className={cx('min-h-9 flex-1 rounded-md', board === b ? 'bg-brand-700 text-white shadow-sm' : 'text-slate-600')}>{t(b === 'leave' ? 'Leave' : 'Controllers')}</button>
+      ))}
+    </div>
+  );
+}
+
 export default function CalendarPage({ profile }: { profile?: UserProfile }) {
+  const [params, setParams] = useSearchParams();
+  const board: 'leave' | 'controllers' = params.get('board') === 'controllers' && profile ? 'controllers' : 'leave';
+  // the last board chosen opens again next time (per device)
+  useEffect(() => {
+    if (params.has('board') || !profile) return;
+    try { if (localStorage.getItem(BOARD_KEY) === 'controllers') setParams((p) => { const n = new URLSearchParams(p); n.set('board', 'controllers'); return n; }, { replace: true }); } catch { /* no storage */ }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const choose = (b: 'leave' | 'controllers') => {
+    try { localStorage.setItem(BOARD_KEY, b); } catch { /* no storage */ }
+    setParams(b === 'controllers' ? { board: 'controllers' } : {}, { replace: true });
+  };
+  if (board === 'controllers') return <div><BoardSwitch board={board} onChange={choose} /><ControllersBoardPage profile={profile!} /></div>;
+  return <div>{profile && <BoardSwitch board={board} onChange={choose} />}<LeaveCalendar profile={profile} /></div>;
+}
+
+function LeaveCalendar({ profile }: { profile?: UserProfile }) {
   const isHead = profile?.role_code === 'section_head';
   const [params, setParams] = useSearchParams();
   const today = localToday();
@@ -183,7 +214,7 @@ function MonthView({ go: goView }: { go: (set: Record<string, string | null>) =>
           </Section>
           <button type="button" aria-expanded={evOpen} onClick={() => setEvOpen(!evOpen)} className="mt-2 flex w-full items-center justify-between rounded-xl bg-white px-3 py-2 text-left text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
             <span>{evOpen ? '▾' : '▸'} Events &amp; shutdowns {view.monthBars.length}{view.monthHolidays.length ? ` · Holidays ${view.monthHolidays.length}` : ''}</span>
-            <Link to={`/leave-planning?tab=annual&year=${year}${crew ? `&crew=${crew}` : ''}`} onClick={(e) => e.stopPropagation()} className="font-medium text-brand-700">Annual plan {year} ›</Link>
+            <Link to={`/manpower?tab=leave&sub=annual&year=${year}${crew ? `&crew=${crew}` : ''}`} onClick={(e) => e.stopPropagation()} className="font-medium text-brand-700">Annual plan {year} ›</Link>
           </button>
           {evOpen && <>
           {view.monthHolidays.length > 0 ? (
@@ -205,7 +236,7 @@ function MonthView({ go: goView }: { go: (set: Record<string, string | null>) =>
                 <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-900">{b.label}</span><span className="block text-xs text-slate-500">{b.event ? EVENT_CATEGORY_LABEL[b.event.category] : 'Operating mode: own minimums per crew'}{b.event?.note ? ` · ${b.event.note}` : ''}</span></span>
                 <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" /></>;
               return b.event ? <button key={b.id} type="button" onClick={() => setSheet({ kind: 'event', event: b.event! })} className="flex w-full items-center gap-2 py-2 text-left">{inner}</button>
-                : <Link key={b.id} to="/shutdown?tab=modes" className="flex items-center gap-2 py-2">{inner}</Link>;
+                : <Link key={b.id} to="/shutdowns?section=modes" className="flex items-center gap-2 py-2">{inner}</Link>;
             })}
           </Section>
 

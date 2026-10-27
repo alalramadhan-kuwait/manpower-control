@@ -62,7 +62,7 @@ export default function RequestPage({ profile }: { profile: UserProfile }) {
 
   if (error && !dir) return <ErrorBox error={error} />;
   // new leave is entered in Requests → Entry; this page only shows (and decides) the paper forms already entered
-  if (isNew) return <Navigate to="/requests?view=entry&card=leave" replace />;
+  if (isNew) return <Navigate to="/manpower?tab=requests&view=entry&card=leave" replace />;
   if (!dir || !req) return <Spinner />;
   const open = isNew || (req ? isOpen(req) : false);
   const isHead = profile.role_code === 'section_head';
@@ -70,7 +70,7 @@ export default function RequestPage({ profile }: { profile: UserProfile }) {
 
   return (
     <div>
-      <Link to="/requests?view=approvals" className="mb-3 inline-flex min-h-10 items-center gap-1 text-sm text-brand-700"><ArrowLeft className="h-4 w-4 rtl:rotate-180" /> Approvals</Link>
+      <Link to="/manpower?tab=requests&view=approvals" className="mb-3 inline-flex min-h-10 items-center gap-1 text-sm text-brand-700"><ArrowLeft className="h-4 w-4 rtl:rotate-180" /> Approvals</Link>
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold text-brand-800">{isNew ? 'New leave request' : emp?.display_name ?? 'Leave request'}</h1>
@@ -82,7 +82,7 @@ export default function RequestPage({ profile }: { profile: UserProfile }) {
 
       {editing ? (
         <FormCard form={form} setForm={setForm} dir={dir} emp={emp} requestId={isNew ? null : req!.id}
-          onCancel={() => (isNew ? navigate("/requests?view=approvals") : (setForm(toForm(req!)), setEditing(false)))}
+          onCancel={() => (isNew ? navigate("/manpower?tab=requests&view=approvals") : (setForm(toForm(req!)), setEditing(false)))}
           onSaved={(newId, m) => { setEditing(false); if (isNew) navigate(`/requests/${newId}`, { replace: true }); done(m); }} />
       ) : req && (
         <Card className="mb-3">

@@ -6,7 +6,6 @@ import { appAccess, isAdminStaff } from '@/core/users/access';
 import LoginPage from '@/features/auth/LoginPage';
 import { OwnLogin, ownLoginStep } from '@/features/auth/OwnLogin';
 import DayOverviewPage from '@/features/day/DayOverviewPage';
-import EmployeesPage from '@/features/employees/EmployeesPage';
 import EmployeeProfilePage from '@/features/employees/EmployeeProfilePage';
 import ImportBatchPage from '@/features/imports/ImportBatchPage';
 import MorePage from '@/features/more/MorePage';
@@ -15,9 +14,8 @@ import SdPlanPage from '@/features/shutdown/SdPlanPage';
 import { SdOvertimePage, SdSchedulePage } from '@/features/shutdown/SdDocuments';
 import { SdMemoPage } from '@/features/shutdown/SdMemo';
 import TrackerPage from '@/features/tracker/TrackerPage';
-import RequestsPage from '@/features/requests/RequestsPage';
 import NotificationsPage from '@/features/notifications/NotificationsPage';
-import { AdminWorkspace, ControllersWorkspace, DataQualityWorkspace, ImportWorkspace, LeavePlanningWorkspace, ShutdownWorkspace } from '@/features/workspaces';
+import { AdminWorkspace, DataQualityWorkspace, ImportWorkspace, ManpowerWorkspace, ShutdownsWorkspace } from '@/features/workspaces';
 import RequestPage from '@/features/requests/RequestPage';
 import { Shell } from './Shell';
 import { Button } from '@/ui/components';
@@ -82,21 +80,24 @@ function MainApp() {
         <Routes>
           <Route path="/" element={<DayOverviewPage />} />
           <Route path="/calendar" element={<CalendarPage profile={profile} />} />
-          <Route path="/requests" element={<RequestsPage profile={profile} />} />
+          <Route path="/manpower" element={<ManpowerWorkspace profile={profile} />} />
+          <Route path="/shutdowns" element={<ShutdownsWorkspace profile={profile} />} />
+          {/* the addresses before 27 Oct 2026 (bookmarks, notices, the back button): every one lands on the same page */}
+          <Route path="/requests" element={<Legacy to={(q) => rest('/manpower?tab=requests', q)} />} />
           <Route path="/requests/:id" element={<RequestPage profile={profile} />} />
-          <Route path="/employees" element={<EmployeesPage profile={profile} />} />
+          <Route path="/employees" element={<Legacy to={(q) => rest('/manpower?tab=employees', q)} />} />
           <Route path="/employees/:id" element={<EmployeeProfilePage profile={profile} />} />
           <Route path="/more" element={<MorePage profile={profile} />} />
           <Route path="/notifications" element={<NotificationsPage profile={profile} />} />
-          <Route path="/controllers" element={<ControllersWorkspace profile={profile} />} />
-          <Route path="/leave-planning" element={<LeavePlanningWorkspace profile={profile} />} />
-          <Route path="/vacation-plan" element={<Navigate to={`/leave-planning?tab=next${window.location.search.replace(/^\?/, '&')}`} replace />} />
-          <Route path="/shutdown" element={<ShutdownWorkspace profile={profile} />} />
+          <Route path="/controllers" element={<Legacy to={(q) => (q.get('tab') === 'calendar' ? rest('/calendar?board=controllers', q, ['tab']) : rest(`/manpower?tab=controllers&sub=${q.get('tab') === 'morning' ? 'morning' : 'cover'}`, q, ['tab']))} />} />
+          <Route path="/leave-planning" element={<Legacy to={(q) => rest(`/manpower?tab=leave&sub=${['annual', 'next', 'pv'].find((k) => k === q.get('tab')) ?? 'annual'}`, q, ['tab'])} />} />
+          <Route path="/vacation-plan" element={<Legacy to={(q) => rest('/manpower?tab=leave&sub=next', q, ['tab'])} />} />
+          <Route path="/shutdown" element={<Legacy to={(q) => rest(q.get('tab') === 'modes' ? '/shutdowns?section=modes' : '/shutdowns?section=plans', q, ['tab'])} />} />
           <Route path="/shutdown/:id" element={<SdPlanPage isHead={profile.role_code === 'section_head'} />} />
           <Route path="/shutdown/:id/schedule" element={<SdSchedulePage />} />
           <Route path="/shutdown/:id/overtime" element={<SdOvertimePage />} />
           <Route path="/shutdown/:id/memo" element={<SdMemoPage />} />
-          <Route path="/progress" element={<TrackerPage profile={profile} />} />
+          <Route path="/progress" element={<Legacy to={(q) => rest('/shutdowns?section=progress', q)} />} />
           <Route path="/progress/:id" element={<TrackerPage profile={profile} />} />
           <Route path="/data-quality" element={admin ? <DataQualityWorkspace profile={profile} /> : <Navigate to="/" replace />} />
           <Route path="/import" element={admin ? <ImportWorkspace profile={profile} /> : <Navigate to="/" replace />} />
@@ -113,10 +114,18 @@ function MainApp() {
 /** Records the page each time it changes (for the Section Head's User activity). */
 function VisitRecorder() {
   const { pathname, search } = useLocation();
-  const tab = new URLSearchParams(search).get('tab');
-  useEffect(() => { recordVisit(`${pathname}${tab ? `?tab=${tab}` : ''}`); }, [pathname, tab]);
+  const q = new URLSearchParams(search);
+  const tab = pathname === '/shutdowns' ? `section=${q.get('section') ?? 'progress'}` : q.get('tab') ? `tab=${q.get('tab')}` : '';
+  useEffect(() => { recordVisit(`${pathname}${tab ? `?${tab}` : ''}`); }, [pathname, tab]);
   return null;
 }
+
+/** An address from before the 27 Oct 2026 layout: the same page under its new tab, with the rest of the address kept. */
+function Legacy({ to }: { to: (q: URLSearchParams) => string }) {
+  const { search } = useLocation();
+  return <Navigate to={to(new URLSearchParams(search))} replace />;
+}
+const rest = (base: string, q: URLSearchParams, drop: string[] = []) => { const n = new URLSearchParams(q); for (const k of drop) n.delete(k); const s = n.toString(); return s ? `${base}&${s}` : base; };
 
 /** A Controller without the Manpower assignment: the shutdown tracker only (the database allows nothing else). */
 function TrackerOnly({ profile }: { profile: NonNullable<ReturnType<typeof useSession>['profile']> }) {

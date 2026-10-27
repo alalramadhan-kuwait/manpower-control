@@ -128,7 +128,7 @@ export default function ControllersBoardPage({ profile }: { profile: UserProfile
         <p>Only the Controllers: whether each crew has its Controller, what each Controller does every day, and the Morning post. Tap a day for its detail.</p>
         <p><b>Rules:</b> no two Controllers (crew or VR) on leave on the same day without the Section Head's approval; at most {CONTROLLER_LEAVE_RULES.maxLeavesPerYear} annual leaves a year each (more needs approval); at least {CONTROLLER_LEAVE_RULES.minDaysPerYear} days of annual leave a year each.</p>
         <p>Leave is never blocked: a break shows in red until approved. New dates need a new approval.</p>
-      </div>} action={<Link to="/controllers" className="text-xs font-medium text-brand-700">Controllers ›</Link>} />
+      </div>} action={<Link to="/manpower?tab=controllers" className="text-xs font-medium text-brand-700">Controllers ›</Link>} />
 
       <div className="mb-2 flex items-center gap-2">
         <button aria-label="Previous" disabled={!prevOk} onClick={() => (mode === 'week' ? goWeek(addDaysIso(week, -7)) : goMonth(py, pm))} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-300 disabled:opacity-30"><ChevronLeft className="h-5 w-5" /></button>
@@ -143,10 +143,10 @@ export default function ControllersBoardPage({ profile }: { profile: UserProfile
       {error ? <ErrorBox error={error} /> : !view || !base ? <Spinner /> : (
         <>
           <div className="mb-2 grid grid-cols-4 gap-1 text-center">
-            {[{ n: view.tiles.cover, label: 'Cover needed', dot: 'bg-status-red', go: () => (view.firstRed ? setOpen(view.firstRed.date) : navigate('/controllers')) },
+            {[{ n: view.tiles.cover, label: 'Cover needed', dot: 'bg-status-red', go: () => (view.firstRed ? setOpen(view.firstRed.date) : navigate('/manpower?tab=controllers')) },
               { n: view.tiles.together, label: '2 on leave', dot: 'bg-status-red', go: () => rulesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
-              { n: view.tiles.morning, label: 'Morning gap', dot: 'bg-amber-500', go: () => navigate('/controllers?tab=morning') },
-              { n: view.tiles.vrFree, label: 'VR spare', dot: 'bg-status-green', go: () => navigate('/controllers') }].map((k) => (
+              { n: view.tiles.morning, label: 'Morning gap', dot: 'bg-amber-500', go: () => navigate('/manpower?tab=controllers&sub=morning') },
+              { n: view.tiles.vrFree, label: 'VR spare', dot: 'bg-status-green', go: () => navigate('/manpower?tab=controllers') }].map((k) => (
               <button key={k.label} type="button" onClick={k.go} className="rounded-lg bg-white px-1 py-1 ring-1 ring-slate-200 active:bg-slate-50">
                 <div className="flex items-center justify-center gap-1 text-base font-semibold leading-tight tabular-nums text-slate-800"><span className={cx('h-2 w-2 rounded-full', k.dot)} />{k.n}</div>
                 <div className="flex items-center justify-center gap-0.5 text-[10px] leading-tight text-slate-500">{k.label}<ChevronRight className="h-2.5 w-2.5" /></div>
@@ -166,7 +166,7 @@ export default function ControllersBoardPage({ profile }: { profile: UserProfile
                 <span className="truncate text-[11px]">{base.short.get(p.id)}</span>
                 {p.crew ? <CrewBadge crew={p.crew} size="sm" /> : <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-500">VR</span>}
               </Link>), cell: (g: Col) => <PersonCell key={g.date} c={g.people[p.id]} wide={mode === 'week'} /> })),
-            { key: 'morning', label: <Link to="/controllers?tab=morning" className="flex items-center gap-1 text-[11px] font-medium text-slate-800"><Sun className="h-3.5 w-3.5 text-amber-500" />Morning</Link>,
+            { key: 'morning', label: <Link to="/manpower?tab=controllers&sub=morning" className="flex items-center gap-1 text-[11px] font-medium text-slate-800"><Sun className="h-3.5 w-3.5 text-amber-500" />Morning</Link>,
               cell: (g: Col) => <td key={g.date} className={cx('h-7 rounded', g.morning === 'held' ? 'bg-amber-100 text-amber-700' : g.morning === 'empty' ? 'bg-red-200' : '')}>{g.morning === 'held' ? <Sun className="mx-auto h-3 w-3" /> : ''}</td> }]} />
 
           <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 px-1 text-[10px] text-slate-500">
@@ -312,7 +312,7 @@ function DaySheet({ col, ctl, onClose }: { col: Col; ctl: MpPerson[]; onClose: (
                   <span className="w-7 text-xs font-semibold text-slate-700">{c.state}</span>
                   <CrewBadge crew={c.crew} size="sm" />
                   <span className={cx('min-w-0 flex-1 truncate text-sm', ok ? 'text-slate-800' : 'font-semibold text-status-red')}>{ok ? who ?? 'Controller in place' : `Cover needed${c.controller.onLeave.length ? ` · ${c.controller.onLeave.map((p) => p.name.split(' ')[0]).join(', ')} on leave` : ''}`}</span>
-                  {!ok && <Link to={`/requests?view=entry&card=controller&kind=cover&crew=${c.crew}&from=${col.date}`} className="shrink-0 rounded-lg bg-brand-700 px-3 py-1.5 text-xs font-medium text-white">Assign</Link>}
+                  {!ok && <Link to={`/manpower?tab=requests&view=entry&card=controller&kind=cover&crew=${c.crew}&from=${col.date}`} className="shrink-0 rounded-lg bg-brand-700 px-3 py-1.5 text-xs font-medium text-white">Assign</Link>}
                 </div>
               );
             })}
@@ -332,7 +332,7 @@ function DaySheet({ col, ctl, onClose }: { col: Col; ctl: MpPerson[]; onClose: (
         <div className="flex items-center gap-2 rounded-xl px-2.5 py-2 ring-1 ring-slate-200">
           <Sun className="h-4 w-4 text-amber-500" />
           <span className="flex-1 text-sm">{mp.holder ? <>Morning post: <b>{mp.holder.name}</b>{mp.status === 'on_leave' ? ' (on leave)' : ''}</> : isDayDutyWorkday(col.date) ? <span className="font-medium text-status-red">Morning post empty</span> : 'Morning post · weekend'}</span>
-          <Link to="/controllers?tab=morning" className="text-xs font-medium text-brand-700">Plan ›</Link>
+          <Link to="/manpower?tab=controllers&sub=morning" className="text-xs font-medium text-brand-700">Plan ›</Link>
         </div>
       </div>
     </BottomSheet>

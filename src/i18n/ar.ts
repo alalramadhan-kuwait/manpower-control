@@ -1,7 +1,7 @@
 // Arabic for the screens (see ./index.tsx). English text is the key; anything missing stays in English.
 export const AR: Record<string, string> = {
   // navigation and workspaces
-  'Today': 'اليوم', 'Tomorrow': 'غدًا', 'Pick date': 'اختر تاريخًا', 'Calendar': 'التقويم', 'Requests': 'الطلبات', 'Employees': 'الموظفون', 'More': 'المزيد',
+  'Today': 'اليوم', 'Manpower': 'القوى العاملة', 'Shutdowns': 'الإطفاءات', 'Leave plan': 'خطة الإجازات', 'Progress': 'التقدّم', 'Plans': 'الخطط', 'Waiting for you': 'بانتظارك', 'Controllers calendar': 'تقويم المراقبين', 'Tomorrow': 'غدًا', 'Pick date': 'اختر تاريخًا', 'Calendar': 'التقويم', 'Requests': 'الطلبات', 'Employees': 'الموظفون', 'More': 'المزيد',
   'Workspaces': 'مساحات العمل', 'Manpower Control': 'التحكم بالقوى العاملة', 'Notifications': 'التنبيهات', 'Quick add': 'إضافة سريعة', 'Sign out': 'تسجيل الخروج', 'Signed in as': 'مسجل الدخول باسم', 'Language': 'اللغة',
   'Open alerts and resolved history': 'التنبيهات المفتوحة وسجل ما تم حله',
   'Controllers': 'المراقبون', 'Leave planning': 'تخطيط الإجازات', 'Shutdown planning': 'تخطيط التوقف', 'Shutdown progress': 'تقدم التوقف', 'Data quality': 'جودة البيانات', 'Excel import': 'استيراد Excel', 'Administration': 'الإدارة',

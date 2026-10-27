@@ -99,7 +99,7 @@ export function LeaveOracle({ isHead, onCount }: { isHead: boolean; onCount?: (n
   const undo = (x: Item) => run([x], (i) => (x.state === 'rejected' ? declineLeave(i, false) : x.state === 'fix' ? sendLeaveToFix(i, '', false) : approveLeave(i, false)), `${x.person.name}: ${t('back to planned')}`);
   const reject = (x: Item, reason: string) => run([x], (i) => declineLeave(i, true, reason), `${x.person.name}: ${t('rejected')}`);
   const toFix = (x: Item, note: string) => run([x], (i) => sendLeaveToFix(i, note, true), `${x.person.name}: ${t('sent to the Coordinator')}`);
-  const pvLink = (x: Item) => `/requests?view=entry&card=pv&emp=${x.person.id}&leave=${x.leave.start}`;
+  const pvLink = (x: Item) => `/manpower?tab=requests&view=entry&card=pv&emp=${x.person.id}&leave=${x.leave.start}`;
 
   return (
     <div className="lg:max-w-3xl">

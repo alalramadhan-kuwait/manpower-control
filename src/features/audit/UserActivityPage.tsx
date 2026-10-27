@@ -16,7 +16,8 @@ const ago = (iso: string | null) => {
   return m < 2 ? 'now' : m < 60 ? `${m} min ago` : m < 24 * 60 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
 };
 /** A page address in words. */
-const PAGES: [RegExp, string][] = [[/^\/$/, 'Today'], [/^\/calendar/, 'Calendar'], [/^\/requests/, 'Requests'], [/^\/employees/, 'Employees'], [/^\/controllers/, 'Controllers'],
+const PAGES: [RegExp, string][] = [[/^\/$/, 'Today'], [/^\/calendar/, 'Calendar'], [/^\/manpower\?tab=employees/, 'Employees'], [/^\/manpower\?tab=controllers/, 'Controllers'], [/^\/manpower\?tab=leave/, 'Leave planning'],
+  [/^\/manpower/, 'Requests'], [/^\/shutdowns\?section=plans/, 'Shutdown plan'], [/^\/shutdowns\?section=modes/, 'Unit status'], [/^\/shutdowns/, 'Shutdown progress'], [/^\/requests/, 'Requests'], [/^\/employees/, 'Employees'], [/^\/controllers/, 'Controllers'],
   [/^\/leave-planning/, 'Leave planning'], [/^\/shutdown/, 'Shutdown plan'], [/^\/progress/, 'Shutdown progress'], [/^\/data-quality/, 'Data quality'], [/^\/import/, 'Excel import'],
   [/^\/admin/, 'Administration'], [/^\/notifications/, 'Notifications'], [/^\/more/, 'More'], [/^\/engineer\/(\w+)/, 'Engineer · $1']];
 const ENG: Record<string, string> = { dash: 'Dashboard', equip: 'Equipment', ho: 'Handover', scope: 'SD scope', hot: 'Hot work' };

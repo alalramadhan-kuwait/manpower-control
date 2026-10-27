@@ -65,8 +65,8 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
     <div>
       <PageHeader title="Controllers" info={<><p>Cover for a Shift Controller on leave, and the Morning Controller rotation.</p><p>Only Grade 15+ can cover. A Morning rotation is up to 2 months; a shift cover lasts the actual leave.</p><p>Grade 15+ Controllers only; nobody covers their own crew; one person cannot hold two overlapping assignments. Every change is kept in the audit history.</p><p>Needs are listed for the next 120 days with a free VR Controller suggested.</p></>} />
       <div className="mb-3 flex flex-wrap gap-2">
-        <Link to="/requests?view=entry&card=controller&kind=cover" className="inline-flex min-h-11 items-center rounded-xl bg-brand-700 px-4 text-sm font-medium text-white">{t('Assign cover')}</Link>
-        <Link to="/requests?view=entry&card=controller&kind=morning" className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-white px-4 text-sm font-medium text-brand-800 ring-1 ring-slate-300"><Sun className="h-4 w-4" /> {t('Morning rotation')}</Link>
+        <Link to="/manpower?tab=requests&view=entry&card=controller&kind=cover" className="inline-flex min-h-11 items-center rounded-xl bg-brand-700 px-4 text-sm font-medium text-white">{t('Assign cover')}</Link>
+        <Link to="/manpower?tab=requests&view=entry&card=controller&kind=morning" className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-white px-4 text-sm font-medium text-brand-800 ring-1 ring-slate-300"><Sun className="h-4 w-4" /> {t('Morning rotation')}</Link>
       </div>
       {notice && <div className="mb-3 rounded-xl bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{notice}</div>}
       {error != null && <div className="mb-3 space-y-2"><ErrorBox error={error} /><Button variant="secondary" onClick={load}><RefreshCw className="h-4 w-4" /> Try again</Button></div>}
@@ -91,7 +91,7 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
                           ? <div className="truncate text-xs text-status-amber">VR {n.vr.name}: {n.vrNote.replace(/^VR /, '').replace(/(\d{4}-\d{2}-\d{2})/g, (d) => shortDate(d))}</div>
                           : <div className="truncate text-xs text-status-green">Move VR {n.vr.name}{n.vrFrom ? ` from ${n.vrFrom}` : ''}</div>))}
                     </div>
-                    <Link to={n.kind === 'morning' ? `/requests?view=entry&card=controller&kind=morning&from=${n.start}` : `/requests?view=entry&card=controller&kind=cover&crew=${n.crew}&from=${n.start}`} className="inline-flex min-h-11 shrink-0 items-center rounded-xl bg-white px-4 text-sm font-medium text-brand-800 ring-1 ring-slate-300">{t(n.kind === 'morning' ? 'Rotation' : 'Assign')}</Link>
+                    <Link to={n.kind === 'morning' ? `/manpower?tab=requests&view=entry&card=controller&kind=morning&from=${n.start}` : `/manpower?tab=requests&view=entry&card=controller&kind=cover&crew=${n.crew}&from=${n.start}`} className="inline-flex min-h-11 shrink-0 items-center rounded-xl bg-white px-4 text-sm font-medium text-brand-800 ring-1 ring-slate-300">{t(n.kind === 'morning' ? 'Rotation' : 'Assign')}</Link>
                   </li>
                 );
               })}
@@ -112,14 +112,14 @@ export default function ControllersPage({ profile }: { profile: UserProfile }) {
                       <div className="truncate font-medium text-slate-800">{p.name}</div>
                       <div className="truncate text-xs text-slate-500">{now ? `In ${now} Shift${cur ? ` since ${shortDate(cur.start_date)}` : ''}` : <span className="font-semibold text-status-red">Not placed in a crew</span>}{next.length ? ` · ${next.map((m) => `→ ${m.to_crew} ${shortDate(m.start_date)}`).join(' · ')}` : ''}</div>
                     </div>
-                    <Link to={`/requests?view=entry&card=controller&kind=vr&emp=${p.id}`} className="inline-flex min-h-11 shrink-0 items-center rounded-xl bg-white px-4 text-sm font-medium text-brand-800 ring-1 ring-slate-300">{t('Move')}</Link>
+                    <Link to={`/manpower?tab=requests&view=entry&card=controller&kind=vr&emp=${p.id}`} className="inline-flex min-h-11 shrink-0 items-center rounded-xl bg-white px-4 text-sm font-medium text-brand-800 ring-1 ring-slate-300">{t('Move')}</Link>
                   </li>
                 );
               })}
             </ul>
           </Section>
 
-          <Section title="Morning Controller" action={<Link to="/controllers?tab=morning" className="text-xs font-medium text-brand-700">Plan ›</Link>}>
+          <Section title="Morning Controller" action={<Link to="/manpower?tab=controllers&sub=morning" className="text-xs font-medium text-brand-700">Plan ›</Link>}>
             {morningToday ? (
               <div className="flex items-center justify-between gap-3 text-sm">
                 <span><span className="font-medium text-slate-800">{morningToday.person.name}</span> <span className="text-xs text-slate-500">holds the post today{morningToday.assignment?.kind === 'morning_rotation' ? ` (rotation until ${shortDate(morningToday.assignment.end)})` : ''}</span></span>

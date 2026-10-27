@@ -54,7 +54,7 @@ export default function MorningPlanPage() {
         <p>The Morning Controller post, Sunday–Thursday, from today to the end of {year + 1}.</p>
         <p>Each rotation is one Grade 15+ Controller for up to 2 months. A crew Controller on rotation leaves their crew, which then needs a cover.</p>
         <p>Empty days are red. Empty periods are cut into turns of up to 2 months, each with a suggested Controller: free for the whole turn, fewest Morning days that year, so the turns go round. Nothing is saved until you Assign.</p>
-      </div>} action={<Link to="/controllers" className="text-xs font-medium text-brand-700">Controllers ›</Link>} />
+      </div>} action={<Link to="/manpower?tab=controllers" className="text-xs font-medium text-brand-700">Controllers ›</Link>} />
 
       {error ? <ErrorBox error={error} /> : !view || !inputs ? <Spinner /> : (
         <>
@@ -130,7 +130,7 @@ type View = { colour: Map<string, string>; people: Map<string, { name: string }>
 function SegmentRow({ s, view }: { s: MorningSegment; view: View }) {
   if (s.kind === 'gap') return <>{(view.byGap.get(s.start) ?? []).map((r) => <GapRow key={r.start} r={r} view={view} />)}</>;
   return (
-    <Link to="/controllers" className="flex items-center gap-2.5 py-2">
+    <Link to="/manpower?tab=controllers" className="flex items-center gap-2.5 py-2">
       <span className={cx('h-6 w-6 shrink-0 rounded-md', view.colour.get(s.employeeId!) ?? 'bg-slate-400')} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-slate-900">{view.people.get(s.employeeId!)?.name ?? 'Unknown'} <span className="font-normal text-slate-500">· {s.workdays} days</span></span>
@@ -158,7 +158,7 @@ function GapRow({ r, view }: { r: ProposedRotation; view: View }) {
           : <span className="block text-xs text-status-amber">No one free for the whole period</span>}
         {sug?.warnings.map((w) => <span key={w} className="block truncate text-[11px] text-status-amber">{w}</span>)}
       </span>
-      <Link to={`/requests?view=entry&card=controller&kind=morning&from=${r.start}&to=${r.end}${sug ? `&who=${sug.employeeId}` : ''}`} className="shrink-0 rounded-lg bg-brand-700 px-3 py-1.5 text-xs font-medium text-white">Assign</Link>
+      <Link to={`/manpower?tab=requests&view=entry&card=controller&kind=morning&from=${r.start}&to=${r.end}${sug ? `&who=${sug.employeeId}` : ''}`} className="shrink-0 rounded-lg bg-brand-700 px-3 py-1.5 text-xs font-medium text-white">Assign</Link>
     </div>
   );
 }

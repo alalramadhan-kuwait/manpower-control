@@ -129,7 +129,7 @@ function Tracker({ preset, onExit }: { preset?: { login_id: string; tracker_id: 
     <Frame title="Operations Portal" sub="">
       <div className="mx-auto max-w-sm p-6 text-center"><p className="font-semibold text-brand-700">This link is no longer used.</p>
         <p className="mt-2 text-sm text-slate-600">Sign in to the portal with your own account.</p>
-        <button type="button" className="mt-5 min-h-11 w-full rounded-xl bg-brand-700 font-semibold text-white" onClick={() => { setEngineerLink(null); window.location.replace('/progress'); }}>Go to sign in</button></div>
+        <button type="button" className="mt-5 min-h-11 w-full rounded-xl bg-brand-700 font-semibold text-white" onClick={() => { setEngineerLink(null); window.location.replace('/shutdowns?section=progress'); }}>Go to sign in</button></div>
     </Frame>
   );
   if (err && !data) return <Frame title="Operations Portal" sub=""><div className="p-4"><ErrorBox error={err} /></div></Frame>;

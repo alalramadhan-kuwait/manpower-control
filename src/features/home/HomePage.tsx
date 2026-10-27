@@ -23,10 +23,10 @@ export default function HomePage() {
     <div>
       <PageHeader title="Section summary" info="Unit 12 Section 1 headcount and data quality. Daily manpower status is on the Today screen." />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="In scope" value={scope.length} to="/employees" />
-        <Stat label="Controllers" value={byCat('controller').length} to="/employees?role=controller" />
-        <Stat label="Panel Operators" value={byCat('panel').length} to="/employees?role=panel" />
-        <Stat label="Field Operators" value={byCat('field').length} to="/employees?role=field" />
+        <Stat label="In scope" value={scope.length} to="/manpower?tab=employees" />
+        <Stat label="Controllers" value={byCat('controller').length} to="/manpower?tab=employees&role=controller" />
+        <Stat label="Panel Operators" value={byCat('panel').length} to="/manpower?tab=employees&role=panel" />
+        <Stat label="Field Operators" value={byCat('field').length} to="/manpower?tab=employees&role=field" />
       </div>
       <h2 className="mb-2 mt-6 text-xs font-semibold uppercase tracking-wide text-slate-500">Crews (permanent assignment)</h2>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

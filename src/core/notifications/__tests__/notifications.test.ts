@@ -33,7 +33,7 @@ describe('notification center', () => {
     const cover = n.find((x) => x.area === 'controller')!;
     expect(cover).toMatchObject({ level: 'action', title: 'Cover needed · B Shift' });
     expect(cover.detail).toContain(`Move VR ${vr.name}`);
-    expect(cover.to).toBe(`/requests?view=entry&card=controller&kind=cover&crew=B&from=${cover.date}`);
+    expect(cover.to).toBe(`/manpower?tab=requests&view=entry&card=controller&kind=cover&crew=B&from=${cover.date}`);
   });
   it('requests: review is an action for everyone; the decision is an action only for the Section Head', () => {
     const requests = [{ id: 'r1', employeeName: 'Person X', typeLabel: 'Unscheduled', start: '2026-10-02', end: '2026-10-03', status: 'reviewed' as const, overtime: true }];
@@ -42,7 +42,7 @@ describe('notification center', () => {
   });
   it('a reschedule request is the Section Head\'s to decide and says when the crew would be short', () => {
     const changes = [{ id: 'c1', employeeName: 'Person X', oldStart: '2026-10-02', oldEnd: '2026-10-08', newStart: '2026-10-09', newEnd: '2026-10-15', short: 2, clash: 0 }];
-    expect(buildNotices(base({ changes })).find((x) => x.id === 'chg-c1')).toMatchObject({ level: 'action', title: 'Reschedule request to decide', to: '/requests?view=approvals' });
+    expect(buildNotices(base({ changes })).find((x) => x.id === 'chg-c1')).toMatchObject({ level: 'action', title: 'Reschedule request to decide', to: '/manpower?tab=requests&view=approvals' });
     expect(buildNotices(base({ changes })).find((x) => x.id === 'chg-c1')?.detail).toContain('crew short 2d');
     expect(buildNotices(base({ changes, isSectionHead: false })).find((x) => x.id === 'chg-c1')).toMatchObject({ level: 'watch' });
   });
@@ -68,7 +68,7 @@ describe('notification center', () => {
   it('Controller leave rules: one grouped notice each; actions for the Section Head only', () => {
     const controllerLeave = { overlaps: [{ a: 'Jasem Sadeq', b: 'Muath Malallah', start: '2026-12-07', end: '2026-12-14', days: 8 }], extras: [{ name: 'Yaser Asiri', nth: 5, year: 2027, start: '2027-09-01', end: '2027-09-04' }] };
     const head = buildNotices(base({ controllerLeave }));
-    expect(head.find((x) => x.id.startsWith('ctl2-'))).toMatchObject({ level: 'action', title: '2 Controllers on leave together · 1×', detail: 'Jasem + Muath 7 Dec – 14 Dec · needs your approval', to: '/controllers?tab=calendar&month=2026-12' });
+    expect(head.find((x) => x.id.startsWith('ctl2-'))).toMatchObject({ level: 'action', title: '2 Controllers on leave together · 1×', detail: 'Jasem + Muath 7 Dec – 14 Dec · needs your approval', to: '/calendar?board=controllers&month=2026-12' });
     expect(head.find((x) => x.id.startsWith('ctlx-'))).toMatchObject({ level: 'action', title: 'Controller leave over 4 a year · 1×', detail: 'Yaser (leave 5) 1 Sep · needs your approval' });
     expect(buildNotices(base({ controllerLeave, isSectionHead: false })).find((x) => x.id.startsWith('ctl2-'))!.level).toBe('watch');
   });

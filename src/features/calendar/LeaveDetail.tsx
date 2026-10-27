@@ -87,7 +87,7 @@ export function LeaveDetail({ item, around, isHead, onClose, onChanged }: {
   const cancel = () => { const r = records[0];
     return act(() => cancelLeaveEntry({ employeeId: p.id, recordId: r.id, code: r.absence_type_code ?? '', label: item.codes.join('+'), start: r.start_date, end: r.end_date, reason: text, summaryDates: range(r.start_date, r.end_date) }),
       isHead ? 'Cancelled. The leave is kept in the history.' : 'Cancellation sent to the Section Head.'); };
-  const reschedule = `/requests?view=entry&card=pv&emp=${p.id}&leave=${records[0]?.start_date ?? item.start}${back}`;
+  const reschedule = `/manpower?tab=requests&view=entry&card=pv&emp=${p.id}&leave=${records[0]?.start_date ?? item.start}${back}`;
   const btn = 'min-h-11 rounded-xl px-3 text-sm font-semibold ring-1 disabled:opacity-50';
   const pick = (a: Ask) => { setMore(false); setAsk(ask === a ? null : a); };
 
@@ -174,7 +174,7 @@ export function LeaveDetail({ item, around, isHead, onClose, onChanged }: {
             {done && <p role="status" className="flex items-center gap-2 text-xs font-medium text-status-green">{done.msg}
               {done.undo && <button type="button" disabled={busy} onClick={() => act(done.undo!, 'Undone.')} className="font-semibold text-brand-700 underline">Undo</button>}</p>}
             <div className="relative flex gap-1.5">
-              {request ? <Link to={`/requests?view=approvals${back}`} className={cx(btn, 'flex flex-1 items-center justify-center bg-brand-700 text-white ring-brand-700')}>Review in Approvals ›</Link>
+              {request ? <Link to={`/manpower?tab=requests&view=approvals${back}`} className={cx(btn, 'flex flex-1 items-center justify-center bg-brand-700 text-white ring-brand-700')}>Review in Approvals ›</Link>
                 : canDecide ? <>
                   <button type="button" disabled={busy} onClick={approve} className={cx(btn, 'flex-[1.4] bg-brand-700 text-white ring-brand-700')}>✓ Approve</button>
                   <button type="button" disabled={busy} onClick={() => pick('reject')} className={cx(btn, 'flex-1 bg-white text-red-700 ring-slate-200')}>Reject…</button>
@@ -223,7 +223,7 @@ export function LeaveDetail({ item, around, isHead, onClose, onChanged }: {
                     {c.warnings.length ? <span className="text-amber-700" title={c.warnings.join(' · ')}>⚠ {c.warnings[0]}</span> : <span className="text-status-green">✓</span>}</li>; })}
                 {!ctl.candidates.length && <li className="px-2 py-1 text-slate-500">None free</li>}
               </ul>
-              <Link to={`/requests?view=entry&card=controller&kind=cover&crew=${crew}&from=${item.start}&to=${last}&back=${backHere()}`} className="block px-2 py-1 font-medium text-brand-700">Assign cover ›</Link>
+              <Link to={`/manpower?tab=requests&view=entry&card=controller&kind=cover&crew=${crew}&from=${item.start}&to=${last}&back=${backHere()}`} className="block px-2 py-1 font-medium text-brand-700">Assign cover ›</Link>
             </Fold>
           )}
           {item.sd && (
