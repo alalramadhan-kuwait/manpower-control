@@ -22,7 +22,7 @@ export function expand(text: string): string { let t = text; for (const [re, to]
 
 /** Plant tags as the reports write them, resolved to the tracker's form (E-216 A/B → E-12-216A, E-12-216B; R-201/203/204 → three reactors;
  *  HV-12-546A as it is). The "12-" unit part is optional in the report. */
-const TAG = /\b([A-Z]{1,3})-(?:12-)?(\d{3})\s*([A-Z])?((?:\s*\/\s*(?:[A-Z]|\d{3}[A-Z]?))*)\b/g;
+const TAG = /\b([A-Z]{1,3})-(?:12-)?(\d{3})[\s-]*([A-Z])?((?:\s*\/\s*(?:[A-Z]|\d{3}[A-Z]?))*)\b/g;
 export function tagsIn(text: string): { raw: string; tags: string[]; index: number }[] {
   const out: { raw: string; tags: string[]; index: number }[] = [];
   for (const m of text.matchAll(TAG)) {
@@ -40,7 +40,7 @@ const HEADER = /^(unit-?\s?\d+|train-?\s?\d+\s*(shutdown|sd)?\s*(report|update|s
 /** The pasted text as statements: a line that starts with tag(s) is about them; a line without one continues the
  *  statement above (a wrapped line or a second bullet), unless it is a heading. */
 export function segment(text: string): Statement[] {
-  const rows = text.split(/\r?\n/).map((r) => r.replace(/[⁠​*_]/g, '').replace(/^\s*(?:[-•·⁠▪➢>]+|\d+[.)])\s*/, '').trim());
+  const rows = text.split(/\r?\n/).map((r) => r.replace(/[⁠​*_]/g, '').replace(/^\s*(?:[-•·⁠▪➢>📌]+|\d+[.)])\s*/, '').trim());
   const out: Statement[] = [];
   rows.forEach((raw, i) => {
     if (!raw) return;
@@ -59,7 +59,9 @@ export function segment(text: string): Statement[] {
     if ((HEADER.test(raw) && raw.split(/\s+/).length <= 6) || /^\d{1,2}[:.]\d{2}/.test(raw) || /^\d{1,2}\/\d{1,2}/.test(raw)) { out.push({ line: i + 1, raw, tagsText: '', tags: [], text: raw, header: true }); return; }
     const prev = out[out.length - 1];
     // a wrapped line continues the item above; a line of its own ("Train-1: …", a planning line, a heading-like label) does not
-    const own = /^[A-Za-z][\w\s-]{0,24}:/.test(raw) || TRAIN1.test(raw) || /planned\s*:?\s*\d/i.test(raw);
+    // a short label line ("LP", "Control Valves") is a heading of its own
+    const own = /^[A-Za-z][\w\s-]{0,24}:/.test(raw) || TRAIN1.test(raw) || /planned\s*:?\s*\d/i.test(raw) || /^[A-Za-z][A-Za-z ]{0,20}$/.test(raw);
+    if (/^[A-Za-z][A-Za-z ]{0,20}$/.test(raw) && !/\b(done|progress|pending|start)\b/i.test(raw)) { out.push({ line: i + 1, raw, tagsText: '', tags: [], text: raw, header: true }); return; }
     if (prev && !prev.header && prev.tags.length && !own) out.push({ line: i + 1, raw, tagsText: prev.tagsText, tags: prev.tags, text: raw, header: false });
     else out.push({ line: i + 1, raw, tagsText: '', tags: [], text: raw, header: false });
   });
