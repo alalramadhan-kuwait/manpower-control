@@ -71,7 +71,7 @@ export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, n
   ) : undefined;
   return (
     <>
-      <CRow dot={dot} faded={!a.tracked} title={a.activity} sub={<>{sub}{a.actualNote ? <i> · {a.actualNote}</i> : null}</>} action={action}
+      <CRow dot={dot} faded={!a.tracked} title={a.activity} sub={<><span className={cx(late && a.tracked && t.state !== 'FINISHED' && 'font-semibold text-status-red')}>{sub}</span>{a.actualNote ? <i> · {a.actualNote}</i> : null}</>} action={action}
         menu={menu} />
       {err != null && <ErrorBox error={err} />}
     </>

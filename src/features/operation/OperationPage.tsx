@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { minimumsText, modeOn, unitsOn, type OperatingMode, type UnitSection } from '@/core/modes';
 import { isValidIsoDate } from '@/core/roster';
-import { cancelPeriod, fetchOperationPlan, saveMode, schedulePeriod, type PeriodRow } from '@/data/modes';
+import { cancelPeriod, fetchOperationPlan, fetchUnitStatusHistory, saveMode, schedulePeriod, type PeriodRow, type UnitStatusChange } from '@/data/modes';
 import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, Card, ErrorBox, Field, PageHeader, Spinner, cx } from '@/ui/components';
 import { localToday, shortDate } from '@/ui/leave';
@@ -131,6 +131,8 @@ export default function OperationPage({ profile }: { profile: UserProfile }) {
             )}
           </Card>
 
+          <StatusHistory label={(code) => (view.plan.units ?? []).find((u) => u.code === code)?.label ?? code} mode={(code) => view.modeOf(code)?.label ?? code} />
+
           {view.past.length > 0 && (
             <Card className="p-0">
               <button type="button" onClick={() => setHistory(!history)} className="flex w-full items-center justify-between px-4 py-3 text-left">
@@ -245,5 +247,40 @@ function CancelSheet({ period, label, onClose, onDone }: { period: PeriodRow; la
           <Button variant="danger" className="flex-1" disabled={busy || !reason.trim()} onClick={() => run(() => cancelPeriod(period.id, reason.trim()), 'Period cancelled. Those days follow the unit status again.')}>Cancel period</Button></div>
       </div>
     </BottomSheet>
+  );
+}
+
+/** The unit status history (owner's notes): every change with its date and time, and the shutdown plan it belongs to. */
+function StatusHistory({ label, mode }: { label: (code: string) => string; mode: (code: string) => string }) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<UnitStatusChange[] | null>(null); const [err, setErr] = useState<unknown>(null);
+  useEffect(() => { if (!open || rows) return; fetchUnitStatusHistory().then(setRows).catch(setErr); }, [open, rows]);
+  const at = (iso: string) => new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kuwait' });
+  const span = (a: string | null, b: string | null) => (a && b ? `${shortDate(a)} – ${shortDate(b)}` : '—');
+  const what = (c: UnitStatusChange) => {
+    if (c.action === 'insert') return `added · ${span(c.newStart, c.newEnd)}`;
+    if (c.action === 'delete') return `removed · ${span(c.oldStart, c.oldEnd)}`;
+    if (c.oldStatus !== c.newStatus && c.newStatus === 'cancelled') return `cancelled · ${span(c.oldStart, c.oldEnd)}`;
+    if (c.oldStart !== c.newStart || c.oldEnd !== c.newEnd) return `dates ${span(c.oldStart, c.oldEnd)} → ${span(c.newStart, c.newEnd)}`;
+    return `sections set · ${span(c.newStart, c.newEnd)}`;
+  };
+  const name = (c: UnitStatusChange) => (c.kind === 'mode' ? `Mode: ${mode(c.modeCode ?? '')}` : `${c.units.length ? c.units.map(label).join(' + ') : 'Unit'}${c.title ? ` · ${c.title}` : ''}`);
+  return (
+    <Card className="p-0">
+      <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center justify-between px-4 py-3 text-left">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Unit status history{rows ? ` (${rows.length})` : ''}</span>{open ? <ChevronUp className="h-4 w-4 text-slate-500" /> : <ChevronDown className="h-4 w-4 text-slate-500" />}
+      </button>
+      {open && (err != null ? <div className="px-4 pb-3"><ErrorBox error={err} /></div> : !rows ? <div className="pb-3"><Spinner /></div>
+        : !rows.length ? <p className="px-4 pb-3 text-sm text-slate-500">No change recorded yet.</p>
+        : <ul className="divide-y divide-slate-100 px-4 pb-2">{rows.map((c, i) => (
+          <li key={`${c.at}-${i}`} className="flex items-start gap-2 py-2">
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-semibold text-slate-800">{name(c)}</span>
+              <span className={cx('block text-[12px] tabular-nums', c.newStatus === 'cancelled' && c.oldStatus !== 'cancelled' ? 'text-status-red' : 'text-slate-600')}>{what(c)}</span>
+              <span className="block text-[11px] tabular-nums text-slate-500">{at(c.at)}</span>
+            </span>
+            {c.planId && <Link to={`/shutdown/${c.planId}`} className="shrink-0 rounded-lg bg-brand-50 px-2 py-1 text-[12px] font-semibold text-brand-700">{c.planTitle ?? 'Plan'} ›</Link>}
+          </li>))}</ul>)}
+    </Card>
   );
 }

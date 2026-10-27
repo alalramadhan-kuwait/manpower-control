@@ -57,3 +57,14 @@ export async function cancelPeriod(id: string, reason: string) {
   if (error) throw plain(error);
   dataChanged();
 }
+
+/** One change of the unit status: a shutdown event (sections down) or an operating-mode period, from the audit log. */
+export interface UnitStatusChange { at: string; kind: 'unit' | 'mode'; action: 'insert' | 'update' | 'delete'; entityId: string | null; title: string | null; units: string[]; modeCode: string | null;
+  oldStart: string | null; oldEnd: string | null; newStart: string | null; newEnd: string | null; oldStatus: string | null; newStatus: string | null; planId: string | null; planTitle: string | null }
+export async function fetchUnitStatusHistory(limit = 200): Promise<UnitStatusChange[]> {
+  const { data, error } = await supabase.rpc('unit_status_history', { p_limit: limit });
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({ at: r.at as string, kind: r.kind as 'unit' | 'mode', action: r.action as UnitStatusChange['action'], entityId: (r.entity_id as string) ?? null,
+    title: (r.title as string) ?? null, units: (r.units as string[]) ?? [], modeCode: (r.mode_code as string) ?? null, oldStart: (r.old_start as string) ?? null, oldEnd: (r.old_end as string) ?? null,
+    newStart: (r.new_start as string) ?? null, newEnd: (r.new_end as string) ?? null, oldStatus: (r.old_status as string) ?? null, newStatus: (r.new_status as string) ?? null, planId: (r.plan_id as string) ?? null, planTitle: (r.plan_title as string) ?? null }));
+}
