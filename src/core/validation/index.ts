@@ -140,11 +140,18 @@ export function checkSchedule(days: DayLine[], rules: RuleConfig[]): Finding[] {
   if (consec.enabled) {
     const max = Number(consec.params.max ?? 6);
     let run: DayLine[] = [];
+    // where the days come from, when the run mixes sources (e.g. shutdown team, then the crew's rota)
+    const sourceOf = (d: DayLine) => d.duty.note?.replace(/ \(.*\)$/, '') ?? (d.duty.crew ? `${d.duty.crew} Shift` : d.duty.code === 'D' ? 'day duty' : 'duty');
+    const breakdown = (r: DayLine[]) => {
+      const parts: { label: string; from: string; to: string }[] = [];
+      for (const d of r) { const label = sourceOf(d); const last = parts[parts.length - 1]; if (last && last.label === label) last.to = d.date; else parts.push({ label, from: d.date, to: d.date }); }
+      return parts.length > 1 ? ` — ${parts.map((x) => `${x.label} ${x.from === x.to ? fmt(x.from) : `${fmt(x.from)}–${fmt(x.to)}`}`).join(', then ')}` : '';
+    };
     const flush = () => {
       if (run.length > max) {
         const day = run[max];
         out.push({ rule: consec.code, severity: 'hard_stop', date: day.date, key: `consec:${run[0].date}`,
-          message: `${run.length} duty days in a row (${fmt(run[0].date)} – ${fmt(run[run.length - 1].date)}): ${fmt(day.date)} is day ${max + 1}. At most ${max}.` });
+          message: `${run.length} duty days in a row (${fmt(run[0].date)} – ${fmt(run[run.length - 1].date)}${breakdown(run)}): ${fmt(day.date)} is day ${max + 1}. At most ${max}.` });
       }
       run = [];
     };

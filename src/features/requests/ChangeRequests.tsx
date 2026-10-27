@@ -130,6 +130,9 @@ export function ProposeSheet({ person, leave, inputs, approvals, today, changes,
           <Button variant="secondary" className="flex-1" onClick={onBack}>Back</Button>
           <Button className="flex-1" disabled={busy || !valid || unchanged || !remark.trim() || !check || hard || headBlocked} onClick={send}>{busy ? 'Saving…' : isHead ? 'Save' : 'Send request'}</Button>
         </div>
+        {valid && !unchanged && !busy && (hard || headBlocked || !remark.trim()) && (
+          <p className="text-xs font-medium text-red-800">{hard ? `${isHead ? 'Save' : 'Send'} is off: a hard stop above. Choose dates that avoid it${isHead ? ', or give him a rest day first' : ''}.` : headBlocked ? 'Save is off: cover the crew first.' : `Add a remark to ${isHead ? 'save' : 'send'}.`}</p>
+        )}
       </div>
     </BottomSheet>
   );
