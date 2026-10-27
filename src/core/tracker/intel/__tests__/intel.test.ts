@@ -55,7 +55,9 @@ describe('acceptance reports', () => {
   });
   it('3 · R-201/203/204 collector ring: location and repair status kept apart, nothing concluded complete', () => {
     const ops = run('R-201/203/204: Collector ring under repair.');
-    expect(ops.proposals.filter((p) => p.type === 'new_step').map((p) => p.tag)).toEqual(['R-12-201', 'R-12-203', 'R-12-204']);
+    // repair family: the reactors' repair step starts, no step is added for the ring itself
+    expect(ops.proposals.filter((p) => p.type === 'start_step').map((p) => `${p.tag} ${p.activityName}`)).toEqual(['R-12-201 Repair of thermowell brackets', 'R-12-203 Repair of thermowell brackets', 'R-12-204 Repair of thermowell brackets']);
+    expect(ops.proposals.some((p) => p.type === 'new_step')).toBe(false);
     expect(ops.proposals.filter((p) => p.type === 'finish_step').length).toBe(0);
     const mm = run('R-201/203/204: Collector ring shifted to site.', MM);
     expect(mm.proposals.filter((p) => p.classification === 'location').length).toBe(3);
@@ -71,7 +73,7 @@ describe('acceptance reports', () => {
     const r = run('E-216 A/B: Cleaning to start.\nFour control valves dropped.\nScaffold erection in progress.');
     expect(new Set(r.proposals.map((p) => p.tag))).toEqual(new Set(['E-12-216A', 'E-12-216B']));
     expect(r.proposals.filter((p) => p.type === 'start_step' || p.type === 'finish_step').length).toBe(0);
-    expect(r.proposals.filter((p) => p.type === 'new_step' && /scaffold/i.test(p.title)).length).toBe(2);
+    expect(r.proposals.filter((p) => p.type === 'info' && /scaffold/i.test(p.title)).length).toBe(2); expect(r.proposals.some((p) => p.type === 'new_step')).toBe(false);
     expect(r.proposals.filter((p) => p.classification === 'unclear' && /control valves/.test(p.title)).length).toBe(2);
   });
   it('6 · E-122B: not in this tracker → a review item, nothing created, no spare hold invented', () => {
@@ -147,6 +149,16 @@ describe('latest valid information', () => {
     d.equipment.find((e) => e.tag === 'V-12-213')!.pendingReason = 'Waiting for crane';
     expect(find(run('V-213: Hold released, work resumed.', MM, d), (p) => p.type === 'hold_release')?.status).toBe('ready');
   });
+  it('no micro-tracking: a sub-item of cleaning / inspection marks the family step running, never a new step', () => {
+    const d = data();
+    const r = run('R-203: Collector ring cleaning done, inlet diffuser cleaning done & shifted to WS.\nR-205: basket cleaning done.\nE-216 A/B: Scaffold erection in progress.', MM, d);
+    expect(r.proposals.some((p) => p.type === 'new_step')).toBe(false);
+    // R-203 has only a repair step in the fixture: cleaning falls back to information
+    expect(find(r, (p) => p.tag === 'R-12-205' && p.type === 'info' && /part of ▶/.test(p.title))?.activityName).toBe('Dump Catalyst by Double Vacuum');
+    const d2 = data(); d2.activities.push(act('R-12-203', 'Cleaning all internal by Hydrojet'));
+    const r2 = run('R-203: Collector ring cleaning done.', MM, d2);
+    expect(find(r2, (p) => p.type === 'start_step')?.activityName).toBe('Cleaning all internal by Hydrojet');
+  });
   it('an RTJ / flange inspection remark is information on the item, not a new step', () => {
     const d = data(); d.equipment.push(eq('C-12-201')); d.activities.push(act('C-12-201', 'Dismantle (workshop)', { actualStart: S, actualFinish: F }));
     const r = run('C-201: RTJ flanges inspection I/P.', META, d);
@@ -160,8 +172,9 @@ describe('latest valid information', () => {
     expect(r.proposals.some((p) => p.type === 'review')).toBe(false);
   });
   it('a same-name existing step is reused instead of a new one; a workflow change is marked', () => {
-    const r = run('H-201: Burner cleaning of pass 2 done.\nR-205: Additional hydroblasting of the cone done.', MM);
-    expect(find(r, (p) => p.tag === 'H-12-201' && p.type === 'review')?.title).toContain('part of');
-    expect(find(r, (p) => p.tag === 'R-12-205' && p.type === 'new_step')?.classification).toBe('workflow_change');
+    const d = data(); d.activities.push(act('E-12-205', 'Bundle hydroblasting', { actualStart: S, actualFinish: F }));
+    const r = run('H-201: Burner cleaning of pass 2 done.\nE-205: Additional hydroblasting after inspection rejection done.', MM, d);
+    expect(find(r, (p) => p.tag === 'H-12-201' && /part of/.test(p.title))?.activityName).toBe('Burner cleaning');
+    expect(find(r, (p) => p.tag === 'E-12-205' && p.type === 'new_step')?.classification).toBe('workflow_change');
   });
 });

@@ -66,6 +66,15 @@ const fmt = (iso: string) => new Date(Date.parse(iso) + KW).toISOString().slice(
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const overlap = (phrase: string, name: string) => { const p = words(phrase).map(stem), n = words(name).map(stem); return p.length ? p.filter((w) => n.includes(w)).length / p.length : 0; };
 const WORKFLOW = /\b(re-?(test|inspect\w*|tub\w*|work|clean\w*|do|weld\w*|blast\w*)|additional|extra|again|replace\w*|rectif\w*|rework|new (elements?|tubes?|bundle|gasket))\b/i;
+/** Work families (owner, 27 Oct 2026: no micro-tracking): a reported sub-item (trays cleaning, collector ring, diffuser,
+ *  buffing, DPT …) belongs to the item's step of the same family and only marks that step running; it never adds a step. */
+const FAMILIES: [string, RegExp][] = [
+  ['cleaning', /\b(clean\w*|hydro\s?blast\w*|hydro\s?jet\w*|h\/?blast\w*|buff\w*|de-?chok\w*|jack\s?hammer\w*|vacuum\w*|dump\w*|flush\w*|steam\w*|wash\w*|pigging|scrap\w*|grinding)\b/i],
+  ['inspection', /\b(inspect\w*|dye penetrant|dpt|ndt|radiograph\w*|ultrasonic|eddy current|iris|thickness|visual|offer\w*|clearance)\b/i],
+  ['repair', /\b(repair\w*|retub\w*|weld\w*|replac\w*|rectif\w*|rework|machining|overhaul\w*|fabricat\w*)\b/i],
+  ['boxup', /\b(box[\s-]?up|fix(ing)? back|re-?fix\w*|re-?install\w*|install\w*|assembl\w*|tightening|de-?blind\w*|connect\w*)\b/i],
+  ['opening', /\b(remov\w*|drop\w*|dismantl\w*|open\w*|pull(ed)? out|disconnect\w*|blind\w*|erect\w*|scaffold\w*|insulation)\b/i]];
+const familyOf = (text: string): string | null => FAMILIES.find(([, re]) => re.test(text))?.[0] ?? null;
 const INSPECTION_SCOPE = /\b(rtj|ring[\s-]?(type )?joints?|flanges? (faces?|inspection|grooves?)|grooves?|gasket (face|seat))\b/i;
 const OPS_ACTION = /\b(handover|hand over|blind|gas test|permit|clearance|isolat|purge|n2|nitrogen|process)\b/i;
 
@@ -210,6 +219,27 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
         if (INSPECTION_SCOPE.test(f.text)) {
           out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: null, activityName: null, type: 'info', status: 'info', classification: 'info', title: `${e.tag}: inspection scope · ${f.text}`,
             detail: 'A remark on the inspection scope (RTJ / flanges), kept with the item; the inspection worklist and the IATs carry the findings. Not a step of this item\'s work.', current: {}, proposed: {}, reason: 'General inspection remark', evidence: ev }));
+          continue;
+        }
+        // a sub-item of a work family → the item's step of that family, marked running (no new step)
+        const fam = familyOf(f.text);
+        const famSteps = fam ? acts.filter((a) => familyOf(a.activity) === fam) : [];
+        const byFit = (xs: TrkActivity[]) => [...xs].sort((a, b) => overlap(nounOnly, b.activity) - overlap(nounOnly, a.activity));
+        const famStep = byFit(famSteps.filter((a) => a.actualStart && !a.actualFinish))[0] ?? byFit(famSteps.filter((a) => !a.actualStart))[0] ?? null;
+        if (famStep) {
+          const changed = later(famStep.updatedAt, at);
+          if (!famStep.actualStart) out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: famStep.id, activityName: famStep.activity, type: 'start_step', status: changed ? 'conflict' : 'ready', classification: 'step_in_progress',
+            title: `${e.tag}: ▶ ${famStep.activity}`, detail: `${sentence(f.text)}: part of this ${fam} step, which starts with it. Sub-items are not tracked one by one; the step is finished when the whole work is reported done.`,
+            current: { actualStart: null }, proposed: { actualStart: eventAt }, reason: `${dept} reports ${fam} work on the item`, evidence: ev, issues: changed ? [`the step changed in the tracker after the report (${fmt(famStep.updatedAt!)})`] : [] }));
+          else out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: famStep.id, activityName: famStep.activity, type: 'info', status: 'info', classification: 'already_recorded',
+            title: `${e.tag}: ${f.text} · part of ▶ ${famStep.activity}`, detail: `${fam} in progress since ${fmt(famStep.actualStart!)}; this sub-item is noted, not a step of its own.`, current: { actualStart: famStep.actualStart }, proposed: {}, reason: 'Sub-item of a running step', evidence: ev }));
+          continue;
+        }
+        // a family with every step finished: more of the same work is a workflow change (re-test, additional cleaning); any
+        // other sub-item with no step of its family on the item is noted, never a step of its own
+        if (fam && !(famSteps.length && WORKFLOW.test(f.text))) {
+          out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: null, activityName: null, type: 'info', status: 'info', classification: 'info', title: `${e.tag}: ${f.text}`,
+            detail: famSteps.length ? `${fam} already finished on this item; noted.` : `${fam} work noted on the item (no ${fam} step in its plan; sub-items are not tracked one by one).`, current: {}, proposed: {}, reason: 'Sub-item noted', evidence: ev }));
           continue;
         }
         const near = acts.filter((a) => overlap(nounOnly, a.activity) >= 0.5).sort((a, b) => overlap(nounOnly, b.activity) - overlap(nounOnly, a.activity));
