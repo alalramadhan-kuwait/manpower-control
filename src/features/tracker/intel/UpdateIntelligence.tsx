@@ -6,9 +6,7 @@ import { fetchIntel, type IntelData } from '@/data/trackerIntel';
 import type { TrackerData } from '@/data/tracker';
 import { ErrorBox, Spinner, cx } from '@/ui/components';
 import { ProposalList, when } from './ProposalList';
-
-type Filter = 'all' | 'ready' | 'proposals' | 'conflicts' | 'applied';
-const FILTERS: [Filter, string][] = [['all', 'All'], ['ready', 'Ready'], ['proposals', 'Proposals'], ['conflicts', 'Conflicts'], ['applied', 'Applied']];
+import { ItemCards, toCards } from './ItemCards';
 
 export function useIntel(trackerId: string, tick = 0) {
   const [intel, setIntel] = useState<IntelData | null>(null); const [err, setErr] = useState<unknown>(null);
@@ -17,27 +15,39 @@ export function useIntel(trackerId: string, tick = 0) {
   return { intel, err, reload: () => fetchIntel(trackerId).then(setIntel).catch(setErr) };
 }
 
+/** Updates by item (owner, 27 Oct 2026): three counts on top (tap one to show only that part), one card per item
+ *  (Need your look first, then Ready to apply with Apply all), the notes and what was applied folded at the bottom. */
 export function UpdateIntelligence({ d, canEdit, onDone, onPaste }: { d: TrackerData; canEdit: boolean; onDone: (msg: string) => void; onPaste: () => void }) {
-  const [filter, setFilter] = useState<Filter>('all');
+  const [show, setShow] = useState<'all' | 'look' | 'ready'>('all');
   const [tick, setTick] = useState(0);
   const { intel, err } = useIntel(d.tracker.id, tick);
-  const rows = useMemo(() => {
-    if (!intel) return [];
-    const open = (s: string) => s === 'ready' || s === 'review' || s === 'conflict';
-    return intel.proposals.filter((p) => filter === 'all' ? open(p.status) || p.status === 'info' : filter === 'ready' ? p.status === 'ready' : filter === 'proposals' ? ['new_step', 'defect', 'hold', 'risk', 'review'].includes(p.type) && open(p.status) : filter === 'conflicts' ? p.status === 'conflict' : p.status === 'applied' || p.status === 'dismissed');
-  }, [intel, filter]);
-  const count = (f: Filter) => { if (!intel) return 0; const open = (s: string) => s === 'ready' || s === 'review' || s === 'conflict'; return intel.proposals.filter((p) => f === 'all' ? open(p.status) : f === 'ready' ? p.status === 'ready' : f === 'proposals' ? ['new_step', 'defect', 'hold', 'risk', 'review'].includes(p.type) && open(p.status) : f === 'conflicts' ? p.status === 'conflict' : p.status === 'applied').length; };
+  const { cards, notes } = useMemo(() => toCards(intel?.proposals ?? []), [intel]);
+  const applied = useMemo(() => (intel?.proposals ?? []).filter((p) => (p.status === 'applied' || p.status === 'dismissed') && Date.parse(p.reviewedAt ?? p.createdAt) > Date.now() - 864e5), [intel]);
   if (err) return <ErrorBox error={err} />;
   if (!intel) return <Spinner />;
+  const done = (m: string) => { onDone(m); setTick((t) => t + 1); };
+  const look = cards.filter((c) => c.look).length, ready = cards.length - look;
+  const count = (k: 'look' | 'ready', n: number, label: string) => (
+    <button type="button" aria-pressed={show === k} onClick={() => setShow((x) => (x === k ? 'all' : k))}
+      className={cx('min-w-0 flex-1 rounded-xl bg-white px-2.5 py-1.5 text-left ring-1', show === k ? 'ring-2 ring-brand-700' : 'ring-slate-200')}>
+      <b className="block text-[18px] leading-tight tabular-nums">{n}</b><span className="block truncate text-[11px] text-slate-500">{label}</span></button>);
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <div className="no-scrollbar flex flex-1 gap-1 overflow-x-auto">
-          {FILTERS.map(([k, l]) => <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)} className={cx('min-h-8 shrink-0 rounded-lg px-2.5 text-[12px] font-semibold ring-1', filter === k ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-200')}>{l}{count(k) ? <span className="ml-1 tabular-nums opacity-80">{count(k)}</span> : null}</button>)}
-        </div>
-        {canEdit && <button type="button" onClick={onPaste} className="min-h-8 shrink-0 rounded-lg bg-brand-700 px-2.5 text-[12px] font-bold text-white">📋 Paste</button>}
+      <div className="flex items-stretch gap-1.5">
+        {count('look', look, 'To check')}
+        {count('ready', ready, 'Ready')}
+        <a href="#updates-notes" className="min-w-0 flex-1 rounded-xl bg-white px-2.5 py-1.5 ring-1 ring-slate-200"><b className="block text-[18px] leading-tight tabular-nums">{notes.length}</b><span className="block truncate text-[11px] text-slate-500">Notes</span></a>
+        {canEdit && <button type="button" onClick={onPaste} className="shrink-0 rounded-xl bg-brand-700 px-2.5 text-[12px] font-bold text-white">📋 Paste</button>}
       </div>
-      <ProposalList rows={rows} d={d} canEdit={canEdit} onDone={(m) => { onDone(m); setTick((t) => t + 1); }} />
+      <ItemCards cards={cards} d={d} canEdit={canEdit} onDone={done} show={show} />
+      <details id="updates-notes" className="rounded-2xl bg-white px-3 py-1.5 text-[12px] ring-1 ring-slate-200">
+        <summary className="cursor-pointer font-semibold text-slate-700">Notes · {notes.length} <span className="font-normal text-slate-500">Train-1 conditions, items not in this tracker, unclear lines, older statuses</span></summary>
+        <div className="mt-1.5">{notes.length ? <ProposalList rows={notes} d={d} canEdit={canEdit} onDone={done} /> : <p className="text-slate-500">No notes.</p>}</div>
+      </details>
+      <details className="rounded-2xl bg-white px-3 py-1.5 text-[12px] ring-1 ring-slate-200">
+        <summary className="cursor-pointer font-semibold text-slate-700">Applied today · {applied.length}</summary>
+        <div className="mt-1.5">{applied.length ? <ProposalList rows={applied} d={d} canEdit={false} onDone={done} /> : <p className="text-slate-500">Nothing yet.</p>}</div>
+      </details>
       <details className="rounded-2xl bg-white px-3 py-1.5 text-[12px] ring-1 ring-slate-200">
         <summary className="cursor-pointer font-semibold text-slate-700">Reports read · {intel.reports.length}</summary>
         <ul className="mt-1 divide-y divide-slate-100">
