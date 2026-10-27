@@ -16,7 +16,7 @@ import { BlindList } from '@/features/tracker/BlindList';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
-import { putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, REACTORS, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
+import { putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { addReturnItem, setReturnItem, BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -346,7 +346,6 @@ function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string)
     <div className="-mx-3 mb-2.5 flex gap-1.5 overflow-x-auto px-3 pb-0.5 [scrollbar-width:none]">{chips.map(([k, l]) => <button key={k} type="button" onClick={() => setF(k)} ref={(el) => { if (el && f === k && f !== 'all') el.scrollIntoView({ inline: 'center', block: 'nearest' }); }}
       className={cx('min-h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-[12px] font-bold', f === k ? 'bg-brand-700 text-white' : k === 'todo' && todo.length ? 'bg-amber-50 text-amber-900 ring-1 ring-amber-300' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>)}</div>
     {f === 'todo' && <p className="mx-1 mb-2 text-[12px] text-slate-500">Work running (or due to start) with no update for {'>'}12 h · critical {'>'}6 h. Any step, note, status or drum entry counts as an update.</p>}
-    {(f === 'all' || f === 'Reactors') && <Reactors d={d} now={now} done={done} />}
     {groups.map((g) => { const xs = f === 'late' ? shown : shown.filter((e) => grpOf(e) === g); const seen = new Set<string>();
       const item = (e: TrkEquipment) => <ItemRow key={e.id} d={d} e={e} now={now} ageH={stale.get(keyOf(e))} mi={mi.get(keyOf(e))} onOpen={() => setOpen(e)} done={done} />;
       return <div key={g}><Sec>{g}</Sec><List>{xs.flatMap((e) => { const sys = e.system; if (!sys || f === 'todo' || f === 'late') return [item(e)]; if (seen.has(sys)) return []; seen.add(sys);
@@ -361,35 +360,6 @@ function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string)
     {head && showOut && <List>{[...outs, ...off].map((e) => <button key={e.id} type="button" onClick={() => setOpen(e)} className={cx(ROW, 'opacity-70')}><b className={TAG}>{short(e.tag)}</b><span className="min-w-0 flex-1 truncate text-[12px] text-slate-600">{isOutOfScope(e) ? `⊘ ${scopeReasonText(e.disabledReason)}` : 'switched off (Admin)'}</span></button>)}</List>}
     {open && <ItemSheet d={d} e={open} done={done} onClose={() => setOpen(null)} />}
   </>);
-}
-
-/** Reactor issues (nitrogen, temperature …) and this shift's max bed temperatures. */
-/** Max bed temperatures, followed while a reactor's catalyst is being dumped: open with the reactors dumping (removal
- *  started, vessel not yet empty); folded when none is, one tap shows all five. */
-function Reactors({ d, now, done }: Pick<P, 'd' | 'now' | 'done'>) {
-  const sh = shiftOf(now);
-  const saved = d.shiftLogs.find((l) => l.shiftDate === sh.date && l.shift === sh.shift);
-  const [temps, setTemps] = useState<Record<string, string>>(saved?.temps ?? {});
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  const tagOf = (k: string) => `R-12-${k.slice(1)}`;
-  const dumping = REACTORS.filter((k) => (d.engine?.scopes ?? []).some((sc) => sc.key === tagOf(k) && sc.scope === 'removal' && !sc.completeAt
-    && ((d.engine?.entries ?? []).some((x) => x.scopeId === sc.id) || d.activities.some((a) => a.key === sc.key && sc.activityIds.includes(a.activityId) && a.actualStart))));
-  const [open, setOpen] = useState(dumping.length > 0);
-  const shown = dumping.length ? dumping : [...REACTORS];
-  return (
-    <Card>
-      <button type="button" onClick={() => setOpen((x) => !x)} className="flex w-full items-center justify-between text-left">
-        <span className="text-[13px] font-bold">Max bed temperature °F <span className="font-normal text-slate-500">· {dumping.length ? `dumping ${dumping.map((k) => k.replace('R', 'R-')).join(', ')}` : 'no reactor dumping'}</span></span>
-        <span className="text-slate-500">{open ? '▾' : '▸'}</span></button>
-      {open && <>
-        <div className={cx('mt-2 grid gap-1.5', shown.length >= 5 ? 'grid-cols-5' : shown.length === 4 ? 'grid-cols-4' : 'grid-cols-3')}>{shown.map((k) => <label key={k} className="text-center text-[11px] font-bold text-slate-500">{k.replace('R', 'R-')}
-          <input inputMode="decimal" className="input mt-0.5 px-1 text-center text-sm" value={temps[k] ?? ''} onChange={(e) => setTemps((t) => ({ ...t, [k]: e.target.value.replace(/[^\d.]/g, '') }))} /></label>)}</div>
-        <button type="button" disabled={busy} onClick={async () => { setBusy(true); setErr(null); try { await saveShiftLog(d.tracker.id, sh.date, sh.shift, { notes: saved?.notes ?? '', temps }); done('Temperatures saved.'); } catch (e) { setErr(e); } finally { setBusy(false); } }}
-          className="mt-2 min-h-10 w-full rounded-xl bg-brand-700 text-[14px] font-bold text-white disabled:opacity-60">Save temperatures</button>
-        {err != null && <ErrorBox error={err} />}
-      </>}
-    </Card>
-  );
 }
 
 // holds: the Section Head's reason list (PendingForm) in every view (owner, 25 Oct 2026)
@@ -478,7 +448,6 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
   const manage = useCanManage();
   // a bar-chart step not required: off the timing and the %, kept with its reason (Section Head, as on the tracker)
   const isHead = useContext(RoleCtx) === 'head';
-  const [nr, setNr] = useState<{ id: string; why: string } | null>(null);
   const [order, setOrd] = useState<{ key: string; ids: string[] } | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [edit, setEdit] = useState<{ id: string; text: string } | null>(null);
@@ -574,15 +543,10 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
                     {a.actualStart && <button type="button" disabled={busy} onClick={() => step(a, 'undo')} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-slate-700 ring-1 ring-slate-300">↶ Undo {a.actualFinish ? 'finish' : 'start'}</button>}
                     {atIso && a.actualStart && <button type="button" disabled={busy || !why.trim()} onClick={() => retime(a, 'actual_start')} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-brand-700 ring-1 ring-slate-300">Set start to this time</button>}
                     {atIso && a.actualFinish && <button type="button" disabled={busy || !why.trim()} onClick={() => retime(a, 'actual_finish')} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-brand-700 ring-1 ring-slate-300">Set finish to this time</button>}
-                    {isHead && !eng && !a.actualStart && <button type="button" disabled={busy} onClick={() => setNr({ id: a.id, why: '' })} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-slate-700 ring-1 ring-slate-300">⊘ Not required</button>}
+                    {isHead && !eng && !a.actualStart && <button type="button" disabled={busy} onClick={() => void act(() => setActivity(a.id, { tracked: false, disabled_reason: 'not required' }), `${a.activity}: not required.`, () => setActivity(a.id, { tracked: true, disabled_reason: null }))} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-slate-700 ring-1 ring-slate-300">⊘ Not required</button>}
                     {manage && <button type="button" disabled={busy} onClick={() => setEdit({ id: a.id, text: a.activity })} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-brand-700 ring-1 ring-slate-300">✎ Edit name</button>}
                     {eng && manage && <button type="button" disabled={busy} onClick={() => { if (window.confirm(`Remove "${a.activity}"?`)) void act(() => setActivity(a.id, { tracked: false, disabled_reason: 'removed' }), 'Step removed.', () => setActivity(a.id, { tracked: true, disabled_reason: null })); }} className="min-h-10 rounded-xl bg-white text-[13px] font-bold text-red-700 ring-1 ring-red-200">🗑 Remove</button>}
                   </div>}</>}
-                  {nr?.id === a.id && <div className="space-y-1.5 rounded-xl bg-slate-50 p-2 ring-1 ring-slate-200">
-                    <input autoFocus className="input min-h-9 text-[13px]" placeholder="Why it is not required" value={nr.why} onChange={(x) => setNr({ ...nr, why: x.target.value })} />
-                    <div className="flex gap-2"><button type="button" onClick={() => setNr(null)} className="min-h-10 flex-1 rounded-xl bg-white font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button>
-                      <button type="button" disabled={busy || nr.why.trim().length < 3} onClick={() => { const w = nr.why.trim(); setNr(null); void act(() => setActivity(a.id, { tracked: false, disabled_reason: `not required: ${w}` }), `${a.activity}: not required.`, () => setActivity(a.id, { tracked: true, disabled_reason: null })); }} className="min-h-10 flex-1 rounded-xl bg-brand-700 font-bold text-white disabled:opacity-50">Save</button></div>
-                    <p className="text-[11px] text-slate-500">The step leaves the timing and the %; it is kept with the reason and can be made required again.</p></div>}
                   {!eng && !edit && <p className="text-[11px] text-slate-500">Bar-chart step: its plan dates stay as in P6.</p>}
                 </div>}
               </div>; })}</List>}
@@ -896,9 +860,8 @@ function Loop({ d, p, now, done, toItem }: { d: TrackerData; p: TrkPoint; now: n
   const before = p.status === 'open' ? jobs.filter((c) => c.phase === 'before' && !c.doneAt).length : 0;
   // the reactor body spray waits for the catalyst dumping (the same lock as the Section Head's Isolation)
   const waiting = p.status === 'open' ? waitingSteps(p, d.activities) : [];
-  const run = async (f: () => Promise<unknown>, msg: string, undo?: () => Promise<unknown>) => { setBusy(true); setErr(null); try { await f(); done(msg, undo); setNr(null); } catch (x) { setErr(x); } finally { setBusy(false); } };
-  // the loop's requirement: Required · Pending decision · N/R (with a reason); N/R only before it starts
-  const [nr, setNr] = useState<string | null>(null);
+  const run = async (f: () => Promise<unknown>, msg: string, undo?: () => Promise<unknown>) => { setBusy(true); setErr(null); try { await f(); done(msg, undo); } catch (x) { setErr(x); } finally { setBusy(false); } };
+  // the loop's requirement: Required · Pending decision · N/R (one tap, Undo); N/R only before it starts
   const [holdOpen, setHoldOpen] = useState(false);
   const diagram = <LoopDiagramButton trackerId={d.tracker.id} loop={p} data={{ points: d.points ?? [], steps: d.pointSteps ?? [], lineup: d.lineup ?? [] }} />; const [reqOpen, setReqOpen] = useState(false);
   const req = p.requirement ?? 'required', was = { requirement: req, requirement_reason: p.requirementReason ?? null };
@@ -937,15 +900,11 @@ function Loop({ d, p, now, done, toItem }: { d: TrackerData; p: TrkPoint; now: n
           <button type="button" onClick={() => setForce(false)} className="min-h-8 rounded-lg bg-white px-3 font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button></div></div>}
       {sheet && <LoopOpen d={d} p={p} now={now} done={done} toItem={toItem} onClose={() => setSheet(false)} />}
       {holdOpen && !p.holdReason && <div className="mt-2"><PendingForm initial={null} busy={busy} onSave={(r) => { setHoldOpen(false); void run(() => setPoint(p.id, { hold_reason: r }), `${p.ref}: on hold.`, () => setPoint(p.id, { hold_reason: null })); }} /></div>}
-      {p.status === 'open' && manage && (nr !== null
-        ? <div className="mt-2 flex gap-1.5"><input autoFocus className="input min-h-9 flex-1 text-[13px]" placeholder="Why not required" value={nr} onChange={(x) => setNr(x.target.value)} />
-            <button type="button" disabled={busy || !nr.trim()} onClick={() => setReq('not_required', nr)} className="min-h-9 rounded-lg bg-slate-700 px-3 text-[12px] font-bold text-white disabled:opacity-50">Save N/R</button>
-            <button type="button" onClick={() => setNr(null)} className="min-h-9 rounded-lg bg-white px-2.5 text-[12px] font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button></div>
-        : !reqOpen ? <button type="button" onClick={() => setReqOpen(true)} className="mt-1 text-[12px] font-semibold text-slate-500">⋯ Requirement{req !== 'required' ? `: ${req === 'pending' ? 'decision pending' : 'not required'}` : ''}</button>
+      {p.status === 'open' && manage && (!reqOpen ? <button type="button" onClick={() => setReqOpen(true)} className="mt-1 text-[12px] font-semibold text-slate-500">⋯ Requirement{req !== 'required' ? `: ${req === 'pending' ? 'decision pending' : 'not required'}` : ''}</button>
         : <div className="mt-1.5 flex flex-wrap gap-1.5 text-[12px]">
             {req !== 'required' && <button type="button" disabled={busy} onClick={() => setReq('required')} className="min-h-8 rounded-lg bg-white px-2.5 font-bold text-brand-700 ring-1 ring-slate-300">Required</button>}
             {req !== 'pending' && <button type="button" disabled={busy} onClick={() => setReq('pending')} className="min-h-8 rounded-lg bg-white px-2.5 font-bold text-amber-800 ring-1 ring-slate-300">Decision pending</button>}
-            {req !== 'not_required' && <button type="button" disabled={busy} onClick={() => setNr('')} className="min-h-8 rounded-lg bg-white px-2.5 font-bold text-slate-700 ring-1 ring-slate-300">Not required…</button>}
+            {req !== 'not_required' && <button type="button" disabled={busy} onClick={() => setReq('not_required', 'Not required')} className="min-h-8 rounded-lg bg-white px-2.5 font-bold text-slate-700 ring-1 ring-slate-300">Not required</button>}
           </div>)}
       {err != null && <ErrorBox error={err} />}
     </Card>

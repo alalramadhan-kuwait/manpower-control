@@ -477,9 +477,7 @@ var V2_DEFAULTS = {
   monthWarn: 72,
   monthHard: 80,
   yearWarn: 380,
-  yearHard: 440,
-  teamNeeds: { controller: 2, senior: 2, good: 2, new: 1 },
-  reducedNeeds: { controller: 1, senior: 1, good: 1, new: 0 }
+  yearHard: 440
 };
 var SICK_RULES = { okMax: 21, warnMax: 35, freshDays: 45 };
 var SD_MINIMUM = { controller: 1, experienced: 1, qualifiedFo: 2 };

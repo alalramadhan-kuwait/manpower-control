@@ -17,8 +17,6 @@ export const isV2 = (p: Pick<SdPlan, 'rulesVersion'>) => (p.rulesVersion ?? 1) >
 export const V2_DEFAULTS = {
   shiftHours: 12, normalHours: 8, reducedDays: 2, reducedHours: 12,
   monthWarn: 72, monthHard: 80, yearWarn: 380, yearHard: 440,
-  teamNeeds: { controller: 2, senior: 2, good: 2, new: 1 },
-  reducedNeeds: { controller: 1, senior: 1, good: 1, new: 0 },
 } as const;
 export const SICK_RULES = { okMax: 21, warnMax: 35, freshDays: 45 } as const;
 export const CONTROLLER_GRADE = 15;
@@ -44,6 +42,12 @@ export const isControllerPerson = (i: PersonInfo | undefined) => !!i && CONTROLL
  *  1 qualified Controller, 1 Experienced (Senior) Field Operator, and 2 different Field Operators who are Experienced or
  *  Good (so 1 Experienced + 1 Good, or 2 Experienced). New Field Operators never count. */
 export const SD_MINIMUM = { controller: 1, experienced: 1, qualifiedFo: 2 } as const;
+/** The standard places of every shift team (owner, 27 Oct 2026: one standard, from the latest rules): 1 Controller,
+ *  the Experienced FOs as Senior places, the other qualified FOs as Good places; the New FO place is training only (0).
+ *  Same on full and reduced days. The database keeps the open plans on it (trigger sd_teams_standard). */
+export const standardTeamNeeds = () => ({ controller: SD_MINIMUM.controller, senior: SD_MINIMUM.experienced, good: Math.max(0, SD_MINIMUM.qualifiedFo - SD_MINIMUM.experienced), new: 0 });
+/** A team of this plan follows the standard: latest rules, train shutdown, not approved, not finished. */
+export const followsTeamStandard = (p: Pick<SdPlan, 'rulesVersion' | 'kind' | 'end'>, approved: boolean, today: string) => isV2(p) && p.kind === 'train' && !approved && p.end >= today;
 /** An operator place whose people can count for the minimum (the New FO place is training; 'member' has no level). */
 const FO_SLOTS: SdMember['slot'][] = ['senior', 'good'];
 /**

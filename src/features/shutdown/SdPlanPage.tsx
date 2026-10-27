@@ -22,7 +22,7 @@ import { yearCap } from '@/core/shutdown/spread';
 import { MoveLeaveSheet } from './MoveLeave';
 import { FollowInstruction, FollowSheet } from './FollowCrew';
 import { suggestFollow } from '@/core/shutdown/overlap';
-import { adjacent, coverageGaps, eligibility, isV2, memberOtDetail, plannerContext, sickState, type CoverGap, type Eligibility, type OtEntry, type PlanCheck, type PlanRef, type SdException, type SickEntry } from '@/core/shutdown/v2';
+import { adjacent, coverageGaps, eligibility, followsTeamStandard, isV2, memberOtDetail, plannerContext, sickState, type CoverGap, type Eligibility, type OtEntry, type PlanCheck, type PlanRef, type SdException, type SickEntry } from '@/core/shutdown/v2';
 import { fetchApproval, fetchExceptions, fetchOtEntries, fetchSickEntries, loadPlanCheckInput, personInfo, runPlanCheck, type ApprovalState } from '@/data/sdCheck';
 import { EligibilityBadge, ExceptionsBox, FiguresSheet, ReadinessPanel } from './SdV2';
 import { localToday } from '@/ui/leave';
@@ -386,7 +386,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
       {yearOt && <YearOvertimeSheet plan={plan} members={members} dir={dir} taken={data.otTaken} onClose={() => setYearOt(false)} onDone={done} />}
       {editPattern && <PatternSheet plan={plan} hasPeople={members.length > 0} onClose={() => setEditPattern(false)} onDone={done} onMoved={moved} />}
       {editPhases && <PhasesSheet plan={plan} teams={teams} phases={data.phases} onClose={() => setEditPhases(false)} onDone={done} />}
-      {editTeam && <NeedsSheet t={editTeam} onClose={() => setEditTeam(null)} onDone={done} />}
+      {editTeam && <NeedsSheet t={editTeam} standard={followsTeamStandard(plan, approval?.status === 'approved', localToday())} onClose={() => setEditTeam(null)} onDone={done} />}
     </div>
   );
 }
@@ -904,7 +904,7 @@ function YearOvertimeSheet({ plan, members, dir, taken, onClose, onDone }: { pla
   );
 }
 
-function NeedsSheet({ t, onClose, onDone }: { t: SdTeam; onClose: () => void; onDone: (m: string) => void }) {
+function NeedsSheet({ t, standard, onClose, onDone }: { t: SdTeam; standard: boolean; onClose: () => void; onDone: (m: string) => void }) {
   const [n, setN] = useState({ ...t.needs }); const [r, setR] = useState({ ...t.rampNeeds });
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   async function save() {
@@ -919,10 +919,15 @@ function NeedsSheet({ t, onClose, onDone }: { t: SdTeam; onClose: () => void; on
           <thead><tr className="text-left text-[11px] text-slate-500"><th className="font-medium">Slot</th><th className="font-medium">Full days</th><th className="font-medium">Reduced days</th></tr></thead>
           <tbody>{SD_SLOTS.map((s) => (
             <tr key={s}><td className="py-1">{SD_SLOT_LABEL[s]}</td>
+              {standard && s !== 'new' ? <><td className="h-9 font-semibold tabular-nums">{n[s]}</td><td className="font-semibold tabular-nums">{r[s]}</td></> : <>
               <td><input className="input h-9 w-16" inputMode="numeric" value={n[s]} onChange={(e) => setN((x) => ({ ...x, [s]: Number(e.target.value) || 0 }))} /></td>
-              <td><input className="input h-9 w-16" inputMode="numeric" value={r[s]} onChange={(e) => setR((x) => ({ ...x, [s]: Number(e.target.value) || 0 }))} /></td></tr>
+              <td><input className="input h-9 w-16" inputMode="numeric" value={r[s]} onChange={(e) => setR((x) => ({ ...x, [s]: Number(e.target.value) || 0 }))} /></td></>}</tr>
           ))}</tbody>
         </table>
+        {standard && <>
+          <p className="text-xs text-slate-500">Controller, Senior and Good FO places are the standard for every shutdown (latest rules): set on the Rules page. The New FO place is training only and stays your choice.</p>
+          <Link to="/rules?group=shutdown" className="flex min-h-10 items-center justify-between rounded-xl bg-brand-50 px-3 text-[12px] font-semibold text-brand-700">Change on the Rules page<span>›</span></Link>
+        </>}
         {err != null && <ErrorBox error={err} />}
         <Button className="w-full" disabled={busy} onClick={save}>Save</Button>
       </div>

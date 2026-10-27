@@ -4,7 +4,7 @@ import { openFrom, withOpenEnd } from './openEnd';
 import { dataChanged } from './changes';
 import { addDaysIso, type Crew } from '@/core/roster';
 import { fetchMovements } from './movements';
-import { V2_DEFAULTS } from '@/core/shutdown/v2';
+import { V2_DEFAULTS, standardTeamNeeds } from '@/core/shutdown/v2';
 import { memberHoursOn, memberWorks, teamGaps, type TeamGap, type FoLevel, type SdDay, type SdKind, type SdMember, type SdPhase, type SdPlan, type SdSlot, type SdTeam } from '@/core/shutdown';
 
 export interface Signature { title: string; name: string }
@@ -96,9 +96,8 @@ export async function fetchSdWorkInfo(members: SdMember[]): Promise<Map<string, 
   return out;
 }
 
-/** A new plan with a Morning and a Night team, under the v2 rules: reduced first and last two days (1 Controller, 1 Senior FO,
- *  1 Good FO on 12 h), Primary + Assistant Controller, 2 Senior, 2 Good and 1 New FO otherwise; overtime 72 / 380 h warnings,
- *  80 / 440 h limits. A total turnaround: everyone every day, two areas, one phase for all its days. */
+/** A new plan with a Morning and a Night team, under the v2 rules: the standard places (1 Controller, 1 Senior FO, 1 Good FO
+ *  by default, from the Rules page; New FO a training place) on full and reduced days; overtime limits from the Rules page. A total turnaround: everyone every day, two areas, one phase for all its days. */
 export async function createSdPlan(v: { title: string; start: string; end: string; eventId: string | null; kind?: SdKind }): Promise<string> {
   const total = v.kind === 'total';
   const areas = total ? ['TR-II', 'L.P & TR-I'] : [];
@@ -110,7 +109,8 @@ export async function createSdPlan(v: { title: string; start: string; end: strin
     ...(total ? { days_on: 1, days_off: 0, ramp_days: 0, areas, sections } : { days_on: 3, days_off: 1, cycle_until: v.end }) }).select('id').single();
   if (error) throw error;
   const id = (data as { id: string }).id;
-  const n = V2_DEFAULTS.teamNeeds, r = V2_DEFAULTS.reducedNeeds;
+  // the standard places (Rules page: shutdown team minimum); the database keeps open plans on it
+  const n = standardTeamNeeds(), r = n;
   const needs = { controller_n: n.controller, senior_n: n.senior, good_n: n.good, new_n: n.new, ramp_controller_n: r.controller, ramp_senior_n: r.senior, ramp_good_n: r.good, ramp_new_n: r.new };
   const t = await supabase.from('sd_teams').insert([{ plan_id: id, name: 'Morning', sort: 0, shift_code: 'M', shift_hours_label: '07:00 - 19:00', ...needs },
     { plan_id: id, name: 'Night', sort: 1, shift_code: 'N', shift_hours_label: '19:00 - 07:00', ...needs }]).select('id');

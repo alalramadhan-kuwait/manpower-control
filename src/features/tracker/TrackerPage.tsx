@@ -5,7 +5,7 @@ import { ReportImport } from './ReportImport';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle, LayoutDashboard, Handshake, Wrench, Flame, ClipboardList, Settings, type LucideIcon } from 'lucide-react';
-import { equipmentList, lateOrHold, isNR, totals, FO_NAMES, REACTORS, STAGE_SHORT, pointComplete, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, shiftOf, shiftReport, staleItems, stepViews, type StepView } from '@/core/tracker';
+import { phases, equipmentList, lateOrHold, isNR, totals, FO_NAMES, REACTORS, STAGE_SHORT, pointComplete, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, shiftOf, shiftReport, staleItems, stepViews, type StepView } from '@/core/tracker';
 import { StageReview } from './StageReview';
 import { CONFLICT_EVENT, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
@@ -97,12 +97,29 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
     return () => { window.clearInterval(i); document.removeEventListener('visibilitychange', v); window.removeEventListener(CONFLICT_EVENT, c); };
   }, [load]);
   const now = useClock(tracker);
+  const pendingDelta = useRef<{ d: unknown; tag: string | null; before: { total: number | null; item: number | null } | null } | null>(null);
+  const [delta, setDelta] = useState<{ tag: string | null; before: { total: number | null; item: number | null }; after: { total: number | null; item: number | null } } | null>(null);
+  useEffect(() => {
+    const p = pendingDelta.current; if (!p || !data || p.d === data || !p.before) return;
+    pendingDelta.current = null;
+    const w = phases(data, now).mi.weighted; const it = p.tag ? w?.items.find((i) => i.tag === p.tag || i.key === p.tag) : undefined;
+    setDelta({ tag: p.tag, before: p.before, after: { total: w?.actualPct ?? null, item: it?.physPct ?? null } });
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
   const steps = useMemo(() => (data ? stepViews(data, now) : null), [data, now]);
   const eqs = useMemo(() => (data && steps ? equipViews(data, now, steps) : null), [data, now, steps]);
 
   // a step sheet closes after its action, the equipment sheet stays open (several actions in a row) and refreshes
   const done = (msg: string, keep = false, undo?: () => Promise<unknown>) => { if (!keep) setSheet(null); setFlash({ msg, undo }); load(true);
     window.clearTimeout(flashTimer.current); flashTimer.current = window.setTimeout(() => setFlash(null), undo ? 7000 : 3000); };
+  // after an update is applied: the item's and the M & I progress before → after (owner's notes, 27 Oct 2026)
+  const snap = (x: typeof data, tag: string | null) => { if (!x) return null; const w = phases(x, now).mi.weighted; const it = tag ? w?.items.find((i) => i.tag === tag || i.key === tag) : undefined;
+    return { total: w?.actualPct ?? null, item: it?.physPct ?? null }; };
+  const intelDone = (m: string) => {
+    // one proposal ("C-12-201: applied · …": that item and the M & I) or several ("3 changes applied": the M & I)
+    const one = /^(.+?): applied · /.exec(m);
+    if (one || /^\d+ changes? applied/.test(m)) { const tag = one && one[1] !== 'Plan' ? one[1] : null; pendingDelta.current = { d: data, tag, before: snap(data, tag) }; }
+    done(m, true);
+  };
   const undoLast = async () => { const u = flash?.undo; if (!u) return; setFlash(null); try { await u(); done('Undone.', true); } catch (e) { setFlash({ msg: e instanceof Error ? e.message : 'Not undone' }); } };
   if (error) return <ErrorBox error={error} />;
   if (!trackers) return <Spinner />;
@@ -152,8 +169,9 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       </div>}
       {refreshing && <div aria-hidden className="fixed inset-x-0 top-0 z-[80] h-1 overflow-hidden bg-brand-100"><div className="h-full w-1/3 animate-[trkbar_1s_ease-in-out_infinite] bg-brand-500" /></div>}
       {flash && <Toast msg={flash.msg} onUndo={flash.undo ? undoLast : undefined} />}
-      {tab === 'updates' && <UpdateIntelligence d={data} canEdit={canEdit} onDone={(m) => done(m, true)} onPaste={() => setPaste(true)} />}
-      {paste && <PasteUpdate d={data} canEdit={canEdit} onClose={() => setPaste(false)} onDone={(m) => done(m, true)} />}
+      {delta && (tab === 'updates' || paste) && <ProgressDelta v={delta} onClose={() => setDelta(null)} />}
+      {tab === 'updates' && <UpdateIntelligence d={data} canEdit={canEdit} onDone={intelDone} onPaste={() => setPaste(true)} />}
+      {paste && <PasteUpdate d={data} canEdit={canEdit} onClose={() => setPaste(false)} onDone={intelDone} />}
       {tab === 'today' && <DashboardTab d={data} now={now} role={role} by={profile.display_name} done={(m, u) => done(m, true, u)} intel={<IntelSummary d={data} onOpen={() => setTab('updates')} />}
         go={(t, g) => { if (t === 'equip') { setEqInit(g ?? 'all'); setTab('equipment'); } else setTab(t === 'ho' ? 'isolation' : t === 'hot' ? 'iats' : t === 'scope' ? 'scope' : g === 'focus' ? 'guideline' : 'today'); }}
         onItem={(tag) => setSheet({ kind: 'eq', tag })}
@@ -345,3 +363,18 @@ function ShiftReportView({ data, now, canEdit, by, onSaved }: { data: TrackerDat
 
 /** The step button of an equipment row: ▶ starts the next step, ✓ finishes the running one, one tap, now. The message
  *  that follows offers Undo (the step goes back as it was, the waiting note too); other times are set in the item. */
+
+/** One line after an update is applied: the item's progress and the M & I progress, before → after. */
+function ProgressDelta({ v, onClose }: { v: { tag: string | null; before: { total: number | null; item: number | null }; after: { total: number | null; item: number | null } }; onClose: () => void }) {
+  const part = (label: string, a: number | null, b: number | null) => (a == null || b == null ? null
+    : <span>{label} {a}% → <b className={cx(b > a ? 'text-status-green' : b < a ? 'text-status-red' : 'text-slate-800')}>{b}%</b></span>);
+  const item = v.tag ? part(v.tag, v.before.item, v.after.item) : null, total = part('M & I', v.before.total, v.after.total);
+  if (!item && !total) return null;
+  return (
+    <div role="status" className="mb-2 flex min-h-9 items-center gap-2 rounded-xl bg-white px-3 text-[12px] text-slate-700 ring-1 ring-slate-200">
+      <span className="font-bold text-slate-700">Progress</span>
+      <span className="flex min-w-0 flex-1 flex-wrap gap-x-3 tabular-nums">{item}{total}</span>
+      <button type="button" aria-label="Close" onClick={onClose} className="text-slate-500">×</button>
+    </div>
+  );
+}

@@ -52,7 +52,7 @@ export function ActivityRow({ t, canEdit, isHead = false, neutCovered = false, n
       <div className="flex flex-wrap gap-1.5">
         {free && a.actualFinish && <MenuBtn danger disabled={busy} onClick={() => run({ actual_finish: null }, `${a.key}: ${a.activityId} back to running.`, close)}>↶ Undo finish</MenuBtn>}
         {free && a.actualStart && !a.actualFinish && <MenuBtn danger disabled={busy} onClick={() => run({ actual_start: null }, `${a.key}: ${a.activityId} back to not started.`, close)}>↶ Undo start</MenuBtn>}
-        {isHead && free && !a.actualStart && <MenuBtn disabled={busy || note.trim().length < 3} onClick={() => run({ tracked: false, disabled_reason: `not required: ${note.trim()}` }, `${a.key}: ${a.activityId} not required.`, close, () => setActivity(a.id, { tracked: true, disabled_reason: null }))}>Not required{note.trim().length < 3 ? ' (write why in the note)' : ''}</MenuBtn>}
+        {isHead && free && !a.actualStart && <MenuBtn disabled={busy} onClick={() => run({ tracked: false, disabled_reason: note.trim() ? `not required: ${note.trim()}` : 'not required' }, `${a.key}: ${a.activityId} not required.`, close, () => setActivity(a.id, { tracked: true, disabled_reason: null }))}>Not required</MenuBtn>}
         <span className="self-center text-[10px] text-slate-500">{a.activityId}{a.updatedBy ? ` · ${a.updatedBy}` : ''}</span>
       </div>
       <div className="grid grid-cols-2 gap-1.5">
