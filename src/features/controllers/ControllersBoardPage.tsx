@@ -38,8 +38,10 @@ export default function ControllersBoardPage({ profile }: { profile: UserProfile
   const week = /^\d{4}-\d{2}-\d{2}$/.test(w) && w >= first && w <= last ? weekStartOf(w) : weekStartOf(today);
   const from = mode === 'week' ? week : monthStart(year, month);
   const to = mode === 'week' ? addDaysIso(week, 6) : monthEnd(year, month);
-  const goMonth = (y: number, m: number) => setParams(`${y}-${pad(m)}` === today.slice(0, 7) ? {} : { month: `${y}-${pad(m)}` }, { replace: true });
-  const goWeek = (s: string) => setParams(s === weekStartOf(today) ? { view: 'week' } : { view: 'week', week: s }, { replace: true });
+  // keep the workspace tab (?tab=) and anything else in the address: only the view, month and week change here
+  const setView = (v: Record<string, string | null>) => setParams((p) => { const n = new URLSearchParams(p); for (const k of ['view', 'month', 'week']) n.delete(k); for (const [k, x] of Object.entries(v)) if (x) n.set(k, x); return n; }, { replace: true });
+  const goMonth = (y: number, m: number) => setView(`${y}-${pad(m)}` === today.slice(0, 7) ? {} : { month: `${y}-${pad(m)}` });
+  const goWeek = (s: string) => setView(s === weekStartOf(today) ? { view: 'week' } : { view: 'week', week: s });
   const isHead = profile.role_code === 'section_head';
 
   const [inputs, setInputs] = useState<ManpowerInputs | null>(null);
