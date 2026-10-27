@@ -15,7 +15,8 @@ const TYPE_ICON: Record<string, string> = { finish_step: '✓', start_step: '▶
 const editable = (p: ProposalRow) => p.type === 'status_line' || p.type === 'new_step' || p.type === 'defect' || p.type === 'hold';
 const canApply = (p: ProposalRow) => ['finish_step', 'start_step', 'status_line', 'drums', 'new_step', 'defect', 'hold', 'hold_release', 'planning'].includes(p.type) && (p.status === 'ready' || p.status === 'review' || p.status === 'conflict');
 
-export function ProposalRowView({ p, d, canEdit, onDone, defaultOpen = false }: { p: ProposalRow; d: TrackerData; canEdit: boolean; onDone: (msg: string) => void; defaultOpen?: boolean }) {
+type Pick = { checked: boolean; toggle: () => void };
+export function ProposalRowView({ p, d, canEdit, onDone, defaultOpen = false, pick }: { p: ProposalRow; d: TrackerData; canEdit: boolean; onDone: (msg: string) => void; defaultOpen?: boolean; pick?: Pick }) {
   const [open, setOpen] = useState(defaultOpen);
   const [edit, setEdit] = useState<string | null>(null);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
@@ -35,15 +36,16 @@ export function ProposalRowView({ p, d, canEdit, onDone, defaultOpen = false }: 
   const done = p.status === 'applied' || p.status === 'dismissed';
   return (
     <div className={cx('px-3 py-1.5', done && 'opacity-70')}>
-      <button type="button" onClick={() => setOpen((x) => !x)} className="flex min-h-9 w-full items-start gap-2 text-left">
-        <span className={cx('mt-1.5 h-2 w-2 shrink-0 rounded-full', DOT[p.status])} />
+      <button type="button" aria-pressed={pick ? pick.checked : undefined} onClick={() => (pick ? pick.toggle() : setOpen((x) => !x))} className="flex min-h-9 w-full items-start gap-2 text-left">
+        {pick ? <span aria-hidden className={cx('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[12px] font-bold ring-1', pick.checked ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-transparent ring-slate-300')}>✓</span>
+          : <span className={cx('mt-1.5 h-2 w-2 shrink-0 rounded-full', DOT[p.status])} />}
         <span className="min-w-0 flex-1">
           <span className="block text-[13px] font-semibold leading-snug text-slate-900"><span className="mr-1 text-slate-500">{TYPE_ICON[p.type]}</span>{p.title}</span>
           <span className="block truncate text-[11px] text-slate-500">{CLASS_LABEL[p.classification]} · {DEPT_SHORT[p.department]} {p.reportDate}{p.issues.length ? ` · ${p.issues[0]}` : ''}{p.status === 'applied' && p.appliedRef ? ` · ${p.appliedRef}` : ''}</span>
         </span>
         <span className={cx('shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold', p.status === 'ready' ? 'bg-green-100 text-green-900' : p.status === 'review' ? 'bg-amber-100 text-amber-900' : p.status === 'conflict' ? 'bg-red-100 text-red-900' : p.status === 'applied' ? 'bg-brand-100 text-brand-700' : 'bg-slate-100 text-slate-600')}>{STATUS_WORD[p.status]}</span>
       </button>
-      {open && (
+      {open && !pick && (
         <div className="mb-1 ml-4 space-y-1.5 text-[12px] text-slate-700">
           {p.detail && <p>{p.detail}</p>}
           {p.reason && <p className="text-slate-500">Why: {p.reason}</p>}
@@ -69,18 +71,58 @@ export function ProposalRowView({ p, d, canEdit, onDone, defaultOpen = false }: 
   );
 }
 
-/** Proposals grouped by item, in one box. */
+/** Proposals grouped by item, in one box. Select (owner, 27 Oct 2026): tick several rows, or a whole group, then Apply
+ *  or Dismiss them together. Apply takes only what one tap could apply (a conflict still needs its own "Apply anyway"). */
 export function ProposalList({ rows, d, canEdit, onDone, openAll = false }: { rows: ProposalRow[]; d: TrackerData; canEdit: boolean; onDone: (msg: string) => void; openAll?: boolean }) {
+  const [selecting, setSelecting] = useState(false);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState<string | null>(null); const [err, setErr] = useState<unknown>(null);
   if (!rows.length) return <p className="rounded-xl bg-white px-3 py-2 text-[12px] text-slate-500 ring-1 ring-slate-200">Nothing here.</p>;
   const tags = [...new Set(rows.map((r) => r.tag ?? '—'))];
+  const open = (p: ProposalRow) => p.status !== 'applied' && p.status !== 'dismissed';
+  const pickable = rows.filter(open);
+  const chosen = pickable.filter((p) => sel.has(p.id));
+  const applicable = chosen.filter((p) => canApply(p) && p.status !== 'conflict');
+  const toggle = (ids: string[], on: boolean) => setSel((s) => { const n = new Set(s); for (const id of ids) { if (on) n.add(id); else n.delete(id); } return n; });
+  const stop = () => { setSelecting(false); setSel(new Set()); };
+  async function bulk(kind: 'apply' | 'dismiss') {
+    const list = kind === 'apply' ? applicable : chosen; if (!list.length) return;
+    setBusy(kind === 'apply' ? 'Applying…' : 'Dismissing…'); setErr(null); let ok = 0; const bad: string[] = [];
+    for (const p of list) {
+      try { if (kind === 'apply') await applyProposal(d, p); else await reviewProposal(p.id, 'dismissed', 'dismissed with others'); ok++; }
+      catch (e) { bad.push(`${p.tag ?? p.title}: ${e instanceof Error ? e.message : String(e)}`); }
+    }
+    setBusy(null); if (bad.length) setErr(new Error(bad.join('\n'))); else stop();
+    onDone(kind === 'apply' ? `${ok} change${ok === 1 ? '' : 's'} applied${bad.length ? `, ${bad.length} not` : ''}.` : `${ok} dismissed${bad.length ? `, ${bad.length} not` : ''}.`);
+  }
   return (
-    <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200">
-      {tags.map((t) => (
-        <div key={t}>
-          {tags.length > 1 && <p className="bg-slate-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">{t === '—' ? 'Not on an item' : t}</p>}
-          {rows.filter((r) => (r.tag ?? '—') === t).map((p) => <ProposalRowView key={p.id} p={p} d={d} canEdit={canEdit} onDone={onDone} defaultOpen={openAll} />)}
+    <div className="space-y-1.5">
+      {canEdit && pickable.length > 1 && <div className="flex items-center justify-end gap-2 text-[12px]">
+        {selecting && <button type="button" onClick={() => toggle(pickable.map((p) => p.id), chosen.length < pickable.length)} className="min-h-8 rounded-lg px-2 font-semibold text-brand-700">{chosen.length < pickable.length ? `Select all ${pickable.length}` : 'Clear'}</button>}
+        <button type="button" aria-pressed={selecting} onClick={() => (selecting ? stop() : setSelecting(true))} className={cx('min-h-8 rounded-lg px-2.5 font-semibold ring-1', selecting ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-200')}>{selecting ? 'Done' : '☑ Select'}</button>
+      </div>}
+      <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200">
+        {tags.map((t) => { const group = rows.filter((r) => (r.tag ?? '—') === t), gp = group.filter(open), all = gp.length > 0 && gp.every((p) => sel.has(p.id));
+          return (
+          <div key={t}>
+            {(tags.length > 1 || selecting) && <div className="flex items-center bg-slate-50 px-3 py-1">
+              <p className="min-w-0 flex-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">{t === '—' ? 'Not on an item' : t}</p>
+              {selecting && gp.length > 0 && <button type="button" onClick={() => toggle(gp.map((p) => p.id), !all)} className="min-h-7 text-[11px] font-bold text-brand-700">{all ? 'Clear group' : `Select ${gp.length}`}</button>}
+            </div>}
+            {group.map((p) => <ProposalRowView key={p.id} p={p} d={d} canEdit={canEdit} onDone={onDone} defaultOpen={openAll}
+              pick={selecting && open(p) ? { checked: sel.has(p.id), toggle: () => toggle([p.id], !sel.has(p.id)) } : undefined} />)}
+          </div>); })}
+      </div>
+      {selecting && chosen.length > 0 && (
+        <div role="toolbar" aria-label="Selected updates" className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+5rem)] z-[60] mx-auto max-w-md space-y-1.5 rounded-2xl bg-white p-2 shadow-xl ring-1 ring-slate-200 sm:bottom-6">
+          {err != null && <ErrorBox error={err} />}
+          <div className="flex items-center gap-1.5">
+            <span className="min-w-0 flex-1 px-1 text-[12px] font-semibold text-slate-700">{chosen.length} selected{applicable.length < chosen.length ? <span className="block text-[11px] font-normal text-slate-500">{applicable.length} can be applied</span> : null}</span>
+            <Button className="min-h-9 px-3 text-[12px]" disabled={!!busy || applicable.length === 0} onClick={() => bulk('apply')}>{busy === 'Applying…' ? busy : `Apply ${applicable.length}`}</Button>
+            <Button variant="secondary" className="min-h-9 px-3 text-[12px]" disabled={!!busy} onClick={() => bulk('dismiss')}>{busy === 'Dismissing…' ? busy : `Dismiss ${chosen.length}`}</Button>
+          </div>
         </div>
-      ))}
+      )}
     </div>
   );
 }
