@@ -5,6 +5,7 @@ const eq = (tag: string, more: Partial<TrkEquipment> = {}): TrkEquipment => ({ i
 let seq = 0;
 const act = (key: string, activity: string, more: Partial<TrkActivity> = {}): TrkActivity => ({ id: `${key}:${++seq}`, activityId: `A${seq}`, group: 'M', key, activity, durationH: 12, start: '2026-10-22T04:00:00Z', finish: '2026-10-23T04:00:00Z', stage: 2, tracked: true, updatedAt: '2026-10-24T06:00:00Z', ...more });
 const S = '2026-10-25T04:00:00Z', F = '2026-10-25T16:00:00Z';
+export { eq, act, S, F };
 export function data(): TrkData {
   seq = 0;
   return { steps: [], iats: [], log: [], settings: { miEnd: '2026-11-07T04:00:00Z', end: '2026-11-07' },

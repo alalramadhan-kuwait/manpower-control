@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { eventAtOf, fingerprint, planningCandidates, planningView, readReport, reconcile, reconstruct, resolveTag, tagsIn, withinTolerance } from '..';
 
-import { data, META, MM } from './fixture';
+import { act, data, eq, F, META, MM, S } from './fixture';
 const run = (text: string, meta = META, d = data(), existing: Parameters<typeof reconcile>[3] = {}) => reconcile(d, text, meta, { now: Date.parse('2026-10-26T16:00:00Z'), ...existing });
 const find = (r: ReturnType<typeof reconcile>, f: (p: ReturnType<typeof reconcile>['proposals'][number]) => boolean) => r.proposals.find(f);
 
@@ -146,6 +146,12 @@ describe('latest valid information', () => {
     expect(find(r, (p) => p.tag === 'V-12-213' && p.type === 'hold_release')?.status).toBe('info');
     d.equipment.find((e) => e.tag === 'V-12-213')!.pendingReason = 'Waiting for crane';
     expect(find(run('V-213: Hold released, work resumed.', MM, d), (p) => p.type === 'hold_release')?.status).toBe('ready');
+  });
+  it('an RTJ / flange inspection remark is information on the item, not a new step', () => {
+    const d = data(); d.equipment.push(eq('C-12-201')); d.activities.push(act('C-12-201', 'Dismantle (workshop)', { actualStart: S, actualFinish: F }));
+    const r = run('C-201: RTJ flanges inspection I/P.', META, d);
+    expect(r.proposals.some((p) => p.type === 'new_step')).toBe(false);
+    expect(find(r, (p) => p.tag === 'C-12-201' && p.type === 'info')?.title).toContain('inspection scope');
   });
   it('two steps with the same words: the running one is meant', () => {
     const d = data(); d.activities.push({ ...d.activities[0], id: 'R-12-205:x', activityId: 'AX', activity: 'Dump ceramic balls inside the cone', actualStart: null });

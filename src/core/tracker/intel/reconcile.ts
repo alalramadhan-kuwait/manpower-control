@@ -66,6 +66,7 @@ const fmt = (iso: string) => new Date(Date.parse(iso) + KW).toISOString().slice(
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const overlap = (phrase: string, name: string) => { const p = words(phrase).map(stem), n = words(name).map(stem); return p.length ? p.filter((w) => n.includes(w)).length / p.length : 0; };
 const WORKFLOW = /\b(re-?(test|inspect\w*|tub\w*|work|clean\w*|do|weld\w*|blast\w*)|additional|extra|again|replace\w*|rectif\w*|rework|new (elements?|tubes?|bundle|gasket))\b/i;
+const INSPECTION_SCOPE = /\b(rtj|ring[\s-]?(type )?joints?|flanges? (faces?|inspection|grooves?)|grooves?|gasket (face|seat))\b/i;
 const OPS_ACTION = /\b(handover|hand over|blind|gas test|permit|clearance|isolat|purge|n2|nitrogen|process)\b/i;
 
 export interface ReconcileOptions { tolerance?: Tolerance; now?: number; /** proposals already in the database for this tracker (open or applied): the same change is not proposed twice */ existing?: { type: ProposalType; key: string | null; activityId: string | null; status: ProposalStatus; proposed: Record<string, unknown>; department: Department; reportDate: string }[] }
@@ -205,6 +206,12 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
         }
         // no step of that name
         if (f.state === 'pending' || f.state === 'planned') { out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: null, activityName: null, type: 'info', status: 'info', classification: 'step_pending', title: `${e.tag}: ${f.text}`, detail: 'Planned work with no step of that name yet: added when it starts, if the Engineer agrees.', current: {}, proposed: {}, reason: 'Not started', evidence: ev })); continue; }
+        // an inspection-scope remark (RTJ ring joints, flange faces, grooves): information on the item, never a work step of its own
+        if (INSPECTION_SCOPE.test(f.text)) {
+          out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: null, activityName: null, type: 'info', status: 'info', classification: 'info', title: `${e.tag}: inspection scope · ${f.text}`,
+            detail: 'A remark on the inspection scope (RTJ / flanges), kept with the item; the inspection worklist and the IATs carry the findings. Not a step of this item\'s work.', current: {}, proposed: {}, reason: 'General inspection remark', evidence: ev }));
+          continue;
+        }
         const near = acts.filter((a) => overlap(nounOnly, a.activity) >= 0.5).sort((a, b) => overlap(nounOnly, b.activity) - overlap(nounOnly, a.activity));
         if (near.length) {
           const a = near[0];
