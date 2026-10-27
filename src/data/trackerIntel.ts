@@ -5,7 +5,7 @@
 import { supabase } from './supabase';
 import { dataChanged } from './changes';
 import { addEngStep, addEvent, addQtyEntry, setActivity, setEquipment, setOrder, type TrackerData } from './tracker';
-import { DEFAULT_TOLERANCE, fingerprint, reconcile, type Department, type PlanningRecord, type Proposal, type ProposalStatus, type ProposalType, type Reconciled, type ReportMeta, type Tolerance } from '@/core/tracker/intel';
+import { DEFAULT_TOLERANCE, latestStatusOnly, fingerprint, reconcile, type Department, type PlanningRecord, type Proposal, type ProposalStatus, type ProposalType, type Reconciled, type ReportMeta, type Tolerance } from '@/core/tracker/intel';
 import { sortActs } from '@/core/tracker';
 
 export interface ReportRow { id: string; department: Department; reportDate: string; shift: 'D' | 'N' | null; reporter: string | null; body: string; status: 'read' | 'applied' | 'partial' | 'failed'; summary: Record<string, number>; submittedBy: string | null; submittedAt: string }
@@ -30,7 +30,8 @@ export async function fetchIntel(trackerId: string, days = 14): Promise<IntelDat
   return {
     reports: (r.data as { id: string; department: Department; report_date: string; shift: 'D' | 'N' | null; reporter: string | null; body: string; status: ReportRow['status']; summary: Record<string, number>; submitted_by_name: string | null; submitted_at: string }[])
       .map((x) => ({ id: x.id, department: x.department, reportDate: x.report_date, shift: x.shift, reporter: x.reporter, body: x.body, status: x.status, summary: x.summary ?? {}, submittedBy: x.submitted_by_name, submittedAt: x.submitted_at })),
-    proposals: (p.data as PRow[]).map(toProposal),
+    // several status lines for one item: only the newest can be applied (the older ones show as older)
+    proposals: latestStatusOnly((p.data as PRow[]).map(toProposal)),
     planning: (pl.data as { id: string; report_date: string; cutoff: string | null; planned_pct: number; actual_pct: number; source: string; revision: number; supersedes: string | null; created_at: string }[])
       .map((x) => ({ id: x.id, reportDate: x.report_date, cutoff: x.cutoff, planned: Number(x.planned_pct), actual: Number(x.actual_pct), source: x.source, revision: x.revision, supersedes: x.supersedes, createdAt: x.created_at })),
   };

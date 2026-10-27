@@ -10,7 +10,7 @@ import { Button, ErrorBox, cx } from '@/ui/components';
 const KW = 3 * 36e5;
 export const when = (iso: string) => { const d = new Date(Date.parse(iso) + KW); return `${d.getUTCDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()]} ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`; };
 const DOT: Record<string, string> = { ready: 'bg-status-green', review: 'bg-amber-500', conflict: 'bg-status-red', info: 'bg-slate-300', applied: 'bg-brand-500', dismissed: 'bg-slate-200' };
-const STATUS_WORD: Record<string, string> = { ready: 'Ready', review: 'Review', conflict: 'Conflict', info: 'Info', applied: 'Applied', dismissed: 'Dismissed' };
+const STATUS_WORD: Record<string, string> = { older: 'Older', ready: 'Ready', review: 'Review', conflict: 'Conflict', info: 'Info', applied: 'Applied', dismissed: 'Dismissed' };
 const TYPE_ICON: Record<string, string> = { finish_step: '✓', start_step: '▶', status_line: '✎', drums: '🛢', new_step: '＋', defect: '⚠', hold: '⛔', hold_release: '▶', risk: '◔', planning: '％', info: 'ℹ', review: '?' };
 const editable = (p: ProposalRow) => p.type === 'status_line' || p.type === 'new_step' || p.type === 'defect' || p.type === 'hold';
 const canApply = (p: ProposalRow) => ['finish_step', 'start_step', 'status_line', 'drums', 'new_step', 'defect', 'hold', 'hold_release', 'planning'].includes(p.type) && (p.status === 'ready' || p.status === 'review' || p.status === 'conflict');
@@ -43,7 +43,7 @@ export function ProposalRowView({ p, d, canEdit, onDone, defaultOpen = false, pi
           <span className="block text-[13px] font-semibold leading-snug text-slate-900"><span className="mr-1 text-slate-500">{TYPE_ICON[p.type]}</span>{p.title}</span>
           <span className="block truncate text-[11px] text-slate-500">{CLASS_LABEL[p.classification]} · {DEPT_SHORT[p.department]} {p.reportDate}{p.issues.length ? ` · ${p.issues[0]}` : ''}{p.status === 'applied' && p.appliedRef ? ` · ${p.appliedRef}` : ''}</span>
         </span>
-        <span className={cx('shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold', p.status === 'ready' ? 'bg-green-100 text-green-900' : p.status === 'review' ? 'bg-amber-100 text-amber-900' : p.status === 'conflict' ? 'bg-red-100 text-red-900' : p.status === 'applied' ? 'bg-brand-100 text-brand-700' : 'bg-slate-100 text-slate-600')}>{STATUS_WORD[p.status]}</span>
+        <span className={cx('shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold', p.status === 'ready' ? 'bg-green-100 text-green-900' : p.status === 'review' ? 'bg-amber-100 text-amber-900' : p.status === 'conflict' ? 'bg-red-100 text-red-900' : p.status === 'applied' ? 'bg-brand-100 text-brand-700' : 'bg-slate-100 text-slate-600')}>{STATUS_WORD[(p as { superseded?: boolean }).superseded ? 'older' : p.status]}</span>
       </button>
       {open && !pick && (
         <div className="mb-1 ml-4 space-y-1.5 text-[12px] text-slate-700">
@@ -86,7 +86,8 @@ export function ProposalList({ rows, d, canEdit, onDone, openAll = false }: { ro
   const toggle = (ids: string[], on: boolean) => setSel((s) => { const n = new Set(s); for (const id of ids) { if (on) n.add(id); else n.delete(id); } return n; });
   const stop = () => { setSelecting(false); setSel(new Set()); };
   async function bulk(kind: 'apply' | 'dismiss') {
-    const list = kind === 'apply' ? applicable : chosen; if (!list.length) return;
+    // in the order things happened: a later report's change lands last
+    const list = [...(kind === 'apply' ? applicable : chosen)].sort((a, b) => Date.parse(a.eventAt) - Date.parse(b.eventAt)); if (!list.length) return;
     setBusy(kind === 'apply' ? 'Applying…' : 'Dismissing…'); setErr(null); let ok = 0; const bad: string[] = [];
     for (const p of list) {
       try { if (kind === 'apply') await applyProposal(d, p); else await reviewProposal(p.id, 'dismissed', 'dismissed with others'); ok++; }
