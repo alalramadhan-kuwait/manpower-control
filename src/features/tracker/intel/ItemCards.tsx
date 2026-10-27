@@ -110,7 +110,7 @@ function ItemCard({ c, d, canEdit, onDone }: { c: Card; d: TrackerData; canEdit:
 }
 
 /** The two sections: Need your look, Ready to apply (with Apply all). */
-export function ItemCards({ cards, d, canEdit, onDone, show }: { cards: Card[]; d: TrackerData; canEdit: boolean; onDone: (m: string) => void; show: 'all' | 'look' | 'ready' }) {
+export function ItemCards({ cards, d, canEdit, onDone, show, applyAll: withAll = true }: { cards: Card[]; d: TrackerData; canEdit: boolean; onDone: (m: string) => void; show: 'all' | 'look' | 'ready'; applyAll?: boolean }) {
   const look = cards.filter((c) => c.look), ready = cards.filter((c) => !c.look);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   async function applyAll() {
@@ -124,10 +124,26 @@ export function ItemCards({ cards, d, canEdit, onDone, show }: { cards: Card[]; 
   return (
     <div className="space-y-2">
       {show !== 'ready' && look.length > 0 && <>{head('To check', look.length)}{look.map((c) => <ItemCard key={c.tag} c={c} d={d} canEdit={canEdit} onDone={onDone} />)}</>}
-      {show !== 'look' && ready.length > 0 && <>{head('Ready to apply', ready.length, canEdit && ready.length > 1 ? <button type="button" disabled={busy} onClick={applyAll} className="text-[12px] font-bold text-brand-700 disabled:opacity-50">{busy ? 'Applying…' : 'Apply all'}</button> : null)}
+      {show !== 'look' && ready.length > 0 && <>{head('Ready to apply', ready.length, withAll && canEdit && ready.length > 1 ? <button type="button" disabled={busy} onClick={applyAll} className="text-[12px] font-bold text-brand-700 disabled:opacity-50">{busy ? 'Applying…' : 'Apply all'}</button> : null)}
         {err != null && <ErrorBox error={err} />}
         {ready.map((c) => <ItemCard key={c.tag} c={c} d={d} canEdit={canEdit} onDone={onDone} />)}</>}
       {!cards.length && <p className="rounded-xl bg-white px-3 py-2 text-[12px] text-slate-500 ring-1 ring-slate-200">Nothing to apply. Paste a report to read it.</p>}
     </div>
   );
+}
+
+/** What a whole report does to the M & I progress if its ready changes are applied, and once the steps it starts finish. */
+export function reportProgress(d: TrackerData, rows: ProposalRow[]): string | null {
+  const steps = rows.filter((p) => cardApplicable(p) && STEP.has(p.type) && p.activityId);
+  if (!steps.length) return null;
+  const now = Date.now(), t = new Date(now).toISOString();
+  const total = (x: TrackerData) => phases(x, now).mi.weighted?.actualPct ?? null;
+  const patched = (finishAll: boolean) => ({ ...d, activities: d.activities.map((a) => {
+    const p = steps.find((s) => s.activityId === a.id); if (!p) return a;
+    return { ...a, actualStart: a.actualStart ?? t, actualFinish: p.type === 'finish_step' || finishAll ? (a.actualFinish ?? t) : a.actualFinish };
+  }) }) as TrackerData;
+  const b = total(d), a = total(patched(false)), w = total(patched(true));
+  if (b == null || a == null || w == null) return null;
+  const starts = steps.filter((p) => p.type === 'start_step').length, fins = steps.length - starts;
+  return `This report: ${fins} step${fins === 1 ? '' : 's'} finish, ${starts} start · M & I ${a === b ? `stays ${b}%` : `${b}% → ${a}%`} if applied${w !== a ? ` · ${w}% when the started steps finish` : ''}`;
 }

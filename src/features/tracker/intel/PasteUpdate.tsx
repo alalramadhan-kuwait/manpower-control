@@ -8,6 +8,7 @@ import { applyProposal, fetchIntel, readAgainst, submitReport, type IntelData, t
 import type { TrackerData } from '@/data/tracker';
 import { BottomSheet, Button, ErrorBox, Field, cx } from '@/ui/components';
 import { ProposalList } from './ProposalList';
+import { ItemCards, cardApplicable, reportProgress, toCards } from './ItemCards';
 
 const KW = 3 * 36e5;
 const today = () => new Date(Date.now() + KW).toISOString().slice(0, 10);
@@ -34,7 +35,7 @@ export function PasteUpdate({ d, canEdit, onClose, onDone }: { d: TrackerData; c
   }
   async function applyReady() {
     if (!result) return; setBusy('Applying…'); setErr(null); let ok = 0; const bad: string[] = [];
-    for (const p of result.rows.filter((x) => x.status === 'ready' && ['finish_step', 'start_step', 'status_line', 'drums', 'planning', 'hold_release'].includes(x.type))) {
+    for (const p of result.rows.filter(cardApplicable).sort((a, b) => Date.parse(a.eventAt) - Date.parse(b.eventAt))) {
       try { await applyProposal(d, p); ok++; } catch (e) { bad.push(`${p.tag ?? p.type}: ${e instanceof Error ? e.message : String(e)}`); }
     }
     const fresh = await fetchIntel(d.tracker.id, 30);
@@ -42,7 +43,6 @@ export function PasteUpdate({ d, canEdit, onClose, onDone }: { d: TrackerData; c
     setBusy(null); if (bad.length) setErr(new Error(bad.join('\n')));
     onDone(`${ok} change${ok === 1 ? '' : 's'} applied${bad.length ? `, ${bad.length} not` : ''}.`);
   }
-  const readyN = result ? result.rows.filter((x) => x.status === 'ready').length : 0;
   return (
     <BottomSheet open onClose={onClose} title="📋 Paste update">
       {!result ? (
@@ -60,10 +60,19 @@ export function PasteUpdate({ d, canEdit, onClose, onDone }: { d: TrackerData; c
         </div>
       ) : (
         <div className="space-y-2">
-          <p className="text-[12px] text-slate-600">{result.duplicate ? 'This text was already read: its proposals are below. ' : ''}{result.rows.length} proposal{result.rows.length === 1 ? '' : 's'} · <b className="text-green-800">{readyN} ready</b> · {result.rows.filter((x) => x.status === 'review').length} to review · <span className={cx(result.rows.some((x) => x.status === 'conflict') && 'text-red-800')}>{result.rows.filter((x) => x.status === 'conflict').length} conflicts</span> · {result.rows.filter((x) => x.status === 'info').length} info</p>
-          {canEdit && readyN > 0 && <Button className="w-full" disabled={!!busy} onClick={applyReady}>{busy ?? `Apply all ready (${result.rows.filter((x) => x.status === 'ready' && ['finish_step', 'start_step', 'status_line', 'drums', 'planning', 'hold_release'].includes(x.type)).length})`}</Button>}
-          {err != null && <ErrorBox error={err} />}
-          <ProposalList rows={result.rows} d={d} canEdit={canEdit} onDone={async (m) => { onDone(m); const fresh = await fetchIntel(d.tracker.id, 30); setResult((r) => (r ? { ...r, rows: fresh.proposals.filter((p) => p.reportId === r.reportId) } : r)); }} />
+          {(() => {
+            const { cards, notes } = toCards(result.rows); const look = cards.filter((c) => c.look).length;
+            const effect = reportProgress(d, result.rows); const readyN2 = result.rows.filter(cardApplicable).length;
+            const refresh = async (m: string) => { onDone(m); const fresh = await fetchIntel(d.tracker.id, 30); setResult((r) => (r ? { ...r, rows: fresh.proposals.filter((p) => p.reportId === r.reportId) } : r)); };
+            return <>
+              <p className="text-[12px] text-slate-600">{result.duplicate ? 'This text was already read. ' : ''}{cards.length} item{cards.length === 1 ? '' : 's'} · <b className={cx(look ? 'text-amber-800' : 'text-slate-600')}>{look} to check</b> · <b className="text-green-800">{cards.length - look} ready</b> · {notes.length} notes</p>
+              {effect && <p className="rounded-xl bg-brand-50 px-3 py-2 text-[13px] font-semibold tabular-nums text-brand-800">{effect}</p>}
+              {canEdit && readyN2 > 0 && <Button className="w-full" disabled={!!busy} onClick={applyReady}>{busy ?? `Apply all ready (${readyN2})`}</Button>}
+              {err != null && <ErrorBox error={err} />}
+              <ItemCards cards={cards} d={d} canEdit={canEdit} onDone={refresh} show="all" applyAll={false} />
+              {notes.length > 0 && <details className="rounded-2xl bg-white px-3 py-1.5 text-[12px] ring-1 ring-slate-200"><summary className="cursor-pointer font-semibold text-slate-700">Notes · {notes.length}</summary><div className="mt-1.5"><ProposalList rows={notes} d={d} canEdit={canEdit} onDone={refresh} /></div></details>}
+            </>;
+          })()}
           <div className="flex gap-2"><Button variant="secondary" className="flex-1" onClick={() => { setResult(null); setText(''); }}>Paste another</Button><Button variant="secondary" className="flex-1" onClick={onClose}>Close</Button></div>
         </div>
       )}
