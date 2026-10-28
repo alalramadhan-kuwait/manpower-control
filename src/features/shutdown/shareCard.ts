@@ -1,6 +1,8 @@
 // The start-up as a picture for WhatsApp (owner, 28 Oct 2026, option A of the mock-up): a 1080 × 1350 (4:5) card
 // drawn on the phone, so it shows whole in a chat. Nothing is uploaded: the phone's share sheet sends it.
-export interface CardStep { title: string; status: 'done' | 'running' | 'not_started' | 'not_required'; right: string; red: boolean; sub: string | null }
+export interface CardStep { title: string; status: 'done' | 'running' | 'not_started' | 'not_required'; right: string; red: boolean;
+  /** when: done at, or the expected / target time from the latest update (grey); why it is late (amber) */
+  time: string | null; sub: string | null }
 export interface CardData {
   title: string; when: string; pct: number; planPct: number; stepsLine: string; runningLine: string | null; expectedLine: string; behindLine: string | null; behindRed: boolean;
   planLine: string | null; steps: CardStep[]; footLeft: string; footRight: string;
@@ -68,7 +70,9 @@ function layout(ctx: CanvasRenderingContext2D, d: CardData, k: number) {
     const yy = ty + 14 + big;
     const th = put(s.title, 110, yy, big, 500, s.status === 'not_required' ? C.grey : C.ink, W - 110 - 70 - rw);
     L.push({ t: s.right, x: W - 50, y: yy, size: big, weight: s.red ? 800 : 500, color: s.red ? C.red : C.grey, align: 'right' });
-    const sh = s.sub ? put(s.sub, 110, yy + th - bl + sl + 4, small, 500, C.note, W - 160) + 4 : 0;
+    let sh = 0;
+    if (s.time) sh += put(s.time, 110, yy + th - bl + sl + 4, small, 500, C.grey, W - 160) + 2;
+    if (s.sub) sh += put(s.sub, 110, yy + th - bl + sh + sl + 4, small, 500, C.note, W - 160) + 4;
     const h = 14 + th + sh + 10; rows.push({ y: ty, h, s, i }); ty += h;
   });
   shapes.push((c) => rows.forEach(({ y: ry, h, s, i }, n) => {

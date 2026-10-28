@@ -422,8 +422,18 @@ function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEnt
     const steps_ = steps.map((x) => {
       const t = tl.get(x.id); const over = vp.over.get(x.id); const wait = vp.wait.get(x.id);
       const right = x.status === 'done' ? `${t?.actualH != null ? hrs(t.actualH) : '—'} / ${x.stdHours != null ? hrs(x.stdHours) : '—'}` : x.status === 'running' ? `${t?.actualH != null ? hrs(t.actualH) : '0 h'} / ${x.stdHours != null ? hrs(x.stdHours) : '—'}` : x.status === 'not_required' ? 'not required' : x.stdHours != null ? hrs(x.stdHours) : '—';
-      const sub = [over ? `+${hrs(over)}${x.delayReason ? ` · ${reasonLabel(x.delayReason)}${x.delayNote ? `: ${x.delayNote}` : ''}` : ''}` : null, wait ? `waited ${hrs(wait)}${x.waitReason ? ` · ${reasonLabel(x.waitReason)}${x.waitNote ? `: ${x.waitNote}` : ''}` : ''}` : null].filter(Boolean).join(' · ') || null;
-      return { title: x.title, status: x.status, right, red: !!over, sub };
+      // the time from the latest update: done at; running: its expected finish; still to come: expected start → finish
+      const end = x.startedAt && x.stdHours != null ? Math.max(Date.parse(x.startedAt) + x.stdHours * H, now) : null;
+      const from = t?.planStart != null ? Math.max(t.planStart, now) : null;
+      const time = x.status === 'done' ? `done ${at(x.doneAt)}` : x.status === 'running' ? `started ${at(x.startedAt)} · expected done ${at(end)}`
+        : x.status === 'not_required' ? null : from !== null ? `expected ${at(from)} → ${at(t?.planEnd ?? null)}` : null;
+      // why it was late, said once (the wait and the overrun may share one reason)
+      const why = (r: string | null, n: string | null) => (r ? `${reasonLabel(r)}${n ? `: ${n}` : ''}` : null);
+      const wr = why(x.waitReason, x.waitNote); const dr = why(x.delayReason, x.delayNote);
+      const parts = [wait ? `waited ${hrs(wait)}` : null, over ? `+${hrs(over)} over plan` : null].filter(Boolean) as string[];
+      const reasons = [...new Set([wait ? wr : null, over ? dr : null].filter(Boolean) as string[])];
+      const sub = parts.length ? [...parts, ...reasons].join(' · ') : null;
+      return { title: x.title, status: x.status, right, red: !!over, time, sub };
     });
     const d: CardData = {
       title: `${entryName(entry)} · Start-up`, when: `Unit-12 · ${new Date(now).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kuwait' })}`,
