@@ -127,7 +127,7 @@ export default function DayOverviewPage() {
           </div>
         )}
         {period && result && (
-          <Link to="/shutdowns?section=modes" className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-brand-700 px-2.5 py-1 text-[11px] font-semibold text-white">
+          <Link to="/rules?group=crew" className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-brand-700 px-2.5 py-1 text-[11px] font-semibold text-white">
             <span className="truncate">{result.rules.modeLabel} · {shortDate(period.start)} – {shortDate(period.end)}{period.note ? ` · ${period.note}` : ''}</span>
           </Link>
         )}

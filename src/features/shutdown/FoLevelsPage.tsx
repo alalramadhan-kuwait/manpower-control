@@ -1,4 +1,4 @@
-import { ArrowLeft, Check } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FO_LEVEL_LABEL, sdOperatorEligible, type FoLevel } from '@/core/shutdown';
@@ -33,7 +33,6 @@ export default function FoLevelsPage() {
   const count = (l: FoLevel) => fos.filter((r) => r.fo_level === l).length;
   return (
     <div>
-      <Link to="/shutdowns?section=plans" className="mb-2 inline-flex items-center gap-1 text-sm font-medium text-brand-700"><ArrowLeft className="h-4 w-4" />Shutdown teams</Link>
       <PageHeader title="FO levels" subtitle={`${count('senior')} Senior · ${count('good')} Good · ${count('new')} New · ${count('below')} Below · ${fos.length - LEVELS.reduce((n, l) => n + count(l), 0)} not set`}
         info="Your grading of each Field Operator, and of the Panel Operators who can work on a shutdown team (Grade 13 and below, and contractors), for shutdown teams. Below = below average: ranked after everyone else when a shutdown team is picked. Tap a level to set it, tap it again to clear. Saved at once and kept in the audit history." />
       {saved && <p className="mb-2 flex items-center gap-1 text-sm text-status-green"><Check className="h-4 w-4" />{saved}</p>}

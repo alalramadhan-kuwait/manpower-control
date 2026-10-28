@@ -10,6 +10,7 @@ import EmployeeProfilePage from '@/features/employees/EmployeeProfilePage';
 import ImportBatchPage from '@/features/imports/ImportBatchPage';
 import MorePage from '@/features/more/MorePage';
 import CalendarPage from '@/features/calendar/CalendarPage';
+import ShutdownPage from '@/features/shutdown/ShutdownPage';
 import SdPlanPage from '@/features/shutdown/SdPlanPage';
 import { SdOvertimePage, SdSchedulePage } from '@/features/shutdown/SdDocuments';
 import { SdMemoPage } from '@/features/shutdown/SdMemo';
@@ -98,6 +99,7 @@ function MainApp() {
           <Route path="/leave-planning" element={<Legacy to={(q) => rest(`/manpower?tab=leave&sub=${['annual', 'next', 'pv'].find((k) => k === q.get('tab')) ?? 'annual'}`, q, ['tab'])} />} />
           <Route path="/vacation-plan" element={<Legacy to={(q) => rest('/manpower?tab=leave&sub=next', q, ['tab'])} />} />
           <Route path="/shutdown" element={<Legacy to={(q) => rest(q.get('tab') === 'modes' ? '/shutdowns?section=modes' : '/shutdowns?section=plans', q, ['tab'])} />} />
+          <Route path="/sd/:key" element={<ShutdownPage profile={profile} />} />
           <Route path="/shutdown/:id" element={<SdPlanPage isHead={profile.role_code === 'section_head'} />} />
           <Route path="/shutdown/:id/schedule" element={<SdSchedulePage />} />
           <Route path="/shutdown/:id/overtime" element={<SdOvertimePage />} />

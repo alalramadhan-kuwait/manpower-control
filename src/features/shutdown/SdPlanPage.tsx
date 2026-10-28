@@ -268,7 +268,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
                 <ToolButton to={`/shutdown/${plan.id}/schedule`} label="Duty schedule" hint="Who works which day (print)" />
                 <ToolButton to={`/shutdown/${plan.id}/overtime`} label="Overtime sheet" hint="For approval (print)" />
                 <ToolButton to={`/shutdown/${plan.id}/memo`} label="Instruction memo" hint="For the staff, with the schedule (print)" />
-                <ToolButton to="/shutdowns?section=progress" label="Shutdown progress" hint="Steps, equipment, shift report" />
+                <ToolButton to={`/sd/${plan.eventId ?? `p-${plan.id}`}`} label="Shutdown page" hint="Stages, steps, record and file" />
                 <ToolButton onClick={generate} disabled={generating} label={generating ? 'Creating…' : 'Excel file'} hint="All 4 sheets in one file" />
                 <ToolButton onClick={() => setEditPattern(true)} label="Plan settings" hint="Dates, 3 on / 1 off, hours, limits" />
               </div>

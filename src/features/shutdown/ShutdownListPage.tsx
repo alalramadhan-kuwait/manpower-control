@@ -5,7 +5,8 @@ import { yearSegment } from '@/core/calendar';
 import { FO_LEVEL_LABEL, sdOperatorEligible, type SdKind, type SdMember, type SdPlan } from '@/core/shutdown';
 import { fetchCalendarInfo } from '@/data/calendar';
 import { fetchDirectory } from '@/data/queries';
-import { createSdPlan, fetchAllSdMembers, fetchIncompleteShutdowns, fetchSdPlans, moveSdPlan, updateSdPlan } from '@/data/shutdown';
+import { entryName, fetchShutdownIndex, type ShutdownEntry } from '@/data/sdPage';
+import { createSdPlan, fetchAllSdMembers, fetchIncompleteShutdowns, moveSdPlan, updateSdPlan } from '@/data/shutdown';
 import { addDaysIso } from '@/core/roster';
 import type { EmployeeDirectoryRow } from '@/data/types';
 import { BottomSheet, Button, Card, ErrorBox, Field, PageHeader, Spinner, cx, fmtDate } from '@/ui/components';
@@ -13,9 +14,10 @@ import { CrewBadge, isCrew } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { nameFilter } from '@/ui/nameSearch';
 
-/** Shutdown teams: one plan per shutdown; open it to fill the Morning and Night teams. */
+/** Shutdowns (owner, 28 Oct 2026): every shutdown in one list, the Calendar's (tentative ones too) and the team plans
+ *  made before shutdowns were on the Calendar. A row opens the shutdown's page (stages, steps, team, record, file). */
 export default function ShutdownListPage() {
-  const [plans, setPlans] = useState<SdPlan[] | null>(null);
+  const [entries, setEntries] = useState<ShutdownEntry[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<SdPlan | null>(null);
@@ -28,8 +30,8 @@ export default function ShutdownListPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const today = localToday();
   const load = () => {
-    Promise.all([fetchSdPlans(), fetchAllSdMembers()]).then(([ps, ms]) => {
-      setPlans(ps); setMembers(ms);
+    Promise.all([fetchShutdownIndex(), fetchAllSdMembers()]).then(([es, ms]) => {
+      setEntries(es); setMembers(ms);
       const n = new Map<string, number>();
       for (const m of ms) n.set(m.planId, (n.get(m.planId) ?? 0) + 1);
       setPeople(n);
@@ -37,61 +39,60 @@ export default function ShutdownListPage() {
     fetchIncompleteShutdowns(today).then((x) => setShort(new Map(x.map(({ plan, gaps }) => [plan.id, new Set(gaps.flatMap((g) => g.dates)).size])))).catch(() => setShort(new Map()));
   };
   useEffect(load, []);
-  // still to come or running first (soonest first); the finished ones after, the latest first, greyed
-  const ahead = (plans ?? []).filter((p) => p.end >= today).sort((a, b) => a.start.localeCompare(b.start));
-  const done = (plans ?? []).filter((p) => p.end < today).sort((a, b) => b.end.localeCompare(a.end));
+  const plans = useMemo(() => (entries ?? []).flatMap((e) => (e.plan ? [e.plan] : [])), [entries]);
+  // running first, then still to come (soonest first); the finished ones after, the latest first, greyed
+  const running = (entries ?? []).filter((e) => e.start <= today && e.end >= today);
+  const coming = (entries ?? []).filter((e) => e.start > today);
+  const done = (entries ?? []).filter((e) => e.end < today).reverse();
+  const soon = coming.filter((e) => e.start <= `${Number(today.slice(0, 4)) + 1}${today.slice(4)}`);
   const dayNo = (iso: string) => Math.round(Date.parse(`${iso}T00:00:00Z`) / 86400000);
-  const when = (p: SdPlan) => {
-    const length = dayNo(p.end) - dayNo(p.start) + 1;
-    const range = `${fmtDate(p.start)} – ${fmtDate(p.end)}`;
-    return { range, length, state: p.end < today ? 'Finished' : p.start <= today ? `Running · day ${dayNo(today) - dayNo(p.start) + 1} of ${length}` : `Starts in ${dayNo(p.start) - dayNo(today)} ${dayNo(p.start) - dayNo(today) === 1 ? 'day' : 'days'}` };
-  };
-  const row = (p: SdPlan, finished: boolean) => {
-    const w = when(p); const n = people.get(p.id) ?? 0;
+  const row = (e: ShutdownEntry, finished: boolean) => {
+    const length = dayNo(e.end) - dayNo(e.start) + 1; const p = e.plan; const n = p ? people.get(p.id) ?? 0 : 0;
+    const state = finished ? 'Finished' : e.start <= today ? `Day ${dayNo(today) - dayNo(e.start) + 1} of ${length}` : `In ${dayNo(e.start) - dayNo(today)} days`;
     return (
-      <div key={p.id} className={cx('flex items-center', finished && 'bg-slate-50/60')}>
-        <Link to={`/shutdown/${p.id}`} className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-3">
-          <span className={cx('min-w-0 flex-1 space-y-0.5', finished && 'opacity-60')}>
+      <div key={e.key} className={cx('flex items-center', finished && 'bg-slate-50/60')}>
+        <Link to={`/sd/${e.key}`} className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-3">
+          <span className={cx('min-w-0 flex-1 space-y-0.5', finished && 'opacity-70')}>
             <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-              <span className={cx('font-medium', finished ? 'text-slate-600' : 'text-slate-900')}>{p.title}</span>
-              <span className={cx('rounded-full px-1.5 text-[10px] font-semibold', finished ? 'bg-slate-200 text-slate-600' : p.start <= today ? 'bg-green-100 text-green-800' : 'bg-brand-50 text-brand-700')}>{w.state}</span>
-              {!finished && (short.get(p.id) ?? 0) > 0 && <span className="rounded-full bg-status-red px-1.5 text-[10px] font-semibold text-white">Not complete · {short.get(p.id)} {short.get(p.id) === 1 ? 'day' : 'days'} short</span>}
+              <span className={cx('font-medium', finished ? 'text-slate-600' : 'text-slate-900')}>{entryName(e)}</span>
+              <span className={cx('rounded-full px-1.5 text-[10px] font-semibold', finished ? 'bg-slate-200 text-slate-600' : e.start <= today ? 'bg-green-100 text-green-800' : 'bg-brand-50 text-brand-700')}>{state}</span>
+              {e.tentative && <span className="rounded-full bg-slate-200 px-1.5 text-[10px] font-semibold text-slate-600">tentative</span>}
+              {p && !finished && (short.get(p.id) ?? 0) > 0 && <span className="rounded-full bg-status-red px-1.5 text-[10px] font-semibold text-white">Team not complete · {short.get(p.id)} {short.get(p.id) === 1 ? 'day' : 'days'} short</span>}
             </span>
-            <span className="block text-xs text-slate-700">{w.range} · {w.length} days</span>
-            <span className="block text-xs text-slate-500">{p.kind === 'total' ? 'Total · ' : ''}{p.daysOff ? `${p.daysOn} on, ${p.daysOff} off` : 'every day'} · {p.shiftHours} h · <span className={cx(n === 0 && !finished && 'font-medium text-amber-700')}>{n === 0 ? 'no one added yet' : `${n} ${n === 1 ? 'person' : 'people'}`}</span></span>
+            <span className="block text-xs text-slate-700">{fmtDate(e.start)} – {fmtDate(e.end)} · {length} days</span>
+            <span className="block text-xs text-slate-500">{p ? <>Team: {p.kind === 'total' ? 'total · ' : ''}{p.daysOff ? `${p.daysOn} on, ${p.daysOff} off` : 'every day'} · {p.shiftHours} h · {n} {n === 1 ? 'person' : 'people'}</> : 'No team yet'}{e.tracker ? ' · tracker' : ''}</span>
           </span>
           <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
         </Link>
-        <button type="button" aria-label={`Edit or delete ${p.title}`} onClick={() => setEditing(p)} className="flex h-12 w-12 shrink-0 items-center justify-center text-brand-700"><Pencil className="h-4 w-4" /></button>
+        {p && <button type="button" aria-label={`Edit or delete the team plan ${p.title}`} onClick={() => setEditing(p)} className="flex h-12 w-12 shrink-0 items-center justify-center text-brand-700"><Pencil className="h-4 w-4" /></button>}
       </div>
     );
   };
   return (
     <div>
-      <PageHeader title="Shutdown teams" info={<div className="space-y-2 text-sm text-slate-700">
-        <p>One plan per shutdown, with a Morning and a Night team. Train shutdown: each team needs its own Controller, Senior, Good and New Field Operators; the crews keep running. Total turnaround: the whole unit is down, each shift has its Controllers and operators per area (e.g. TR-II, L.P &amp; TR-I), the numbers can step down by phase, and the crew minimums don't apply.</p>
-        <p>Panel Operators of Grade 13 and below, and contractor Panel Operators, can also be picked for a team.</p>
-        <p>Team members leave their crew for the team's dates; the crews must still meet the shutdown's operating-mode minimums. The team's Controller can still cover a normal shift on a day (Controllers › Assign cover).</p>
-        <p>Overtime = shutdown hours − the normal duty hours the person would have worked, per month, against the cap.</p>
+      <PageHeader title="Shutdowns" info={<div className="space-y-2 text-sm text-slate-700">
+        <p>Every shutdown on the Calendar, with the ones of the five-year plan (tentative until confirmed). Tap one for its page: Shutdown → M&I → Start-up, the steps, the team plan, the record and the file.</p>
+        <p>A team plan: a Morning and a Night team for the shutdown's dates. Team members leave their crew for the team's dates; the crews must still meet the minimums. Overtime = shutdown hours − the normal duty hours the person would have worked, per month, against the cap.</p>
         <p>Picking members: the right level first; nobody works two shutdowns in a row (flagged); then those free of leave whose crew keeps its minimum; then fewer sick days this year.</p>
-      </div>} action={<Button className="min-h-10 shrink-0 px-3" onClick={() => setAdding(true)}><Plus className="h-4 w-4" /> New</Button>} />
+      </div>} action={<Button className="min-h-10 shrink-0 px-3" onClick={() => setAdding(true)}><Plus className="h-4 w-4" /> Team plan</Button>} />
       <div className="mb-3 grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
         {(['plans', 'timeline', 'people'] as const).map((t) => (
           <button key={t} type="button" aria-pressed={view === t} onClick={() => setParams((p) => { const n = new URLSearchParams(p); if (t === 'plans') n.delete('view'); else n.set('view', t); return n; }, { replace: true })}
-            className={cx('min-h-9 rounded-lg font-medium', view === t ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{t === 'plans' ? 'Shutdowns' : t === 'timeline' ? 'Timeline' : 'Who took part'}</button>
+            className={cx('min-h-9 rounded-lg font-medium', view === t ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{t === 'plans' ? 'List' : t === 'timeline' ? 'Timeline' : 'Who took part'}</button>
         ))}
       </div>
-      {view === 'timeline' && (error ? <ErrorBox error={error} /> : !plans ? <Spinner /> : <TimelineTab plans={plans} people={people} today={today} />)}
-      {view === 'people' && (error ? <ErrorBox error={error} /> : !plans ? <Spinner /> : <PeopleTab plans={plans} members={members} />)}
-      {view === 'plans' && <p className="mb-2 text-xs text-slate-500">Field Operator levels: <Link to="/data-quality?tab=fo-levels" className="font-medium text-brand-700">Senior / Good / New ›</Link></p>}
+      {view === 'timeline' && (error ? <ErrorBox error={error} /> : !entries ? <Spinner /> : <TimelineTab items={entries.map((e) => ({ key: e.key, title: entryName(e), start: e.start, end: e.end, total: e.plan?.kind === 'total' || (e.unitCodes.includes('train_1') && e.unitCodes.includes('train_2')), tentative: e.tentative, people: e.plan ? people.get(e.plan.id) ?? 0 : null }))} today={today} />)}
+      {view === 'people' && (error ? <ErrorBox error={error} /> : !entries ? <Spinner /> : <PeopleTab plans={plans} members={members} />)}
       {notice && <p role="status" className="mb-2 text-sm text-status-green">{notice}</p>}
-      {view === 'plans' && (error ? <ErrorBox error={error} /> : !plans ? <Spinner /> : plans.length === 0 ? <Card><p className="text-sm text-slate-500">No shutdown plan yet.</p></Card> : (
+      {view === 'plans' && (error ? <ErrorBox error={error} /> : !entries ? <Spinner /> : entries.length === 0 ? <Card><p className="text-sm text-slate-500">No shutdown yet. Add one on the Calendar.</p></Card> : (
         <div className="space-y-4">
-          {ahead.length > 0 && <Card className="divide-y divide-slate-100 p-0">{ahead.map((p) => row(p, false))}</Card>}
+          {running.length > 0 && <section><h2 className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Running</h2><Card className="divide-y divide-slate-100 p-0">{running.map((e) => row(e, false))}</Card></section>}
+          {soon.length > 0 && <section><h2 className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Coming · next 12 months</h2><Card className="divide-y divide-slate-100 p-0">{soon.map((e) => row(e, false))}</Card></section>}
+          {coming.length > soon.length && <section><h2 className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Later · five-year plan ({coming.length - soon.length})</h2><Card className="divide-y divide-slate-100 p-0">{coming.slice(soon.length).map((e) => row(e, false))}</Card></section>}
           {done.length > 0 && (
             <section>
               <h2 className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Done · for the record ({done.length})</h2>
-              <Card className="divide-y divide-slate-100 overflow-hidden p-0">{done.map((p) => row(p, true))}</Card>
+              <Card className="divide-y divide-slate-100 overflow-hidden p-0">{done.map((e) => row(e, true))}</Card>
             </section>
           )}
         </div>
@@ -103,19 +104,20 @@ export default function ShutdownListPage() {
 }
 
 /** Every shutdown on a time scale: one strip per year (months across), bars placed by date, today marked; the list under each strip has the details. */
-function TimelineTab({ plans, people, today }: { plans: SdPlan[]; people: Map<string, number>; today: string }) {
-  if (plans.length === 0) return <Card><p className="text-sm text-slate-500">No shutdown plan yet.</p></Card>;
-  const sorted = [...plans].sort((a, b) => a.start.localeCompare(b.start));
+interface TItem { key: string; title: string; start: string; end: string; total: boolean; tentative: boolean; people: number | null }
+function TimelineTab({ items, today }: { items: TItem[]; today: string }) {
+  if (items.length === 0) return <Card><p className="text-sm text-slate-500">No shutdown yet.</p></Card>;
+  const sorted = [...items].sort((a, b) => a.start.localeCompare(b.start));
   const first = Number(sorted[0].start.slice(0, 4));
   const last = Math.max(Number(sorted[sorted.length - 1].end.slice(0, 4)), Number(today.slice(0, 4)));
   const years = Array.from({ length: last - first + 1 }, (_, i) => last - i);   // newest year on top
   const days = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
-  const prevOf = new Map(sorted.map((p, i) => [p.id, i > 0 ? sorted[i - 1] : null]));
+  const prevOf = new Map(sorted.map((p, i) => [p.key, i > 0 ? sorted[i - 1] : null]));
   const finished = sorted.filter((p) => p.end < today);
   const ahead = sorted.filter((p) => p.end >= today);
   const lastDone = finished[finished.length - 1] ?? null;
   const next = ahead[0] ?? null;
-  const colour = (p: SdPlan) => (p.kind === 'total' ? 'bg-amber-500' : 'bg-brand-600');
+  const colour = (p: TItem) => (p.total ? 'bg-amber-500' : 'bg-brand-600');
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2 text-xs">
@@ -134,7 +136,7 @@ function TimelineTab({ plans, people, today }: { plans: SdPlan[]; people: Map<st
         const inYear = sorted.filter((p) => yearSegment(p.start, p.end, y));
         // lanes: bars that overlap in time go on separate lines
         const lanes: string[] = []; const laneOf = new Map<string, number>();
-        for (const p of inYear) { let i = lanes.findIndex((end) => end < p.start); if (i < 0) { i = lanes.length; lanes.push(p.end); } else lanes[i] = p.end; laneOf.set(p.id, i); }
+        for (const p of inYear) { let i = lanes.findIndex((end) => end < p.start); if (i < 0) { i = lanes.length; lanes.push(p.end); } else lanes[i] = p.end; laneOf.set(p.key, i); }
         const todaySeg = String(y) === today.slice(0, 4) ? yearSegment(today, today, y) : null;
         const starting = sorted.filter((p) => p.start.startsWith(String(y))).reverse();
         const height = Math.max(1, lanes.length) * 26 + 8;
@@ -146,9 +148,9 @@ function TimelineTab({ plans, people, today }: { plans: SdPlan[]; people: Map<st
               {Array.from({ length: 11 }, (_, i) => <span key={i} className="absolute top-0 h-full w-px bg-slate-200" style={{ left: `${((i + 1) / 12) * 100}%` }} />)}
               {inYear.map((p) => { const seg = yearSegment(p.start, p.end, y)!; const planned = p.start > today;
                 return (
-                  <Link key={p.id} to={`/shutdown/${p.id}`} title={`${p.title} · ${fmtDate(p.start)} – ${fmtDate(p.end)}`} aria-label={`${p.title}, ${fmtDate(p.start)} to ${fmtDate(p.end)}`}
-                    className={cx('absolute flex items-center overflow-hidden rounded px-1 text-[10px] font-semibold leading-none', planned ? 'bg-white text-slate-700 ring-2 ring-inset ' + (p.kind === 'total' ? 'ring-amber-500' : 'ring-brand-600') : cx(colour(p), 'text-white'))}
-                    style={{ left: `${seg.left * 100}%`, width: `max(${seg.width * 100}%, 6px)`, top: 4 + (laneOf.get(p.id) ?? 0) * 26, height: 22 }}>
+                  <Link key={p.key} to={`/sd/${p.key}`} title={`${p.title} · ${fmtDate(p.start)} – ${fmtDate(p.end)}`} aria-label={`${p.title}, ${fmtDate(p.start)} to ${fmtDate(p.end)}`}
+                    className={cx('absolute flex items-center overflow-hidden rounded px-1 text-[10px] font-semibold leading-none', planned ? 'bg-white text-slate-700 ring-2 ring-inset ' + (p.total ? 'ring-amber-500' : 'ring-brand-600') : cx(colour(p), 'text-white'))}
+                    style={{ left: `${seg.left * 100}%`, width: `max(${seg.width * 100}%, 6px)`, top: 4 + (laneOf.get(p.key) ?? 0) * 26, height: 22 }}>
                     <span className="truncate">{seg.width > 0.12 ? p.title : ''}</span>
                   </Link>
                 ); })}
@@ -156,14 +158,14 @@ function TimelineTab({ plans, people, today }: { plans: SdPlan[]; people: Map<st
             </div>
             {starting.length > 0 && (
               <ul className="mt-2 divide-y divide-slate-100">
-                {starting.map((p) => { const prev = prevOf.get(p.id); const gap = prev ? days(prev.end, p.start) - 1 : null; const n = people.get(p.id) ?? 0;
+                {starting.map((p) => { const prev = prevOf.get(p.key); const gap = prev ? days(prev.end, p.start) - 1 : null; const n = p.people;
                   return (
-                    <li key={p.id}>
-                      <Link to={`/shutdown/${p.id}`} className="flex items-start gap-2 py-1.5">
+                    <li key={p.key}>
+                      <Link to={`/sd/${p.key}`} className="flex items-start gap-2 py-1.5">
                         <span className={cx('mt-1 h-2.5 w-2.5 shrink-0 rounded-sm', colour(p))} />
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium text-slate-900">{p.title}{p.start > today ? <span className="ml-1.5 text-[10px] font-semibold text-brand-700">planned</span> : p.end >= today ? <span className="ml-1.5 text-[10px] font-semibold text-green-700">running</span> : null}</span>
-                          <span className="block text-xs text-slate-600">{fmtDate(p.start)} – {fmtDate(p.end)} · {days(p.start, p.end) + 1} days · {n} {n === 1 ? 'person' : 'people'}{p.end.slice(0, 4) !== p.start.slice(0, 4) ? ` · continues into ${p.end.slice(0, 4)}` : ''}</span>
+                          <span className="block truncate text-sm font-medium text-slate-900">{p.title}{p.start > today ? <span className="ml-1.5 text-[10px] font-semibold text-brand-700">{p.tentative ? 'tentative' : 'planned'}</span> : p.end >= today ? <span className="ml-1.5 text-[10px] font-semibold text-green-700">running</span> : null}</span>
+                          <span className="block text-xs text-slate-600">{fmtDate(p.start)} – {fmtDate(p.end)} · {days(p.start, p.end) + 1} days{n != null ? ` · ${n} ${n === 1 ? 'person' : 'people'}` : ''}{p.end.slice(0, 4) !== p.start.slice(0, 4) ? ` · continues into ${p.end.slice(0, 4)}` : ''}</span>
                           {gap != null && gap >= 0 && <span className="block text-[11px] text-slate-500">{gap} days after {prev!.title}</span>}
                         </span>
                       </Link>
@@ -349,18 +351,21 @@ function PeopleTab({ plans, members }: { plans: SdPlan[]; members: SdMember[] })
   );
 }
 
-function NewPlanSheet({ onClose }: { onClose: () => void }) {
+export function NewPlanSheet({ onClose, eventId: fromEvent = null }: { onClose: () => void; eventId?: string | null }) {
   const navigate = useNavigate();
   const today = localToday();
   const [events, setEvents] = useState<{ id: string; label: string; start: string; end: string }[]>([]);
-  const [eventId, setEventId] = useState('');
+  const [eventId, setEventId] = useState(fromEvent ?? '');
   const [kind, setKind] = useState<SdKind>('train');
   const [title, setTitle] = useState(''); const [start, setStart] = useState(today); const [end, setEnd] = useState(today);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   useEffect(() => {
-    fetchCalendarInfo(today, `${Number(today.slice(0, 4)) + 2}-12-31`).then((i) => setEvents(i.events.filter((e) => e.category === 'shutdown')
-      .map((e) => ({ id: e.id, label: `${e.unit ? `${e.unit} ` : ''}${e.title}`, start: e.start, end: e.end })))).catch(setErr);
-  }, [today]);
+    fetchCalendarInfo(today, `${Number(today.slice(0, 4)) + 6}-12-31`).then((i) => {
+      const list = i.events.filter((e) => e.category === 'shutdown').map((e) => ({ id: e.id, label: `${e.unit ? `${e.unit} ` : ''}${e.title}`, start: e.start, end: e.end }));
+      setEvents(list);
+      const e = list.find((x) => x.id === fromEvent); if (e) { setTitle(e.label); setStart(e.start); setEnd(e.end); }
+    }).catch(setErr);
+  }, [today, fromEvent]);
   function pickEvent(id: string) { setEventId(id); const e = events.find((x) => x.id === id); if (e) { setTitle(e.label); setStart(e.start); setEnd(e.end); } }
   async function save() {
     setBusy(true); setErr(null);

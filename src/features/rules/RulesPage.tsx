@@ -6,6 +6,7 @@ import { RULE_GROUPS, checkRuleValue, ruleDef, type RuleBound, type RuleField, t
 import { fetchRuleChanges, fetchRules, type RuleChange, type RuleRow } from '@/data/rules';
 import { changeRule } from '@/data/rulesClient';
 import type { UserProfile } from '@/data/types';
+import ModesPanel from '@/features/operation/OperationPage';
 import { BottomSheet, Button, ErrorBox, PageHeader, Spinner, Toast, cx } from '@/ui/components';
 
 const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -59,6 +60,7 @@ export default function RulesPage({ profile }: { profile: UserProfile }) {
           </section>
         ))}
       </div>
+      {(group === 'all' || group === 'crew') && rows && <section className="mt-3 lg:max-w-2xl"><h2 className="mb-1.5 px-1 text-[13px] font-bold text-slate-700">👥 Manual override and operating modes</h2><ModesPanel profile={profile} /></section>}
       {open && <RuleSheet row={open} isHead={isHead} onClose={() => setOpen(null)} onSaved={(m) => { setOpen(null); setToast(m); void load(); }} />}
       <BottomSheet open={history} onClose={() => setHistory(false)} title="History of changes">{history && <ChangeList />}</BottomSheet>
       {toast && <Toast msg={toast} />}

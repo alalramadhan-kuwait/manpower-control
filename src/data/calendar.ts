@@ -75,11 +75,3 @@ export async function markPlanUnitsDown(plan: { id: string; title: string; start
   if (error) throw error;
   dataChanged();
 }
-
-/** The unit's shutdowns from today on (five-year plan included), for the five-year view on Unit status. */
-export async function fetchShutdownOutlook(from: string): Promise<UnitEvent[]> {
-  const { data, error } = await supabase.from('unit_events').select('*').eq('status', 'active').eq('category', 'shutdown').gte('end_date', from).neq('unit_codes', '{}').order('start_date');
-  if (error) throw error;
-  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({ id: r.id as string, category: r.category as UnitEvent['category'], title: r.title as string, unit: (r.unit as string) ?? null, unitCodes: (r.unit_codes as string[]) ?? [],
-    start: r.start_date as string, end: r.end_date as string, note: (r.note as string) ?? null, status: r.status as UnitEvent['status'], tentative: !!r.tentative, sourceRef: (r.source_ref as string) ?? null }));
-}

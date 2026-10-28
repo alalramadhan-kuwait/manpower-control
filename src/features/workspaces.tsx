@@ -3,7 +3,7 @@
 // ?section= for Shutdowns because the tracker uses ?tab= itself). Only what the role may use is shown, and the
 // database enforces it too.
 import { useEffect, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import type { UserProfile } from '@/data/types';
 import { countPendingApprovals } from '@/data/approvals';
 import { cx } from '@/ui/components';
@@ -20,7 +20,7 @@ import ImportHistoryPage from '@/features/imports/ImportHistoryPage';
 import UsersPage from '@/features/users/UsersPage';
 import AuditPage from '@/features/audit/AuditPage';
 import UserActivityPage from '@/features/audit/UserActivityPage';
-import OperationPage from '@/features/operation/OperationPage';
+import UnitStatusPage from '@/features/operation/UnitStatusPage';
 import ShutdownListPage from '@/features/shutdown/ShutdownListPage';
 import FoLevelsPage from '@/features/shutdown/FoLevelsPage';
 import LeavePlanPage from '@/features/leave/LeavePlanPage';
@@ -66,13 +66,15 @@ export function ManpowerWorkspace({ profile }: { profile: UserProfile }) {
     { key: 'leave', label: 'Leave', el: <SubTabs tabs={[{ key: 'annual', label: 'Annual plan', el: <LeavePlanPage /> }, { key: 'next', label: 'Plan next year', el: <VacationPlanPage profile={profile} /> }, { key: 'pv', label: 'PV cycles', el: <PvPage isHead={head(profile)} /> }]} /> }]} />;
 }
 
-/** Shutdowns: the progress tracker first (its own ?tab=), then the plans, Unit status and FO levels (Section Head). */
+/** Shutdowns (28 Oct 2026): Live (the running shutdown's tracker, its own ?tab=), every shutdown (each opens its own
+ *  page) and Unit status. FO levels moved to Data quality (an old ?section=fo address goes there). */
 export function ShutdownsWorkspace({ profile }: { profile: UserProfile }) {
+  const [params] = useSearchParams();
+  if (params.get('section') === 'fo') return <Navigate to="/data-quality?tab=fo-levels" replace />;
   return <Workspace title="Shutdowns" param="section" tabs={[
-    { key: 'progress', label: 'Progress', el: <TrackerPage profile={profile} /> },
-    { key: 'plans', label: 'Plans', el: <ShutdownListPage /> },
-    { key: 'modes', label: 'Unit status', el: <OperationPage profile={profile} /> },
-    { key: 'fo', label: 'FO levels', el: <FoLevelsPage />, hidden: !head(profile) }]} />;
+    { key: 'progress', label: 'Live', el: <TrackerPage profile={profile} /> },
+    { key: 'plans', label: 'Shutdowns', el: <ShutdownListPage /> },
+    { key: 'modes', label: 'Unit status', el: <UnitStatusPage profile={profile} /> }]} />;
 }
 
 export function DataQualityWorkspace({ profile }: { profile: UserProfile }) {
@@ -81,7 +83,8 @@ export function DataQualityWorkspace({ profile }: { profile: UserProfile }) {
     { key: 'issues', label: 'Issues', el: <DataQualityPage profile={profile} /> },
     { key: 'take-charge', label: 'Take-Charge', el: <TakeChargeBulkPage profile={profile} /> },
     { key: 'records', label: 'Employee records', el: <EmployeeRecords profile={profile} /> },
-    { key: 'oracle', label: 'Oracle statistics', el: <OracleStatsPanel profile={profile} /> }]} />;
+    { key: 'oracle', label: 'Oracle statistics', el: <OracleStatsPanel profile={profile} /> },
+    { key: 'fo-levels', label: 'FO levels', el: <FoLevelsPage />, hidden: !head(profile) }]} />;
 }
 
 export function ImportWorkspace({ profile }: { profile: UserProfile }) {

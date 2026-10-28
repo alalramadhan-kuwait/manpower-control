@@ -236,7 +236,7 @@ function MonthView({ go: goView }: { go: (set: Record<string, string | null>) =>
                 <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-900">{b.label}</span><span className="block text-xs text-slate-500">{b.event ? EVENT_CATEGORY_LABEL[b.event.category] : 'Operating mode: own minimums per crew'}{b.event?.note ? ` · ${b.event.note}` : ''}</span></span>
                 <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" /></>;
               return b.event ? <button key={b.id} type="button" onClick={() => setSheet({ kind: 'event', event: b.event! })} className="flex w-full items-center gap-2 py-2 text-left">{inner}</button>
-                : <Link key={b.id} to="/shutdowns?section=modes" className="flex items-center gap-2 py-2">{inner}</Link>;
+                : <Link key={b.id} to="/rules?group=crew" className="flex items-center gap-2 py-2">{inner}</Link>;
             })}
           </Section>
 

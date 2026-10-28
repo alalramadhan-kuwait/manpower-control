@@ -82,6 +82,9 @@ begin
   -- the Put back list: no grant without a login (refused), or no row
   begin select count(*) into n from public.trk_return_item; if n > 0 then raise exception 'FAIL: anonymous reads the Put back list'; end if; ok := ok + 1;
     exception when insufficient_privilege then ok := ok + 1; end;
+  -- the shutdown page's start-up steps and file: no access without a login
+  begin select count(*) into n from public.sd_file_doc; if n > 0 then raise exception 'FAIL: anonymous reads the shutdown file'; end if; ok := ok + 1;
+    exception when insufficient_privilege then ok := ok + 1; end;
 
   -- ── Coordinator ─────────────────────────────────────────────────────────────────────────────────────────
   perform set_config('role', 'authenticated', true);
@@ -117,6 +120,11 @@ begin
   if n <> 1 then raise exception 'FAIL: a Controller cannot update the Put back list'; end if; ok := ok + 1;
   if not exists (select 1 from public.trk_log where kind = 'return' and field = 'status' and new_value = 'installed' and at > now() - interval '1 minute') then raise exception 'FAIL: the Put back change is not logged'; end if; ok := ok + 1;
   begin delete from public.trk_return_item where tracker_id = live; raise exception 'FAIL: the Put back list can be deleted'; exception when insufficient_privilege then ok := ok + 1; end;
+
+  -- the shutdown page: start-up steps and the file are never deleted; a Controller does not edit the file
+  begin delete from public.sd_startup_step where false; raise exception 'FAIL: start-up steps can be deleted'; exception when insufficient_privilege then ok := ok + 1; end;
+  begin insert into public.sd_file_doc (event_id, part, title) values ('2e94a02b-e34b-4e8f-9ae1-5a80294719df', 'scope', 'check');
+    raise exception 'FAIL: a Controller may edit the shutdown file'; exception when insufficient_privilege then ok := ok + 1; end;
 
   -- a Controller cannot take an item out of scope or change its details
   begin update public.trk_equipment set tracked = false, disabled_reason = 'out of scope: check' where id = (select id from public.trk_equipment where tracker_id = live and tracked limit 1);
