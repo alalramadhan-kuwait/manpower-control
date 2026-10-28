@@ -1,6 +1,6 @@
-// The start-up as a picture for WhatsApp (owner, 28 Oct 2026, option A of the second mock-up): a 1080-wide card
-// drawn on the phone, 4:5 when it fits so it shows whole in a chat. On top the progress ring and, beside it, the
-// time management asks for: when the black oil is cut in. Under them the time column of the steps still to do (the
+// The start-up as a picture for WhatsApp (owner, 28 Oct 2026, option C of the second mock-up): a 1080-wide card
+// drawn on the phone, 4:5 when it fits so it shows whole in a chat. On top two equal tiles: the progress ring, and the
+// time management asks for: when the black oil is cut in, with a bar counting down to it. Under them the time column of the steps still to do (the
 // finished ones are one line). Times are rounded to the half hour. Nothing is uploaded: the phone's share sheet sends it.
 export interface CardRow {
   kind: 'done' | 'run' | 'next' | 'oil' | 'hold';
@@ -8,9 +8,11 @@ export interface CardRow {
 }
 export interface CardData {
   title: string; when: string; pct: number; planPct: number;
-  /** the big box: what (BLACK OIL CUT-IN), when (11:30 PM), the day and how long to it, and its full rate */
-  box: { label: string; big: string; line1: string; line2: string | null } | null;
-  summary: string; behind: string; behindRed: boolean; hold: string | null;
+  /** the orange tile: what (BLACK OIL CUT-IN), when (11:30 PM), the day, the countdown bar (0–1, share of the wait
+   *  from the start-up's first step to the cut-in that has passed) and how long is left with the full rate */
+  box: { label: string; big: string; line1: string; bar: number | null; line2: string | null } | null;
+  /** the ring tile's lines ("6 of 8 steps", "3 h behind plan"); under the tiles the running step and the holds */
+  steps: string; behind: string; behindRed: boolean; running: string | null; hold: string | null;
   rows: CardRow[]; footLeft: string; footRight: string;
 }
 
@@ -52,23 +54,33 @@ function layout(ctx: CanvasRenderingContext2D, d: CardData, k: number) {
   font(ctx, 52, 800); const tl = wrap(ctx, d.title, W - 100).length; const headH = 56 + tl * 64 + 44;
   shapes.push((c) => { c.fillStyle = C.navy; c.fillRect(0, 0, W, headH); });
   const hy = 74 + put(d.title, 50, 74, 52, 800, '#ffffff', W - 100); put(d.when, 50, hy + 2, 28, 400, 'rgba(255,255,255,0.8)', W - 100);
-  // the ring and, beside it, the black oil box
-  const top = headH + 36; const r = 112; const cx = 50 + r + 17, cy = top + r + 17;
-  let boxH = 0;
+  // two equal tiles: the ring with the steps and behind / ahead; the black oil cut-in with its countdown
+  const top = headH + 34, gap = 28, tw = (W - 100 - gap) / 2, ox = 50 + tw + gap; const r = 110; const cx = 50 + tw / 2, cy = top + 40 + r;
+  let ly = cy + r + 17 + 50;
+  ly += put(d.steps, cx, ly, Math.round(30 * k), 500, C.ink, tw - 40, 'center');
+  ly += put(d.behind, cx, ly + 2, Math.round(30 * k), 800, d.behindRed ? C.red : C.green, tw - 40, 'center');
+  let by = top + 54; let tileH = 0;
+  shapes.push((c) => {
+    round(c, 50, top, tw, tileH, 26, '#e2e8f0'); round(c, 52, top + 2, tw - 4, tileH - 4, 24, '#ffffff');
+    if (d.box) { const g = c.createLinearGradient(ox, top, ox + tw, top + tileH); g.addColorStop(0, C.oil); g.addColorStop(1, C.oilDark); round(c, ox, top, tw, tileH, 26, g); }
+  });
   if (d.box) {
-    const bx = 330, bw = W - 50 - bx; let y = top + 54;
-    const parts: number[] = [];
-    parts.push(put(d.box.label, bx + 30, y, Math.round(26 * k), 800, 'rgba(255,255,255,0.92)', bw - 60)); y += parts[0] + 10;
-    const bigH = put(d.box.big, bx + 30, y + 50, 84, 900, '#ffffff', bw - 60); y += bigH + 14;
-    y += put(d.box.line1, bx + 30, y + 6, Math.round(30 * k), 600, '#ffffff', bw - 60);
-    if (d.box.line2) y += put(d.box.line2, bx + 30, y + 8, Math.round(26 * k), 400, 'rgba(255,255,255,0.92)', bw - 60) + 4;
-    boxH = Math.max(2 * r + 34, y - top + 26);
-    shapes.push((c) => { const g = c.createLinearGradient(bx, top, bx + bw, top + boxH); g.addColorStop(0, C.oil); g.addColorStop(1, C.oilDark); round(c, bx, top, bw, boxH, 26, g); });
+    const bx = ox + 30, bw = tw - 60; const box = d.box;
+    by += put(box.label, bx, by, Math.round(26 * k), 800, 'rgba(255,255,255,0.92)', bw) + 6;
+    by += put(box.big, bx, by + 64, 84, 900, '#ffffff', bw) + 12;
+    by += put(box.line1, bx, by + 18, Math.round(30 * k), 600, '#ffffff', bw);
+    if (box.bar !== null) {
+      const barY = by + 22, f = Math.max(0, Math.min(1, box.bar));
+      shapes.push((c) => { round(c, bx, barY, bw, 16, 8, 'rgba(255,255,255,0.3)'); if (f > 0) round(c, bx, barY, Math.max(16, bw * f), 16, 8, '#ffffff'); });
+      by += 40;
+    }
+    // "6 h left · full rate …": one part a line
+    if (box.line2) { by += 8; for (const part of box.line2.split(' · ')) by += put(part, bx, by + 30, Math.round(27 * k), 600, 'rgba(255,255,255,0.95)', bw); }
   }
-  let ty = top + Math.max(2 * r + 34, boxH) + 30;
-  // the summary, behind / ahead, the holds
-  ty += put(d.summary, 50, ty + 30, Math.round(30 * k), 500, C.ink, W - 100) + 4;
-  ty += put(d.behind, 50, ty + 30, Math.round(30 * k), 800, d.behindRed ? C.red : C.green, W - 100);
+  tileH = Math.max(ly - top + 10, by - top + 26);
+  let ty = top + tileH + 18;
+  // under the tiles: the running step and the holds
+  if (d.running) ty += put(d.running, 50, ty + 30, Math.round(28 * k), 500, C.ink, W - 100);
   if (d.hold) ty += put(d.hold, 50, ty + 30, Math.round(26 * k), 500, '#0369a1', W - 100);
   ty += 24;
   // the time column: start (bold) over end and the date, a line with the dot, the step, actual / plan on the right
@@ -115,7 +127,7 @@ export function drawCard(canvas: HTMLCanvasElement, d: CardData) {
   const pa = -Math.PI / 2 + (Math.PI * 2 * Math.min(100, d.planPct)) / 100;
   ctx.lineWidth = 6; ctx.lineCap = 'butt'; ctx.strokeStyle = C.ink; ctx.beginPath(); ctx.moveTo(cx + Math.cos(pa) * (r - 24), cy + Math.sin(pa) * (r - 24)); ctx.lineTo(cx + Math.cos(pa) * (r + 24), cy + Math.sin(pa) * (r + 24)); ctx.stroke();
   font(ctx, 66, 900); ctx.fillStyle = C.ink; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillText(`${d.pct}%`, cx, cy + 18);
-  font(ctx, 22, 500); ctx.fillStyle = C.grey; ctx.fillText('by plan hours', cx, cy + 54);
+  font(ctx, 22, 500); ctx.fillStyle = C.grey; ctx.fillText('by plan hours', cx, cy + 50);
   for (const l of lay.L) { font(ctx, l.size, l.weight); ctx.fillStyle = l.color; ctx.textAlign = l.align ?? 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(l.t, l.x, l.y); }
 }
 

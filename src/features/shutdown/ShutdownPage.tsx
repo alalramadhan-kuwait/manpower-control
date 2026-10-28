@@ -607,18 +607,22 @@ function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEnt
     const oilAt = oilStep?.startedAt ? Date.parse(oilStep.startedAt) : ot?.planStart != null ? ago(ot.planStart) : null;
     const oilEnd = oilStep?.doneAt ? Date.parse(oilStep.doneAt) : ot?.planEnd ?? null;
     const inH = oilAt !== null ? Math.round(((oilAt - now) / H) * 2) / 2 : null;
+    // the countdown bar: how much of the wait from the start-up's first step to the cut-in has passed
+    const begun = steps.filter((x) => x.startedAt).map((x) => Date.parse(x.startedAt!)); const s0 = begun.length ? Math.min(...begun) : null;
+    const bar = oilStep && oilAt !== null ? (oilStep.status !== 'not_started' ? 1 : s0 !== null && oilAt > s0 ? (now - s0) / (oilAt - s0) : null) : null;
+    const full = oilEnd !== null ? `${kwWeekDay(round30(oilEnd))} ${hm(oilEnd)}` : null;
     const box = oilStep && oilAt !== null ? { label: oilStep.status === 'done' ? 'BLACK OIL CUT IN' : oilStep.status === 'running' ? 'BLACK OIL CUT-IN · SINCE' : 'BLACK OIL CUT-IN',
-      big: hm(oilAt), line1: `${kwWeekDay(round30(oilAt))}${inH !== null && inH > 0 && oilStep.status === 'not_started' ? ` · in ${hrs(inH)}` : ''}`,
-      line2: oilEnd !== null ? `${oilStep.status === 'done' ? 'Full rate reached' : 'Full 42 KBPD'} · ${kwWeekDay(round30(oilEnd))} ${hm(oilEnd)}` : null }
-      : vp.expectedEnd !== null ? { label: vp.finished ? 'START-UP FINISHED' : 'START-UP EXPECTED END', big: hm(vp.expectedEnd), line1: kwWeekDay(round30(vp.expectedEnd)), line2: null } : null;
+      big: hm(oilAt), line1: kwWeekDay(round30(oilAt)), bar,
+      line2: oilStep.status === 'not_started' && inH !== null && inH > 0 ? `${hrs(inH)} left${full ? ` · Full rate ${full}` : ''}` : full ? `${oilStep.status === 'done' ? 'Full rate reached' : 'Full 42 KBPD'} ${full}` : null }
+      : vp.expectedEnd !== null ? { label: vp.finished ? 'START-UP FINISHED' : 'START-UP EXPECTED END', big: hm(vp.expectedEnd), line1: kwWeekDay(round30(vp.expectedEnd)), bar: null, line2: null } : null;
     const d: CardData = {
       title: `${entryName(entry)} · Start-up`, when: `Unit-12 · ${kwWeekDay(now)} ${clock12(now)}`, pct: vp.actualPct, planPct: vp.planPct, box,
-      summary: `${done} of ${counted.length} steps done${running ? ` · Running: ${running.title}` : ''}`,
+      steps: `${done} of ${counted.length} steps done`, running: running ? `Running: ${running.title}` : null,
       behind: behind >= DELAY_MIN_H ? `${hrs(behind)} behind plan` : behind <= -DELAY_MIN_H ? `${hrs(-behind)} ahead of plan` : 'On plan', behindRed: behind >= DELAY_MIN_H,
       hold: vp.holdH > 0 ? `+ ${hrs(vp.holdH)} on hold (not counted as late)` : null,
       rows, footLeft: `Plan ${Math.round(counted.reduce((n, x) => n + (x.stdHours ?? 0), 0) * 10) / 10} h`, footRight: `Down since ${shortDate(entry.start)} · day ${day}`,
     };
-    setCaption(`${entryName(entry)} start-up ${vp.actualPct}% · ${done}/${counted.length} steps${box ? ` · ${box.label.toLowerCase().replace(/^\w/, (ch) => ch.toUpperCase())} ${box.line1.split(' · ')[0]} ${box.big}` : ''}${behind >= DELAY_MIN_H ? ` · ${hrs(behind)} behind plan` : ''}`);
+    setCaption(`${entryName(entry)} start-up ${vp.actualPct}% · ${done}/${counted.length} steps${box ? ` · ${box.label.toLowerCase().replace(/^\w/, (ch) => ch.toUpperCase())} ${box.line1} ${box.big}` : ''}${behind >= DELAY_MIN_H ? ` · ${hrs(behind)} behind plan` : ''}`);
     const c = document.createElement('canvas'); drawCard(c, d);
     c.toBlob((b) => { if (b) { setBlob(b); setUrl(URL.createObjectURL(b)); } }, 'image/png');
   }, [entry, steps, vp, tl, now, done, counted.length, running, day, behind]);
