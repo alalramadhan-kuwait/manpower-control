@@ -1,6 +1,8 @@
 // The start-up as a picture for WhatsApp (owner, 28 Oct 2026, option C of the second mock-up): a 1080-wide card
 // drawn on the phone, 4:5 when it fits so it shows whole in a chat. On top two equal tiles: the progress ring, and the
-// time management asks for: when the black oil is cut in, with a bar counting down to it. Under them the time column of the steps still to do (the
+// time management asks for: when the black oil is cut in, with a bar counting down to it; under them three chips
+// (cut-in, 20 and 42 KBPD black oil, from the SOP table). Colours after the blue, red and green of the company mark
+// (owner, B2), with no name or logo. Under them the time column of the steps still to do (the
 // finished ones are one line). Times are rounded to the half hour. Nothing is uploaded: the phone's share sheet sends it.
 export interface CardRow {
   kind: 'done' | 'run' | 'next' | 'oil' | 'hold';
@@ -13,14 +15,16 @@ export interface CardData {
   box: { label: string; big: string; line1: string; bar: number | null; line2: string | null } | null;
   /** the ring tile's lines ("6 of 8 steps", "3 h behind plan"); under the tiles the running step and the holds */
   steps: string; behind: string; behindRed: boolean; running: string | null; hold: string | null;
+  /** the milestones under the tiles: the cut-in (blue), 20 KBPD (red), 42 KBPD (green) */
+  chips: { label: string; big: string; sub: string; color: 'blue' | 'red' | 'green' }[];
   rows: CardRow[]; footLeft: string; footRight: string;
 }
 
 const W = 1080, MIN_H = 1350;
-const C = { navy: '#22386b', ink: '#172235', grey: '#64748b', light: '#e5e7eb', green: '#16a34a', amber: '#f59e0b', red: '#dc2626', sky: '#0284c7', oil: '#ea580c', oilDark: '#c2410c', note: '#b45309' };
+const C = { blue: '#0b3c8c', brandRed: '#d71920', brandRedDark: '#a3141a', brandGreen: '#00873e', ink: '#172235', grey: '#64748b', light: '#e5e7eb', green: '#16a34a', red: '#dc2626', sky: '#0284c7', note: '#b45309' };
 const FONT = '-apple-system, "Segoe UI", Roboto, system-ui, sans-serif';
-const ROW = { done: { dot: C.green, bg: '#f0fdf4', title: '#166534' }, run: { dot: C.amber, bg: '#fffbeb', title: C.ink }, next: { dot: '#cbd5e1', bg: '#ffffff', title: C.ink },
-  oil: { dot: C.oil, bg: '#fff7ed', title: C.oilDark }, hold: { dot: C.sky, bg: '#f0f9ff', title: '#0369a1' } } as const;
+const ROW = { done: { dot: C.brandGreen, bg: '#eef8f2', title: C.brandGreen }, run: { dot: C.blue, bg: '#eef3fb', title: C.ink }, next: { dot: '#cbd5e1', bg: '#ffffff', title: C.ink },
+  oil: { dot: C.brandRed, bg: '#fdeeee', title: C.brandRedDark }, hold: { dot: C.sky, bg: '#f0f9ff', title: '#0369a1' } } as const;
 
 /** A sentence in lines that fit the width: whole, never cut (a word longer than the line is broken). */
 function wrap(ctx: CanvasRenderingContext2D, text: string, max: number): string[] {
@@ -52,17 +56,17 @@ function layout(ctx: CanvasRenderingContext2D, d: CardData, k: number) {
   };
   // header
   font(ctx, 52, 800); const tl = wrap(ctx, d.title, W - 100).length; const headH = 56 + tl * 64 + 44;
-  shapes.push((c) => { c.fillStyle = C.navy; c.fillRect(0, 0, W, headH); });
+  shapes.push((c) => { c.fillStyle = C.blue; c.fillRect(0, 0, W, headH); });
   const hy = 74 + put(d.title, 50, 74, 52, 800, '#ffffff', W - 100); put(d.when, 50, hy + 2, 28, 400, 'rgba(255,255,255,0.8)', W - 100);
   // two equal tiles: the ring with the steps and behind / ahead; the black oil cut-in with its countdown
   const top = headH + 34, gap = 28, tw = (W - 100 - gap) / 2, ox = 50 + tw + gap; const r = 110; const cx = 50 + tw / 2, cy = top + 40 + r;
   let ly = cy + r + 17 + 50;
   ly += put(d.steps, cx, ly, Math.round(30 * k), 500, C.ink, tw - 40, 'center');
-  ly += put(d.behind, cx, ly + 2, Math.round(30 * k), 800, d.behindRed ? C.red : C.green, tw - 40, 'center');
+  ly += put(d.behind, cx, ly + 2, Math.round(30 * k), 800, d.behindRed ? C.red : C.brandGreen, tw - 40, 'center');
   let by = top + 54; let tileH = 0;
   shapes.push((c) => {
     round(c, 50, top, tw, tileH, 26, '#e2e8f0'); round(c, 52, top + 2, tw - 4, tileH - 4, 24, '#ffffff');
-    if (d.box) { const g = c.createLinearGradient(ox, top, ox + tw, top + tileH); g.addColorStop(0, C.oil); g.addColorStop(1, C.oilDark); round(c, ox, top, tw, tileH, 26, g); }
+    if (d.box) { const g = c.createLinearGradient(ox, top, ox + tw, top + tileH); g.addColorStop(0, C.brandRed); g.addColorStop(1, C.brandRedDark); round(c, ox, top, tw, tileH, 26, g); }
   });
   if (d.box) {
     const bx = ox + 30, bw = tw - 60; const box = d.box;
@@ -79,6 +83,18 @@ function layout(ctx: CanvasRenderingContext2D, d: CardData, k: number) {
   }
   tileH = Math.max(ly - top + 10, by - top + 26);
   let ty = top + tileH + 18;
+  // the three milestones, one chip each
+  if (d.chips.length) {
+    const cg = 20, y0 = ty, cw = (W - 100 - cg * (d.chips.length - 1)) / d.chips.length, ch = Math.round(150 * k);
+    d.chips.forEach((chip, i) => {
+      const x = 50 + i * (cw + cg), mid = x + cw / 2; const fill = chip.color === 'blue' ? C.blue : chip.color === 'red' ? C.brandRed : C.brandGreen;
+      shapes.push((c) => round(c, x, y0, cw, ch, 22, fill));
+      put(chip.label, mid, ty + Math.round(36 * k), Math.round(23 * k), 800, 'rgba(255,255,255,0.92)', cw - 24, 'center');
+      put(chip.big, mid, ty + Math.round(92 * k), Math.round(50 * k), 900, '#ffffff', cw - 16, 'center');
+      put(chip.sub, mid, ty + Math.round(130 * k), Math.round(23 * k), 500, 'rgba(255,255,255,0.95)', cw - 24, 'center');
+    });
+    ty += ch + 16;
+  }
   // under the tiles: the running step and the holds
   if (d.running) ty += put(d.running, 50, ty + 30, Math.round(28 * k), 500, C.ink, W - 100);
   if (d.hold) ty += put(d.hold, 50, ty + 30, Math.round(26 * k), 500, '#0369a1', W - 100);
@@ -91,11 +107,11 @@ function layout(ctx: CanvasRenderingContext2D, d: CardData, k: number) {
     const y0 = ty; const yy = y0 + 16 + big;
     font(ctx, big, 600); const rw = ctx.measureText(row.right).width;
     const th = put(row.title, bodyX, yy, big, 600, ROW[row.kind].title, W - bodyX - 60 - rw);
-    L.push({ t: row.right, x: W - 50, y: yy, size: Math.round(big * 0.9), weight: row.red || row.kind === 'oil' ? 800 : 500, color: row.red ? C.red : row.kind === 'oil' ? C.oilDark : C.grey, align: 'right' });
+    L.push({ t: row.right, x: W - 50, y: yy, size: Math.round(big * 0.9), weight: row.red || row.kind === 'oil' ? 800 : 500, color: row.red ? C.red : row.kind === 'oil' ? C.brandRedDark : C.grey, align: 'right' });
     const sh = row.sub ? put(row.sub, bodyX, yy + th - Math.round(big * 1.22) + Math.round(small * 1.3) + 4, small, 500, row.kind === 'done' || row.kind === 'hold' ? '#0369a1' : C.note, W - bodyX - 50) + 4 : 0;
-    const tcol = row.kind === 'oil' ? C.oilDark : row.kind === 'next' ? C.grey : C.ink;
+    const tcol = row.kind === 'oil' ? C.brandRedDark : row.kind === 'next' ? C.grey : C.ink;
     L.push({ t: row.start, x: tcR, y: yy, size: Math.round(big * 0.95), weight: 800, color: tcol, align: 'right' });
-    L.push({ t: row.end, x: tcR, y: yy + Math.round(small * 1.25), size: small, weight: 500, color: row.kind === 'oil' ? C.oilDark : C.grey, align: 'right' });
+    L.push({ t: row.end, x: tcR, y: yy + Math.round(small * 1.25), size: small, weight: 500, color: row.kind === 'oil' ? C.brandRedDark : C.grey, align: 'right' });
     L.push({ t: row.date, x: tcR, y: yy + Math.round(small * 2.35), size: Math.round(small * 0.85), weight: 500, color: '#94a3b8', align: 'right' });
     const h = Math.max(th + sh, Math.round(small * 2.6)) + 30; rows.push({ y: y0, h, row }); ty += h;
   }
@@ -123,7 +139,7 @@ export function drawCard(canvas: HTMLCanvasElement, d: CardData) {
   // ring: progress by plan hours, the plan as a thin mark
   const { cx, cy, r } = lay.ring;
   ctx.lineCap = 'round'; ctx.lineWidth = 34; ctx.strokeStyle = C.light; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
-  if (d.pct > 0) { ctx.strokeStyle = d.pct >= 100 ? C.green : C.amber; ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * Math.min(100, d.pct)) / 100); ctx.stroke(); }
+  if (d.pct > 0) { ctx.strokeStyle = d.pct >= 100 ? C.brandGreen : C.blue; ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * Math.min(100, d.pct)) / 100); ctx.stroke(); }
   const pa = -Math.PI / 2 + (Math.PI * 2 * Math.min(100, d.planPct)) / 100;
   ctx.lineWidth = 6; ctx.lineCap = 'butt'; ctx.strokeStyle = C.ink; ctx.beginPath(); ctx.moveTo(cx + Math.cos(pa) * (r - 24), cy + Math.sin(pa) * (r - 24)); ctx.lineTo(cx + Math.cos(pa) * (r + 24), cy + Math.sin(pa) * (r + 24)); ctx.stroke();
   font(ctx, 66, 900); ctx.fillStyle = C.ink; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillText(`${d.pct}%`, cx, cy + 18);

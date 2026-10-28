@@ -65,3 +65,8 @@ export function profileView(p: ProfileRow[], start: number, readings: Reading[],
 
 /** The re-planned clock time of a profile hour (for the table and the graph): from the reading's point on, shifted. */
 export const clockOf = (start: number, v: ProfileView, h: number) => start + (h + (h >= v.fromH ? v.shiftH : 0)) * H;
+
+/** The black oil (AR) rate of a row: the first number of its AR/DSL column ("21/04" → 21, "42" → 42). */
+export const blackOf = (r: ProfileRow) => { const n = Number.parseFloat(String(r.ardsl).split('/')[0]); return Number.isFinite(n) ? n : 0; };
+/** The first profile hour the SOP table reaches a black oil rate (KBPD), or null when it never does. */
+export const blackAt = (p: ProfileRow[], kbpd: number) => p.find((r) => blackOf(r) >= kbpd)?.h ?? null;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clockOf, hourOf, profileView, targetsAt, uniform, type ProfileRow } from '../profile';
+import { blackAt, blackOf, clockOf, hourOf, profileView, targetsAt, uniform, type ProfileRow } from '../profile';
 
 const H = 3_600_000;
 const heat: ProfileRow[] = Array.from({ length: 10 }, (_, h) => ({ h, sop_h: h, feed: 20, ardsl: '0/20', rx: Array(5).fill(350 + 25 * h), note: null }));
@@ -33,4 +33,10 @@ describe('profile targets', () => {
     expect(v.holding).toBe(true); expect(v.now[0]).toBe(400);
     expect(new Date(v.endAt).toISOString()).toBe('2026-10-28T22:30:00.000Z');
   });
+});
+
+describe('black oil rate milestones', () => {
+  const oil: ProfileRow[] = [['0/20', 0], ['3/20', 1], ['18/07', 7], ['21/04', 8], ['40/0', 15], ['42/0', 16], ['42', 17]].map(([a, h]) => ({ h: h as number, sop_h: (h as number) + 9, feed: 25, ardsl: a as string, rx: [600], note: null }));
+  it('reads the AR side of AR/DSL', () => { expect(blackOf(oil[3])).toBe(21); expect(blackOf(oil[6])).toBe(42); });
+  it('finds the first hour at or over a rate', () => { expect(blackAt(oil, 20)).toBe(8); expect(blackAt(oil, 42)).toBe(16); expect(blackAt(oil, 50)).toBeNull(); });
 });
