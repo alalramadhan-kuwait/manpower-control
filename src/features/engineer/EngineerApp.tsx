@@ -281,6 +281,51 @@ function lastUpdate(d: TrackerData, keys: string[]): number | null {
   return ts.length ? Math.max(...ts) : null;
 }
 const ago = (t: number, now: number) => { const h = Math.round((now - t) / H); return h < 1 ? 'just now' : `${h} h ago`; };
+/** One step, plan against actual (owner, 28 Oct 2026: "plan timing, actual start and end, duration, simple"): two lines,
+ *  two bars on one time axis, and one verdict. Display only. */
+function PlanVsActual({ a, planH }: { a: TrkActivity; planH: number | null }) {
+  const now = Date.now();
+  const ps = a.start ? Date.parse(a.start) : NaN, pf = a.finish ? Date.parse(a.finish) : NaN;
+  const as = a.actualStart ? Date.parse(a.actualStart) : NaN, af = a.actualFinish ? Date.parse(a.actualFinish) : NaN;
+  const hasPlan = !Number.isNaN(ps) && !Number.isNaN(pf), started = !Number.isNaN(as), done = !Number.isNaN(af);
+  if (!hasPlan && !started) return null;
+  const hTxt = (ms: number) => { const h = Math.abs(ms) / H; return h < 1 ? `${Math.round(h * 60)} min` : `${Math.round(h)} h`; };
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const at = (t: number) => { const k = new Date(t + 3 * H); return `${k.getUTCDate()} ${MON[k.getUTCMonth()]} ${kwTime(t)}`; };
+  const actEnd = done ? af : now;
+  const planMs = hasPlan ? (planH != null ? planH * H : pf - ps) : NaN;
+  // the verdict: finish against the plan finish when done; a running step against its plan finish; a waiting one against its plan start
+  const verdict = (() => {
+    if (!hasPlan) return null;
+    if (done) {
+      const d0 = af - pf, took = af - as, over = took - planMs;
+      const fin = Math.abs(d0) < H ? 'Finished on time' : d0 > 0 ? `Finished ${hTxt(d0)} late` : `Finished ${hTxt(d0)} early`;
+      const dur = !started || Number.isNaN(planMs) || Math.abs(over) < H ? '' : over > 0 ? ` · took ${hTxt(over)} longer than plan` : ` · took ${hTxt(over)} less than plan`;
+      return { t: fin + dur, c: d0 > H ? 'red' : over > H ? 'amber' : 'green' };
+    }
+    if (started) return now > pf ? { t: `Running ${hTxt(now - pf)} past the plan finish`, c: 'red' } : { t: `On track · plan finish in ${hTxt(pf - now)}`, c: 'slate' };
+    return now > ps ? { t: `Not started · ${hTxt(now - ps)} after the plan start`, c: 'red' } : { t: `Starts in ${hTxt(ps - now)}`, c: 'slate' };
+  })();
+  const lo = Math.min(...[ps, as].filter((x) => !Number.isNaN(x))), hi = Math.max(...[pf, started ? actEnd : NaN].filter((x) => !Number.isNaN(x)));
+  const span = Math.max(hi - lo, H);
+  const bar = (x0: number, x1: number) => ({ left: `${((x0 - lo) / span) * 100}%`, width: `${Math.max(((x1 - x0) / span) * 100, 1.5)}%` });
+  const row = (label: string, s0: number, f0: number | null, dur: string, tone: string) => (
+    <div className="grid grid-cols-[3.4rem_1fr] items-baseline gap-x-2">
+      <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">{label}</span>
+      <span className="text-[12px] tabular-nums text-slate-800">{at(s0)} → {f0 == null ? <b className={tone}>running</b> : at(f0)} · <b>{dur}</b></span>
+    </div>);
+  return (
+    <div className="space-y-1.5 rounded-xl bg-white p-2.5 ring-1 ring-slate-200">
+      {hasPlan && row('Plan', ps, pf, planH != null ? `${planH} h` : hTxt(pf - ps), '')}
+      {started ? row('Actual', as, done ? af : null, hTxt(actEnd - as), 'text-amber-700') : <div className="grid grid-cols-[3.4rem_1fr] gap-x-2"><span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Actual</span><span className="text-[12px] text-slate-500">not started</span></div>}
+      <div className="relative ml-[3.9rem] mt-1 h-6" aria-hidden>
+        {hasPlan && <span className="absolute top-0 h-2.5 rounded-full bg-slate-300" style={bar(ps, pf)} />}
+        {started && <span className={cx('absolute top-3.5 h-2.5 rounded-full', done ? (hasPlan && af - pf > H ? 'bg-status-red' : 'bg-status-green') : hasPlan && now > pf ? 'bg-status-red' : 'bg-amber-400')} style={bar(as, actEnd)} />}
+      </div>
+      {verdict && <p className={cx('text-[12px] font-bold', verdict.c === 'red' ? 'text-status-red' : verdict.c === 'green' ? 'text-status-green' : verdict.c === 'amber' ? 'text-amber-700' : 'text-slate-600')}>{verdict.t}</p>}
+    </div>
+  );
+}
 /** Buffer steps of the item (owner, 27 Oct 2026): not always needed; skipping them is the way to catch up when late.
  *  Shows what skipping them all would do to the forecast finish; the Section Head skips one with one tap (Undo). */
 function BufferBox({ d, k, now, head, done }: { d: TrackerData; k: string; now: number; head: boolean; done: Done }) {
@@ -551,6 +596,7 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
                     <button type="button" aria-label="Down" disabled={i === shown.length - 1} onClick={() => move(a.id, 1)} className="h-9 w-9 rounded-lg bg-slate-100 text-lg font-bold disabled:opacity-30">↓</button></span>}
                 </div>
                 {on && <div className="space-y-2 border-t border-slate-100 px-2.5 py-2">
+                  <PlanVsActual a={a} planH={h} />
                   {edit?.id === a.id ? <>
                     <textarea autoFocus className="input min-h-16 text-[14px]" value={edit.text} onChange={(x) => setEdit({ ...edit, text: x.target.value })} />
                     <div className="flex gap-2"><button type="button" onClick={() => setEdit(null)} className="min-h-10 flex-1 rounded-xl bg-white font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button>
