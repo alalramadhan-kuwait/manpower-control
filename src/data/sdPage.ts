@@ -7,7 +7,7 @@ import { supabase } from './supabase';
 import { fetchTrackers, type Tracker } from './tracker';
 
 export interface ShutdownEntry {
-  key: string; eventId: string | null; plan: SdPlan | null; tracker: Tracker | null;
+  key: string; eventId: string | null; category: 'shutdown' | 'outage' | null; plan: SdPlan | null; tracker: Tracker | null;
   title: string; unit: string | null; unitCodes: string[]; start: string; end: string; tentative: boolean; sourceRef: string | null; note: string | null;
 }
 
@@ -23,12 +23,12 @@ export async function fetchShutdownIndex(): Promise<ShutdownEntry[]> {
   if (ev.error) throw ev.error;
   const out: ShutdownEntry[] = ((ev.data ?? []) as Record<string, unknown>[]).map((r) => {
     const id = r.id as string;
-    return { key: id, eventId: id, plan: plans.find((p) => p.eventId === id) ?? null, tracker: trackerOf(trackers, id),
+    return { key: id, eventId: id, category: r.category as 'shutdown' | 'outage', plan: plans.find((p) => p.eventId === id) ?? null, tracker: trackerOf(trackers, id),
       title: r.title as string, unit: (r.unit as string) ?? null, unitCodes: (r.unit_codes as string[]) ?? [], start: r.start_date as string, end: r.end_date as string,
       tentative: !!r.tentative, sourceRef: (r.source_ref as string) ?? null, note: (r.note as string) ?? null };
   });
   for (const p of plans) if (!p.eventId || !out.some((e) => e.eventId === p.eventId))
-    out.push({ key: `p-${p.id}`, eventId: null, plan: p, tracker: null, title: p.title, unit: null, unitCodes: [], start: p.start, end: p.end, tentative: false, sourceRef: null, note: null });
+    out.push({ key: `p-${p.id}`, eventId: null, category: null, plan: p, tracker: null, title: p.title, unit: null, unitCodes: [], start: p.start, end: p.end, tentative: false, sourceRef: null, note: null });
   return out.sort((a, b) => a.start.localeCompare(b.start));
 }
 

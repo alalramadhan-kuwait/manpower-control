@@ -121,6 +121,8 @@ function UpdateSheet({ unit, down, events, label, today, onClose, onDone }: { un
   const [title, setTitle] = useState('Unplanned outage'); const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const others = ev ? ev.unitCodes.filter((c) => c !== unit.code).map(label) : [];
+  // running now: its last shutdown may have ended on paper only (start-up still going): put that one right instead
+  const recent = ev ? null : [...events].reverse().find((e) => e.unitCodes.includes(unit.code) && !e.tentative && e.end < today && e.end >= addDaysIso(today, -30)) ?? null;
   const bad = !isValidIsoDate(first) || !isValidIsoDate(last) || last < first;
   const note = (old: string | null) => [old?.trim(), `${shortDate(today)}: ${reason.trim()}`].filter(Boolean).join(' · ');
   async function save(f: string, l: string, msg: string) {
@@ -137,6 +139,7 @@ function UpdateSheet({ unit, down, events, label, today, onClose, onDone }: { un
       <div className="space-y-3">
         {ev ? <p className="text-xs text-slate-500">{ev.title} · plan {shortDate(ev.start)} – {shortDate(ev.end)}{others.length ? ` · also takes down ${others.join(', ')}: the dates move for them too` : ''}</p>
           : <p className="text-xs text-slate-500">It went down: an outage on the Calendar from the day given.</p>}
+        {recent && <Link to={`/sd/${recent.id}`} className="block rounded-xl bg-amber-50 px-3 py-2 text-[12px] text-amber-900 ring-1 ring-amber-200">Still down after <b>{recent.title}</b> (plan ended {shortDate(recent.end)})? Change its dates there ›</Link>}
         {!ev && <Field label="What"><input className="input" value={title} onChange={(e) => setTitle(e.target.value)} /></Field>}
         <div className="grid grid-cols-2 gap-2">
           <Field label={ev ? 'First day down (actual)' : 'First day down'}><input type="date" className="input" value={first} onChange={(e) => setFirst(e.target.value)} /></Field>

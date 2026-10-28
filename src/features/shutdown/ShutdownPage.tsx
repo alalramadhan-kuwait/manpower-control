@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { sopRefs, stageSummary, stdTimeline, type StdStep } from '@/core/shutdown/stages';
 import { kwDay, kwTime, phases, stepViews, type TrkStep } from '@/core/tracker';
+import { saveEvent } from '@/data/calendar';
 import { fetchUnitStatusHistory, type UnitStatusChange } from '@/data/modes';
 import { DOC_STATUS, FILE_PARTS, addStartupStep, entryName, fetchFileDocs, fetchShutdownIndex, fetchStartupSteps, removeFileDoc, saveFileDoc, setStartupStep,
   type DocStatus, type FileDoc, type FilePart, type ShutdownEntry, type StartupStep } from '@/data/sdPage';
@@ -38,7 +39,7 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
   const [trk, setTrk] = useState<TrackerData | null>(null);
   const [startup, setStartup] = useState<StartupStep[]>([]);
   const [docs, setDocs] = useState<FileDoc[]>([]);
-  const [err, setErr] = useState<unknown>(null); const [toast, setToast] = useState<string | null>(null);
+  const [err, setErr] = useState<unknown>(null); const [toast, setToast] = useState<string | null>(null); const [dates, setDates] = useState(false);
   const today = localToday(); const now = Date.now();
   const load = useCallback(async () => {
     try {
@@ -68,7 +69,10 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
   if (!entry) return <Card><p className="text-sm text-slate-600">This shutdown is not on the list any more.</p><Link to="/shutdowns?section=plans" className="text-sm font-medium text-brand-700">Shutdowns ›</Link></Card>;
 
   const len = dayNo(entry.end) - dayNo(entry.start) + 1;
-  const state = entry.end < today ? 'Finished' : entry.start <= today ? `Day ${dayNo(today) - dayNo(entry.start) + 1} of ${len}` : `Starts in ${dayNo(entry.start) - dayNo(today)} days`;
+  // past its last day with start-up steps still open: it is not finished, its dates need putting right
+  const inStartup = entry.end < today && startup.length > 0 && suSum.done < suSum.total;
+  const state = inStartup ? 'Still in start-up' : entry.end < today ? 'Finished' : entry.start <= today ? `Day ${dayNo(today) - dayNo(entry.start) + 1} of ${len}` : `Starts in ${dayNo(entry.start) - dayNo(today)} days`;
+  const canDates = !!entry.eventId && ['section_head', 'manpower_coordinator'].includes(profile.role_code);
   const missing = docs.filter((d) => d.status !== 'available').length;
   const ops = ph?.ops ?? null;
   const w = ph?.mi.weighted ?? null;
@@ -77,7 +81,8 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
     <div>
       <Link to="/shutdowns?section=plans" className="mb-2 inline-flex items-center gap-1 text-sm font-medium text-brand-700"><ArrowLeft className="h-4 w-4" />Shutdowns</Link>
       <h1 className="text-xl font-bold text-slate-900">{entryName(entry)}</h1>
-      <p className="mb-2 text-sm text-slate-600">{shortDate(entry.start)} – {shortDate(entry.end)} {entry.end.slice(0, 4)} · {len} days · <b className="text-slate-800">{state}</b>
+      <p className="mb-2 text-sm text-slate-600">{shortDate(entry.start)} – {shortDate(entry.end)} {entry.end.slice(0, 4)} · {len} days · <b className={inStartup ? 'text-amber-700' : 'text-slate-800'}>{state}</b>
+        {canDates && <button type="button" onClick={() => setDates(true)} className="ml-1.5 text-[12px] font-semibold text-brand-700">Dates</button>}
         {entry.tentative && <span className="ml-1.5 rounded-full bg-slate-200 px-1.5 text-[10px] font-semibold text-slate-600">tentative</span>}
         {entry.eventId && docs.length > 0 && <span className={cx('ml-1.5 text-[12px] font-semibold', missing ? 'text-status-red' : 'text-status-green')}>· File: {missing ? `${missing} not ready` : 'ready'}</span>}</p>
 
@@ -101,8 +106,41 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
       {part === 'team' && <TeamPart entry={entry} isHead={profile.role_code === 'section_head'} />}
       {part === 'record' && <RecordPart entry={entry} ops={ops} mi={ph?.mi ?? null} su={suSum} />}
       {part === 'file' && <FilePart_ entry={entry} docs={docs} trk={trk} canEdit={FILE_ROLES.includes(profile.role_code)} onDone={done} />}
+      {inStartup && canDates && <button type="button" onClick={() => setDates(true)} className="mb-3 block w-full rounded-xl bg-amber-50 px-3 py-2 text-left text-[12px] text-amber-900 ring-1 ring-amber-200">The plan ended {shortDate(entry.end)} but start-up is not finished, so the unit shows as running. <b>Set the expected last day ›</b></button>}
+      {dates && entry.eventId && <DatesSheet entry={entry} today={today} onClose={() => setDates(false)} onDone={(m) => { setDates(false); done(m); }} />}
       {toast && <Toast msg={toast} />}
     </div>
+  );
+}
+
+/** The shutdown's actual first day and last day down (actual or expected): the Calendar event moves, the reason is
+ *  kept on it and the change in the record. A shutdown of several sections moves for all of them. */
+function DatesSheet({ entry, today, onClose, onDone }: { entry: ShutdownEntry; today: string; onClose: () => void; onDone: (m: string) => void }) {
+  const [first, setFirst] = useState(entry.start); const [last, setLast] = useState(entry.end < today ? today : entry.end); const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const bad = !first || !last || last < first;
+  async function save() {
+    setBusy(true); setErr(null);
+    try {
+      await saveEvent({ id: entry.eventId!, category: entry.category ?? 'shutdown', title: entry.title, unit: entry.unit, unitCodes: entry.unitCodes, start: first, end: last,
+        note: [entry.note?.trim(), `${shortDate(today)}: ${reason.trim()}`].filter(Boolean).join(' · ') });
+      onDone(`${entryName(entry)}: ${shortDate(first)} – ${shortDate(last)} saved.`);
+    } catch (e) { setErr(e); setBusy(false); }
+  }
+  return (
+    <BottomSheet open onClose={onClose} title="Shutdown dates">
+      <div className="space-y-3">
+        <p className="text-xs text-slate-500">Plan {shortDate(entry.start)} – {shortDate(entry.end)}. The unit is down from the first day to the last day; a day still to come is the expected one.</p>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="First day down"><input type="date" className="input" value={first} onChange={(e) => setFirst(e.target.value)} /></Field>
+          <Field label="Last day down"><input type="date" className="input" value={last} min={first} onChange={(e) => setLast(e.target.value)} /></Field>
+        </div>
+        <Field label="Reason (kept with the change)"><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. start-up still running" /></Field>
+        {last < first && <p className="text-xs text-status-red">The last day is before the first.</p>}
+        {err != null && <ErrorBox error={err} />}
+        <Button className="w-full" disabled={busy || bad || !reason.trim()} onClick={save}>Save</Button>
+      </div>
+    </BottomSheet>
   );
 }
 
