@@ -3,7 +3,7 @@
 // reactors' issues and temperatures), Isolation (neutralization and blinds), Small jobs & IATs. Every change is
 // stamped with the ID; Undo for a few seconds after each one.
 import { LatestUpdate } from '@/features/tracker/intel/LatestUpdate';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { ItemMore, PendingForm } from '@/features/tracker/TrackerSheets';
 import { ShutdownOverview } from '@/features/tracker/TrackerToday';
 import { ActivityRow } from '@/features/tracker/Timing';
@@ -16,7 +16,7 @@ import { BlindList } from '@/features/tracker/BlindList';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
-import { bufferCatchUp, isBufferStep, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
+import { bufferCatchUp, isBufferStep, runTogether, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { addReturnItem, setReturnItem, BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -450,6 +450,9 @@ function ItemSheet({ d, e: e0, now = Date.now(), done, onClose }: { d: TrackerDa
   const v = views.find((x) => x.eq.tag === e.tag);
   const keys = e.combine ? d.equipment.filter((x) => x.combine === e.combine).map(keyOf) : [keyOf(e)];
   const ls = lines(d, keys); const run = ls.filter((a) => a.actualStart && !a.actualFinish); const next = ls.find((a) => !a.actualStart);
+  // steps that run together with the next one or with a running one can start too (owner, 28 Oct 2026)
+  const together = new Map(keys.flatMap((k) => [...runTogether(lines(d, [k]))].map(([id, g]) => [id, `${k}:${g.id}`] as const)));
+  const alsoNow = next ? ls.filter((a) => !a.actualStart && a.id !== next.id && [next, ...run].some((x) => together.get(x.id) && together.get(x.id) === together.get(a.id))).slice(0, 3) : [];
   const [holdOpen, setHoldOpen] = useState(false); const [insp, setInsp] = useState(false);
   const [note, setNote] = useState('');
   const [stage, setStage] = useState<number | null>(null);
@@ -481,7 +484,7 @@ function ItemSheet({ d, e: e0, now = Date.now(), done, onClose }: { d: TrackerDa
           trackerId={d.tracker.id} canEdit isHead={role === 'head'} activities={d.activities.filter((a) => a.key === keyOf(e))} now={now} iso={isolationOf(e.tag, d.points ?? [])} points={d.points ?? []} engine={d.engine} settings={d.settings} me={me}
           onIsolation={() => { onClose(); toIso?.(e.tag); }} onDone={done} />}
         {run.map((a) => <button key={a.id} type="button" disabled={busy} onClick={() => step(a, true)} className="w-full rounded-xl bg-amber-400 px-3 py-2 text-left text-amber-950"><span className="block text-[11px] font-bold uppercase tracking-wide opacity-80">✓ Finish</span><span className="line-clamp-2 text-[13px] font-semibold leading-snug">{a.activity}</span></button>)}
-        {next && <button type="button" disabled={busy} onClick={() => step(next, false)} className="w-full rounded-xl bg-brand-700 px-3 py-2 text-left text-white"><span className="block text-[11px] font-bold uppercase tracking-wide opacity-80">▶ Start</span><span className="line-clamp-2 text-[13px] font-semibold leading-snug">{next.activity}</span></button>}
+        {next && [next, ...alsoNow].map((x, j) => <button key={x.id} type="button" disabled={busy} onClick={() => step(x, false)} className="w-full rounded-xl bg-brand-700 px-3 py-2 text-left text-white"><span className="block text-[11px] font-bold uppercase tracking-wide opacity-80">▶ Start{j > 0 || (alsoNow.length && j === 0) || run.some((r) => together.get(r.id) && together.get(r.id) === together.get(x.id)) ? ' · runs together' : ''}</span><span className="line-clamp-2 text-[13px] font-semibold leading-snug">{x.activity}</span></button>)}
         {!ls.length ? <>{e.description && <p className="text-[13px] font-semibold">{e.description}</p>}
           <p className="pt-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Stage</p>
           <div className="flex flex-wrap gap-1.5">{STAGE_SHORT.map((l, i) => <button key={l} type="button" onClick={() => setStage(i)} className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', (stage ?? e.stage) === i ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{l}</button>)}</div></>
@@ -581,12 +584,18 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
                 <button type="button" disabled={busy || !add.text.trim()} onClick={() => act(() => addEngStep(d.tracker.id, k, add.text.trim(), all.map((a) => a.id), add.after), `${short(k)}: step added.`)} className="min-h-10 flex-1 rounded-xl bg-brand-700 font-bold text-white disabled:opacity-50">Add</button></div>
               <p className="text-[11px] text-slate-500">An added step has no plan time: it does not change the % or the end date.</p>
             </div>}
-            {shown.length > 0 && <List>{shown.map((a, i) => { const eng = a.activityId.startsWith('ENG-'), h = hrs(a), on = open === a.id && !ids;
+            {shown.length > 0 && <List>{(() => { const grp = runTogether(shown); const range = new Map<number, [number, number]>();
+              shown.forEach((a, i) => { const g = grp.get(a.id); if (g) { const r = range.get(g.id); range.set(g.id, r ? [r[0], i] : [i, i]); } });
+              const inBand = (i: number) => [...range.values()].some(([x, y]) => i >= x && i <= y);
+              return shown.map((a, i) => { const eng = a.activityId.startsWith('ENG-'), h = hrs(a), on = open === a.id && !ids;
+              const g = grp.get(a.id), first = g ? range.get(g.id)![0] : -1;
               // red when late (owner, 27 Oct 2026): its P6 start passed and it has not started, or its P6 finish passed and it has not finished
               const tnow = Date.now(), lateStart = !a.actualStart && !!a.start && tnow > Date.parse(a.start), lateFinish = !a.actualFinish && !!a.finish && tnow > Date.parse(a.finish), late = a.tracked && (lateStart || lateFinish);
-              return <div key={a.id} className={cx('border-b border-slate-100 last:border-b-0', on && 'bg-slate-50')}>
+              const head = g && g.letter === 'a' && !ids ? <div key={`g${g.id}`} className="flex items-center justify-between gap-2 border-b border-l-4 border-indigo-300 border-b-indigo-100 bg-indigo-50 px-2.5 py-1 text-[11px]">
+                <b className="text-indigo-800">⇉ {g.members.length} run together</b><span className="tabular-nums text-slate-600">{kwDay(g.start)} {kwTime(g.start)} → {kwDay(g.end)} {kwTime(g.end)} · {Math.round((g.end - g.start) / H)} h</span></div> : null;
+              return <Fragment key={a.id}>{head}<div className={cx('border-b border-slate-100 last:border-b-0', on && 'bg-slate-50', !ids && inBand(i) && 'border-l-4 border-l-indigo-300 bg-indigo-50/30')}>
                 <div className="flex items-center gap-2 px-2.5 py-1.5">
-                  <span className={cx('flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold', a.actualFinish ? 'bg-status-green text-white' : a.actualStart ? 'bg-amber-400 text-amber-950' : 'bg-slate-100 text-slate-600')}>{a.actualFinish ? '✓' : a.actualStart ? '▶' : i + 1}</span>
+                  <span className={cx('flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold', a.actualFinish ? 'bg-status-green text-white' : a.actualStart ? 'bg-amber-400 text-amber-950' : 'bg-slate-100 text-slate-600')}>{a.actualFinish ? '✓' : a.actualStart ? '▶' : g && !ids ? `${first + 1}${g.letter}` : i + 1}</span>
                   <button type="button" disabled={!!ids} onClick={() => { setOpen(on ? null : a.id); setEdit(null); setAt(''); setWhy(''); }} className="min-w-0 flex-1 text-left">
                     <span className="block text-[13px] font-semibold leading-snug">{a.activity}{!a.actualFinish && isBufferStep(a.activity) && <span title="Buffer: not always needed, can be skipped to catch up" className="ml-1.5 inline-block rounded border border-dashed border-amber-500 px-1 align-middle text-[10px] font-bold text-amber-800">Buffer</span>}</span>
                     <span className={cx('block text-[11px]', late ? 'font-semibold text-status-red' : 'text-slate-500')}>{a.actualFinish ? `Done ${ld(a.actualFinish)}${entered(a, 'actual_finish', a.actualFinish)}${tookOf(a)}` : a.actualStart ? `Started ${ld(a.actualStart)}${entered(a, 'actual_start', a.actualStart)}${spanText(a.actualStart, new Date().toISOString()) ? ` · running ${spanText(a.actualStart, new Date().toISOString())}` : ''}` : eng ? 'Added step · no plan time' : a.start ? `Plan ${ld(a.start)}${h ? ` · ${h} h` : ''}` : 'No plan time'}{late ? (lateStart ? ' · start late' : ` · finish late (plan ${ld(a.finish!)})`) : ''}{a.updatedBy && (a.actualStart || eng) ? ` · ${a.updatedBy}` : ''}</span>
@@ -621,7 +630,7 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
                   </div>}</>}
                   {!eng && !edit && <p className="text-[11px] text-slate-500">Bar-chart step: its plan dates stay as in P6.</p>}
                 </div>}
-              </div>; })}</List>}
+              </div></Fragment>; }); })()}</List>}
             {!shown.length && <Card><p className="text-sm text-slate-600">No steps yet. Add the first one.</p></Card>}
             {(() => { const off = d.activities.filter((a) => a.key === k && !a.tracked && !a.outOfScope && !a.detail && /^not required/.test(a.disabledReason ?? ''));
               return off.length > 0 && <details className="mb-2 rounded-2xl bg-white px-2.5 py-1.5 text-[12px] ring-1 ring-slate-200"><summary className="cursor-pointer font-semibold text-slate-600">Not required · {off.length}</summary>

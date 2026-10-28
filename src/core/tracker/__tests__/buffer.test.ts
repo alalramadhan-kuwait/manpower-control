@@ -17,3 +17,18 @@ describe('buffer steps', () => {
     expect(found.every((b) => b!.steps.every((a) => !a.actualStart && isBufferStep(a.activity)))).toBe(true);
   });
 });
+
+import { runTogether } from '..';
+describe('steps that run together', () => {
+  const st = (id: string, s: string | null, f: string | null) => ({ id, start: s, finish: f } as unknown as Parameters<typeof runTogether>[0][number]);
+  it('groups overlapping plan windows in order; touching windows and unplanned steps do not break or join', () => {
+    const g = runTogether([st('insp', '2026-10-27T00:00Z', '2026-10-27T12:00Z'), st('weld', '2026-10-27T12:00Z', '2026-10-29T00:00Z'), st('rtj', '2026-10-27T12:00Z', '2026-10-29T00:00Z'),
+      st('ring', null, null), st('tw', '2026-10-27T12:00Z', '2026-10-29T00:00Z'), st('scaff', '2026-10-29T00:00Z', '2026-10-29T06:00Z'),
+      st('box', '2026-10-31T00:00Z', '2026-10-31T12:00Z'), st('ins', '2026-10-31T00:00Z', '2026-11-02T00:00Z'), st('deb', '2026-10-31T12:00Z', '2026-11-01T00:00Z')]);
+    expect(['weld', 'rtj', 'tw'].map((k) => g.get(k)?.letter)).toEqual(['a', 'b', 'c']);
+    expect(g.get('weld')!.id).toBe(g.get('tw')!.id);
+    expect(g.has('insp') || g.has('scaff') || g.has('ring')).toBe(false);
+    expect(['box', 'ins', 'deb'].map((k) => g.get(k)?.letter)).toEqual(['a', 'b', 'c']);
+    expect(g.get('box')!.id).not.toBe(g.get('weld')!.id);
+  });
+});

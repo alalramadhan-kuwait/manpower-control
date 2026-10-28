@@ -1307,3 +1307,21 @@ export function bufferCatchUp(d: TrkData, now: number, key: string): BufferCatch
   const b = item(d), a = item({ ...d, activities: d.activities.map((x) => (ids.has(x.id) ? { ...x, tracked: false } : x)) });
   return { steps: open, hours: open.reduce((t, x) => t + (x.durationH ?? 0), 0), forecast: b?.forecast ?? null, forecastIfSkipped: a?.forecast ?? null, p6Finish: b?.p6Finish ?? null, late: !!b && b.svD < -0.5 };
 }
+
+// ── Steps that run together (owner, 28 Oct 2026, option A): in the item's step order, a step whose P6 window starts
+// before the window of the steps above it ends joins them ("3 run together · 27 Oct 15:00 → 29 Oct 03:00"). Steps with
+// no plan time are passed over (they neither join nor break a group). Only groups of two or more are returned.
+export interface RunTogether { id: number; start: number; end: number; members: string[] }
+export function runTogether(acts: TrkActivity[]): Map<string, RunTogether & { letter: string }> {
+  const out = new Map<string, RunTogether & { letter: string }>();
+  let cur: RunTogether | null = null; let n = 0;
+  const close = () => { if (cur && cur.members.length > 1) cur.members.forEach((id, i) => out.set(id, { ...cur!, letter: String.fromCharCode(97 + Math.min(i, 25)) })); };
+  for (const a of acts) {
+    const s = a.start ? Date.parse(a.start) : NaN, f = a.finish ? Date.parse(a.finish) : NaN;
+    if (Number.isNaN(s) || Number.isNaN(f)) continue;
+    if (cur && s < cur.end - 60_000) { cur.members.push(a.id); cur.end = Math.max(cur.end, f); continue; }
+    close(); cur = { id: ++n, start: s, end: f, members: [a.id] };
+  }
+  close();
+  return out;
+}
