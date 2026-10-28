@@ -222,6 +222,9 @@ function StartupSteps({ entry, steps, stageStart, canEdit, isHead, now, onDone }
   const [open, setOpen] = useState<StartupStep | 'new' | null>(null);
   if (!entry.eventId) return <Card><p className="text-sm text-slate-600">This shutdown is not on the Calendar, so it has no start-up steps.</p></Card>;
   const tl = new Map(stdTimeline(steps, stageStart, now).map((v) => [v.id, v]));
+  // where a step should start: when the step before it was done (actual), else its plan from the stage start
+  const planStartOf = (x: StartupStep) => { const i = steps.findIndex((y) => y.id === x.id); const prev = steps.slice(0, i).reverse().find((y) => y.status !== 'not_required');
+    return prev?.doneAt ? Date.parse(prev.doneAt) : tl.get(x.id)?.planStart ?? null; };
   return (
     <Card className="p-0">
       <h3 className="flex items-center justify-between px-3 pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-500"><span>Start-up steps · standard vs actual</span>
@@ -233,14 +236,25 @@ function StartupSteps({ entry, steps, stageStart, canEdit, isHead, now, onDone }
             <span className="min-w-0 flex-1"><span className={cx('block text-[13px] font-medium', s.status === 'not_required' ? 'text-slate-400 line-through' : 'text-slate-900')}>{s.title}</span>
               <StdLine std={s.stdHours} t={tl.get(s.id)} status={s.status} startedAt={s.startedAt} doneAt={s.doneAt} proc={s.procedureRef} /></span>
             <span className="text-slate-400">›</span></button></li>))}</ul>}
-      {open && <StartupSheet eventId={entry.eventId} step={open === 'new' ? null : open} nextSeq={(steps[steps.length - 1]?.seq ?? 0) + 10} canEdit={canEdit} isHead={isHead} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); onDone(m); }} />}
+      {open && <StartupSheet eventId={entry.eventId} step={open === 'new' ? null : open} planStart={open === 'new' ? null : planStartOf(open)} nextSeq={(steps[steps.length - 1]?.seq ?? 0) + 10} canEdit={canEdit} isHead={isHead} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); onDone(m); }} />}
     </Card>
   );
 }
 
-function StartupSheet({ eventId, step, nextSeq, canEdit, isHead, onClose, onDone }: { eventId: string; step: StartupStep | null; nextSeq: number; canEdit: boolean; isHead: boolean; onClose: () => void; onDone: (m: string) => void }) {
+function StartupSheet({ eventId, step, planStart = null, nextSeq, canEdit, isHead, onClose, onDone }: { eventId: string; step: StartupStep | null; planStart?: number | null; nextSeq: number; canEdit: boolean; isHead: boolean; onClose: () => void; onDone: (m: string) => void }) {
   const [title, setTitle] = useState(step?.title ?? ''); const [std, setStd] = useState(step?.stdHours?.toString() ?? ''); const [proc, setProc] = useState(step?.procedureRef ?? '');
-  const [s, setS] = useState(local(step?.startedAt)); const [f, setF] = useState(local(step?.doneAt)); const [note, setNote] = useState(step?.remark ?? ''); const [reason, setReason] = useState('');
+  // times not recorded yet are filled from the plan (start: the step before done, done: start + standard), to be
+  // corrected to the actual ones; a planned time still to come is shown, not filled
+  const nowMs = Date.now(); const stdMs = (step?.stdHours ?? 0) * H;
+  const planS = !step?.startedAt && planStart !== null ? planStart : null;
+  const startMs = step?.startedAt ? Date.parse(step.startedAt) : planS !== null && planS <= nowMs ? planS : null;
+  const planF = !step?.doneAt && startMs !== null && step?.stdHours != null ? startMs + stdMs : null;
+  const [s, setS] = useState(step?.startedAt ? local(step.startedAt) : startMs !== null ? local(new Date(startMs).toISOString()) : '');
+  const [f, setF] = useState(step?.doneAt ? local(step.doneAt) : planF !== null && planF <= nowMs ? local(new Date(planF).toISOString()) : '');
+  const [fTouched, setFTouched] = useState(!!step?.doneAt);
+  const filled = !!step && ((!step.startedAt && !!s) || (!step.doneAt && !!f));
+  const setStart = (v: string) => { setS(v); if (!fTouched && v && step?.stdHours != null) { const e = Date.parse(`${v}:00+03:00`) + stdMs; setF(e <= Date.now() ? local(new Date(e).toISOString()) : ''); } };
+  const future = (v: string) => !!v && Date.parse(`${v}:00+03:00`) > Date.now() + 15 * 60_000; const [note, setNote] = useState(step?.remark ?? ''); const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const run = async (fn: () => Promise<unknown>, m: string) => { setBusy(true); setErr(null); try { await fn(); onDone(m); } catch (e) { setErr(e); setBusy(false); } };
   const stdN = std.trim() === '' ? null : Number(std);
@@ -262,18 +276,23 @@ function StartupSheet({ eventId, step, nextSeq, canEdit, isHead, onClose, onDone
     <BottomSheet open onClose={onClose} title={step.title}>
       <div className="space-y-3">
         <p className="text-xs text-slate-500">Standard {step.stdHours != null ? hrs(step.stdHours) : '—'}{step.procedureRef ? ` · ${step.procedureRef}` : ''}{step.updatedBy ? ` · last change ${step.updatedBy}` : ''}</p>
-        {canEdit && step.status !== 'not_required' && <div className="grid grid-cols-2 gap-2">
+        {canEdit && step.status !== 'not_required' && <div className="flex gap-2 [&>*]:flex-1">
           {step.status === 'not_started' && <Button disabled={busy} onClick={() => patch({ status: 'running', started_at: nowIso() }, `${step.title} started.`)}>▶ Start now</Button>}
           {step.status === 'running' && <Button disabled={busy} onClick={() => patch({ status: 'done', done_at: nowIso() }, `${step.title} done.`)}>✓ Done now</Button>}
           {step.status === 'done' && <Button variant="secondary" disabled={busy} onClick={() => patch({ status: 'running', done_at: null }, `${step.title} back to running.`)}>↶ Undo done</Button>}
           {step.status === 'running' && <Button variant="secondary" disabled={busy} onClick={() => patch({ status: 'not_started', started_at: null }, `${step.title} back to not started.`)}>↶ Undo start</Button>}
         </div>}
         {canEdit && <>
-          <div className="grid grid-cols-2 gap-2"><Field label="Started"><input type="datetime-local" className="input" value={s} onChange={(e) => setS(e.target.value)} /></Field>
-            <Field label="Done"><input type="datetime-local" className="input" value={f} onChange={(e) => setF(e.target.value)} /></Field></div>
-          <Field label="Remark"><input className="input" value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+          {filled && <p className="rounded-lg bg-brand-50 px-2.5 py-1.5 text-[11px] text-brand-900">Filled from the plan{step.stdHours != null ? ` (start + ${hrs(step.stdHours)} standard)` : ''}. Change them to the actual times, then Save.</p>}
+          <Field label="Started"><input type="datetime-local" className="input w-full min-w-0 appearance-none" value={s} onChange={(e) => setStart(e.target.value)} /></Field>
+          {!s && planS !== null && <p className="-mt-2 text-[11px] text-slate-500">Plan start {at(planS)}</p>}
+          <Field label="Done"><input type="datetime-local" className="input w-full min-w-0 appearance-none" value={f} onChange={(e) => { setF(e.target.value); setFTouched(true); }} /></Field>
+          {!f && planF !== null && <p className="-mt-2 text-[11px] text-slate-500">Plan done {at(planF)}</p>}
+          {s && f && step.stdHours != null && f >= s && <p className="-mt-1 text-[11px] text-slate-600">Took {hrs((Date.parse(`${f}:00+03:00`) - Date.parse(`${s}:00+03:00`)) / H)} · standard {hrs(step.stdHours)}</p>}
+          <Field label="Remark"><input className="input w-full min-w-0" value={note} onChange={(e) => setNote(e.target.value)} /></Field>
           {!!s && !!f && f < s && <p className="text-xs text-status-red">Done is before the start.</p>}
-          <Button variant="secondary" className="w-full" disabled={busy || (!!s && !!f && f < s) || (!s && !!f)} onClick={() => patch({ started_at: fromLocal(s), done_at: fromLocal(f), status: step.status === 'not_required' ? 'not_required' : f ? 'done' : s ? 'running' : 'not_started', remark: note.trim() || null }, `${step.title} saved.`)}>Save times</Button>
+          {(future(s) || future(f)) && <p className="text-xs text-status-red">A time still to come cannot be recorded.</p>}
+          <Button className="w-full" disabled={busy || (!!s && !!f && f < s) || (!s && !!f) || future(s) || future(f)} onClick={() => patch({ started_at: fromLocal(s), done_at: fromLocal(f), status: step.status === 'not_required' ? 'not_required' : f ? 'done' : s ? 'running' : 'not_started', remark: note.trim() || null }, `${step.title} saved.`)}>Save times</Button>
         </>}
         {isHead && <details className="rounded-xl bg-slate-50 p-2 text-sm"><summary className="cursor-pointer text-[12px] font-semibold text-slate-600">Step details · not required</summary>
           <div className="mt-2 space-y-2">
