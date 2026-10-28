@@ -21,7 +21,7 @@ import { localToday, shortDate } from '@/ui/leave';
 import { NewPlanSheet } from './ShutdownListPage';
 import { drawCard, sharePicture, type CardData, type CardRow } from './shareCard';
 import { ProfileCard, stepProfile } from './ProfileCard';
-import { blackAt, uniform, type ProfileView } from '@/core/shutdown/profile';
+import { allBlackRow, blackAt, blackOf, uniform, type ProfileView } from '@/core/shutdown/profile';
 
 type Stage = 'shutdown' | 'mi' | 'startup';
 const H = 3_600_000;
@@ -604,16 +604,17 @@ function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEnt
     // the countdown bar: how much of the wait from the start-up's first step to the cut-in has passed
     const begun = steps.filter((x) => x.startedAt).map((x) => Date.parse(x.startedAt!)); const s0 = begun.length ? Math.min(...begun) : null;
     const bar = oilStep && oilAt !== null ? (oilStep.status !== 'not_started' ? 1 : s0 !== null && oilAt > s0 ? (now - s0) / (oilAt - s0) : null) : null;
-    // the three questions management asks: when the cut-in starts, when 20 and when 42 KBPD black oil, the hours from the
-    // SOP table of the black oil step (its AR column) after its start; no table, no 20 / 42 (never guessed)
+    // the three questions management asks: when the cut-in starts, when the feed is all black oil and when 42 KBPD, the
+    // hours from the SOP table of the black oil step (its AR/DSL column) after its start; no table, no times (never guessed)
     const chipAt = (t: number) => { const h = Math.round(((t - now) / H) * 2) / 2; return `${kwWeekDay(round30(t)).split(' ')[0]} · ${h > 0 ? `in ${hrs(h)}` : h < 0 ? `${hrs(-h)} ago` : 'now'}`; };
     const chips: CardData['chips'] = [];
     if (oilStep && oilAt !== null) {
       chips.push({ label: oilStep.status === 'not_started' ? 'CUT-IN STARTS' : 'CUT-IN STARTED', big: hm(oilAt), sub: chipAt(oilAt), color: 'blue' });
-      for (const [kbpd, color] of [[20, 'red'], [42, 'green']] as const) {
-        const h = oilStep.profile ? blackAt(oilStep.profile, kbpd) : null;
-        if (h !== null) { const t = oilAt + h * H; chips.push({ label: `${kbpd} KBPD BLACK`, big: hm(t), sub: chipAt(t), color }); }
-      }
+      // all black oil: the first hour with no diesel left (before it the feed is a mix, e.g. 21 AR + 4 DSL), then 42 KBPD
+      const all = oilStep.profile ? allBlackRow(oilStep.profile) : null;
+      if (all) { const t = oilAt + all.h * H; chips.push({ label: `ALL BLACK · ${blackOf(all)} KBPD`, big: hm(t), sub: chipAt(t), color: 'red' }); }
+      const h42 = oilStep.profile ? blackAt(oilStep.profile, 42) : null;
+      if (h42 !== null) { const t = oilAt + h42 * H; chips.push({ label: '42 KBPD BLACK', big: hm(t), sub: chipAt(t), color: 'green' }); }
     }
     const box = oilStep && oilAt !== null ? { label: oilStep.status === 'done' ? 'BLACK OIL CUT IN' : oilStep.status === 'running' ? 'BLACK OIL CUT-IN · SINCE' : 'BLACK OIL CUT-IN',
       big: hm(oilAt), line1: kwWeekDay(round30(oilAt)), bar,
@@ -625,7 +626,7 @@ function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEnt
       hold: vp.holdH > 0 ? `+ ${hrs(vp.holdH)} on hold` : null, chips,
       rows, footLeft: `Plan ${Math.round(counted.reduce((n, x) => n + (x.stdHours ?? 0), 0) * 10) / 10} h`, footRight: `Down since ${shortDate(entry.start)} · day ${day}`,
     };
-    setCaption(`${entryName(entry)} start-up ${vp.actualPct}% · ${done}/${counted.length} steps${box ? ` · ${box.label.toLowerCase().replace(/^\w/, (ch) => ch.toUpperCase())} ${box.line1} ${box.big}` : ''}${chips.slice(1).map((c) => ` · ${c.label.replace(' BLACK', ' black oil')} ${c.sub.split(' · ')[0]} ${c.big}`).join('')}`);
+    setCaption(`${entryName(entry)} start-up ${vp.actualPct}% · ${done}/${counted.length} steps${box ? ` · ${box.label.toLowerCase().replace(/^\w/, (ch) => ch.toUpperCase())} ${box.line1} ${box.big}` : ''}${chips.slice(1).map((c) => ` · ${c.label.startsWith('ALL') ? `All black oil (${c.label.split(' · ')[1]})` : '42 KBPD black oil'} ${c.sub.split(' · ')[0]} ${c.big}`).join('')}`);
     const c = document.createElement('canvas'); drawCard(c, d);
     c.toBlob((b) => { if (b) { setBlob(b); setUrl(URL.createObjectURL(b)); } }, 'image/png');
   }, [entry, steps, vp, tl, now, done, counted.length, running, day]);

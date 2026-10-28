@@ -1,7 +1,7 @@
 // The start-up as a picture for WhatsApp (owner, 28 Oct 2026, option C of the second mock-up): a 1080-wide card
 // drawn on the phone, 4:5 when it fits so it shows whole in a chat. On top two equal tiles: the progress ring, and the
 // time management asks for: when the black oil is cut in, with a bar counting down to it; under them three chips
-// (cut-in, 20 and 42 KBPD black oil, from the SOP table). Colours after the blue, red and green of the company mark
+// (cut-in, all black oil and 42 KBPD, from the SOP table). Colours after the blue, red and green of the company mark
 // (owner, B2), with no name or logo. Under them the time column of the steps still to do (the
 // finished ones are one line). Times are rounded to the half hour. Nothing is uploaded: the phone's share sheet sends it.
 export interface CardRow {
@@ -16,7 +16,7 @@ export interface CardData {
   /** the ring tile's line ("6 of 8 steps done"); under the tiles the running step and the holds. No late, behind or
    *  over plan anywhere in the picture (owner, 28 Oct 2026). */
   steps: string; running: string | null; hold: string | null;
-  /** the milestones under the tiles: the cut-in (blue), 20 KBPD (red), 42 KBPD (green) */
+  /** the milestones under the tiles: the cut-in (blue), all black oil (red), 42 KBPD (green) */
   chips: { label: string; big: string; sub: string; color: 'blue' | 'red' | 'green' }[];
   rows: CardRow[]; footLeft: string; footRight: string;
 }

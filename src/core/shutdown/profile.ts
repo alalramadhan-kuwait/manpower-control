@@ -70,3 +70,7 @@ export const clockOf = (start: number, v: ProfileView, h: number) => start + (h 
 export const blackOf = (r: ProfileRow) => { const n = Number.parseFloat(String(r.ardsl).split('/')[0]); return Number.isFinite(n) ? n : 0; };
 /** The first profile hour the SOP table reaches a black oil rate (KBPD), or null when it never does. */
 export const blackAt = (p: ProfileRow[], kbpd: number) => p.find((r) => blackOf(r) >= kbpd)?.h ?? null;
+/** The diesel (DSL) rate of a row: the number after the slash ("21/04" → 4; "42" → 0). */
+export const dieselOf = (r: ProfileRow) => { const n = Number.parseFloat(String(r.ardsl).split('/')[1] ?? '0'); return Number.isFinite(n) ? n : 0; };
+/** The first row where the feed is all black oil (some AR, no diesel left), or null. */
+export const allBlackRow = (p: ProfileRow[]) => p.find((r) => blackOf(r) > 0 && dieselOf(r) === 0) ?? null;
