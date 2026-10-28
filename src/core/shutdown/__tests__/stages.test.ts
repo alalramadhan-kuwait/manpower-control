@@ -20,6 +20,12 @@ describe('stdTimeline', () => {
     expect(stdTimeline([step('a', 4)], T0, T0 + H)[0].late).toBe(true);
     expect(stdTimeline([step('a', 4)], null, T0)[0]).toMatchObject({ planStart: null, late: false });
   });
+  it('re-plans the next steps on the actual times: a late step moves the ones after it', () => {
+    const now = T0 + 30 * H;
+    const v = stdTimeline([step('a', 3, 'done', new Date(T0).toISOString(), new Date(T0 + 26 * H).toISOString()), step('b', 6, 'running', new Date(T0 + 29 * H).toISOString()), step('c', 9)], T0, now);
+    expect((v[2].planStart! - T0) / H).toBe(35);
+    expect(v[2].late).toBe(false);
+  });
 });
 
 describe('stageSummary', () => {

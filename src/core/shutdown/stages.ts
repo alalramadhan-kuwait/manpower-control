@@ -8,20 +8,25 @@ export interface StdStep { id: string; stdHours: number | null; status: 'not_sta
 export interface StdStepView { id: string; planStart: number | null; planEnd: number | null; actualH: number | null; overH: number | null; late: boolean }
 
 /**
- * Each step's plan from the stage start, one after another by its standard hours (a step not required takes none).
- * Actual hours are measured from its start to its done time (or to now while running); over = actual − standard.
- * Late: not started after its planned start, or running past its planned end.
+ * Each step's plan, one after another by its standard hours, re-planned on the actual times: a step starts when the
+ * one before it was done (or, while that one runs, at its start + standard, never before now); the first from the stage
+ * start. A step not required takes none. Actual hours run from its start to its done time (or now while running);
+ * over = actual − standard. Late: not started after its planned start, or running past its planned end.
  */
 export function stdTimeline(steps: StdStep[], stageStart: number | null, now: number): StdStepView[] {
   let t = stageStart;
   return steps.map((s) => {
-    const skip = s.status === 'not_required';
-    const planStart = t; const planEnd = t !== null && s.stdHours !== null && !skip ? t + s.stdHours * H : t;
-    if (!skip) t = planEnd;
     const a = s.startedAt ? Date.parse(s.startedAt) : null; const b = s.doneAt ? Date.parse(s.doneAt) : s.status === 'running' ? now : null;
     const actualH = a !== null && b !== null && b >= a ? r1((b - a) / H) : null;
     const overH = actualH !== null && s.stdHours !== null ? r1(actualH - s.stdHours) : null;
-    const late = !skip && s.status !== 'done' && ((s.status === 'not_started' && planStart !== null && now > planStart) || (s.status === 'running' && planEnd !== null && now > planEnd));
+    const std = (s.stdHours ?? 0) * H;
+    if (s.status === 'not_required') return { id: s.id, planStart: t, planEnd: t, actualH, overH, late: false };
+    const planStart = t;
+    let planEnd: number | null;
+    if (s.status === 'done') { planEnd = t !== null ? t + std : null; if (s.doneAt) t = Date.parse(s.doneAt); }
+    else if (s.status === 'running' && a !== null) { planEnd = a + std; t = Math.max(planEnd, now); }
+    else { planEnd = t !== null ? Math.max(t, now) + std : null; t = planEnd; }
+    const late = (s.status === 'not_started' && planStart !== null && now > planStart) || (s.status === 'running' && planEnd !== null && now > planEnd);
     return { id: s.id, planStart, planEnd, actualH, overH, late };
   });
 }

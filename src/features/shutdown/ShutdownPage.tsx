@@ -71,7 +71,8 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
   const len = dayNo(entry.end) - dayNo(entry.start) + 1;
   // past its last day with start-up steps still open: it is not finished, its dates need putting right
   const inStartup = entry.end < today && startup.length > 0 && suSum.done < suSum.total;
-  const state = inStartup ? 'Still in start-up' : entry.end < today ? 'Finished' : entry.start <= today ? `Day ${dayNo(today) - dayNo(entry.start) + 1} of ${len}` : `Starts in ${dayNo(entry.start) - dayNo(today)} days`;
+  const startupRunning = suSum.startedAt !== null && suSum.done < suSum.total;
+  const state = inStartup ? 'Still in start-up' : startupRunning ? `In start-up · ends with it (expected ${shortDate(entry.end)})` : entry.end < today ? 'Finished' : entry.start <= today ? `Day ${dayNo(today) - dayNo(entry.start) + 1} of ${len}` : `Starts in ${dayNo(entry.start) - dayNo(today)} days`;
   const canDates = !!entry.eventId && ['section_head', 'manpower_coordinator'].includes(profile.role_code);
   const missing = docs.filter((d) => d.status !== 'available').length;
   const ops = ph?.ops ?? null;
