@@ -10,7 +10,7 @@ import { DELAY_MIN_H, DELAY_REASONS, delayPeriod, reasonLabel, sopRefs, stageSum
 import { kwDay, kwTime, phases, stepViews, type TrkStep } from '@/core/tracker';
 import { saveEvent } from '@/data/calendar';
 import { fetchUnitStatusHistory, type UnitStatusChange } from '@/data/modes';
-import { DOC_STATUS, FILE_PARTS, addStartupStep, entryName, fetchFileDocs, fetchShutdownIndex, fetchStartupSteps, removeFileDoc, saveFileDoc, setStartupStep,
+import { DOC_STATUS, FILE_PARTS, addStartupStep, entryName, fetchFileDocs, fetchShutdownIndex, fetchStartupSteps, removeFileDoc, saveFileDoc, setStartupStep, fetchReadings, type PanelReading,
   type DocStatus, type FileDoc, type FilePart, type ShutdownEntry, type StartupStep } from '@/data/sdPage';
 import { fetchTrackerData, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
@@ -19,6 +19,8 @@ import { BottomSheet, Button, Card, ErrorBox, Field, Spinner, Toast, cx } from '
 import { localToday, shortDate } from '@/ui/leave';
 import { NewPlanSheet } from './ShutdownListPage';
 import { drawCard, sharePicture, type CardData } from './shareCard';
+import { ProfileCard, stepProfile } from './ProfileCard';
+import { uniform, type ProfileView } from '@/core/shutdown/profile';
 
 type Stage = 'shutdown' | 'mi' | 'startup';
 const H = 3_600_000;
@@ -38,7 +40,7 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
   const [q, setQ] = useSearchParams();
   const [entry, setEntry] = useState<ShutdownEntry | null | undefined>(undefined);
   const [trk, setTrk] = useState<TrackerData | null>(null);
-  const [startup, setStartup] = useState<StartupStep[]>([]);
+  const [startup, setStartup] = useState<StartupStep[]>([]); const [readings, setReadings] = useState<PanelReading[]>([]);
   const [docs, setDocs] = useState<FileDoc[]>([]);
   const [err, setErr] = useState<unknown>(null); const [toast, setToast] = useState<string | null>(null); const [dates, setDates] = useState(false);
   const today = localToday(); const now = Date.now();
@@ -48,6 +50,7 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
       if (!e) return;
       const [t, s, d] = await Promise.all([e.tracker ? fetchTrackerData(e.tracker.id) : Promise.resolve(null), e.eventId ? fetchStartupSteps(e.eventId) : Promise.resolve([]), e.eventId ? fetchFileDocs(e.eventId) : Promise.resolve([])]);
       setTrk(t); setStartup(s); setDocs(d); setErr(null);
+      setReadings(await fetchReadings(s.filter((x) => x.profile?.length).map((x) => x.id)).catch(() => []));
     } catch (x) { setErr(x); }
   }, [key]);
   useEffect(() => { void load(); }, [load]);
@@ -104,7 +107,7 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
 
       {part === 'progress' && stage === 'shutdown' && <ShutdownSteps trk={trk} steps={opsSteps} stageStart={ops ? ops.start : null} profile={profile} now={now} onDone={done} />}
       {part === 'progress' && stage === 'mi' && <MiStage trk={trk} entry={entry} now={now} />}
-      {part === 'progress' && stage === 'startup' && <StartupSteps entry={entry} steps={startup} stageStart={miEnd ?? suSum.startedAt} canEdit={EDIT_ROLES.includes(profile.role_code)} isHead={profile.role_code === 'section_head'} now={now} onDone={done} />}
+      {part === 'progress' && stage === 'startup' && <StartupSteps entry={entry} steps={startup} readings={readings} stageStart={miEnd ?? suSum.startedAt} canEdit={EDIT_ROLES.includes(profile.role_code)} isHead={profile.role_code === 'section_head'} now={now} onDone={done} />}
       {part === 'team' && <TeamPart entry={entry} isHead={profile.role_code === 'section_head'} />}
       {part === 'record' && <RecordPart entry={entry} ops={ops} mi={ph?.mi ?? null} su={suSum} />}
       {part === 'file' && <FilePart_ entry={entry} docs={docs} trk={trk} canEdit={FILE_ROLES.includes(profile.role_code)} onDone={done} />}
@@ -220,7 +223,7 @@ function MiStage({ trk, entry, now }: { trk: TrackerData | null; entry: Shutdown
 
 /** The start-up steps of this shutdown, planned one after another by their standard hours from the M&I finish (no
  *  tracker: from the first step's actual start). */
-function StartupSteps({ entry, steps, stageStart, canEdit, isHead, now, onDone }: { entry: ShutdownEntry; steps: StartupStep[]; stageStart: number | null; canEdit: boolean; isHead: boolean; now: number; onDone: (m: string) => void }) {
+function StartupSteps({ entry, steps, readings, stageStart, canEdit, isHead, now, onDone }: { entry: ShutdownEntry; steps: StartupStep[]; readings: PanelReading[]; stageStart: number | null; canEdit: boolean; isHead: boolean; now: number; onDone: (m: string) => void }) {
   const [open, setOpen] = useState<StartupStep | 'new' | 'hold' | null>(null); const [sharing, setSharing] = useState(false); const [holdFor, setHoldFor] = useState<string | null>(null);
   const [delay, setDelay] = useState<{ step: StartupStep; kind: 'wait' | 'over'; period: { from: number; to: number | null; h: number } } | null>(null);
   if (!entry.eventId) return <Card><p className="text-sm text-slate-600">This shutdown is not on the Calendar, so it has no start-up steps.</p></Card>;
@@ -229,6 +232,9 @@ function StartupSteps({ entry, steps, stageStart, canEdit, isHead, now, onDone }
   const prevOf = (x: StartupStep) => { const i = steps.findIndex((y) => y.id === x.id); return steps.slice(0, i).reverse().find((y) => y.status !== 'not_required') ?? null; };
   const planStartOf = (x: StartupStep) => { const prev = prevOf(x); return prev?.doneAt ? Date.parse(prev.doneAt) : tl.get(x.id)?.planStart ?? null; };
   const vp = startupVsPlan(steps, now);
+  // the WhatsApp picture keeps the plan: a finish re-planned from the panel readings stays in the app (owner)
+  const plain = steps.map((x) => ({ ...x, expectedDoneAt: null }));
+  const vpPlain = startupVsPlan(plain, now); const tlPlain = new Map(stdTimeline(plain, stageStart, now).map((v) => [v.id, v]));
   // a row moves one place up or down; finished rows keep their length and the time moves with them
   const move = async (id: string, dir: -1 | 1) => {
     const i = steps.findIndex((x) => x.id === id); const j = i + dir; if (i < 0 || j < 0 || j >= steps.length) return;
@@ -248,12 +254,12 @@ function StartupSteps({ entry, steps, stageStart, canEdit, isHead, now, onDone }
       {vp.start !== null && <VsPlanBox vp={vp} onShare={() => setSharing(true)} />}
       {!steps.length ? <p className="px-3 pb-3 pt-1 text-sm text-slate-500">No start-up steps yet: add them here.</p>
         : <ul className="mt-1 divide-y divide-slate-100 border-t border-slate-100">{steps.map((s) => (
-          <li key={s.id}><TimeRow s={s} n={steps.filter((x) => x.kind !== 'hold' && x.seq <= s.seq).length} t={tl.get(s.id)} over={s.kind === 'hold' ? undefined : vp.over.get(s.id)} wait={vp.wait.get(s.id)} hours={vp.hold.get(s.id)} now={now}
+          <li key={s.id}><TimeRow s={s} pv={stepProfile(s, readings, now)} n={steps.filter((x) => x.kind !== 'hold' && x.seq <= s.seq).length} t={tl.get(s.id)} over={s.kind === 'hold' ? undefined : vp.over.get(s.id)} wait={vp.wait.get(s.id)} hours={vp.hold.get(s.id)} now={now}
             onOpen={() => setOpen(s)} onDelay={canEdit ? (kind) => { const p = prevOf(s); const per = delayPeriod(s, p?.doneAt ? Date.parse(p.doneAt) : null, kind, now); if (per) setDelay({ step: s, kind, period: per }); } : undefined} /></li>))}</ul>}
       {delay && <DelaySheet eventId={entry.eventId} steps={steps} step={delay.step} kind={delay.kind} period={delay.period} onClose={() => setDelay(null)} onDone={(m) => { setDelay(null); onDone(m); }} />}
-      {sharing && <ShareSheet entry={entry} steps={steps} vp={vp} tl={tl} now={now} onClose={() => setSharing(false)} />}
+      {sharing && <ShareSheet entry={entry} steps={plain} vp={vpPlain} tl={tlPlain} now={now} onClose={() => setSharing(false)} />}
       {(open === 'hold' || (open && open !== 'new' && open.kind === 'hold')) && <HoldSheet eventId={entry.eventId} hold={open === 'hold' ? null : open as StartupStep} steps={steps} initialBefore={holdFor} canEdit={canEdit} onMove={move} onClose={() => { setOpen(null); setHoldFor(null); }} onDone={(m) => { setOpen(null); setHoldFor(null); onDone(m); }} />}
-      {open && open !== 'hold' && (open === 'new' || open.kind !== 'hold') && <StartupSheet eventId={entry.eventId} step={open === 'new' ? null : open} planStart={open === 'new' ? null : planStartOf(open)} prevDone={open === 'new' ? null : (() => { const p = prevOf(open); return p?.doneAt ? Date.parse(p.doneAt) : null; })()} nextSeq={(steps[steps.length - 1]?.seq ?? 0) + 10} all={steps} canEdit={canEdit} isHead={isHead} onMove={move} onHold={(id) => { setHoldFor(id); setOpen('hold'); }} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); onDone(m); }} />}
+      {open && open !== 'hold' && (open === 'new' || open.kind !== 'hold') && <StartupSheet eventId={entry.eventId} step={open === 'new' ? null : open} planStart={open === 'new' ? null : planStartOf(open)} prevDone={open === 'new' ? null : (() => { const p = prevOf(open); return p?.doneAt ? Date.parse(p.doneAt) : null; })()} nextSeq={(steps[steps.length - 1]?.seq ?? 0) + 10} all={steps} readings={readings} canEdit={canEdit} isHead={isHead} onMove={move} onHold={(id) => { setHoldFor(id); setOpen('hold'); }} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); onDone(m); }} />}
     </Card>
   );
 }
@@ -267,7 +273,7 @@ const kwD = (t: number) => kwDay(t).replace(/^\w+,?\s*/, '');
  *  date, a line down the side with the state's dot, on the right the step and Plan · Actual · Variance. A hold is the
  *  same row in blue (its length, never late). Times still to come are the expected ones, in grey. A delay (a wait
  *  before the step, or time over plan) is a tappable line: it can become a hold or a step of its own. */
-function TimeRow({ s, n, t, over, wait, hours, now, onOpen, onDelay }: { s: StartupStep; n: number; t?: ReturnType<typeof stdTimeline>[number]; over?: number; wait?: number; hours?: number; now: number;
+function TimeRow({ s, pv = null, n, t, over, wait, hours, now, onOpen, onDelay }: { s: StartupStep; pv?: ProfileView | null; n: number; t?: ReturnType<typeof stdTimeline>[number]; over?: number; wait?: number; hours?: number; now: number;
   onOpen: () => void; onDelay?: (kind: 'wait' | 'over') => void }) {
   const hold = s.kind === 'hold'; const off = s.status === 'not_required'; const pending = s.status === 'not_started';
   const a = s.startedAt ? Date.parse(s.startedAt) : t?.planStart != null ? Math.max(t.planStart, now) : null;
@@ -293,6 +299,8 @@ function TimeRow({ s, n, t, over, wait, hours, now, onOpen, onDelay }: { s: Star
             {v !== null && <b className={cx('whitespace-nowrap font-semibold', v >= DELAY_MIN_H ? 'text-status-red' : 'text-status-green')}> · {Math.abs(v) < 0.05 ? 'on plan' : signed(v)}</b>}
             {pending && t?.late && wait === undefined && <b className="whitespace-nowrap font-semibold text-status-red"> · late start</b>}
             {exp && !off && <span className="text-slate-400"> · expected</span>}</span>}
+        {pv && s.status === 'running' && <span className={cx('mt-0.5 block rounded px-1.5 py-0.5 text-[11px] tabular-nums', pv.shiftH >= DELAY_MIN_H && s.profile && uniform(s.profile) ? 'bg-red-50 text-red-900 ring-1 ring-red-200' : 'bg-amber-50 text-amber-900')}>
+          🎯 {s.profile && uniform(s.profile) ? `Target now ${pv.now[0]} °F · ${pv.next.rx[0]} °F at ${kwTime(pv.next.at)}` : `Now ${pv.row.feed} KBPD · AR/DSL ${pv.row.ardsl}`}{pv.shiftH >= DELAY_MIN_H && s.profile && uniform(s.profile) ? ` · ${pv.behindF ?? ''}${pv.behindF != null ? ' °F' : ''} behind · ${hrs(pv.shiftH)} late` : ''}</span>}
         {wait !== undefined && <button type="button" onClick={(k) => { k.stopPropagation(); onDelay?.('wait'); }} className="mt-0.5 block w-full rounded bg-amber-50 px-1.5 py-0.5 text-left text-[11px] leading-snug text-amber-900 ring-1 ring-amber-200">
           ⏸ Waited {hrs(wait)}{pending ? ' so far' : ''} before · {s.waitReason ? reason(s.waitReason, s.waitNote) : <b className="text-status-red">reason?</b>}{onDelay && <span className="font-semibold text-brand-700"> · Hold / Step ›</span>}</button>}
         {!!over && <button type="button" onClick={(k) => { k.stopPropagation(); onDelay?.('over'); }} className="mt-0.5 block w-full rounded bg-red-50 px-1.5 py-0.5 text-left text-[11px] leading-snug text-red-900 ring-1 ring-red-200">
@@ -422,7 +430,7 @@ function HoldSheet({ eventId, hold, steps, initialBefore = null, canEdit, onMove
   );
 }
 
-function StartupSheet({ eventId, step, all = [], planStart = null, prevDone = null, nextSeq, canEdit, isHead, onHold, onMove, onClose, onDone }: { eventId: string; step: StartupStep | null; all?: StartupStep[]; planStart?: number | null; prevDone?: number | null; nextSeq: number; canEdit: boolean; isHead: boolean; onHold?: (id: string) => void; onMove?: (id: string, dir: -1 | 1) => void; onClose: () => void; onDone: (m: string) => void }) {
+function StartupSheet({ eventId, step, all = [], readings = [], planStart = null, prevDone = null, nextSeq, canEdit, isHead, onHold, onMove, onClose, onDone }: { eventId: string; step: StartupStep | null; all?: StartupStep[]; readings?: PanelReading[]; planStart?: number | null; prevDone?: number | null; nextSeq: number; canEdit: boolean; isHead: boolean; onHold?: (id: string) => void; onMove?: (id: string, dir: -1 | 1) => void; onClose: () => void; onDone: (m: string) => void }) {
   const [title, setTitle] = useState(step?.title ?? ''); const [std, setStd] = useState(step?.stdHours?.toString() ?? ''); const [proc, setProc] = useState(step?.procedureRef ?? '');
   // times not recorded yet are filled from the plan (start: the step before done, done: start + standard), to be
   // corrected to the actual ones; a planned time still to come is shown, not filled
@@ -469,6 +477,7 @@ function StartupSheet({ eventId, step, all = [], planStart = null, prevDone = nu
   return (
     <BottomSheet open onClose={onClose} title={step.title}>
       <div className="space-y-3">
+        {step.profile?.length ? <ProfileCard step={step} readings={readings} canEdit={canEdit} now={nowMs} onDone={onDone} /> : null}
         {canEdit && onMove && <MoveBar id={step.id} steps={all} onMove={onMove} />}
         <p className="text-xs text-slate-500">Plan {step.stdHours != null ? hrs(step.stdHours) : '—'}{step.procedureRef ? ` · ${step.procedureRef}` : ''}{step.updatedBy ? ` · last change ${step.updatedBy}` : ''}</p>
         {canEdit && step.status !== 'not_required' && <div className="flex gap-2 [&>*]:flex-1">
