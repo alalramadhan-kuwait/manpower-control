@@ -18,7 +18,7 @@ export function calendarBars(inputs: ManpowerInputs, info: { events: UnitEvent[]
   return [
     ...inputs.plan.periods.filter((p) => p.status === 'active').map((p) => ({ id: `mode-${p.id}`, start: p.start, end: p.end, label: `${inputs.plan.modes.find((x) => x.code === p.modeCode)?.label ?? p.modeCode} · ${dates(p.start, p.end)}`, cls: 'bg-brand-700', icon: EVENT_ICON.mode })),
     ...info.events.map((e) => ({ id: e.id, start: e.start, end: e.end, event: e, icon: EVENT_ICON[e.category],
-      label: `${e.unit ? `${e.unit} ` : ''}${e.title} · ${dates(e.start, e.end)}`, cls: UNIT_BAR[Math.max(0, unitIndex(e.unit)) % UNIT_BAR.length] }))
+      label: `${e.unit ? `${e.unit} ` : ''}${e.title} · ${dates(e.start, e.end)}${e.tentative ? ' · tentative' : ''}`, cls: `${UNIT_BAR[Math.max(0, unitIndex(e.unit)) % UNIT_BAR.length]}${e.tentative ? ' opacity-70' : ''}` }))
   ];
 }
 

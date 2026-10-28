@@ -10,7 +10,7 @@ export const EVENT_CATEGORY_LABEL: Record<EventCategory, string> = {
   shutdown: 'Shutdown', startup: 'Startup', maintenance: 'Major maintenance', catalyst: 'Catalyst activity', outage: 'Unit outage',
   operational: 'Planned operational activity', training: 'Training / team event', other: 'Other'
 };
-export interface UnitEvent { id: string; category: EventCategory; title: string; unit: string | null; unitCodes: string[]; start: string; end: string; note: string | null; status: 'active' | 'cancelled' }
+export interface UnitEvent { id: string; category: EventCategory; title: string; unit: string | null; unitCodes: string[]; start: string; end: string; note: string | null; status: 'active' | 'cancelled'; tentative?: boolean; sourceRef?: string | null }
 /** Shutdowns and outages can take unit sections down. */
 export const TAKES_UNITS_DOWN: EventCategory[] = ['shutdown', 'outage'];
 
@@ -27,7 +27,7 @@ export async function fetchCalendarInfo(from: string, to: string): Promise<{ hol
   for (const r of [h, e, u, s]) if (r.error) throw r.error;
   return {
     holidays: (h.data as HRow[]).map((r) => ({ id: r.id, name: r.name, start: r.start_date, end: r.end_date, expected: r.expected, note: r.note })),
-    events: (e.data as ERow[]).map((r) => ({ id: r.id, category: r.category, title: r.title, unit: r.unit, unitCodes: r.unit_codes ?? [], start: r.start_date, end: r.end_date, note: r.note, status: r.status })),
+    events: (e.data as ERow[]).map((r) => ({ id: r.id, category: r.category, title: r.title, unit: r.unit, unitCodes: r.unit_codes ?? [], start: r.start_date, end: r.end_date, note: r.note, status: r.status, tentative: !!(r as { tentative?: boolean }).tentative, sourceRef: (r as { source_ref?: string | null }).source_ref ?? null })),
     // every unit / train name in use, sorted: the order gives each one its colour on every month
     units: [...new Set((u.data as { unit: string | null }[]).map((r) => r.unit?.trim()).filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b)),
     sections: (s.data as { code: string; label: string; panel_min: number; field_min: number; essential: boolean }[]).map((r) => ({ code: r.code, label: r.label, panelMin: r.panel_min, fieldMin: r.field_min, essential: r.essential }))
@@ -74,4 +74,12 @@ export async function markPlanUnitsDown(plan: { id: string; title: string; start
   const { error } = await supabase.from('sd_plans').update({ event_id: (ins.data as { id: string }).id }).eq('id', plan.id);
   if (error) throw error;
   dataChanged();
+}
+
+/** The unit's shutdowns from today on (five-year plan included), for the five-year view on Unit status. */
+export async function fetchShutdownOutlook(from: string): Promise<UnitEvent[]> {
+  const { data, error } = await supabase.from('unit_events').select('*').eq('status', 'active').eq('category', 'shutdown').gte('end_date', from).neq('unit_codes', '{}').order('start_date');
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({ id: r.id as string, category: r.category as UnitEvent['category'], title: r.title as string, unit: (r.unit as string) ?? null, unitCodes: (r.unit_codes as string[]) ?? [],
+    start: r.start_date as string, end: r.end_date as string, note: (r.note as string) ?? null, status: r.status as UnitEvent['status'], tentative: !!r.tentative, sourceRef: (r.source_ref as string) ?? null }));
 }
