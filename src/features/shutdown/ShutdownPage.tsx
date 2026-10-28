@@ -7,7 +7,7 @@ import { ArrowLeft, Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { DELAY_MIN_H, DELAY_REASONS, delayPeriod, reasonLabel, sopRefs, stageSummary, startupVsPlan, stdTimeline, swapTimes, type DelayReason, type StdStep } from '@/core/shutdown/stages';
-import { dateTime12 } from '@/core/clock';
+import { clock12, dateTime12, dayRange, kwWeekDay, round30 } from '@/core/clock';
 import { kwDay, kwTime12, phases, stepViews, type TrkStep } from '@/core/tracker';
 import { saveEvent } from '@/data/calendar';
 import { fetchUnitStatusHistory, type UnitStatusChange } from '@/data/modes';
@@ -19,7 +19,7 @@ import { StepSheet } from '@/features/tracker/TrackerSheets';
 import { BottomSheet, Button, Card, ErrorBox, Field, Spinner, Toast, cx } from '@/ui/components';
 import { localToday, shortDate } from '@/ui/leave';
 import { NewPlanSheet } from './ShutdownListPage';
-import { drawCard, sharePicture, type CardData } from './shareCard';
+import { drawCard, sharePicture, type CardData, type CardRow } from './shareCard';
 import { ProfileCard, stepProfile } from './ProfileCard';
 import { uniform, type ProfileView } from '@/core/shutdown/profile';
 
@@ -569,35 +569,56 @@ function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEnt
   const today = localToday(); const day = dayNo(today) - dayNo(entry.start) + 1;
   // late is only what the holds do not explain
   const behind = vp.lateH ?? 0;
-  const caption = `${entryName(entry)} start-up ${vp.actualPct}% · ${done}/${counted.length} steps · ${vp.finished ? 'finished' : 'expected end'} ${at(vp.expectedEnd)}${behind >= DELAY_MIN_H ? ` · ${hrs(behind)} behind plan` : ''}`;
+  const [caption, setCaption] = useState('');
   useEffect(() => {
-    const steps_ = steps.map((x) => {
-      if (x.kind === 'hold') { const h = vp.hold.get(x.id); return { title: `Hold · ${x.title}`, status: 'hold' as const, right: h !== undefined ? `${hrs(h)} hold` : 'hold', red: false,
-        time: `${at(x.startedAt)} → ${x.status === 'running' ? 'still on hold' : at(x.doneAt)}`, sub: x.remark, hold: true }; }
-      const t = tl.get(x.id); const over = vp.over.get(x.id); const wait = vp.wait.get(x.id);
-      const right = x.stdHours == null && t?.actualH != null ? `${hrs(t.actualH)} added` : x.status === 'done' ? `${t?.actualH != null ? hrs(t.actualH) : '—'} / ${x.stdHours != null ? hrs(x.stdHours) : '—'}` : x.status === 'running' ? `${t?.actualH != null ? hrs(t.actualH) : '0 h'} / ${x.stdHours != null ? hrs(x.stdHours) : '—'}` : x.status === 'not_required' ? 'not required' : x.stdHours != null ? hrs(x.stdHours) : '—';
-      // the time from the latest update: done at; running: its expected finish; still to come: expected start → finish
-      const end = x.startedAt && x.stdHours != null ? Math.max(Date.parse(x.startedAt) + x.stdHours * H, now) : null;
-      const from = t?.planStart != null ? Math.max(t.planStart, now) : null;
-      const time = x.status === 'done' ? `done ${at(x.doneAt)}` : x.status === 'running' ? `started ${at(x.startedAt)} · expected done ${at(end)}`
-        : x.status === 'not_required' ? null : from !== null ? `expected ${at(from)} → ${at(t?.planEnd ?? null)}` : null;
-      // why it was late, said once (the wait and the overrun may share one reason)
-      const why = (r: string | null, n: string | null) => (r ? `${reasonLabel(r)}${n ? `: ${n}` : ''}` : null);
-      const wr = why(x.waitReason, x.waitNote); const dr = why(x.delayReason, x.delayNote);
-      const parts = [wait ? `waited ${hrs(wait)}` : null, over ? `+${hrs(over)} over plan` : null].filter(Boolean) as string[];
-      const reasons = [...new Set([wait ? wr : null, over ? dr : null].filter(Boolean) as string[])];
-      const sub = parts.length ? [...parts, ...reasons].join(' · ') : null;
-      return { title: x.title, status: x.status, right, red: !!over, time, sub };
-    });
+    // the picture's times, to the half hour (owner)
+    const hm = (t: number) => clock12(round30(t)); const ago = (t: number) => Math.max(t, now);
+    const why = (r: string | null, n: string | null) => (r ? `${reasonLabel(r)}${n ? `: ${n}` : ''}` : null);
+    const rows: CardRow[] = [];
+    // what is finished: one line (the steps, the added ones, the holds)
+    const doneSteps = steps.filter((x) => x.status === 'done' && x.kind !== 'hold'); const holds = steps.filter((x) => x.kind === 'hold' && x.status === 'done');
+    const firstStart = Math.min(...steps.filter((x) => x.startedAt && x.status === 'done').map((x) => Date.parse(x.startedAt!)));
+    const lastDone = Math.max(...steps.filter((x) => x.doneAt && x.status === 'done').map((x) => Date.parse(x.doneAt!)));
+    if (doneSteps.length || holds.length) {
+      const planned = doneSteps.filter((x) => x.stdHours != null).length; const added = doneSteps.length - planned;
+      const holdH = holds.reduce((n, x) => n + (vp.hold.get(x.id) ?? 0), 0);
+      rows.push({ kind: 'done', start: hm(firstStart), end: hm(lastDone), date: dayRange(round30(firstStart), round30(lastDone)), title: `Done: ${planned} step${planned === 1 ? '' : 's'}${added ? ` + ${added} added` : ''}`,
+        sub: holds.length ? `${holds.length} hold${holds.length === 1 ? '' : 's'} ${hrs(holdH)} (${[...new Set(holds.map((x) => x.title))].join(', ')}) · not late` : null, right: '✓' });
+    }
+    // what is left, in the time column
+    for (const x of steps) {
+      if (x.status === 'done' || x.status === 'not_required') continue;
+      const t = tl.get(x.id);
+      if (x.kind === 'hold') { rows.push({ kind: 'hold', start: hm(Date.parse(x.startedAt!)), end: 'on hold', date: dayRange(round30(Date.parse(x.startedAt!)), null), title: `Hold · ${x.title}`, sub: x.remark, right: `${hrs(vp.hold.get(x.id) ?? 0)} so far` }); continue; }
+      const oil = /black\s*oil/i.test(x.title);
+      if (x.status === 'running') {
+        const a = Date.parse(x.startedAt!); const e = x.stdHours != null ? ago(a + x.stdHours * H) : null;
+        const over = vp.over.get(x.id); const wait = vp.wait.get(x.id);
+        const sub = [wait ? `waited ${hrs(wait)}` : null, over ? `+${hrs(over)} over plan` : null, ...new Set([wait ? why(x.waitReason, x.waitNote) : null, over ? why(x.delayReason, x.delayNote) : null])].filter(Boolean).join(' · ') || null;
+        rows.push({ kind: oil ? 'oil' : 'run', start: hm(a), end: e !== null ? `~${hm(e)}` : '…', date: dayRange(round30(a), e !== null ? round30(e) : null), title: x.title, sub, right: `${t?.actualH != null ? hrs(t.actualH) : '0 h'} / ${x.stdHours != null ? hrs(x.stdHours) : '—'}`, red: !!over });
+      } else {
+        const a = t?.planStart != null ? ago(t.planStart) : null; const e = t?.planEnd ?? null;
+        rows.push({ kind: oil ? 'oil' : 'next', start: a !== null ? hm(a) : '—', end: e !== null ? hm(e) : '—', date: a !== null ? dayRange(round30(a), e !== null ? round30(e) : null) : '', title: x.title, sub: null, right: x.stdHours != null ? hrs(x.stdHours) : '—' });
+      }
+    }
+    // the box: when the black oil is cut in (its expected start; running: since); with no such step, the start-up end
+    const oilStep = steps.find((x) => /black\s*oil/i.test(x.title) && x.status !== 'not_required');
+    const ot = oilStep ? tl.get(oilStep.id) : undefined;
+    const oilAt = oilStep?.startedAt ? Date.parse(oilStep.startedAt) : ot?.planStart != null ? ago(ot.planStart) : null;
+    const oilEnd = oilStep?.doneAt ? Date.parse(oilStep.doneAt) : ot?.planEnd ?? null;
+    const inH = oilAt !== null ? Math.round(((oilAt - now) / H) * 2) / 2 : null;
+    const box = oilStep && oilAt !== null ? { label: oilStep.status === 'done' ? 'BLACK OIL CUT IN' : oilStep.status === 'running' ? 'BLACK OIL CUT-IN · SINCE' : 'BLACK OIL CUT-IN',
+      big: hm(oilAt), line1: `${kwWeekDay(round30(oilAt))}${inH !== null && inH > 0 && oilStep.status === 'not_started' ? ` · in ${hrs(inH)}` : ''}`,
+      line2: oilEnd !== null ? `${oilStep.status === 'done' ? 'Full rate reached' : 'Full 42 KBPD'} · ${kwWeekDay(round30(oilEnd))} ${hm(oilEnd)}` : null }
+      : vp.expectedEnd !== null ? { label: vp.finished ? 'START-UP FINISHED' : 'START-UP EXPECTED END', big: hm(vp.expectedEnd), line1: kwWeekDay(round30(vp.expectedEnd)), line2: null } : null;
     const d: CardData = {
-      title: `${entryName(entry)} · Start-up`, when: `Unit-12 · ${dateTime12(now, true)}`,
-      pct: vp.actualPct, planPct: vp.planPct, stepsLine: `${done} of ${counted.length} steps done`,
-      runningLine: running ? `Running: ${running.title}` : null,
-      expectedLine: `${vp.finished ? 'Finished' : 'Expected end'} ${at(vp.expectedEnd)}`,
-      behindLine: behind >= DELAY_MIN_H ? `${hrs(behind)} behind plan` : behind <= -DELAY_MIN_H ? `${hrs(-behind)} ahead of plan` : 'On plan', behindRed: behind >= DELAY_MIN_H,
-      planLine: `Plan end ${at(vp.planEnd)}${vp.overH > 0 ? ` · ${hrs(vp.overH)} longer steps` : ''}${vp.addedH > 0 ? ` · ${hrs(vp.addedH)} added steps` : ''}${vp.waitH > 0 ? ` · ${hrs(vp.waitH)} waiting` : ''}${vp.holdH > 0 ? ` · ${hrs(vp.holdH)} on hold (not late)` : ''}`,
-      steps: steps_, footLeft: `Plan ${Math.round(counted.reduce((n, x) => n + (x.stdHours ?? 0), 0) * 10) / 10} h`, footRight: `Down since ${shortDate(entry.start)} · day ${day}`,
+      title: `${entryName(entry)} · Start-up`, when: `Unit-12 · ${kwWeekDay(now)} ${clock12(now)}`, pct: vp.actualPct, planPct: vp.planPct, box,
+      summary: `${done} of ${counted.length} steps done${running ? ` · Running: ${running.title}` : ''}`,
+      behind: behind >= DELAY_MIN_H ? `${hrs(behind)} behind plan` : behind <= -DELAY_MIN_H ? `${hrs(-behind)} ahead of plan` : 'On plan', behindRed: behind >= DELAY_MIN_H,
+      hold: vp.holdH > 0 ? `+ ${hrs(vp.holdH)} on hold (not counted as late)` : null,
+      rows, footLeft: `Plan ${Math.round(counted.reduce((n, x) => n + (x.stdHours ?? 0), 0) * 10) / 10} h`, footRight: `Down since ${shortDate(entry.start)} · day ${day}`,
     };
+    setCaption(`${entryName(entry)} start-up ${vp.actualPct}% · ${done}/${counted.length} steps${box ? ` · ${box.label.toLowerCase().replace(/^\w/, (ch) => ch.toUpperCase())} ${box.line1.split(' · ')[0]} ${box.big}` : ''}${behind >= DELAY_MIN_H ? ` · ${hrs(behind)} behind plan` : ''}`);
     const c = document.createElement('canvas'); drawCard(c, d);
     c.toBlob((b) => { if (b) { setBlob(b); setUrl(URL.createObjectURL(b)); } }, 'image/png');
   }, [entry, steps, vp, tl, now, done, counted.length, running, day, behind]);

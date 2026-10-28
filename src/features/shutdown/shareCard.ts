@@ -1,16 +1,24 @@
-// The start-up as a picture for WhatsApp (owner, 28 Oct 2026, option A of the mock-up): a 1080 × 1350 (4:5) card
-// drawn on the phone, so it shows whole in a chat. Nothing is uploaded: the phone's share sheet sends it.
-export interface CardStep { title: string; status: 'done' | 'running' | 'not_started' | 'not_required' | 'hold'; right: string; red: boolean;
-  /** when: done at, or the expected / target time from the latest update (grey); why it is late (amber) */
-  time: string | null; sub: string | null }
+// The start-up as a picture for WhatsApp (owner, 28 Oct 2026, option A of the second mock-up): a 1080-wide card
+// drawn on the phone, 4:5 when it fits so it shows whole in a chat. On top the progress ring and, beside it, the
+// time management asks for: when the black oil is cut in. Under them the time column of the steps still to do (the
+// finished ones are one line). Times are rounded to the half hour. Nothing is uploaded: the phone's share sheet sends it.
+export interface CardRow {
+  kind: 'done' | 'run' | 'next' | 'oil' | 'hold';
+  start: string; end: string; date: string; title: string; sub: string | null; right: string; red?: boolean;
+}
 export interface CardData {
-  title: string; when: string; pct: number; planPct: number; stepsLine: string; runningLine: string | null; expectedLine: string; behindLine: string | null; behindRed: boolean;
-  planLine: string | null; steps: CardStep[]; footLeft: string; footRight: string;
+  title: string; when: string; pct: number; planPct: number;
+  /** the big box: what (BLACK OIL CUT-IN), when (11:30 PM), the day and how long to it, and its full rate */
+  box: { label: string; big: string; line1: string; line2: string | null } | null;
+  summary: string; behind: string; behindRed: boolean; hold: string | null;
+  rows: CardRow[]; footLeft: string; footRight: string;
 }
 
 const W = 1080, MIN_H = 1350;
-const C = { navy: '#22386b', ink: '#172235', grey: '#64748b', light: '#e5e7eb', green: '#16a34a', amber: '#f59e0b', red: '#dc2626', band: '#f1f5f9', note: '#b45309', sky: '#0284c7' };
+const C = { navy: '#22386b', ink: '#172235', grey: '#64748b', light: '#e5e7eb', green: '#16a34a', amber: '#f59e0b', red: '#dc2626', sky: '#0284c7', oil: '#ea580c', oilDark: '#c2410c', note: '#b45309' };
 const FONT = '-apple-system, "Segoe UI", Roboto, system-ui, sans-serif';
+const ROW = { done: { dot: C.green, bg: '#f0fdf4', title: '#166534' }, run: { dot: C.amber, bg: '#fffbeb', title: C.ink }, next: { dot: '#cbd5e1', bg: '#ffffff', title: C.ink },
+  oil: { dot: C.oil, bg: '#fff7ed', title: C.oilDark }, hold: { dot: C.sky, bg: '#f0f9ff', title: '#0369a1' } } as const;
 
 /** A sentence in lines that fit the width: whole, never cut (a word longer than the line is broken). */
 function wrap(ctx: CanvasRenderingContext2D, text: string, max: number): string[] {
@@ -27,13 +35,12 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, max: number): string[
   return out.length ? out : [''];
 }
 const font = (ctx: CanvasRenderingContext2D, size: number, weight = 400) => { ctx.font = `${weight} ${size}px ${FONT}`; };
-function round(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, fill: string) {
+function round(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, fill: string | CanvasGradient) {
   ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   ctx.fillStyle = fill; ctx.fill();
 }
 type Line = { t: string; x: number; y: number; size: number; weight: number; color: string; align?: CanvasTextAlign };
 
-/** Lays the card out at a text scale; returns what to draw and the height it needs. */
 function layout(ctx: CanvasRenderingContext2D, d: CardData, k: number) {
   const L: Line[] = []; const shapes: ((c: CanvasRenderingContext2D) => void)[] = [];
   const put = (t: string, x: number, y: number, size: number, weight: number, color: string, max: number, align: CanvasTextAlign = 'left') => {
@@ -42,71 +49,73 @@ function layout(ctx: CanvasRenderingContext2D, d: CardData, k: number) {
     return lines.length * lh;
   };
   // header
-  let y = 78;
-  font(ctx, 54, 800); const titleLines = wrap(ctx, d.title, W - 100).length;
-  const headH = 60 + titleLines * 66 + 48;
+  font(ctx, 52, 800); const tl = wrap(ctx, d.title, W - 100).length; const headH = 56 + tl * 64 + 44;
   shapes.push((c) => { c.fillStyle = C.navy; c.fillRect(0, 0, W, headH); });
-  y += put(d.title, 50, y, 54, 800, '#ffffff', W - 100);
-  put(d.when, 50, y + 4, 30, 400, 'rgba(255,255,255,0.8)', W - 100);
-  // ring and figures
-  const top = headH + 40; const r = 120; const cx = 190, cy = top + r + 10;
-  let fy = top + 50; const fx = 370, fw = W - fx - 50;
-  fy += put(d.stepsLine, fx, fy, Math.round(40 * k), 800, C.ink, fw) + 6;
-  if (d.runningLine) fy += put(d.runningLine, fx, fy, Math.round(30 * k), 400, C.ink, fw) + 4;
-  fy += put(d.expectedLine, fx, fy, Math.round(30 * k), 600, C.ink, fw) + 4;
-  if (d.behindLine) fy += put(d.behindLine, fx, fy, Math.round(32 * k), 800, d.behindRed ? C.red : C.green, fw);
-  let ty = Math.max(cy + r + 50, fy + 10);
-  // plan line
-  if (d.planLine) {
-    const size = Math.round(28 * k); font(ctx, size, 500); const n = wrap(ctx, d.planLine, W - 128).length; const h = n * Math.round(size * 1.22) + 30;
-    const by = ty; shapes.push((c) => round(c, 40, by, W - 80, h, 14, C.band));
-    put(d.planLine, 64, by + 16 + size, size, 500, C.ink, W - 128); ty += h + 16;
+  const hy = 74 + put(d.title, 50, 74, 52, 800, '#ffffff', W - 100); put(d.when, 50, hy + 2, 28, 400, 'rgba(255,255,255,0.8)', W - 100);
+  // the ring and, beside it, the black oil box
+  const top = headH + 36; const r = 112; const cx = 50 + r + 17, cy = top + r + 17;
+  let boxH = 0;
+  if (d.box) {
+    const bx = 330, bw = W - 50 - bx; let y = top + 54;
+    const parts: number[] = [];
+    parts.push(put(d.box.label, bx + 30, y, Math.round(26 * k), 800, 'rgba(255,255,255,0.92)', bw - 60)); y += parts[0] + 10;
+    const bigH = put(d.box.big, bx + 30, y + 50, 84, 900, '#ffffff', bw - 60); y += bigH + 14;
+    y += put(d.box.line1, bx + 30, y + 6, Math.round(30 * k), 600, '#ffffff', bw - 60);
+    if (d.box.line2) y += put(d.box.line2, bx + 30, y + 8, Math.round(26 * k), 400, 'rgba(255,255,255,0.92)', bw - 60) + 4;
+    boxH = Math.max(2 * r + 34, y - top + 26);
+    shapes.push((c) => { const g = c.createLinearGradient(bx, top, bx + bw, top + boxH); g.addColorStop(0, C.oil); g.addColorStop(1, C.oilDark); round(c, bx, top, bw, boxH, 26, g); });
   }
-  // steps: the title wraps beside the hours; the reasons under it, whole
-  const big = Math.round(30 * k), small = Math.round(23 * k), bl = Math.round(big * 1.22), sl = Math.round(small * 1.25);
-  const rows: { y: number; h: number; s: CardStep }[] = [];
-  d.steps.forEach((s) => {
-    font(ctx, big, s.red ? 800 : 500); const rw = ctx.measureText(s.right).width;
-    const yy = ty + 14 + big;
-    const th = put(s.title, 110, yy, big, 500, s.status === 'not_required' ? C.grey : s.status === 'hold' ? C.sky : C.ink, W - 110 - 70 - rw);
-    L.push({ t: s.right, x: W - 50, y: yy, size: big, weight: s.red ? 800 : 500, color: s.red ? C.red : C.grey, align: 'right' });
-    let sh = 0;
-    if (s.time) sh += put(s.time, 110, yy + th - bl + sl + 4, small, 500, C.grey, W - 160) + 2;
-    if (s.sub) sh += put(s.sub, 110, yy + th - bl + sh + sl + 4, small, 500, s.status === 'hold' ? C.sky : C.note, W - 160) + 4;
-    const h = 14 + th + sh + 10; rows.push({ y: ty, h, s }); ty += h;
-  });
-  shapes.push((c) => rows.forEach(({ y: ry, h, s }, n) => {
-    const mid = ry + 14 + bl / 2 - 2; const col = s.status === 'hold' ? C.sky : s.status === 'done' ? C.green : s.status === 'running' ? C.amber : C.light;
-    c.beginPath(); c.arc(70, mid, 20, 0, Math.PI * 2); c.fillStyle = col; c.fill();
-    font(c, 22, 800); c.fillStyle = s.status === 'not_started' || s.status === 'not_required' ? C.grey : '#ffffff'; c.textAlign = 'center'; c.textBaseline = 'middle';
-    const num = rows.slice(0, n + 1).filter((r) => r.s.status !== 'hold').length;
-    c.fillText(s.status === 'hold' ? '❚❚' : s.status === 'done' ? '✓' : s.status === 'running' ? '▶' : s.status === 'not_required' ? '–' : String(num), 70, mid + 1); c.textBaseline = 'alphabetic';
-    if (n < rows.length - 1) { c.fillStyle = '#eef1f5'; c.fillRect(110, ry + h - 1, W - 160, 2); }
+  let ty = top + Math.max(2 * r + 34, boxH) + 30;
+  // the summary, behind / ahead, the holds
+  ty += put(d.summary, 50, ty + 30, Math.round(30 * k), 500, C.ink, W - 100) + 4;
+  ty += put(d.behind, 50, ty + 30, Math.round(30 * k), 800, d.behindRed ? C.red : C.green, W - 100);
+  if (d.hold) ty += put(d.hold, 50, ty + 30, Math.round(26 * k), 500, '#0369a1', W - 100);
+  ty += 24;
+  // the time column: start (bold) over end and the date, a line with the dot, the step, actual / plan on the right
+  const big = Math.round(31 * k), small = Math.round(24 * k), tcR = 230, railX = 258, bodyX = 288;
+  const rows: { y: number; h: number; row: CardRow }[] = [];
+  shapes.push((c) => { c.fillStyle = '#eef1f5'; c.fillRect(0, ty - 1, W, 2); });
+  for (const row of d.rows) {
+    const y0 = ty; const yy = y0 + 16 + big;
+    font(ctx, big, 600); const rw = ctx.measureText(row.right).width;
+    const th = put(row.title, bodyX, yy, big, 600, ROW[row.kind].title, W - bodyX - 60 - rw);
+    L.push({ t: row.right, x: W - 50, y: yy, size: Math.round(big * 0.9), weight: row.red || row.kind === 'oil' ? 800 : 500, color: row.red ? C.red : row.kind === 'oil' ? C.oilDark : C.grey, align: 'right' });
+    const sh = row.sub ? put(row.sub, bodyX, yy + th - Math.round(big * 1.22) + Math.round(small * 1.3) + 4, small, 500, row.kind === 'done' || row.kind === 'hold' ? '#0369a1' : C.note, W - bodyX - 50) + 4 : 0;
+    const tcol = row.kind === 'oil' ? C.oilDark : row.kind === 'next' ? C.grey : C.ink;
+    L.push({ t: row.start, x: tcR, y: yy, size: Math.round(big * 0.95), weight: 800, color: tcol, align: 'right' });
+    L.push({ t: row.end, x: tcR, y: yy + Math.round(small * 1.25), size: small, weight: 500, color: row.kind === 'oil' ? C.oilDark : C.grey, align: 'right' });
+    L.push({ t: row.date, x: tcR, y: yy + Math.round(small * 2.35), size: Math.round(small * 0.85), weight: 500, color: '#94a3b8', align: 'right' });
+    const h = Math.max(th + sh, Math.round(small * 2.6)) + 30; rows.push({ y: y0, h, row }); ty += h;
+  }
+  shapes.push((c) => rows.forEach(({ y, h, row }) => {
+    c.fillStyle = ROW[row.kind].bg; c.fillRect(0, y, W, h);
+    c.fillStyle = '#e2e8f0'; c.fillRect(railX - 2, y, 4, h);
+    c.beginPath(); c.arc(railX, y + 16 + big * 0.62, 15, 0, Math.PI * 2); c.fillStyle = ROW[row.kind].dot; c.fill();
+    c.fillStyle = '#eef1f5'; c.fillRect(0, y + h - 1, W, 2);
   }));
   // footer
-  const foot = ty + 20;
-  shapes.push((c) => { c.fillStyle = '#eef1f5'; c.fillRect(0, foot, W, 2); });
-  const fh = Math.max(put(d.footLeft, 50, foot + 50, 26, 500, C.grey, W / 2 - 60), put(d.footRight, W - 50, foot + 50, 26, 500, C.grey, W / 2 - 60, 'right'));
-  return { L, shapes, height: foot + 30 + fh, ring: { cx, cy, r } };
+  const foot = ty + 10;
+  const fh = Math.max(put(d.footLeft, 50, foot + 46, 26, 500, C.grey, W / 2 - 60), put(d.footRight, W - 50, foot + 46, 26, 500, C.grey, W / 2 - 60, 'right'));
+  return { L, shapes, height: foot + 26 + fh, ring: { cx, cy, r } };
 }
 
 export function drawCard(canvas: HTMLCanvasElement, d: CardData) {
   const probe = document.createElement('canvas').getContext('2d')!;
   // the largest text that fits 4:5 (shows whole in a chat); if even small text does not fit, the picture grows taller
   let lay = layout(probe, d, 1);
-  for (const k of [0.94, 0.88, 0.82, 0.76]) { if (lay.height <= MIN_H) break; lay = layout(probe, d, k); }
+  for (const k of [0.94, 0.88, 0.82]) { if (lay.height <= MIN_H) break; lay = layout(probe, d, k); }
   canvas.width = W; canvas.height = Math.max(MIN_H, lay.height);
   const ctx = canvas.getContext('2d')!;
   ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, canvas.height);
   for (const f of lay.shapes) f(ctx);
-  // ring: progress by standard hours, the plan as a thin mark
+  // ring: progress by plan hours, the plan as a thin mark
   const { cx, cy, r } = lay.ring;
   ctx.lineCap = 'round'; ctx.lineWidth = 34; ctx.strokeStyle = C.light; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
   if (d.pct > 0) { ctx.strokeStyle = d.pct >= 100 ? C.green : C.amber; ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * Math.min(100, d.pct)) / 100); ctx.stroke(); }
   const pa = -Math.PI / 2 + (Math.PI * 2 * Math.min(100, d.planPct)) / 100;
   ctx.lineWidth = 6; ctx.lineCap = 'butt'; ctx.strokeStyle = C.ink; ctx.beginPath(); ctx.moveTo(cx + Math.cos(pa) * (r - 24), cy + Math.sin(pa) * (r - 24)); ctx.lineTo(cx + Math.cos(pa) * (r + 24), cy + Math.sin(pa) * (r + 24)); ctx.stroke();
-  font(ctx, 70, 800); ctx.fillStyle = C.ink; ctx.textAlign = 'center'; ctx.fillText(`${d.pct}%`, cx, cy + 20);
-  font(ctx, 24, 500); ctx.fillStyle = C.grey; ctx.fillText('by plan hours', cx, cy + 58);
+  font(ctx, 66, 900); ctx.fillStyle = C.ink; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillText(`${d.pct}%`, cx, cy + 18);
+  font(ctx, 22, 500); ctx.fillStyle = C.grey; ctx.fillText('by plan hours', cx, cy + 54);
   for (const l of lay.L) { font(ctx, l.size, l.weight); ctx.fillStyle = l.color; ctx.textAlign = l.align ?? 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(l.t, l.x, l.y); }
 }
 

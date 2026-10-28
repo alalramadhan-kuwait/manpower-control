@@ -12,3 +12,13 @@ export const hour12 = (t: string | number | Date) => clock12(t).replace(':00 ', 
 export const dateTime12 = (t: string | number | Date, year = false) => { const d = new Date(ms(t) + KW); return `${d.getUTCDate()} ${MON[d.getUTCMonth()]}${year ? ` ${d.getUTCFullYear()},` : ''} ${clock12(t)}`; };
 /** A "HH:MM" time of day (a rule's shift time) as "7:00 PM". */
 export const hhmm12 = (hhmm: string) => { const m = /^(\d{1,2}):(\d{2})/.exec(hhmm); if (!m) return hhmm; const h = Number(m[1]); return `${h % 12 || 12}:${m[2]} ${h < 12 || h === 24 ? 'AM' : 'PM'}`; };
+/** To the nearest half hour (owner: the times on the WhatsApp picture, "round to 30 mins"). */
+export const round30 = (t: number) => Math.round(t / 1_800_000) * 1_800_000;
+/** "Tue 28 Oct" in Kuwait. */
+export const kwWeekDay = (t: number) => { const d = new Date(t + KW); return `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`; };
+/** "28 Oct", or "28→29 Oct" / "31 Oct→1 Nov" for two days. */
+export const dayRange = (a: number, b: number | null) => {
+  const da = new Date(a + KW); const sa = `${da.getUTCDate()} ${MON[da.getUTCMonth()]}`;
+  if (b === null) return sa; const db = new Date(b + KW); const sb = `${db.getUTCDate()} ${MON[db.getUTCMonth()]}`;
+  if (sa === sb) return sa; return da.getUTCMonth() === db.getUTCMonth() ? `${da.getUTCDate()}→${sb}` : `${sa}→${sb}`;
+};
