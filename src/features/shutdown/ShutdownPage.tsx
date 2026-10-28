@@ -166,6 +166,7 @@ const DOT = { done: 'bg-status-green text-white', running: 'bg-amber-400 text-am
 
 /** The shutdown steps of the tracker, by stage (gate), each against its standard hours. Tap: the tracker's own sheet. */
 function ShutdownSteps({ trk, steps, stageStart, profile, now, onDone }: { trk: TrackerData | null; steps: TrkStep[]; stageStart: number | null; profile: UserProfile; now: number; onDone: (m: string) => void }) {
+  // the open step by its step number (S315): the views are keyed by it
   const [open, setOpen] = useState<string | null>(null);
   const views = useMemo(() => (trk ? stepViews(trk, now) : null), [trk, now]);
   if (!trk) return <Card><p className="text-sm text-slate-600">No tracker for this shutdown. The shutdown steps come with its tracker (Live).</p></Card>;
@@ -178,7 +179,7 @@ function ShutdownSteps({ trk, steps, stageStart, profile, now, onDone }: { trk: 
         <Card key={g} className="p-0">
           <h3 className="flex justify-between px-3 pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-500"><span>{list[0].gateName ?? `Stage ${g}`}</span><span>{d}/{list.length}</span></h3>
           <ul className="divide-y divide-slate-100 px-3 pb-1">{list.map((s) => { const x = asStd(s); const t = tl.get(s.id); return (
-            <li key={s.id}><button type="button" onClick={() => setOpen(s.id)} className="flex w-full items-center gap-2 py-2 text-left">
+            <li key={s.id}><button type="button" onClick={() => setOpen(s.stepId)} className="flex w-full items-center gap-2 py-2 text-left">
               <span className={cx('flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold', DOT[x.status])}>{x.status === 'done' ? '✓' : x.status === 'running' ? '▶' : x.status === 'not_required' ? '–' : s.stepId.replace(/^S/, '')}</span>
               <span className="min-w-0 flex-1"><span className={cx('block text-[13px] font-medium', x.status === 'not_required' ? 'text-slate-400 line-through' : 'text-slate-900')}>{s.shortName}</span>
                 <StdLine std={s.estHours} t={t} status={x.status} startedAt={x.startedAt} doneAt={x.doneAt} proc={s.procedure} /></span>
