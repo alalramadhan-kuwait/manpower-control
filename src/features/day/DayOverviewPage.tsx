@@ -483,15 +483,16 @@ function TodaySummary({ result, date, today }: { result: DayResult; date: string
 const isGap = (r: PositionResult) => r.count < r.min || r.finding === 'shortage' || r.finding === 'coverage_required' || r.finding === 'data_incomplete';
 const gapCount = (result: DayResult) => result.crews.filter((c) => c.working).reduce((n, c) => n + POS.filter((p) => isGap(c[p.key])).length, 0);
 
-/** The unit events of the date (shutdowns and the rest) in one card, with the shutdown progress under them. */
+/** The unit events of the date (shutdowns and the rest) in one card, with the shutdown progress under them. A shutdown or
+ *  outage opens its own page; the rest open the Calendar month. */
 function EventsCard({ date, events }: { date: string; events: UnitEvent[] }) {
   if (!events.length) return <TrackerTodayCard date={date} />;
   return (
     <div className="mb-2 overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200">
       {events.map((e) => { const Icon = EVENT_ICON[e.category];
-        return <Link key={e.id} to={`/calendar?month=${date.slice(0, 7)}`} className="flex items-center gap-2 border-b border-slate-100 px-3 py-1.5 text-[13px]">
+        return <Link key={e.id} to={e.category === 'shutdown' || e.category === 'outage' ? `/sd/${e.id}` : `/calendar?month=${date.slice(0, 7)}`} className="flex items-center gap-2 border-b border-slate-100 px-3 py-1.5 text-[13px]">
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal-700 text-white"><Icon className="h-3.5 w-3.5" /></span>
-          <span className="min-w-0 flex-1 truncate text-slate-800">{e.unit ? `${e.unit} ` : ''}{e.title}{e.start <= date && date <= e.end && e.start !== e.end ? <span className="text-slate-500"> · day {dayIndex(e.start, date)} of {dayIndex(e.start, e.end)}</span> : null}</span>
+          <span className="min-w-0 flex-1 text-slate-800">{e.unit ? `${e.unit} ` : ''}{e.title}{e.start <= date && date <= e.end && e.start !== e.end ? <span className="text-slate-500"> · day {dayIndex(e.start, date)} of {dayIndex(e.start, e.end)}</span> : null}</span>
           <span className="shrink-0 text-[12px] text-slate-500">{e.start === e.end ? shortDate(e.start) : `to ${shortDate(e.end)}`}</span>
         </Link>; })}
       <TrackerTodayCard date={date} embedded />
