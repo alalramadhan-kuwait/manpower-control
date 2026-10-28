@@ -221,7 +221,7 @@ function MiStage({ trk, entry, now }: { trk: TrackerData | null; entry: Shutdown
 /** The start-up steps of this shutdown, planned one after another by their standard hours from the M&I finish (no
  *  tracker: from the first step's actual start). */
 function StartupSteps({ entry, steps, stageStart, canEdit, isHead, now, onDone }: { entry: ShutdownEntry; steps: StartupStep[]; stageStart: number | null; canEdit: boolean; isHead: boolean; now: number; onDone: (m: string) => void }) {
-  const [open, setOpen] = useState<StartupStep | 'new' | 'hold' | null>(null); const [sharing, setSharing] = useState(false);
+  const [open, setOpen] = useState<StartupStep | 'new' | 'hold' | null>(null); const [sharing, setSharing] = useState(false); const [holdFor, setHoldFor] = useState<string | null>(null);
   if (!entry.eventId) return <Card><p className="text-sm text-slate-600">This shutdown is not on the Calendar, so it has no start-up steps.</p></Card>;
   const tl = new Map(stdTimeline(steps, stageStart, now).map((v) => [v.id, v]));
   // where a step should start: when the step before it was done (actual), else its plan from the stage start
@@ -240,8 +240,8 @@ function StartupSteps({ entry, steps, stageStart, canEdit, isHead, now, onDone }
           <li key={s.id}>{s.kind === 'hold' ? <HoldRow s={s} hours={vp.hold.get(s.id)} onOpen={() => setOpen(s)} />
             : <StartupRow s={s} n={steps.filter((x) => x.kind !== 'hold' && x.seq <= s.seq).length} t={tl.get(s.id)} over={vp.over.get(s.id)} wait={vp.wait.get(s.id)} onOpen={() => setOpen(s)} />}</li>))}</ul>}
       {sharing && <ShareSheet entry={entry} steps={steps} vp={vp} tl={tl} now={now} onClose={() => setSharing(false)} />}
-      {(open === 'hold' || (open && open !== 'new' && open.kind === 'hold')) && <HoldSheet eventId={entry.eventId} hold={open === 'hold' ? null : open as StartupStep} steps={steps} canEdit={canEdit} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); onDone(m); }} />}
-      {open && open !== 'hold' && (open === 'new' || open.kind !== 'hold') && <StartupSheet eventId={entry.eventId} step={open === 'new' ? null : open} planStart={open === 'new' ? null : planStartOf(open)} prevDone={open === 'new' ? null : (() => { const p = prevOf(open); return p?.doneAt ? Date.parse(p.doneAt) : null; })()} nextSeq={(steps[steps.length - 1]?.seq ?? 0) + 10} canEdit={canEdit} isHead={isHead} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); onDone(m); }} />}
+      {(open === 'hold' || (open && open !== 'new' && open.kind === 'hold')) && <HoldSheet eventId={entry.eventId} hold={open === 'hold' ? null : open as StartupStep} steps={steps} initialBefore={holdFor} canEdit={canEdit} onClose={() => { setOpen(null); setHoldFor(null); }} onDone={(m) => { setOpen(null); setHoldFor(null); onDone(m); }} />}
+      {open && open !== 'hold' && (open === 'new' || open.kind !== 'hold') && <StartupSheet eventId={entry.eventId} step={open === 'new' ? null : open} planStart={open === 'new' ? null : planStartOf(open)} prevDone={open === 'new' ? null : (() => { const p = prevOf(open); return p?.doneAt ? Date.parse(p.doneAt) : null; })()} nextSeq={(steps[steps.length - 1]?.seq ?? 0) + 10} canEdit={canEdit} isHead={isHead} onHold={(id) => { setHoldFor(id); setOpen('hold'); }} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); onDone(m); }} />}
     </Card>
   );
 }
@@ -310,43 +310,77 @@ function HoldRow({ s, hours, onOpen }: { s: StartupStep; hours?: number; onOpen:
   );
 }
 
-/** Add or change a hold: what it waited on, where it sits (before which step), from / to (empty: still on hold). */
-function HoldSheet({ eventId, hold, steps, canEdit, onClose, onDone }: { eventId: string; hold: StartupStep | null; steps: StartupStep[]; canEdit: boolean; onClose: () => void; onDone: (m: string) => void }) {
+/** Add or change a hold. No time to type: a new hold takes its times from the steps around it, from the step before
+ *  done to the chosen step's start (no start yet: still on hold). If that step also ran over its plan, "the step took
+ *  its plan" moves the rest of its time into the hold (its start becomes done − plan). The times stay editable. */
+function HoldSheet({ eventId, hold, steps, initialBefore = null, canEdit, onClose, onDone }: { eventId: string; hold: StartupStep | null; steps: StartupStep[]; initialBefore?: string | null; canEdit: boolean; onClose: () => void; onDone: (m: string) => void }) {
   const list = steps.filter((x) => x.kind !== 'hold');
-  const [title, setTitle] = useState(hold?.title ?? 'Waiting for sulfur block clearance');
-  const [before, setBefore] = useState(list.find((x) => x.status !== 'done')?.id ?? list[list.length - 1]?.id ?? '');
-  const [a, setA] = useState(local(hold?.startedAt)); const [b, setB] = useState(local(hold?.doneAt)); const [note, setNote] = useState(hold?.remark ?? '');
+  const ms = (x: string | null) => (x ? Date.parse(x) : null);
+  const prevDoneOf = (id: string) => { const i = steps.findIndex((x) => x.id === id); return ms(steps.slice(0, i).reverse().find((x) => x.status !== 'not_required' && x.doneAt)?.doneAt ?? null); };
+  const overOf = (x: StartupStep) => (x.status === 'done' && x.startedAt && x.doneAt && x.stdHours != null ? (Date.parse(x.doneAt) - Date.parse(x.startedAt)) / H - x.stdHours : 0);
+  const gapOf = (x: StartupStep) => { const p = prevDoneOf(x.id); const st = ms(x.startedAt); return p !== null ? ((st ?? Date.now()) - p) / H : 0; };
+  // the step the hold most likely belongs to: the first one that waited or ran over, else the next one to do
+  const suggest = initialBefore ?? list.find((x) => gapOf(x) >= DELAY_MIN_H || overOf(x) >= DELAY_MIN_H)?.id ?? list.find((x) => x.status !== 'done')?.id ?? list[list.length - 1]?.id ?? '';
+  const [title, setTitle] = useState(hold?.title ?? (() => { const x = list.find((y) => y.id === suggest); return x?.waitNote || x?.delayNote || 'Waiting for sulfur block clearance'; })());
+  const [before, setBefore] = useState(suggest);
+  const step = list.find((x) => x.id === before) ?? null;
+  const canPlan = !hold && !!step && overOf(step) >= DELAY_MIN_H;
+  const [onPlan, setOnPlan] = useState(true);
+  const auto = (id: string, plan: boolean) => {
+    const x = list.find((y) => y.id === id); const from = prevDoneOf(id);
+    const to = x?.startedAt ? (plan && x.doneAt && x.stdHours != null && overOf(x) >= DELAY_MIN_H ? Date.parse(x.doneAt) - x.stdHours * H : Date.parse(x.startedAt)) : null;
+    return { a: from !== null ? local(new Date(from).toISOString()) : '', b: to !== null ? local(new Date(to).toISOString()) : '' };
+  };
+  const init = hold ? { a: local(hold.startedAt), b: local(hold.doneAt) } : auto(suggest, true);
+  const [a, setA] = useState(init.a); const [b, setB] = useState(init.b); const [note, setNote] = useState(hold?.remark ?? '');
+  const [edit, setEdit] = useState(!!hold || !init.a);
+  const pick = (id: string) => { setBefore(id); const t = auto(id, onPlan); setA(t.a); setB(t.b); };
+  const togglePlan = (v: boolean) => { setOnPlan(v); const t = auto(before, v); setA(t.a); setB(t.b); };
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const run = async (fn: () => Promise<unknown>, m: string) => { setBusy(true); setErr(null); try { await fn(); onDone(m); } catch (e) { setErr(e); setBusy(false); } };
   const future = (v: string) => !!v && Date.parse(`${v}:00+03:00`) > Date.now() + 15 * 60_000;
   const bad = !title.trim() || !a || (!!b && b < a) || future(a) || future(b);
+  const len = a && b && b >= a ? hrs((Date.parse(`${b}:00+03:00`) - Date.parse(`${a}:00+03:00`)) / H) : null;
   // a new hold sits just before the step chosen
   const seqFor = () => { const at_ = steps.findIndex((x) => x.id === before); if (at_ < 0) return (steps[steps.length - 1]?.seq ?? 0) + 10; const prev = at_ > 0 ? steps[at_ - 1].seq : steps[at_].seq - 10; return Math.floor((prev + steps[at_].seq) / 2) === prev ? steps[at_].seq - 1 : Math.floor((prev + steps[at_].seq) / 2); };
+  async function save() {
+    if (hold) { await setStartupStep(hold.id, { title: title.trim(), started_at: fromLocal(a), done_at: fromLocal(b), status: b ? 'done' : 'running', remark: note.trim() || null }); return; }
+    await addStartupStep(eventId, { seq: seqFor(), title, stdHours: null, procedureRef: null, kind: 'hold', startedAt: fromLocal(a), doneAt: fromLocal(b), remark: note });
+    // the step after it: the wait is the hold now (its reasons go), and on its plan when chosen
+    if (step) await setStartupStep(step.id, { wait_reason: null, wait_note: null, ...(canPlan && onPlan && b ? { started_at: fromLocal(b), delay_reason: null, delay_note: null } : {}) });
+  }
   return (
     <BottomSheet open onClose={onClose} title={hold ? 'Hold' : 'Add a hold'}>
       <div className="space-y-3">
-        <p className="text-xs text-slate-500">Time the start-up waited on something outside it. Shown on its own, not as a late step; the steps after it count from its end.</p>
         <Field label="Waiting for"><input className="input w-full min-w-0" disabled={!canEdit} value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
-        {!hold && <Field label="Before step"><select className="input w-full min-w-0" value={before} onChange={(e) => setBefore(e.target.value)}>{list.map((x, i) => <option key={x.id} value={x.id}>{i + 1}. {x.title}</option>)}</select></Field>}
-        <Field label="From"><input type="datetime-local" className="input w-full min-w-0 appearance-none" disabled={!canEdit} value={a} onChange={(e) => setA(e.target.value)} /></Field>
-        <Field label="To (empty: still on hold)"><input type="datetime-local" className="input w-full min-w-0 appearance-none" disabled={!canEdit} value={b} onChange={(e) => setB(e.target.value)} /></Field>
-        {a && b && b >= a && <p className="-mt-1 text-[11px] text-slate-600">Hold {hrs((Date.parse(`${b}:00+03:00`) - Date.parse(`${a}:00+03:00`)) / H)}</p>}
+        {!hold && <Field label="Before step"><select className="input w-full min-w-0" value={before} onChange={(e) => pick(e.target.value)}>{list.map((x, i) => <option key={x.id} value={x.id}>{i + 1}. {x.title}</option>)}</select></Field>}
+        {canPlan && <label className="flex items-start gap-2 rounded-xl bg-slate-50 p-2.5 text-[12px] text-slate-700 ring-1 ring-slate-200">
+          <input type="checkbox" className="mt-0.5 h-4 w-4" checked={onPlan} onChange={(e) => togglePlan(e.target.checked)} />
+          <span>The step took its plan ({hrs(step!.stdHours ?? 0)}): the rest of its time was the hold. Its start becomes {b ? at(Date.parse(`${b}:00+03:00`)) : '—'}.</span></label>}
+        {!edit ? (
+          <div className="flex items-center justify-between gap-2 rounded-xl bg-sky-50 px-3 py-2 text-[13px] text-sky-900 ring-1 ring-sky-200">
+            <span className="tabular-nums"><b>{a ? at(Date.parse(`${a}:00+03:00`)) : '—'}</b> → <b>{b ? at(Date.parse(`${b}:00+03:00`)) : 'still on hold'}</b>{len ? ` · ${len}` : ''}<span className="block text-[11px] text-sky-800/80">From the steps' times</span></span>
+            {canEdit && <button type="button" onClick={() => setEdit(true)} className="shrink-0 text-[12px] font-semibold text-brand-700">Change</button>}
+          </div>
+        ) : <>
+          <Field label="From"><input type="datetime-local" className="input w-full min-w-0 appearance-none" disabled={!canEdit} value={a} onChange={(e) => setA(e.target.value)} /></Field>
+          <Field label="To (empty: still on hold)"><input type="datetime-local" className="input w-full min-w-0 appearance-none" disabled={!canEdit} value={b} onChange={(e) => setB(e.target.value)} /></Field>
+          {len && <p className="-mt-1 text-[11px] text-slate-600">Hold {len}</p>}
+        </>}
         <Field label="Note"><input className="input w-full min-w-0" disabled={!canEdit} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. clearance through Operations Planning" /></Field>
         {!!a && !!b && b < a && <p className="text-xs text-status-red">The end is before the start.</p>}
         {(future(a) || future(b)) && <p className="text-xs text-status-red">A time still to come cannot be recorded.</p>}
         {err != null && <ErrorBox error={err} />}
         {canEdit && <div className="flex gap-2">
           {hold && <Button variant="danger" className="flex-1" disabled={busy} onClick={() => run(() => setStartupStep(hold.id, { active: false }), 'Hold removed from the list (kept in the history).')}>Remove</Button>}
-          <Button className="flex-1" disabled={busy || bad} onClick={() => run(() => hold
-            ? setStartupStep(hold.id, { title: title.trim(), started_at: fromLocal(a), done_at: fromLocal(b), status: b ? 'done' : 'running', remark: note.trim() || null })
-            : addStartupStep(eventId, { seq: seqFor(), title, stdHours: null, procedureRef: null, kind: 'hold', startedAt: fromLocal(a), doneAt: fromLocal(b), remark: note }), hold ? 'Hold saved.' : 'Hold added.')}>Save</Button>
+          <Button className="flex-1" disabled={busy || bad} onClick={() => run(save, hold ? 'Hold saved.' : 'Hold added.')}>Save</Button>
         </div>}
       </div>
     </BottomSheet>
   );
 }
 
-function StartupSheet({ eventId, step, planStart = null, prevDone = null, nextSeq, canEdit, isHead, onClose, onDone }: { eventId: string; step: StartupStep | null; planStart?: number | null; prevDone?: number | null; nextSeq: number; canEdit: boolean; isHead: boolean; onClose: () => void; onDone: (m: string) => void }) {
+function StartupSheet({ eventId, step, planStart = null, prevDone = null, nextSeq, canEdit, isHead, onHold, onClose, onDone }: { eventId: string; step: StartupStep | null; planStart?: number | null; prevDone?: number | null; nextSeq: number; canEdit: boolean; isHead: boolean; onHold?: (id: string) => void; onClose: () => void; onDone: (m: string) => void }) {
   const [title, setTitle] = useState(step?.title ?? ''); const [std, setStd] = useState(step?.stdHours?.toString() ?? ''); const [proc, setProc] = useState(step?.procedureRef ?? '');
   // times not recorded yet are filled from the plan (start: the step before done, done: start + standard), to be
   // corrected to the actual ones; a planned time still to come is shown, not filled
@@ -412,6 +446,8 @@ function StartupSheet({ eventId, step, planStart = null, prevDone = null, nextSe
             const parts = [w >= DELAY_MIN_H && `waited ${hrs(w)} before`, o >= DELAY_MIN_H && `${hrs(o)} over plan`].filter(Boolean) as string[];
             return (parts.length > 0 || lr) && <ReasonPick title={parts.length ? `Late (${parts.join(' + ')}): why?` : 'Delay reason'} value={lr} note={ln} onValue={setLr} onNote={setLn} />;
           })()}
+          {onHold && prevDone !== null && (Math.max(sWait, sOver) >= DELAY_MIN_H || (step.status === 'not_started' && nowWait >= DELAY_MIN_H)) &&
+            <button type="button" onClick={() => onHold(step.id)} className="flex w-full items-center justify-between rounded-xl bg-sky-50 px-3 py-2 text-left text-[12px] font-semibold text-sky-900 ring-1 ring-sky-200">Not our delay (e.g. waiting for a clearance)? Make it a hold<span>›</span></button>}
           <Field label="Remark"><input className="input w-full min-w-0" value={note} onChange={(e) => setNote(e.target.value)} /></Field>
           {!!s && !!f && f < s && <p className="text-xs text-status-red">Done is before the start.</p>}
           {(future(s) || future(f)) && <p className="text-xs text-status-red">A time still to come cannot be recorded.</p>}
