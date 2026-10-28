@@ -69,22 +69,33 @@ const WORKFLOW = /\b(re-?(test|inspect\w*|tub\w*|work|clean\w*|do|weld\w*|blast\
 /** Work families (owner, 27 Oct 2026: no micro-tracking): a reported sub-item (trays cleaning, collector ring, diffuser,
  *  buffing, DPT …) belongs to the item's step of the same family and only marks that step running; it never adds a step. */
 const FAMILIES: [string, RegExp][] = [
+  ['scaffold', /\b(scaffold\w*|erect\w*)\b/i],
   ['cleaning', /\b(clean\w*|hydro\s?blast\w*|hydro\s?jet\w*|h\/?blast\w*|buff\w*|de-?chok\w*|jack\s?hammer\w*|vacuum\w*|dump\w*|flush\w*|steam\w*|wash\w*|pigging|scrap\w*|grinding)\b/i],
-  ['inspection', /\b(inspect\w*|dye penetrant|dpt|ndt|radiograph\w*|ultrasonic|eddy current|iris|thickness|visual|offer\w*|clearance)\b/i],
+  ['inspection', /\b(inspect\w*|dye penetrant|dpt|ndt|radiograph\w*|ultrasonic|eddy current|iris|thickness|visual|offer\w*|clear\w*)\b/i],
+  ['loading', /\b(load\w*|charg\w*)\b/i],
   ['repair', /\b(repair\w*|retub\w*|weld\w*|replac\w*|rectif\w*|rework|machining|overhaul\w*|fabricat\w*)\b/i],
-  ['boxup', /\b(box[\s-]?up|fix(ing)? back|re-?fix\w*|re-?install\w*|install\w*|assembl\w*|tightening|de-?blind\w*|connect\w*)\b/i],
-  ['opening', /\b(remov\w*|drop\w*|dismantl\w*|open\w*|pull(ed)? out|disconnect\w*|blind\w*|erect\w*|scaffold\w*|insulation)\b/i]];
-const familyOf = (text: string): string | null => FAMILIES.find(([, re]) => re.test(text))?.[0] ?? null;
+  ['boxup', /\b(box[\s-]?up|fix(ing)? back|re-?fix\w*|re-?install\w*|install\w*|assembl\w*|tighten\w*|de-?blind\w*|connect\w*)\b/i],
+  ['opening', /\b(remov\w*|drop\w*|dismantl\w*|open\w*|pull(ed)? out|disconnect\w*|blind\w*|insulation)\b/i]];
+// a scaffolding note in brackets on a real step ("Shell pull out (scaffolding modification as required)") is not its family
+const familyOf = (text: string): string | null => { const t = text.replace(/\([^)]*scaffold[^)]*\)?/gi, ' '); return FAMILIES.find(([, re]) => re.test(t))?.[0] ?? null; };
+const BARE_TAG = /^[A-Z]{1,3}-\d{2}-\d{3,4}[A-Z]?$/;
+/** A clause about a part of the work, never the whole step: a pass, a numbered item, one piece, a side, the balance. */
+const PARTIAL = /\b(pass(es)?|no\.?|nos\.?|one|two|three|four|\d+\s*(of|out of|nos|pcs)|partial\w*|part(s|ly)?|pieces?|pcs|side|half|remaining|balance|some)\b/i;
+/** A new step's name from the clause: the words as reported, without the trailing state words. */
+const stepTitle = (text: string, phrase: string) => (/\s,|,$/.test(phrase) || words(phrase).length < 2 ? sentence(text.replace(/[,;]?\s*\b(in progress|under way|completed?|done|started|finished|pending|to start)\b\s*$/i, '').trim()) : sentence(phrase));
 /** Families whose steps are about one object (owner, 27 Oct 2026: a collector ring repair is not the thermowell bracket
  *  repair): a report joins such a step only when it names the same object or the step is general ("Repair if required").
  *  Cleaning and inspection sub-items still join their family's step whatever they name (no micro-tracking). */
 const OBJECT_FAMILIES = new Set(['repair', 'opening', 'boxup']);
 const FILLER = new Set(['if', 'required', 'requir', 'possible', 'possibl', 'need', 'needed', 'any', 'per', 'work', 'job', 'progress', 'done', 'complet', 'pend', 'pending', 'start', 'start', 'from', 'into', 'out', 'back', 'item', 'equipment', 'side']);
 const objectWords = (text: string) => words(text).filter((w) => !FAMILIES.some(([, re]) => re.test(w))).map(stem).filter((w) => !FILLER.has(w) && w.length > 2);
+// "preparation" and "prepare", "collector" and "collect": the same object word
+const sameWord = (a: string, b: string) => a === b || (a.length >= 5 && b.length >= 5 && a.slice(0, 5) === b.slice(0, 5));
+const shares = (xs: string[], ys: string[]) => xs.some((x) => ys.some((y) => sameWord(x, y)));
 const fitsFamilyStep = (fam: string, report: string, step: string) => {
   if (!OBJECT_FAMILIES.has(fam)) return true;
   const st = objectWords(step), rp = objectWords(report);
-  return st.length === 0 || rp.length === 0 || rp.some((w) => st.includes(w));
+  return st.length === 0 || rp.length === 0 || shares(rp, st);
 };
 const INSPECTION_SCOPE = /\b(rtj|ring[\s-]?(type )?joints?|flanges? (faces?|inspection|grooves?)|grooves?|gasket (face|seat))\b/i;
 const OPS_ACTION = /\b(handover|hand over|blind|gas test|permit|clearance|isolat|purge|n2|nitrogen|process)\b/i;
@@ -117,8 +128,19 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
   const byTag = new Map<string, Fact[]>();
   for (const f of work) { if (!f.tags.length) byTag.set('', [...(byTag.get('') ?? []), f]); for (const t of f.tags) byTag.set(t, [...(byTag.get(t) ?? []), f]); }
   for (const [tag, fs] of byTag) {
-    if (!tag) { for (const f of fs) if (!/^\s*$/.test(f.text)) out.push(mk({ factIds: [f.id], tag: null, key: null, equipmentId: null, activityId: null, activityName: null, type: 'review', status: 'review', classification: 'unclear',
+    if (!tag) { for (const f of fs) if (!/^\s*$/.test(f.text)) out.push(f.tagsText && !/^note\b/i.test(f.text)
+      ? mk({ factIds: [f.id], tag: null, key: null, equipmentId: null, activityId: null, activityName: null, type: 'info', status: 'info', classification: 'info', title: `${f.tagsText}: ${f.text}`, detail: 'Not an item of this tracker; kept as a note of the report.', current: {}, proposed: {}, reason: 'Note under a heading', evidence: [quote(f)] })
+      : /^note\b/i.test(f.text)
+      ? mk({ factIds: [f.id], tag: null, key: null, equipmentId: null, activityId: null, activityName: null, type: 'info', status: 'info', classification: 'info', title: sentence(f.text.replace(/^note\s*[:\-–]?\s*/i, '')), detail: 'A general note of the report, kept as written.', current: {}, proposed: {}, reason: 'Note', evidence: [quote(f)] })
+      : mk({ factIds: [f.id], tag: null, key: null, equipmentId: null, activityId: null, activityName: null, type: 'review', status: 'review', classification: 'unclear',
       title: 'No equipment named', detail: f.text, current: {}, proposed: {}, reason: 'The line names no tag: say which item it is about, or leave it', evidence: [quote(f)] })); continue; }
+    // an IAT (hot-work permit item) named by its number: its line is kept with it as information
+    if (tag.startsWith('IAT-')) {
+      const no = tag.slice(4); const iat = (d.iats ?? []).find((x) => x.iatNo === no || x.iatNo.endsWith(no.slice(-5)));
+      for (const f of fs) out.push(mk({ factIds: [f.id], tag: iat ? `IAT ${iat.iatNo} · ${iat.tag}` : `IAT ${no}`, key: null, equipmentId: null, activityId: null, activityName: null, type: 'info', status: 'info', classification: iat ? 'info' : 'unclear',
+        title: iat ? `IAT ${iat.iatNo} (${iat.tag}, ${iat.status}): ${f.text}` : `IAT ${no} is not in this tracker: ${f.text}`, detail: iat ? 'Hot-work item: its status is followed on the Hot work tab; this report is linked to it.' : 'No IAT with this number in the tracker.', current: iat ? { status: iat.status } : {}, proposed: {}, reason: 'IAT line', evidence: [quote(f)] }));
+      continue;
+    }
     const matches = resolveTag(d, tag);
     if (!matches.length) { out.push(mk({ factIds: fs.map((f) => f.id), tag, key: null, equipmentId: null, activityId: null, activityName: null, type: 'review', status: 'review', classification: 'unclear',
       title: `${tag} is not in this tracker`, detail: fs.map((f) => f.text).join(' · '), current: {}, proposed: {}, reason: 'Unknown tag: equipment is never created from a report (another unit, a typo, or a part not tracked)', evidence: fs.map(quote) })); continue; }
@@ -129,8 +151,16 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
       if (!e.tracked) { out.push(mk({ factIds: fs.map((f) => f.id), tag: e.tag, key, equipmentId: e.id, activityId: null, activityName: null, type: 'info', status: 'info', classification: 'info', title: `${e.tag} is off the tracker / out of scope`, detail: fs.map((f) => f.text).join(' · '), current: { disabled: e.disabledReason }, proposed: {}, reason: 'Kept as information only', evidence: fs.map(quote) })); continue; }
       const acts = linesOf(d, key);
       const noteAt = (d.log ?? []).filter((l) => l.kind === 'equipment' && l.ref === e.tag && l.field === 'note').map((l) => l.at).sort().pop();
-      const statusParts: string[] = [];
-      for (const f of fs) {
+      // the status line (owner, 28 Oct 2026: least text): what is in progress now; if nothing is, what was done
+      const runParts: string[] = [], doneParts: string[] = [];
+      const addStatus = (f: Fact) => { if (f.kind === 'quantity' || INSPECTION_SCOPE.test(f.text) || BARE_TAG.test(f.text)) return; (f.state === 'in_progress' || f.kind === 'hold' || f.kind === 'risk' ? runParts : doneParts).push(f.text); };
+      // steps this report already finishes are not matched again; a family still running (another clause) is not finished
+      const claimed = new Set<string>();
+      const famRunning = new Set(fs.filter((f) => f.state === 'in_progress').map((f) => familyOf(f.text)).filter(Boolean));
+      // what is done first, then what is running: a finished step frees the next one for the running clause
+      const ordered = [...fs.filter((f) => f.state === 'done'), ...fs.filter((f) => f.state !== 'done')];
+      for (const f of ordered) {
+        if (BARE_TAG.test(f.text)) continue;
         const ev = [quote(f)];
         const nounOnly = f.phrase;
         // facts about several unnamed valves or parts: which ones is not known → a person decides, nothing is attributed
@@ -147,7 +177,7 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
               issues: later(st.updatedAt, at) ? ['the step changed after the report'] : [] }));
           } else out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: null, activityName: null, type: 'info', status: 'info', classification: 'location', title: `${e.tag}: ${f.text}`,
             detail: 'Where the part is. A location never completes a repair or an installation: those are reported as their own work.', current: {}, proposed: {}, reason: 'Component location kept apart from repair status', evidence: ev }));
-          statusParts.push(f.text); continue;
+          addStatus(f); continue;
         }
         if (f.kind === 'readiness') {
           // the step that records an offer / clearance / inspection: the first of them not finished
@@ -155,7 +185,7 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
           out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: offer?.id ?? null, activityName: offer?.activity ?? null, type: offer && !offer.actualFinish ? 'review' : 'info', status: offer && !offer.actualFinish ? 'review' : 'info', classification: 'readiness',
             title: `${e.tag}: ${sentence(f.text)}`, detail: offer ? `Step "${offer.activity}" ${offer.actualFinish ? 'is already finished' : offer.actualStart ? 'is running' : 'has not started'}: an offer or a clearance is recorded on that step by a person; an acceptance is never assumed.` : 'Readiness as reported; inspection acceptance, handover and a formal clearance are not assumed from it.',
             current: offer ? { actualStart: offer.actualStart, actualFinish: offer.actualFinish } : {}, proposed: {}, reason: 'Readiness is not acceptance', evidence: ev }));
-          statusParts.push(f.text); continue;
+          addStatus(f); continue;
         }
         if (f.kind === 'hold' || f.kind === 'risk') {
           const level = f.holdLevel ?? 'possible';
@@ -166,12 +196,12 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
             title: `${e.tag}: ${level === 'confirmed' ? 'Hold' : level === 'possible' ? 'Possible hold' : 'At risk'} · ${f.text}`,
             detail: level === 'confirmed' ? `Work stopped or blocked${st ? ` on "${st.activity}"` : ''}. Applying sets the item's pending reason (the hold starts at the report's time; the release is recorded when it comes).` : `${level === 'possible' ? 'An unresolved condition may stop the work' : 'A problem that may affect later work'}${st ? ` on "${st.activity}"` : ''}: watched, nothing is changed.`,
             current: { pendingReason: e.pendingReason }, proposed: level === 'confirmed' ? { pendingReason: sentence(f.text).slice(0, 120) } : {}, reason: same ? 'The tracker already records this hold' : `Reported by ${dept}`, evidence: ev }));
-          statusParts.push(f.text); continue;
+          addStatus(f); continue;
         }
         if (f.kind === 'hold_release') {
           out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: null, activityName: null, type: 'hold_release', status: e.pendingReason ? 'ready' : 'info', classification: 'hold_release', title: `${e.tag}: hold released · ${f.text}`,
             detail: e.pendingReason ? `Clears the pending reason "${e.pendingReason}".` : 'No hold is recorded on this item.', current: { pendingReason: e.pendingReason }, proposed: { pendingReason: null }, reason: `Reported by ${dept}`, evidence: ev }));
-          statusParts.push(f.text); continue;
+          addStatus(f); continue;
         }
         if (f.kind === 'defect') {
           const rel = acts.filter((a) => !a.actualFinish && overlap(nounOnly.replace(/\b(no\.?|number)\s*\d+\b/i, ''), a.activity) > 0);
@@ -180,7 +210,7 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
             title: `${e.tag}: defect · ${f.text}`, detail: `${rel.length ? `Related step: "${rel[0].activity}". ` : ''}Proposed: a rectification step "${fix} rectification" after ${rel[0]?.activity ?? 'the current work'}; whether it needs a repair, a spare or an inspection decision is for the Engineer. Not a hold: the work continues unless a hold is reported.`,
             current: {}, proposed: { event: f.text, newStep: `${fix} rectification` }, reason: 'Unexpected finding', evidence: ev,
             newStep: { title: `${fix} rectification`, after: rel[0]?.activity ?? null, before: null, owner: DEPT_SHORT[meta.department], reason: f.text, durationH: null, opsAction: OPS_ACTION.test(f.text), scheduleEffect: rel.length ? `may extend "${rel[0].activity}"; duration not known` : 'not known' } }));
-          statusParts.push(f.text); continue;
+          addStatus(f); continue;
         }
         if (f.kind === 'quantity' || (f.qty?.some((q) => q.mode === 'cumulative') && f.kind === 'work')) {
           const q = f.qty!.find((x) => x.mode === 'cumulative')!; const daily = f.qty!.find((x) => x.mode === 'daily');
@@ -200,18 +230,18 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
             else out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: null, activityName: null, type: 'review', status: 'conflict', classification: 'quantity', title: `${e.tag}: ${q.value.toLocaleString()} drums reported, tracker ${current.toLocaleString()}`,
               detail: `Lower by ${current - q.value}, beyond the tolerance: a counter reset, a change of scope or a wrong figure? The tracker keeps its count until a person decides${dailyNote}.`, current: { total: current }, proposed: {}, reason: 'Significant difference', evidence: [quote(f)], issues: ['reported total below the tracker'] }));
           } else out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: null, activityName: null, type: 'info', status: 'info', classification: 'quantity', title: `${e.tag}: ${q.value.toLocaleString()} ${q.unit}s`, detail: 'A quantity with no count kept for it in the tracker: recorded as information.', current: {}, proposed: {}, reason: 'No measured scope', evidence: [quote(f)] }));
-          if (f.kind === 'quantity') { statusParts.push(f.text); continue; }
+          if (f.kind === 'quantity') { addStatus(f); continue; }
         }
         // ── work: a step of the tracker, or work it lacks ──
-        if (f.state === 'info') { statusParts.push(f.text); out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: null, activityName: null, type: 'info', status: 'info', classification: 'info', title: `${e.tag}: ${f.text}`, detail: 'No state word: kept as information.', current: {}, proposed: {}, reason: 'Information only', evidence: ev })); continue; }
-        const st = stepFor(nounOnly, acts);
-        statusParts.push(f.text);
+        if (f.state === 'info') { addStatus(f); out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: null, activityName: null, type: 'info', status: 'info', classification: 'info', title: `${e.tag}: ${f.text}`, detail: 'No state word: kept as information.', current: {}, proposed: {}, reason: 'Information only', evidence: ev })); continue; }
+        const st = stepFor(nounOnly, acts.filter((a) => !claimed.has(a.id)));
+        addStatus(f);
         if (st) {
           const changed = later(st.updatedAt, at);
           if (f.state === 'done') {
             if (st.actualFinish) out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: st.id, activityName: st.activity, type: 'info', status: 'info', classification: 'already_recorded', title: `${e.tag}: ✓ ${st.activity} (recorded ${fmt(st.actualFinish)})`, detail: f.text, current: { actualFinish: st.actualFinish }, proposed: {}, reason: 'Already finished in the tracker', evidence: ev }));
-            else out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: st.id, activityName: st.activity, type: 'finish_step', status: changed ? 'conflict' : 'ready', classification: 'step_done', title: `${e.tag}: ✓ ${st.activity}`, detail: f.text,
-              current: { actualStart: st.actualStart, actualFinish: null }, proposed: { actualStart: st.actualStart ?? eventAt, actualFinish: eventAt }, reason: `${dept} reports it done`, evidence: ev, issues: changed ? [`the step changed in the tracker after the report (${fmt(st.updatedAt!)})`] : [] }));
+            else { claimed.add(st.id); out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: st.id, activityName: st.activity, type: 'finish_step', status: changed ? 'conflict' : 'ready', classification: 'step_done', title: `${e.tag}: ✓ ${st.activity}`, detail: f.text,
+              current: { actualStart: st.actualStart, actualFinish: null }, proposed: { actualStart: st.actualStart ?? eventAt, actualFinish: eventAt }, reason: `${dept} reports it done`, evidence: ev, issues: changed ? [`the step changed in the tracker after the report (${fmt(st.updatedAt!)})`] : [] })); }
           } else if (f.state === 'in_progress') {
             if (st.actualFinish) out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: st.id, activityName: st.activity, type: 'info', status: 'conflict', classification: 'already_recorded', title: `${e.tag}: "${st.activity}" reported running, tracker has it finished ${fmt(st.actualFinish)}`, detail: f.text, current: { actualFinish: st.actualFinish }, proposed: {}, reason: 'The tracker is further than the report (an older report, or a finish to check)', evidence: ev, issues: ['tracker further than the report'] }));
             else if (st.actualStart) out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: st.id, activityName: st.activity, type: 'info', status: 'info', classification: 'already_recorded', title: `${e.tag}: ▶ ${st.activity} (running since ${fmt(st.actualStart)})`, detail: f.text, current: { actualStart: st.actualStart }, proposed: {}, reason: 'Already running in the tracker', evidence: ev }));
@@ -234,22 +264,43 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
         }
         // a sub-item of a work family → the item's step of that family, marked running (no new step)
         const fam = familyOf(f.text);
-        const famSteps = fam ? acts.filter((a) => familyOf(a.activity) === fam && fitsFamilyStep(fam, nounOnly, a.activity)) : [];
+        // the same step reported done twice in one report (two lines): one proposal, both quotes
+        const stAll = stepFor(nounOnly, acts);
+        if (stAll && claimed.has(stAll.id) && f.state === 'done') { const prev = out.find((p) => p.type === 'finish_step' && p.activityId === stAll.id); if (prev) { prev.factIds.push(f.id); prev.evidence.push(...ev); continue; } }
+        const openActs = acts.filter((a) => !claimed.has(a.id));
+        let famSteps = fam ? openActs.filter((a) => familyOf(a.activity) === fam && fitsFamilyStep(fam, nounOnly, a.activity)) : [];
+        // a part removed or fitted for its repair ("quench pipe one piece removed" with a quench pipe repair step): that repair step
+        let via: string | null = null;
+        if (fam && OBJECT_FAMILIES.has(fam) && !famSteps.some((a) => !a.actualFinish)) {
+          const other = openActs.filter((a) => { const g = familyOf(a.activity); return g !== fam && g !== null && OBJECT_FAMILIES.has(g) && !a.actualFinish && shares(objectWords(nounOnly), objectWords(a.activity)); });
+          if (other.length) { famSteps = other; via = familyOf(other[0].activity); }
+        }
         const byFit = (xs: TrkActivity[]) => [...xs].sort((a, b) => overlap(nounOnly, b.activity) - overlap(nounOnly, a.activity));
         const famStep = byFit(famSteps.filter((a) => a.actualStart && !a.actualFinish))[0] ?? byFit(famSteps.filter((a) => !a.actualStart))[0] ?? null;
         if (famStep) {
-          const changed = later(famStep.updatedAt, at);
-          if (!famStep.actualStart) out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: famStep.id, activityName: famStep.activity, type: 'start_step', status: changed ? 'conflict' : 'ready', classification: 'step_in_progress',
-            title: `${e.tag}: ▶ ${famStep.activity}`, detail: `"${sentence(f.text)}" starts this step. It finishes when the whole ${fam} work is reported done.`,
-            current: { actualStart: null }, proposed: { actualStart: eventAt }, reason: `${dept} reports ${fam} work on the item`, evidence: ev, issues: changed ? [`the step changed in the tracker after the report (${fmt(famStep.updatedAt!)})`] : [] }));
+          const changed = later(famStep.updatedAt, at); const what = via ?? fam;
+          const issues = changed ? [`the step changed in the tracker after the report (${fmt(famStep.updatedAt!)})`] : [];
+          // the whole work of the step reported done ("loading preparation completed"), not a part of it ("basket cleaning
+          // done", "pass 2 done"): the step finishes. A part done while the step has not started: the step starts.
+          const whole = !PARTIAL.test(f.text) && (objectWords(nounOnly).length === 0 || shares(objectWords(nounOnly), objectWords(famStep.activity)));
+          // another clause of the same family still running keeps the step open only when it is the family's last open step
+          const blocked = famRunning.has(fam!) && famSteps.filter((a) => !a.actualFinish).length <= 1;
+          if (f.state === 'done' && !blocked && !via && whole) {
+            // the family's work reported done: the step finishes (and starts, if the start was never recorded)
+            claimed.add(famStep.id);
+            out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: famStep.id, activityName: famStep.activity, type: 'finish_step', status: changed ? 'conflict' : 'ready', classification: 'step_done',
+              title: `${e.tag}: ✓ ${famStep.activity}`, detail: `"${sentence(f.text)}" completes this ${what} step.`, current: { actualStart: famStep.actualStart, actualFinish: null }, proposed: { actualStart: famStep.actualStart ?? eventAt, actualFinish: eventAt }, reason: `${dept} reports the ${what} done`, evidence: ev, issues }));
+          } else if (!famStep.actualStart) out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: famStep.id, activityName: famStep.activity, type: 'start_step', status: changed ? 'conflict' : 'ready', classification: 'step_in_progress',
+            title: `${e.tag}: ▶ ${famStep.activity}`, detail: `"${sentence(f.text)}" starts this step. It finishes when the whole ${what} work is reported done.`,
+            current: { actualStart: null }, proposed: { actualStart: eventAt }, reason: `${dept} reports ${what} work on the item`, evidence: ev, issues }));
           else out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: famStep.id, activityName: famStep.activity, type: 'info', status: 'info', classification: 'already_recorded',
-            title: `${e.tag}: ${f.text} · part of ▶ ${famStep.activity}`, detail: `${fam} in progress since ${fmt(famStep.actualStart!)}; this sub-item is noted, not a step of its own.`, current: { actualStart: famStep.actualStart }, proposed: {}, reason: 'Sub-item of a running step', evidence: ev }));
+            title: `${e.tag}: ${f.text} · part of ▶ ${famStep.activity}`, detail: `${what} in progress since ${fmt(famStep.actualStart!)}; this sub-item is noted, not a step of its own.`, current: { actualStart: famStep.actualStart }, proposed: {}, reason: 'Sub-item of a running step', evidence: ev }));
           continue;
         }
         // a family with every step finished: more of the same work is a workflow change (re-test, additional cleaning); any
         // other sub-item with no step of its family on the item is noted, never a step of its own
         // an object family naming another object (collector ring, not the thermowell brackets): a step to suggest, below
-        const otherObject = !!fam && OBJECT_FAMILIES.has(fam) && objectWords(nounOnly).length > 0 && acts.some((a) => familyOf(a.activity) === fam);
+        const otherObject = !!fam && OBJECT_FAMILIES.has(fam) && objectWords(nounOnly).length > 0 && acts.some((a) => familyOf(a.activity) === fam && !a.actualFinish);
         if (fam && !otherObject && !(famSteps.length && WORKFLOW.test(f.text))) {
           out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: null, activityName: null, type: 'info', status: 'info', classification: 'info', title: `${e.tag}: ${f.text}`,
             detail: famSteps.length ? `${fam} already finished on this item; noted.` : `${fam} work noted on the item (no ${fam} step in its plan; sub-items are not tracked one by one).`, current: {}, proposed: {}, reason: 'Sub-item noted', evidence: ev }));
@@ -265,14 +316,17 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
         const running = acts.find((a) => a.actualStart && !a.actualFinish), lastDone = [...acts].reverse().find((a) => a.actualFinish), next = acts.find((a) => !a.actualStart);
         const change = WORKFLOW.test(f.text);
         out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: null, activityName: null, type: 'new_step', status: 'review', classification: change ? 'workflow_change' : 'new_activity',
-          title: `${e.tag}: new step "${sentence(nounOnly)}" (${f.state === 'done' ? 'done' : 'in progress'})`,
+          title: `${e.tag}: new step "${stepTitle(f.text, nounOnly)}" (${f.state === 'done' ? 'done' : 'in progress'})`,
           detail: `Not in the tracker. Suggested after "${(running ?? lastDone)?.activity ?? 'the start'}"${next ? ` and before "${next.activity}"` : ''}; ${change ? 'a change of the planned sequence: the P6 baseline stays, completed steps stay' : 'extra work reported by the field'}. Duration not estimated.`,
-          current: {}, proposed: { title: sentence(nounOnly), state: f.state, after: (running ?? lastDone)?.id ?? null }, reason: `${dept} reports work the tracker has no step for`, evidence: ev,
-          newStep: { title: sentence(nounOnly), after: (running ?? lastDone)?.activity ?? null, before: next?.activity ?? null, owner: DEPT_SHORT[meta.department], reason: f.text, durationH: null, opsAction: OPS_ACTION.test(f.text), scheduleEffect: change ? 'may move what follows; the forecast re-runs once the step is in' : 'none expected' } }));
+          current: {}, proposed: { title: stepTitle(f.text, nounOnly), state: f.state, after: (running ?? lastDone)?.id ?? null }, reason: `${dept} reports work the tracker has no step for`, evidence: ev,
+          newStep: { title: stepTitle(f.text, nounOnly), after: (running ?? lastDone)?.activity ?? null, before: next?.activity ?? null, owner: DEPT_SHORT[meta.department], reason: f.text, durationH: null, opsAction: OPS_ACTION.test(f.text), scheduleEffect: change ? 'may move what follows; the forecast re-runs once the step is in' : 'none expected' } }));
       }
       // one consolidated status line per item: the report's words, unless the tracker says the same or more, or was changed later
-      if (statusParts.length) {
-        const line = sentence(statusParts.join('; ')).replace(/\.$/, '').slice(0, 160);
+      const tk = (x: string) => words(x).map(stem);
+      const parts0 = runParts.length ? runParts : doneParts;
+      const parts = parts0.filter((x, i) => !parts0.some((y, j) => j !== i && (j < i || tk(y).length > tk(x).length) && tk(x).every((w) => tk(y).includes(w))));
+      if (parts.length) {
+        const line = sentence(parts.join('; ')).replace(/\.$/, '').slice(0, 160);
         const toks = (x: string) => [...words(x).map(stem), ...(x.match(/\d+/g) ?? [])];
         const subset = !!e.remark && toks(line).every((w) => toks(e.remark!).includes(w));
         if ((e.remark ?? '').trim().toLowerCase() !== line.toLowerCase()) out.push(mk({ factIds: fs.map((f) => f.id), tag: e.tag, key, equipmentId: e.id, activityId: null, activityName: null, type: 'status_line',
@@ -283,7 +337,7 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
   }
   // ── the same change already proposed or applied from another report: linked, not repeated ──
   for (const p of out) {
-    const dup = (opts.existing ?? []).find((x) => x.type === p.type && x.key === p.key && x.activityId === p.activityId && (p.type !== 'status_line' || x.proposed.remark === p.proposed.remark) && (p.type !== 'planning' || x.proposed.reportDate === p.proposed.reportDate) && x.status !== 'dismissed');
+    const dup = (opts.existing ?? []).find((x) => x.type === p.type && x.key === p.key && x.activityId === p.activityId && (p.type !== 'status_line' || x.proposed.remark === p.proposed.remark) && (p.type !== 'drums' || x.proposed.total === p.proposed.total) && (p.type !== 'planning' || x.proposed.reportDate === p.proposed.reportDate) && x.status !== 'dismissed');
     if (dup && p.status !== 'info') { p.status = dup.status === 'applied' ? 'info' : 'info'; p.classification = 'already_recorded'; p.reason = `${dup.status === 'applied' ? 'Applied' : 'Already proposed'} from the ${DEPT_SHORT[dup.department]} report of ${dup.reportDate}`; p.evidence.push(`linked to the ${DEPT_SHORT[dup.department]} report of ${dup.reportDate}`); }
   }
   // the same statement from two departments in one submission is one proposal with both sources

@@ -22,7 +22,7 @@ export function expand(text: string): string { let t = text; for (const [re, to]
 
 /** Plant tags as the reports write them, resolved to the tracker's form (E-216 A/B → E-12-216A, E-12-216B; R-201/203/204 → three reactors;
  *  HV-12-546A as it is). The "12-" unit part is optional in the report. */
-const TAG = /\b([A-Z]{1,3})-(?:12-)?(\d{3})[\s-]*([A-Z])?((?:\s*\/\s*(?:[A-Z]|\d{3}[A-Z]?))*)\b/g;
+const TAG = /\b([A-Z]{1,3})-(?:12-)?(\d{3})[\s-]*([A-Z])?((?:\s*\/\s*(?:[A-Z](?![A-Z0-9-])|\d{3}[A-Z]?))*)\b/g;
 export function tagsIn(text: string): { raw: string; tags: string[]; index: number }[] {
   const out: { raw: string; tags: string[]; index: number }[] = [];
   for (const m of text.matchAll(TAG)) {
@@ -42,8 +42,16 @@ const HEADER = /^(unit-?\s?\d+|train-?\s?\d+\s*(shutdown|sd)?\s*(report|update|s
 export function segment(text: string): Statement[] {
   const rows = text.split(/\r?\n/).map((r) => r.replace(/[⁠​*_]/g, '').replace(/^\s*(?:[-•·⁠▪➢>📌]+|\d+[.)])\s*/, '').trim());
   const out: Statement[] = [];
+  const bullets = text.split(/\r?\n/).map((r) => /^\s*(?:[-•·⁠▪➢>📌]+|\d+[.)])\s*\S/.test(r));
+  // a bullet with no tag ("📌 Instrument Air Backup Tanks") is a heading: the lines under it are notes under that heading
+  let label = '';
   rows.forEach((raw, i) => {
     if (!raw) return;
+    if (bullets[i] && !tagsIn(raw).some((t) => t.index <= 2) && !/^IAT/i.test(raw) && !/^note\b/i.test(raw) && !TRAIN1.test(raw) && raw.split(/\s+/).length <= 6) { label = raw; out.push({ line: i + 1, raw, tagsText: '', tags: [], text: raw, header: true }); return; }
+    if (bullets[i]) label = '';
+    // an IAT number heads a line of its own ("IAT-2026-64210 Spool brought from the painting yard")
+    const iat = raw.match(/^IAT[-\s]?(\d{4})[-\s]?(\d{4,6})\b\s*[:\-–—]?\s*/i);
+    if (iat) { out.push({ line: i + 1, raw, tagsText: iat[0].trim(), tags: [`IAT-${iat[1]}-${iat[2]}`], text: raw.slice(iat[0].length).trim(), header: false }); return; }
     const found = tagsIn(raw).filter((t) => t.index <= 2);
     if (found.length) {
       const head = found[0];
@@ -60,10 +68,11 @@ export function segment(text: string): Statement[] {
     const prev = out[out.length - 1];
     // a wrapped line continues the item above; a line of its own ("Train-1: …", a planning line, a heading-like label) does not
     // a short label line ("LP", "Control Valves") is a heading of its own
-    const own = /^[A-Za-z][\w\s-]{0,24}:/.test(raw) || TRAIN1.test(raw) || /planned\s*:?\s*\d/i.test(raw) || /^[A-Za-z][A-Za-z ]{0,20}$/.test(raw);
+    const own = /^[A-Za-z][\w\s-]{0,24}:/.test(raw) || /^note\b/i.test(raw) || TRAIN1.test(raw) || /planned\s*:?\s*\d/i.test(raw) || /^[A-Za-z][A-Za-z ]{0,20}$/.test(raw);
     if (/^[A-Za-z][A-Za-z ]{0,20}$/.test(raw) && !/\b(done|progress|pending|start)\b/i.test(raw)) { out.push({ line: i + 1, raw, tagsText: '', tags: [], text: raw, header: true }); return; }
-    if (prev && !prev.header && prev.tags.length && !own) out.push({ line: i + 1, raw, tagsText: prev.tagsText, tags: prev.tags, text: raw, header: false });
-    else out.push({ line: i + 1, raw, tagsText: '', tags: [], text: raw, header: false });
+    // a bullet of its own (📌 Instrument Air Backup Tanks …) never continues the item above
+    if (prev && !prev.header && prev.tags.length && !own && !bullets[i]) out.push({ line: i + 1, raw, tagsText: prev.tagsText, tags: prev.tags, text: raw, header: false });
+    else out.push({ line: i + 1, raw, tagsText: label, tags: [], text: raw, header: false });
   });
   return out;
 }
@@ -89,7 +98,7 @@ const HOLD = /\b(stopped (due to|because|for)|on hold|held up|hold|cannot (proce
 const RELEASE = /\b(hold (released|lifted|cleared|removed)|resumed|restarted|spares? (received|arrived|available)|material (received|arrived))\b/i;
 const RISK = /\b(under review|subject to|may (affect|delay|not)|might|if (available|required|needed)|availability|at risk|likely|expected (delay|late)|concern|to be confirmed|tbc)\b/i;
 const LOCATION = /\b(at (the )?(instrument |inst\.? |mech\.? |mechanical )?(workshop|site|yard|store|vendor)|shifted to (site|workshop|yard)|sent to (workshop|vendor|site)|in (the )?workshop|returned to site|back (to|at) site)\b/i;
-const READINESS = /\b(ready for (inspection|handover|box[\s-]?up|loading|startup|start-up)|offered (for|to) (inspection|process|operations?)|under inspection|clearance (cleared|given|obtained)|cleared by (operations|process|inspection)|inspection (cleared|accepted|ok))\b/i;
+const READINESS = /\b(ready for (inspection|handover|box[\s-]?up|loading|startup|start-up)|offered (for|to) (inspection|process|operations?)|under inspection|clearance (cleared|given|obtained)|inspection (cleared|accepted|ok))\b/i;
 const READING = /\b(\d[\d,.]*\s*(psig|psi|barg|bar|kg\/cm2|°\s?[fc]|deg\s?[fc]|degf|degc|ppm|%\s*lel|rpm))\b|\b(pressuri[sz]ed|depressuri[sz]ed|temperature|bed temp|heating|cooling|lined up|lineup|circulat|start-?up|commission)/i;
 const TRAIN1 = /\btrain-?\s?1\b|\btr-?1\b|\bhp loop\b|\bunit start|\bstartup\b/i;
 const QTY = /(?:total(?:ly)?\s*(?:of\s*)?)?(\d[\d,]*)\s*(drums?|bags?|m3|tons?|nos?\.?|pcs|pieces|tubes?|trays?|valves?|elements?|bolts?|flanges?|joints?|spools?)\b/gi;
