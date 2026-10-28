@@ -68,7 +68,8 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
   const running: Stage = suSum.startedAt !== null || (miEnd !== null && now > miEnd) || (!trk && startup.length > 0) ? 'startup' : ph?.mi.actualStart != null ? 'mi' : 'shutdown';
   const stage = (['shutdown', 'mi', 'startup'] as const).find((s) => s === q.get('stage')) ?? running;
   const part = (['progress', 'team', 'record', 'file'] as const).find((p) => p === q.get('part')) ?? 'progress';
-  const set = (k: string, v: string) => { const n = new URLSearchParams(q); n.set(k, v); setQ(n, { replace: true }); };
+  // one update for several keys: two in a row would each start from the same old URL and the second would undo the first
+  const set = (k: string, v: string, more: Record<string, string> = {}) => { const n = new URLSearchParams(q); n.set(k, v); for (const [a, b] of Object.entries(more)) n.set(a, b); setQ(n, { replace: true }); };
 
   if (err != null) return <ErrorBox error={err} />;
   if (entry === undefined) return <Spinner />;
@@ -94,11 +95,11 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
         {entry.eventId && docs.length > 0 && <span className={cx('ml-1.5 text-[12px] font-semibold', missing ? 'text-status-red' : 'text-status-green')}>· File: {missing ? `${missing} not ready` : 'ready'}</span>}</p>
 
       <div className="mb-3 grid grid-cols-3 gap-1.5">
-        <StageCard on={stage === 'shutdown'} onClick={() => { set('stage', 'shutdown'); set('part', 'progress'); }} title="Shutdown" tone={ops?.finishedAt != null ? 'done' : ops && ops.state !== 'NOT_STARTED' ? 'run' : 'idle'}
+        <StageCard on={stage === 'shutdown'} onClick={() => set('stage', 'shutdown', { part: 'progress' })} title="Shutdown" tone={ops?.finishedAt != null ? 'done' : ops && ops.state !== 'NOT_STARTED' ? 'run' : 'idle'}
           lines={!trk ? ['No tracker'] : ops?.finishedAt != null ? ['Done', `${opsSum.done}/${opsSum.total} steps`] : ops ? [`${ops.actualPct}% · plan ${ops.planPct}%`, `${opsSum.done}/${opsSum.total} steps`] : [`${opsSum.done}/${opsSum.total} steps`]} pct={ops?.actualPct} />
-        <StageCard on={stage === 'mi'} onClick={() => { set('stage', 'mi'); set('part', 'progress'); }} title="M&I" tone={ph?.mi.actualStart != null ? (w && w.actualPct >= 100 ? 'done' : 'run') : 'idle'}
+        <StageCard on={stage === 'mi'} onClick={() => set('stage', 'mi', { part: 'progress' })} title="M&I" tone={ph?.mi.actualStart != null ? (w && w.actualPct >= 100 ? 'done' : 'run') : 'idle'}
           lines={!trk ? ['No tracker'] : ph?.mi.actualStart != null ? [w ? `${w.actualPct}% · plan ${w.planPct}%` : 'Started', `from ${at(ph.mi.actualStart)}`] : [`plan ${Number.isNaN(ph?.mi.planned ?? NaN) ? '—' : at(ph!.mi.planned)}`]} pct={ph?.mi.actualStart != null ? w?.actualPct : undefined} />
-        <StageCard on={stage === 'startup'} onClick={() => { set('stage', 'startup'); set('part', 'progress'); }} title="Start-up" tone={suSum.finishedAt != null ? 'done' : suSum.startedAt != null ? 'run' : 'idle'}
+        <StageCard on={stage === 'startup'} onClick={() => set('stage', 'startup', { part: 'progress' })} title="Start-up" tone={suSum.finishedAt != null ? 'done' : suSum.startedAt != null ? 'run' : 'idle'}
           lines={startup.length ? [`${suSum.done}/${suSum.total} steps`, suSum.stdH ? `plan ${suSum.stdH} h` : ''] : [miEnd !== null ? `plan ${at(miEnd)}` : 'No steps yet']} pct={suSum.total ? Math.round((suSum.done / suSum.total) * 100) : undefined} />
       </div>
 
