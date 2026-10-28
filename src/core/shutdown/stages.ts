@@ -3,6 +3,8 @@
 const H = 3_600_000;
 const DAY = 86_400_000;
 const r1 = (x: number) => Math.round(x * 10) / 10;
+/** Less than this is not late (owner, 28 Oct 2026: half an hour is not late, 1 h is). Hours. */
+export const DELAY_MIN_H = 1;
 
 export interface StdStep { id: string; stdHours: number | null; status: 'not_started' | 'running' | 'done' | 'not_required'; startedAt: string | null; doneAt: string | null }
 export interface StdStepView { id: string; planStart: number | null; planEnd: number | null; actualH: number | null; overH: number | null; late: boolean }
@@ -26,7 +28,7 @@ export function stdTimeline(steps: StdStep[], stageStart: number | null, now: nu
     if (s.status === 'done') { planEnd = t !== null ? t + std : null; if (s.doneAt) t = Date.parse(s.doneAt); }
     else if (s.status === 'running' && a !== null) { planEnd = a + std; t = Math.max(planEnd, now); }
     else { planEnd = t !== null ? Math.max(t, now) + std : null; t = planEnd; }
-    const late = (s.status === 'not_started' && planStart !== null && now > planStart) || (s.status === 'running' && planEnd !== null && now > planEnd);
+    const late = (s.status === 'not_started' && planStart !== null && now > planStart + DELAY_MIN_H * H) || (s.status === 'running' && planEnd !== null && now > planEnd + DELAY_MIN_H * H);
     return { id: s.id, planStart, planEnd, actualH, overH, late };
   });
 }
@@ -89,9 +91,6 @@ export const DELAY_REASONS: { key: DelayReason; label: string }[] = [
   { key: 'equipment', label: 'Equipment problem' }, { key: 'maintenance', label: 'Waiting on Maintenance' }, { key: 'process', label: 'Process conditions' },
   { key: 'safety', label: 'Safety hold' }, { key: 'other', label: 'Other' }];
 export const reasonLabel = (k: string | null | undefined) => DELAY_REASONS.find((r) => r.key === k)?.label ?? null;
-/** Less than this is not a delay worth a reason (hours). */
-export const DELAY_MIN_H = 0.25;
-
 export interface VsPlan {
   /** the first step's actual start, the plan end (start + all standard hours, fixed), the end expected now */
   start: number | null; planEnd: number | null; expectedEnd: number | null; finished: boolean;

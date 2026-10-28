@@ -122,9 +122,9 @@ function TimelineTab({ items, today }: { items: TItem[]; today: string }) {
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200"><div className="text-slate-500">Last finished</div>
-          {lastDone ? <><div className="truncate font-medium text-slate-900">{lastDone.title}</div><div className="text-slate-600">{days(lastDone.end, today)} days ago</div></> : <div className="text-slate-500">none</div>}</div>
+          {lastDone ? <><div className="font-medium text-slate-900">{lastDone.title}</div><div className="text-slate-600">{days(lastDone.end, today)} days ago</div></> : <div className="text-slate-500">none</div>}</div>
         <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200"><div className="text-slate-500">{next && next.start <= today ? 'Running now' : 'Next'}</div>
-          {next ? <><div className="truncate font-medium text-slate-900">{next.title}</div><div className="text-slate-600">{next.start <= today ? `ends in ${days(today, next.end)} days` : `in ${days(today, next.start)} days`}</div></> : <div className="text-slate-500">none planned</div>}</div>
+          {next ? <><div className="font-medium text-slate-900">{next.title}</div><div className="text-slate-600">{next.start <= today ? `ends in ${days(today, next.end)} days` : `in ${days(today, next.start)} days`}</div></> : <div className="text-slate-500">none planned</div>}</div>
       </div>
       <div className="flex flex-wrap gap-x-3 gap-y-1 px-1 text-[11px] text-slate-600">
         <span className="inline-flex items-center gap-1"><span className="h-2.5 w-4 rounded-sm bg-brand-600" />Train shutdown</span>
@@ -164,7 +164,7 @@ function TimelineTab({ items, today }: { items: TItem[]; today: string }) {
                       <Link to={`/sd/${p.key}`} className="flex items-start gap-2 py-1.5">
                         <span className={cx('mt-1 h-2.5 w-2.5 shrink-0 rounded-sm', colour(p))} />
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium text-slate-900">{p.title}{p.start > today ? <span className="ml-1.5 text-[10px] font-semibold text-brand-700">{p.tentative ? 'tentative' : 'planned'}</span> : p.end >= today ? <span className="ml-1.5 text-[10px] font-semibold text-green-700">running</span> : null}</span>
+                          <span className="block text-sm font-medium text-slate-900">{p.title}{p.start > today ? <span className="ml-1.5 text-[10px] font-semibold text-brand-700">{p.tentative ? 'tentative' : 'planned'}</span> : p.end >= today ? <span className="ml-1.5 text-[10px] font-semibold text-green-700">running</span> : null}</span>
                           <span className="block text-xs text-slate-600">{fmtDate(p.start)} – {fmtDate(p.end)} · {days(p.start, p.end) + 1} days{n != null ? ` · ${n} ${n === 1 ? 'person' : 'people'}` : ''}{p.end.slice(0, 4) !== p.start.slice(0, 4) ? ` · continues into ${p.end.slice(0, 4)}` : ''}</span>
                           {gap != null && gap >= 0 && <span className="block text-[11px] text-slate-500">{gap} days after {prev!.title}</span>}
                         </span>

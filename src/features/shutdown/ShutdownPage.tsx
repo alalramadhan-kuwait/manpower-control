@@ -94,7 +94,7 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
         <StageCard on={stage === 'mi'} onClick={() => { set('stage', 'mi'); set('part', 'progress'); }} title="M&I" tone={ph?.mi.actualStart != null ? (w && w.actualPct >= 100 ? 'done' : 'run') : 'idle'}
           lines={!trk ? ['No tracker'] : ph?.mi.actualStart != null ? [w ? `${w.actualPct}% · plan ${w.planPct}%` : 'Started', `from ${at(ph.mi.actualStart)}`] : [`plan ${Number.isNaN(ph?.mi.planned ?? NaN) ? '—' : at(ph!.mi.planned)}`]} pct={ph?.mi.actualStart != null ? w?.actualPct : undefined} />
         <StageCard on={stage === 'startup'} onClick={() => { set('stage', 'startup'); set('part', 'progress'); }} title="Start-up" tone={suSum.finishedAt != null ? 'done' : suSum.startedAt != null ? 'run' : 'idle'}
-          lines={startup.length ? [`${suSum.done}/${suSum.total} steps`, suSum.stdH ? `std ${hrs(suSum.stdH)}` : ''] : [miEnd !== null ? `plan ${at(miEnd)}` : 'No steps yet']} pct={suSum.total ? Math.round((suSum.done / suSum.total) * 100) : undefined} />
+          lines={startup.length ? [`${suSum.done}/${suSum.total} steps`, suSum.stdH ? `std ${suSum.stdH} h` : ''] : [miEnd !== null ? `plan ${at(miEnd)}` : 'No steps yet']} pct={suSum.total ? Math.round((suSum.done / suSum.total) * 100) : undefined} />
       </div>
 
       <div className="mb-3 grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
@@ -192,7 +192,7 @@ function StdLine({ std, t, status, startedAt, doneAt, proc }: { std: number | nu
   else if (t?.planStart != null) parts.push(`plan ${at(t.planStart)}`);
   return (
     <span className="block text-[11px] text-slate-500">{parts.join(' · ')}
-      {t?.overH != null && t.overH > 0 && status !== 'not_required' && <span className="font-semibold text-status-red"> · {hrs(t.overH)} over</span>}
+      {t?.overH != null && t.overH > 0 && status !== 'not_required' && <span className={t.overH >= DELAY_MIN_H ? 'font-semibold text-status-red' : ''}> · {hrs(t.overH)} over</span>}
       {t?.late && status === 'not_started' && <span className="font-semibold text-status-red"> · start late</span>}
       {proc && <span className="text-slate-400"> · {proc}</span>}</span>
   );
@@ -387,7 +387,7 @@ function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEnt
     const d: CardData = {
       title: `${entryName(entry)} · Start-up`, when: `Unit-12 · ${new Date(now).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kuwait' })}`,
       pct: vp.actualPct, planPct: vp.planPct, stepsLine: `${done} of ${counted.length} steps done`,
-      runningLine: running ? `Running: ${running.title.split(/[:(]/)[0].trim()}` : null,
+      runningLine: running ? `Running: ${running.title}` : null,
       expectedLine: `${vp.finished ? 'Finished' : 'Expected end'} ${at(vp.expectedEnd)}`,
       behindLine: behind >= DELAY_MIN_H ? `${hrs(behind)} behind plan` : behind <= -DELAY_MIN_H ? `${hrs(-behind)} ahead of plan` : 'On plan', behindRed: behind >= DELAY_MIN_H,
       planLine: `Plan end ${at(vp.planEnd)}${vp.overH > 0 ? ` · ${hrs(vp.overH)} longer steps` : ''}${vp.waitH > 0 ? ` · ${hrs(vp.waitH)} waiting` : ''}`,

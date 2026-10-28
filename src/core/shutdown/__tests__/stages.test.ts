@@ -11,13 +11,16 @@ describe('stdTimeline', () => {
     expect(v.map((x) => [(x.planStart! - T0) / H, (x.planEnd! - T0) / H])).toEqual([[0, 4], [4, 4], [4, 6]]);
   });
   it('measures actual against standard and flags a running step past its plan', () => {
-    const now = T0 + 7 * H;
+    const now = T0 + 8 * H;
     const v = stdTimeline([step('a', 4, 'done', new Date(T0).toISOString(), new Date(T0 + 5 * H).toISOString()), step('b', 1, 'running', new Date(T0 + 5 * H).toISOString())], T0, now);
     expect(v[0]).toMatchObject({ actualH: 5, overH: 1, late: false });
-    expect(v[1]).toMatchObject({ actualH: 2, overH: 1, late: true });
+    expect(v[1]).toMatchObject({ actualH: 3, overH: 2, late: true });
+    // half an hour past the plan is not late (1 h is)
+    expect(stdTimeline([step('c', 1, 'running', new Date(T0).toISOString())], T0, T0 + 1.5 * H)[0].late).toBe(false);
   });
   it('a step not started after its planned start is late; no stage start, no plan', () => {
-    expect(stdTimeline([step('a', 4)], T0, T0 + H)[0].late).toBe(true);
+    expect(stdTimeline([step('a', 4)], T0, T0 + 2 * H)[0].late).toBe(true);
+    expect(stdTimeline([step('a', 4)], T0, T0 + 0.5 * H)[0].late).toBe(false);
     expect(stdTimeline([step('a', 4)], null, T0)[0]).toMatchObject({ planStart: null, late: false });
   });
   it('re-plans the next steps on the actual times: a late step moves the ones after it', () => {
@@ -87,7 +90,8 @@ describe('startupVsPlan', () => {
   });
   it('splits the delay into steps over standard and waiting between steps', () => {
     const v = startupVsPlan(steps, now);
-    expect(v.overH).toBe(23.5); expect(v.waitH).toBe(23);
+    expect(v.overH).toBe(23); expect(v.waitH).toBe(23);
+    expect(v.over.has('s1')).toBe(false);
     expect(v.over.get('s2')).toBe(23); expect(v.wait.get('s2')).toBe(20); expect(v.wait.get('s6')).toBe(3);
   });
   it('progress by standard hours: done steps and the running one up to its standard', () => {
