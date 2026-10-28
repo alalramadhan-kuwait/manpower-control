@@ -106,3 +106,27 @@ describe('startupVsPlan', () => {
     expect(startupVsPlan([step('a', 2)], now)).toMatchObject({ start: null, planEnd: null, behindH: null, actualPct: 0 });
   });
 });
+
+describe('holds', () => {
+  const z = (x: string) => `2026-10-${x}:00Z`;
+  const hold = (id: string, a: string, d: string | null): StdStep => ({ id, stdHours: null, status: d ? 'done' : 'running', startedAt: a, doneAt: d, kind: 'hold' });
+  const steps: StdStep[] = [step('s1', 7, 'done', z('25T04:30'), z('25T12:00')), hold('h', z('25T12:00'), z('27T07:00')), step('s2', 3, 'done', z('27T07:00'), z('27T10:00')), step('s3', 8)];
+  const now = Date.parse(z('27T10:00'));
+  it('a hold is not a delay: the step after it is on time, its length is the hold', () => {
+    const v = startupVsPlan(steps, now);
+    expect(v.over.size).toBe(0); expect(v.wait.size).toBe(0);
+    expect(v.hold.get('h')).toBe(43); expect(v.holdH).toBe(43);
+    expect(v.behindH).toBe(43.5); expect(v.lateH).toBe(0.5);
+  });
+  it('the steps after a hold are planned from its end; it has no plan and is never late', () => {
+    const t = stdTimeline(steps, Date.parse(z('25T04:30')), now);
+    expect(t[1]).toMatchObject({ late: false, overH: null });
+    expect(new Date(t[3].planStart!).toISOString()).toBe('2026-10-27T10:00:00.000Z');
+  });
+  it('a hold still running moves the end with now; counts no step', () => {
+    const v = startupVsPlan([step('s1', 2, 'done', z('27T00:00'), z('27T02:00')), hold('h', z('27T02:00'), null), step('s2', 3)], now);
+    expect(v.hold.get('h')).toBe(8);
+    expect(new Date(v.expectedEnd!).toISOString()).toBe('2026-10-27T13:00:00.000Z');
+    expect(stageSummary([step('s1', 2, 'done', z('27T00:00'), z('27T02:00')), hold('h', z('27T02:00'), null)])).toMatchObject({ total: 1, done: 1 });
+  });
+});

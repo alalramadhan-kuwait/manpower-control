@@ -286,3 +286,4 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261028073522_train1_startup_plan_steps` | Train-1 start-up plan: 8 start-up steps, 60 standard hours, on the Train-1 Sulfur line SD (no actual times entered) |
 | `20261028090001_sd_end_follows_startup` | A shutdown ends with its start-up: once a start-up step has a time, the Calendar shutdown's last day follows (all done: the last done day; else the expected day from the actual times + standard hours); Train-1 synced |
 | `20261028091355_sd_startup_delay_reasons` | Start-up steps: delay and waiting reasons (a quick choice each: equipment, maintenance, process, safety, other, with a note) |
+| `20261028114146_sd_startup_hold` | Start-up holds: a row of kind hold (waiting on something outside the start-up, e.g. a clearance), with its own from / to and reason; no plan, never late |

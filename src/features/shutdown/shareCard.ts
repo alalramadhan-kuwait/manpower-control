@@ -1,6 +1,6 @@
 // The start-up as a picture for WhatsApp (owner, 28 Oct 2026, option A of the mock-up): a 1080 × 1350 (4:5) card
 // drawn on the phone, so it shows whole in a chat. Nothing is uploaded: the phone's share sheet sends it.
-export interface CardStep { title: string; status: 'done' | 'running' | 'not_started' | 'not_required'; right: string; red: boolean;
+export interface CardStep { title: string; status: 'done' | 'running' | 'not_started' | 'not_required' | 'hold'; right: string; red: boolean;
   /** when: done at, or the expected / target time from the latest update (grey); why it is late (amber) */
   time: string | null; sub: string | null }
 export interface CardData {
@@ -9,7 +9,7 @@ export interface CardData {
 }
 
 const W = 1080, MIN_H = 1350;
-const C = { navy: '#22386b', ink: '#172235', grey: '#64748b', light: '#e5e7eb', green: '#16a34a', amber: '#f59e0b', red: '#dc2626', band: '#f1f5f9', note: '#b45309' };
+const C = { navy: '#22386b', ink: '#172235', grey: '#64748b', light: '#e5e7eb', green: '#16a34a', amber: '#f59e0b', red: '#dc2626', band: '#f1f5f9', note: '#b45309', sky: '#0284c7' };
 const FONT = '-apple-system, "Segoe UI", Roboto, system-ui, sans-serif';
 
 /** A sentence in lines that fit the width: whole, never cut (a word longer than the line is broken). */
@@ -64,22 +64,23 @@ function layout(ctx: CanvasRenderingContext2D, d: CardData, k: number) {
   }
   // steps: the title wraps beside the hours; the reasons under it, whole
   const big = Math.round(30 * k), small = Math.round(23 * k), bl = Math.round(big * 1.22), sl = Math.round(small * 1.25);
-  const rows: { y: number; h: number; s: CardStep; i: number }[] = [];
-  d.steps.forEach((s, i) => {
+  const rows: { y: number; h: number; s: CardStep }[] = [];
+  d.steps.forEach((s) => {
     font(ctx, big, s.red ? 800 : 500); const rw = ctx.measureText(s.right).width;
     const yy = ty + 14 + big;
-    const th = put(s.title, 110, yy, big, 500, s.status === 'not_required' ? C.grey : C.ink, W - 110 - 70 - rw);
+    const th = put(s.title, 110, yy, big, 500, s.status === 'not_required' ? C.grey : s.status === 'hold' ? C.sky : C.ink, W - 110 - 70 - rw);
     L.push({ t: s.right, x: W - 50, y: yy, size: big, weight: s.red ? 800 : 500, color: s.red ? C.red : C.grey, align: 'right' });
     let sh = 0;
     if (s.time) sh += put(s.time, 110, yy + th - bl + sl + 4, small, 500, C.grey, W - 160) + 2;
-    if (s.sub) sh += put(s.sub, 110, yy + th - bl + sh + sl + 4, small, 500, C.note, W - 160) + 4;
-    const h = 14 + th + sh + 10; rows.push({ y: ty, h, s, i }); ty += h;
+    if (s.sub) sh += put(s.sub, 110, yy + th - bl + sh + sl + 4, small, 500, s.status === 'hold' ? C.sky : C.note, W - 160) + 4;
+    const h = 14 + th + sh + 10; rows.push({ y: ty, h, s }); ty += h;
   });
-  shapes.push((c) => rows.forEach(({ y: ry, h, s, i }, n) => {
-    const mid = ry + 14 + bl / 2 - 2; const col = s.status === 'done' ? C.green : s.status === 'running' ? C.amber : C.light;
+  shapes.push((c) => rows.forEach(({ y: ry, h, s }, n) => {
+    const mid = ry + 14 + bl / 2 - 2; const col = s.status === 'hold' ? C.sky : s.status === 'done' ? C.green : s.status === 'running' ? C.amber : C.light;
     c.beginPath(); c.arc(70, mid, 20, 0, Math.PI * 2); c.fillStyle = col; c.fill();
     font(c, 22, 800); c.fillStyle = s.status === 'not_started' || s.status === 'not_required' ? C.grey : '#ffffff'; c.textAlign = 'center'; c.textBaseline = 'middle';
-    c.fillText(s.status === 'done' ? '✓' : s.status === 'running' ? '▶' : s.status === 'not_required' ? '–' : String(i + 1), 70, mid + 1); c.textBaseline = 'alphabetic';
+    const num = rows.slice(0, n + 1).filter((r) => r.s.status !== 'hold').length;
+    c.fillText(s.status === 'hold' ? '❚❚' : s.status === 'done' ? '✓' : s.status === 'running' ? '▶' : s.status === 'not_required' ? '–' : String(num), 70, mid + 1); c.textBaseline = 'alphabetic';
     if (n < rows.length - 1) { c.fillStyle = '#eef1f5'; c.fillRect(110, ry + h - 1, W - 160, 2); }
   }));
   // footer

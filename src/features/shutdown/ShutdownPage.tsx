@@ -221,7 +221,7 @@ function MiStage({ trk, entry, now }: { trk: TrackerData | null; entry: Shutdown
 /** The start-up steps of this shutdown, planned one after another by their standard hours from the M&I finish (no
  *  tracker: from the first step's actual start). */
 function StartupSteps({ entry, steps, stageStart, canEdit, isHead, now, onDone }: { entry: ShutdownEntry; steps: StartupStep[]; stageStart: number | null; canEdit: boolean; isHead: boolean; now: number; onDone: (m: string) => void }) {
-  const [open, setOpen] = useState<StartupStep | 'new' | null>(null); const [sharing, setSharing] = useState(false);
+  const [open, setOpen] = useState<StartupStep | 'new' | 'hold' | null>(null); const [sharing, setSharing] = useState(false);
   if (!entry.eventId) return <Card><p className="text-sm text-slate-600">This shutdown is not on the Calendar, so it has no start-up steps.</p></Card>;
   const tl = new Map(stdTimeline(steps, stageStart, now).map((v) => [v.id, v]));
   // where a step should start: when the step before it was done (actual), else its plan from the stage start
@@ -231,13 +231,17 @@ function StartupSteps({ entry, steps, stageStart, canEdit, isHead, now, onDone }
   return (
     <Card className="p-0">
       <h3 className="flex items-center justify-between px-3 pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-500"><span>Start-up · plan vs actual</span>
-        {canEdit && <button type="button" onClick={() => setOpen('new')} className="inline-flex min-h-8 items-center gap-0.5 text-[12px] font-semibold normal-case tracking-normal text-brand-700"><Plus className="h-3.5 w-3.5" />Step</button>}</h3>
+        {canEdit && <span className="flex gap-3 normal-case tracking-normal">
+          <button type="button" onClick={() => setOpen('hold')} className="inline-flex min-h-8 items-center gap-0.5 text-[12px] font-semibold text-brand-700"><Plus className="h-3.5 w-3.5" />Hold</button>
+          <button type="button" onClick={() => setOpen('new')} className="inline-flex min-h-8 items-center gap-0.5 text-[12px] font-semibold text-brand-700"><Plus className="h-3.5 w-3.5" />Step</button></span>}</h3>
       {vp.start !== null && <VsPlanBox vp={vp} onShare={() => setSharing(true)} />}
       {!steps.length ? <p className="px-3 pb-3 pt-1 text-sm text-slate-500">No start-up steps yet: add them here.</p>
-        : <ul className="mt-1 divide-y divide-slate-100 border-t border-slate-100">{steps.map((s, i) => (
-          <li key={s.id}><StartupRow s={s} n={i + 1} t={tl.get(s.id)} over={vp.over.get(s.id)} wait={vp.wait.get(s.id)} onOpen={() => setOpen(s)} /></li>))}</ul>}
+        : <ul className="mt-1 divide-y divide-slate-100 border-t border-slate-100">{steps.map((s) => (
+          <li key={s.id}>{s.kind === 'hold' ? <HoldRow s={s} hours={vp.hold.get(s.id)} onOpen={() => setOpen(s)} />
+            : <StartupRow s={s} n={steps.filter((x) => x.kind !== 'hold' && x.seq <= s.seq).length} t={tl.get(s.id)} over={vp.over.get(s.id)} wait={vp.wait.get(s.id)} onOpen={() => setOpen(s)} />}</li>))}</ul>}
       {sharing && <ShareSheet entry={entry} steps={steps} vp={vp} tl={tl} now={now} onClose={() => setSharing(false)} />}
-      {open && <StartupSheet eventId={entry.eventId} step={open === 'new' ? null : open} planStart={open === 'new' ? null : planStartOf(open)} prevDone={open === 'new' ? null : (() => { const p = prevOf(open); return p?.doneAt ? Date.parse(p.doneAt) : null; })()} nextSeq={(steps[steps.length - 1]?.seq ?? 0) + 10} canEdit={canEdit} isHead={isHead} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); onDone(m); }} />}
+      {(open === 'hold' || (open && open !== 'new' && open.kind === 'hold')) && <HoldSheet eventId={entry.eventId} hold={open === 'hold' ? null : open as StartupStep} steps={steps} canEdit={canEdit} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); onDone(m); }} />}
+      {open && open !== 'hold' && (open === 'new' || open.kind !== 'hold') && <StartupSheet eventId={entry.eventId} step={open === 'new' ? null : open} planStart={open === 'new' ? null : planStartOf(open)} prevDone={open === 'new' ? null : (() => { const p = prevOf(open); return p?.doneAt ? Date.parse(p.doneAt) : null; })()} nextSeq={(steps[steps.length - 1]?.seq ?? 0) + 10} canEdit={canEdit} isHead={isHead} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); onDone(m); }} />}
     </Card>
   );
 }
@@ -282,6 +286,63 @@ function StartupRow({ s, n, t, over, wait, onOpen }: { s: StartupStep; n: number
         </span>
       </span>
     </button>
+  );
+}
+
+/** A hold: the start-up waited on something outside it (e.g. a clearance through Operations Planning). Neutral: its
+ *  from / to, its length and its reason; never late or on time. */
+function HoldRow({ s, hours, onOpen }: { s: StartupStep; hours?: number; onOpen: () => void }) {
+  const running = s.status === 'running';
+  return (
+    <button type="button" onClick={onOpen} className="block w-full border-l-[3px] border-l-sky-500 bg-sky-50/60 px-3 py-1.5 text-left active:bg-sky-50">
+      <span className="flex items-start gap-2">
+        <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-500 text-[9px] font-bold text-white">❚❚</span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13px] font-semibold leading-snug text-sky-900">Hold · {s.title}</span>
+          <span className="flex items-baseline justify-between gap-2 text-[11.5px] tabular-nums text-sky-900/80">
+            <span>{at(s.startedAt)} → {running ? 'still on hold' : at(s.doneAt)}</span>
+            {hours !== undefined && <span className="shrink-0 font-semibold">{hrs(hours)}{running ? ' so far' : ''}</span>}
+          </span>
+          {s.remark && <span className="block text-[11px] text-sky-900/80">{s.remark}</span>}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/** Add or change a hold: what it waited on, where it sits (before which step), from / to (empty: still on hold). */
+function HoldSheet({ eventId, hold, steps, canEdit, onClose, onDone }: { eventId: string; hold: StartupStep | null; steps: StartupStep[]; canEdit: boolean; onClose: () => void; onDone: (m: string) => void }) {
+  const list = steps.filter((x) => x.kind !== 'hold');
+  const [title, setTitle] = useState(hold?.title ?? 'Waiting for sulfur block clearance');
+  const [before, setBefore] = useState(list.find((x) => x.status !== 'done')?.id ?? list[list.length - 1]?.id ?? '');
+  const [a, setA] = useState(local(hold?.startedAt)); const [b, setB] = useState(local(hold?.doneAt)); const [note, setNote] = useState(hold?.remark ?? '');
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const run = async (fn: () => Promise<unknown>, m: string) => { setBusy(true); setErr(null); try { await fn(); onDone(m); } catch (e) { setErr(e); setBusy(false); } };
+  const future = (v: string) => !!v && Date.parse(`${v}:00+03:00`) > Date.now() + 15 * 60_000;
+  const bad = !title.trim() || !a || (!!b && b < a) || future(a) || future(b);
+  // a new hold sits just before the step chosen
+  const seqFor = () => { const at_ = steps.findIndex((x) => x.id === before); if (at_ < 0) return (steps[steps.length - 1]?.seq ?? 0) + 10; const prev = at_ > 0 ? steps[at_ - 1].seq : steps[at_].seq - 10; return Math.floor((prev + steps[at_].seq) / 2) === prev ? steps[at_].seq - 1 : Math.floor((prev + steps[at_].seq) / 2); };
+  return (
+    <BottomSheet open onClose={onClose} title={hold ? 'Hold' : 'Add a hold'}>
+      <div className="space-y-3">
+        <p className="text-xs text-slate-500">Time the start-up waited on something outside it. Shown on its own, not as a late step; the steps after it count from its end.</p>
+        <Field label="Waiting for"><input className="input w-full min-w-0" disabled={!canEdit} value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
+        {!hold && <Field label="Before step"><select className="input w-full min-w-0" value={before} onChange={(e) => setBefore(e.target.value)}>{list.map((x, i) => <option key={x.id} value={x.id}>{i + 1}. {x.title}</option>)}</select></Field>}
+        <Field label="From"><input type="datetime-local" className="input w-full min-w-0 appearance-none" disabled={!canEdit} value={a} onChange={(e) => setA(e.target.value)} /></Field>
+        <Field label="To (empty: still on hold)"><input type="datetime-local" className="input w-full min-w-0 appearance-none" disabled={!canEdit} value={b} onChange={(e) => setB(e.target.value)} /></Field>
+        {a && b && b >= a && <p className="-mt-1 text-[11px] text-slate-600">Hold {hrs((Date.parse(`${b}:00+03:00`) - Date.parse(`${a}:00+03:00`)) / H)}</p>}
+        <Field label="Note"><input className="input w-full min-w-0" disabled={!canEdit} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. clearance through Operations Planning" /></Field>
+        {!!a && !!b && b < a && <p className="text-xs text-status-red">The end is before the start.</p>}
+        {(future(a) || future(b)) && <p className="text-xs text-status-red">A time still to come cannot be recorded.</p>}
+        {err != null && <ErrorBox error={err} />}
+        {canEdit && <div className="flex gap-2">
+          {hold && <Button variant="danger" className="flex-1" disabled={busy} onClick={() => run(() => setStartupStep(hold.id, { active: false }), 'Hold removed from the list (kept in the history).')}>Remove</Button>}
+          <Button className="flex-1" disabled={busy || bad} onClick={() => run(() => hold
+            ? setStartupStep(hold.id, { title: title.trim(), started_at: fromLocal(a), done_at: fromLocal(b), status: b ? 'done' : 'running', remark: note.trim() || null })
+            : addStartupStep(eventId, { seq: seqFor(), title, stdHours: null, procedureRef: null, kind: 'hold', startedAt: fromLocal(a), doneAt: fromLocal(b), remark: note }), hold ? 'Hold saved.' : 'Hold added.')}>Save</Button>
+        </div>}
+      </div>
+    </BottomSheet>
   );
 }
 
@@ -392,7 +453,7 @@ function ReasonPick({ title, value, note, onValue, onNote }: { title: string; va
 /** The start-up against its plan: the plan end (first start + all plan hours, fixed), the end expected now, the
  *  time behind split into longer steps and waiting, progress against the plan; Share sends it as a picture. */
 function VsPlanBox({ vp, onShare }: { vp: ReturnType<typeof startupVsPlan>; onShare: () => void }) {
-  const behind = vp.behindH ?? 0; const red = behind >= DELAY_MIN_H;
+  const behind = vp.lateH ?? 0; const red = behind >= DELAY_MIN_H;
   return (
     <div className="mx-3 mt-1.5 rounded-xl bg-slate-50 px-2.5 py-2 ring-1 ring-slate-200">
       <div className="flex items-center gap-2">
@@ -401,6 +462,7 @@ function VsPlanBox({ vp, onShare }: { vp: ReturnType<typeof startupVsPlan>; onSh
           <span className="block">{vp.finished ? 'Finished' : 'Expected'} <b>{at(vp.expectedEnd)}</b></span>
           <span className={cx('block font-bold', red ? 'text-status-red' : 'text-status-green')}>{red ? `${hrs(behind)} behind plan` : behind <= -DELAY_MIN_H ? `${hrs(-behind)} ahead of plan` : 'On plan'}
             {(vp.overH > 0 || vp.waitH > 0) && <span className="font-normal text-slate-500"> · {[vp.overH > 0 && `${hrs(vp.overH)} longer steps`, vp.waitH > 0 && `${hrs(vp.waitH)} waiting`].filter(Boolean).join(' · ')}</span>}</span>
+          {vp.holdH > 0 && <span className="block text-sky-800">+ {hrs(vp.holdH)} on hold (not counted as late)</span>}
         </div>
         <button type="button" onClick={onShare} className="min-h-9 shrink-0 rounded-lg bg-[#25d366] px-3 text-[12px] font-bold text-white">Share</button>
       </div>
@@ -413,13 +475,16 @@ function VsPlanBox({ vp, onShare }: { vp: ReturnType<typeof startupVsPlan>; onSh
 /** The picture for WhatsApp (option A): previewed, then the phone's share sheet (or saved where it cannot share). */
 function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEntry; steps: StartupStep[]; vp: ReturnType<typeof startupVsPlan>; tl: Map<string, ReturnType<typeof stdTimeline>[number]>; now: number; onClose: () => void }) {
   const [url, setUrl] = useState<string | null>(null); const [blob, setBlob] = useState<Blob | null>(null); const [msg, setMsg] = useState<string | null>(null);
-  const counted = steps.filter((x) => x.status !== 'not_required'); const done = counted.filter((x) => x.status === 'done').length;
+  const counted = steps.filter((x) => x.status !== 'not_required' && x.kind !== 'hold'); const done = counted.filter((x) => x.status === 'done').length;
   const running = counted.find((x) => x.status === 'running') ?? null;
   const today = localToday(); const day = dayNo(today) - dayNo(entry.start) + 1;
-  const behind = vp.behindH ?? 0;
+  // late is only what the holds do not explain
+  const behind = vp.lateH ?? 0;
   const caption = `${entryName(entry)} start-up ${vp.actualPct}% · ${done}/${counted.length} steps · ${vp.finished ? 'finished' : 'expected end'} ${at(vp.expectedEnd)}${behind >= DELAY_MIN_H ? ` · ${hrs(behind)} behind plan` : ''}`;
   useEffect(() => {
     const steps_ = steps.map((x) => {
+      if (x.kind === 'hold') { const h = vp.hold.get(x.id); return { title: `Hold · ${x.title}`, status: 'hold' as const, right: h !== undefined ? `${hrs(h)} hold` : 'hold', red: false,
+        time: `${at(x.startedAt)} → ${x.status === 'running' ? 'still on hold' : at(x.doneAt)}`, sub: x.remark, hold: true }; }
       const t = tl.get(x.id); const over = vp.over.get(x.id); const wait = vp.wait.get(x.id);
       const right = x.status === 'done' ? `${t?.actualH != null ? hrs(t.actualH) : '—'} / ${x.stdHours != null ? hrs(x.stdHours) : '—'}` : x.status === 'running' ? `${t?.actualH != null ? hrs(t.actualH) : '0 h'} / ${x.stdHours != null ? hrs(x.stdHours) : '—'}` : x.status === 'not_required' ? 'not required' : x.stdHours != null ? hrs(x.stdHours) : '—';
       // the time from the latest update: done at; running: its expected finish; still to come: expected start → finish
@@ -441,7 +506,7 @@ function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEnt
       runningLine: running ? `Running: ${running.title}` : null,
       expectedLine: `${vp.finished ? 'Finished' : 'Expected end'} ${at(vp.expectedEnd)}`,
       behindLine: behind >= DELAY_MIN_H ? `${hrs(behind)} behind plan` : behind <= -DELAY_MIN_H ? `${hrs(-behind)} ahead of plan` : 'On plan', behindRed: behind >= DELAY_MIN_H,
-      planLine: `Plan end ${at(vp.planEnd)}${vp.overH > 0 ? ` · ${hrs(vp.overH)} longer steps` : ''}${vp.waitH > 0 ? ` · ${hrs(vp.waitH)} waiting` : ''}`,
+      planLine: `Plan end ${at(vp.planEnd)}${vp.overH > 0 ? ` · ${hrs(vp.overH)} longer steps` : ''}${vp.waitH > 0 ? ` · ${hrs(vp.waitH)} waiting` : ''}${vp.holdH > 0 ? ` · ${hrs(vp.holdH)} on hold (not late)` : ''}`,
       steps: steps_, footLeft: `Plan ${Math.round(counted.reduce((n, x) => n + (x.stdHours ?? 0), 0) * 10) / 10} h`, footRight: `Down since ${shortDate(entry.start)} · day ${day}`,
     };
     const c = document.createElement('canvas'); drawCard(c, d);

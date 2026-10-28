@@ -50,7 +50,9 @@ export type StartupStatus = 'not_started' | 'running' | 'done' | 'not_required';
 export interface StartupStep { id: string; seq: number; title: string; stdHours: number | null; procedureRef: string | null; status: StartupStatus;
   startedAt: string | null; doneAt: string | null; reason: string | null; remark: string | null; updatedAt: string | null; updatedBy: string | null;
   /** why it ran over / started late, and why it waited before it (a quick choice and a note) */
-  delayReason: DelayReason | null; delayNote: string | null; waitReason: DelayReason | null; waitNote: string | null }
+  delayReason: DelayReason | null; delayNote: string | null; waitReason: DelayReason | null; waitNote: string | null;
+  /** a hold: waiting on something outside the start-up (its own from / to and reason, no plan, never late) */
+  kind: 'step' | 'hold' }
 
 export async function fetchStartupSteps(eventId: string): Promise<StartupStep[]> {
   const { data, error } = await supabase.from('sd_startup_step').select('*').eq('event_id', eventId).eq('active', true).order('seq');
@@ -58,10 +60,12 @@ export async function fetchStartupSteps(eventId: string): Promise<StartupStep[]>
   return ((data ?? []) as Record<string, unknown>[]).map((r) => ({ id: r.id as string, seq: r.seq as number, title: r.title as string, stdHours: r.std_hours == null ? null : Number(r.std_hours),
     procedureRef: (r.procedure_ref as string) ?? null, status: r.status as StartupStatus, startedAt: (r.started_at as string) ?? null, doneAt: (r.done_at as string) ?? null,
     reason: (r.reason as string) ?? null, remark: (r.remark as string) ?? null, updatedAt: (r.updated_at as string) ?? null, updatedBy: (r.updated_by_name as string) ?? null,
-    delayReason: (r.delay_reason as DelayReason) ?? null, delayNote: (r.delay_note as string) ?? null, waitReason: (r.wait_reason as DelayReason) ?? null, waitNote: (r.wait_note as string) ?? null }));
+    delayReason: (r.delay_reason as DelayReason) ?? null, delayNote: (r.delay_note as string) ?? null, waitReason: (r.wait_reason as DelayReason) ?? null, waitNote: (r.wait_note as string) ?? null, kind: r.kind === 'hold' ? 'hold' : 'step' }));
 }
-export async function addStartupStep(eventId: string, v: { seq: number; title: string; stdHours: number | null; procedureRef: string | null }) {
-  const { error } = await supabase.from('sd_startup_step').insert({ event_id: eventId, seq: v.seq, title: v.title.trim(), std_hours: v.stdHours, procedure_ref: v.procedureRef?.trim() || null });
+export async function addStartupStep(eventId: string, v: { seq: number; title: string; stdHours: number | null; procedureRef: string | null; kind?: 'step' | 'hold'; startedAt?: string | null; doneAt?: string | null; remark?: string | null }) {
+  const hold = v.kind === 'hold';
+  const { error } = await supabase.from('sd_startup_step').insert({ event_id: eventId, seq: v.seq, title: v.title.trim(), std_hours: hold ? null : v.stdHours, procedure_ref: v.procedureRef?.trim() || null, kind: v.kind ?? 'step',
+    ...(hold ? { started_at: v.startedAt ?? null, done_at: v.doneAt ?? null, status: v.doneAt ? 'done' : v.startedAt ? 'running' : 'not_started', remark: v.remark?.trim() || null } : {}) });
   if (error) throw error;
 }
 export async function setStartupStep(id: string, patch: Partial<{ title: string; std_hours: number | null; procedure_ref: string | null; status: StartupStatus; started_at: string | null; done_at: string | null; reason: string | null; remark: string | null; seq: number; active: boolean; delay_reason: DelayReason | null; delay_note: string | null; wait_reason: DelayReason | null; wait_note: string | null }>) {
