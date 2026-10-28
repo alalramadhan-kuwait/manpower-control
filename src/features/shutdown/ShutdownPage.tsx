@@ -478,7 +478,7 @@ function StartupSheet({ eventId, step, all = [], readings = [], planStart = null
   return (
     <BottomSheet open onClose={onClose} title={step.title}>
       <div className="space-y-3">
-        {step.profile?.length ? <ProfileCard step={step} readings={readings} canEdit={canEdit} now={nowMs} onDone={onDone} /> : null}
+        {step.profile?.length ? <ProfileCard step={step} all={all} readings={readings} canEdit={canEdit} now={nowMs} onDone={onDone} /> : null}
         {canEdit && onMove && <MoveBar id={step.id} steps={all} onMove={onMove} />}
         <p className="text-xs text-slate-500">Plan {step.stdHours != null ? hrs(step.stdHours) : '—'}{step.procedureRef ? ` · ${step.procedureRef}` : ''}{step.updatedBy ? ` · last change ${step.updatedBy}` : ''}</p>
         {canEdit && step.status !== 'not_required' && <div className="flex gap-2 [&>*]:flex-1">

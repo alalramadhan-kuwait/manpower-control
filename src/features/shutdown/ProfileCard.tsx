@@ -20,13 +20,17 @@ export function stepProfile(s: StartupStep, readings: PanelReading[], now: numbe
   return profileView(s.profile, Date.parse(s.startedAt), readings.filter((r) => r.stepId === s.id).map((r) => ({ at: Date.parse(r.at), temp: r.temp, holding: r.holding })), now);
 }
 
-export function ProfileCard({ step, readings, canEdit, now, onDone }: { step: StartupStep; readings: PanelReading[]; canEdit: boolean; now: number; onDone: (m: string) => void }) {
+export function ProfileCard({ step, all = [], readings, canEdit, now, onDone }: { step: StartupStep; all?: StartupStep[]; readings: PanelReading[]; canEdit: boolean; now: number; onDone: (m: string) => void }) {
   const p = step.profile!; const uni = uniform(p);
   const start = step.startedAt ? Date.parse(step.startedAt) : null;
   const mine = readings.filter((r) => r.stepId === step.id);
   const v = start !== null ? profileView(p, start, mine.map((r) => ({ at: Date.parse(r.at), temp: r.temp, holding: r.holding })), now) : null;
   const [table, setTable] = useState(false); const [adding, setAdding] = useState(false);
   const late = v && uni && v.shiftH >= DELAY_MIN_H;
+  // the whole SOP table (owner, 28 Oct 2026), as the SOP prints it: every step's hours on stream in one table, so the
+  // diesel being displaced by black oil shows. A started step's rows at its own clock; the rest follow on from the
+  // latest started step.
+  const sop = sopTable(all.length ? all : [step], readings, now);
   return (
     <div className="space-y-2 rounded-xl ring-1 ring-slate-200">
       <div className="flex items-baseline justify-between px-2.5 pt-2"><b className="text-[12px] uppercase tracking-wide text-slate-500">Target · SOP</b><span className="text-[10.5px] text-slate-400">{step.profileRef}</span></div>
@@ -54,15 +58,40 @@ export function ProfileCard({ step, readings, canEdit, now, onDone }: { step: St
           <span className="flex items-center gap-2"><b>{r.temp} °F</b>{canEdit && <button type="button" className="text-[11px] text-slate-400" onClick={async () => { await removeReading(r.id); onDone('Reading removed (kept in the history).'); }}>✕</button>}</span></li>))}</ul>}
       {v && canEdit && (adding ? <ReadingForm step={step} readings={mine} now={now} onCancel={() => setAdding(false)} onDone={(m) => { setAdding(false); onDone(m); }} />
         : <div className="mx-2.5"><Button variant="secondary" className="min-h-9 w-full" onClick={() => setAdding(true)}>+ Panel reading</Button></div>)}
-      <button type="button" onClick={() => setTable(!table)} className="block w-full px-2.5 pb-2 text-left text-[12px] font-semibold text-brand-700">{table ? 'Hide' : 'Show'} the SOP table ({p.length} hours)</button>
+      <button type="button" onClick={() => setTable(!table)} className="block w-full px-2.5 pb-2 text-left text-[12px] font-semibold text-brand-700">{table ? 'Hide' : 'Show'} the SOP table (hours {sop.rows[0]?.r.sop_h}–{sop.rows[sop.rows.length - 1]?.r.sop_h})</button>
       {table && <div className="overflow-x-auto px-1 pb-2"><table className="w-full text-center text-[11px] tabular-nums">
-        <thead><tr className="text-slate-500"><th>h</th><th>{start !== null ? 'Clock' : 'SOP h'}</th><th>Feed</th><th>AR/DSL</th>{RX_NAMES.map((n) => <th key={n}>{n.replace('Rx-', '')}</th>)}<th /></tr></thead>
-        <tbody>{p.map((r) => { const cur = v && Math.floor(v.atH) === r.h; const nxt = v && Math.floor(v.atH) + 1 === r.h; return (
-          <tr key={r.h} className={cx('border-t border-slate-100', cur && 'bg-amber-100 font-bold', nxt && 'bg-sky-50')}>
-            <td>{r.sop_h}</td><td>{start !== null && v ? kwTime12(clockOf(start, v, r.h)) : r.h}</td><td>{r.feed}</td><td>{r.ardsl}</td>{r.rx.map((x, k) => <td key={k}>{x}</td>)}<td className="text-[10px] text-slate-500">{r.note ?? ''}</td></tr>); })}</tbody></table></div>}
+        <thead><tr className="text-slate-500"><th>Hrs</th><th>Clock</th><th>Feed</th><th>AR/DSL</th>{RX_NAMES.map((n) => <th key={n}>{n.replace('Rx-', '')}</th>)}<th /></tr></thead>
+        <tbody>{sop.rows.map(({ r, clock, step: of }) => { const own = of.id === step.id; const cur = sop.cur === r.sop_h; const nxt = sop.cur !== null && sop.cur + 1 === r.sop_h; return (
+          <tr key={r.sop_h} className={cx('border-t border-slate-100', !own && 'text-slate-500', cur && 'bg-amber-100 font-bold text-slate-900', nxt && 'bg-sky-50')}>
+            <td>{r.sop_h}</td><td className="whitespace-nowrap">{clock !== null ? kwTime12(clock) : '—'}{clock !== null && newDay(sop.rows, r.sop_h) && <span className="block text-[9px] font-semibold text-brand-700">{kwDay(clock).replace(/^\w+,?\s*/, '')}</span>}</td><td>{r.feed}</td><td>{r.ardsl}</td>{r.rx.map((x, k) => <td key={k}>{x}</td>)}<td className="text-[10px] text-slate-500">{r.note ?? ''}</td></tr>); })}</tbody></table></div>}
     </div>
   );
 }
+
+/** Every step's SOP rows in hours on stream (a step's last hour is the next one's first: shown once), each with its clock:
+ *  a started step's own (re-planned from its readings), the others on from the latest started step; and the hour now. */
+function sopTable(steps: StartupStep[], readings: PanelReading[], now: number) {
+  const withP = steps.filter((x) => x.profile?.length && x.status !== 'not_required');
+  const anchor = [...withP].reverse().find((x) => x.startedAt) ?? null; const av = anchor ? stepProfile(anchor, readings, now) : null;
+  const a0 = anchor?.profile![0].sop_h ?? 0;
+  const rows: { r: ProfileRow; clock: number | null; step: StartupStep }[] = [];
+  for (const s of withP) {
+    const sv = s.startedAt ? stepProfile(s, readings, now) : null;
+    for (const r of s.profile!) {
+      if (rows.some((x) => x.r.sop_h === r.sop_h)) continue;
+      const clock = sv ? clockOf(Date.parse(s.startedAt!), sv, r.h) : anchor && av ? clockOf(Date.parse(anchor.startedAt!), av, r.sop_h - a0) : null;
+      rows.push({ r, clock, step: s });
+    }
+  }
+  rows.sort((x, y) => x.r.sop_h - y.r.sop_h);
+  return { rows, cur: anchor && av && anchor.status === 'running' ? a0 + Math.floor(av.atH) : null };
+}
+
+/** The first row of the table or of a new day (Kuwait): it carries the date under its clock. */
+const newDay = (rows: { r: ProfileRow; clock: number | null }[], sopH: number) => {
+  const i = rows.findIndex((x) => x.r.sop_h === sopH); const c = rows[i]?.clock; const p = rows[i - 1]?.clock;
+  return c != null && (i === 0 || p == null || kwDay(p) !== kwDay(c));
+};
 
 /** The graph: the SOP line (dashed), the line re-planned from the latest reading, the readings, now. Rx-104 (the
  *  highest) for a profile that differs per reactor, the one line for a heat-up. */
