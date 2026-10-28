@@ -65,7 +65,7 @@ export async function fetchStartupSteps(eventId: string): Promise<StartupStep[]>
 export async function addStartupStep(eventId: string, v: { seq: number; title: string; stdHours: number | null; procedureRef: string | null; kind?: 'step' | 'hold'; startedAt?: string | null; doneAt?: string | null; remark?: string | null }) {
   const hold = v.kind === 'hold';
   const { error } = await supabase.from('sd_startup_step').insert({ event_id: eventId, seq: v.seq, title: v.title.trim(), std_hours: hold ? null : v.stdHours, procedure_ref: v.procedureRef?.trim() || null, kind: v.kind ?? 'step',
-    ...(hold ? { started_at: v.startedAt ?? null, done_at: v.doneAt ?? null, status: v.doneAt ? 'done' : v.startedAt ? 'running' : 'not_started', remark: v.remark?.trim() || null } : {}) });
+    ...(hold || v.startedAt ? { started_at: v.startedAt ?? null, done_at: v.doneAt ?? null, status: v.doneAt ? 'done' : v.startedAt ? 'running' : 'not_started', remark: v.remark?.trim() || null } : {}) });
   if (error) throw error;
 }
 export async function setStartupStep(id: string, patch: Partial<{ title: string; std_hours: number | null; procedure_ref: string | null; status: StartupStatus; started_at: string | null; done_at: string | null; reason: string | null; remark: string | null; seq: number; active: boolean; delay_reason: DelayReason | null; delay_note: string | null; wait_reason: DelayReason | null; wait_note: string | null }>) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { runRecord, sopRefs, stageSummary, startupVsPlan, stdTimeline, type StdStep } from '../stages';
+import { delayPeriod, runRecord, sopRefs, stageSummary, startupVsPlan, stdTimeline, swapTimes, type StdStep } from '../stages';
 
 const T0 = Date.parse('2026-11-12T03:00:00Z');
 const H = 3_600_000;
@@ -128,5 +128,23 @@ describe('holds', () => {
     expect(v.hold.get('h')).toBe(8);
     expect(new Date(v.expectedEnd!).toISOString()).toBe('2026-10-27T13:00:00.000Z');
     expect(stageSummary([step('s1', 2, 'done', z('27T00:00'), z('27T02:00')), hold('h', z('27T02:00'), null)])).toMatchObject({ total: 1, done: 1 });
+  });
+});
+
+describe('moving rows', () => {
+  const z = (x: string) => `2026-10-${x}:00Z`;
+  it('two finished rows trade places, each keeps its length and the gap between them', () => {
+    const r = swapTimes({ startedAt: z('25T12:00'), doneAt: z('26T08:00'), status: 'done' }, { startedAt: z('26T09:00'), doneAt: z('26T12:00'), status: 'done' });
+    expect(r).toEqual({ b: { startedAt: '2026-10-25T12:00:00.000Z', doneAt: '2026-10-25T15:00:00.000Z' }, a: { startedAt: '2026-10-25T16:00:00.000Z', doneAt: '2026-10-26T12:00:00.000Z' } });
+  });
+  it('rows without times only change order; a running row does not move past a finished one', () => {
+    expect(swapTimes({ startedAt: null, doneAt: null, status: 'not_started' }, { startedAt: null, doneAt: null, status: 'not_started' })).toBe('order');
+    expect(swapTimes({ startedAt: z('25T12:00'), doneAt: z('26T08:00'), status: 'done' }, { startedAt: z('26T09:00'), doneAt: null, status: 'running' })).toBeNull();
+  });
+  it('a delay as a period: the wait before a step, or its time over plan', () => {
+    const s = step('s', 3, 'done', z('26T08:00'), z('27T10:00'));
+    expect(delayPeriod(s, Date.parse(z('25T12:00')), 'wait', 0)).toEqual({ from: Date.parse(z('25T12:00')), to: Date.parse(z('26T08:00')), h: 20 });
+    expect(delayPeriod(s, null, 'over', 0)).toEqual({ from: Date.parse(z('26T08:00')), to: Date.parse(z('27T07:00')), h: 23 });
+    expect(delayPeriod(step('t', 3, 'done', z('26T08:00'), z('26T11:30')), null, 'over', 0)).toBeNull();
   });
 });

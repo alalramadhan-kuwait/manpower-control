@@ -144,3 +144,32 @@ export function startupVsPlan(steps: (StdStep & { seq?: number })[], now: number
     actualPct: stdTotal ? Math.round((doneStd / stdTotal) * 100) : 0,
     planPct: start !== null && stdTotal ? Math.round(Math.min(1, Math.max(0, (now - start) / (stdTotal * H))) * 100) : 0 };
 }
+
+// ── Moving a row: its time moves with it ─────────────────────────────────────────────────────────────────────
+export interface Timed { startedAt: string | null; doneAt: string | null; status: StdStep['status'] }
+/**
+ * Two neighbouring rows trade places (owner, 28 Oct 2026: "move it and the time moves with it"). Both finished: each
+ * keeps its own length and the gap between them stays between them, so the pair starts and ends when it did; B
+ * (was second) starts when A started. Neither has times: only the order changes (null times). Anything else (a row
+ * still running, one with times and one without) cannot move past the other: null.
+ */
+export function swapTimes(a: Timed, b: Timed): { a: { startedAt: string; doneAt: string }; b: { startedAt: string; doneAt: string } } | 'order' | null {
+  const timed = (x: Timed) => x.status === 'done' && !!x.startedAt && !!x.doneAt;
+  const bare = (x: Timed) => !x.startedAt && !x.doneAt && x.status !== 'running';
+  if (bare(a) && bare(b)) return 'order';
+  if (!timed(a) || !timed(b)) return null;
+  const as = Date.parse(a.startedAt!), ad = Date.parse(a.doneAt!), bs = Date.parse(b.startedAt!), bd = Date.parse(b.doneAt!);
+  const gap = Math.max(0, bs - ad);
+  const nbS = as, nbD = as + (bd - bs), naS = nbD + gap, naD = naS + (ad - as);
+  const iso = (t: number) => new Date(t).toISOString();
+  return { b: { startedAt: iso(nbS), doneAt: iso(nbD) }, a: { startedAt: iso(naS), doneAt: iso(naD) } };
+}
+
+/** The delay a step carries, as a period that can become a hold or a step of its own: the wait before it (the step
+ *  before done → its start, or now while it has not started), or its time over plan (its start → done − plan). */
+export function delayPeriod(s: StdStep, prevDone: number | null, kind: 'wait' | 'over', now: number): { from: number; to: number | null; h: number } | null {
+  const a = s.startedAt ? Date.parse(s.startedAt) : null; const d = s.doneAt ? Date.parse(s.doneAt) : null;
+  if (kind === 'wait') { if (prevDone === null) return null; const to = a; const h = ((to ?? now) - prevDone) / H; return h >= DELAY_MIN_H ? { from: prevDone, to, h: r1(h) } : null; }
+  if (a === null || d === null || s.stdHours == null) return null;
+  const h = (d - a) / H - s.stdHours; return h >= DELAY_MIN_H ? { from: a, to: d - s.stdHours * H, h: r1(h) } : null;
+}
