@@ -21,6 +21,7 @@ import { localToday, shortDate } from '@/ui/leave';
 import { NewPlanSheet } from './ShutdownListPage';
 import { drawCard, sharePicture, type CardData, type CardRow } from './shareCard';
 import { ProfileCard, stepProfile } from './ProfileCard';
+import { WaveCard } from './WaveCard';
 import { allBlackRow, blackAt, blackOf, uniform, type ProfileView } from '@/core/shutdown/profile';
 
 type Stage = 'shutdown' | 'mi' | 'startup';
@@ -478,6 +479,7 @@ function StartupSheet({ eventId, step, all = [], readings = [], planStart = null
   return (
     <BottomSheet open onClose={onClose} title={step.title}>
       <div className="space-y-3">
+        {step.cutin ? <WaveCard step={step} canEdit={canEdit} now={nowMs} /> : null}
         {step.profile?.length ? <ProfileCard step={step} all={all} readings={readings} canEdit={canEdit} now={nowMs} onDone={onDone} /> : null}
         {canEdit && onMove && <MoveBar id={step.id} steps={all} onMove={onMove} />}
         <p className="text-xs text-slate-500">Plan {step.stdHours != null ? hrs(step.stdHours) : '—'}{step.procedureRef ? ` · ${step.procedureRef}` : ''}{step.updatedBy ? ` · last change ${step.updatedBy}` : ''}</p>
