@@ -544,6 +544,8 @@ export function shiftOf(now: number): { date: string; shift: 'D' | 'N'; from: nu
   const start = h >= 19 ? day : day - DAY;
   return { date: new Date(start).toISOString().slice(0, 10), shift: 'N', from: start + 19 * H - KW, to: start + 31 * H - KW };
 }
+/** Kuwait time as 12-hour with AM / PM (owner, 28 Oct 2026: the shutdown page and its picture), e.g. "2:32 PM". */
+export const kwTime12 = (iso: string | number) => { const d = new Date((typeof iso === 'number' ? iso : Date.parse(iso)) + KW); const h = d.getUTCHours(); return `${h % 12 || 12}:${String(d.getUTCMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
 export const kwTime = (iso: string | number) => { const d = new Date((typeof iso === 'number' ? iso : Date.parse(iso)) + KW); return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`; };
 export const kwDay = (iso: string | number) => new Date((typeof iso === 'number' ? iso : Date.parse(iso)) + KW).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 

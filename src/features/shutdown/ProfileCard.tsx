@@ -4,12 +4,12 @@
 import { useState } from 'react';
 import { DELAY_MIN_H, DELAY_REASONS, type DelayReason } from '@/core/shutdown/stages';
 import { RX_NAMES, clockOf, profileView, uniform, type ProfileRow, type ProfileView } from '@/core/shutdown/profile';
-import { kwDay, kwTime } from '@/core/tracker';
+import { kwDay, kwTime12 } from '@/core/tracker';
 import { addReading, removeReading, setStartupStep, type PanelReading, type StartupStep } from '@/data/sdPage';
 import { Button, ErrorBox, Field, cx } from '@/ui/components';
 
 const H = 3_600_000;
-const at = (t: number) => `${kwDay(t).replace(/^\w+,?\s*/, '')} ${kwTime(t)}`;
+const at = (t: number) => `${kwDay(t).replace(/^\w+,?\s*/, '')} ${kwTime12(t)}`;
 const local = (t: number) => new Date(t + 3 * H).toISOString().slice(0, 16);
 const fromLocal = (v: string) => Date.parse(`${v}:00+03:00`);
 const hrs = (h: number) => `${Math.round(Math.abs(h) * 10) / 10} h`;
@@ -35,10 +35,10 @@ export function ProfileCard({ step, readings, canEdit, now, onDone }: { step: St
           <span className="block">End re-planned {at(v.endAt)} (plan {at(v.planEndAt)}), at the SOP rate. Not shown on the WhatsApp picture.</span></div>}
         {v.holding && <div className="mx-2.5 rounded-lg bg-sky-50 px-2.5 py-1.5 text-[12px] text-sky-900 ring-1 ring-sky-200"><b>Holding at {v.now[0]} °F</b> since {at(v.reading!.at)}: the end moves with the clock.</div>}
         <div className="mx-2.5 grid grid-cols-2 gap-1.5">
-          <div className="rounded-xl bg-amber-50 px-2.5 py-1.5 ring-1 ring-amber-200"><span className="block text-[10px] font-bold uppercase text-slate-500">Now · {kwTime(now)}</span>
+          <div className="rounded-xl bg-amber-50 px-2.5 py-1.5 ring-1 ring-amber-200"><span className="block text-[10px] font-bold uppercase text-slate-500">Now · {kwTime12(now)}</span>
             {uni ? <b className="block text-[24px] leading-tight tabular-nums">{v.now[0]} °F</b> : <b className="block text-[18px] leading-tight tabular-nums">{v.row.feed} KBPD</b>}
             <span className="text-[11px] text-slate-600">{uni ? 'all reactors inlet' : `AR/DSL ${v.row.ardsl}${v.row.note ? ` · ${v.row.note}` : ''}`}</span></div>
-          <div className="rounded-xl bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200"><span className="block text-[10px] font-bold uppercase text-slate-500">Next · {kwTime(v.next.at)}</span>
+          <div className="rounded-xl bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200"><span className="block text-[10px] font-bold uppercase text-slate-500">Next · {kwTime12(v.next.at)}</span>
             {uni ? <b className="block text-[24px] leading-tight tabular-nums">{v.next.rx[0]} °F</b> : <b className="block text-[18px] leading-tight tabular-nums">{v.nextRow?.feed ?? v.row.feed} KBPD</b>}
             <span className="text-[11px] text-slate-600">{uni ? `end ${at(v.endAt)}` : `AR/DSL ${v.nextRow?.ardsl ?? v.row.ardsl}${v.nextRow?.note ? ` · ${v.nextRow.note}` : ''}`}</span></div>
         </div>
@@ -59,7 +59,7 @@ export function ProfileCard({ step, readings, canEdit, now, onDone }: { step: St
         <thead><tr className="text-slate-500"><th>h</th><th>{start !== null ? 'Clock' : 'SOP h'}</th><th>Feed</th><th>AR/DSL</th>{RX_NAMES.map((n) => <th key={n}>{n.replace('Rx-', '')}</th>)}<th /></tr></thead>
         <tbody>{p.map((r) => { const cur = v && Math.floor(v.atH) === r.h; const nxt = v && Math.floor(v.atH) + 1 === r.h; return (
           <tr key={r.h} className={cx('border-t border-slate-100', cur && 'bg-amber-100 font-bold', nxt && 'bg-sky-50')}>
-            <td>{r.sop_h}</td><td>{start !== null && v ? kwTime(clockOf(start, v, r.h)) : r.h}</td><td>{r.feed}</td><td>{r.ardsl}</td>{r.rx.map((x, k) => <td key={k}>{x}</td>)}<td className="text-[10px] text-slate-500">{r.note ?? ''}</td></tr>); })}</tbody></table></div>}
+            <td>{r.sop_h}</td><td>{start !== null && v ? kwTime12(clockOf(start, v, r.h)) : r.h}</td><td>{r.feed}</td><td>{r.ardsl}</td>{r.rx.map((x, k) => <td key={k}>{x}</td>)}<td className="text-[10px] text-slate-500">{r.note ?? ''}</td></tr>); })}</tbody></table></div>}
     </div>
   );
 }
@@ -83,7 +83,7 @@ function Chart({ p, start, v, readings, now }: { p: ProfileRow[]; start: number;
       {readings.map((r) => <circle key={r.id} cx={X(Date.parse(r.at))} cy={Y(r.temp)} r="3.5" fill="#dc2626" />)}
       <line x1={X(now)} x2={X(now)} y1="4" y2={Hh - 14} stroke="#dc2626" strokeWidth="1.5" />
       <text x="2" y={Y(hi - 10) + 3} fontSize="9" fill="#94a3b8">{hi - 10}</text><text x="2" y={Y(lo + 10) + 3} fontSize="9" fill="#94a3b8">{lo + 10}</text>
-      {ticks.map((t, i) => <text key={i} x={X(t)} y={Hh - 3} fontSize="9" fill="#94a3b8" textAnchor={i === 0 ? 'start' : i === ticks.length - 1 ? 'end' : 'middle'}>{kwTime(t)}</text>)}
+      {ticks.map((t, i) => <text key={i} x={X(t)} y={Hh - 3} fontSize="9" fill="#94a3b8" textAnchor={i === 0 ? 'start' : i === ticks.length - 1 ? 'end' : 'middle'}>{kwTime12(t)}</text>)}
     </svg>
   );
 }

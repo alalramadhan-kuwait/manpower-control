@@ -7,7 +7,7 @@ import { ArrowLeft, Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { DELAY_MIN_H, DELAY_REASONS, delayPeriod, reasonLabel, sopRefs, stageSummary, startupVsPlan, stdTimeline, swapTimes, type DelayReason, type StdStep } from '@/core/shutdown/stages';
-import { kwDay, kwTime, phases, stepViews, type TrkStep } from '@/core/tracker';
+import { kwDay, kwTime12, phases, stepViews, type TrkStep } from '@/core/tracker';
 import { saveEvent } from '@/data/calendar';
 import { fetchUnitStatusHistory, type UnitStatusChange } from '@/data/modes';
 import { DOC_STATUS, FILE_PARTS, addStartupStep, entryName, fetchFileDocs, fetchShutdownIndex, fetchStartupSteps, removeFileDoc, saveFileDoc, setStartupStep, fetchReadings, type PanelReading,
@@ -26,7 +26,7 @@ type Stage = 'shutdown' | 'mi' | 'startup';
 const H = 3_600_000;
 const local = (iso: string | null | undefined) => (iso ? new Date(Date.parse(iso) + 3 * H).toISOString().slice(0, 16) : '');
 const fromLocal = (v: string) => (v ? new Date(`${v}:00+03:00`).toISOString() : null);
-const at = (t: number | string | null | undefined) => (t == null ? '—' : `${kwDay(t).replace(/^\w+,?\s*/, '')} ${kwTime(t)}`);
+const at = (t: number | string | null | undefined) => (t == null ? '—' : `${kwDay(t).replace(/^\w+,?\s*/, '')} ${kwTime12(t)}`);
 const hrs = (h: number) => (Math.abs(h) >= 48 ? `${Math.round(h / 24 * 10) / 10} d` : `${Math.round(h * 10) / 10} h`);
 const dayNo = (iso: string) => Math.round(Date.parse(`${iso}T00:00:00Z`) / 864e5);
 const EDIT_ROLES = ['section_head', 'manpower_coordinator', 'engineer', 'controller'];
@@ -266,7 +266,7 @@ function StartupSteps({ entry, steps, readings, stageStart, canEdit, isHead, now
 
 const signed = (h: number) => `${h > 0 ? '+' : h < 0 ? '−' : ''}${hrs(Math.abs(h))}`;
 const DOT_COL = { done: 'bg-status-green', running: 'bg-amber-400', not_started: 'bg-slate-300', not_required: 'bg-slate-200', hold: 'bg-sky-500' } as const;
-const kwHM = (t: number) => kwTime(t);
+const kwHM = (t: number) => kwTime12(t);
 const kwD = (t: number) => kwDay(t).replace(/^\w+,?\s*/, '');
 
 /** One start-up row, option A of the mock-up (owner, 28 Oct 2026): on the left the start (bold) over the end and the
@@ -285,7 +285,7 @@ function TimeRow({ s, pv = null, n, t, over, wait, hours, now, onOpen, onDelay }
   const day = a !== null ? (e !== null && kwD(e) !== kwD(a) ? `${kwD(a).replace(/ \w+$/, '')}→${kwD(e)}` : kwD(a)) : '';
   return (
     <div role="button" tabIndex={0} onClick={onOpen} onKeyDown={(k) => { if (k.key === 'Enter') onOpen(); }} className={cx('flex cursor-pointer active:bg-slate-50', hold ? 'bg-sky-50/70' : s.status === 'running' ? 'bg-amber-50/60' : pending ? 'bg-slate-50/50' : '')}>
-      <span className={cx('w-[66px] shrink-0 py-1.5 pr-1.5 text-right text-[11px] leading-tight tabular-nums', exp ? 'text-slate-400' : 'text-slate-600')}>
+      <span className={cx('w-[76px] shrink-0 whitespace-nowrap py-1.5 pr-1.5 text-right text-[11px] leading-tight tabular-nums', exp ? 'text-slate-400' : 'text-slate-600')}>
         <b className={cx('block text-[12.5px]', exp ? 'text-slate-400' : 'text-slate-900')}>{a !== null ? kwHM(a) : '—'}</b>
         <span className="block">{e !== null ? kwHM(e) : runEnd !== null ? <span className="text-amber-700">~{kwHM(runEnd)}</span> : s.status === 'running' ? '…' : '—'}</span>
         <span className="block whitespace-nowrap text-[10px] text-slate-400">{day}</span>
@@ -300,7 +300,7 @@ function TimeRow({ s, pv = null, n, t, over, wait, hours, now, onOpen, onDelay }
             {pending && t?.late && wait === undefined && <b className="whitespace-nowrap font-semibold text-status-red"> · late start</b>}
             {exp && !off && <span className="text-slate-400"> · expected</span>}</span>}
         {pv && s.status === 'running' && <span className={cx('mt-0.5 block rounded px-1.5 py-0.5 text-[11px] tabular-nums', pv.shiftH >= DELAY_MIN_H && s.profile && uniform(s.profile) ? 'bg-red-50 text-red-900 ring-1 ring-red-200' : 'bg-amber-50 text-amber-900')}>
-          🎯 {s.profile && uniform(s.profile) ? `Target now ${pv.now[0]} °F · ${pv.next.rx[0]} °F at ${kwTime(pv.next.at)}` : `Now ${pv.row.feed} KBPD · AR/DSL ${pv.row.ardsl}`}{pv.shiftH >= DELAY_MIN_H && s.profile && uniform(s.profile) ? ` · ${pv.behindF ?? ''}${pv.behindF != null ? ' °F' : ''} behind · ${hrs(pv.shiftH)} late` : ''}</span>}
+          🎯 {s.profile && uniform(s.profile) ? `Target now ${pv.now[0]} °F · ${pv.next.rx[0]} °F at ${kwTime12(pv.next.at)}` : `Now ${pv.row.feed} KBPD · AR/DSL ${pv.row.ardsl}`}{pv.shiftH >= DELAY_MIN_H && s.profile && uniform(s.profile) ? ` · ${pv.behindF ?? ''}${pv.behindF != null ? ' °F' : ''} behind · ${hrs(pv.shiftH)} late` : ''}</span>}
         {wait !== undefined && <button type="button" onClick={(k) => { k.stopPropagation(); onDelay?.('wait'); }} className="mt-0.5 block w-full rounded bg-amber-50 px-1.5 py-0.5 text-left text-[11px] leading-snug text-amber-900 ring-1 ring-amber-200">
           ⏸ Waited {hrs(wait)}{pending ? ' so far' : ''} before · {s.waitReason ? reason(s.waitReason, s.waitNote) : <b className="text-status-red">reason?</b>}{onDelay && <span className="font-semibold text-brand-700"> · Hold / Step ›</span>}</button>}
         {!!over && <button type="button" onClick={(k) => { k.stopPropagation(); onDelay?.('over'); }} className="mt-0.5 block w-full rounded bg-red-50 px-1.5 py-0.5 text-left text-[11px] leading-snug text-red-900 ring-1 ring-red-200">
@@ -589,7 +589,7 @@ function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEnt
       return { title: x.title, status: x.status, right, red: !!over, time, sub };
     });
     const d: CardData = {
-      title: `${entryName(entry)} · Start-up`, when: `Unit-12 · ${new Date(now).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kuwait' })}`,
+      title: `${entryName(entry)} · Start-up`, when: `Unit-12 · ${new Date(now).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kuwait' })}`,
       pct: vp.actualPct, planPct: vp.planPct, stepsLine: `${done} of ${counted.length} steps done`,
       runningLine: running ? `Running: ${running.title}` : null,
       expectedLine: `${vp.finished ? 'Finished' : 'Expected end'} ${at(vp.expectedEnd)}`,
@@ -637,7 +637,7 @@ function TeamPart({ entry, isHead }: { entry: ShutdownEntry; isHead: boolean }) 
 function RecordPart({ entry, ops, mi, su }: { entry: ShutdownEntry; ops: ReturnType<typeof phases>['ops']; mi: ReturnType<typeof phases>['mi'] | null; su: ReturnType<typeof stageSummary> }) {
   const [rows, setRows] = useState<UnitStatusChange[] | null>(null); const [err, setErr] = useState<unknown>(null);
   useEffect(() => { if (!entry.eventId) { setRows([]); return; } fetchUnitStatusHistory(500).then((r) => setRows(r.filter((c) => c.entityId === entry.eventId || (entry.plan && c.planId === entry.plan.id)))).catch(setErr); }, [entry]);
-  const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kuwait' });
+  const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kuwait' });
   const span = (a: string | null, b: string | null) => (a && b ? `${shortDate(a)} – ${shortDate(b)}` : '—');
   return (
     <div className="space-y-2">
