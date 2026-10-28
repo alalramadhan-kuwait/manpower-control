@@ -567,13 +567,10 @@ function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEnt
   const counted = steps.filter((x) => x.status !== 'not_required' && x.kind !== 'hold'); const done = counted.filter((x) => x.status === 'done').length;
   const running = counted.find((x) => x.status === 'running') ?? null;
   const today = localToday(); const day = dayNo(today) - dayNo(entry.start) + 1;
-  // late is only what the holds do not explain
-  const behind = vp.lateH ?? 0;
   const [caption, setCaption] = useState('');
   useEffect(() => {
     // the picture's times, to the half hour (owner)
     const hm = (t: number) => clock12(round30(t)); const ago = (t: number) => Math.max(t, now);
-    const why = (r: string | null, n: string | null) => (r ? `${reasonLabel(r)}${n ? `: ${n}` : ''}` : null);
     const rows: CardRow[] = [];
     // what is finished: one line (the steps, the added ones, the holds)
     const doneSteps = steps.filter((x) => x.status === 'done' && x.kind !== 'hold'); const holds = steps.filter((x) => x.kind === 'hold' && x.status === 'done');
@@ -583,7 +580,7 @@ function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEnt
       const planned = doneSteps.filter((x) => x.stdHours != null).length; const added = doneSteps.length - planned;
       const holdH = holds.reduce((n, x) => n + (vp.hold.get(x.id) ?? 0), 0);
       rows.push({ kind: 'done', start: hm(firstStart), end: hm(lastDone), date: dayRange(round30(firstStart), round30(lastDone)), title: `Done: ${planned} step${planned === 1 ? '' : 's'}${added ? ` + ${added} added` : ''}`,
-        sub: holds.length ? `${holds.length} hold${holds.length === 1 ? '' : 's'} ${hrs(holdH)} (${[...new Set(holds.map((x) => x.title))].join(', ')}) · not late` : null, right: '✓' });
+        sub: holds.length ? `${holds.length} hold${holds.length === 1 ? '' : 's'} ${hrs(holdH)} (${[...new Set(holds.map((x) => x.title))].join(', ')})` : null, right: '✓' });
     }
     // what is left, in the time column
     for (const x of steps) {
@@ -593,9 +590,7 @@ function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEnt
       const oil = /black\s*oil/i.test(x.title);
       if (x.status === 'running') {
         const a = Date.parse(x.startedAt!); const e = x.stdHours != null ? ago(a + x.stdHours * H) : null;
-        const over = vp.over.get(x.id); const wait = vp.wait.get(x.id);
-        const sub = [wait ? `waited ${hrs(wait)}` : null, over ? `+${hrs(over)} over plan` : null, ...new Set([wait ? why(x.waitReason, x.waitNote) : null, over ? why(x.delayReason, x.delayNote) : null])].filter(Boolean).join(' · ') || null;
-        rows.push({ kind: oil ? 'oil' : 'run', start: hm(a), end: e !== null ? `~${hm(e)}` : '…', date: dayRange(round30(a), e !== null ? round30(e) : null), title: x.title, sub, right: `${t?.actualH != null ? hrs(t.actualH) : '0 h'} / ${x.stdHours != null ? hrs(x.stdHours) : '—'}`, red: !!over });
+        rows.push({ kind: oil ? 'oil' : 'run', start: hm(a), end: e !== null ? `~${hm(e)}` : '…', date: dayRange(round30(a), e !== null ? round30(e) : null), title: x.title, sub: null, right: x.stdHours != null ? hrs(x.stdHours) : '—' });
       } else {
         const a = t?.planStart != null ? ago(t.planStart) : null; const e = t?.planEnd ?? null;
         rows.push({ kind: oil ? 'oil' : 'next', start: a !== null ? hm(a) : '—', end: e !== null ? hm(e) : '—', date: a !== null ? dayRange(round30(a), e !== null ? round30(e) : null) : '', title: x.title, sub: null, right: x.stdHours != null ? hrs(x.stdHours) : '—' });
@@ -625,16 +620,15 @@ function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEnt
       line2: oilStep.status === 'not_started' && inH !== null && inH > 0 ? `${hrs(inH)} left` : null }
       : vp.expectedEnd !== null ? { label: vp.finished ? 'START-UP FINISHED' : 'START-UP EXPECTED END', big: hm(vp.expectedEnd), line1: kwWeekDay(round30(vp.expectedEnd)), bar: null, line2: null } : null;
     const d: CardData = {
-      title: `${entryName(entry)} · Start-up`, when: `Unit-12 · ${kwWeekDay(now)} ${clock12(now)}`, pct: vp.actualPct, planPct: vp.planPct, box,
+      title: `${entryName(entry)} · Start-up`, when: `Unit-12 · ${kwWeekDay(now)} ${clock12(now)}`, pct: vp.actualPct, box,
       steps: `${done} of ${counted.length} steps done`, running: running ? `Running: ${running.title}` : null,
-      behind: behind >= DELAY_MIN_H ? `${hrs(behind)} behind plan` : behind <= -DELAY_MIN_H ? `${hrs(-behind)} ahead of plan` : 'On plan', behindRed: behind >= DELAY_MIN_H,
-      hold: vp.holdH > 0 ? `+ ${hrs(vp.holdH)} on hold (not counted as late)` : null, chips,
+      hold: vp.holdH > 0 ? `+ ${hrs(vp.holdH)} on hold` : null, chips,
       rows, footLeft: `Plan ${Math.round(counted.reduce((n, x) => n + (x.stdHours ?? 0), 0) * 10) / 10} h`, footRight: `Down since ${shortDate(entry.start)} · day ${day}`,
     };
-    setCaption(`${entryName(entry)} start-up ${vp.actualPct}% · ${done}/${counted.length} steps${box ? ` · ${box.label.toLowerCase().replace(/^\w/, (ch) => ch.toUpperCase())} ${box.line1} ${box.big}` : ''}${chips.slice(1).map((c) => ` · ${c.label.replace(' BLACK', ' black oil')} ${c.sub.split(' · ')[0]} ${c.big}`).join('')}${behind >= DELAY_MIN_H ? ` · ${hrs(behind)} behind plan` : ''}`);
+    setCaption(`${entryName(entry)} start-up ${vp.actualPct}% · ${done}/${counted.length} steps${box ? ` · ${box.label.toLowerCase().replace(/^\w/, (ch) => ch.toUpperCase())} ${box.line1} ${box.big}` : ''}${chips.slice(1).map((c) => ` · ${c.label.replace(' BLACK', ' black oil')} ${c.sub.split(' · ')[0]} ${c.big}`).join('')}`);
     const c = document.createElement('canvas'); drawCard(c, d);
     c.toBlob((b) => { if (b) { setBlob(b); setUrl(URL.createObjectURL(b)); } }, 'image/png');
-  }, [entry, steps, vp, tl, now, done, counted.length, running, day, behind]);
+  }, [entry, steps, vp, tl, now, done, counted.length, running, day]);
   useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
   const name = `${entryName(entry).replace(/[^\w-]+/g, '-').toLowerCase()}-startup.png`;
   return (
