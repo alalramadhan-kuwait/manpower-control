@@ -101,7 +101,7 @@ export function drawCard(canvas: HTMLCanvasElement, d: CardData) {
   const pa = -Math.PI / 2 + (Math.PI * 2 * Math.min(100, d.planPct)) / 100;
   ctx.lineWidth = 6; ctx.lineCap = 'butt'; ctx.strokeStyle = C.ink; ctx.beginPath(); ctx.moveTo(cx + Math.cos(pa) * (r - 24), cy + Math.sin(pa) * (r - 24)); ctx.lineTo(cx + Math.cos(pa) * (r + 24), cy + Math.sin(pa) * (r + 24)); ctx.stroke();
   font(ctx, 70, 800); ctx.fillStyle = C.ink; ctx.textAlign = 'center'; ctx.fillText(`${d.pct}%`, cx, cy + 20);
-  font(ctx, 24, 500); ctx.fillStyle = C.grey; ctx.fillText('by std hours', cx, cy + 58);
+  font(ctx, 24, 500); ctx.fillStyle = C.grey; ctx.fillText('by plan hours', cx, cy + 58);
   for (const l of lay.L) { font(ctx, l.size, l.weight); ctx.fillStyle = l.color; ctx.textAlign = l.align ?? 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(l.t, l.x, l.y); }
 }
 

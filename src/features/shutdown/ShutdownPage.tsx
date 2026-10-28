@@ -94,7 +94,7 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
         <StageCard on={stage === 'mi'} onClick={() => { set('stage', 'mi'); set('part', 'progress'); }} title="M&I" tone={ph?.mi.actualStart != null ? (w && w.actualPct >= 100 ? 'done' : 'run') : 'idle'}
           lines={!trk ? ['No tracker'] : ph?.mi.actualStart != null ? [w ? `${w.actualPct}% · plan ${w.planPct}%` : 'Started', `from ${at(ph.mi.actualStart)}`] : [`plan ${Number.isNaN(ph?.mi.planned ?? NaN) ? '—' : at(ph!.mi.planned)}`]} pct={ph?.mi.actualStart != null ? w?.actualPct : undefined} />
         <StageCard on={stage === 'startup'} onClick={() => { set('stage', 'startup'); set('part', 'progress'); }} title="Start-up" tone={suSum.finishedAt != null ? 'done' : suSum.startedAt != null ? 'run' : 'idle'}
-          lines={startup.length ? [`${suSum.done}/${suSum.total} steps`, suSum.stdH ? `std ${suSum.stdH} h` : ''] : [miEnd !== null ? `plan ${at(miEnd)}` : 'No steps yet']} pct={suSum.total ? Math.round((suSum.done / suSum.total) * 100) : undefined} />
+          lines={startup.length ? [`${suSum.done}/${suSum.total} steps`, suSum.stdH ? `plan ${suSum.stdH} h` : ''] : [miEnd !== null ? `plan ${at(miEnd)}` : 'No steps yet']} pct={suSum.total ? Math.round((suSum.done / suSum.total) * 100) : undefined} />
       </div>
 
       <div className="mb-3 grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
@@ -185,11 +185,11 @@ function ShutdownSteps({ trk, steps, stageStart, profile, now, onDone }: { trk: 
 
 function StdLine({ std, t, status, startedAt, doneAt, proc }: { std: number | null; t?: { planStart: number | null; actualH: number | null; overH: number | null; late: boolean }; status: StdStep['status']; startedAt: string | null; doneAt: string | null; proc?: string | null }) {
   const parts: React.ReactNode[] = [];
-  parts.push(std !== null ? `std ${hrs(std)}` : 'no std');
+  parts.push(std !== null ? `plan ${hrs(std)}` : 'no plan time');
   if (status === 'done') parts.push(`done ${at(doneAt)}${t?.actualH != null ? ` · took ${hrs(t.actualH)}` : ''}`);
   else if (status === 'running') parts.push(`started ${at(startedAt)}${t?.actualH != null ? ` · ${hrs(t.actualH)} so far` : ''}`);
   else if (status === 'not_required') parts.push('not required');
-  else if (t?.planStart != null) parts.push(`plan ${at(t.planStart)}`);
+  else if (t?.planStart != null) parts.push(`from ${at(t.planStart)}`);
   return (
     <span className="block text-[11px] text-slate-500">{parts.join(' · ')}
       {t?.overH != null && t.overH > 0 && status !== 'not_required' && <span className={t.overH >= DELAY_MIN_H ? 'font-semibold text-status-red' : ''}> · {hrs(t.overH)} over</span>}
@@ -230,23 +230,49 @@ function StartupSteps({ entry, steps, stageStart, canEdit, isHead, now, onDone }
   const vp = startupVsPlan(steps, now);
   return (
     <Card className="p-0">
-      <h3 className="flex items-center justify-between px-3 pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-500"><span>Start-up steps · standard vs actual</span>
-        {canEdit && <button type="button" onClick={() => setOpen('new')} className="inline-flex items-center gap-0.5 text-[12px] font-semibold normal-case tracking-normal text-brand-700"><Plus className="h-3.5 w-3.5" />Step</button>}</h3>
+      <h3 className="flex items-center justify-between px-3 pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-500"><span>Start-up · plan vs actual</span>
+        {canEdit && <button type="button" onClick={() => setOpen('new')} className="inline-flex min-h-8 items-center gap-0.5 text-[12px] font-semibold normal-case tracking-normal text-brand-700"><Plus className="h-3.5 w-3.5" />Step</button>}</h3>
       {vp.start !== null && <VsPlanBox vp={vp} onShare={() => setSharing(true)} />}
-      {!steps.length ? <p className="px-3 pb-3 pt-1 text-sm text-slate-500">No start-up steps yet. Add them here, or they are loaded with their standard timings when the list is ready.</p>
-        : <ul className="divide-y divide-slate-100 px-3 pb-1">{steps.map((s, i) => (
-          <li key={s.id}>{vp.wait.get(s.id) !== undefined && <button type="button" onClick={() => setOpen(s)} className="mt-1 flex w-full items-center gap-1.5 rounded-lg bg-amber-50 px-2 py-1 text-left text-[11px] text-amber-900">
-            <span>⏸ Waited {hrs(vp.wait.get(s.id)!)} before this step{s.status === 'not_started' ? ' (so far)' : ''}</span><span className={cx('ml-auto font-semibold', s.waitReason ? 'text-amber-900' : 'text-status-red')}>{s.waitReason ? reasonLabel(s.waitReason) : 'Reason?'}</span></button>}
-            <button type="button" onClick={() => setOpen(s)} className="flex w-full items-center gap-2 py-2 text-left">
-            <span className={cx('flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold', DOT[s.status])}>{s.status === 'done' ? '✓' : s.status === 'running' ? '▶' : s.status === 'not_required' ? '–' : i + 1}</span>
-            <span className="min-w-0 flex-1"><span className={cx('block text-[13px] font-medium', s.status === 'not_required' ? 'text-slate-400 line-through' : 'text-slate-900')}>{s.title}</span>
-              <StdLine std={s.stdHours} t={tl.get(s.id)} status={s.status} startedAt={s.startedAt} doneAt={s.doneAt} proc={s.procedureRef} />
-              {(s.delayReason || (vp.over.get(s.id) ?? 0) > 0 || tl.get(s.id)?.late) && s.status !== 'not_required' && <span className={cx('block text-[11px] font-medium', s.delayReason ? 'text-amber-800' : 'text-status-red')}>{s.delayReason ? `Reason: ${reasonLabel(s.delayReason)}${s.delayNote ? ` · ${s.delayNote}` : ''}` : 'Late: reason?'}</span>}
-              {s.waitReason && s.waitNote && <span className="block text-[11px] text-amber-800">Waited: {s.waitNote}</span>}</span>
-            <span className="text-slate-400">›</span></button></li>))}</ul>}
+      {!steps.length ? <p className="px-3 pb-3 pt-1 text-sm text-slate-500">No start-up steps yet: add them here.</p>
+        : <ul className="mt-1 divide-y divide-slate-100 border-t border-slate-100">{steps.map((s, i) => (
+          <li key={s.id}><StartupRow s={s} n={i + 1} t={tl.get(s.id)} over={vp.over.get(s.id)} wait={vp.wait.get(s.id)} onOpen={() => setOpen(s)} /></li>))}</ul>}
       {sharing && <ShareSheet entry={entry} steps={steps} vp={vp} tl={tl} now={now} onClose={() => setSharing(false)} />}
       {open && <StartupSheet eventId={entry.eventId} step={open === 'new' ? null : open} planStart={open === 'new' ? null : planStartOf(open)} prevDone={open === 'new' ? null : (() => { const p = prevOf(open); return p?.doneAt ? Date.parse(p.doneAt) : null; })()} nextSeq={(steps[steps.length - 1]?.seq ?? 0) + 10} canEdit={canEdit} isHead={isHead} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); onDone(m); }} />}
     </Card>
+  );
+}
+
+const ROW_EDGE = { done: 'border-l-status-green', running: 'border-l-amber-400', not_started: 'border-l-transparent', not_required: 'border-l-transparent' } as const;
+const signed = (h: number) => `${h > 0 ? '+' : h < 0 ? '−' : ''}${hrs(Math.abs(h))}`;
+
+/** One start-up step in two lines: the step and its state; Plan · Actual · Variance with its time on the right. A wait
+ *  before it and a delay reason each take one small highlighted line (amber: waiting, red: over plan). */
+function StartupRow({ s, n, t, over, wait, onOpen }: { s: StartupStep; n: number; t?: ReturnType<typeof stdTimeline>[number]; over?: number; wait?: number; onOpen: () => void }) {
+  const off = s.status === 'not_required'; const pending = s.status === 'not_started';
+  const variance = t?.actualH != null && s.stdHours != null ? t.actualH - s.stdHours : null;
+  // running under its plan is not a variance yet
+  const v = variance === null || (s.status === 'running' && variance < 0) ? null : variance;
+  const late = !!over || (pending && !!t?.late);
+  const when = s.status === 'done' ? at(s.doneAt) : s.status === 'running' ? `since ${at(s.startedAt)}` : off ? 'not required' : t?.planStart != null ? `from ${at(t.planStart)}` : '';
+  const reason = (r: string | null, note: string | null) => [reasonLabel(r), note].filter(Boolean).join(' · ');
+  return (
+    <button type="button" onClick={onOpen} className={cx('block w-full border-l-[3px] px-3 py-1.5 text-left active:bg-slate-50', ROW_EDGE[s.status], pending && 'bg-slate-50/60')}>
+      <span className="flex items-start gap-2">
+        <span className={cx('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold', DOT[s.status])}>{s.status === 'done' ? '✓' : s.status === 'running' ? '▶' : off ? '–' : n}</span>
+        <span className="min-w-0 flex-1">
+          <span className={cx('block text-[13px] font-semibold leading-snug', off ? 'text-slate-400 line-through' : pending ? 'text-slate-600' : 'text-slate-900')}>{s.title}</span>
+          <span className="flex items-baseline justify-between gap-2 text-[11.5px] tabular-nums">
+            <span className="text-slate-600"><span className="whitespace-nowrap">Plan {s.stdHours != null ? hrs(s.stdHours) : '—'}</span>{t?.actualH != null && <span className="whitespace-nowrap"> · Actual {hrs(t.actualH)}{s.status === 'running' ? ' so far' : ''}</span>}
+              {v !== null && <b className={cx('whitespace-nowrap font-semibold', v >= DELAY_MIN_H ? 'text-status-red' : 'text-status-green')}> · {Math.abs(v) < 0.05 ? 'on plan' : signed(v)}</b>}
+              {pending && t?.late && <b className="whitespace-nowrap font-semibold text-status-red"> · late start</b>}</span>
+            <span className="shrink-0 text-slate-500">{when}</span>
+          </span>
+          {wait !== undefined && <span className="mt-0.5 block rounded bg-amber-50 px-1.5 py-0.5 text-[11px] leading-snug text-amber-900">⏸ Waited {hrs(wait)}{pending ? ' so far' : ''} · {s.waitReason ? reason(s.waitReason, s.waitNote) : <b className="text-status-red">reason?</b>}</span>}
+          {late && <span className="mt-0.5 block rounded bg-red-50 px-1.5 py-0.5 text-[11px] leading-snug text-red-900">{over ? `Over plan ${signed(over)}` : 'Started late'} · {s.delayReason ? reason(s.delayReason, s.delayNote) : <b>reason?</b>}</span>}
+          {!late && s.delayReason && <span className="mt-0.5 block text-[11px] text-slate-500">{reason(s.delayReason, s.delayNote)}</span>}
+        </span>
+      </span>
+    </button>
   );
 }
 
@@ -282,7 +308,7 @@ function StartupSheet({ eventId, step, planStart = null, prevDone = null, nextSe
     <BottomSheet open onClose={onClose} title="New start-up step">
       <div className="space-y-3">
         <Field label="Step"><input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. N₂ purge and leak test" /></Field>
-        <div className="grid grid-cols-2 gap-2"><Field label="Standard hours"><input className="input" inputMode="decimal" value={std} onChange={(e) => setStd(e.target.value)} /></Field>
+        <div className="grid grid-cols-2 gap-2"><Field label="Plan hours"><input className="input" inputMode="decimal" value={std} onChange={(e) => setStd(e.target.value)} /></Field>
           <Field label="Procedure"><input className="input" value={proc} onChange={(e) => setProc(e.target.value)} placeholder="e.g. SOP-12-…" /></Field></div>
         {err != null && <ErrorBox error={err} />}
         <Button className="w-full" disabled={busy || !title.trim() || badStd} onClick={() => run(() => addStartupStep(eventId, { seq: nextSeq, title, stdHours: stdN, procedureRef: proc }), `${title.trim()} added.`)}>Add</Button>
@@ -294,7 +320,7 @@ function StartupSheet({ eventId, step, planStart = null, prevDone = null, nextSe
   return (
     <BottomSheet open onClose={onClose} title={step.title}>
       <div className="space-y-3">
-        <p className="text-xs text-slate-500">Standard {step.stdHours != null ? hrs(step.stdHours) : '—'}{step.procedureRef ? ` · ${step.procedureRef}` : ''}{step.updatedBy ? ` · last change ${step.updatedBy}` : ''}</p>
+        <p className="text-xs text-slate-500">Plan {step.stdHours != null ? hrs(step.stdHours) : '—'}{step.procedureRef ? ` · ${step.procedureRef}` : ''}{step.updatedBy ? ` · last change ${step.updatedBy}` : ''}</p>
         {canEdit && step.status !== 'not_required' && <div className="flex gap-2 [&>*]:flex-1">
           {step.status === 'not_started' && <Button disabled={busy || needs(0, nowWait)} onClick={() => patch({ status: 'running', started_at: nowIso(), ...reasons }, `${step.title} started.`)}>▶ Start now</Button>}
           {step.status === 'running' && <Button disabled={busy || needs(nowOver, 0)} onClick={() => patch({ status: 'done', done_at: nowIso(), ...reasons }, `${step.title} done.`)}>✓ Done now</Button>}
@@ -302,14 +328,14 @@ function StartupSheet({ eventId, step, planStart = null, prevDone = null, nextSe
           {step.status === 'running' && <Button variant="secondary" disabled={busy} onClick={() => patch({ status: 'not_started', started_at: null }, `${step.title} back to not started.`)}>↶ Undo start</Button>}
         </div>}
         {canEdit && <>
-          {filled && <p className="rounded-lg bg-brand-50 px-2.5 py-1.5 text-[11px] text-brand-900">Filled from the plan{step.stdHours != null ? ` (start + ${hrs(step.stdHours)} standard)` : ''}. Change them to the actual times, then Save.</p>}
+          {filled && <p className="rounded-lg bg-brand-50 px-2.5 py-1.5 text-[11px] text-brand-900">Filled from the plan{step.stdHours != null ? ` (start + ${hrs(step.stdHours)})` : ''}. Change them to the actual times, then Save.</p>}
           <Field label="Started"><input type="datetime-local" className="input w-full min-w-0 appearance-none" value={s} onChange={(e) => setStart(e.target.value)} /></Field>
           {!s && planS !== null && <p className="-mt-2 text-[11px] text-slate-500">Plan start {at(planS)}</p>}
           <Field label="Done"><input type="datetime-local" className="input w-full min-w-0 appearance-none" value={f} onChange={(e) => { setF(e.target.value); setFTouched(true); }} /></Field>
           {!f && planF !== null && <p className="-mt-2 text-[11px] text-slate-500">Plan done {at(planF)}</p>}
-          {s && f && step.stdHours != null && f >= s && <p className="-mt-1 text-[11px] text-slate-600">Took {hrs((Date.parse(`${f}:00+03:00`) - Date.parse(`${s}:00+03:00`)) / H)} · standard {hrs(step.stdHours)}</p>}
+          {s && f && step.stdHours != null && f >= s && <p className="-mt-1 text-[11px] text-slate-600">Actual {hrs((Date.parse(`${f}:00+03:00`) - Date.parse(`${s}:00+03:00`)) / H)} · plan {hrs(step.stdHours)}</p>}
           {(Math.max(sWait, step.status === 'not_started' ? nowWait : 0) >= DELAY_MIN_H || wr) && <ReasonPick title={`Waited ${hrs(Math.max(sWait, step.status === 'not_started' && !s ? nowWait : 0))} before this step: why?`} value={wr} note={wn} onValue={setWr} onNote={setWn} />}
-          {(Math.max(sOver, step.status === 'running' ? nowOver : 0) >= DELAY_MIN_H || dr) && <ReasonPick title={`${hrs(Math.max(sOver, step.status === 'running' && !f ? nowOver : 0))} over the standard: why?`} value={dr} note={dn} onValue={setDr} onNote={setDn} />}
+          {(Math.max(sOver, step.status === 'running' ? nowOver : 0) >= DELAY_MIN_H || dr) && <ReasonPick title={`${hrs(Math.max(sOver, step.status === 'running' && !f ? nowOver : 0))} over plan: why?`} value={dr} note={dn} onValue={setDr} onNote={setDn} />}
           <Field label="Remark"><input className="input w-full min-w-0" value={note} onChange={(e) => setNote(e.target.value)} /></Field>
           {!!s && !!f && f < s && <p className="text-xs text-status-red">Done is before the start.</p>}
           {(future(s) || future(f)) && <p className="text-xs text-status-red">A time still to come cannot be recorded.</p>}
@@ -319,7 +345,7 @@ function StartupSheet({ eventId, step, planStart = null, prevDone = null, nextSe
         {isHead && <details className="rounded-xl bg-slate-50 p-2 text-sm"><summary className="cursor-pointer text-[12px] font-semibold text-slate-600">Step details · not required</summary>
           <div className="mt-2 space-y-2">
             <Field label="Step"><input className="input" value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
-            <div className="grid grid-cols-2 gap-2"><Field label="Standard hours"><input className="input" inputMode="decimal" value={std} onChange={(e) => setStd(e.target.value)} /></Field>
+            <div className="grid grid-cols-2 gap-2"><Field label="Plan hours"><input className="input" inputMode="decimal" value={std} onChange={(e) => setStd(e.target.value)} /></Field>
               <Field label="Procedure"><input className="input" value={proc} onChange={(e) => setProc(e.target.value)} /></Field></div>
             <Button variant="secondary" className="w-full" disabled={busy || !title.trim() || badStd} onClick={() => patch({ title: title.trim(), std_hours: stdN, procedure_ref: proc.trim() || null }, `${title.trim()} saved.`)}>Save details</Button>
             {step.status === 'not_required'
@@ -348,23 +374,23 @@ function ReasonPick({ title, value, note, onValue, onNote }: { title: string; va
   );
 }
 
-/** The start-up against its plan: the plan end (first start + all standard hours, fixed), the end expected now, the
+/** The start-up against its plan: the plan end (first start + all plan hours, fixed), the end expected now, the
  *  time behind split into longer steps and waiting, progress against the plan; Share sends it as a picture. */
 function VsPlanBox({ vp, onShare }: { vp: ReturnType<typeof startupVsPlan>; onShare: () => void }) {
-  const behind = vp.behindH ?? 0;
+  const behind = vp.behindH ?? 0; const red = behind >= DELAY_MIN_H;
   return (
-    <div className="mx-3 mt-2 rounded-xl bg-slate-50 p-2.5 ring-1 ring-slate-200">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 text-[12px] leading-snug text-slate-700">
+    <div className="mx-3 mt-1.5 rounded-xl bg-slate-50 px-2.5 py-2 ring-1 ring-slate-200">
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1 text-[12px] leading-snug tabular-nums text-slate-700">
           <span className="block">Plan end <b>{at(vp.planEnd)}</b></span>
           <span className="block">{vp.finished ? 'Finished' : 'Expected'} <b>{at(vp.expectedEnd)}</b></span>
-          <span className={cx('block text-[13px] font-bold', behind >= DELAY_MIN_H ? 'text-status-red' : 'text-status-green')}>{behind >= DELAY_MIN_H ? `${hrs(behind)} behind plan` : behind <= -DELAY_MIN_H ? `${hrs(-behind)} ahead of plan` : 'On plan'}</span>
-          {(vp.overH > 0 || vp.waitH > 0) && <span className="block text-[11px] text-slate-500">{[vp.overH > 0 && `${hrs(vp.overH)} longer steps`, vp.waitH > 0 && `${hrs(vp.waitH)} waiting between steps`].filter(Boolean).join(' · ')}</span>}
+          <span className={cx('block font-bold', red ? 'text-status-red' : 'text-status-green')}>{red ? `${hrs(behind)} behind plan` : behind <= -DELAY_MIN_H ? `${hrs(-behind)} ahead of plan` : 'On plan'}
+            {(vp.overH > 0 || vp.waitH > 0) && <span className="font-normal text-slate-500"> · {[vp.overH > 0 && `${hrs(vp.overH)} longer steps`, vp.waitH > 0 && `${hrs(vp.waitH)} waiting`].filter(Boolean).join(' · ')}</span>}</span>
         </div>
-        <button type="button" onClick={onShare} className="shrink-0 rounded-xl bg-[#25d366] px-3 py-2 text-[12px] font-bold text-white">Share</button>
+        <button type="button" onClick={onShare} className="min-h-9 shrink-0 rounded-lg bg-[#25d366] px-3 text-[12px] font-bold text-white">Share</button>
       </div>
-      <div className="mt-2"><div className="relative h-2 rounded bg-slate-200"><div className="h-2 rounded bg-amber-500" style={{ width: `${vp.actualPct}%` }} /><span className="absolute -top-1 h-4 w-0.5 bg-slate-800" style={{ left: `${vp.planPct}%` }} /></div>
-        <p className="mt-1 text-[11px] text-slate-500">{vp.actualPct}% done by standard hours · plan now {vp.planPct}%</p></div>
+      <div className="mt-1.5 flex items-center gap-2"><div className="relative h-1.5 flex-1 rounded bg-slate-200"><div className="h-1.5 rounded bg-amber-500" style={{ width: `${vp.actualPct}%` }} /><span className="absolute -top-1 h-3.5 w-0.5 bg-slate-800" style={{ left: `${vp.planPct}%` }} /></div>
+        <span className="shrink-0 text-[11px] tabular-nums text-slate-500">{vp.actualPct}% · plan {vp.planPct}%</span></div>
     </div>
   );
 }
@@ -391,7 +417,7 @@ function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEnt
       expectedLine: `${vp.finished ? 'Finished' : 'Expected end'} ${at(vp.expectedEnd)}`,
       behindLine: behind >= DELAY_MIN_H ? `${hrs(behind)} behind plan` : behind <= -DELAY_MIN_H ? `${hrs(-behind)} ahead of plan` : 'On plan', behindRed: behind >= DELAY_MIN_H,
       planLine: `Plan end ${at(vp.planEnd)}${vp.overH > 0 ? ` · ${hrs(vp.overH)} longer steps` : ''}${vp.waitH > 0 ? ` · ${hrs(vp.waitH)} waiting` : ''}`,
-      steps: steps_, footLeft: `Standard ${Math.round(counted.reduce((n, x) => n + (x.stdHours ?? 0), 0) * 10) / 10} h`, footRight: `Down since ${shortDate(entry.start)} · day ${day}`,
+      steps: steps_, footLeft: `Plan ${Math.round(counted.reduce((n, x) => n + (x.stdHours ?? 0), 0) * 10) / 10} h`, footRight: `Down since ${shortDate(entry.start)} · day ${day}`,
     };
     const c = document.createElement('canvas'); drawCard(c, d);
     c.toBlob((b) => { if (b) { setBlob(b); setUrl(URL.createObjectURL(b)); } }, 'image/png');
@@ -441,7 +467,7 @@ function RecordPart({ entry, ops, mi, su }: { entry: ShutdownEntry; ops: ReturnT
         <h3 className="py-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Plan vs actual</h3>
         <RecLine label="Shutdown" plan={ops ? `${at(ops.start)} → ${at(ops.end)}` : '—'} actual={ops?.finishedAt != null ? `finished ${at(ops.finishedAt)}${ops.finishDelayH ? ` (${ops.finishDelayH > 0 ? '+' : ''}${hrs(ops.finishDelayH)})` : ''}` : ops && ops.state !== 'NOT_STARTED' ? 'running' : 'not started'} late={(ops?.finishDelayH ?? 0) > 0} />
         <RecLine label="M&I" plan={mi && !Number.isNaN(mi.planned) ? `${at(mi.planned)} → ${Number.isNaN(mi.plannedEnd) ? '—' : at(mi.plannedEnd)}` : '—'} actual={mi?.actualStart != null ? `started ${at(mi.actualStart)}${mi.delayH ? ` (${mi.delayH > 0 ? '+' : ''}${hrs(mi.delayH)})` : ''}` : 'not started'} late={(mi?.delayH ?? 0) > 0} />
-        <RecLine label="Start-up" plan={su.stdH ? `std ${hrs(su.stdH)}` : '—'} actual={su.finishedAt != null ? `finished ${at(su.finishedAt)}` : su.startedAt != null ? `started ${at(su.startedAt)}` : 'not started'} late={false} />
+        <RecLine label="Start-up" plan={su.stdH ? `${su.stdH} h` : '—'} actual={su.finishedAt != null ? `finished ${at(su.finishedAt)}` : su.startedAt != null ? `started ${at(su.startedAt)}` : 'not started'} late={false} />
       </Card>
       <Card className="py-1">
         <h3 className="py-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Date changes</h3>
