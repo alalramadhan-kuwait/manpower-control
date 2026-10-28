@@ -288,7 +288,7 @@ function TimeRow({ s, n, t, over, wait, hours, now, onOpen, onDelay }: { s: Star
       <span className="min-w-0 flex-1 py-1.5 pl-1 pr-3">
         <span className={cx('block text-[13px] font-semibold leading-snug', hold ? 'text-sky-900' : off ? 'text-slate-400 line-through' : pending ? 'text-slate-600' : 'text-slate-900')}>{hold ? `Hold · ${s.title}` : `${pending || off ? `${n} · ` : ''}${s.title}`}</span>
         {hold ? <span className="block text-[11.5px] tabular-nums text-sky-800">{hours !== undefined ? `${hrs(hours)}${s.status === 'running' ? ' so far' : ''}` : ''} · not counted as late{s.remark ? ` · ${s.remark}` : ''}</span>
-          : <span className="block text-[11.5px] tabular-nums text-slate-600"><span className="whitespace-nowrap">Plan {s.stdHours != null ? hrs(s.stdHours) : 'none (added)'}</span>
+          : <span className="block text-[11.5px] tabular-nums text-slate-600"><span className="whitespace-nowrap">{s.stdHours != null ? `Plan ${hrs(s.stdHours)}` : 'Added · not in the plan'}</span>
             {t?.actualH != null && <span className="whitespace-nowrap"> · Actual {hrs(t.actualH)}{s.status === 'running' ? ' so far' : ''}</span>}
             {v !== null && <b className={cx('whitespace-nowrap font-semibold', v >= DELAY_MIN_H ? 'text-status-red' : 'text-status-green')}> · {Math.abs(v) < 0.05 ? 'on plan' : signed(v)}</b>}
             {pending && t?.late && wait === undefined && <b className="whitespace-nowrap font-semibold text-status-red"> · late start</b>}
@@ -540,7 +540,7 @@ function VsPlanBox({ vp, onShare }: { vp: ReturnType<typeof startupVsPlan>; onSh
           <span className="block">Plan end <b>{at(vp.planEnd)}</b></span>
           <span className="block">{vp.finished ? 'Finished' : 'Expected'} <b>{at(vp.expectedEnd)}</b></span>
           <span className={cx('block font-bold', red ? 'text-status-red' : 'text-status-green')}>{red ? `${hrs(behind)} behind plan` : behind <= -DELAY_MIN_H ? `${hrs(-behind)} ahead of plan` : 'On plan'}
-            {(vp.overH > 0 || vp.waitH > 0) && <span className="font-normal text-slate-500"> · {[vp.overH > 0 && `${hrs(vp.overH)} longer steps`, vp.waitH > 0 && `${hrs(vp.waitH)} waiting`].filter(Boolean).join(' · ')}</span>}</span>
+            {(vp.overH > 0 || vp.waitH > 0 || vp.addedH > 0) && <span className="font-normal text-slate-500"> · {[vp.overH > 0 && `${hrs(vp.overH)} longer steps`, vp.addedH > 0 && `${hrs(vp.addedH)} added steps`, vp.waitH > 0 && `${hrs(vp.waitH)} waiting`].filter(Boolean).join(' · ')}</span>}</span>
           {vp.holdH > 0 && <span className="block text-sky-800">+ {hrs(vp.holdH)} on hold (not counted as late)</span>}
         </div>
         <button type="button" onClick={onShare} className="min-h-9 shrink-0 rounded-lg bg-[#25d366] px-3 text-[12px] font-bold text-white">Share</button>
@@ -565,7 +565,7 @@ function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEnt
       if (x.kind === 'hold') { const h = vp.hold.get(x.id); return { title: `Hold · ${x.title}`, status: 'hold' as const, right: h !== undefined ? `${hrs(h)} hold` : 'hold', red: false,
         time: `${at(x.startedAt)} → ${x.status === 'running' ? 'still on hold' : at(x.doneAt)}`, sub: x.remark, hold: true }; }
       const t = tl.get(x.id); const over = vp.over.get(x.id); const wait = vp.wait.get(x.id);
-      const right = x.status === 'done' ? `${t?.actualH != null ? hrs(t.actualH) : '—'} / ${x.stdHours != null ? hrs(x.stdHours) : '—'}` : x.status === 'running' ? `${t?.actualH != null ? hrs(t.actualH) : '0 h'} / ${x.stdHours != null ? hrs(x.stdHours) : '—'}` : x.status === 'not_required' ? 'not required' : x.stdHours != null ? hrs(x.stdHours) : '—';
+      const right = x.stdHours == null && t?.actualH != null ? `${hrs(t.actualH)} added` : x.status === 'done' ? `${t?.actualH != null ? hrs(t.actualH) : '—'} / ${x.stdHours != null ? hrs(x.stdHours) : '—'}` : x.status === 'running' ? `${t?.actualH != null ? hrs(t.actualH) : '0 h'} / ${x.stdHours != null ? hrs(x.stdHours) : '—'}` : x.status === 'not_required' ? 'not required' : x.stdHours != null ? hrs(x.stdHours) : '—';
       // the time from the latest update: done at; running: its expected finish; still to come: expected start → finish
       const end = x.startedAt && x.stdHours != null ? Math.max(Date.parse(x.startedAt) + x.stdHours * H, now) : null;
       const from = t?.planStart != null ? Math.max(t.planStart, now) : null;
@@ -585,7 +585,7 @@ function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEnt
       runningLine: running ? `Running: ${running.title}` : null,
       expectedLine: `${vp.finished ? 'Finished' : 'Expected end'} ${at(vp.expectedEnd)}`,
       behindLine: behind >= DELAY_MIN_H ? `${hrs(behind)} behind plan` : behind <= -DELAY_MIN_H ? `${hrs(-behind)} ahead of plan` : 'On plan', behindRed: behind >= DELAY_MIN_H,
-      planLine: `Plan end ${at(vp.planEnd)}${vp.overH > 0 ? ` · ${hrs(vp.overH)} longer steps` : ''}${vp.waitH > 0 ? ` · ${hrs(vp.waitH)} waiting` : ''}${vp.holdH > 0 ? ` · ${hrs(vp.holdH)} on hold (not late)` : ''}`,
+      planLine: `Plan end ${at(vp.planEnd)}${vp.overH > 0 ? ` · ${hrs(vp.overH)} longer steps` : ''}${vp.addedH > 0 ? ` · ${hrs(vp.addedH)} added steps` : ''}${vp.waitH > 0 ? ` · ${hrs(vp.waitH)} waiting` : ''}${vp.holdH > 0 ? ` · ${hrs(vp.holdH)} on hold (not late)` : ''}`,
       steps: steps_, footLeft: `Plan ${Math.round(counted.reduce((n, x) => n + (x.stdHours ?? 0), 0) * 10) / 10} h`, footRight: `Down since ${shortDate(entry.start)} · day ${day}`,
     };
     const c = document.createElement('canvas'); drawCard(c, d);

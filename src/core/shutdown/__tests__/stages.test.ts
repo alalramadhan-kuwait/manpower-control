@@ -148,3 +148,11 @@ describe('moving rows', () => {
     expect(delayPeriod(step('t', 3, 'done', z('26T08:00'), z('26T11:30')), null, 'over', 0)).toBeNull();
   });
 });
+
+describe('added steps', () => {
+  const z = (x: string) => `2026-10-${x}:00Z`;
+  it('a step with no plan is added time, never over plan', () => {
+    const v = startupVsPlan([step('a', 4, 'done', z('28T00:00'), z('28T04:00')), step('x', null, 'done', z('28T04:00'), z('28T07:00')), step('b', 6)], Date.parse(z('28T07:00')));
+    expect(v.over.size).toBe(0); expect(v.added.get('x')).toBe(3); expect(v.addedH).toBe(3);
+  });
+});
