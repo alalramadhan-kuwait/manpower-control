@@ -267,8 +267,17 @@ function StartupRow({ s, n, t, over, wait, onOpen }: { s: StartupStep; n: number
               {pending && t?.late && <b className="whitespace-nowrap font-semibold text-status-red"> · late start</b>}</span>
             <span className="shrink-0 text-slate-500">{when}</span>
           </span>
-          {wait !== undefined && <span className="mt-0.5 block rounded bg-amber-50 px-1.5 py-0.5 text-[11px] leading-snug text-amber-900">⏸ Waited {hrs(wait)}{pending ? ' so far' : ''} · {s.waitReason ? reason(s.waitReason, s.waitNote) : <b className="text-status-red">reason?</b>}</span>}
-          {late && <span className="mt-0.5 block rounded bg-red-50 px-1.5 py-0.5 text-[11px] leading-snug text-red-900">{over ? `Over plan ${signed(over)}` : 'Started late'} · {s.delayReason ? reason(s.delayReason, s.delayNote) : <b>reason?</b>}</span>}
+          {(() => {
+            // the wait and the overrun share one reason (one box on the step): then one line says both
+            const waitTxt = wait !== undefined ? `⏸ Waited ${hrs(wait)}${pending ? ' so far' : ''}` : null; const lateTxt = late ? (over ? `Over plan ${signed(over)}` : 'Started late') : null;
+            const wr = s.waitReason ? reason(s.waitReason, s.waitNote) : null; const dr = s.delayReason ? reason(s.delayReason, s.delayNote) : null;
+            const ask = <b className="text-status-red">reason?</b>;
+            if (waitTxt && lateTxt && (wr === dr || !wr || !dr)) return <span className="mt-0.5 block rounded bg-red-50 px-1.5 py-0.5 text-[11px] leading-snug text-red-900">{waitTxt} · {lateTxt} · {dr ?? wr ?? ask}</span>;
+            return <>
+              {waitTxt && <span className="mt-0.5 block rounded bg-amber-50 px-1.5 py-0.5 text-[11px] leading-snug text-amber-900">{waitTxt} · {wr ?? ask}</span>}
+              {lateTxt && <span className="mt-0.5 block rounded bg-red-50 px-1.5 py-0.5 text-[11px] leading-snug text-red-900">{lateTxt} · {dr ?? ask}</span>}
+            </>;
+          })()}
           {!late && s.delayReason && <span className="mt-0.5 block text-[11px] text-slate-500">{reason(s.delayReason, s.delayNote)}</span>}
         </span>
       </span>
@@ -291,16 +300,19 @@ function StartupSheet({ eventId, step, planStart = null, prevDone = null, nextSe
   const setStart = (v: string) => { setS(v); if (!fTouched && v && step?.stdHours != null) { const e = Date.parse(`${v}:00+03:00`) + stdMs; setF(e <= Date.now() ? local(new Date(e).toISOString()) : ''); } };
   const future = (v: string) => !!v && Date.parse(`${v}:00+03:00`) > Date.now() + 15 * 60_000; const [note, setNote] = useState(step?.remark ?? ''); const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
-  // why it was late: over its standard, and the waiting before it (asked when either passes a quarter of an hour)
-  const [dr, setDr] = useState<DelayReason | null>(step?.delayReason ?? null); const [dn, setDn] = useState(step?.delayNote ?? '');
-  const [wr, setWr] = useState<DelayReason | null>(step?.waitReason ?? null); const [wn, setWn] = useState(step?.waitNote ?? '');
+  // why it was late: one reason for the waiting before it and the time over its standard (asked when either passes
+  // DELAY_MIN_H); saved to whichever of the two applies, so the reports keep both apart
+  const [lr, setLr] = useState<DelayReason | null>(step?.delayReason ?? step?.waitReason ?? null); const [ln, setLn] = useState(step?.delayNote ?? step?.waitNote ?? '');
   const ms = (v: string) => (v ? Date.parse(`${v}:00+03:00`) : null);
   const overFor = (a: number | null, b: number | null) => (a !== null && b !== null && step?.stdHours != null ? (b - a) / H - step.stdHours : 0);
   const waitFor = (a: number | null) => (a !== null && prevDone !== null ? (a - prevDone) / H : 0);
   const sOver = overFor(ms(s), ms(f) ?? (ms(s) !== null && step?.status === 'running' ? nowMs : null)); const sWait = waitFor(ms(s));
   const nowOver = overFor(step?.startedAt ? Date.parse(step.startedAt) : null, nowMs); const nowWait = waitFor(nowMs);
-  const reasons = { delay_reason: dr, delay_note: dn.trim() || null, wait_reason: wr, wait_note: wn.trim() || null };
-  const needs = (over: number, wait: number) => (over >= DELAY_MIN_H && !dr) || (wait >= DELAY_MIN_H && !wr);
+  const reasonsFor = (over: number, wait: number) => {
+    const o = over >= DELAY_MIN_H || !!step?.delayReason; const w = wait >= DELAY_MIN_H || !!step?.waitReason; const n = ln.trim() || null;
+    return { delay_reason: o ? lr : null, delay_note: o ? n : null, wait_reason: w ? lr : null, wait_note: w ? n : null };
+  };
+  const needs = (over: number, wait: number) => (over >= DELAY_MIN_H || wait >= DELAY_MIN_H) && !lr;
   const run = async (fn: () => Promise<unknown>, m: string) => { setBusy(true); setErr(null); try { await fn(); onDone(m); } catch (e) { setErr(e); setBusy(false); } };
   const stdN = std.trim() === '' ? null : Number(std);
   const badStd = stdN !== null && (Number.isNaN(stdN) || stdN < 0);
@@ -322,8 +334,8 @@ function StartupSheet({ eventId, step, planStart = null, prevDone = null, nextSe
       <div className="space-y-3">
         <p className="text-xs text-slate-500">Plan {step.stdHours != null ? hrs(step.stdHours) : '—'}{step.procedureRef ? ` · ${step.procedureRef}` : ''}{step.updatedBy ? ` · last change ${step.updatedBy}` : ''}</p>
         {canEdit && step.status !== 'not_required' && <div className="flex gap-2 [&>*]:flex-1">
-          {step.status === 'not_started' && <Button disabled={busy || needs(0, nowWait)} onClick={() => patch({ status: 'running', started_at: nowIso(), ...reasons }, `${step.title} started.`)}>▶ Start now</Button>}
-          {step.status === 'running' && <Button disabled={busy || needs(nowOver, 0)} onClick={() => patch({ status: 'done', done_at: nowIso(), ...reasons }, `${step.title} done.`)}>✓ Done now</Button>}
+          {step.status === 'not_started' && <Button disabled={busy || needs(0, nowWait)} onClick={() => patch({ status: 'running', started_at: nowIso(), ...reasonsFor(0, nowWait) }, `${step.title} started.`)}>▶ Start now</Button>}
+          {step.status === 'running' && <Button disabled={busy || needs(nowOver, 0)} onClick={() => patch({ status: 'done', done_at: nowIso(), ...reasonsFor(nowOver, 0) }, `${step.title} done.`)}>✓ Done now</Button>}
           {step.status === 'done' && <Button variant="secondary" disabled={busy} onClick={() => patch({ status: 'running', done_at: null }, `${step.title} back to running.`)}>↶ Undo done</Button>}
           {step.status === 'running' && <Button variant="secondary" disabled={busy} onClick={() => patch({ status: 'not_started', started_at: null }, `${step.title} back to not started.`)}>↶ Undo start</Button>}
         </div>}
@@ -334,13 +346,16 @@ function StartupSheet({ eventId, step, planStart = null, prevDone = null, nextSe
           <Field label="Done"><input type="datetime-local" className="input w-full min-w-0 appearance-none" value={f} onChange={(e) => { setF(e.target.value); setFTouched(true); }} /></Field>
           {!f && planF !== null && <p className="-mt-2 text-[11px] text-slate-500">Plan done {at(planF)}</p>}
           {s && f && step.stdHours != null && f >= s && <p className="-mt-1 text-[11px] text-slate-600">Actual {hrs((Date.parse(`${f}:00+03:00`) - Date.parse(`${s}:00+03:00`)) / H)} · plan {hrs(step.stdHours)}</p>}
-          {(Math.max(sWait, step.status === 'not_started' ? nowWait : 0) >= DELAY_MIN_H || wr) && <ReasonPick title={`Waited ${hrs(Math.max(sWait, step.status === 'not_started' && !s ? nowWait : 0))} before this step: why?`} value={wr} note={wn} onValue={setWr} onNote={setWn} />}
-          {(Math.max(sOver, step.status === 'running' ? nowOver : 0) >= DELAY_MIN_H || dr) && <ReasonPick title={`${hrs(Math.max(sOver, step.status === 'running' && !f ? nowOver : 0))} over plan: why?`} value={dr} note={dn} onValue={setDr} onNote={setDn} />}
+          {(() => {
+            const w = Math.max(sWait, step.status === 'not_started' && !s ? nowWait : 0); const o = Math.max(sOver, step.status === 'running' && !f ? nowOver : 0);
+            const parts = [w >= DELAY_MIN_H && `waited ${hrs(w)} before`, o >= DELAY_MIN_H && `${hrs(o)} over plan`].filter(Boolean) as string[];
+            return (parts.length > 0 || lr) && <ReasonPick title={parts.length ? `Late (${parts.join(' + ')}): why?` : 'Delay reason'} value={lr} note={ln} onValue={setLr} onNote={setLn} />;
+          })()}
           <Field label="Remark"><input className="input w-full min-w-0" value={note} onChange={(e) => setNote(e.target.value)} /></Field>
           {!!s && !!f && f < s && <p className="text-xs text-status-red">Done is before the start.</p>}
           {(future(s) || future(f)) && <p className="text-xs text-status-red">A time still to come cannot be recorded.</p>}
           {needs(sOver, sWait) && <p className="text-xs font-medium text-status-red">Pick a reason for the delay to save.</p>}
-          <Button className="w-full" disabled={busy || (!!s && !!f && f < s) || (!s && !!f) || future(s) || future(f) || needs(sOver, sWait)} onClick={() => patch({ started_at: fromLocal(s), done_at: fromLocal(f), status: step.status === 'not_required' ? 'not_required' : f ? 'done' : s ? 'running' : 'not_started', remark: note.trim() || null, ...reasons }, `${step.title} saved.`)}>Save times</Button>
+          <Button className="w-full" disabled={busy || (!!s && !!f && f < s) || (!s && !!f) || future(s) || future(f) || needs(sOver, sWait)} onClick={() => patch({ started_at: fromLocal(s), done_at: fromLocal(f), status: step.status === 'not_required' ? 'not_required' : f ? 'done' : s ? 'running' : 'not_started', remark: note.trim() || null, ...reasonsFor(sOver, sWait) }, `${step.title} saved.`)}>Save times</Button>
         </>}
         {isHead && <details className="rounded-xl bg-slate-50 p-2 text-sm"><summary className="cursor-pointer text-[12px] font-semibold text-slate-600">Step details · not required</summary>
           <div className="mt-2 space-y-2">
