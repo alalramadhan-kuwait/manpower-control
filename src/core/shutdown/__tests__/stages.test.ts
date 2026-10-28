@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { runRecord, sopRefs, stageSummary, stdTimeline, type StdStep } from '../stages';
+import { runRecord, sopRefs, stageSummary, startupVsPlan, stdTimeline, type StdStep } from '../stages';
 
 const T0 = Date.parse('2026-11-12T03:00:00Z');
 const H = 3_600_000;
@@ -68,5 +68,37 @@ describe('sopRefs', () => {
     expect(sopRefs('SOP-12-2005 §3.5')).toEqual(['SOP-12-2005']);
     expect(sopRefs('No SOP received')).toEqual([]);
     expect(sopRefs(null)).toEqual([]);
+  });
+});
+
+describe('startupVsPlan', () => {
+  // the Train-1 start-up as recorded on 28 Oct 2026 (UTC times)
+  const z = (x: string) => `2026-10-${x}:00Z`;
+  const steps: StdStep[] = [
+    step('s1', 7, 'done', z('25T04:30'), z('25T12:00')), step('s2', 3, 'done', z('26T08:00'), z('27T10:00')),
+    step('s3', 8, 'done', z('27T10:00'), z('27T18:00')), step('s4', 5, 'done', z('27T18:00'), z('27T23:00')),
+    step('s5', 4, 'done', z('27T23:00'), z('28T03:00')), step('s6', 6, 'running', z('28T06:00')), step('s7', 9), step('s8', 18)];
+  const now = Date.parse(z('28T09:00'));
+  it('plans from the first start + all standard hours and expects the end from the actual times', () => {
+    const v = startupVsPlan(steps, now);
+    expect(new Date(v.planEnd!).toISOString()).toBe('2026-10-27T16:30:00.000Z');
+    expect(new Date(v.expectedEnd!).toISOString()).toBe('2026-10-29T15:00:00.000Z');
+    expect(v.behindH).toBe(46.5);
+  });
+  it('splits the delay into steps over standard and waiting between steps', () => {
+    const v = startupVsPlan(steps, now);
+    expect(v.overH).toBe(23.5); expect(v.waitH).toBe(23);
+    expect(v.over.get('s2')).toBe(23); expect(v.wait.get('s2')).toBe(20); expect(v.wait.get('s6')).toBe(3);
+  });
+  it('progress by standard hours: done steps and the running one up to its standard', () => {
+    const v = startupVsPlan(steps, now);
+    expect(v.actualPct).toBe(50); expect(v.planPct).toBe(100);
+  });
+  it('a step not started after the one before it was done is waiting until now', () => {
+    const v = startupVsPlan([step('a', 2, 'done', z('28T00:00'), z('28T02:00')), step('b', 3)], now);
+    expect(v.wait.get('b')).toBe(7);
+  });
+  it('no step started: no plan yet', () => {
+    expect(startupVsPlan([step('a', 2)], now)).toMatchObject({ start: null, planEnd: null, behindH: null, actualPct: 0 });
   });
 });

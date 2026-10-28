@@ -82,3 +82,52 @@ export function sopRefs(text: string | null | undefined): string[] {
   }
   return [...new Set(out)];
 }
+
+// ── Start-up against its plan ───────────────────────────────────────────────────────────────────────────────
+export type DelayReason = 'equipment' | 'maintenance' | 'process' | 'safety' | 'other';
+export const DELAY_REASONS: { key: DelayReason; label: string }[] = [
+  { key: 'equipment', label: 'Equipment problem' }, { key: 'maintenance', label: 'Waiting on Maintenance' }, { key: 'process', label: 'Process conditions' },
+  { key: 'safety', label: 'Safety hold' }, { key: 'other', label: 'Other' }];
+export const reasonLabel = (k: string | null | undefined) => DELAY_REASONS.find((r) => r.key === k)?.label ?? null;
+/** Less than this is not a delay worth a reason (hours). */
+export const DELAY_MIN_H = 0.25;
+
+export interface VsPlan {
+  /** the first step's actual start, the plan end (start + all standard hours, fixed), the end expected now */
+  start: number | null; planEnd: number | null; expectedEnd: number | null; finished: boolean;
+  /** behind (+) or ahead (−) of the plan end, and what makes it up: steps longer than standard, waiting between steps */
+  behindH: number | null; overH: number; waitH: number;
+  /** each step's own: hours over its standard, hours waited before it (still waiting: up to now) */
+  over: Map<string, number>; wait: Map<string, number>;
+  /** progress by standard hours (steps done, a running step up to its standard) against the plan at this moment */
+  actualPct: number; planPct: number;
+}
+
+/**
+ * The start-up against its plan. The plan starts with the first step's actual start and lasts the standard hours of
+ * every step (a step not required counts none); it never moves. The expected end follows the actual times (a step
+ * after the one before it, never before now). The time behind splits into steps over standard and waiting time
+ * between steps (the previous step done, the next not started).
+ */
+export function startupVsPlan(steps: (StdStep & { seq?: number })[], now: number): VsPlan {
+  const counted = steps.filter((s) => s.status !== 'not_required');
+  const starts = counted.map((s) => (s.startedAt ? Date.parse(s.startedAt) : null)).filter((x): x is number => x !== null);
+  const start = starts.length ? Math.min(...starts) : null;
+  const stdTotal = counted.reduce((n, s) => n + (s.stdHours ?? 0), 0);
+  const over = new Map<string, number>(); const wait = new Map<string, number>();
+  let t = start; let prevDone: number | null = null; let doneStd = 0;
+  for (const s of counted) {
+    const a = s.startedAt ? Date.parse(s.startedAt) : null; const d = s.doneAt ? Date.parse(s.doneAt) : null; const std = s.stdHours ?? 0;
+    if (prevDone !== null) { const w = ((a ?? now) - prevDone) / H; if (w >= DELAY_MIN_H && (a !== null || s.status === 'not_started')) wait.set(s.id, r1(w)); }
+    if (s.status === 'done' && a !== null && d !== null) { const o = (d - a) / H - std; if (o >= DELAY_MIN_H) over.set(s.id, r1(o)); doneStd += std; t = d; prevDone = d; }
+    else if (s.status === 'running' && a !== null) { const o = (now - a) / H - std; if (o >= DELAY_MIN_H) over.set(s.id, r1(o)); doneStd += Math.min(std, (now - a) / H); t = Math.max(a + std * H, now); prevDone = null; }
+    else { if (t !== null) t = Math.max(t, now) + std * H; prevDone = null; }
+  }
+  const finished = counted.length > 0 && counted.every((s) => s.status === 'done');
+  const planEnd = start !== null ? start + stdTotal * H : null;
+  const sum = (m: Map<string, number>) => r1([...m.values()].reduce((n, x) => n + x, 0));
+  return { start, planEnd, expectedEnd: start !== null ? t : null, finished, behindH: planEnd !== null && t !== null ? r1((t - planEnd) / H) : null,
+    overH: sum(over), waitH: sum(wait), over, wait,
+    actualPct: stdTotal ? Math.round((doneStd / stdTotal) * 100) : 0,
+    planPct: start !== null && stdTotal ? Math.round(Math.min(1, Math.max(0, (now - start) / (stdTotal * H))) * 100) : 0 };
+}

@@ -2,6 +2,7 @@
 // that belong to the shutdown itself: the start-up steps (standard hours vs actual) and the shutdown & start-up file.
 // A team plan made before shutdowns were on the Calendar (no event) is still a shutdown of its own ("p-<plan id>").
 import type { SdPlan } from '@/core/shutdown';
+import type { DelayReason } from '@/core/shutdown/stages';
 import { fetchSdPlans } from './shutdown';
 import { supabase } from './supabase';
 import { fetchTrackers, type Tracker } from './tracker';
@@ -47,20 +48,23 @@ export async function fetchDownEvents(): Promise<DownRow[]> {
 // ── Start-up steps ────────────────────────────────────────────────────────────────────────────────────────────
 export type StartupStatus = 'not_started' | 'running' | 'done' | 'not_required';
 export interface StartupStep { id: string; seq: number; title: string; stdHours: number | null; procedureRef: string | null; status: StartupStatus;
-  startedAt: string | null; doneAt: string | null; reason: string | null; remark: string | null; updatedAt: string | null; updatedBy: string | null }
+  startedAt: string | null; doneAt: string | null; reason: string | null; remark: string | null; updatedAt: string | null; updatedBy: string | null;
+  /** why it ran over / started late, and why it waited before it (a quick choice and a note) */
+  delayReason: DelayReason | null; delayNote: string | null; waitReason: DelayReason | null; waitNote: string | null }
 
 export async function fetchStartupSteps(eventId: string): Promise<StartupStep[]> {
   const { data, error } = await supabase.from('sd_startup_step').select('*').eq('event_id', eventId).eq('active', true).order('seq');
   if (error) throw error;
   return ((data ?? []) as Record<string, unknown>[]).map((r) => ({ id: r.id as string, seq: r.seq as number, title: r.title as string, stdHours: r.std_hours == null ? null : Number(r.std_hours),
     procedureRef: (r.procedure_ref as string) ?? null, status: r.status as StartupStatus, startedAt: (r.started_at as string) ?? null, doneAt: (r.done_at as string) ?? null,
-    reason: (r.reason as string) ?? null, remark: (r.remark as string) ?? null, updatedAt: (r.updated_at as string) ?? null, updatedBy: (r.updated_by_name as string) ?? null }));
+    reason: (r.reason as string) ?? null, remark: (r.remark as string) ?? null, updatedAt: (r.updated_at as string) ?? null, updatedBy: (r.updated_by_name as string) ?? null,
+    delayReason: (r.delay_reason as DelayReason) ?? null, delayNote: (r.delay_note as string) ?? null, waitReason: (r.wait_reason as DelayReason) ?? null, waitNote: (r.wait_note as string) ?? null }));
 }
 export async function addStartupStep(eventId: string, v: { seq: number; title: string; stdHours: number | null; procedureRef: string | null }) {
   const { error } = await supabase.from('sd_startup_step').insert({ event_id: eventId, seq: v.seq, title: v.title.trim(), std_hours: v.stdHours, procedure_ref: v.procedureRef?.trim() || null });
   if (error) throw error;
 }
-export async function setStartupStep(id: string, patch: Partial<{ title: string; std_hours: number | null; procedure_ref: string | null; status: StartupStatus; started_at: string | null; done_at: string | null; reason: string | null; remark: string | null; seq: number; active: boolean }>) {
+export async function setStartupStep(id: string, patch: Partial<{ title: string; std_hours: number | null; procedure_ref: string | null; status: StartupStatus; started_at: string | null; done_at: string | null; reason: string | null; remark: string | null; seq: number; active: boolean; delay_reason: DelayReason | null; delay_note: string | null; wait_reason: DelayReason | null; wait_note: string | null }>) {
   const { error } = await supabase.from('sd_startup_step').update(patch).eq('id', id);
   if (error) throw error;
 }

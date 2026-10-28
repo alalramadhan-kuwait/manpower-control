@@ -6,7 +6,7 @@
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { sopRefs, stageSummary, stdTimeline, type StdStep } from '@/core/shutdown/stages';
+import { DELAY_MIN_H, DELAY_REASONS, reasonLabel, sopRefs, stageSummary, startupVsPlan, stdTimeline, type DelayReason, type StdStep } from '@/core/shutdown/stages';
 import { kwDay, kwTime, phases, stepViews, type TrkStep } from '@/core/tracker';
 import { saveEvent } from '@/data/calendar';
 import { fetchUnitStatusHistory, type UnitStatusChange } from '@/data/modes';
@@ -18,6 +18,7 @@ import { StepSheet } from '@/features/tracker/TrackerSheets';
 import { BottomSheet, Button, Card, ErrorBox, Field, Spinner, Toast, cx } from '@/ui/components';
 import { localToday, shortDate } from '@/ui/leave';
 import { NewPlanSheet } from './ShutdownListPage';
+import { drawCard, sharePicture, type CardData } from './shareCard';
 
 type Stage = 'shutdown' | 'mi' | 'startup';
 const H = 3_600_000;
@@ -72,7 +73,7 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
   // past its last day with start-up steps still open: it is not finished, its dates need putting right
   const inStartup = entry.end < today && startup.length > 0 && suSum.done < suSum.total;
   const startupRunning = suSum.startedAt !== null && suSum.done < suSum.total;
-  const state = inStartup ? 'Still in start-up' : startupRunning ? `In start-up · ends with it (expected ${shortDate(entry.end)})` : entry.end < today ? 'Finished' : entry.start <= today ? `Day ${dayNo(today) - dayNo(entry.start) + 1} of ${len}` : `Starts in ${dayNo(entry.start) - dayNo(today)} days`;
+  const state = inStartup ? 'Still in start-up' : startupRunning ? 'In start-up' : entry.end < today ? 'Finished' : entry.start <= today ? `Day ${dayNo(today) - dayNo(entry.start) + 1} of ${len}` : `Starts in ${dayNo(entry.start) - dayNo(today)} days`;
   const canDates = !!entry.eventId && ['section_head', 'manpower_coordinator'].includes(profile.role_code);
   const missing = docs.filter((d) => d.status !== 'available').length;
   const ops = ph?.ops ?? null;
@@ -220,29 +221,36 @@ function MiStage({ trk, entry, now }: { trk: TrackerData | null; entry: Shutdown
 /** The start-up steps of this shutdown, planned one after another by their standard hours from the M&I finish (no
  *  tracker: from the first step's actual start). */
 function StartupSteps({ entry, steps, stageStart, canEdit, isHead, now, onDone }: { entry: ShutdownEntry; steps: StartupStep[]; stageStart: number | null; canEdit: boolean; isHead: boolean; now: number; onDone: (m: string) => void }) {
-  const [open, setOpen] = useState<StartupStep | 'new' | null>(null);
+  const [open, setOpen] = useState<StartupStep | 'new' | null>(null); const [sharing, setSharing] = useState(false);
   if (!entry.eventId) return <Card><p className="text-sm text-slate-600">This shutdown is not on the Calendar, so it has no start-up steps.</p></Card>;
   const tl = new Map(stdTimeline(steps, stageStart, now).map((v) => [v.id, v]));
   // where a step should start: when the step before it was done (actual), else its plan from the stage start
-  const planStartOf = (x: StartupStep) => { const i = steps.findIndex((y) => y.id === x.id); const prev = steps.slice(0, i).reverse().find((y) => y.status !== 'not_required');
-    return prev?.doneAt ? Date.parse(prev.doneAt) : tl.get(x.id)?.planStart ?? null; };
+  const prevOf = (x: StartupStep) => { const i = steps.findIndex((y) => y.id === x.id); return steps.slice(0, i).reverse().find((y) => y.status !== 'not_required') ?? null; };
+  const planStartOf = (x: StartupStep) => { const prev = prevOf(x); return prev?.doneAt ? Date.parse(prev.doneAt) : tl.get(x.id)?.planStart ?? null; };
+  const vp = startupVsPlan(steps, now);
   return (
     <Card className="p-0">
       <h3 className="flex items-center justify-between px-3 pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-500"><span>Start-up steps · standard vs actual</span>
         {canEdit && <button type="button" onClick={() => setOpen('new')} className="inline-flex items-center gap-0.5 text-[12px] font-semibold normal-case tracking-normal text-brand-700"><Plus className="h-3.5 w-3.5" />Step</button>}</h3>
+      {vp.start !== null && <VsPlanBox vp={vp} onShare={() => setSharing(true)} />}
       {!steps.length ? <p className="px-3 pb-3 pt-1 text-sm text-slate-500">No start-up steps yet. Add them here, or they are loaded with their standard timings when the list is ready.</p>
         : <ul className="divide-y divide-slate-100 px-3 pb-1">{steps.map((s, i) => (
-          <li key={s.id}><button type="button" onClick={() => setOpen(s)} className="flex w-full items-center gap-2 py-2 text-left">
+          <li key={s.id}>{vp.wait.get(s.id) !== undefined && <button type="button" onClick={() => setOpen(s)} className="mt-1 flex w-full items-center gap-1.5 rounded-lg bg-amber-50 px-2 py-1 text-left text-[11px] text-amber-900">
+            <span>⏸ Waited {hrs(vp.wait.get(s.id)!)} before this step{s.status === 'not_started' ? ' (so far)' : ''}</span><span className={cx('ml-auto font-semibold', s.waitReason ? 'text-amber-900' : 'text-status-red')}>{s.waitReason ? reasonLabel(s.waitReason) : 'Reason?'}</span></button>}
+            <button type="button" onClick={() => setOpen(s)} className="flex w-full items-center gap-2 py-2 text-left">
             <span className={cx('flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold', DOT[s.status])}>{s.status === 'done' ? '✓' : s.status === 'running' ? '▶' : s.status === 'not_required' ? '–' : i + 1}</span>
             <span className="min-w-0 flex-1"><span className={cx('block text-[13px] font-medium', s.status === 'not_required' ? 'text-slate-400 line-through' : 'text-slate-900')}>{s.title}</span>
-              <StdLine std={s.stdHours} t={tl.get(s.id)} status={s.status} startedAt={s.startedAt} doneAt={s.doneAt} proc={s.procedureRef} /></span>
+              <StdLine std={s.stdHours} t={tl.get(s.id)} status={s.status} startedAt={s.startedAt} doneAt={s.doneAt} proc={s.procedureRef} />
+              {(s.delayReason || (vp.over.get(s.id) ?? 0) > 0 || tl.get(s.id)?.late) && s.status !== 'not_required' && <span className={cx('block text-[11px] font-medium', s.delayReason ? 'text-amber-800' : 'text-status-red')}>{s.delayReason ? `Reason: ${reasonLabel(s.delayReason)}${s.delayNote ? ` · ${s.delayNote}` : ''}` : 'Late: reason?'}</span>}
+              {s.waitReason && s.waitNote && <span className="block text-[11px] text-amber-800">Waited: {s.waitNote}</span>}</span>
             <span className="text-slate-400">›</span></button></li>))}</ul>}
-      {open && <StartupSheet eventId={entry.eventId} step={open === 'new' ? null : open} planStart={open === 'new' ? null : planStartOf(open)} nextSeq={(steps[steps.length - 1]?.seq ?? 0) + 10} canEdit={canEdit} isHead={isHead} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); onDone(m); }} />}
+      {sharing && <ShareSheet entry={entry} steps={steps} vp={vp} tl={tl} now={now} onClose={() => setSharing(false)} />}
+      {open && <StartupSheet eventId={entry.eventId} step={open === 'new' ? null : open} planStart={open === 'new' ? null : planStartOf(open)} prevDone={open === 'new' ? null : (() => { const p = prevOf(open); return p?.doneAt ? Date.parse(p.doneAt) : null; })()} nextSeq={(steps[steps.length - 1]?.seq ?? 0) + 10} canEdit={canEdit} isHead={isHead} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); onDone(m); }} />}
     </Card>
   );
 }
 
-function StartupSheet({ eventId, step, planStart = null, nextSeq, canEdit, isHead, onClose, onDone }: { eventId: string; step: StartupStep | null; planStart?: number | null; nextSeq: number; canEdit: boolean; isHead: boolean; onClose: () => void; onDone: (m: string) => void }) {
+function StartupSheet({ eventId, step, planStart = null, prevDone = null, nextSeq, canEdit, isHead, onClose, onDone }: { eventId: string; step: StartupStep | null; planStart?: number | null; prevDone?: number | null; nextSeq: number; canEdit: boolean; isHead: boolean; onClose: () => void; onDone: (m: string) => void }) {
   const [title, setTitle] = useState(step?.title ?? ''); const [std, setStd] = useState(step?.stdHours?.toString() ?? ''); const [proc, setProc] = useState(step?.procedureRef ?? '');
   // times not recorded yet are filled from the plan (start: the step before done, done: start + standard), to be
   // corrected to the actual ones; a planned time still to come is shown, not filled
@@ -257,6 +265,16 @@ function StartupSheet({ eventId, step, planStart = null, nextSeq, canEdit, isHea
   const setStart = (v: string) => { setS(v); if (!fTouched && v && step?.stdHours != null) { const e = Date.parse(`${v}:00+03:00`) + stdMs; setF(e <= Date.now() ? local(new Date(e).toISOString()) : ''); } };
   const future = (v: string) => !!v && Date.parse(`${v}:00+03:00`) > Date.now() + 15 * 60_000; const [note, setNote] = useState(step?.remark ?? ''); const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  // why it was late: over its standard, and the waiting before it (asked when either passes a quarter of an hour)
+  const [dr, setDr] = useState<DelayReason | null>(step?.delayReason ?? null); const [dn, setDn] = useState(step?.delayNote ?? '');
+  const [wr, setWr] = useState<DelayReason | null>(step?.waitReason ?? null); const [wn, setWn] = useState(step?.waitNote ?? '');
+  const ms = (v: string) => (v ? Date.parse(`${v}:00+03:00`) : null);
+  const overFor = (a: number | null, b: number | null) => (a !== null && b !== null && step?.stdHours != null ? (b - a) / H - step.stdHours : 0);
+  const waitFor = (a: number | null) => (a !== null && prevDone !== null ? (a - prevDone) / H : 0);
+  const sOver = overFor(ms(s), ms(f) ?? (ms(s) !== null && step?.status === 'running' ? nowMs : null)); const sWait = waitFor(ms(s));
+  const nowOver = overFor(step?.startedAt ? Date.parse(step.startedAt) : null, nowMs); const nowWait = waitFor(nowMs);
+  const reasons = { delay_reason: dr, delay_note: dn.trim() || null, wait_reason: wr, wait_note: wn.trim() || null };
+  const needs = (over: number, wait: number) => (over >= DELAY_MIN_H && !dr) || (wait >= DELAY_MIN_H && !wr);
   const run = async (fn: () => Promise<unknown>, m: string) => { setBusy(true); setErr(null); try { await fn(); onDone(m); } catch (e) { setErr(e); setBusy(false); } };
   const stdN = std.trim() === '' ? null : Number(std);
   const badStd = stdN !== null && (Number.isNaN(stdN) || stdN < 0);
@@ -278,8 +296,8 @@ function StartupSheet({ eventId, step, planStart = null, nextSeq, canEdit, isHea
       <div className="space-y-3">
         <p className="text-xs text-slate-500">Standard {step.stdHours != null ? hrs(step.stdHours) : '—'}{step.procedureRef ? ` · ${step.procedureRef}` : ''}{step.updatedBy ? ` · last change ${step.updatedBy}` : ''}</p>
         {canEdit && step.status !== 'not_required' && <div className="flex gap-2 [&>*]:flex-1">
-          {step.status === 'not_started' && <Button disabled={busy} onClick={() => patch({ status: 'running', started_at: nowIso() }, `${step.title} started.`)}>▶ Start now</Button>}
-          {step.status === 'running' && <Button disabled={busy} onClick={() => patch({ status: 'done', done_at: nowIso() }, `${step.title} done.`)}>✓ Done now</Button>}
+          {step.status === 'not_started' && <Button disabled={busy || needs(0, nowWait)} onClick={() => patch({ status: 'running', started_at: nowIso(), ...reasons }, `${step.title} started.`)}>▶ Start now</Button>}
+          {step.status === 'running' && <Button disabled={busy || needs(nowOver, 0)} onClick={() => patch({ status: 'done', done_at: nowIso(), ...reasons }, `${step.title} done.`)}>✓ Done now</Button>}
           {step.status === 'done' && <Button variant="secondary" disabled={busy} onClick={() => patch({ status: 'running', done_at: null }, `${step.title} back to running.`)}>↶ Undo done</Button>}
           {step.status === 'running' && <Button variant="secondary" disabled={busy} onClick={() => patch({ status: 'not_started', started_at: null }, `${step.title} back to not started.`)}>↶ Undo start</Button>}
         </div>}
@@ -290,10 +308,13 @@ function StartupSheet({ eventId, step, planStart = null, nextSeq, canEdit, isHea
           <Field label="Done"><input type="datetime-local" className="input w-full min-w-0 appearance-none" value={f} onChange={(e) => { setF(e.target.value); setFTouched(true); }} /></Field>
           {!f && planF !== null && <p className="-mt-2 text-[11px] text-slate-500">Plan done {at(planF)}</p>}
           {s && f && step.stdHours != null && f >= s && <p className="-mt-1 text-[11px] text-slate-600">Took {hrs((Date.parse(`${f}:00+03:00`) - Date.parse(`${s}:00+03:00`)) / H)} · standard {hrs(step.stdHours)}</p>}
+          {(Math.max(sWait, step.status === 'not_started' ? nowWait : 0) >= DELAY_MIN_H || wr) && <ReasonPick title={`Waited ${hrs(Math.max(sWait, step.status === 'not_started' && !s ? nowWait : 0))} before this step: why?`} value={wr} note={wn} onValue={setWr} onNote={setWn} />}
+          {(Math.max(sOver, step.status === 'running' ? nowOver : 0) >= DELAY_MIN_H || dr) && <ReasonPick title={`${hrs(Math.max(sOver, step.status === 'running' && !f ? nowOver : 0))} over the standard: why?`} value={dr} note={dn} onValue={setDr} onNote={setDn} />}
           <Field label="Remark"><input className="input w-full min-w-0" value={note} onChange={(e) => setNote(e.target.value)} /></Field>
           {!!s && !!f && f < s && <p className="text-xs text-status-red">Done is before the start.</p>}
           {(future(s) || future(f)) && <p className="text-xs text-status-red">A time still to come cannot be recorded.</p>}
-          <Button className="w-full" disabled={busy || (!!s && !!f && f < s) || (!s && !!f) || future(s) || future(f)} onClick={() => patch({ started_at: fromLocal(s), done_at: fromLocal(f), status: step.status === 'not_required' ? 'not_required' : f ? 'done' : s ? 'running' : 'not_started', remark: note.trim() || null }, `${step.title} saved.`)}>Save times</Button>
+          {needs(sOver, sWait) && <p className="text-xs font-medium text-status-red">Pick a reason for the delay to save.</p>}
+          <Button className="w-full" disabled={busy || (!!s && !!f && f < s) || (!s && !!f) || future(s) || future(f) || needs(sOver, sWait)} onClick={() => patch({ started_at: fromLocal(s), done_at: fromLocal(f), status: step.status === 'not_required' ? 'not_required' : f ? 'done' : s ? 'running' : 'not_started', remark: note.trim() || null, ...reasons }, `${step.title} saved.`)}>Save times</Button>
         </>}
         {isHead && <details className="rounded-xl bg-slate-50 p-2 text-sm"><summary className="cursor-pointer text-[12px] font-semibold text-slate-600">Step details · not required</summary>
           <div className="mt-2 space-y-2">
@@ -309,6 +330,81 @@ function StartupSheet({ eventId, step, planStart = null, nextSeq, canEdit, isHea
           </div></details>}
         {step.reason && <p className="text-xs text-slate-500">Not required: {step.reason}</p>}
         {err != null && <ErrorBox error={err} />}
+      </div>
+    </BottomSheet>
+  );
+}
+
+/** One quick reason (Equipment, Maintenance, Process, Safety, Other) and an optional note. */
+function ReasonPick({ title, value, note, onValue, onNote }: { title: string; value: DelayReason | null; note: string; onValue: (v: DelayReason | null) => void; onNote: (v: string) => void }) {
+  return (
+    <div className="rounded-xl bg-amber-50 p-2.5 ring-1 ring-amber-200">
+      <p className="mb-1.5 text-[12px] font-semibold text-amber-900">{title}</p>
+      <div className="flex flex-wrap gap-1.5">{DELAY_REASONS.map((r) => (
+        <button key={r.key} type="button" aria-pressed={value === r.key} onClick={() => onValue(value === r.key ? null : r.key)}
+          className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold ring-1', value === r.key ? 'bg-amber-600 text-white ring-amber-600' : 'bg-white text-slate-700 ring-slate-300')}>{r.label}</button>))}</div>
+      <input className="input mt-2 w-full min-w-0" placeholder="Short note (optional)" value={note} onChange={(e) => onNote(e.target.value)} />
+    </div>
+  );
+}
+
+/** The start-up against its plan: the plan end (first start + all standard hours, fixed), the end expected now, the
+ *  time behind split into longer steps and waiting, progress against the plan; Share sends it as a picture. */
+function VsPlanBox({ vp, onShare }: { vp: ReturnType<typeof startupVsPlan>; onShare: () => void }) {
+  const behind = vp.behindH ?? 0;
+  return (
+    <div className="mx-3 mt-2 rounded-xl bg-slate-50 p-2.5 ring-1 ring-slate-200">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 text-[12px] leading-snug text-slate-700">
+          <span className="block">Plan end <b>{at(vp.planEnd)}</b></span>
+          <span className="block">{vp.finished ? 'Finished' : 'Expected'} <b>{at(vp.expectedEnd)}</b></span>
+          <span className={cx('block text-[13px] font-bold', behind >= DELAY_MIN_H ? 'text-status-red' : 'text-status-green')}>{behind >= DELAY_MIN_H ? `${hrs(behind)} behind plan` : behind <= -DELAY_MIN_H ? `${hrs(-behind)} ahead of plan` : 'On plan'}</span>
+          {(vp.overH > 0 || vp.waitH > 0) && <span className="block text-[11px] text-slate-500">{[vp.overH > 0 && `${hrs(vp.overH)} longer steps`, vp.waitH > 0 && `${hrs(vp.waitH)} waiting between steps`].filter(Boolean).join(' · ')}</span>}
+        </div>
+        <button type="button" onClick={onShare} className="shrink-0 rounded-xl bg-[#25d366] px-3 py-2 text-[12px] font-bold text-white">Share</button>
+      </div>
+      <div className="mt-2"><div className="relative h-2 rounded bg-slate-200"><div className="h-2 rounded bg-amber-500" style={{ width: `${vp.actualPct}%` }} /><span className="absolute -top-1 h-4 w-0.5 bg-slate-800" style={{ left: `${vp.planPct}%` }} /></div>
+        <p className="mt-1 text-[11px] text-slate-500">{vp.actualPct}% done by standard hours · plan now {vp.planPct}%</p></div>
+    </div>
+  );
+}
+
+/** The picture for WhatsApp (option A): previewed, then the phone's share sheet (or saved where it cannot share). */
+function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEntry; steps: StartupStep[]; vp: ReturnType<typeof startupVsPlan>; tl: Map<string, ReturnType<typeof stdTimeline>[number]>; now: number; onClose: () => void }) {
+  const [url, setUrl] = useState<string | null>(null); const [blob, setBlob] = useState<Blob | null>(null); const [msg, setMsg] = useState<string | null>(null);
+  const counted = steps.filter((x) => x.status !== 'not_required'); const done = counted.filter((x) => x.status === 'done').length;
+  const running = counted.find((x) => x.status === 'running') ?? null;
+  const today = localToday(); const day = dayNo(today) - dayNo(entry.start) + 1;
+  const behind = vp.behindH ?? 0;
+  const caption = `${entryName(entry)} start-up ${vp.actualPct}% · ${done}/${counted.length} steps · ${vp.finished ? 'finished' : 'expected end'} ${at(vp.expectedEnd)}${behind >= DELAY_MIN_H ? ` · ${hrs(behind)} behind plan` : ''}`;
+  useEffect(() => {
+    const steps_ = steps.map((x) => {
+      const t = tl.get(x.id); const over = vp.over.get(x.id); const wait = vp.wait.get(x.id);
+      const right = x.status === 'done' ? `${t?.actualH != null ? hrs(t.actualH) : '—'} / ${x.stdHours != null ? hrs(x.stdHours) : '—'}` : x.status === 'running' ? `${t?.actualH != null ? hrs(t.actualH) : '0 h'} / ${x.stdHours != null ? hrs(x.stdHours) : '—'}` : x.status === 'not_required' ? 'not required' : x.stdHours != null ? hrs(x.stdHours) : '—';
+      const sub = [over ? `+${hrs(over)}${x.delayReason ? ` · ${reasonLabel(x.delayReason)}${x.delayNote ? `: ${x.delayNote}` : ''}` : ''}` : null, wait ? `waited ${hrs(wait)}${x.waitReason ? ` · ${reasonLabel(x.waitReason)}${x.waitNote ? `: ${x.waitNote}` : ''}` : ''}` : null].filter(Boolean).join(' · ') || null;
+      return { title: x.title, status: x.status, right, red: !!over, sub };
+    });
+    const d: CardData = {
+      title: `${entryName(entry)} · Start-up`, when: `Unit-12 · ${new Date(now).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kuwait' })}`,
+      pct: vp.actualPct, planPct: vp.planPct, stepsLine: `${done} of ${counted.length} steps done`,
+      runningLine: running ? `Running: ${running.title.split(/[:(]/)[0].trim()}` : null,
+      expectedLine: `${vp.finished ? 'Finished' : 'Expected end'} ${at(vp.expectedEnd)}`,
+      behindLine: behind >= DELAY_MIN_H ? `${hrs(behind)} behind plan` : behind <= -DELAY_MIN_H ? `${hrs(-behind)} ahead of plan` : 'On plan', behindRed: behind >= DELAY_MIN_H,
+      planLine: `Plan end ${at(vp.planEnd)}${vp.overH > 0 ? ` · ${hrs(vp.overH)} longer steps` : ''}${vp.waitH > 0 ? ` · ${hrs(vp.waitH)} waiting` : ''}`,
+      steps: steps_, footLeft: `Standard ${Math.round(counted.reduce((n, x) => n + (x.stdHours ?? 0), 0) * 10) / 10} h`, footRight: `Down since ${shortDate(entry.start)} · day ${day}`,
+    };
+    const c = document.createElement('canvas'); drawCard(c, d);
+    c.toBlob((b) => { if (b) { setBlob(b); setUrl(URL.createObjectURL(b)); } }, 'image/png');
+  }, [entry, steps, vp, tl, now, done, counted.length, running, day, behind]);
+  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+  const name = `${entryName(entry).replace(/[^\w-]+/g, '-').toLowerCase()}-startup.png`;
+  return (
+    <BottomSheet open onClose={onClose} title="Share the start-up">
+      <div className="space-y-3">
+        {url ? <img src={url} alt="Start-up picture" className="mx-auto w-full max-w-sm rounded-lg ring-1 ring-slate-200" /> : <Spinner />}
+        <p className="text-[12px] text-slate-600">{caption}</p>
+        <Button className="w-full bg-[#25d366] hover:bg-[#1fb457]" disabled={!blob} onClick={async () => { const r = await sharePicture(blob!, name, caption); setMsg(r === 'saved' ? 'Picture saved: attach it in WhatsApp.' : r === 'shared' ? 'Shared.' : null); }}>Share to WhatsApp…</Button>
+        {msg && <p className="text-center text-[12px] text-slate-600">{msg}</p>}
       </div>
     </BottomSheet>
   );
