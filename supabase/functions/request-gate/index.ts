@@ -403,6 +403,15 @@ function evaluateRange(from, to, people, absences, rules = FULL_OPERATION, assig
   return out;
 }
 
+// src/core/clock.ts
+var KW = 3 * 36e5;
+var ms = (t) => t instanceof Date ? t.getTime() : typeof t === "number" ? t : Date.parse(t);
+var clock12 = (t) => {
+  const d = new Date(ms(t) + KW);
+  const h = d.getUTCHours();
+  return `${h % 12 || 12}:${String(d.getUTCMinutes()).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+};
+
 // src/core/validation/index.ts
 var SEVERITY_RANK = { info: 0, warning: 1, critical: 2, hard_stop: 3 };
 var DEFAULT_SHIFT_TIMES = { M: "07:00", A: "15:00", N: "23:00", hours: 8, dayDutyStart: "07:00", dayDutyHours: 8 };
@@ -429,11 +438,8 @@ function kuwaitMs(date, hhmm) {
   return Date.UTC(y, m - 1, d, hh - KUWAIT_OFFSET_H, mm);
 }
 var H = 36e5;
-var hhmmOf = (ms) => {
-  const d = new Date(ms + KUWAIT_OFFSET_H * H);
-  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
-};
-var dayOf = (ms) => new Date(ms + KUWAIT_OFFSET_H * H).toISOString().slice(0, 10);
+var hhmmOf = (ms2) => clock12(ms2);
+var dayOf = (ms2) => new Date(ms2 + KUWAIT_OFFSET_H * H).toISOString().slice(0, 10);
 var ON = /* @__PURE__ */ new Set(["approved", "planned", "unresolved"]);
 var shiftDuty = (date, state, t, crew, note) => {
   const start = kuwaitMs(date, t[state]);
@@ -678,7 +684,7 @@ var memberHoursOn = (p, m, date) => memberWorks(p, m, date) ? m.days?.[date]?.ho
 
 // src/core/shutdown/overtime.ts
 var H2 = 36e5;
-var KW = 3 * H2;
+var KW2 = 3 * H2;
 
 // src/core/shutdown/v2.ts
 var V2_DEFAULTS = {
@@ -1254,15 +1260,15 @@ var PV_RULES = { panelSeats: 4, panelMaxOff: 1, panelMinOnDuty: 3, fieldMaxOff: 
 
 // src/core/tracker/index.ts
 var H3 = 36e5;
-var KW2 = 3 * H3;
+var KW3 = 3 * H3;
 var STALE_H = { normal: 12, critical: 6, small: 24 };
 
 // src/core/tracker/reportImport.ts
-var KW3 = 3 * 36e5;
+var KW4 = 3 * 36e5;
 
 // src/core/tracker/intel/reconcile.ts
 var DEFAULT_TOLERANCE = { abs: 10, rel: 0.01 };
-var KW4 = 3 * 36e5;
+var KW5 = 3 * 36e5;
 
 // src/core/rules/index.ts
 var set = (o, patch) => Object.assign(o, patch);

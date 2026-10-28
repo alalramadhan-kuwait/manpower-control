@@ -1,6 +1,7 @@
 // The review list of update intelligence: one compact row per proposal, expandable; Apply · Edit · Dismiss · Source.
 // One tap applies an ordinary permitted change (a step time, a status line, drums, a planning figure); a new step, a
 // defect or a hold opens for a look first (the name or the reason can be edited); nothing safety-critical is changed here.
+import { clock12 } from '@/core/clock';
 import { useMemo, useState } from 'react';
 import { phases } from '@/core/tracker';
 import { CLASS_LABEL, DEPT_SHORT } from '@/core/tracker/intel';
@@ -9,7 +10,7 @@ import type { TrackerData } from '@/data/tracker';
 import { Button, ErrorBox, cx } from '@/ui/components';
 
 const KW = 3 * 36e5;
-export const when = (iso: string) => { const d = new Date(Date.parse(iso) + KW); return `${d.getUTCDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()]} ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`; };
+export const when = (iso: string) => { const d = new Date(Date.parse(iso) + KW); return `${d.getUTCDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()]} ${clock12(iso)}`; };
 const DOT: Record<string, string> = { ready: 'bg-status-green', review: 'bg-amber-500', conflict: 'bg-status-red', info: 'bg-slate-300', applied: 'bg-brand-500', dismissed: 'bg-slate-200' };
 const STATUS_WORD: Record<string, string> = { older: 'Older', ready: 'Ready', review: 'Review', conflict: 'Conflict', info: 'Info', applied: 'Applied', dismissed: 'Dismissed' };
 const TYPE_ICON: Record<string, string> = { finish_step: '✓', start_step: '▶', status_line: '✎', drums: '🛢', new_step: '＋', defect: '⚠', hold: '⛔', hold_release: '▶', risk: '◔', planning: '％', info: 'ℹ', review: '?' };

@@ -110,7 +110,7 @@ describe('G4 / G5 · 12-hour coverage by the clock', () => {
   it('an 8-hour Senior alone leaves 15:00–19:00 uncovered', () => {
     const list = ready().map((m) => (m.slot === 'senior' ? { ...m, days: Object.fromEntries(dates.map((d) => [d, { works: m.id === 's1', hours: 8 }])) } : m));
     const g = coverageGaps(plan, [day], list, info, () => false).filter((x) => x.role === 'senior');
-    expect(g[0]).toMatchObject({ from: '15:00', to: '19:00', hours: 4 });
+    expect(g[0]).toMatchObject({ from: '3:00 PM', to: '7:00 PM', hours: 4 });
     expect(g).toHaveLength(dates.length);
   });
   it('an operator without a level never counts as a Senior or Good FO', () => {
@@ -119,7 +119,7 @@ describe('G4 / G5 · 12-hour coverage by the clock', () => {
   });
   it('night shifts are checked 19:00–07:00 across midnight', () => {
     const list = balance(roster.map((m) => ({ ...m, teamId: 'night' })), crews, night).map((m) => (m.slot === 'good' ? { ...m, days: Object.fromEntries(dates.map((d) => [d, { works: m.id === 'g1', hours: 8 }])) } : m));
-    expect(coverageGaps(plan, [night], list, info, () => false).find((x) => x.role === 'good')).toMatchObject({ from: '03:00', to: '07:00' });
+    expect(coverageGaps(plan, [night], list, info, () => false).find((x) => x.role === 'good')).toMatchObject({ from: '3:00 AM', to: '7:00 AM' });
   });
 });
 

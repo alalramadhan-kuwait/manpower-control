@@ -1,4 +1,5 @@
 // Which version of the app this is, and whether a newer one has been published (dist/version.json, never cached).
+import { dateTime12 } from '@/core/clock';
 export const APP_VERSION: string = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
 export const APP_BUILT: string = typeof __APP_BUILT__ === 'string' ? __APP_BUILT__ : '';
 export interface RemoteVersion { version: string; built: string }
@@ -14,7 +15,7 @@ export async function fetchRemoteVersion(): Promise<RemoteVersion | null> {
 }
 
 /** "30 Sep 2026, 14:05" for the build time. */
-export const builtLabel = (iso: string) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
+export const builtLabel = (iso: string) => (iso ? dateTime12(iso, true) : '');
 
 /**
  * Update for sure: drop the service workers and their caches, then load the app again under a new address so no cached

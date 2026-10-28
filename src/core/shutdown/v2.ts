@@ -4,6 +4,7 @@
 // Kept apart on purpose: candidate eligibility, team composition, actual 12-hour coverage (by the clock), the duty and
 // rest checks (including joining and returning), overtime accounting, and the plan check that puts them together.
 // Priority: continuous qualified coverage → leave and roster feasibility → hard limits → fairness and New FO development.
+import { clock12 } from '../clock';
 import { addDaysIso, dutyFor, stateOf as rosterState, type Crew } from '../roster';
 import { evaluateDay, personOn, FULL_OPERATION, SD_TEAM, type MpAbsence, type MpAssignment, type MpPerson, type RulesSource } from '../manpower';
 import { checkSchedule, kuwaitMs, personDays, shiftTimesOf, type DayLine, type Finding, type RuleConfig, type SdDutyOf } from '../validation';
@@ -31,7 +32,7 @@ const days = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export const fmtDay = (d: string) => `${Number(d.slice(8))} ${MON[Number(d.slice(5, 7)) - 1]}`;
 export const fmtMonth = (m: string) => `${MON[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
-const hhmm = (ms: number) => { const d = new Date(ms + 3 * H); return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`; };
+const hhmm = (ms: number) => clock12(ms);
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 // ── Who the person is (from the directory) ─────────────────────────────────────────────────────────────────────────

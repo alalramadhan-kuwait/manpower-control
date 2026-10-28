@@ -1,6 +1,7 @@
 // Loop diagram in the loop sheet: the verified drawing excerpt(s) attached to the loop, a full-screen viewer with
 // pinch / drag / double-tap zoom, revisions kept, and attach / withdraw for the Section Head, Coordinators and
 // Engineers. The app never draws a connection itself: no verified drawing → "Drawing not available".
+import { dateTime12 } from '@/core/clock';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { DRAWING_SOURCES, DRAWING_TYPES, REFERENCE_NOTE, drawingLabel, drawingProblem, isPdf, loopDrawings, type TrkDrawing } from '@/core/tracker/drawings';
@@ -10,7 +11,7 @@ import { ErrorBox, cx } from '@/ui/components';
 import { LoopSchematic, SchematicButton, type SchematicData } from './LoopSchematic';
 import type { TrkPoint } from '@/core/tracker';
 
-const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kuwait' }) : '');
+const when = (iso: string | null) => (iso ? dateTime12(iso) : '');
 const meta = (d: TrkDrawing) => `${d.source}${d.uploadedBy ? ` · added by ${d.uploadedBy}` : ''}, ${when(d.uploadedAt)}`;
 
 /** The field card's compact entry: one tap to the loop's current drawing; nothing when none is attached (the loop

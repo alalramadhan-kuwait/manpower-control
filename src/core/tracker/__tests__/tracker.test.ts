@@ -103,7 +103,7 @@ describe('§10 test scenarios', () => {
     expect(r.stepsDone.map((s) => s.stepId)).toEqual(['S203', 'S315']);
     expect(r.stageChanges).toEqual([expect.objectContaining({ tag: 'V-12-201', from: 2, to: 3 })]);
     const text = reportText(r, { test: true, by: 'Ali' });
-    expect(text.split('\n').slice(0, 2)).toEqual(['*[TEST] Unit-12 Train-2 shutdown report*', '_20 Oct 2026 · Day shift · 15:00_']);
+    expect(text.split('\n').slice(0, 2)).toEqual(['*[TEST] Unit-12 Train-2 shutdown report*', '_20 Oct 2026 · Day shift · 3:00 PM_']);
     expect(text).toContain('\n*Reactors*\n- R-205: ');
     expect(text).toContain('*Max bed temperature*\n- R-205: 202°F\n- R-201: 183°F');
     expect(text).toContain('*Vessels*\n- V-201: Under inspection');
@@ -179,7 +179,7 @@ describe('report wording', () => {
     const d = seed();
     d.events = [{ id: 'x', category: 'reactors', text: 'High temp in one bed', startedAt: '2026-10-23T11:40:00+03:00', endedAt: null, by: 'Eng', endedBy: null, key: 'R-12-205' }];
     const text = reportText(shiftReport(d, at('2026-10-23 13:00'), null));
-    expect(text).toContain('*Issues*\n- R-205: High temp in one bed (since 11:40)');
+    expect(text).toContain('*Issues*\n- R-205: High temp in one bed (since 11:40 AM)');
     expect(text.indexOf('*Issues*')).toBeGreaterThan(text.indexOf('*Reactors*'));
   });
   it('bar-chart steps read in sentence case, short forms spelled out, tags kept', () => {

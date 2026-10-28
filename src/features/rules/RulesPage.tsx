@@ -1,5 +1,6 @@
 // Rules (owner, 27 Oct 2026): every organization rule on one page, grouped and in order. Everybody reads them; the
 // Section Head changes a number with a reason, inside its allowed range, from today forward. Every change is kept.
+import { dateTime12 } from '@/core/clock';
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { RULE_GROUPS, checkRuleValue, ruleDef, type RuleBound, type RuleField, type RuleGroup, type RuleValue } from '@/core/rules';
@@ -9,7 +10,7 @@ import type { UserProfile } from '@/data/types';
 import ModesPanel from '@/features/operation/OperationPage';
 import { BottomSheet, Button, ErrorBox, PageHeader, Spinner, Toast, cx } from '@/ui/components';
 
-const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const when = (iso: string) => dateTime12(iso, true);
 const pillOf = (key: string, v: RuleValue | null) => { const d = ruleDef(key); return d && v ? d.pill(v) : '–'; };
 
 export default function RulesPage({ profile }: { profile: UserProfile }) {

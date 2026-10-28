@@ -66,6 +66,7 @@ export interface TrkActivity {
   p6Activity?: string | null;
 }
 export interface TrkLog { kind: 'step' | 'equipment' | 'iat' | 'activity' | 'point' | 'event' | 'qty' | 'shift'; ref: string; field: string; oldValue: string | null; newValue: string | null; reason?: string | null; byName: string | null; at: string }
+import { clock12 } from '../clock';
 import { qtyForecast, qtyProgress, type TrkEngine } from './qty';
 export * from './qty';
 export interface TrkSettings { /** the P6 activity relationships validated: the end forecast is no longer labelled Unverified */ p6LinksVerified?: boolean; hoTarget?: string; end?: string; workOrder?: string; whatsapp?: string; opsStart?: string; miStart?: string; miEnd?: string;
@@ -544,9 +545,9 @@ export function shiftOf(now: number): { date: string; shift: 'D' | 'N'; from: nu
   const start = h >= 19 ? day : day - DAY;
   return { date: new Date(start).toISOString().slice(0, 10), shift: 'N', from: start + 19 * H - KW, to: start + 31 * H - KW };
 }
-/** Kuwait time as 12-hour with AM / PM (owner, 28 Oct 2026: the shutdown page and its picture), e.g. "2:32 PM". */
-export const kwTime12 = (iso: string | number) => { const d = new Date((typeof iso === 'number' ? iso : Date.parse(iso)) + KW); const h = d.getUTCHours(); return `${h % 12 || 12}:${String(d.getUTCMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
-export const kwTime = (iso: string | number) => { const d = new Date((typeof iso === 'number' ? iso : Date.parse(iso)) + KW); return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`; };
+/** Kuwait time, 12-hour with AM / PM (owner, 28 Oct 2026: everywhere in the app), e.g. "2:32 PM". */
+export const kwTime = (iso: string | number) => clock12(iso);
+export const kwTime12 = kwTime;
 export const kwDay = (iso: string | number) => new Date((typeof iso === 'number' ? iso : Date.parse(iso)) + KW).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 
 export interface ShiftReport {
@@ -1137,7 +1138,7 @@ export function askText(items: StaleItem[], now: number, opts: { name?: string; 
   for (const sec of [...new Set(items.map((i) => i.section))].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))) {
     // one item per line, so each can be answered on its own
     // short: "no activity since 19 Oct", "Pigging I/P since 21 Oct", "Gas test OK (22 Oct)"; today's updates by the hour
-    const day = (t: number) => (Math.floor((t + KW) / DAY) === Math.floor((now + KW) / DAY) ? kwTime(t) : askWhen(t).replace(/ \d\d:\d\d$/, ''));
+    const day = (t: number) => (Math.floor((t + KW) / DAY) === Math.floor((now + KW) / DAY) ? kwTime(t) : askWhen(t).replace(/ \d{1,2}:\d\d [AP]M$/, ''));
     out.push('', `*${ASK_NAME[sec] ?? sec}*`, ...items.filter((i) => i.section === sec).sort((a, b) => a.tag.localeCompare(b.tag, 'en', { numeric: true }))
       .map((x) => `- ${short(x.tag.replace(/^12-/, ''))}: ${!x.status ? `no activity since ${day(x.lastAt)}` : / I\/P$/.test(x.status) ? `${x.status} since ${day(x.lastAt)}` : `${x.status} (${day(x.lastAt)})`}:`));
   }

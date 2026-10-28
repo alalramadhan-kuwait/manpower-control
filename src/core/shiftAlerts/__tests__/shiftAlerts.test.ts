@@ -31,9 +31,9 @@ describe('shift alerts', () => {
   });
   it('the alert names the crew, the shift time and the Controller in charge', () => {
     const f = { crew: 'C' as const, shift: 'A' as const, date: '2026-09-29', startsAt: '14:00', controllers: ['Muath Malallah'], short: [] };
-    expect(alertText(f)).toEqual({ title: 'C Shift · Afternoon starts 14:00', body: 'Controller in charge: Muath Malallah', tag: 'shift-2026-09-29-A', url: './?date=2026-09-29' });
+    expect(alertText(f)).toEqual({ title: 'C Shift · Afternoon starts 2:00 PM', body: 'Controller in charge: Muath Malallah', tag: 'shift-2026-09-29-A', url: './?date=2026-09-29' });
     expect(alertText({ ...f, controllers: [], short: ['Field 5 of 6'] }).body).toBe('No Controller counted for this shift: cover needed\nShort: Field 5 of 6');
     expect(alertText({ ...f, also: ['Abdullah Al-Saegh (VR)'] }).body).toBe('Controller in charge: Muath Malallah\nAlso on shift: Abdullah Al-Saegh (VR)');
-    expect(alertText({ ...f, test: true }).title).toBe('Test · C Shift · Afternoon starts 14:00');
+    expect(alertText({ ...f, test: true }).title).toBe('Test · C Shift · Afternoon starts 2:00 PM');
   });
 });

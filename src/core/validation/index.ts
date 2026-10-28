@@ -2,6 +2,7 @@
 // pass. One engine for the rota, temporary moves, day duty, Controller covers and shutdown 12-hour shifts.
 // Severities (configurable per rule in validation_rules): info · warning · critical (the Section Head may accept it) ·
 // hard_stop (never approved). The 7th duty day in a row and a rest of 0 hours or less are always hard stops.
+import { clock12 } from '../clock';
 import { DAY_DUTY, isDayDutyWorkday, personOn, type MpAbsence, type MpAssignment, type MpCrewMove, type MpPerson } from '@/core/manpower';
 import { addDaysIso, dutyFor, stateOf, type Crew } from '@/core/roster';
 
@@ -43,7 +44,7 @@ export function kuwaitMs(date: string, hhmm: string): number {
   return Date.UTC(y, m - 1, d, hh - KUWAIT_OFFSET_H, mm);
 }
 const H = 3600_000;
-const hhmmOf = (ms: number) => { const d = new Date(ms + KUWAIT_OFFSET_H * H); return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`; };
+const hhmmOf = (ms: number) => clock12(ms);
 const dayOf = (ms: number) => new Date(ms + KUWAIT_OFFSET_H * H).toISOString().slice(0, 10);
 
 export type DutyCode = 'M' | 'A' | 'N' | 'D' | 'SD-D' | 'SD-N' | 'OFF' | '—';

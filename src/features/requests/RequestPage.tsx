@@ -1,3 +1,4 @@
+import { dateTime12 } from '@/core/clock';
 import { AlertTriangle, ArrowLeft, Info, Pencil } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, Navigate } from 'react-router-dom';
@@ -237,7 +238,7 @@ function ReviewCard({ req, open, impactRed, onDone }: { req: LeaveRequest; open:
             <Row label="Overtime" value={req.overtime_required ? 'Required' : 'Not required'} />
             <Row label="Signed on the form by" value={req.review_signed_by} />
             <Row label="Remarks" value={req.review_remarks} />
-            <p className="text-xs text-slate-500">Recorded {new Date(req.reviewed_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+            <p className="text-xs text-slate-500">Recorded {dateTime12(req.reviewed_at, true)}</p>
           </>
         ) : <p className="text-sm text-slate-500">{open ? 'Not yet' : '—'}</p>
       ) : (
@@ -278,7 +279,7 @@ function DecisionCard({ req, open, isHead, onDone }: { req: LeaveRequest; open: 
         <>
           <Row label="Decision" value={<span className={req.status === 'approved' ? 'text-status-green' : 'text-status-red'}>{req.status === 'approved' ? 'Leave request approved' : 'Leave request not approved'}</span>} />
           <Row label="Remarks" value={req.decision_remarks} />
-          <p className="text-xs text-slate-500">Decided {new Date(req.decided_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+          <p className="text-xs text-slate-500">Decided {dateTime12(req.decided_at, true)}</p>
           {req.status === 'approved' && <Link to={`/employees/${req.employee_id}`} className="mt-2 inline-block text-sm font-medium text-brand-700">See it in the employee's leave</Link>}
         </>
       ) : !open ? <p className="text-sm text-slate-500">Withdrawn</p> : !isHead ? <p className="text-sm text-slate-500">Waiting for Section Head</p> : (

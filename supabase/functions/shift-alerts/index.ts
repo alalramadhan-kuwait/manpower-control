@@ -394,6 +394,15 @@ function evaluateRange(from, to, people, absences, rules = FULL_OPERATION, assig
   return out;
 }
 
+// src/core/clock.ts
+var KW = 3 * 36e5;
+var hhmm12 = (hhmm) => {
+  const m = /^(\d{1,2}):(\d{2})/.exec(hhmm);
+  if (!m) return hhmm;
+  const h = Number(m[1]);
+  return `${h % 12 || 12}:${m[2]} ${h < 12 || h === 24 ? "AM" : "PM"}`;
+};
+
 // src/core/shiftAlerts/index.ts
 var SHIFT_CODES = ["M", "A", "N"];
 var DEFAULT_SHIFT_ALERTS = { enabled: true, leadMinutes: 15, tz: "Asia/Kuwait", starts: { M: "06:00", A: "14:00", N: "22:00" } };
@@ -419,7 +428,7 @@ var nextShift = (nowMs, s) => upcomingStarts(nowMs, s, 1440 + 60)[0] ?? null;
 function alertText(f) {
   const lead = f.controllers.length ? `Controller in charge: ${f.controllers.join(", ")}` : "No Controller counted for this shift: cover needed";
   return {
-    title: `${f.test ? "Test · " : ""}${f.crew} Shift · ${SHIFT_LABEL[f.shift]} starts ${f.startsAt}`,
+    title: `${f.test ? "Test · " : ""}${f.crew} Shift · ${SHIFT_LABEL[f.shift]} starts ${hhmm12(f.startsAt)}`,
     body: [lead, f.also?.length ? `Also on shift: ${f.also.join(", ")}` : "", f.short.length ? `Short: ${f.short.join(", ")}` : ""].filter(Boolean).join("\n"),
     tag: `shift-${f.date}-${f.shift}`,
     url: `./?date=${f.date}`
@@ -466,7 +475,7 @@ function memberWorks(p, m, date) {
 
 // src/core/shutdown/overtime.ts
 var H = 36e5;
-var KW = 3 * H;
+var KW2 = 3 * H;
 
 // src/core/shutdown/v2.ts
 var V2_DEFAULTS = {
@@ -824,15 +833,15 @@ var PV_RULES = { panelSeats: 4, panelMaxOff: 1, panelMinOnDuty: 3, fieldMaxOff: 
 
 // src/core/tracker/index.ts
 var H2 = 36e5;
-var KW2 = 3 * H2;
+var KW3 = 3 * H2;
 var STALE_H = { normal: 12, critical: 6, small: 24 };
 
 // src/core/tracker/reportImport.ts
-var KW3 = 3 * 36e5;
+var KW4 = 3 * 36e5;
 
 // src/core/tracker/intel/reconcile.ts
 var DEFAULT_TOLERANCE = { abs: 10, rel: 0.01 };
-var KW4 = 3 * 36e5;
+var KW5 = 3 * 36e5;
 
 // src/core/rules/index.ts
 var set = (o, patch) => Object.assign(o, patch);

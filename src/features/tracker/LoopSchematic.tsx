@@ -1,5 +1,6 @@
 // The auto-generated loop schematic: built from the records when opened (src/core/tracker/schematic), shown in the
 // drawing viewer, corrected by the Section Head, Coordinators and Engineers with recorded edits (trk_loop_fix).
+import { dateTime12 } from '@/core/clock';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { buildSchematic, LINK_STYLE, renderSchematic, type LoopFix, type LoopItem, type MarkKind, type Schematic, type SchematicInfo } from '@/core/tracker/schematic';
 import type { LuStream, TrkPoint, TrkPointStep } from '@/core/tracker';
@@ -10,7 +11,7 @@ import { DrawingViewer } from './LoopDiagram';
 
 export interface SchematicData { points: TrkPoint[]; steps: TrkPointStep[]; lineup: LuStream[] }
 type Loop = TrkPoint;
-const when = (ms: number) => new Date(ms).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kuwait' });
+const when = (ms: number) => dateTime12(ms, true);
 
 // one fetch of the corrections per tracker, shared by the cards; reload after a change
 const cache = new Map<string, Promise<{ fixes: LoopFix[]; items: LoopItem[] }>>();

@@ -3,6 +3,7 @@
 // kept in step by the database); the Coordinator's other changes (unplanned / sick leave added by hand, shift moves,
 // VR placements, task releases, Controller covers) are approved or not approved here, after the check (days in a row,
 // rest, overlaps, crew minimums) and the person's days around the change.
+import { clock12 } from '@/core/clock';
 import { AlertTriangle, Check as CheckIcon, ChevronRight, Search } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -37,7 +38,7 @@ const APPROVAL_STATUS: Record<ApprovalStatus, { label: string; tone: Tone }> = {
   not_approved: { label: 'Not approved', tone: 'red' }, withdrawn: { label: 'Withdrawn', tone: 'neutral' }
 };
 const range = (a: string, b: string | null) => (b === null ? `from ${shortDate(a)}` : a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
-const when = (iso: string) => { const d = new Date(iso); const p2 = (n: number) => String(n).padStart(2, '0'); return `${shortDate(`${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`)} ${p2(d.getHours())}:${p2(d.getMinutes())}`; };
+const when = (iso: string) => { const d = new Date(iso); const p2 = (n: number) => String(n).padStart(2, '0'); return `${shortDate(`${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`)} ${clock12(d)}`; };
 
 interface Item { key: string; kind: Kind; open: boolean; status: string; tone: Tone; employeeId: string; text: string; dates: string; start: string; at: string; by: string | null; note: string | null; form?: LeaveRequest; change?: ChangeRequest; approval?: ApprovalRequest }
 

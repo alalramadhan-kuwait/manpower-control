@@ -1,3 +1,4 @@
+import { clock12 } from '@/core/clock';
 import { ChevronDown, ChevronUp, History, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -5,7 +6,7 @@ import { AUDIT_CATEGORIES, describe, type AuditCategory, type AuditEntry, type A
 import { AUDIT_PAGE, fetchAudit, fetchAuditLookups } from '@/data/audit';
 import { Button, Card, ErrorBox, PageHeader, Spinner, cx } from '@/ui/components';
 
-const time = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+const time = (iso: string) => clock12(iso);
 const dateHeading = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
 const localDay = (iso: string) => new Date(iso).toLocaleDateString('en-CA');
 

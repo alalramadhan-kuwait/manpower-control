@@ -1,5 +1,6 @@
 // Shutdown progress tracker: the trackers of the calendar shutdowns (template / test / live), their steps, equipment,
 // IATs, bar chart, shift log and change log. Who and when are stamped by the database on every change.
+import { dateTime12 } from '@/core/clock';
 import { supabase } from './supabase';
 import type { TrkReturnItem, QtyKind, QtyMethod, Shift, TrkEngine, TrkQtyEntry, TrkUpdate, PointStatus, StepStatus, TrkActivity, TrkData, TrkEquipment, TrkIat, TrkRtj, TrkLog, LuEquip, LuStream, TrkPoint, TrkPointStep, TrkEvent, TrkSettings, TrkStep } from '@/core/tracker';
 
@@ -122,7 +123,7 @@ const same = (a: unknown, b: unknown) => a === b || (typeof a === 'string' && ty
 /** A save refused because the record changed after this screen loaded it (or the change is not allowed). */
 export class ConflictError extends Error { constructor(msg: string) { super(msg); this.name = 'ConflictError'; } }
 export const CONFLICT_EVENT = 'trk-conflict';
-const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kuwait' }) : '');
+const when = (iso: string | null | undefined) => (iso ? dateTime12(iso) : '');
 const upd = async (table: string, id: string, patch: Record<string, unknown>) => {
   const before = SEEN.get(`${table}:${id}`);
   let q = supabase.from(table).update(patch).eq('id', id);

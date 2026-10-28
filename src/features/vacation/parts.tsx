@@ -1,4 +1,5 @@
 // Small shared pieces of the vacation planning workspace: status chip, section header, dates, toast state.
+import { clock12 } from '@/core/clock';
 import { AlertTriangle, Check, OctagonX } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Toast, cx } from '@/ui/components';
@@ -9,7 +10,7 @@ export const dm = (iso: string) => `${Number(iso.slice(8, 10))} ${MONTHS[Number(
 /** "4–11 Jan" or "29 Jan – 5 Feb" */
 export const span = (a: string, b: string) => (a.slice(0, 7) === b.slice(0, 7) ? `${Number(a.slice(8))}–${dm(b)}` : `${dm(a)} – ${dm(b)}`);
 /** "27 Oct 14:05" (Kuwait time) */
-export const stamp = (iso: string) => { const d = new Date(Date.parse(iso) + 3 * 3600_000); return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`; };
+export const stamp = (iso: string) => { const d = new Date(Date.parse(iso) + 3 * 3600_000); return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${clock12(iso)}`; };
 
 export type Level = 'ok' | 'warning' | 'error';
 const LV: Record<Level, { cls: string; label: string; Icon: typeof Check }> = {

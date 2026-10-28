@@ -1,5 +1,6 @@
 // Shift alerts: a push notification a few minutes before each shift starts, saying which crew comes on and who the
 // Controller in charge is. Pure functions; the server (supabase/functions/shift-alerts) and the app both use them.
+import { hhmm12 } from '../clock';
 import { SHIFT_LABEL, addDaysIso, type Crew } from '../roster';
 
 export type ShiftCode = 'M' | 'A' | 'N';
@@ -57,7 +58,7 @@ export interface AlertText { title: string; body: string; tag: string; url: stri
 export function alertText(f: AlertFacts): AlertText {
   const lead = f.controllers.length ? `Controller in charge: ${f.controllers.join(', ')}` : 'No Controller counted for this shift: cover needed';
   return {
-    title: `${f.test ? 'Test · ' : ''}${f.crew} Shift · ${SHIFT_LABEL[f.shift]} starts ${f.startsAt}`,
+    title: `${f.test ? 'Test · ' : ''}${f.crew} Shift · ${SHIFT_LABEL[f.shift]} starts ${hhmm12(f.startsAt)}`,
     body: [lead, f.also?.length ? `Also on shift: ${f.also.join(', ')}` : '', f.short.length ? `Short: ${f.short.join(', ')}` : ''].filter(Boolean).join('\n'),
     tag: `shift-${f.date}-${f.shift}`,
     url: `./?date=${f.date}`

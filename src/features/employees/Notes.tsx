@@ -1,3 +1,4 @@
+import { dateTime12 } from '@/core/clock';
 import { Archive, Pencil, Send } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { addNote, fetchNotes, updateNote, type Note } from '@/data/notes';
@@ -5,7 +6,7 @@ import type { UserProfile } from '@/data/types';
 import { t } from '@/i18n';
 import { Button, ErrorBox, cx } from '@/ui/components';
 
-const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const when = (iso: string) => dateTime12(iso, true);
 
 /** Notes on a person, newest first: author and time on each; edit own (Coordinator) or any (Section Head). */
 export function Notes({ employeeId, profile, limit }: { employeeId: string; profile: UserProfile; limit?: number }) {

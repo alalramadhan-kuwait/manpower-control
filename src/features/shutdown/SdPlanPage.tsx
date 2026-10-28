@@ -310,7 +310,7 @@ export default function SdPlanPage({ isHead = false }: { isHead?: boolean }) {
       {!data.v2 && view.clockGaps.length > 0 && (
         <div role="alert" className="mb-3 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-900 ring-2 ring-red-400">
           <p className="flex items-center gap-1.5 font-bold"><AlertTriangle className="h-4 w-4 shrink-0" />Below the minimum on duty · {view.clockGaps.length} {view.clockGaps.length === 1 ? 'stretch' : 'stretches'}, {Math.round(view.clockGaps.reduce((t, g) => t + g.hours, 0))} h</p>
-          <p className="text-xs">Checked hour by hour: an 8-hour duty covers only 07:00–15:00 (19:00–03:00), so the rest of the 12-hour shift needs somebody on the full shift. Move the plan to the current rules and plan the days and hours, or set a full shift on these days.</p>
+          <p className="text-xs">Checked hour by hour: an 8-hour duty covers only 7 AM–3 PM (7 PM–3 AM), so the rest of the 12-hour shift needs somebody on the full shift. Move the plan to the current rules and plan the days and hours, or set a full shift on these days.</p>
           <ul className="mt-1.5 space-y-0.5 text-xs">
             {view.clockGaps.slice(0, 12).map((g, i) => <li key={i}><b>{g.team} · {g.label}</b> {shortDate(g.date)} {g.from}–{g.to}: {g.have} of {g.need} on duty</li>)}
             {view.clockGaps.length > 12 && <li>and {view.clockGaps.length - 12} more</li>}

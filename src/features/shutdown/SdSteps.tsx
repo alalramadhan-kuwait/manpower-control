@@ -1,5 +1,6 @@
 // Shutdown plan (rules v2): the steps to a ready plan, in order, with one button for the step to do now.
 // Done steps fold to a tick; later steps wait. Everything else on the page is detail behind it.
+import { clock12 } from '@/core/clock';
 import { Check, Loader2, RefreshCw } from 'lucide-react';
 import type { SdMember } from '@/core/shutdown';
 import type { PlanCheck } from '@/core/shutdown/v2';
@@ -33,7 +34,7 @@ export function NextSteps({ steps, checking, loadedAt, onRefresh }: { steps: Ste
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Next step</h2>
         <button type="button" onClick={onRefresh} disabled={checking} className="flex items-center gap-1 text-[11px] font-medium text-brand-700 disabled:text-slate-500">
-          {checking ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Checking…</> : <><RefreshCw className="h-3.5 w-3.5" />{loadedAt ? `Updated ${loadedAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` : 'Refresh'}</>}
+          {checking ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Checking…</> : <><RefreshCw className="h-3.5 w-3.5" />{loadedAt ? `Updated ${clock12(loadedAt)}` : 'Refresh'}</>}
         </button>
       </div>
       <ol className="mt-1.5 space-y-1">

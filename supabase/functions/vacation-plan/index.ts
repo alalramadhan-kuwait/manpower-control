@@ -882,6 +882,9 @@ function withOpenEnd(rows) {
   return (rows ?? []).map((r) => ({ ...r, end_date: r.end_date ?? OPEN_END, open_end: r.end_date == null }));
 }
 
+// src/core/clock.ts
+var KW = 3 * 36e5;
+
 // src/core/validation/index.ts
 var DEFAULT_SHIFT_TIMES = { M: "07:00", A: "15:00", N: "23:00", hours: 8, dayDutyStart: "07:00", dayDutyHours: 8 };
 var DEFAULT_RULES = [
@@ -908,7 +911,7 @@ function memberWorks(p, m, date) {
 
 // src/core/shutdown/overtime.ts
 var H = 36e5;
-var KW = 3 * H;
+var KW2 = 3 * H;
 
 // src/core/shutdown/v2.ts
 var V2_DEFAULTS = {
@@ -1377,15 +1380,15 @@ var CONTROLLER_LEAVE_RULES = { maxLeavesPerYear: 4, minDaysPerYear: 25 };
 
 // src/core/tracker/index.ts
 var H2 = 36e5;
-var KW2 = 3 * H2;
+var KW3 = 3 * H2;
 var STALE_H = { normal: 12, critical: 6, small: 24 };
 
 // src/core/tracker/reportImport.ts
-var KW3 = 3 * 36e5;
+var KW4 = 3 * 36e5;
 
 // src/core/tracker/intel/reconcile.ts
 var DEFAULT_TOLERANCE = { abs: 10, rel: 0.01 };
-var KW4 = 3 * 36e5;
+var KW5 = 3 * 36e5;
 
 // src/core/rules/index.ts
 var set = (o, patch) => Object.assign(o, patch);

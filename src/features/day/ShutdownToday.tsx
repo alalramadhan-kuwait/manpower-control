@@ -1,4 +1,5 @@
 // Today page: who is on duty on each shutdown team on the date. Shown only on the dates of an active shutdown.
+import { hour12 } from '@/core/clock';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -13,7 +14,7 @@ import { shortDate } from '@/ui/leave';
 
 type Loaded = { plan: SdPlan; teams: SdTeam[]; members: SdMember[] };
 const SLOT_ORDER: Record<string, number> = { controller: 0, senior: 1, good: 2, new: 3, member: 4 };
-const hhmm = (ms: number) => { const d = new Date(ms + 3 * 3600_000); return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`; };
+const hhmm = (ms: number) => hour12(ms);
 
 /** The active shutdowns that cover the date, with their teams and members (loaded once, then reused while stepping days). */
 function useShutdownsOn(date: string, tick: number) {
@@ -70,7 +71,7 @@ function TeamBlock({ edge, plan, team, members, date, name, leave }: { edge: boo
   return (
     <div className={cx('min-w-0 overflow-hidden text-[12px] leading-[1.45]', night ? 'bg-indigo-50/70' : 'bg-amber-50/70', edge && 'border-l border-white')}>
       <div className={cx('flex items-center gap-1 whitespace-nowrap px-2 py-1 text-[10px] font-extrabold uppercase', night ? 'bg-indigo-300 text-indigo-950' : 'bg-amber-200 text-amber-950')}>
-        <span className="truncate">{night ? '☾' : '☀'} {team.name} {first ? `${hhmm(first.start).slice(0, 2)}–${hhmm(first.end).slice(0, 2)}` : team.hoursLabel ?? ''}</span><span className="ml-auto normal-case">{on.length} on</span>
+        <span className="truncate">{night ? '☾' : '☀'} {team.name} {first ? `${hhmm(first.start)}–${hhmm(first.end)}` : team.hoursLabel ?? ''}</span><span className="ml-auto normal-case">{on.length} on</span>
       </div>
       <div className="px-2 pb-2 pt-1">
         {ctl ? <><b className="block truncate font-extrabold text-brand-800">{ctls[0] && name(ctls[0].m.employeeId)}</b>{ctls.slice(1).map((r) => <span key={r.m.id} className="block truncate text-[12px] text-slate-500">+ {name(r.m.employeeId)}</span>)}</>

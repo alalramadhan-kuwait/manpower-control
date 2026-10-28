@@ -2,12 +2,13 @@
 // two reports (Ops Eng., Shift Ops …) each propose a status for the same item. Only the newest by the time of the report
 // can be applied; the older ones are shown as older, not applied (they may still be dismissed). Nothing is stored:
 // the newest is worked out each time the list is read, so a later report always takes over.
+import { clock12 } from '../../clock';
 import { DEPT_SHORT, type Department } from './parse';
 
 interface StatusLike { id: string; type: string; key: string | null; status: string; eventAt: string; createdAt: string; department: Department; issues: string[]; title: string }
 const OPEN = new Set(['ready', 'review', 'conflict']);
 const KW = 3 * 36e5;
-const at = (iso: string) => { const d = new Date(Date.parse(iso) + KW); return `${d.getUTCDate()}/${d.getUTCMonth() + 1} ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`; };
+const at = (iso: string) => { const d = new Date(Date.parse(iso) + KW); return `${d.getUTCDate()}/${d.getUTCMonth() + 1} ${clock12(iso)}`; };
 
 /** The proposals with every older open status line of an item turned into an "older" information row. */
 export function latestStatusOnly<T extends StatusLike>(rows: T[]): (T & { superseded?: boolean })[] {

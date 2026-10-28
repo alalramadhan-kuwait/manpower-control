@@ -57,22 +57,22 @@ describe('coverage hour by hour · 8-hour duties', () => {
   it('the Good on 8 h with nobody else: 15:00–19:00 has 1 of 2 Field Operators, a 4-hour gap every day, never Ready', () => {
     const g = short(day12(['c', 'controller'], ['e1', 'senior'], ['g1', 'good', 8]));
     expect(g).toHaveLength(dates.length);
-    expect(g[0]).toMatchObject({ role: 'good', from: '15:00', to: '19:00', hours: 4, need: 2, have: 1 });
+    expect(g[0]).toMatchObject({ role: 'good', from: '3:00 PM', to: '7:00 PM', hours: 4, need: 2, have: 1 });
   });
   it('the only Experienced on 8 h: no Experienced 15:00–19:00 even with two Good on 12 h', () => {
     const g = short(day12(['c', 'controller'], ['e1', 'senior', 8], ['g1', 'good'], ['g2', 'good']));
-    expect(g.every((x) => x.role === 'senior' && x.from === '15:00' && x.to === '19:00' && x.have === 0)).toBe(true);
+    expect(g.every((x) => x.role === 'senior' && x.from === '3:00 PM' && x.to === '7:00 PM' && x.have === 0)).toBe(true);
   });
   it('a night 8 h duty leaves 03:00–07:00 short', () => {
     const team = [m('c', 'N', 'controller', () => 12), m('e1', 'N', 'senior', () => 12), m('g1', 'N', 'good', () => 8)];
     const g = coverageGaps(train, [night], team, I, nobodyAway);
-    expect(g.every((x) => x.role === 'good' && x.from === '03:00' && x.to === '07:00' && x.hours === 4 && x.have === 1)).toBe(true);
+    expect(g.every((x) => x.role === 'good' && x.from === '3:00 AM' && x.to === '7:00 AM' && x.hours === 4 && x.have === 1)).toBe(true);
     expect(g).toHaveLength(dates.length);
   });
   it('a 12 h person on approved leave does not count; the 8 h person alone leaves the last 4 hours short', () => {
     const team = day12(['c', 'controller'], ['e1', 'senior'], ['g1', 'good', 8], ['g2', 'good']);
     const g = coverageGaps(train, [day], team, I, (e, d) => e === 'g2' && d === '2026-11-02');
-    expect(g).toEqual([expect.objectContaining({ date: '2026-11-02', role: 'good', from: '15:00', to: '19:00', have: 1, need: 2 })]);
+    expect(g).toEqual([expect.objectContaining({ date: '2026-11-02', role: 'good', from: '3:00 PM', to: '7:00 PM', have: 1, need: 2 })]);
   });
 });
 
@@ -92,14 +92,14 @@ describe('coverage hour by hour · counts, not just presence (a place needing 6)
   it('one of the 6 on 8 h (07:00–15:00): 15:00–19:00 has 5 of 6, a gap every day', () => {
     const gaps = coverageGaps(total, [day], ops(6, 1), TI, nobodyAway, phases);
     expect(gaps).toHaveLength(dates.length);
-    expect(gaps[0]).toMatchObject({ role: 'area:TR-II', from: '15:00', to: '19:00', need: 6, have: 5, hours: 4 });
+    expect(gaps[0]).toMatchObject({ role: 'area:TR-II', from: '3:00 PM', to: '7:00 PM', need: 6, have: 5, hours: 4 });
   });
   it('the same 8 h duty with a 7th operator on 12 h: 6 on duty at every moment, covered', () => {
     expect(coverageGaps(total, [day], ops(6, 1, 1), TI, nobodyAway, phases)).toEqual([]);
   });
   it('a headcount of 6 is not enough when two work 8 h: 4 of 6 from 15:00', () => {
     const gaps = coverageGaps(total, [day], ops(6, 2), TI, nobodyAway, phases);
-    expect(gaps[0]).toMatchObject({ from: '15:00', to: '19:00', have: 4, need: 6 });
+    expect(gaps[0]).toMatchObject({ from: '3:00 PM', to: '7:00 PM', have: 4, need: 6 });
   });
 });
 
