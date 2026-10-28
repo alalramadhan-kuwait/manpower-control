@@ -57,7 +57,8 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
   const opsSum = stageSummary(opsSteps.map(asStd));
   const suSum = stageSummary(startup);
   const miEnd = ph && !Number.isNaN(ph.mi.plannedEnd) ? ph.mi.plannedEnd : null;
-  const running: Stage = suSum.startedAt !== null || (miEnd !== null && now > miEnd) ? 'startup' : ph?.mi.actualStart != null ? 'mi' : 'shutdown';
+  // with no tracker the page is about its start-up steps; else the stage running now
+  const running: Stage = suSum.startedAt !== null || (miEnd !== null && now > miEnd) || (!trk && startup.length > 0) ? 'startup' : ph?.mi.actualStart != null ? 'mi' : 'shutdown';
   const stage = (['shutdown', 'mi', 'startup'] as const).find((s) => s === q.get('stage')) ?? running;
   const part = (['progress', 'team', 'record', 'file'] as const).find((p) => p === q.get('part')) ?? 'progress';
   const set = (k: string, v: string) => { const n = new URLSearchParams(q); n.set(k, v); setQ(n, { replace: true }); };
@@ -96,7 +97,7 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
 
       {part === 'progress' && stage === 'shutdown' && <ShutdownSteps trk={trk} steps={opsSteps} stageStart={ops ? ops.start : null} profile={profile} now={now} onDone={done} />}
       {part === 'progress' && stage === 'mi' && <MiStage trk={trk} entry={entry} now={now} />}
-      {part === 'progress' && stage === 'startup' && <StartupSteps entry={entry} steps={startup} stageStart={miEnd} canEdit={EDIT_ROLES.includes(profile.role_code)} isHead={profile.role_code === 'section_head'} now={now} onDone={done} />}
+      {part === 'progress' && stage === 'startup' && <StartupSteps entry={entry} steps={startup} stageStart={miEnd ?? suSum.startedAt} canEdit={EDIT_ROLES.includes(profile.role_code)} isHead={profile.role_code === 'section_head'} now={now} onDone={done} />}
       {part === 'team' && <TeamPart entry={entry} isHead={profile.role_code === 'section_head'} />}
       {part === 'record' && <RecordPart entry={entry} ops={ops} mi={ph?.mi ?? null} su={suSum} />}
       {part === 'file' && <FilePart_ entry={entry} docs={docs} trk={trk} canEdit={FILE_ROLES.includes(profile.role_code)} onDone={done} />}
@@ -177,7 +178,8 @@ function MiStage({ trk, entry, now }: { trk: TrackerData | null; entry: Shutdown
   );
 }
 
-/** The start-up steps of this shutdown, planned one after another from the M&I finish by their standard hours. */
+/** The start-up steps of this shutdown, planned one after another by their standard hours from the M&I finish (no
+ *  tracker: from the first step's actual start). */
 function StartupSteps({ entry, steps, stageStart, canEdit, isHead, now, onDone }: { entry: ShutdownEntry; steps: StartupStep[]; stageStart: number | null; canEdit: boolean; isHead: boolean; now: number; onDone: (m: string) => void }) {
   const [open, setOpen] = useState<StartupStep | 'new' | null>(null);
   if (!entry.eventId) return <Card><p className="text-sm text-slate-600">This shutdown is not on the Calendar, so it has no start-up steps.</p></Card>;
