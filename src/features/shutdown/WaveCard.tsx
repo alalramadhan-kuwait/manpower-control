@@ -3,7 +3,7 @@
 // limit (E-129 takes part of the heat) and when it gets there. An estimate: it never changes a step.
 import { useCallback, useEffect, useState } from 'react';
 import { clock12, kwWeekDay, round30 } from '@/core/clock';
-import { WAVE_POINTS, WAVE_REACTORS, cutinEstimate, type CutinSpec, type PointKey, type ReactorKey } from '@/core/shutdown/wave';
+import { E129_POINTS, WAVE_POINTS, WAVE_REACTORS, cutinEstimate, type CutinSpec, type PointKey, type ReactorKey } from '@/core/shutdown/wave';
 import { addWave, fetchWave, removeWave, type StartupStep, type WaveRow } from '@/data/sdPage';
 import { Button, ErrorBox, Field, cx } from '@/ui/components';
 
@@ -12,7 +12,7 @@ const local = (t: number) => new Date(t + 3 * H).toISOString().slice(0, 16);
 const fromLocal = (v: string) => Date.parse(`${v}:00+03:00`);
 const when = (t: number) => `${clock12(round30(t))} ${kwWeekDay(round30(t)).split(' ')[0]}`;
 const hrs = (h: number) => `${Math.round(Math.abs(h) * 2) / 2} h`;
-const SHORT: Record<PointKey, string> = { r105_in: '105 in', r105_out: '105 out', r101_in: '101 in', r102_in: '102 in', r103_in: '103 in', r104_in: '104 in', r104_out: '104 out' };
+const SHORT: Record<PointKey, string> = { r105_in: '105 in', r105_out: '105 out', r101_in: '101 in', r102_in: '102 in', r103_in: '103 in', r104_in: '104 in', r104_out: '104 out', e129_feed: 'E-129 feed', e129_out: 'E-129 out' };
 
 export function WaveCard({ step, canEdit, now }: { step: StartupStep; canEdit: boolean; now: number }) {
   const spec = step.cutin as CutinSpec;
@@ -37,7 +37,7 @@ export function WaveCard({ step, canEdit, now }: { step: StartupStep; canEdit: b
           <span className="block text-[10px] font-bold uppercase text-slate-500">{e.reactors.every((r) => r.done) ? 'All inlets at temperature' : `Cut-in at this inlet (R-105 in ${spec.inletMax} °F)`}</span>
           <b className={cx('block text-[20px] leading-tight tabular-nums', e.blocked && 'text-red-800')}>
             {blocker ? `${blocker.name} tops out ~${Math.round(blocker.max!)} °F` : e.ready !== null ? `Ready ~${when(e.ready)}` : `${lim ?? 'An inlet'} not rising`}</b>
-          <span className="text-[11px] text-slate-600">{blocker ? `needs ${blocker.target}${others ? ` · ${others}` : ''}` : e.ready !== null && e.ready > now ? `${lim} sets it · in ${hrs((e.ready - now) / H)}` : lim ? `${lim}: a newer reading will tell` : 'Ready now'}</span>
+          <span className="text-[11px] text-slate-600">{blocker ? `at today's E-129 feed · needs ${blocker.target}: E-129 may take ≤ ${Math.max(0, Math.round(e.e129?.allowed ?? 0))} °F (now ${Math.round(e.e129?.dropNow ?? 0)})${e.e129?.needFeed != null ? `, feed in ≥ ${Math.round(e.e129.needFeed)} °F` : ''}${others ? ` · ${others}` : ''}` : e.ready !== null && e.ready > now ? `${lim} sets it · in ${hrs((e.ready - now) / H)}` : lim ? `${lim}: a newer reading will tell` : 'Ready now'}</span>
         </div>
         <table className="mx-2.5 w-[calc(100%-1.25rem)] text-[12px] tabular-nums">
           <thead><tr className="text-[10px] text-slate-500"><th className="text-left font-semibold">Inlet</th><th className="text-right font-semibold">Needs</th><th className="text-right font-semibold">Now</th><th className="text-right font-semibold">Rate</th><th className="text-right font-semibold">Max</th><th className="text-right font-semibold">Reaches it</th></tr></thead>
@@ -47,10 +47,10 @@ export function WaveCard({ step, canEdit, now }: { step: StartupStep; canEdit: b
               <td className="text-right">{r.target}</td><td className="text-right">{r.now !== null ? Math.round(r.now) : '—'}</td>
               <td className="text-right text-slate-500">{r.rate !== null ? `${Math.round(r.rate)}/h` : '—'}</td>
               <td className={cx('text-right', r.wont ? 'text-status-red' : 'text-slate-500')}>{r.max !== null ? `~${Math.round(r.max)}` : '—'}</td>
-              <td className={cx('text-right', r.done ? 'text-status-green' : r.wont ? 'text-status-red' : r.eta === null ? 'text-amber-700' : '')}>{r.done ? '✓ there' : r.wont ? "won't" : r.eta !== null ? when(r.eta) : r.now === null ? 'not read' : 'not rising'}</td></tr>))}</tbody>
+              <td className={cx('text-right', r.done ? 'text-status-green' : r.wont ? 'text-status-red' : r.eta === null ? 'text-amber-700' : '')}>{r.done ? '✓ there' : r.wont ? 'not at this feed' : r.eta !== null ? when(r.eta) : r.now === null ? 'not read' : 'not rising'}</td></tr>))}</tbody>
         </table>
         <p className="mx-2.5 rounded-lg bg-slate-50 px-2 py-1 text-[11px] text-slate-600">
-          <b>How:</b> a wave model fitted to the {e.model.readings} readings: each step a delay (R-105 {e.model.r105.tau.toFixed(1)} h, then {(['r102', 'r103', 'r104'] as const).map((k) => e.model.steps[k].tau.toFixed(1)).join(' · ')} h){e.e129 ? `, and E-129 taking ${Math.round(e.e129.dropNow)} °F now, +${e.e129.perDegree.toFixed(2)} °F per °F of R-105 outlet` : ''}. Max: steady with R-105 inlet at {spec.inletMax}. <b>exo</b>: a bed hotter than its inlet (the reaction is not in the model and makes it faster). A reading every 1–2 h keeps it close.</p>
+          <b>How:</b> a wave model fitted to the {e.model.readings} readings: each step a delay (R-105 {e.model.r105.tau.toFixed(1)} h, then {(['r102', 'r103', 'r104'] as const).map((k) => e.model.steps[k].tau.toFixed(1)).join(' · ')} h){e.e129 ? (e.e129.eff != null ? `, and E-129 taking ${Math.round(e.e129.eff * 100)}% of (R-105 outlet − feed in)${e.e129.gain ? `, FC-148 hot gas adding ${Math.round(e.e129.gain)} °F` : ''}` : `, and E-129 taking ${Math.round(e.e129.dropNow)} °F now at today's feed (add E-129 feed in / out to the readings: as the feed warms E-129 takes less)`) : ''}. Max: steady with R-105 inlet at {spec.inletMax}. <b>exo</b>: a bed hotter than its inlet (the reaction is not in the model and makes it faster). A reading every 1–2 h keeps it close.</p>
       </>}
       {canEdit && (adding ? <WaveForm step={step} last={rows?.[rows.length - 1] ?? null} now={now} onCancel={() => setAdding(false)} onDone={() => { setAdding(false); void load(); }} />
         : <div className="mx-2.5"><Button variant="secondary" className="min-h-9 w-full" onClick={() => setAdding(true)}>+ Panel temperatures</Button></div>)}
@@ -59,7 +59,7 @@ export function WaveCard({ step, canEdit, now }: { step: StartupStep; canEdit: b
         {list && <ul className="mx-2.5 divide-y divide-slate-100 pb-2 text-[11px] tabular-nums">{[...rows].reverse().map((r) => (
           <li key={r.id} className="py-1"><div className="flex justify-between gap-2"><b>{clock12(Date.parse(r.at))} {kwWeekDay(Date.parse(r.at))}</b>
             {canEdit && <button type="button" className="text-slate-400" onClick={async () => { await removeWave(r.id); void load(); }}>✕</button>}</div>
-            <span className="block text-slate-600">{WAVE_POINTS.filter((p) => r.pts[p.key] != null).map((p) => `${SHORT[p.key]} ${r.pts[p.key]}`).join(' · ')}</span>
+            <span className="block text-slate-600">{[...WAVE_POINTS, ...E129_POINTS].filter((p) => r.pts[p.key] != null).map((p) => `${SHORT[p.key]} ${r.pts[p.key]}`).join(' · ')}</span>
             {Object.keys(r.beds).length > 0 && <span className="block text-slate-500">Hottest bed: {WAVE_REACTORS.filter((x) => r.beds[x.key] != null).map((x) => `${x.name.replace('R-', '')} ${r.beds[x.key]}`).join(' · ')}</span>}
             {r.note && <span className="block text-slate-500">{r.note}</span>}</li>))}</ul>}
       </>}
@@ -85,6 +85,11 @@ function WaveForm({ step, last, now, onCancel, onDone }: { step: StartupStep; la
       <span className="block text-[11px] font-semibold text-slate-600">Inlet / outlet °F (R-105 inlet needed)</span>
       <div className="grid grid-cols-4 gap-1">{WAVE_POINTS.map((p) => (
         <label key={p.key} className="text-center text-[10px] text-slate-500">{SHORT[p.key]}
+          <input className="input mt-0.5 w-full min-w-0 px-1 text-center" inputMode="decimal" value={pts[p.key] ?? ''} placeholder={last?.pts[p.key] != null ? String(last.pts[p.key]) : ''}
+            onChange={(e) => setPts((x) => ({ ...x, [p.key]: e.target.value }))} /></label>))}</div>
+      <span className="block text-[11px] font-semibold text-slate-600">E-129 °F (optional: makes R-101 follow the feed)</span>
+      <div className="grid grid-cols-2 gap-1">{E129_POINTS.map((p) => (
+        <label key={p.key} className="text-center text-[10px] text-slate-500">{p.label}
           <input className="input mt-0.5 w-full min-w-0 px-1 text-center" inputMode="decimal" value={pts[p.key] ?? ''} placeholder={last?.pts[p.key] != null ? String(last.pts[p.key]) : ''}
             onChange={(e) => setPts((x) => ({ ...x, [p.key]: e.target.value }))} /></label>))}</div>
       <span className="block text-[11px] font-semibold text-slate-600">Hottest bed °F (optional, shows a reaction)</span>

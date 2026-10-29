@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TRAIN1_CUTIN, cutinEstimate, fitModel, fitWave, pickPair, type WaveReading } from '../wave';
+import { TRAIN1_CUTIN, cutinEstimate, feedModel, fitModel, fitWave, pickPair, type WaveReading } from '../wave';
 
 const H = 3_600_000;
 const t = (d: number, hh: number, mm = 0) => Date.UTC(2026, 9, d, hh - 3, mm); // Kuwait time
@@ -51,5 +51,28 @@ describe('cut-in estimate on the reactor inlets', () => {
   });
   it('marks the reaction where a bed is hotter than its inlet', () => {
     expect(of(e, 'r105').exo).toBe(true); expect(of(e, 'r102').exo).toBe(false);
+  });
+});
+
+describe('E-129 by the feed temperature', () => {
+  it('without the feed read: R-101 needs E-129 to take no more than ~20 °F with R-105 inlet at 620', () => {
+    const e = cutinEstimate([pm3, pm951, am537], TRAIN1_CUTIN)!;
+    expect(e.e129!.allowed).toBeGreaterThan(15); expect(e.e129!.allowed).toBeLessThan(25);
+    expect(e.e129!.eff).toBeNull(); expect(e.e129!.needFeed).toBeNull();
+  });
+  it('with the feed read: a share of (R-105 outlet − feed), the feed R-101 needs, and a warmer feed lifts R-101', () => {
+    const f = (x: WaveReading, feed: number, out: number) => ({ ...x, pts: { ...x.pts, e129_feed: feed, e129_out: out } });
+    const rs = [pm3, f(pm951, 380, 497), f(am537, 400, 576)];
+    const m = feedModel(rs)!; expect(m.gain).toBe(0); expect(m.eff).toBeGreaterThan(0.15); expect(m.eff).toBeLessThan(0.19);
+    const e = cutinEstimate(rs, TRAIN1_CUTIN)!;
+    expect(e.e129!.needFeed!).toBeGreaterThan(470); expect(e.e129!.needFeed!).toBeLessThan(530);
+    expect(of(e, 'r101').wont).toBe(true);
+    // two hours on, the feed at 520 °F: E-129 takes ~16 °F, R-101 inlet ~599
+    const later: WaveReading = { at: am537.at + 2 * H, pts: { r105_in: 620, r105_out: 615, r101_in: 599, r102_in: 590, r103_in: 584, r104_in: 572, r104_out: 563, e129_feed: 520, e129_out: 599 }, beds: {} };
+    const warm = cutinEstimate([...rs, later], TRAIN1_CUTIN)!;
+    expect(of(warm, 'r101').max!).toBeGreaterThan(of(e, 'r101').max!); expect(of(warm, 'r101').wont).toBe(false);
+  });
+  it('FC-148 hot gas: what it adds is R-101 inlet − E-129 out', () => {
+    const g = feedModel([{ ...am537, pts: { ...am537.pts, e129_feed: 400, e129_out: 570 } }])!; expect(g.gain).toBe(6);
   });
 });

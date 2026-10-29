@@ -6,7 +6,10 @@
 const H = 3_600_000;
 const DT = 0.01; // hours per simulation step
 
-export type PointKey = 'r105_in' | 'r105_out' | 'r101_in' | 'r102_in' | 'r103_in' | 'r104_in' | 'r104_out';
+export type PointKey = 'r105_in' | 'r105_out' | 'r101_in' | 'r102_in' | 'r103_in' | 'r104_in' | 'r104_out' | 'e129_feed' | 'e129_out';
+/** E-129's own points, optional: the feed coming into its shell (TI-265) and the effluent leaving its tubes before the
+ *  FC-148 hot gas joins (TI-1687). With them the E-129 drop is worked out from the feed temperature. */
+export const E129_POINTS: { key: PointKey; label: string }[] = [{ key: 'e129_feed', label: 'E-129 feed in (TI-265)' }, { key: 'e129_out', label: 'E-129 out (TI-1687)' }];
 export type ReactorKey = 'r105' | 'r101' | 'r102' | 'r103' | 'r104';
 /** the panel points in the order the heat reaches them */
 export const WAVE_POINTS: { key: PointKey; label: string }[] = [
@@ -73,7 +76,13 @@ export interface CutinEstimate {
   /** when every inlet is at its temperature; null when one cannot get there at this R-105 inlet or is not rising */
   ready: number | null; limiting: ReactorKey | null; blocked: boolean;
   /** the share of the R-105 outlet's heat above the feed that E-129 takes (from the drop to R-101 inlet) */
-  e129: { dropNow: number; perDegree: number } | null;
+  e129: {
+    dropNow: number; perDegree: number;
+    /** the most E-129 (less what FC-148 adds) may take for R-101 inlet to reach its target with R-105 inlet at its limit */
+    allowed: number;
+    /** from the feed temperature, when read: drop = eff × (R-105 outlet − feed in); the feed needed into E-129 */
+    eff: number | null; feed: number | null; needFeed: number | null; gain: number;
+  } | null;
   model: WaveModel;
 }
 
@@ -125,6 +134,18 @@ export function fitModel(readings: WaveReading[]): WaveModel | null {
   return m;
 }
 
+/** E-129 from the feed temperature: drop = eff × (R-105 outlet − feed in), least squares over the readings that have
+ *  the feed; the FC-148 hot gas adds R-101 inlet − E-129 out (when that is read; else none). */
+export function feedModel(readings: WaveReading[]): { eff: number; gain: number } | null {
+  const r = readings.filter((x) => x.pts.e129_feed != null && x.pts.r105_out != null && (x.pts.e129_out != null || x.pts.r101_in != null));
+  if (!r.length) return null;
+  const g = r.filter((x) => x.pts.e129_out != null && x.pts.r101_in != null).map((x) => x.pts.r101_in! - x.pts.e129_out!);
+  const gain = g.length ? g.reduce((a, v) => a + v, 0) / g.length : 0;
+  let sxy = 0, sxx = 0;
+  for (const x of r) { const d = x.pts.r105_out! - x.pts.e129_feed!; const drop = x.pts.r105_out! - (x.pts.e129_out ?? x.pts.r101_in! - gain); sxy += d * drop; sxx += d * d; }
+  return sxx > 0 ? { eff: Math.min(1, Math.max(0, sxy / sxx)), gain } : null;
+}
+
 /**
  * The cut-in estimate on the reactor inlets. From the latest reading on, the R-105 inlet goes on at its present rate
  * up to its limit and the model carries the heat down the train: when each inlet gets to its target, and the highest
@@ -138,6 +159,11 @@ export function cutinEstimate(readings: WaveReading[], spec: CutinSpec, horizonH
   const cap = Math.max(spec.inletMax, b.pts.r105_in); const rate = Math.max(0, (b.pts.r105_in - (a.pts.r105_in ?? b.pts.r105_in)) / span);
   // steady with the inlet at its limit
   const oSS = cap - m.r105.loss; const max: Record<ReactorKey, number> = { r105: cap, r101: e129Of(m, oSS), r102: 0, r103: 0, r104: 0 };
+  // E-129 by the feed temperature (when read): the feed warms as the unit heats up and E-129 then takes less
+  const fm = feedModel(readings); const feed = b.pts.e129_feed ?? null;
+  if (fm && feed != null) max.r101 = oSS - fm.eff * Math.max(0, oSS - feed) + fm.gain;
+  const gain = fm?.gain ?? 0; const allowed = oSS + gain - spec.targets.r101;
+  const needFeed = fm && fm.eff > 0 ? oSS - allowed / fm.eff : null;
   max.r102 = max.r101 - m.steps.r102.loss; max.r103 = max.r102 - m.steps.r103.loss; max.r104 = max.r103 - m.steps.r104.loss;
   // the way there, from the latest reading
   const n = Math.ceil(horizonH / STEP);
@@ -160,7 +186,7 @@ export function cutinEstimate(readings: WaveReading[], spec: CutinSpec, horizonH
   const ready = open.length === 0 ? b.at : open.some((r) => r.eta === null) ? null : Math.max(...open.map((r) => r.eta!));
   const limiting = open.length === 0 ? null : (open.find((r) => r.wont) ?? open.find((r) => r.eta === null) ?? open.reduce((x, r) => (r.eta! > x.eta! ? r : x))).key;
   const o1 = b.pts.r105_out!;
-  return { from: a.at, to: b.at, reactors, ready, limiting, blocked, e129: { dropNow: o1 - b.pts.r101_in!, perDegree: m.e129.b }, model: m };
+  return { from: a.at, to: b.at, reactors, ready, limiting, blocked, e129: { dropNow: o1 - b.pts.r101_in!, perDegree: m.e129.b, allowed, eff: fm?.eff ?? null, feed, needFeed, gain }, model: m };
 }
 
 /** Train-1's cut-in conditions (process instruction, 28 Oct 2026): each reactor's inlet °F, R-105 inlet up to 620 °F. */
