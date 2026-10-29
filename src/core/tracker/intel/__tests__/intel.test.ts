@@ -22,6 +22,17 @@ describe('reading the report', () => {
     expect(facts[3].qty).toEqual([{ value: 1968, unit: 'drum', mode: 'cumulative' }, { value: 124, unit: 'drum', mode: 'daily' }]);
     expect(facts[5].text).toContain('dye penetrant test');
   });
+  it('29 Oct report: parts after a tag, a 📌 tag block, a night count apart from the total, RTJ numbers', () => {
+    expect(tagsIn('P-205 E-01: Cooler dismantled').flatMap((t) => t.tags)).toEqual(['P-12-205-E-01']);
+    expect(tagsIn('P-12-205 E1').flatMap((t) => t.tags)).toEqual(['P-12-205-E-01']);
+    expect(tagsIn('P-12-203 TK-01').flatMap((t) => t.tags)).toEqual(['P-12-203-TK-01']);
+    expect(tagsIn('C-201 E-01A / E-01B: Elements removed').flatMap((t) => t.tags)).toEqual(['C-12-201-E-01A', 'C-12-201-E-01B']);
+    expect(tagsIn('E-204 / E-205: Under inspection').flatMap((t) => t.tags)).toEqual(['E-12-204', 'E-12-205']);
+    const { facts } = readReport('📌R-205\nJack hammering and vacuuming I/P.\nTonight: 52 drums.\nTotal: 2356 drums.\nWindow opening I/P : 7/9 completed.\n\n📌E-12-205 / P-12-205:\nTube inlet flange opened, cleaned, DPT completed, and RTJ Nos. 82/83/02 boxed up.');
+    expect(facts.filter((f) => f.line <= 5).every((f) => f.tags[0] === 'R-12-205')).toBe(true);
+    expect(facts.flatMap((f) => f.qty ?? [])).toEqual([{ value: 52, unit: 'drum', mode: 'daily' }, { value: 2356, unit: 'drum', mode: 'cumulative' }]);
+    expect(facts.some((f) => /^\d+\/\d+\/\d+ boxed up/.test(f.text))).toBe(false);
+  });
   it('event time: the end of the report shift, never after the submission', () => {
     expect(eventAtOf(META)).toBe('2026-10-26T15:30:00.000Z');
     expect(eventAtOf({ ...META, submittedAt: '2026-10-27T05:00:00Z' })).toBe('2026-10-26T16:00:00.000Z');

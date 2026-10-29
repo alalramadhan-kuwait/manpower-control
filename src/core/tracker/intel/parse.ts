@@ -23,8 +23,21 @@ export function expand(text: string): string { let t = text; for (const [re, to]
 /** Plant tags as the reports write them, resolved to the tracker's form (E-216 A/B → E-12-216A, E-12-216B; R-201/203/204 → three reactors;
  *  HV-12-546A as it is). The "12-" unit part is optional in the report. */
 const TAG = /\b([A-Z]{1,3})-(?:12-)?(\d{3})[\s-]*([A-Z])?((?:\s*\/\s*(?:[A-Z](?![A-Z0-9-])|\d{3}[A-Z]?))*)\b/g;
+/** A part of an item written after its tag ("P-205 E-01", "P-12-205 E1", "P-12-203 TK-01", "C-201 E-01A / E-01B"): the
+ *  tracker names it P-12-205-E-01, P-12-203-TK-01, C-12-201-E-01A (owner's report, 29 Oct 2026). */
+const PART = /\b([A-Z]{1,3})-(?:12-)?(\d{3})\s*[- ]\s*(E|TK|F|ST|EJ)\s*-?\s*(\d{1,2})([A-Z])?(?:\s*\/\s*(?:\3\s*-?\s*\d{1,2})?([A-Z]))?\b/g;
 export function tagsIn(text: string): { raw: string; tags: string[]; index: number }[] {
   const out: { raw: string; tags: string[]; index: number }[] = [];
+  // "P-205 LO tank" is its lube oil tank, TK-01 ("P-203 TK-01 (LO tank)")
+  for (const m of text.matchAll(/\b([A-Z]{1,3})-(?:12-)?(\d{3})\s+L\.?\s?O\.?\s*tank\b/gi)) {
+    out.push({ raw: m[0], tags: [`${m[1]}-12-${m[2]}-TK-01`], index: m.index ?? 0 });
+    text = text.slice(0, m.index) + ' '.repeat(m[0].length) + text.slice((m.index ?? 0) + m[0].length);
+  }
+  for (const m of text.matchAll(PART)) {
+    const [raw, pre, num, part, n, l1, l2] = m; const base = `${pre}-12-${num}-${part}-${n.padStart(2, '0')}`;
+    out.push({ raw, tags: l2 ? [`${base}${l1 ?? ''}`, `${base}${l2}`] : [`${base}${l1 ?? ''}`], index: m.index ?? 0 });
+    text = text.slice(0, m.index) + ' '.repeat(raw.length) + text.slice((m.index ?? 0) + raw.length);
+  }
   for (const m of text.matchAll(TAG)) {
     const [raw, pre, num, letter, more] = m; const tags: string[] = [];
     const rest = (more ?? '').split('/').map((s) => s.trim()).filter(Boolean);
@@ -32,7 +45,7 @@ export function tagsIn(text: string): { raw: string; tags: string[]; index: numb
     else { tags.push(`${pre}-12-${num}${letter ?? ''}`); for (const r of rest) tags.push(/^\d{3}/.test(r) ? `${pre}-12-${r}` : `${pre}-12-${num}${r}`); }
     out.push({ raw, tags: [...new Set(tags)], index: m.index ?? 0 });
   }
-  return out;
+  return out.sort((x, y) => x.index - y.index);
 }
 
 export interface Statement { line: number; raw: string; tagsText: string; tags: string[]; text: string; header: boolean }
@@ -40,13 +53,21 @@ const HEADER = /^(unit-?\s?\d+|train-?\s?\d+\s*(shutdown|sd)?\s*(report|update|s
 /** The pasted text as statements: a line that starts with tag(s) is about them; a line without one continues the
  *  statement above (a wrapped line or a second bullet), unless it is a heading. */
 export function segment(text: string): Statement[] {
-  const rows = text.split(/\r?\n/).map((r) => r.replace(/[⁠​*_]/g, '').replace(/^\s*(?:[-•·⁠▪➢>📌]+|\d+[.)])\s*/, '').trim());
+  // tags written without the dash ("E204 + E205 …", "E216 cleaning"): an equipment letter and a train number
+  const rows = text.split(/\r?\n/).map((r) => r.replace(/[⁠​*_]/g, '').replace(/^\s*(?:[-•·⁠▪➢>📌]+|\d+[.)])\s*/, '').replace(/\b([ERVHCPFT])([12]\d{2})\b/g, '$1-$2').trim());
   const out: Statement[] = [];
   const bullets = text.split(/\r?\n/).map((r) => /^\s*(?:[-•·⁠▪➢>📌]+|\d+[.)])\s*\S/.test(r));
   // a bullet with no tag ("📌 Instrument Air Backup Tanks") is a heading: the lines under it are notes under that heading
   let label = '';
+  // a bullet that is only a tag ("📌R-205") heads a block: every line under it, up to the next bullet, is about that item
+  // ("Tonight: 52 drums", "Total: 2356 drums", "Window opening I/P : 7/9 completed")
+  let block: Statement | null = null;
   rows.forEach((raw, i) => {
     if (!raw) return;
+    if (bullets[i]) block = null;
+    if (block && !bullets[i] && !TRAIN1.test(raw) && !/^note\b/i.test(raw) && !/^IAT/i.test(raw) && !tagsIn(raw).some((t) => t.index <= 2)) {
+      out.push({ line: i + 1, raw, tagsText: block.tagsText, tags: block.tags, text: raw, header: false }); return;
+    }
     if (bullets[i] && !tagsIn(raw).some((t) => t.index <= 2) && !/^IAT/i.test(raw) && !/^note\b/i.test(raw) && !TRAIN1.test(raw) && raw.split(/\s+/).length <= 6) { label = raw; out.push({ line: i + 1, raw, tagsText: '', tags: [], text: raw, header: true }); return; }
     if (bullets[i]) label = '';
     // an IAT number heads a line of its own ("IAT-2026-64210 Spool brought from the painting yard")
@@ -56,14 +77,16 @@ export function segment(text: string): Statement[] {
     if (found.length) {
       const head = found[0];
       // "R-205: text", "R-205 - text", "R-205 text"
-      let rest = raw.slice(head.index + head.raw.length).replace(/^\s*[:\-–—]\s*/, '').trim();
+      let rest = raw.slice(head.index + head.raw.length).replace(/^\s*\([^)]{1,40}\)/, '').replace(/^\s*[:\-–—]\s*/, '').trim();
       // more tags right after the first ("E-204 & E-205: …")
       const tags = [...head.tags];
       for (const t of tagsIn(rest)) if (t.index <= 3 || /^[\s&,+/]*$/.test(rest.slice(0, t.index))) { tags.push(...t.tags); rest = rest.slice(t.index + t.raw.length).replace(/^\s*[:\-–—&,]\s*/, '').trim(); }
-      out.push({ line: i + 1, raw, tagsText: raw.slice(0, raw.length - rest.length).trim().replace(/[:\-–—\s]+$/, ''), tags: [...new Set(tags)], text: rest, header: false });
+      const st: Statement = { line: i + 1, raw, tagsText: raw.slice(0, raw.length - rest.length).trim().replace(/[:\-–—\s]+$/, ''), tags: [...new Set(tags)], text: rest, header: false };
+      out.push(st); if (bullets[i] && !rest) block = st;
       return;
     }
     // a heading is short ("Train-2 Shutdown Report", a date); a long line that starts like one carries content
+    if (/^(?:U-?\s?12|unit[\s-]?12)\b.*\b(update|report|status)\b/i.test(raw) || /^(sun|mon|tue|wed|thu|fri|sat)[a-z]*,?\s+\d{1,2}[/.-]\d{1,2}([/.-]\d{2,4})?\s*$/i.test(raw)) { out.push({ line: i + 1, raw, tagsText: '', tags: [], text: raw, header: true }); return; }
     if ((HEADER.test(raw) && raw.split(/\s+/).length <= 6) || /^\d{1,2}[:.]\d{2}/.test(raw) || /^\d{1,2}\/\d{1,2}/.test(raw)) { out.push({ line: i + 1, raw, tagsText: '', tags: [], text: raw, header: true }); return; }
     const prev = out[out.length - 1];
     // a wrapped line continues the item above; a line of its own ("Train-1: …", a planning line, a heading-like label) does not
@@ -111,24 +134,28 @@ export function factsOf(s: Statement, scope: Scope = 'unknown'): Fact[] {
   // a planning line: "Planned 51.01%, Actual 51.01%"
   const pl = spelled.match(/plan(?:ned)?\s*(?:progress|completion)?\s*[:=]?\s*([\d.]+)\s*%.*?actual\s*(?:progress|completion)?\s*[:=]?\s*([\d.]+)\s*%/i);
   if (pl) return [{ id: `${s.line}:p`, line: s.line, raw: s.raw, tagsText: s.tagsText, tags: s.tags, text: clean(spelled), phrase: 'planning progress', state: 'info', kind: 'planning', planning: { planned: +pl[1], actual: +pl[2] }, scope: 'common', confidence: 0.95 }];
-  const clauses = spelled.split(/(?<=[a-z\d)%])(?<!\b[Nn]o)\.\s+(?=[A-Za-z0-9])|;\s*|\s+\/\s+(?=[A-Z][a-z])/).map(clean).filter(Boolean);
+  const clauses = spelled.split(/(?<=[a-z\d)%])(?<!\b[Nn]os?)\.\s+(?=[A-Za-z0-9])|;\s*|\s+\/\s+(?=[A-Z][a-z])/).map(clean).filter(Boolean);
   const train1 = TRAIN1.test(s.raw) || (scope === 'train1');
   return clauses.map((c, n): Fact => {
     const id = `${s.line}:${n}`;
     const base = { id, line: s.line, raw: s.raw, tagsText: s.tagsText, tags: s.tags, text: c };
     const qty: Fact['qty'] = [];
     for (const m of c.matchAll(QTY)) {
-      const before = c.slice(Math.max(0, (m.index ?? 0) - 12), m.index ?? 0);
-      qty.push({ value: +m[1].replace(/,/g, ''), unit: m[2].toLowerCase().replace(/s$/, ''), mode: /today|this shift|shift/i.test(before) ? 'daily' : 'cumulative' });
+      const before = c.slice(Math.max(0, (m.index ?? 0) - 12), m.index ?? 0); const after = c.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 12);
+      // "today 124 drums", "Tonight: 52 drums", "52 drums tonight": the shift's count, never a total
+      qty.push({ value: +m[1].replace(/,/g, ''), unit: m[2].toLowerCase().replace(/s$/, ''), mode: /today|tonight|night|this shift|shift/i.test(before) || /^\s*(today|tonight|this shift)\b/i.test(after) ? 'daily' : 'cumulative' });
     }
     // "today 124" without a unit after the total
     const today = c.match(/\btoday\s*:?\s*(\d[\d,]*)\b/i);
     if (today && qty.length && !qty.some((q) => q.mode === 'daily')) qty.push({ value: +today[1].replace(/,/g, ''), unit: qty[0].unit, mode: 'daily' });
-    const reading = READING.test(c) && !DONE.test(c.replace(READING, '')) && !/drums?|hydro(blast|jet)|clean/i.test(c);
+    const reading = (READING.test(c) && !DONE.test(c.replace(READING, '')) && !/drums?|hydro(blast|jet)|clean/i.test(c)) || /^\s*gas\s*test\b[^,;]*\b(ok|okay|passed|clear(ed)?|done|good)\b/i.test(c);
     if (reading || (train1 && !s.tags.length)) return { ...base, phrase: clean(c), state: 'info', kind: 'reading', qty: qty.length ? qty.map((q) => ({ ...q, mode: 'reading' as const })) : undefined, scope: train1 ? 'train1' : scope, confidence: 0.8 };
     // "to be done" is pending, not done; "to start" is planned
     const stateOf = (): FactState => {
       if (RELEASE.test(c)) return 'info';
+      // "7/9 completed": part of the work done, the rest running
+      const frac = c.match(/\b(\d+)\s*\/\s*(\d+)\s*(?:completed?|done)\b/i);
+      if (frac && +frac[1] < +frac[2]) return 'in_progress';
       const pm = c.match(PEND);
       if (pm && (/\b(done|completed?|started|carried out|installed|fixed|start)\b/i.test(pm[0]) || !DONE.test(c.replace(PEND, '')))) return /\b(to start|planned|scheduled|will)\b/i.test(c) ? 'planned' : 'pending';
       return DONE.test(c) ? 'done' : RUN.test(c) ? 'in_progress' : pm ? 'pending' : 'info';
@@ -161,7 +188,7 @@ export function readReport(text: string): { statements: Statement[]; facts: Fact
     // a clause split at "," or " and " only when every part carries a state ("spools removed and hydroblasting done";
     // "jackhammering and vacuuming in progress" stays one)
     const stated = (p: string) => DONE.test(expand(p)) || RUN.test(expand(p)) || PEND.test(expand(p));
-    const pieces = s.text.split(/(?<=[a-z\d)%])(?<!\b[Nn]o)[.;]\s+(?=[A-Za-z0-9])/).flatMap((part) => {
+    const pieces = s.text.split(/(?<=[a-z\d)%])(?<!\b[Nn]os?)[.;]\s+(?=[A-Za-z0-9])/).flatMap((part) => {
       const byComma = part.split(/,\s*(?=[A-Za-z])/);
       const xs = byComma.length > 1 && byComma.every(stated) ? byComma : [part];
       return xs.flatMap((x) => { const byAnd = x.split(/\s+and\s+(?=[a-z])/i); return byAnd.length > 1 && byAnd.every(stated) ? byAnd : [x]; });

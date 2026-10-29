@@ -56,6 +56,9 @@ export function resolveTag(d: TrkData, tag: string): Match[] {
   if (twins.length) return twins.map((e) => ({ kind: 'equipment' as const, e, tag: e.tag }));
   const v = (d.putBack ?? []).find((x) => bare(x.tag) === bare(tag) || bare(x.tag).replace(/\s.*$/, '') === bare(tag));
   if (v) return [{ kind: 'valve', item: v, tag: v.tag }];
+  // a part the tracker does not follow on its own (P-12-205-E-02): the item it belongs to
+  const part = tag.match(/^([A-Z]{1,3}-12-\d{3})-(?:E|TK|F|ST|EJ)-\d{2}[A-Z]?$/);
+  if (part) return resolveTag(d, part[1]);
   return [];
 }
 
@@ -78,9 +81,15 @@ const FAMILIES: [string, RegExp][] = [
   ['opening', /\b(remov\w*|drop\w*|dismantl\w*|open\w*|pull(ed)? out|disconnect\w*|blind\w*|insulation)\b/i]];
 // a scaffolding note in brackets on a real step ("Shell pull out (scaffolding modification as required)") is not its family
 const familyOf = (text: string): string | null => { const t = text.replace(/\([^)]*scaffold[^)]*\)?/gi, ' '); return FAMILIES.find(([, re]) => re.test(t))?.[0] ?? null; };
+/** A step's family is its last work word ("Burner cleaning (Burner No. 6 tip) rectification" is a repair) */
+const stepFamily = (name: string): string | null => {
+  const t = name.replace(/\([^)]*scaffold[^)]*\)?/gi, ' '); let best: string | null = null, at = -1;
+  for (const [k, re] of FAMILIES) { const m = t.match(re); if (m && (m.index ?? 0) >= at) { best = k; at = m.index ?? 0; } }
+  return best;
+};
 const BARE_TAG = /^[A-Z]{1,3}-\d{2}-\d{3,4}[A-Z]?$/;
 /** A clause about a part of the work, never the whole step: a pass, a numbered item, one piece, a side, the balance. */
-const PARTIAL = /\b(pass(es)?|no\.?|nos\.?|one|two|three|four|\d+\s*(of|out of|nos|pcs)|partial\w*|part(s|ly)?|pieces?|pcs|side|half|remaining|balance|some)\b/i;
+const PARTIAL = /\b(pass(es)?|no\.?|nos\.?|one|two|three|four|\d+\s*(of|out of|nos|pcs)|partial\w*|part(s|ly)?|pieces?|pcs|side|half|remaining|balance|some|\d+\s+(pending|remaining|left|to go)|\d+\s*\/\s*\d+)\b/i;
 /** A new step's name from the clause: the words as reported, without the trailing state words. */
 const stepTitle = (text: string, phrase: string) => (/\s,|,$/.test(phrase) || words(phrase).length < 2 ? sentence(text.replace(/[,;]?\s*\b(in progress|under way|completed?|done|started|finished|pending|to start)\b\s*$/i, '').trim()) : sentence(phrase));
 /** Families whose steps are about one object (owner, 27 Oct 2026: a collector ring repair is not the thermowell bracket
@@ -126,7 +135,20 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
   // ── equipment facts, grouped by tag ──
   const work = facts.filter((f) => f.kind !== 'planning' && f.kind !== 'reading' && f.scope !== 'train1');
   const byTag = new Map<string, Fact[]>();
-  for (const f of work) { if (!f.tags.length) byTag.set('', [...(byTag.get('') ?? []), f]); for (const t of f.tags) byTag.set(t, [...(byTag.get(t) ?? []), f]); }
+  // a line naming two kinds of item ("E-12-205 / P-12-205: tube inlet flange …"): the first is what it is about; a later one takes
+  // the line only when one of its steps names the same thing (owner's report, 29 Oct 2026: a pump never starts a filter
+  // step from an exchanger's flange); otherwise the line is a note on it
+  const alsoNamed: [string, Fact][] = [];
+  const namesWorkOf = (t: string, f: Fact) => {
+    const ow = objectWords(f.text); if (!ow.length) return true;
+    return resolveTag(d, t).some((m) => m.kind !== 'equipment' || linesOf(d, keyOf(m.e!)).some((a) => shares(ow, objectWords(a.activity))));
+  };
+  for (const f of work) {
+    if (!f.tags.length) byTag.set('', [...(byTag.get('') ?? []), f]);
+    f.tags.forEach((t, i) => { if (i > 0 && t.split('-')[0] !== f.tags[0].split('-')[0] && !namesWorkOf(t, f)) alsoNamed.push([t, f]); else byTag.set(t, [...(byTag.get(t) ?? []), f]); });
+  }
+  for (const [t, f] of alsoNamed) out.push(mk({ factIds: [f.id], tag: t, key: null, equipmentId: null, activityId: null, activityName: null, type: 'info', status: 'info', classification: 'info',
+    title: `${t}: named with ${f.tags[0]} · ${f.text}`, detail: `The line is about ${f.tags[0]}; none of ${t}'s steps names this work, so nothing changes on ${t}.`, current: {}, proposed: {}, reason: 'Second tag of a line', evidence: [quote(f)] }));
   for (const [tag, fs] of byTag) {
     if (!tag) { for (const f of fs) if (!/^\s*$/.test(f.text)) out.push(f.tagsText && !/^note\b/i.test(f.text)
       ? mk({ factIds: [f.id], tag: null, key: null, equipmentId: null, activityId: null, activityName: null, type: 'info', status: 'info', classification: 'info', title: `${f.tagsText}: ${f.text}`, detail: 'Not an item of this tracker; kept as a note of the report.', current: {}, proposed: {}, reason: 'Note under a heading', evidence: [quote(f)] })
@@ -153,7 +175,7 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
       const noteAt = (d.log ?? []).filter((l) => l.kind === 'equipment' && l.ref === e.tag && l.field === 'note').map((l) => l.at).sort().pop();
       // the status line (owner, 28 Oct 2026: least text): what is in progress now; if nothing is, what was done
       const runParts: string[] = [], doneParts: string[] = [];
-      const addStatus = (f: Fact) => { if (f.kind === 'quantity' || INSPECTION_SCOPE.test(f.text) || BARE_TAG.test(f.text)) return; (f.state === 'in_progress' || f.kind === 'hold' || f.kind === 'risk' ? runParts : doneParts).push(f.text); };
+      const addStatus = (f: Fact) => { if (f.kind === 'quantity' || INSPECTION_SCOPE.test(f.text) || BARE_TAG.test(f.text) || (words(f.text).length <= 2 && !objectWords(f.text).length)) return; (f.state === 'in_progress' || f.kind === 'hold' || f.kind === 'risk' ? runParts : doneParts).push(f.text); };
       // steps this report already finishes are not matched again; a family still running (another clause) is not finished
       const claimed = new Set<string>();
       const famRunning = new Set(fs.filter((f) => f.state === 'in_progress').map((f) => familyOf(f.text)).filter(Boolean));
@@ -240,6 +262,13 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
           const changed = later(st.updatedAt, at);
           if (f.state === 'done') {
             if (st.actualFinish) out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: st.id, activityName: st.activity, type: 'info', status: 'info', classification: 'already_recorded', title: `${e.tag}: ✓ ${st.activity} (recorded ${fmt(st.actualFinish)})`, detail: f.text, current: { actualFinish: st.actualFinish }, proposed: {}, reason: 'Already finished in the tracker', evidence: ev }));
+            // "All burners removed" names the burner cleaning step but is not its work: a part of it, never its finish
+            else if (stepFamily(st.activity) && familyOf(f.text) !== stepFamily(st.activity)) {
+              if (!st.actualStart) { claimed.add(st.id); out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: st.id, activityName: st.activity, type: 'start_step', status: changed ? 'conflict' : 'ready', classification: 'step_in_progress',
+                title: `${e.tag}: ▶ ${st.activity}`, detail: `"${sentence(f.text)}" is part of this step: it starts; it finishes when the step's own work is reported done.`, current: { actualStart: null }, proposed: { actualStart: eventAt }, reason: `${dept} reports part of the step`, evidence: ev, issues: changed ? [`the step changed in the tracker after the report (${fmt(st.updatedAt!)})`] : [] })); }
+              else out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: st.id, activityName: st.activity, type: 'info', status: 'info', classification: 'already_recorded', title: `${e.tag}: ${f.text} · part of ▶ ${st.activity}`,
+                detail: 'Part of the running step; it finishes when the step\'s own work is reported done.', current: { actualStart: st.actualStart }, proposed: {}, reason: 'Part of a running step', evidence: ev }));
+            }
             else { claimed.add(st.id); out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: st.id, activityName: st.activity, type: 'finish_step', status: changed ? 'conflict' : 'ready', classification: 'step_done', title: `${e.tag}: ✓ ${st.activity}`, detail: f.text,
               current: { actualStart: st.actualStart, actualFinish: null }, proposed: { actualStart: st.actualStart ?? eventAt, actualFinish: eventAt }, reason: `${dept} reports it done`, evidence: ev, issues: changed ? [`the step changed in the tracker after the report (${fmt(st.updatedAt!)})`] : [] })); }
           } else if (f.state === 'in_progress') {
@@ -267,13 +296,20 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
         // the same step reported done twice in one report (two lines): one proposal, both quotes
         const stAll = stepFor(nounOnly, acts);
         if (stAll && claimed.has(stAll.id) && f.state === 'done') { const prev = out.find((p) => p.type === 'finish_step' && p.activityId === stAll.id); if (prev) { prev.factIds.push(f.id); prev.evidence.push(...ev); continue; } }
+        // the work reported done and its step already finished in the tracker ("loading preparation completed" after
+        // Prepare for loading ✓): already recorded; it never starts the family's next step
+        if (fam && f.state === 'done') {
+          const ow = objectWords(nounOnly); const fin = ow.length ? acts.find((a) => a.actualFinish && stepFamily(a.activity) === fam && shares(ow, objectWords(a.activity))) : undefined;
+          if (fin) { out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: fin.id, activityName: fin.activity, type: 'info', status: 'info', classification: 'already_recorded',
+            title: `${e.tag}: ✓ ${fin.activity} (recorded ${fmt(fin.actualFinish!)})`, detail: `"${sentence(f.text)}" is already recorded on this step.`, current: { actualFinish: fin.actualFinish }, proposed: {}, reason: 'Already recorded', evidence: ev })); continue; }
+        }
         const openActs = acts.filter((a) => !claimed.has(a.id));
-        let famSteps = fam ? openActs.filter((a) => familyOf(a.activity) === fam && fitsFamilyStep(fam, nounOnly, a.activity)) : [];
+        let famSteps = fam ? openActs.filter((a) => stepFamily(a.activity) === fam && fitsFamilyStep(fam, nounOnly, a.activity)) : [];
         // a part removed or fitted for its repair ("quench pipe one piece removed" with a quench pipe repair step): that repair step
         let via: string | null = null;
         if (fam && OBJECT_FAMILIES.has(fam) && !famSteps.some((a) => !a.actualFinish)) {
-          const other = openActs.filter((a) => { const g = familyOf(a.activity); return g !== fam && g !== null && OBJECT_FAMILIES.has(g) && !a.actualFinish && shares(objectWords(nounOnly), objectWords(a.activity)); });
-          if (other.length) { famSteps = other; via = familyOf(other[0].activity); }
+          const other = openActs.filter((a) => { const g = stepFamily(a.activity); return g !== fam && g !== null && OBJECT_FAMILIES.has(g) && !a.actualFinish && shares(objectWords(nounOnly), objectWords(a.activity)); });
+          if (other.length) { famSteps = other; via = stepFamily(other[0].activity); }
         }
         const byFit = (xs: TrkActivity[]) => [...xs].sort((a, b) => overlap(nounOnly, b.activity) - overlap(nounOnly, a.activity));
         const famStep = byFit(famSteps.filter((a) => a.actualStart && !a.actualFinish))[0] ?? byFit(famSteps.filter((a) => !a.actualStart))[0] ?? null;
@@ -300,7 +336,7 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
         // a family with every step finished: more of the same work is a workflow change (re-test, additional cleaning); any
         // other sub-item with no step of its family on the item is noted, never a step of its own
         // an object family naming another object (collector ring, not the thermowell brackets): a step to suggest, below
-        const otherObject = !!fam && OBJECT_FAMILIES.has(fam) && objectWords(nounOnly).length > 0 && acts.some((a) => familyOf(a.activity) === fam && !a.actualFinish);
+        const otherObject = !!fam && OBJECT_FAMILIES.has(fam) && objectWords(nounOnly).length > 0 && acts.some((a) => stepFamily(a.activity) === fam && !a.actualFinish);
         if (fam && !otherObject && !(famSteps.length && WORKFLOW.test(f.text))) {
           out.push(mk({ factIds: [f.id], tag: e.tag, key, equipmentId: e.id, activityId: null, activityName: null, type: 'info', status: 'info', classification: 'info', title: `${e.tag}: ${f.text}`,
             detail: famSteps.length ? `${fam} already finished on this item; noted.` : `${fam} work noted on the item (no ${fam} step in its plan; sub-items are not tracked one by one).`, current: {}, proposed: {}, reason: 'Sub-item noted', evidence: ev }));
