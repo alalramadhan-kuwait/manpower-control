@@ -5,6 +5,7 @@
 import { CONTROLLER_LEAVE_RULES } from '../controllers/leaveRules';
 import { ACTING_PANEL } from '../manpower';
 import { PV_RULES } from '../pv';
+import { HEATUP_PLAN } from '../shutdown/profile';
 import { SD_MINIMUM, SICK_RULES, V2_DEFAULTS } from '../shutdown/v2';
 import { STALE_H } from '../tracker';
 import { DEFAULT_TOLERANCE } from '../tracker/intel/reconcile';
@@ -104,6 +105,10 @@ export const RULE_DEFS: RuleDef[] = [
     effect: 'Shutdown teams are checked with the new numbers from today.',
     fields: [{ name: 'okMax', label: 'OK up to', unit: 'days' }, { name: 'warnMax', label: 'Warning up to', unit: 'days' }, { name: 'freshDays', label: 'List fresh for', unit: 'days' }],
     pill: (v) => `≤${n(v, 'okMax')} · ≤${n(v, 'warnMax')}` },
+  { key: 'sd.heatup', group: 'shutdown', label: 'Start-up heat-up plan', description: 'Each reactor inlet from the first to the second temperature at its own rate. R-105 is set by the heater firing; R-101 to R-104 follow the heat wave. The slowest sets the end of the heat-up.',
+    effect: 'Heat-up steps added from now use the new rates. Steps already added keep their plan.',
+    fields: [{ name: 'r105', label: 'R-105 (heater)', unit: '°F/h' }, { name: 'r101', label: 'R-101', unit: '°F/h' }, { name: 'r102', label: 'R-102', unit: '°F/h' }, { name: 'r103', label: 'R-103', unit: '°F/h' }, { name: 'r104', label: 'R-104', unit: '°F/h' }, { name: 'from', label: 'From', unit: '°F' }, { name: 'to', label: 'To', unit: '°F' }],
+    pill: (v) => `${n(v, 'r105')} · ${n(v, 'r101')} · ${n(v, 'r102')} · ${n(v, 'r103')} · ${n(v, 'r104')} °F/h` },
   { key: 'trk.stale', group: 'tracker', label: 'No update for', description: 'An item is flagged when nothing has been heard about it for this many hours.',
     effect: 'The tracker flags items with the new hours straight away.',
     fields: [{ name: 'critical', label: 'Critical', unit: 'h' }, { name: 'normal', label: 'Normal', unit: 'h' }, { name: 'small', label: 'Small jobs', unit: 'h' }],
@@ -131,6 +136,7 @@ export function checkRuleValue(key: string, v: RuleValue, bounds: RuleBounds, ol
   if ('min' in v && 'max' in v && num('min') > num('max')) return 'The least cannot be more than the most.';
   if ('warn' in v && 'hard' in v && num('warn') > num('hard')) return 'The warning cannot be above the hard limit.';
   if ('okMax' in v && 'warnMax' in v && num('okMax') > num('warnMax')) return 'OK cannot be above the warning.';
+  if (key === 'sd.heatup' && !(num('from') < num('to'))) return 'From must be below To.';
   if (key === 'trk.stale' && !(num('critical') <= num('normal') && num('normal') <= num('small'))) return 'Critical ≤ normal ≤ small jobs.';
   if (old && sameValue(old, v)) return 'Nothing changed.';
   return null;
@@ -144,12 +150,12 @@ const set = (o: object, patch: Mut) => Object.assign(o as Mut, patch);
 const SNAPSHOT = {
   ACTING_PANEL: { ...ACTING_PANEL }, PV_RULES: { ...PV_RULES }, VAC_RULES: { ...VAC_RULES }, CONTROLLER_LEAVE_RULES: { ...CONTROLLER_LEAVE_RULES },
   V2_DEFAULTS: { monthWarn: V2_DEFAULTS.monthWarn, monthHard: V2_DEFAULTS.monthHard, yearWarn: V2_DEFAULTS.yearWarn, yearHard: V2_DEFAULTS.yearHard },
-  SD_MINIMUM: { ...SD_MINIMUM }, SICK_RULES: { ...SICK_RULES }, STALE_H: { ...STALE_H }, DEFAULT_TOLERANCE: { ...DEFAULT_TOLERANCE }
+  SD_MINIMUM: { ...SD_MINIMUM }, SICK_RULES: { ...SICK_RULES }, HEATUP_PLAN: { ...HEATUP_PLAN }, STALE_H: { ...STALE_H }, DEFAULT_TOLERANCE: { ...DEFAULT_TOLERANCE }
 };
 /** Back to the values in code (tests). */
 export function resetRuleValues() {
   set(ACTING_PANEL, SNAPSHOT.ACTING_PANEL); set(PV_RULES, SNAPSHOT.PV_RULES); set(VAC_RULES, SNAPSHOT.VAC_RULES); set(CONTROLLER_LEAVE_RULES, SNAPSHOT.CONTROLLER_LEAVE_RULES);
-  set(V2_DEFAULTS, SNAPSHOT.V2_DEFAULTS); set(SD_MINIMUM, SNAPSHOT.SD_MINIMUM); set(SICK_RULES, SNAPSHOT.SICK_RULES); set(STALE_H, SNAPSHOT.STALE_H); set(DEFAULT_TOLERANCE, SNAPSHOT.DEFAULT_TOLERANCE);
+  set(V2_DEFAULTS, SNAPSHOT.V2_DEFAULTS); set(SD_MINIMUM, SNAPSHOT.SD_MINIMUM); set(SICK_RULES, SNAPSHOT.SICK_RULES); set(HEATUP_PLAN, SNAPSHOT.HEATUP_PLAN); set(STALE_H, SNAPSHOT.STALE_H); set(DEFAULT_TOLERANCE, SNAPSHOT.DEFAULT_TOLERANCE);
 }
 
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
@@ -180,6 +186,7 @@ export function applyRuleValues(values: Record<string, RuleValue | null | undefi
   set(V2_DEFAULTS, pick(v('sd.ot_year'), { warn: 'yearWarn', hard: 'yearHard' }));
   set(SD_MINIMUM, pick(v('sd.team_min'), { controller: 'controller', experienced: 'experienced', qualifiedFo: 'qualifiedFo' }));
   set(SICK_RULES, pick(v('sd.sick'), { okMax: 'okMax', warnMax: 'warnMax', freshDays: 'freshDays' }));
+  set(HEATUP_PLAN, pick(v('sd.heatup'), { r105: 'r105', r101: 'r101', r102: 'r102', r103: 'r103', r104: 'r104', from: 'from', to: 'to' }));
   set(STALE_H, pick(v('trk.stale'), { critical: 'critical', normal: 'normal', small: 'small' }));
   const tol = v('trk.qty_tol');
   if (tol) { const a = num(tol.abs), r = num(tol.relPct); set(DEFAULT_TOLERANCE, { ...(a !== undefined ? { abs: a } : {}), ...(r !== undefined ? { rel: r / 100 } : {}) }); }

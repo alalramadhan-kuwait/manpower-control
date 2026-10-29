@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allBlackRow, blackAt, blackHourOf, blackOf, dieselOf, clockOf, hourOf, profileView, targetsAt, uniform, type ProfileRow } from '../profile';
+import { HEATUP_PLAN, allBlackRow, blackAt, blackHourOf, blackOf, heatupHours, heatupProfile, dieselOf, clockOf, hourOf, profileView, targetsAt, uniform, type ProfileRow } from '../profile';
 
 const H = 3_600_000;
 const heat: ProfileRow[] = Array.from({ length: 10 }, (_, h) => ({ h, sop_h: h, feed: 20, ardsl: '0/20', rx: Array(5).fill(350 + 25 * h), note: null }));
@@ -59,5 +59,21 @@ describe('the cut-in by its black oil feed (owner, 29 Oct 2026)', () => {
     expect(v.fromH).toBe(10); expect(v.shiftH).toBeCloseTo(-6.08, 1);
     expect(clockOf(start, v, 10)).toBe(Date.UTC(2026, 9, 29, 9, 30));
     expect(clockOf(start, v, 18)).toBe(Date.UTC(2026, 9, 29, 17, 30)); // 42 KBPD ~8:30 PM
+  });
+});
+
+describe('the heat-up plan of every start-up (owner, 29 Oct 2026)', () => {
+  it('R-105 25 °F/h by the heater, R-101..R-103 14, R-104 13: R-104 sets the end at 17.3 h', () => {
+    expect(heatupHours()).toBe(17.3);
+    const p = heatupProfile();
+    expect(p[0].rx).toEqual([350, 350, 350, 350, 350]);
+    expect(p[9].rx).toEqual([575, 476, 476, 476, 467]);
+    expect(p[16].rx).toEqual([575, 574, 574, 574, 558]);
+    expect(p[p.length - 1]).toMatchObject({ h: 17.3, rx: [575, 575, 575, 575, 575] });
+    expect(uniform(p)).toBe(false);
+  });
+  it('follows the rule', () => {
+    const was = { ...HEATUP_PLAN }; Object.assign(HEATUP_PLAN, { r104: 15 });
+    try { expect(heatupHours()).toBe(16.1); } finally { Object.assign(HEATUP_PLAN, was); }
   });
 });

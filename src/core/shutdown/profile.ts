@@ -87,3 +87,32 @@ export function blackHourOf(p: ProfileRow[], kbpd: number): number {
   for (let i = 1; i < p.length; i++) { const a = p[i - 1], b = p[i]; const ba = blackOf(a), bb = blackOf(b); if (kbpd <= bb) return bb === ba ? b.h : a.h + ((kbpd - ba) * (b.h - a.h)) / (bb - ba); }
   return p[p.length - 1].h;
 }
+
+/** The heat-up plan of every start-up (owner, 29 Oct 2026; rule sd.heatup): each reactor inlet from 350 to 575 °F at its
+ *  own rate. R-105 by the heater firing; R-101..R-104 follow the heat wave (Train-1's Oct-26 average rates less a margin,
+ *  rounded). The slowest sets the end. Changed on Rules. */
+export const HEATUP_PLAN = { r105: 25, r101: 14, r102: 14, r103: 14, r104: 13, from: 350, to: 575 };
+export const heatupRates = (p = HEATUP_PLAN) => [p.r105, p.r101, p.r102, p.r103, p.r104];
+/** Hours to the end: the slowest reactor. */
+export const heatupHours = (p = HEATUP_PLAN) => Math.round(Math.max(...heatupRates(p).map((r) => (p.to - p.from) / r)) * 10) / 10;
+/** The plan as profile rows: every hour, each reactor at its rate and held at the target once there; a last row at the
+ *  end (all at the target). Feed 20 KBPD diesel as in the SOP. */
+export function heatupProfile(p = HEATUP_PLAN): ProfileRow[] {
+  const rates = heatupRates(p); const end = heatupHours(p);
+  const at = (h: number) => rates.map((r) => Math.round(Math.min(p.to, p.from + r * h)));
+  const rows: ProfileRow[] = [];
+  for (let h = 0; h < end; h++) rows.push({ h, sop_h: h, feed: 20, ardsl: '0/20', rx: at(h), note: null });
+  rows.push({ h: end, sop_h: end, feed: 20, ardsl: '0/20', rx: rates.map(() => p.to), note: 'heat-up end' });
+  return rows;
+}
+export const heatupRef = (p = HEATUP_PLAN) => `Heat-up plan · R-105 ${p.r105} (heater) · R-101 ${p.r101} · R-102 ${p.r102} · R-103 ${p.r103} · R-104 ${p.r104} °F/h`;
+/** The black oil cut-in of SOP MAB-OPR-SOP-12-1051 (hours 9–27), as on Train-1's start-up. */
+export const CUTIN_SOP: ProfileRow[] = [
+  [0, 9, 20, '0/20', [575, 575, 575, 575, 575], null], [1, 10, 23, '3/20', [600, 600, 600, 600, 600], 'Note 1'], [2, 11, 25, '6/19', [610, 610, 610, 610, 610], null],
+  [3, 12, 25, '9/16', [620, 620, 620, 620, 620], 'Note 2'], [4, 13, 25, '11/14', [630, 630, 630, 630, 630], null], [5, 14, 25, '13/12', [640, 642, 645, 647, 649], '50/50'],
+  [6, 15, 25, '15/10', [640, 642, 645, 647, 649], 'Note 3'], [7, 16, 25, '18/07', [640, 644, 647, 649, 652], null], [8, 17, 25, '21/04', [640, 646, 649, 650, 654], null],
+  [9, 18, 25, '24/01', [640, 653, 657, 659, 663], null], [10, 19, 25, '25/0', [645, 658, 660, 667, 672], null], [11, 20, 28, '28/0', [646, 659, 661, 668, 675], null],
+  [12, 21, 31, '31/0', [647, 660, 666, 675, 680], null], [13, 22, 34, '34/0', [649, 663, 669, 678, 690], null], [14, 23, 37, '37/0', [650, 666, 672, 681, 693], null],
+  [15, 24, 40, '40/0', [650, 669, 675, 684, 696], null], [16, 25, 42, '42/0', [653, 672, 678, 687, 699], null], [17, 26, 42, '42', [656, 675, 681, 690, 702], null],
+  [18, 27, 42, '42', [659, 678, 684, 693, 705], null],
+].map(([h, sop_h, feed, ardsl, rx, note]) => ({ h, sop_h, feed, ardsl, rx, note }) as ProfileRow);

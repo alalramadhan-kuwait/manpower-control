@@ -1258,6 +1258,30 @@ var VAC_RULES = {
 // src/core/pv/index.ts
 var PV_RULES = { panelSeats: 4, panelMaxOff: 1, panelMinOnDuty: 3, fieldMaxOff: 2, fieldMinOnDuty: 6, summerFromMonth: 6, summerToMonth: 9, summerMaxCycles: 2, controllerMaxLeaves: 4, actingGrade: 13 };
 
+// src/core/shutdown/profile.ts
+var HEATUP_PLAN = { r105: 25, r101: 14, r102: 14, r103: 14, r104: 13, from: 350, to: 575 };
+var CUTIN_SOP = [
+  [0, 9, 20, "0/20", [575, 575, 575, 575, 575], null],
+  [1, 10, 23, "3/20", [600, 600, 600, 600, 600], "Note 1"],
+  [2, 11, 25, "6/19", [610, 610, 610, 610, 610], null],
+  [3, 12, 25, "9/16", [620, 620, 620, 620, 620], "Note 2"],
+  [4, 13, 25, "11/14", [630, 630, 630, 630, 630], null],
+  [5, 14, 25, "13/12", [640, 642, 645, 647, 649], "50/50"],
+  [6, 15, 25, "15/10", [640, 642, 645, 647, 649], "Note 3"],
+  [7, 16, 25, "18/07", [640, 644, 647, 649, 652], null],
+  [8, 17, 25, "21/04", [640, 646, 649, 650, 654], null],
+  [9, 18, 25, "24/01", [640, 653, 657, 659, 663], null],
+  [10, 19, 25, "25/0", [645, 658, 660, 667, 672], null],
+  [11, 20, 28, "28/0", [646, 659, 661, 668, 675], null],
+  [12, 21, 31, "31/0", [647, 660, 666, 675, 680], null],
+  [13, 22, 34, "34/0", [649, 663, 669, 678, 690], null],
+  [14, 23, 37, "37/0", [650, 666, 672, 681, 693], null],
+  [15, 24, 40, "40/0", [650, 669, 675, 684, 696], null],
+  [16, 25, 42, "42/0", [653, 672, 678, 687, 699], null],
+  [17, 26, 42, "42", [656, 675, 681, 690, 702], null],
+  [18, 27, 42, "42", [659, 678, 684, 693, 705], null]
+].map(([h, sop_h, feed, ardsl, rx, note]) => ({ h, sop_h, feed, ardsl, rx, note }));
+
 // src/core/tracker/index.ts
 var H3 = 36e5;
 var KW3 = 3 * H3;
@@ -1280,6 +1304,7 @@ var SNAPSHOT = {
   V2_DEFAULTS: { monthWarn: V2_DEFAULTS.monthWarn, monthHard: V2_DEFAULTS.monthHard, yearWarn: V2_DEFAULTS.yearWarn, yearHard: V2_DEFAULTS.yearHard },
   SD_MINIMUM: { ...SD_MINIMUM },
   SICK_RULES: { ...SICK_RULES },
+  HEATUP_PLAN: { ...HEATUP_PLAN },
   STALE_H: { ...STALE_H },
   DEFAULT_TOLERANCE: { ...DEFAULT_TOLERANCE }
 };
@@ -1315,6 +1340,7 @@ function applyRuleValues(values) {
   set(V2_DEFAULTS, pick(v("sd.ot_year"), { warn: "yearWarn", hard: "yearHard" }));
   set(SD_MINIMUM, pick(v("sd.team_min"), { controller: "controller", experienced: "experienced", qualifiedFo: "qualifiedFo" }));
   set(SICK_RULES, pick(v("sd.sick"), { okMax: "okMax", warnMax: "warnMax", freshDays: "freshDays" }));
+  set(HEATUP_PLAN, pick(v("sd.heatup"), { r105: "r105", r101: "r101", r102: "r102", r103: "r103", r104: "r104", from: "from", to: "to" }));
   set(STALE_H, pick(v("trk.stale"), { critical: "critical", normal: "normal", small: "small" }));
   const tol = v("trk.qty_tol");
   if (tol) {

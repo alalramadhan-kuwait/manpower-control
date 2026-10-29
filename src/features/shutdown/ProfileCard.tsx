@@ -21,7 +21,7 @@ export function stepProfile(s: StartupStep, readings: PanelReading[], now: numbe
 }
 
 export function ProfileCard({ step, all = [], readings, canEdit, now, onDone }: { step: StartupStep; all?: StartupStep[]; readings: PanelReading[]; canEdit: boolean; now: number; onDone: (m: string) => void }) {
-  const p = step.profile!; const uni = uniform(p);
+  const p = step.profile!; const uni = uniform(p); const heat = !uni && !p.some((r) => blackOf(r) > 0);
   const start = step.startedAt ? Date.parse(step.startedAt) : null;
   const mine = readings.filter((r) => r.stepId === step.id);
   const v = start !== null ? profileView(p, start, mine.map((r) => ({ at: Date.parse(r.at), temp: r.temp, black: r.black, holding: r.holding })), now) : null;
@@ -40,11 +40,11 @@ export function ProfileCard({ step, all = [], readings, canEdit, now, onDone }: 
         {v.holding && <div className="mx-2.5 rounded-lg bg-sky-50 px-2.5 py-1.5 text-[12px] text-sky-900 ring-1 ring-sky-200"><b>Holding at {v.now[0]} °F</b> since {at(v.reading!.at)}: the end moves with the clock.</div>}
         <div className="mx-2.5 grid grid-cols-2 gap-1.5">
           <div className="rounded-xl bg-amber-50 px-2.5 py-1.5 ring-1 ring-amber-200"><span className="block text-[10px] font-bold uppercase text-slate-500">Now · {kwTime12(now)}</span>
-            {uni ? <b className="block text-[24px] leading-tight tabular-nums">{v.now[0]} °F</b> : <b className="block text-[18px] leading-tight tabular-nums">{v.row.feed} KBPD</b>}
-            <span className="text-[11px] text-slate-600">{uni ? 'all reactors inlet' : `AR/DSL ${v.row.ardsl}${v.row.note ? ` · ${v.row.note}` : ''}`}</span></div>
+            {uni ? <b className="block text-[24px] leading-tight tabular-nums">{v.now[0]} °F</b> : heat ? <b className="block text-[24px] leading-tight tabular-nums">{v.now[4]} °F</b> : <b className="block text-[18px] leading-tight tabular-nums">{v.row.feed} KBPD</b>}
+            <span className="text-[11px] text-slate-600">{uni ? 'all reactors inlet' : heat ? `R-104 inlet · R-105 ${v.now[0]} °F` : `AR/DSL ${v.row.ardsl}${v.row.note ? ` · ${v.row.note}` : ''}`}</span></div>
           <div className="rounded-xl bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200"><span className="block text-[10px] font-bold uppercase text-slate-500">Next · {kwTime12(v.next.at)}</span>
-            {uni ? <b className="block text-[24px] leading-tight tabular-nums">{v.next.rx[0]} °F</b> : <b className="block text-[18px] leading-tight tabular-nums">{v.nextRow?.feed ?? v.row.feed} KBPD</b>}
-            <span className="text-[11px] text-slate-600">{uni ? `end ${at(v.endAt)}` : `AR/DSL ${v.nextRow?.ardsl ?? v.row.ardsl}${v.nextRow?.note ? ` · ${v.nextRow.note}` : ''}`}</span></div>
+            {uni ? <b className="block text-[24px] leading-tight tabular-nums">{v.next.rx[0]} °F</b> : heat ? <b className="block text-[24px] leading-tight tabular-nums">{v.next.rx[4]} °F</b> : <b className="block text-[18px] leading-tight tabular-nums">{v.nextRow?.feed ?? v.row.feed} KBPD</b>}
+            <span className="text-[11px] text-slate-600">{uni || heat ? `end ${at(v.endAt)}` : `AR/DSL ${v.nextRow?.ardsl ?? v.row.ardsl}${v.nextRow?.note ? ` · ${v.nextRow.note}` : ''}`}</span></div>
         </div>
         {uni ? <div className="mx-2.5 flex gap-1.5 text-center text-[10.5px] text-slate-500">
             <span className="flex-1 rounded-lg bg-slate-50 py-1">Feed <b className="block text-[13px] text-slate-900">{v.row.feed}</b>KBPD</span>
@@ -58,12 +58,12 @@ export function ProfileCard({ step, all = [], readings, canEdit, now, onDone }: 
           <span className="flex items-center gap-2"><b>{r.temp != null ? `${r.temp} °F` : ''}{r.temp != null && r.black != null ? ' · ' : ''}{r.black != null ? `${r.black} KBPD black` : ''}</b>{canEdit && <button type="button" className="text-[11px] text-slate-400" onClick={async () => { await removeReading(r.id); onDone('Reading removed (kept in the history).'); }}>✕</button>}</span></li>))}</ul>}
       {v && canEdit && (adding ? <ReadingForm step={step} readings={mine} now={now} onCancel={() => setAdding(false)} onDone={(m) => { setAdding(false); onDone(m); }} />
         : <div className="mx-2.5"><Button variant="secondary" className="min-h-9 w-full" onClick={() => setAdding(true)}>+ Panel reading</Button></div>)}
-      <button type="button" onClick={() => setTable(!table)} className="block w-full px-2.5 pb-2 text-left text-[12px] font-semibold text-brand-700">{table ? 'Hide' : 'Show'} the SOP table (hours {sop.rows[0]?.r.sop_h}–{sop.rows[sop.rows.length - 1]?.r.sop_h})</button>
+      <button type="button" onClick={() => setTable(!table)} className="block w-full px-2.5 pb-2 text-left text-[12px] font-semibold text-brand-700">{table ? 'Hide' : 'Show'} the SOP table (hours {sop.rows[0]?.hr}–{sop.rows[sop.rows.length - 1]?.hr})</button>
       {table && <div className="overflow-x-auto px-1 pb-2"><table className="w-full text-center text-[11px] tabular-nums">
         <thead><tr className="text-slate-500"><th>Hrs</th><th>Clock</th><th>Feed</th><th>AR/DSL</th>{RX_NAMES.map((n) => <th key={n}>{n.replace('Rx-', '')}</th>)}<th /></tr></thead>
-        <tbody>{sop.rows.map(({ r, clock, step: of }) => { const own = of.id === step.id; const cur = sop.cur === r.sop_h; const nxt = sop.cur !== null && sop.cur + 1 === r.sop_h; return (
-          <tr key={r.sop_h} className={cx('border-t border-slate-100', !own && 'text-slate-500', cur && 'bg-amber-100 font-bold text-slate-900', nxt && 'bg-sky-50')}>
-            <td>{r.sop_h}</td><td className="whitespace-nowrap">{clock !== null ? kwTime12(clock) : '—'}{clock !== null && newDay(sop.rows, r.sop_h) && <span className="block text-[9px] font-semibold text-brand-700">{kwDay(clock).replace(/^\w+,?\s*/, '')}</span>}</td><td>{r.feed}</td><td>{r.ardsl}</td>{r.rx.map((x, k) => <td key={k}>{x}</td>)}<td className="text-[10px] text-slate-500">{r.note ?? ''}</td></tr>); })}</tbody></table></div>}
+        <tbody>{sop.rows.map(({ r, hr, clock, step: of }) => { const own = of.id === step.id; const cur = sop.cur !== null && Math.floor(hr) === sop.cur; const nxt = sop.cur !== null && Math.floor(hr) === sop.cur + 1; return (
+          <tr key={hr} className={cx('border-t border-slate-100', !own && 'text-slate-500', cur && 'bg-amber-100 font-bold text-slate-900', nxt && 'bg-sky-50')}>
+            <td>{hr}</td><td className="whitespace-nowrap">{clock !== null ? kwTime12(clock) : '—'}{clock !== null && newDay(sop.rows, hr) && <span className="block text-[9px] font-semibold text-brand-700">{kwDay(clock).replace(/^\w+,?\s*/, '')}</span>}</td><td>{r.feed}</td><td>{r.ardsl}</td>{r.rx.map((x, k) => <td key={k}>{x}</td>)}<td className="text-[10px] text-slate-500">{r.note ?? ''}</td></tr>); })}</tbody></table></div>}
     </div>
   );
 }
@@ -71,28 +71,33 @@ export function ProfileCard({ step, all = [], readings, canEdit, now, onDone }: 
 /** Every step's SOP rows in hours on stream (a step's last hour is the next one's first: shown once), each with its clock:
  *  a started step's own (re-planned from its readings), the others on from the latest started step; and the hour now. */
 function sopTable(steps: StartupStep[], readings: PanelReading[], now: number) {
+  // hours on stream by step order: a step's rows from the end of the one before (its last hour is the next one's first:
+  // shown once), so a heat-up of any length is followed by the cut-in (owner, 29 Oct 2026)
   const withP = steps.filter((x) => x.profile?.length && x.status !== 'not_required');
+  const offs = new Map<string, number>(); let o = 0;
+  for (const s of withP) { offs.set(s.id, o); o += s.profile![s.profile!.length - 1].h; }
   const anchor = [...withP].reverse().find((x) => x.startedAt) ?? null; const av = anchor ? stepProfile(anchor, readings, now) : null;
-  const a0 = anchor?.profile![0].sop_h ?? 0;
-  const rows: { r: ProfileRow; clock: number | null; step: StartupStep }[] = [];
+  const a0 = anchor ? offs.get(anchor.id)! : 0;
+  const rows: { r: ProfileRow; hr: number; clock: number | null; step: StartupStep }[] = [];
   for (const s of withP) {
-    const sv = s.startedAt ? stepProfile(s, readings, now) : null;
+    const sv = s.startedAt ? stepProfile(s, readings, now) : null; const off = offs.get(s.id)!;
     for (const r of s.profile!) {
-      if (rows.some((x) => x.r.sop_h === r.sop_h)) continue;
+      const hr = Math.round((off + r.h) * 10) / 10;
+      if (rows.some((x) => x.hr === hr)) continue;
       // a finished step without a reading: its rows between its actual start and finish
       const last = s.profile![s.profile!.length - 1].h; const t0 = s.startedAt ? Date.parse(s.startedAt) : NaN;
       const clock = sv && s.doneAt && !sv.reading && last > 0 ? t0 + ((Date.parse(s.doneAt) - t0) * r.h) / last
-        : sv ? clockOf(t0, sv, r.h) : anchor && av ? clockOf(Date.parse(anchor.startedAt!), av, r.sop_h - a0) : null;
-      rows.push({ r, clock, step: s });
+        : sv ? clockOf(t0, sv, r.h) : anchor && av ? clockOf(Date.parse(anchor.startedAt!), av, hr - a0) : null;
+      rows.push({ r, hr, clock, step: s });
     }
   }
-  rows.sort((x, y) => x.r.sop_h - y.r.sop_h);
+  rows.sort((x, y) => x.hr - y.hr);
   return { rows, cur: anchor && av && anchor.status === 'running' ? a0 + Math.floor(av.atH) : null };
 }
 
 /** The first row of the table or of a new day (Kuwait): it carries the date under its clock. */
-const newDay = (rows: { r: ProfileRow; clock: number | null }[], sopH: number) => {
-  const i = rows.findIndex((x) => x.r.sop_h === sopH); const c = rows[i]?.clock; const p = rows[i - 1]?.clock;
+const newDay = (rows: { hr: number; clock: number | null }[], hr: number) => {
+  const i = rows.findIndex((x) => x.hr === hr); const c = rows[i]?.clock; const p = rows[i - 1]?.clock;
   return c != null && (i === 0 || p == null || kwDay(p) !== kwDay(c));
 };
 

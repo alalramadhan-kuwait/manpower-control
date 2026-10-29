@@ -69,9 +69,11 @@ export async function fetchStartupSteps(eventId: string): Promise<StartupStep[]>
     delayReason: (r.delay_reason as DelayReason) ?? null, delayNote: (r.delay_note as string) ?? null, waitReason: (r.wait_reason as DelayReason) ?? null, waitNote: (r.wait_note as string) ?? null, kind: r.kind === 'hold' ? 'hold' : 'step',
     profile: (r.profile as ProfileRow[]) ?? null, profileRef: (r.profile_ref as string) ?? null, expectedDoneAt: (r.expected_done_at as string) ?? null, cutin: (r.cutin as CutinSpec) ?? null }));
 }
-export async function addStartupStep(eventId: string, v: { seq: number; title: string; stdHours: number | null; procedureRef: string | null; kind?: 'step' | 'hold'; startedAt?: string | null; doneAt?: string | null; remark?: string | null }) {
+export async function addStartupStep(eventId: string, v: { seq: number; title: string; stdHours: number | null; procedureRef: string | null; kind?: 'step' | 'hold'; startedAt?: string | null; doneAt?: string | null; remark?: string | null;
+  profile?: unknown[] | null; profileRef?: string | null; cutin?: Record<string, unknown> | null }) {
   const hold = v.kind === 'hold';
   const { error } = await supabase.from('sd_startup_step').insert({ event_id: eventId, seq: v.seq, title: v.title.trim(), std_hours: hold ? null : v.stdHours, procedure_ref: v.procedureRef?.trim() || null, kind: v.kind ?? 'step',
+    ...(v.profile ? { profile: v.profile, profile_ref: v.profileRef ?? null } : {}), ...(v.cutin ? { cutin: v.cutin } : {}),
     ...(hold || v.startedAt ? { started_at: v.startedAt ?? null, done_at: v.doneAt ?? null, status: v.doneAt ? 'done' : v.startedAt ? 'running' : 'not_started', remark: v.remark?.trim() || null } : {}) });
   if (error) throw error;
 }

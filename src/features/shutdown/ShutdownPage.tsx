@@ -25,7 +25,8 @@ import { NewPlanSheet } from './ShutdownListPage';
 import { drawCard, sharePicture, type CardData, type CardRow } from './shareCard';
 import { ProfileCard, QuickBlack, stepProfile } from './ProfileCard';
 import { WaveCard } from './WaveCard';
-import { allBlackRow, blackAt, blackOf, uniform, type ProfileView } from '@/core/shutdown/profile';
+import { CUTIN_SOP, HEATUP_PLAN, allBlackRow, blackAt, blackOf, heatupHours, heatupProfile, heatupRef, uniform, type ProfileView } from '@/core/shutdown/profile';
+import { TRAIN1_CUTIN } from '@/core/shutdown/wave';
 
 type Stage = 'shutdown' | 'mi' | 'startup';
 const H = 3_600_000;
@@ -292,6 +293,16 @@ function StartupSteps({ entry, steps, readings, stageStart, canEdit, isHead, now
   );
 }
 
+/** The standard start-up steps: the heat-up at the Rules' plan (with the cut-in conditions for the readiness card),
+ *  and the SOP's black oil cut-in table. Built when the sheet opens, so a changed rule is used. */
+const STD_STEPS = () => [
+  { key: 'heatup', label: `Heat-up plan · ${heatupHours()} h`, title: `Reactors heat up to ${HEATUP_PLAN.to} °F`, stdHours: heatupHours(), proc: 'MAB-OPR-SOP-12-1051',
+    profile: heatupProfile(), ref: heatupRef(), cutin: { ...TRAIN1_CUTIN, ref: 'Process instruction 28 Oct 2026 · reactor inlets', catalyst: null } as Record<string, unknown>,
+    note: `${heatupRef()}: R-104 sets the end. The table follows on with the cut-in.` },
+  { key: 'cutin', label: 'Black oil cut-in · 18 h', title: 'Black oil cut-in: completely replacing diesel with black oil up to 42 kbpd as per table', stdHours: 18, proc: 'MAB-OPR-SOP-12-1051',
+    profile: CUTIN_SOP, ref: 'MAB-OPR-SOP-12-1051 · hours 9–27', cutin: null, note: 'The SOP table, hours 9–27: black oil in from 575 °F up to 42 KBPD.' },
+];
+
 const signed = (h: number) => `${h > 0 ? '+' : h < 0 ? '−' : ''}${hrs(Math.abs(h))}`;
 const DOT_COL = { done: 'bg-status-green', running: 'bg-amber-400', not_started: 'bg-slate-300', not_required: 'bg-slate-200', hold: 'bg-sky-500' } as const;
 const kwHM = (t: number) => kwTime12(t);
@@ -459,6 +470,7 @@ function HoldSheet({ eventId, hold, steps, initialBefore = null, canEdit, onMove
 }
 
 function StartupSheet({ eventId, step, all = [], readings = [], planStart = null, prevDone = null, nextSeq, canEdit, isHead, onHold, onMove, onClose, onDone }: { eventId: string; step: StartupStep | null; all?: StartupStep[]; readings?: PanelReading[]; planStart?: number | null; prevDone?: number | null; nextSeq: number; canEdit: boolean; isHead: boolean; onHold?: (id: string) => void; onMove?: (id: string, dir: -1 | 1) => void; onClose: () => void; onDone: (m: string) => void }) {
+  const [pick, setPick] = useState<string | null>(null);
   const [title, setTitle] = useState(step?.title ?? ''); const [std, setStd] = useState(step?.stdHours?.toString() ?? ''); const [proc, setProc] = useState(step?.procedureRef ?? '');
   // times not recorded yet are filled from the plan (start: the step before done, done: start + standard), to be
   // corrected to the actual ones; a planned time still to come is shown, not filled
@@ -492,11 +504,17 @@ function StartupSheet({ eventId, step, all = [], readings = [], planStart = null
   if (!step) return (
     <BottomSheet open onClose={onClose} title="New start-up step">
       <div className="space-y-3">
+        {/* the standard steps (owner, 29 Oct 2026): the heat-up plan of the Rules, and the SOP's black oil cut-in */}
+        <div className="flex flex-wrap gap-1.5">{STD_STEPS().map((x) => <button key={x.key} type="button" aria-pressed={std === String(x.stdHours) && title === x.title}
+          onClick={() => { setTitle(x.title); setStd(String(x.stdHours)); setProc(x.proc); setPick(x.key); }}
+          className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold ring-1', pick === x.key ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>{x.label}</button>)}</div>
+        {pick && <p className="text-[11px] text-slate-500">{STD_STEPS().find((x) => x.key === pick)!.note}</p>}
         <Field label="Step"><input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. N₂ purge and leak test" /></Field>
         <div className="grid grid-cols-2 gap-2"><Field label="Plan hours"><input className="input" inputMode="decimal" value={std} onChange={(e) => setStd(e.target.value)} /></Field>
           <Field label="Procedure"><input className="input" value={proc} onChange={(e) => setProc(e.target.value)} placeholder="e.g. SOP-12-…" /></Field></div>
         {err != null && <ErrorBox error={err} />}
-        <Button className="w-full" disabled={busy || !title.trim() || badStd} onClick={() => run(() => addStartupStep(eventId, { seq: nextSeq, title, stdHours: stdN, procedureRef: proc }), `${title.trim()} added.`)}>Add</Button>
+        <Button className="w-full" disabled={busy || !title.trim() || badStd} onClick={() => { const x = STD_STEPS().find((y) => y.key === pick);
+          run(() => addStartupStep(eventId, { seq: nextSeq, title, stdHours: stdN, procedureRef: proc, ...(x ? { profile: x.profile, profileRef: x.ref, cutin: x.cutin } : {}) }), `${title.trim()} added.`); }}>Add</Button>
       </div>
     </BottomSheet>
   );
