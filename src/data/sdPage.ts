@@ -105,16 +105,16 @@ export async function removeFileDoc(id: string) {
 }
 
 // ── Panel readings on a step with a target profile ──────────────────────────────────────────────────────────────
-export interface PanelReading { id: string; stepId: string; at: string; temp: number; rx: (number | null)[] | null; holding: boolean; reason: DelayReason | null; note: string | null; by: string | null }
+export interface PanelReading { id: string; stepId: string; at: string; temp: number | null; black: number | null; rx: (number | null)[] | null; holding: boolean; reason: DelayReason | null; note: string | null; by: string | null }
 export async function fetchReadings(stepIds: string[]): Promise<PanelReading[]> {
   if (!stepIds.length) return [];
   const { data, error } = await supabase.from('sd_startup_reading').select('*').in('step_id', stepIds).eq('active', true).order('at');
   if (error) throw error;
-  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({ id: r.id as string, stepId: r.step_id as string, at: r.at as string, temp: Number(r.temp), rx: (r.rx as (number | null)[]) ?? null,
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({ id: r.id as string, stepId: r.step_id as string, at: r.at as string, temp: r.temp == null ? null : Number(r.temp), black: r.black == null ? null : Number(r.black), rx: (r.rx as (number | null)[]) ?? null,
     holding: !!r.holding, reason: (r.reason as DelayReason) ?? null, note: (r.note as string) ?? null, by: (r.updated_by_name as string) ?? null }));
 }
-export async function addReading(v: { stepId: string; at: string; temp: number; rx: (number | null)[] | null; holding: boolean; reason: DelayReason | null; note: string | null }) {
-  const { error } = await supabase.from('sd_startup_reading').insert({ step_id: v.stepId, at: v.at, temp: v.temp, rx: v.rx, holding: v.holding, reason: v.reason, note: v.note?.trim() || null });
+export async function addReading(v: { stepId: string; at: string; temp: number | null; black?: number | null; rx: (number | null)[] | null; holding: boolean; reason: DelayReason | null; note: string | null }) {
+  const { error } = await supabase.from('sd_startup_reading').insert({ step_id: v.stepId, at: v.at, temp: v.temp, black: v.black ?? null, rx: v.rx, holding: v.holding, reason: v.reason, note: v.note?.trim() || null });
   if (error) throw error;
 }
 export async function removeReading(id: string) {

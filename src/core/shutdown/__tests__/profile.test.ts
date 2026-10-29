@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allBlackRow, blackAt, blackOf, dieselOf, clockOf, hourOf, profileView, targetsAt, uniform, type ProfileRow } from '../profile';
+import { allBlackRow, blackAt, blackHourOf, blackOf, dieselOf, clockOf, hourOf, profileView, targetsAt, uniform, type ProfileRow } from '../profile';
 
 const H = 3_600_000;
 const heat: ProfileRow[] = Array.from({ length: 10 }, (_, h) => ({ h, sop_h: h, feed: 20, ardsl: '0/20', rx: Array(5).fill(350 + 25 * h), note: null }));
@@ -45,4 +45,19 @@ describe('all black oil', () => {
   const oil: ProfileRow[] = [['0/20', 0], ['21/04', 8], ['24/01', 9], ['25/0', 10], ['42/0', 16], ['42', 17]].map(([a, h]) => ({ h: h as number, sop_h: (h as number) + 9, feed: 25, ardsl: a as string, rx: [600], note: null }));
   it('reads the diesel side', () => { expect(dieselOf(oil[1])).toBe(4); expect(dieselOf(oil[5])).toBe(0); });
   it('finds the first hour with no diesel left', () => { expect(allBlackRow(oil)?.h).toBe(10); expect(blackOf(allBlackRow(oil)!)).toBe(25); });
+});
+
+describe('the cut-in by its black oil feed (owner, 29 Oct 2026)', () => {
+  // Train-1 cut-in from 29 Oct 8:35 AM: SOP hour 19 (25/0, all black) is step hour 10
+  const P = [{ h: 0, sop_h: 9, feed: 20, ardsl: '0/20', rx: [575, 575, 575, 575, 575], note: null }, { h: 1, sop_h: 10, feed: 23, ardsl: '3/20', rx: [600, 600, 600, 600, 600], note: null },
+    { h: 9, sop_h: 18, feed: 25, ardsl: '24/01', rx: [640, 653, 657, 659, 663], note: null }, { h: 10, sop_h: 19, feed: 25, ardsl: '25/0', rx: [645, 658, 660, 667, 672], note: null },
+    { h: 18, sop_h: 27, feed: 42, ardsl: '42', rx: [659, 678, 684, 693, 705], note: null }];
+  const start = Date.UTC(2026, 9, 29, 5, 35);
+  it('25 KBPD all black at 12:30 PM puts SOP hour 19 at 12:30 PM: about 6 h ahead of the table', () => {
+    expect(blackHourOf(P, 25)).toBe(10);
+    const v = profileView(P, start, [{ at: Date.UTC(2026, 9, 29, 9, 30), temp: null, black: 25, holding: false }], Date.UTC(2026, 9, 29, 12, 0));
+    expect(v.fromH).toBe(10); expect(v.shiftH).toBeCloseTo(-6.08, 1);
+    expect(clockOf(start, v, 10)).toBe(Date.UTC(2026, 9, 29, 9, 30));
+    expect(clockOf(start, v, 18)).toBe(Date.UTC(2026, 9, 29, 17, 30)); // 42 KBPD ~8:30 PM
+  });
 });

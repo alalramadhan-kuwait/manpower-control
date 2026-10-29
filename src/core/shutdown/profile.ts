@@ -6,7 +6,8 @@ const H = 3_600_000;
 const r1 = (x: number) => Math.round(x * 10) / 10;
 
 export interface ProfileRow { h: number; sop_h: number; feed: number; ardsl: string; rx: number[]; note: string | null }
-export interface Reading { at: number; temp: number; holding: boolean }
+/** a panel reading: the inlet temperature (a heat-up), or the black oil feed in KBPD (the cut-in) */
+export interface Reading { at: number; temp: number | null; holding: boolean; black?: number | null }
 export const RX_NAMES = ['Rx-105', 'Rx-101', 'Rx-102', 'Rx-103', 'Rx-104'];
 
 /** Each reactor's target at a point in the profile (hours from the start), between two rows a straight line. */
@@ -50,21 +51,26 @@ export function profileView(p: ProfileRow[], start: number, readings: Reading[],
   const last = p[p.length - 1].h;
   const r = [...readings].sort((a, b) => a.at - b.at).pop() ?? null;
   let shift = 0; let behindF: number | null = null; let fromH = 0;
-  if (r && uniform(p)) {
+  if (r && r.black != null && p.some((x) => blackOf(x) > 0)) {
+    // the cut-in by its black oil feed: the row where that much black oil goes in is where the step stands then
+    const pos = blackHourOf(p, r.black); const at = (r.at - start) / H; fromH = pos; shift = at - pos;
+  } else if (r && r.temp != null && uniform(p)) {
     const pos = hourOf(p, r.temp); const at = (r.at - start) / H; fromH = pos;
     behindF = Math.round(targetsAt(p, at)[0] - r.temp);
     shift = (r.holding ? (Math.max(now, r.at) - start) / H : at) - pos;
   }
   const elapsedH = (now - start) / H; const atH = Math.min(last, Math.max(0, elapsedH - shift));
-  const nowT = r?.holding && uniform(p) ? p[0].rx.map(() => Math.round(r.temp)) : targetsAt(p, atH);
+  const nowT = r?.holding && r.temp != null && uniform(p) ? p[0].rx.map(() => Math.round(r.temp!)) : targetsAt(p, atH);
   const nextH = Math.min(last, atH + 1);
   return { elapsedH: r1(elapsedH), atH: r1(atH), now: nowT, next: { at: start + (nextH + shift) * H, rx: targetsAt(p, nextH) }, row: rowAt(p, atH),
     nextRow: p.find((x) => x.h > atH) ?? null, shiftH: shift, behindF, holding: !!r?.holding, reading: r,
     endAt: start + (last + shift) * H, planEndAt: start + last * H, fromH };
 }
 
-/** The re-planned clock time of a profile hour (for the table and the graph): from the reading's point on, shifted. */
-export const clockOf = (start: number, v: ProfileView, h: number) => start + (h + (h >= v.fromH ? v.shiftH : 0)) * H;
+/** The re-planned clock time of a profile hour (for the table and the graph): from the reading's point on, shifted; the
+ *  rows before it fall between the step's start and the reading (they happened in that time, faster or slower). */
+export const clockOf = (start: number, v: ProfileView, h: number) =>
+  h >= v.fromH ? start + (h + v.shiftH) * H : v.fromH > 0 ? start + (h * (v.fromH + v.shiftH) * H) / v.fromH : start + h * H;
 
 /** The black oil (AR) rate of a row: the first number of its AR/DSL column ("21/04" → 21, "42" → 42). */
 export const blackOf = (r: ProfileRow) => { const n = Number.parseFloat(String(r.ardsl).split('/')[0]); return Number.isFinite(n) ? n : 0; };
@@ -74,3 +80,10 @@ export const blackAt = (p: ProfileRow[], kbpd: number) => p.find((r) => blackOf(
 export const dieselOf = (r: ProfileRow) => { const n = Number.parseFloat(String(r.ardsl).split('/')[1] ?? '0'); return Number.isFinite(n) ? n : 0; };
 /** The first row where the feed is all black oil (some AR, no diesel left), or null. */
 export const allBlackRow = (p: ProfileRow[]) => p.find((r) => blackOf(r) > 0 && dieselOf(r) === 0) ?? null;
+
+/** The profile hour where this much black oil (KBPD) goes in: between two rows in proportion; past the last, its hour. */
+export function blackHourOf(p: ProfileRow[], kbpd: number): number {
+  if (kbpd <= blackOf(p[0])) return p[0].h;
+  for (let i = 1; i < p.length; i++) { const a = p[i - 1], b = p[i]; const ba = blackOf(a), bb = blackOf(b); if (kbpd <= bb) return bb === ba ? b.h : a.h + ((kbpd - ba) * (b.h - a.h)) / (bb - ba); }
+  return p[p.length - 1].h;
+}
