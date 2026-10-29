@@ -1,9 +1,8 @@
-// The heat wave through the reactors (owner, 28 Oct 2026). Only R-105 is heated; the heat travels R-105 → R-101 →
-// R-102 → R-103 → R-104, each one following the one before it. The relationship, fitted to the panel's readings:
-//   rate of rise (°F/h) = (temperature before it − its own temperature) ÷ τ
-// τ (hours) is the delay of each step in the wave. From two readings τ is fitted step by step; then, with the R-105
-// inlet going on at its rate up to its limit (620 °F), the app works out when each reactor reaches its cut-in
-// temperature. The black oil cut-in can start when the last one does. An estimate only: it never changes a step.
+// The heat wave through the reactors (owner, 28-29 Oct 2026). Only R-105 is heated; the heat travels R-105 → E-129 →
+// R-101 → R-102 → R-103 → R-104. The black oil cut-in can start when every reactor inlet is at its temperature.
+// fitWave gives the delay of each step in the wave:  rate of rise = (temperature before it − its own) ÷ τ.
+// cutinEstimate works on the inlets: the highest each can reach with the R-105 inlet at its limit (E-129 gives part of
+// the R-105 outlet's heat to the feed; each step loses some) and when it gets to its target at the present rate.
 const H = 3_600_000;
 const DT = 0.01; // hours per simulation step
 
@@ -13,24 +12,16 @@ export type ReactorKey = 'r105' | 'r101' | 'r102' | 'r103' | 'r104';
 export const WAVE_POINTS: { key: PointKey; label: string }[] = [
   { key: 'r105_in', label: 'R-105 inlet' }, { key: 'r105_out', label: 'R-105 outlet' }, { key: 'r101_in', label: 'R-101 inlet' },
   { key: 'r102_in', label: 'R-102 inlet' }, { key: 'r103_in', label: 'R-103 inlet' }, { key: 'r104_in', label: 'R-104 inlet' }, { key: 'r104_out', label: 'R-104 outlet' }];
-/** each reactor and the point that stands for its beds: its outlet (the next reactor's inlet) */
-export const WAVE_REACTORS: { key: ReactorKey; name: string; proxy: PointKey }[] = [
-  { key: 'r105', name: 'R-105', proxy: 'r105_out' }, { key: 'r101', name: 'R-101', proxy: 'r102_in' }, { key: 'r102', name: 'R-102', proxy: 'r103_in' },
-  { key: 'r103', name: 'R-103', proxy: 'r104_in' }, { key: 'r104', name: 'R-104', proxy: 'r104_out' }];
+/** the reactors in the order the heat reaches them */
+export const WAVE_REACTORS: { key: ReactorKey; name: string }[] = [
+  { key: 'r105', name: 'R-105' }, { key: 'r101', name: 'R-101' }, { key: 'r102', name: 'R-102' }, { key: 'r103', name: 'R-103' }, { key: 'r104', name: 'R-104' }];
 
+/** the panel's temperatures at a time; beds: each reactor's hottest bed, optional, to show an exotherm */
 export interface WaveReading { at: number; pts: Partial<Record<PointKey, number>>; beds: Partial<Record<ReactorKey, number>> }
-/** the cut-in conditions: each reactor's bed temperature, and the most the R-105 inlet may be raised to */
+/** the cut-in conditions: each reactor's inlet temperature, and the most the R-105 inlet may be raised to */
 export interface CutinSpec { targets: Record<ReactorKey, number>; inletMax: number; ref: string | null }
 
 export interface WaveFit { chain: PointKey[]; tau: number[]; from: number; to: number; inletRate: number }
-export interface ReactorEta { key: ReactorKey; name: string; target: number; now: number | null; bed: boolean; done: boolean; eta: number | null }
-export interface CutinEstimate {
-  fit: WaveFit; reactors: ReactorEta[];
-  /** when every reactor is at its temperature (null: not within two days at this rate, or a reactor not read) */
-  ready: number | null; limiting: ReactorKey | null;
-  /** what the panel should read 3 h after the latest reading, to check the estimate */
-  check: { at: number; expect: Partial<Record<PointKey, number>> };
-}
 
 function simulate(upstream: (t: number) => number, x0: number, tau: number, hours: number) {
   const out: number[] = []; let x = x0;
@@ -66,34 +57,72 @@ export function fitWave(a: WaveReading, b: WaveReading): WaveFit | null {
   return { chain, tau, from: a.at, to: b.at, inletRate: (i1 - i0) / span };
 }
 
-/** From the latest reading on: each reactor's time to its cut-in temperature, and when the last one gets there. */
-export function cutinEstimate(readings: WaveReading[], spec: CutinSpec, horizonH = 48): CutinEstimate | null {
-  const pair = pickPair(readings); if (!pair) return null;
-  const fit = fitWave(...pair); if (!fit) return null;
-  const last = pair[1]; const inlet0 = last.pts.r105_in!;
-  const cap = Math.max(spec.inletMax, inlet0); const rate = Math.max(0, fit.inletRate);
-  // the wave from now on: the inlet goes on at its rate up to its limit, each point follows the one before it
-  const series = new Map<PointKey, number[]>();
-  let up: (t: number) => number = (t) => Math.min(cap, inlet0 + rate * t);
-  series.set('r105_in', Array.from({ length: Math.ceil(horizonH / DT) }, (_, k) => up((k + 1) * DT)));
-  fit.chain.slice(1).forEach((k, i) => { const s = simulate(up, last.pts[k]!, fit.tau[i], horizonH); series.set(k, s); up = (t) => at(s, t); });
-  const reactors: ReactorEta[] = WAVE_REACTORS.map((r) => {
-    const target = spec.targets[r.key]; const s = series.get(r.proxy); const p = last.pts[r.proxy];
-    const bed = last.beds[r.key]; const now = bed ?? p ?? null;
-    if (now !== null && now >= target) return { key: r.key, name: r.name, target, now, bed: bed != null, done: true, eta: last.at };
-    if (!s || p == null) return { key: r.key, name: r.name, target, now, bed: bed != null, done: false, eta: null };
-    // a bed colder than its outlet trails it, as the wave does: by the gap at the outlet's present rate
-    const k = s.findIndex((v) => v >= target); const pr = (p - (pair[0].pts[r.proxy] ?? p)) / ((last.at - pair[0].at) / H);
-    const lag = bed != null && bed < p ? (pr > 0 ? (p - bed) / pr : null) : 0;
-    return { key: r.key, name: r.name, target, now, bed: bed != null, done: false, eta: k < 0 || lag === null ? null : last.at + ((k + 1) * DT + lag) * H };
-  });
-  const open = reactors.filter((r) => !r.done);
-  const ready = open.length === 0 ? last.at : open.some((r) => r.eta === null) ? null : Math.max(...open.map((r) => r.eta!));
-  const limiting = open.length === 0 ? null : (open.find((r) => r.eta === null) ?? open.reduce((m, r) => (r.eta! > m.eta! ? r : m))).key;
-  const expect: Partial<Record<PointKey, number>> = {};
-  for (const [k, s] of series) expect[k] = Math.round(at(s, 3));
-  return { fit, reactors, ready, limiting, check: { at: last.at + 3 * H, expect } };
+/** each reactor's inlet: the cut-in conditions are on the reactor inlet temperatures (owner, 29 Oct 2026) */
+export const INLET: Record<ReactorKey, PointKey> = { r105: 'r105_in', r101: 'r101_in', r102: 'r102_in', r103: 'r103_in', r104: 'r104_in' };
+
+export interface InletEta {
+  key: ReactorKey; name: string; target: number; now: number | null;
+  /** °F/h between the two readings; the highest it can reach with the R-105 inlet at its limit */
+  rate: number | null; max: number | null;
+  done: boolean; wont: boolean; eta: number | null;
+  /** a bed hotter than the inlet: the reaction is giving heat */
+  exo: boolean;
+}
+export interface CutinEstimate {
+  from: number; to: number; reactors: InletEta[];
+  /** when every inlet is at its temperature; null when one cannot get there at this R-105 inlet or is not rising */
+  ready: number | null; limiting: ReactorKey | null; blocked: boolean;
+  /** the share of the R-105 outlet's heat above the feed that E-129 takes (from the drop to R-101 inlet) */
+  e129: { dropNow: number; perDegree: number } | null;
 }
 
-/** Train-1's cut-in conditions (process instruction, 28 Oct 2026): the bed temperatures, R-105 inlet up to 620 °F. */
+/**
+ * The cut-in estimate on the reactor inlets, from the latest two readings an hour or more apart.
+ * The highest each inlet can reach: R-105 inlet at its limit; R-105 gives no heat away (a reaction only adds); E-129
+ * takes from the R-105 outlet a drop that grows with it (as seen between the two readings: the feed side follows the
+ * heat train); every further step loses what it loses now. The time: the rise at the present rate, slowing as it nears
+ * that highest value. An estimate only: it never changes a step.
+ */
+export function cutinEstimate(readings: WaveReading[], spec: CutinSpec, horizonH = 48): CutinEstimate | null {
+  const pair = pickPair(readings); if (!pair) return null;
+  const [a, b] = pair; const span = (b.at - a.at) / H;
+  if (b.pts.r105_in == null) return null;
+  const cap = Math.max(spec.inletMax, b.pts.r105_in);
+  // the highest each inlet can reach, down the train
+  const max: Partial<Record<ReactorKey, number>> = { r105: cap };
+  let e129: CutinEstimate['e129'] = null;
+  const o1 = b.pts.r105_out, i1 = b.pts.r101_in;
+  if (i1 != null) {
+    if (o1 != null) {
+      const d1 = o1 - i1; const o0 = a.pts.r105_out, i0 = a.pts.r101_in;
+      const per = o0 != null && i0 != null && o1 !== o0 ? Math.min(1, Math.max(0, (d1 - (o0 - i0)) / (o1 - o0))) : 0;
+      e129 = { dropNow: d1, perDegree: per };
+      max.r101 = cap - Math.max(0, d1 + per * (cap - o1));
+    } else max.r101 = cap - Math.max(0, b.pts.r105_in - i1);
+  }
+  const chain: ReactorKey[] = ['r101', 'r102', 'r103', 'r104'];
+  for (let k = 1; k < chain.length; k++) {
+    const up = chain[k - 1], me = chain[k]; const u = b.pts[INLET[up]], x = b.pts[INLET[me]];
+    if (max[up] != null && u != null && x != null) max[me] = max[up]! - Math.max(0, u - x);
+  }
+  const reactors: InletEta[] = WAVE_REACTORS.map((r) => {
+    const target = spec.targets[r.key]; const now = b.pts[INLET[r.key]] ?? null; const was = a.pts[INLET[r.key]];
+    const rate = now != null && was != null ? (now - was) / span : null; const m = max[r.key] ?? null;
+    const bed = b.beds[r.key]; const exo = bed != null && now != null && bed > now + 3;
+    const base = { key: r.key, name: r.name, target, now, rate, max: m, exo };
+    if (now != null && now >= target) return { ...base, done: true, wont: false, eta: b.at };
+    if (now == null || m == null) return { ...base, done: false, wont: false, eta: null };
+    if (m < target) return { ...base, done: false, wont: true, eta: null };
+    if (rate == null || rate <= 0.5) return { ...base, done: false, wont: false, eta: null };
+    // a first-order approach to the highest value: fast while far from it, slowing near it
+    const gap = m - now; const left = Math.max(m - target, 1e-6); const h = (gap / rate) * Math.log(gap / left);
+    return { ...base, done: false, wont: false, eta: h <= horizonH ? b.at + h * H : null };
+  });
+  const open = reactors.filter((r) => !r.done); const blocked = open.some((r) => r.wont);
+  const ready = open.length === 0 ? b.at : open.some((r) => r.eta === null) ? null : Math.max(...open.map((r) => r.eta!));
+  const limiting = open.length === 0 ? null : (open.find((r) => r.wont) ?? open.find((r) => r.eta === null) ?? open.reduce((x, r) => (r.eta! > x.eta! ? r : x))).key;
+  return { from: a.at, to: b.at, reactors, ready, limiting, blocked, e129 };
+}
+
+/** Train-1's cut-in conditions (process instruction, 28 Oct 2026): each reactor's inlet °F, R-105 inlet up to 620 °F. */
 export const TRAIN1_CUTIN: CutinSpec = { targets: { r105: 610, r101: 600, r102: 580, r103: 570, r104: 560 }, inletMax: 620, ref: 'Process instruction 28 Oct 2026' };
