@@ -16,7 +16,7 @@ import { BlindList } from '@/features/tracker/BlindList';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
-import { bufferCatchUp, isBufferStep, runTogether, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor, bedSets, bedMatrix, bedRowDone, bedRowOff, type BedSet, type BedRow,
+import { bufferCatchUp, isBufferStep, runTogether, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor, stepGroups, bedMatrix, bedRowDone, bedRowOff, bedItemDone, bedLate, bedWindow, type BedSet, type BedRow, type BedDept,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { setFollow, addReturnItem, setReturnItem, BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -429,9 +429,10 @@ function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string)
   const shown = f === 'todo' ? todo : f === 'late' ? late : f === 'all' ? main : main.filter((e) => grpOf(e) === f);
   const groups = f === 'late' ? ['Late first'] : [...new Set(shown.map(grpOf))];
   // the four fixed-bed reactors: one row, one page with the steps against all four
-  const beds = useMemo(() => (f === 'todo' || f === 'late' ? [] : bedSets(main)), [f, main]);
+  const allGroups = useMemo(() => stepGroups(main, d.activities), [main, d.activities]);
+  const beds = f === 'todo' || f === 'late' ? [] : allGroups;
   const bedOf = (e: TrkEquipment) => beds.find((b) => b.items.includes(e));
-  const [bedLabel, setBedLabel] = useState<string | null>(null); const bed = beds.find((b) => b.label === bedLabel) ?? (bedLabel ? bedSets(main).find((b) => b.label === bedLabel) : undefined);
+  const [bedLabel, setBedLabel] = useState<string | null>(null); const bed = allGroups.find((b) => b.label === bedLabel);
   const chips: [string, string][] = [['all', `All ${main.length}`], ['todo', `To update ${todo.length}`], ...(late.length ? [['late', `Late / hold ${late.length}`] as [string, string]] : []), ...all.map((g): [string, string] => [g, `${g} ${main.filter((e) => grpOf(e) === g).length}`])];
   return (<>
     <div className="-mx-3 mb-2.5 flex gap-1.5 overflow-x-auto px-3 pb-0.5 [scrollbar-width:none]">{chips.map(([k, l]) => <button key={k} type="button" onClick={() => setF(k)} ref={(el) => { if (el && f === k && f !== 'all') el.scrollIntoView({ inline: 'center', block: 'nearest' }); }}
@@ -439,7 +440,7 @@ function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string)
     {f === 'todo' && <p className="mx-1 mb-2 text-[12px] text-slate-500">Work running (or due to start) with no update for {'>'}12 h · critical {'>'}6 h. Any step, note, status or drum entry counts as an update.</p>}
     {groups.map((g) => { const xs = f === 'late' ? shown : shown.filter((e) => grpOf(e) === g); const seen = new Set<string>();
       const item = (e: TrkEquipment) => <ItemRow key={e.id} d={d} e={e} now={now} ageH={stale.get(keyOf(e))} mi={mi.get(keyOf(e))} onOpen={() => setOpen(e)} done={done} />;
-      return <div key={g}><Sec>{g}</Sec><List>{xs.flatMap((e) => { const b = bedOf(e); if (b) { if (seen.has(b.label)) return []; seen.add(b.label); return [<BedsRow key={`bed:${b.label}`} d={d} set={b} onOpen={() => setBedLabel(b.label)} />]; }
+      return <div key={g}><Sec>{g}</Sec><List>{xs.flatMap((e) => { const b = bedOf(e); if (b) { if (seen.has(b.label)) return []; seen.add(b.label); return [<BedsRow key={`bed:${b.label}`} d={d} set={b} now={now} onOpen={() => setBedLabel(b.label)} />]; }
         const sys = e.system; if (!sys || f === 'todo' || f === 'late') return [item(e)]; if (seen.has(sys)) return []; seen.add(sys);
         const ms = xs.filter((m) => m.system === sys); if (ms.length < 2) return [item(e)]; const isOpen = openSys.has(sys); const ho = ms.filter((m) => m.stage >= 1).length;
         return [<button key={`sys:${sys}`} type="button" aria-expanded={isOpen} onClick={() => setOpenSys((s) => { const n = new Set(s); if (n.has(sys)) n.delete(sys); else n.add(sys); return n; })}
@@ -450,90 +451,125 @@ function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string)
     {!shown.length && <Card><p className="text-sm font-semibold text-green-800">{f === 'todo' ? '✓ Everything has a recent update.' : f === 'late' ? '✓ Nothing late.' : 'Nothing here.'}</p></Card>}
     {outs.length + off.length > 0 && <button type="button" onClick={() => setShowOut((x) => !x)} className="mx-1 mb-2 block text-[12px] font-semibold text-slate-500">{showOut ? '▾' : '▸'} {head ? `Out of scope ${outs.length}` : ''}{off.length - mine ? ` · switched off ${off.length - mine}` : ''}{mine ? `${head ? ' · ' : ''}not followed by you ${mine}` : ''}</button>}
     {showOut && <List>{[...outs, ...off].map((e) => <button key={e.id} type="button" onClick={() => setOpen(e)} className={cx(ROW, 'opacity-70')}><b className={TAG}>{short(e.tag)}</b><span className="min-w-0 flex-1 truncate text-[12px] text-slate-600">{isOutOfScope(e) ? `⊘ ${scopeReasonText(e.disabledReason)}` : e.notFollowed ? '🔕 not followed by you' : 'switched off (Admin)'}</span></button>)}</List>}
-    {bed && <BedsPage d={d} set={bed} done={done} onItem={(e) => { setBedLabel(null); setOpen(e); }} onClose={() => setBedLabel(null)} />}
+    {bed && <BedsPage d={d} set={bed} now={now} done={done} onItem={(e) => { setBedLabel(null); setOpen(e); }} onClose={() => setBedLabel(null)} />}
     {open && <ItemSheet d={d} e={open} done={done} onClose={() => setOpen(null)} />}
   </>);
 }
 
-// ── Fixed-bed reactors on one page (owner, 29 Oct 2026) ─────────────────────────────────────────────────────────────
-const bedTime = (iso: string) => { const k = Date.parse(iso), today = kwDay(Date.now()) === kwDay(k); return today ? kwTime(k) : `${kwDay(k).replace(/^\w+,? /, '')} ${kwTime(k)}`; };
+// ── Items worked to one step list, on one page (owner, 29 Oct 2026) ─────────────────────────────────────────────────
+const MON3 = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const dayOf = (t: number) => { const k = new Date(t + 3 * H); return `${k.getUTCDate()} ${MON3[k.getUTCMonth()]}`; };
+const bedTime = (iso: string) => { const k = Date.parse(iso); return dayOf(k) === dayOf(Date.now()) ? kwTime(k) : dayOf(k); };
+const lateText = (h: number) => (h < 24 ? `late ${Math.max(1, Math.round(h))} h` : `late ${Math.round(h / 24)} d`);
+const windowText = (w: { start: number; finish: number } | null) => { if (!w) return 'no plan time'; const a = dayOf(w.start), b = dayOf(w.finish);
+  if (a === b) return `Plan ${a}`; const [da, ma] = a.split(' '), [db, mb] = b.split(' '); return ma === mb ? `Plan ${da}–${db} ${mb}` : `Plan ${a} – ${b}`; };
 const bedCount = (rows: BedRow[], i: number) => { const xs = rows.map((r) => r.cells[i]).filter((c) => c.state !== 'nr' && c.state !== 'none'); return [xs.filter((c) => c.state === 'done').length, xs.length]; };
-/** The four reactors as one row in the Equipment list: what is running (or next) and each reactor's steps done. */
-function BedsRow({ d, set, onOpen }: { d: TrackerData; set: BedSet; onOpen: () => void }) {
+const DEPT_TAG = { inspection: ['Inspection', 'bg-indigo-100 text-indigo-800'], cleaning: ['Cleaning', 'bg-amber-100 text-amber-900'] } as const;
+const DeptTag = ({ dept }: { dept: BedDept }) => <span className={cx('rounded px-1 text-[9.5px] font-extrabold uppercase tracking-wide', DEPT_TAG[dept][1])}>{DEPT_TAG[dept][0]}</span>;
+/** A group as one row in the Equipment list: what is running (or next), late when past its plan, and each item's
+ *  steps done (up to four items; more: how many are finished). */
+function BedsRow({ d, set, now, onOpen }: { d: TrackerData; set: BedSet; now: number; onOpen: () => void }) {
   const rows = useMemo(() => bedMatrix(d.activities, set.keys), [d.activities, set.keys]);
-  const run = rows.map((r) => ({ r, on: r.cells.map((c, i) => (c.state === 'run' ? short(set.items[i].tag) : '')).filter(Boolean) })).filter((x) => x.on.length);
+  const run = rows.map((r) => ({ r, on: r.cells.flatMap((c, i) => (c.state === 'run' ? [{ t: short(set.items[i].tag), l: bedLate(c, now) }] : [])) })).filter((x) => x.on.length);
   const next = rows.find((r) => r.cells.some((c) => c.state === 'open'));
-  const line = run.length ? run.map((x) => `▶ ${x.r.name} ${x.on.join(', ')}`).join(' · ') : next ? `Next: ${next.name}` : 'All steps done';
+  const late = rows.flatMap((r) => r.cells).filter((c) => c.state !== 'done' && bedLate(c, now).late).length;
+  const fin = set.items.filter((_, i) => bedItemDone(rows, i)).length;
   return (
     <div role="button" tabIndex={0} onClick={onOpen} onKeyDown={(x) => x.key === 'Enter' && onOpen()} className="block w-full cursor-pointer border-b border-slate-100 px-2.5 py-2 text-left last:border-b-0 active:bg-slate-50">
-      <span className="flex items-center gap-2"><b className="text-[13px]">{set.label}</b><span className="text-[11px] text-slate-500">· one page</span><span className="ml-auto text-[16px] text-slate-400">›</span></span>
-      <span className="block truncate text-[12px] text-slate-700">{line}</span>
-      <span className="mt-1 grid grid-cols-4 gap-1.5">{set.items.map((e, i) => { const [n, t] = bedCount(rows, i);
-        return <span key={e.id} className="text-[10px] tabular-nums text-slate-600">{short(e.tag)} {n}/{t}<span className="mt-0.5 block h-1.5 overflow-hidden rounded-full bg-slate-200"><span className="block h-full bg-status-green" style={{ width: `${t ? (n / t) * 100 : 0}%` }} /></span></span>; })}</span>
+      <span className="flex items-center gap-1.5"><b className="text-[13px]">{set.label}</b><DeptTag dept={set.dept} /><span className="text-[11px] text-slate-500">· {set.items.length}{fin ? ` · ${fin} done` : ''}</span><span className="ml-auto text-[16px] text-slate-400">›</span></span>
+      <span className="block truncate text-[12px] text-slate-700">{run.length ? run.map((x) => `▶ ${x.r.name} ${x.on.map((o) => o.t).join(', ')}`).join(' · ') : next ? `Next: ${next.name}` : 'All steps done'}
+        {late > 0 && <b className="text-status-red"> · {late} late</b>}</span>
+      {set.items.length <= 4 && <span className="mt-1 grid grid-cols-4 gap-1.5">{set.items.map((e, i) => { const [n, t] = bedCount(rows, i);
+        return <span key={e.id} className="text-[10px] tabular-nums text-slate-600">{short(e.tag)} {n}/{t}<span className="mt-0.5 block h-1.5 overflow-hidden rounded-full bg-slate-200"><span className="block h-full bg-status-green" style={{ width: `${t ? (n / t) * 100 : 0}%` }} /></span></span>; })}</span>}
     </div>
   );
 }
-/** Steps down the side, the four reactors across: tap a cell to start or finish it (others in the same state can be
- *  ticked to move together), or a row's "all" to do every reactor at once. Each reactor keeps its own records. */
-function BedsPage({ d, set, done, onItem, onClose }: { d: TrackerData; set: BedSet; done: Done; onItem: (e: TrkEquipment) => void; onClose: () => void }) {
+/** Steps down the side, the items across (more than four still working: the items as chips under each step). Each
+ *  step shows its plan window, each item its own plan finish; red = not started after its plan start or not done
+ *  after its plan finish. Items whose steps are all done leave the columns ("Handed back"). Tap to start / finish
+ *  (others in the same state can be ticked), or a row's "all". Each item keeps its own records. */
+function BedsPage({ d, set, now, done, onItem, onClose }: { d: TrackerData; set: BedSet; now: number; done: Done; onItem: (e: TrkEquipment) => void; onClose: () => void }) {
   const isHead = useContext(RoleCtx) === 'head';
-  const rows = useMemo(() => bedMatrix(d.activities, set.keys), [d.activities, set.keys]);
+  const rows0 = useMemo(() => bedMatrix(d.activities, set.keys), [d.activities, set.keys]);
   const [showDone, setShowDone] = useState(false); const [showOff, setShowOff] = useState(false);
   const [pick, setPick] = useState<{ row: string; col: number; all: boolean } | null>(null);
-  const finished = rows.filter(bedRowDone), off = rows.filter(bedRowOff), open = rows.filter((r) => !bedRowDone(r) && !bedRowOff(r));
-  const cols = 'grid grid-cols-[minmax(0,1.35fr)_repeat(4,minmax(0,1fr))] items-center gap-1';
-  const cell = (r: BedRow, i: number) => { const c = r.cells[i], go = () => setPick({ row: r.id, col: i, all: false });
+  const handed = set.items.map((_, i) => i).filter((i) => bedItemDone(rows0, i));
+  const cols = handed.length === set.items.length ? set.items.map((_, i) => i) : set.items.map((_, i) => i).filter((i) => !handed.includes(i));
+  // the rows as the shown columns see them (an item handed back no longer keeps a row open)
+  const view = (r: BedRow): BedRow => ({ ...r, cells: cols.map((i) => r.cells[i]) });
+  const finished = rows0.filter((r) => bedRowDone(view(r)) || (bedRowOff(view(r)) && !bedRowOff(r))), off = rows0.filter((r) => bedRowOff(r));
+  const open = rows0.filter((r) => !finished.includes(r) && !off.includes(r));
+  const chips = cols.length > 4;
+  const grid = { gridTemplateColumns: `minmax(0,1.4fr) repeat(${cols.length},minmax(0,1fr))` };
+  const tap = (r: BedRow, i: number) => setPick({ row: r.id, col: i, all: false });
+  const cell = (r: BedRow, i: number) => { const c = r.cells[i], l = bedLate(c, now), go = () => tap(r, i);
     if (c.state === 'none') return <span key={i} />;
     if (c.state === 'nr') return <span key={i} className="text-center text-slate-300">–</span>;
-    if (c.state === 'done') return <button key={i} type="button" onClick={go} className="text-center text-[12px] font-bold text-status-green">✓<span className="block text-[9.5px] font-normal tabular-nums text-slate-500">{bedTime(c.a!.actualFinish!)}</span></button>;
-    if (c.state === 'run') return <button key={i} type="button" onClick={go} className="rounded-lg bg-amber-50 px-0.5 py-1 text-center text-[11px] font-bold text-amber-900 ring-1 ring-amber-400">▶ Finish<span className="block text-[9.5px] font-medium tabular-nums">{bedTime(c.a!.actualStart!)}</span></button>;
-    return <button key={i} type="button" onClick={go} className="min-h-8 rounded-lg text-center text-[11px] font-bold text-brand-700 ring-1 ring-brand-700">Start</button>; };
-  const row = (r: BedRow) => { const nOpen = r.cells.filter((c) => c.state === 'open').length, nRun = r.cells.filter((c) => c.state === 'run').length;
-    const all = nRun >= 2 ? `Finish ${nRun}` : nOpen >= 2 && !nRun ? `Start all ${nOpen}` : null;
-    return <div key={r.id} className={cx(cols, 'border-t border-slate-100 px-2 py-1.5')}>
-      <span className="min-w-0 text-[12px] font-semibold leading-tight text-slate-800">{r.name}{all && <button type="button" onClick={() => setPick({ row: r.id, col: r.cells.findIndex((c) => c.state === (nRun >= 2 ? 'run' : 'open')), all: true })} className="block text-[10.5px] font-bold text-brand-700">{all}</button>}</span>
-      {r.cells.map((_, i) => cell(r, i))}</div>; };
-  const sel = pick && rows.find((r) => r.id === pick.row);
+    if (c.state === 'done') return <button key={i} type="button" onClick={go} className="text-center text-[12px] font-bold text-status-green">✓<span className={cx('block text-[9.5px] font-normal tabular-nums', l.late ? 'text-amber-700' : 'text-slate-500')}>{bedTime(c.a!.actualFinish!)}</span></button>;
+    const sub = l.late ? lateText(l.byH) : c.a!.finish ? `by ${dayOf(Date.parse(c.a!.finish))}` : 'no plan';
+    if (c.state === 'run') return <button key={i} type="button" onClick={go} className={cx('rounded-lg px-0.5 py-1 text-center text-[11px] font-bold ring-1', l.late ? 'bg-red-50 text-red-800 ring-red-400' : 'bg-amber-50 text-amber-900 ring-amber-400')}>▶ Finish<span className="block text-[9.5px] font-medium tabular-nums">{sub}</span></button>;
+    return <button key={i} type="button" onClick={go} className={cx('rounded-lg py-1 text-center text-[11px] font-bold ring-1', l.late ? 'text-red-800 ring-red-400' : 'text-brand-700 ring-brand-700')}>Start<span className={cx('block text-[9px] font-semibold tabular-nums', l.late ? 'text-red-700' : 'text-slate-500')}>{sub}</span></button>; };
+  const allOf = (r: BedRow) => { const v = view(r), nOpen = v.cells.filter((c) => c.state === 'open').length, nRun = v.cells.filter((c) => c.state === 'run').length;
+    return nRun >= 2 ? { t: `Finish ${nRun}`, col: cols[v.cells.findIndex((c) => c.state === 'run')] } : nOpen >= 2 && !nRun ? { t: `Start all ${nOpen}`, col: cols[v.cells.findIndex((c) => c.state === 'open')] } : null; };
+  const label = (r: BedRow) => { const w = bedWindow(view(r)), late = view(r).cells.some((c) => c.state !== 'done' && bedLate(c, now).late), all = allOf(r);
+    return <><span className="block text-[12px] font-semibold leading-tight text-slate-800">{r.name}</span>
+      <span className={cx('block text-[10px] font-semibold', late ? 'text-status-red' : 'text-slate-500')}>{windowText(w)}</span>
+      {all && <button type="button" onClick={() => setPick({ row: r.id, col: all.col, all: true })} className="block text-[10.5px] font-bold text-brand-700">{all.t}</button>}</>; };
+  const row = (r: BedRow) => chips
+    ? <div key={r.id} className="border-t border-slate-100 px-2.5 py-1.5">{label(r)}
+        <div className="mt-1 grid grid-cols-5 gap-1">{cols.filter((i) => r.cells[i].state !== 'none').map((i) => { const c = r.cells[i], l = bedLate(c, now);
+          return <button key={i} type="button" disabled={c.state === 'nr'} onClick={() => tap(r, i)} className={cx('min-h-8 truncate rounded-md px-0.5 text-[10.5px] font-bold ring-1',
+            c.state === 'nr' ? 'text-slate-300 ring-slate-100' : c.state === 'done' ? cx('bg-green-100 ring-green-300', l.late ? 'text-amber-800' : 'text-green-800') : c.state === 'run' ? 'bg-amber-50 text-amber-900 ring-amber-400' : l.late ? 'bg-red-50 text-red-800 ring-red-300' : 'bg-white text-slate-700 ring-slate-300')}>
+            {c.state === 'done' ? '✓' : c.state === 'run' ? '▶' : ''}{short(set.items[i].tag).replace(/^[A-Z]+-/, '')}</button>; })}</div></div>
+    : <div key={r.id} className="grid items-center gap-1 border-t border-slate-100 px-2 py-1.5" style={grid}><span className="min-w-0">{label(r)}</span>{cols.map((i) => cell(r, i))}</div>;
+  const sel = pick && rows0.find((r) => r.id === pick.row);
   return (
     <div className="fixed inset-0 z-[60] overflow-y-auto bg-canvas pb-28">
       <header className="sticky top-0 z-10 flex items-center gap-2 bg-brand-700 px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white">
         <button type="button" onClick={onClose} className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-bold">‹ Back</button>
-        <p className="min-w-0 flex-1 truncate text-[16px] font-bold">{set.label} · fixed beds</p>
+        <p className="min-w-0 flex-1 truncate text-[16px] font-bold">{set.label}</p><DeptTag dept={set.dept} />
       </header>
       <main className="mx-auto max-w-xl px-3 pt-3">
         <List>
-          <div className={cx(cols, 'bg-slate-50 px-2 py-1.5')}><span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Step</span>
-            {set.items.map((e, i) => { const [n, t] = bedCount(rows, i); return <button key={e.id} type="button" onClick={() => onItem(e)} className="text-center text-[12px] font-bold text-brand-700 underline decoration-slate-300 underline-offset-2">{short(e.tag)}<span className="block text-[10px] font-medium tabular-nums text-slate-500 no-underline">{n}/{t}</span></button>; })}</div>
-          {finished.length > 0 && <button type="button" aria-expanded={showDone} onClick={() => setShowDone((x) => !x)} className="flex w-full justify-between border-t border-green-100 bg-green-50 px-2.5 py-2 text-[12px] font-semibold text-green-900"><span>✓ {finished.length} step{finished.length === 1 ? '' : 's'} done on all four</span><span>{showDone ? 'hide ▴' : 'show ▾'}</span></button>}
+          {chips ? <div className="flex flex-wrap gap-1 bg-slate-50 px-2.5 py-1.5">{cols.map((i) => { const [n, t] = bedCount(rows0, i); return <button key={i} type="button" onClick={() => onItem(set.items[i])} className="rounded-md bg-white px-1.5 py-0.5 text-[11px] font-bold text-brand-700 ring-1 ring-slate-200">{short(set.items[i].tag)} <span className="font-medium tabular-nums text-slate-500">{n}/{t}</span></button>; })}</div>
+            : <div className="grid items-center gap-1 bg-slate-50 px-2 py-1.5" style={grid}><span className="text-[10.5px] font-extrabold uppercase tracking-wider text-slate-500">Step · plan</span>
+              {cols.map((i) => { const [n, t] = bedCount(rows0, i); return <button key={i} type="button" onClick={() => onItem(set.items[i])} className="text-center text-[12px] font-bold text-brand-700 underline decoration-slate-300 underline-offset-2">{short(set.items[i].tag)}<span className="block text-[10px] font-medium tabular-nums text-slate-500 no-underline">{n}/{t}</span></button>; })}</div>}
+          {handed.length > 0 && handed.length < set.items.length && <div className="flex flex-wrap items-center gap-1 border-t border-green-100 bg-green-50 px-2.5 py-1.5 text-[11.5px] font-semibold text-green-900">✓ Handed back:
+            {handed.map((i) => { const f = Math.max(...rows0.map((r) => r.cells[i].a?.actualFinish).filter((x): x is string => !!x).map((x) => Date.parse(x)));
+              return <button key={i} type="button" onClick={() => onItem(set.items[i])} className="rounded bg-green-100 px-1.5 text-[10.5px]">{short(set.items[i].tag)} {dayOf(f)}</button>; })}</div>}
+          {finished.length > 0 && <button type="button" aria-expanded={showDone} onClick={() => setShowDone((x) => !x)} className="flex w-full justify-between border-t border-green-100 bg-green-50 px-2.5 py-2 text-[12px] font-semibold text-green-900"><span>✓ {finished.length} step{finished.length === 1 ? '' : 's'} done on all</span><span>{showDone ? 'hide ▴' : 'show ▾'}</span></button>}
           {showDone && finished.map(row)}
           {open.map(row)}
           {!open.length && <p className="border-t border-slate-100 px-2.5 py-2 text-[12px] font-semibold text-status-green">✓ All steps done.</p>}
           {off.length > 0 && <button type="button" aria-expanded={showOff} onClick={() => setShowOff((x) => !x)} className="flex w-full justify-between border-t border-slate-100 bg-slate-50 px-2.5 py-2 text-[12px] font-semibold text-slate-500"><span>– {off.length} not required</span><span>{showOff ? 'hide ▴' : 'show ▾'}</span></button>}
           {showOff && off.map(row)}
         </List>
-        <p className="mx-1 text-[11px] text-slate-500">✓ done · ▶ running, tap to finish · – not required. Tap a reactor for its own page (remarks, holds, history, step order).</p>
+        <p className="mx-1 text-[11px] text-slate-500">✓ done · ▶ running, tap to finish · – not required · “by” = that item’s plan finish. <b className="text-status-red">Red</b>: not started after its plan start, or not done after its plan finish; a ✓ date in amber finished late. Tap an item for its own page.</p>
       </main>
-      {sel && pick && <BedSheet set={set} r={sel} col={pick.col} all={pick.all} head={isHead} done={done} onClose={() => setPick(null)} />}
+      {sel && pick && <BedSheet d={d} set={set} r={sel} col={pick.col} cols={cols} all={pick.all} head={isHead} done={done} onClose={() => setPick(null)} />}
     </div>
   );
 }
-/** One step on one reactor (or the row's "all"): start or finish it now or at a time typed in, ticking the other
- *  reactors in the same state to move them together; undo a start / finish; not required (Section Head). */
-function BedSheet({ set, r, col, all, head, done, onClose }: { set: BedSet; r: BedRow; col: number; all: boolean; head: boolean; done: Done; onClose: () => void }) {
+/** One step on one item (or the row's "all"): its plan against what happened; start or finish it now or at a time
+ *  typed in, ticking the others in the same state to move them together (items worked as one move with it); undo a
+ *  start / finish; not required (Section Head). */
+function BedSheet({ d, set, r, col, cols, all, head, done, onClose }: { d: TrackerData; set: BedSet; r: BedRow; col: number; cols: number[]; all: boolean; head: boolean; done: Done; onClose: () => void }) {
   const c0 = r.cells[col], mode = c0.state;
-  const same = r.cells.map((c, i) => (c.state === mode && (mode === 'open' || mode === 'run') ? i : -1)).filter((i) => i >= 0);
+  const same = cols.filter((i) => r.cells[i].state === mode && (mode === 'open' || mode === 'run'));
   const [on, setOn] = useState<Set<number>>(new Set(all ? same : [col]));
   const [at, setAt] = useState(''); const [why, setWhy] = useState('');
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const atIso = at ? new Date(`${at}:00+03:00`).toISOString() : null;
   const tooOld = !!atIso && Date.now() - Date.parse(atIso) > BACKDATE_LIMIT_H * H, future = !!atIso && Date.parse(atIso) > Date.now() + 15 * 60000;
   const kwInput = (ms: number) => new Date(ms + 3 * H).toISOString().slice(0, 16);
-  const picked = [...on].sort().map((i) => ({ a: r.cells[i].a!, e: set.items[i] }));
-  const tags = picked.map((x) => short(x.e.tag)).join(', ');
+  // the same step of the items worked as one with it (E-12-216A/B)
+  const twins = (e: TrkEquipment, a: TrkActivity) => (e.combine ? d.activities.filter((x) => x.id !== a.id && x.activity === a.activity && x.tracked && !x.actualFinish && d.equipment.some((q) => q.combine === e.combine && keyOf(q) === x.key)) : []);
+  const picked = [...on].sort((p, q) => p - q).flatMap((i) => { const a = r.cells[i].a!, e = set.items[i]; return [{ a, e }, ...twins(e, a).map((x) => ({ a: x, e }))]; });
+  const tags = [...on].sort((p, q) => p - q).map((i) => short(set.items[i].tag)).join(', ');
   async function run(f: () => Promise<unknown>, msg: string, undo: () => Promise<unknown>) { setBusy(true); setErr(null); try { await f(); done(msg, undo); onClose(); } catch (x) { setErr(x); } finally { setBusy(false); } }
   const back = (xs: { a: TrkActivity }[]) => xs.map(({ a }) => ({ id: a.id, s: a.actualStart ?? null, f: a.actualFinish ?? null }));
   const move = (finish: boolean) => { const t = atIso ?? new Date().toISOString(), was = back(picked), reason = why.trim() ? { time_reason: why.trim() } : {};
-    const held = finish ? [] : picked.map((x) => x.e).filter((e) => e.pendingReason);
+    const held = finish ? [] : [...new Set(picked.map((x) => x.e))].filter((e) => e.pendingReason);
     return run(async () => {
       for (const { a } of picked) await setActivity(a.id, finish ? { actual_finish: t, ...(a.actualStart ? {} : { actual_start: t }), ...reason } : { actual_start: t, ...reason });
       for (const e of held) await setEquipment(e.id, { pending_reason: null });
@@ -545,16 +581,16 @@ function BedSheet({ set, r, col, all, head, done, onClose }: { set: BedSet; r: B
   const undo = () => { const was = back([{ a }]); return run(() => setActivity(a.id, a.actualFinish ? { actual_finish: null } : { actual_start: null }), `${r.name}: ${a.actualFinish ? 'finish' : 'start'} undone on ${short(e0.tag)}.`,
     () => setActivity(was[0].id, { actual_start: was[0].s, actual_finish: was[0].f, time_reason: 'Undo' })); };
   const notReq = () => run(() => setActivity(a.id, { tracked: false, disabled_reason: 'not required' }), `${r.name}: not required on ${short(e0.tag)}.`, () => setActivity(a.id, { tracked: true, disabled_reason: null }));
-  const status = mode === 'done' ? `Done ${when(a.actualFinish)}${a.actualStart ? ` · took ${spanText(a.actualStart, a.actualFinish) || '—'}` : ''}` : mode === 'run' ? `Running since ${when(a.actualStart)}${spanText(a.actualStart, new Date().toISOString()) ? ` (${spanText(a.actualStart, new Date().toISOString())})` : ''}` : 'Not started';
   return (
-    <BottomSheet open onClose={onClose} title={all ? `${r.name} · ${same.length} reactors` : `${r.name} · ${short(e0.tag)}`}>
+    <BottomSheet open onClose={onClose} title={all ? `${r.name} · ${same.length} items` : `${r.name} · ${short(e0.tag)}`}>
       <div className="space-y-2.5">
-        {!all && <p className="text-[13px] text-slate-600">{status}{a.updatedBy ? ` · ${a.updatedBy}` : ''}</p>}
+        {!all && <PlanVsActual a={a} planH={a.durationH ?? null} />}
+        {!all && !a.start && <p className="text-[12px] text-slate-500">No plan time (an added step): not counted in the %.</p>}
         {(mode === 'open' || mode === 'run') && <>
-          {same.length > 1 && <div><p className="mb-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">{mode === 'run' ? 'Finish on' : 'Start on'}</p>
-            <div className="grid grid-cols-4 gap-1.5">{set.items.map((e, i) => { const can = same.includes(i), x = on.has(i);
-              return <button key={e.id} type="button" disabled={!can} aria-pressed={x} onClick={() => setOn((s) => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; })}
-                className={cx('min-h-9 rounded-lg text-[12px] font-bold ring-1', !can ? 'text-slate-300 ring-slate-100' : x ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>{short(e.tag)}</button>; })}</div></div>}
+          {same.length > 1 && <div><p className="mb-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">{mode === 'run' ? 'Finish on' : 'Start or done on'}</p>
+            <div className="grid grid-cols-4 gap-1.5">{same.map((i) => { const x = on.has(i);
+              return <button key={i} type="button" aria-pressed={x} onClick={() => setOn((s) => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; })}
+                className={cx('min-h-9 truncate rounded-lg px-1 text-[12px] font-bold ring-1', x ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>{short(set.items[i].tag)}</button>; })}</div></div>}
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-bold uppercase text-slate-500">Time</span>
             <input type="datetime-local" className="input min-h-9 flex-1 py-1 text-[13px]" value={at} max={kwInput(Date.now())} onChange={(x) => setAt(x.target.value)} />
@@ -567,9 +603,10 @@ function BedSheet({ set, r, col, all, head, done, onClose }: { set: BedSet; r: B
         <div className="grid grid-cols-2 gap-1.5">
           {mode === 'open' && !all && head && <button type="button" disabled={busy} onClick={() => void notReq()} className="min-h-11 rounded-xl bg-white text-[13px] font-bold text-slate-700 ring-1 ring-slate-300">⊘ Not required</button>}
           {(mode === 'done' || mode === 'run') && !all && <button type="button" disabled={busy} onClick={() => void undo()} className="min-h-11 rounded-xl bg-white text-[13px] font-bold text-slate-700 ring-1 ring-slate-300">↶ Undo {mode === 'done' ? 'finish' : 'start'}</button>}
-          {mode === 'open' && <button type="button" disabled={busy || !on.size || future || (tooOld && !why.trim())} onClick={() => void move(false)} className={cx('min-h-11 rounded-xl bg-brand-700 text-[13px] font-bold text-white disabled:opacity-50', (all || !head) && 'col-span-2')}>▶ Start{on.size > 1 ? ` ${on.size}` : ''}</button>}
+          {mode === 'open' && !all && head && <span />}
+          {mode === 'open' && <button type="button" disabled={busy || !on.size || future || (tooOld && !why.trim())} onClick={() => void move(false)} className="min-h-11 rounded-xl bg-brand-700 text-[13px] font-bold text-white disabled:opacity-50">▶ Start{on.size > 1 ? ` ${on.size}` : ''}</button>}
+          {mode === 'open' && <button type="button" disabled={busy || !on.size || future || (tooOld && !why.trim())} onClick={() => void move(true)} className="min-h-11 rounded-xl bg-amber-400 text-[13px] font-bold text-amber-950 disabled:opacity-50">✓ Done{on.size > 1 ? ` ${on.size}` : ''}</button>}
           {mode === 'run' && <button type="button" disabled={busy || !on.size || future || (tooOld && !why.trim())} onClick={() => void move(true)} className={cx('min-h-11 rounded-xl bg-amber-400 text-[13px] font-bold text-amber-950 disabled:opacity-50', all && 'col-span-2')}>✓ Finish{on.size > 1 ? ` ${on.size}` : ''}</button>}
-          {mode === 'done' && <span />}
         </div>
       </div>
     </BottomSheet>
@@ -1207,6 +1244,7 @@ function HotWork({ d, now, done }: P) {
 function SmallGroup({ d, now, items, stale, done, onBack, back = 'Back' }: { d: TrackerData; now: number; items: TrkEquipment[]; stale: Map<string, number>; done: Done; onBack?: () => void; back?: string }) {
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<TrkEquipment | null>(null); const openItem = useContext(OpenItemCtx);
+  const [grpOpen, setGrpOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const nextOf = (e: TrkEquipment) => { const ls = lines(d, [keyOf(e)]); return ls.find((a) => a.actualStart && !a.actualFinish) ?? ls.find((a) => !a.actualStart) ?? null; };
   const tick = (id: string) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -1229,8 +1267,12 @@ function SmallGroup({ d, now, items, stale, done, onBack, back = 'Back' }: { d: 
   }
   const picked = items.filter((e) => sel.has(e.id)).map(nextOf).filter((a): a is TrkActivity => !!a);
   const same = picked.length > 0 && picked.every((a) => a.activity === picked[0].activity);
+  // items worked to one step list (CV shells, check valves): the same one-page view as the Equipment list
+  const groups = stepGroups(items, d.activities), grp = groups.find((g) => g.label === grpOpen);
   return (<>
     {onBack && <button type="button" onClick={onBack} className="mb-2 text-sm font-semibold text-brand-500">‹ {back}</button>}
+    {groups.length > 0 && <List>{groups.map((g) => <BedsRow key={g.label} d={d} set={g} now={now} onOpen={() => setGrpOpen(g.label)} />)}</List>}
+    {grp && <BedsPage d={d} set={grp} now={now} done={done} onItem={(e) => { setGrpOpen(null); if (openItem) openItem(e.tag); else setOpen(e); }} onClose={() => setGrpOpen(null)} />}
     <List>{items.map((e) => { const n = nextOf(e), ls = lines(d, [keyOf(e)]);
       return <div key={e.id} className={ROW}>
         {ls.length ? <input type="checkbox" className="h-5 w-5 shrink-0" disabled={!n} checked={sel.has(e.id)} onChange={() => tick(e.id)} /> : null}
