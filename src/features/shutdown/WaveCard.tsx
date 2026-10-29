@@ -50,7 +50,7 @@ export function WaveCard({ step, canEdit, now }: { step: StartupStep; canEdit: b
               <td className={cx('text-right', r.done ? 'text-status-green' : r.wont ? 'text-status-red' : r.eta === null ? 'text-amber-700' : '')}>{r.done ? '✓ there' : r.wont ? "won't" : r.eta !== null ? when(r.eta) : r.now === null ? 'not read' : 'not rising'}</td></tr>))}</tbody>
         </table>
         <p className="mx-2.5 rounded-lg bg-slate-50 px-2 py-1 text-[11px] text-slate-600">
-          <b>How:</b> Max = R-105 inlet at {spec.inletMax} less what E-129 takes{e.e129 ? ` (${Math.round(e.e129.dropNow)} °F now, +${e.e129.perDegree.toFixed(2)} °F per °F of R-105 outlet)` : ''} and what each step loses now. Time: the rate since {clock12(e.from)}, slowing near the max. <b>exo</b>: a bed hotter than its inlet. A reading every 1–2 h keeps it close.</p>
+          <b>How:</b> a wave model fitted to the {e.model.readings} readings: each step a delay (R-105 {e.model.r105.tau.toFixed(1)} h, then {(['r102', 'r103', 'r104'] as const).map((k) => e.model.steps[k].tau.toFixed(1)).join(' · ')} h){e.e129 ? `, and E-129 taking ${Math.round(e.e129.dropNow)} °F now, +${e.e129.perDegree.toFixed(2)} °F per °F of R-105 outlet` : ''}. Max: steady with R-105 inlet at {spec.inletMax}. <b>exo</b>: a bed hotter than its inlet (the reaction is not in the model and makes it faster). A reading every 1–2 h keeps it close.</p>
       </>}
       {canEdit && (adding ? <WaveForm step={step} last={rows?.[rows.length - 1] ?? null} now={now} onCancel={() => setAdding(false)} onDone={() => { setAdding(false); void load(); }} />
         : <div className="mx-2.5"><Button variant="secondary" className="min-h-9 w-full" onClick={() => setAdding(true)}>+ Panel temperatures</Button></div>)}

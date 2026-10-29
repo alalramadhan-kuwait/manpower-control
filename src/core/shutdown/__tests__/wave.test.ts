@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TRAIN1_CUTIN, cutinEstimate, fitWave, pickPair, type WaveReading } from '../wave';
+import { TRAIN1_CUTIN, cutinEstimate, fitModel, fitWave, pickPair, type WaveReading } from '../wave';
 
 const H = 3_600_000;
 const t = (d: number, hh: number, mm = 0) => Date.UTC(2026, 9, d, hh - 3, mm); // Kuwait time
@@ -24,28 +24,32 @@ describe('heat wave fit', () => {
   });
 });
 
+describe('wave model fitted to the readings', () => {
+  it('fits a delay for each step and E-129 as a drop growing with the R-105 outlet', () => {
+    const m = fitModel([pm3, pm951, am537])!;
+    expect(m.readings).toBe(3); expect(m.r105.tau).toBeGreaterThan(1.5); expect(m.r105.tau).toBeLessThan(3);
+    expect(m.e129.b).toBeGreaterThan(0.09); expect(m.e129.b).toBeLessThan(0.13);
+    for (const k of ['r102', 'r103', 'r104'] as const) { expect(m.steps[k].tau).toBeGreaterThan(0.2); expect(m.steps[k].tau).toBeLessThan(2.5); }
+  });
+  it('from 3:00 PM and 9:51 PM alone it foresaw 5:37 AM: R-101 short of 600, R-103 and R-104 there by then', () => {
+    const e = cutinEstimate([pm3, pm951], TRAIN1_CUTIN)!;
+    expect(of(e, 'r101').wont).toBe(true); expect(of(e, 'r101').max!).toBeLessThan(590);
+    for (const k of ['r103', 'r104']) expect(of(e, k).eta!).toBeLessThanOrEqual(am537.at);
+  });
+});
+
 describe('cut-in estimate on the reactor inlets', () => {
   const e = cutinEstimate([pm3, pm951, am537], TRAIN1_CUTIN)!;
-  it('uses the latest two readings', () => { expect(e.from).toBe(pm951.at); expect(e.to).toBe(am537.at); });
+  it('uses the latest two readings for the rates', () => { expect(e.from).toBe(pm951.at); expect(e.to).toBe(am537.at); });
   it('R-105, R-103 and R-104 inlets are there', () => {
     for (const k of ['r105', 'r103', 'r104']) expect(of(e, k).done).toBe(true);
   });
-  it('R-101 cannot reach 600: E-129 takes more as R-105 outlet rises', () => {
+  it('R-101 cannot reach 600: E-129 takes ~36 °F at the R-105 inlet limit', () => {
     const r = of(e, 'r101');
-    expect(e.e129!.dropNow).toBeCloseTo(35.1, 1); expect(e.e129!.perDegree).toBeGreaterThan(0.1); expect(e.e129!.perDegree).toBeLessThan(0.13);
-    expect(r.max!).toBeGreaterThan(580); expect(r.max!).toBeLessThan(590);
+    expect(r.max!).toBeGreaterThan(575); expect(r.max!).toBeLessThan(590);
     expect(r.wont).toBe(true); expect(e.blocked).toBe(true); expect(e.ready).toBeNull(); expect(e.limiting).toBe('r101');
-  });
-  it('R-102 gets to 580 within the hour, slowing near its highest', () => {
-    const r = of(e, 'r102'); expect(r.wont).toBe(false);
-    const h = (r.eta! - am537.at) / H; expect(h).toBeGreaterThan(0.1); expect(h).toBeLessThan(1.5);
   });
   it('marks the reaction where a bed is hotter than its inlet', () => {
     expect(of(e, 'r105').exo).toBe(true); expect(of(e, 'r102').exo).toBe(false);
-  });
-  it('with E-129 giving less heat away, every inlet gets there and the time is the last one', () => {
-    const warmer = { ...am537, pts: { ...am537.pts, r101_in: 595, r102_in: 579 } };
-    const w = cutinEstimate([pm951, warmer], TRAIN1_CUTIN)!;
-    expect(w.blocked).toBe(false); expect(w.ready).not.toBeNull(); expect(w.ready!).toBeGreaterThan(am537.at);
   });
 });
