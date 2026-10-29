@@ -51,7 +51,9 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     // the worklist RTJs, linked to their loops (reference only): optional
     supabase.from('trk_rtj').select('id,seq,point_id,line,iso_sheet,rtj_no,size,fitting,link,link_note').eq('tracker_id', id).order('seq').limit(2000),
     // the Put back list (small parts removed for the shutdown): optional
-    supabase.from('trk_return_item').select('id,tag,kind,what,status,removed_at,serviced_at,installed_at,source,remark,updated_by_name,by_name').eq('tracker_id', id).eq('archived', false).order('tag').limit(1000)]);
+    supabase.from('trk_return_item').select('id,tag,kind,what,status,removed_at,serviced_at,installed_at,source,remark,updated_by_name,by_name').eq('tracker_id', id).eq('archived', false).order('tag').limit(1000),
+    // the items this login does not follow (its own rows only): optional
+    supabase.from('trk_follow_off').select('item_key').eq('tracker_id', id).eq('off', true).limit(2000)]);
   const [t, s, e, i, a, l, sl, pt] = await Promise.all([
     supabase.from('trk_trackers').select('id,event_id,title,mode,settings,status,unit_events(start_date,end_date,unit,title)').eq('id', id).single(),
     supabase.from('trk_steps').select('*').eq('tracker_id', id).order('step_id'),
@@ -63,7 +65,7 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     supabase.from('trk_points').select('*').eq('tracker_id', id).eq('removed', false).order('sort'),
   ]);
   // the U-12 process lineup (P&ID streams): optional, the tracker works without it
-  const [[lu, le], ps, ev, rj, rb] = await extraP;
+  const [[lu, le], ps, ev, rj, rb, fo] = await extraP;
   const err = [t, s, e, i, a, l, sl, pt].find((r) => r.error)?.error; if (err) throw err;
   // what this screen has seen: a later save checks the fields it changes still hold these values
   seen('trk_steps', s.data); seen('trk_equipment', e.data); seen('trk_iat', i.data); seen('trk_activities', a.data); seen('trk_points', pt.data);
@@ -72,8 +74,10 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
   const acts = a.data as ActRow[]; const base = Math.max(0, ...acts.map((x) => x.baseline));
   // an item out of the shutdown scope: its P6 lines stay as they are in the database, but are not counted
   const outKeys = new Set((e.data as EqRow[]).filter((r) => (r.disabled_reason ?? '').startsWith('out of scope')).map((r) => r.barchart_key ?? r.tag));
+  // the items this login chose not to follow: off for this login only, as if switched off
+  const offKeys = new Set(fo.error ? [] : (fo.data as { item_key: string }[]).map((r) => r.item_key));
   const eqMap = (r: EqRow): TrkEquipment => ({ id: r.id, tag: r.tag, group: r.grp, description: r.description, fo: r.fo, hoStep: r.ho_step, procedure: r.procedure, barchartKey: r.barchart_key,
-    opsItem: r.ops_item, critical: r.critical, tracked: r.tracked, disabledReason: r.disabled_reason, plannedHo: r.planned_ho, plannedFinish: r.planned_finish, sort: r.sort, stage: r.stage,
+    opsItem: r.ops_item, critical: r.critical, tracked: r.tracked && !offKeys.has(r.barchart_key ?? r.tag), notFollowed: offKeys.has(r.barchart_key ?? r.tag), disabledReason: r.disabled_reason, plannedHo: r.planned_ho, plannedFinish: r.planned_finish, sort: r.sort, stage: r.stage,
     pendingReason: r.pending_reason, remark: r.remark, blindsIn: r.blinds_in_at, blindsOut: r.blinds_out_at, updatedBy: r.updated_by_name, updatedAt: r.updated_at, combine: r.combine ?? null, system: r.system ?? null,
     list: r.list === 'rotating' ? 'rotating' : null, inspRef: r.insp_ref ?? null, inspWork: r.insp_work ?? null, coveredBy: r.covered_by ?? null });
   return {
@@ -100,7 +104,7 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
       finding: r.finding ?? null, recommendation: r.recommendation ?? null, lineClass: r.line_class ?? null, material: r.material ?? null, checks: r.checks ?? {}, painting: r.painting ?? {}, actionBy: r.action_by ?? null, opsAction: !!r.ops_action, hoRequired: !!r.ho_required, opsLabel: (r.ops_label ?? null) as TrkIat['opsLabel'], opsNone: !!r.ops_none, spoolOnly: !!r.spool_only, updatedBy: r.updated_by_name ?? null, updatedAt: r.updated_at ?? null })),
     // a combined bar-chart line split into its jobs (the database keeps it, off) is not shown: its parts are
     activities: acts.filter((x) => x.baseline === base && !['split', 'removed', 'unit'].includes(x.disabled_reason ?? '')).map((r): TrkActivity => ({ id: r.id, activityId: r.activity_id, group: r.grp, key: r.equipment_key, activity: r.activity, durationH: r.duration_h,
-      start: r.planned_start, finish: r.planned_finish, stage: r.stage, tracked: r.tracked && !outKeys.has(r.equipment_key), disabledReason: r.disabled_reason, outOfScope: outKeys.has(r.equipment_key),
+      start: r.planned_start, finish: r.planned_finish, stage: r.stage, tracked: r.tracked && !outKeys.has(r.equipment_key) && !offKeys.has(r.equipment_key), disabledReason: r.disabled_reason, outOfScope: outKeys.has(r.equipment_key),
       actualStart: r.actual_start, actualFinish: r.actual_finish, actualNote: r.actual_note, seq: r.seq ?? null, detail: !!r.detail, p6Activity: r.p6_activity ?? null, updatedBy: r.updated_by_name, updatedAt: r.updated_at })),
     log: (l.data as LogRow[]).map((r): TrkLog => ({ kind: r.kind, ref: r.ref, field: r.field, oldValue: r.old_value, newValue: r.new_value, byName: r.by_name, at: r.at })),
     shiftLogs: (sl.data as { id: string; shift_date: string; shift: 'D' | 'N'; notes: string | null; temps: Record<string, string> | null; updated_by_name: string | null }[])
@@ -110,6 +114,12 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
       inAt: r.in_at, outAt: r.out_at, fillAt: r.fill_at, soakAt: r.soak_at, drainAt: r.drain_at, doneAt: r.done_at, soakH: r.soak_h, remark: r.remark, updatedBy: r.updated_by_name, updatedAt: r.updated_at, holdReason: r.hold_reason ?? null, holdAt: r.hold_at ?? null,
       requirement: r.requirement ?? 'required', requirementReason: r.requirement_reason ?? null, requirementBy: r.requirement_by_name ?? null, requirementAt: r.requirement_at ?? null })),
   };
+}
+
+/** Follow an item again, or stop following it: for this login only (trk_follow_off). */
+export async function setFollow(trackerId: string, key: string, follow: boolean): Promise<void> {
+  const { error } = await supabase.from('trk_follow_off').upsert({ tracker_id: trackerId, item_key: key, off: !follow, updated_at: new Date().toISOString() }, { onConflict: 'tracker_id,user_id,item_key' });
+  if (error) throw error;
 }
 
 // ── Saving without overwriting someone else's change ──────────────────────────────────────────────────────────

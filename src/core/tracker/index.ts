@@ -20,6 +20,8 @@ export interface TrkEquipment {
   blindsIn: string | null; blindsOut: string | null; updatedBy: string | null; updatedAt: string | null;
   /** items worked as one (E-12-216A/B): one row in the list, a step started / finished on all of them */
   combine?: string | null;
+  /** not followed by this login (trk_follow_off): off its no-update list, update requests, progress and forecast; others keep it */
+  notFollowed?: boolean;
   /** display group: items of one machine (a compressor with its turbine, lube oil, suction …) listed together under one
    *  expandable heading; each keeps its own steps, stage, P6 lines and progress — not used in any count */
   system?: string | null;

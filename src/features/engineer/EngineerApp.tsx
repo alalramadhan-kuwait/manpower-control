@@ -18,7 +18,7 @@ import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIc
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
 import { bufferCatchUp, isBufferStep, runTogether, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
-import { addReturnItem, setReturnItem, BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
+import { setFollow, addReturnItem, setReturnItem, BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
 import { ensureAppRules } from '@/data/rulesClient';
 import { BottomSheet, ErrorBox, Spinner, Toast, cx } from '@/ui/components';
@@ -328,6 +328,24 @@ function PlanVsActual({ a, planH }: { a: TrkActivity; planH: number | null }) {
 }
 /** Buffer steps of the item (owner, 27 Oct 2026): not always needed; skipping them is the way to catch up when late.
  *  Shows what skipping them all would do to the forecast finish; the Section Head skips one with one tap (Undo). */
+/** Follow an item or not, for this login only: an item not followed is off its no-update list, update requests,
+ *  progress and forecast; everyone else keeps it (owner, 29 Oct 2026). */
+function FollowRow({ d, e, keys, done }: { d: TrackerData; e: TrkEquipment; keys: string[]; done: Done }) {
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const off = !!e.notFollowed;
+  const set = async (follow: boolean) => { for (const k of keys) await setFollow(d.tracker.id, k, follow); };
+  const go = async () => {
+    setBusy(true); setErr(null);
+    try { await set(off); done(off ? `${short(e.tag)}: followed again.` : `${short(e.tag)}: not followed by you.`, () => set(!off)); } catch (x) { setErr(x); } finally { setBusy(false); }
+  };
+  return (<>
+    <div className={cx('flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs', off ? 'bg-slate-100 text-slate-700' : 'text-slate-600')}>
+      <span className="min-w-0 flex-1">{off ? <>🔕 <b>Not followed by you</b> · off your update list, progress and forecast</> : <>🔔 Followed by you</>}</span>
+      <button type="button" disabled={busy} onClick={() => void go()} className={cx('shrink-0 font-semibold', off ? 'text-brand-500' : 'text-slate-600')}>{off ? '↺ Follow again' : 'Stop following'}</button>
+    </div>
+    {err ? <ErrorBox error={err} /> : null}
+  </>);
+}
 function BufferBox({ d, k, now, head, done }: { d: TrackerData; k: string; now: number; head: boolean; done: Done }) {
   const b = useMemo(() => bufferCatchUp(d, now, k), [d, now, k]);
   const [open, setOpen] = useState(false);
@@ -406,7 +424,8 @@ function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string)
   const todo = main.filter((e) => stale.has(keyOf(e)));
   // late first: handover late, late, on hold, by how late
   const late = lateOrHold(main, [...views.values()]);
-  const outs = d.equipment.filter(isOutOfScope), off = d.equipment.filter((e) => !e.tracked && !isOutOfScope(e) && inEquipmentTab(e));
+  const outs = head ? d.equipment.filter(isOutOfScope) : [], off = d.equipment.filter((e) => !e.tracked && !isOutOfScope(e) && inEquipmentTab(e) && (head || e.notFollowed));
+  const mine = off.filter((e) => e.notFollowed).length;
   const shown = f === 'todo' ? todo : f === 'late' ? late : f === 'all' ? main : main.filter((e) => grpOf(e) === f);
   const groups = f === 'late' ? ['Late first'] : [...new Set(shown.map(grpOf))];
   const chips: [string, string][] = [['all', `All ${main.length}`], ['todo', `To update ${todo.length}`], ...(late.length ? [['late', `Late / hold ${late.length}`] as [string, string]] : []), ...all.map((g): [string, string] => [g, `${g} ${main.filter((e) => grpOf(e) === g).length}`])];
@@ -424,8 +443,8 @@ function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string)
           <span className="min-w-0 flex-1"><b className="block truncate text-[14px] text-slate-900">{sys}</b><span className="text-[12px] text-slate-600">{ms.length} items · {ho} handed over · tap to {isOpen ? 'close' : 'open'}</span></span></button>,
           ...(isOpen ? ms.map((m) => <div key={`in:${m.id}`} className="border-l-4 border-slate-200">{item(m)}</div>) : [])]; })}</List></div>; })}
     {!shown.length && <Card><p className="text-sm font-semibold text-green-800">{f === 'todo' ? '✓ Everything has a recent update.' : f === 'late' ? '✓ Nothing late.' : 'Nothing here.'}</p></Card>}
-    {head && outs.length + off.length > 0 && <button type="button" onClick={() => setShowOut((x) => !x)} className="mx-1 mb-2 block text-[12px] font-semibold text-slate-500">{showOut ? '▾' : '▸'} Out of scope {outs.length}{off.length ? ` · switched off ${off.length}` : ''}</button>}
-    {head && showOut && <List>{[...outs, ...off].map((e) => <button key={e.id} type="button" onClick={() => setOpen(e)} className={cx(ROW, 'opacity-70')}><b className={TAG}>{short(e.tag)}</b><span className="min-w-0 flex-1 truncate text-[12px] text-slate-600">{isOutOfScope(e) ? `⊘ ${scopeReasonText(e.disabledReason)}` : 'switched off (Admin)'}</span></button>)}</List>}
+    {outs.length + off.length > 0 && <button type="button" onClick={() => setShowOut((x) => !x)} className="mx-1 mb-2 block text-[12px] font-semibold text-slate-500">{showOut ? '▾' : '▸'} {head ? `Out of scope ${outs.length}` : ''}{off.length - mine ? ` · switched off ${off.length - mine}` : ''}{mine ? `${head ? ' · ' : ''}not followed by you ${mine}` : ''}</button>}
+    {showOut && <List>{[...outs, ...off].map((e) => <button key={e.id} type="button" onClick={() => setOpen(e)} className={cx(ROW, 'opacity-70')}><b className={TAG}>{short(e.tag)}</b><span className="min-w-0 flex-1 truncate text-[12px] text-slate-600">{isOutOfScope(e) ? `⊘ ${scopeReasonText(e.disabledReason)}` : e.notFollowed ? '🔕 not followed by you' : 'switched off (Admin)'}</span></button>)}</List>}
     {open && <ItemSheet d={d} e={open} done={done} onClose={() => setOpen(null)} />}
   </>);
 }
@@ -479,6 +498,7 @@ function ItemSheet({ d, e: e0, now = Date.now(), done, onClose }: { d: TrackerDa
         <p className="text-xs text-slate-600">Last: {itemLine(d, e)}{e.updatedAt ? ` · ${when(e.updatedAt)}` : ''}</p>
         <LatestUpdate d={d} tag={e.tag} canEdit onDone={(m: string) => done(m)} />
         <BufferBox d={d} k={keyOf(e)} now={now} head={role === 'head'} done={done} />
+        <FollowRow d={d} e={e} keys={keys} done={done} />
         {v && <ItemMore part="top" v={v} system={e.system ? views.filter((x) => x.eq.system === e.system && x.eq.tag !== e.tag) : []} groups={[...new Set(d.equipment.map((x) => x.group))]} systems={[...new Set(d.equipment.map((x) => x.system).filter((x): x is string => !!x))]}
           canManage={manage} canScope={role === 'head'} totalH={scopeImpact(d).totalH} onItem={setTag} mi={miAll.get(e.tag)} related={relatedWork(e.tag, keyOf(e), d.activities)} allIats={d.iats} lineup={d.lineup} lineupEq={d.lineupEq} tags={d.equipment.map((x) => x.tag)}
           trackerId={d.tracker.id} canEdit isHead={role === 'head'} activities={d.activities.filter((a) => a.key === keyOf(e))} now={now} iso={isolationOf(e.tag, d.points ?? [])} points={d.points ?? []} engine={d.engine} settings={d.settings} me={me}
