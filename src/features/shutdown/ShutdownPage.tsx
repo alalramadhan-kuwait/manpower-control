@@ -1,14 +1,16 @@
 // One shutdown, one page (owner, 28 Oct 2026). On top the three stages, Shutdown → M&I → Start-up, each plan vs
 // actual; tapping a stage shows its steps (the page opens on the stage running now). Below: Progress (the steps),
-// Team (the team plan), Record (date changes) and File (scope and the shutdown, handover and start-up procedures).
+// Team (the team plan), File (scope and the shutdown, handover and start-up procedures) and Dates (plan vs actual and
+// the date changes). Simplified 29 Oct 2026 (owner, approved mock-up): one end forecast (the tracker's) in the header,
+// stage cards that say what is open, open steps first with finished groups folded, M & I as the tracker's own summary.
 // The shutdown steps and M&I are the tracker's own (edited the same way as on Live); the start-up steps and the file
 // belong to the Calendar shutdown. Standard hours are compared with actual; nothing here changes a calculation.
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { DELAY_MIN_H, DELAY_REASONS, delayPeriod, reasonLabel, sopRefs, stageSummary, startupVsPlan, stdTimeline, swapTimes, type DelayReason, type StdStep } from '@/core/shutdown/stages';
 import { clock12, dateTime12, dayRange, kwWeekDay, round30 } from '@/core/clock';
-import { kwDay, kwTime12, phases, stepViews, type TrkStep } from '@/core/tracker';
+import { daysAsHours, kwDay, kwTime12, phases, stepViews, type TrkStep } from '@/core/tracker';
 import { saveEvent } from '@/data/calendar';
 import { fetchUnitStatusHistory, type UnitStatusChange } from '@/data/modes';
 import { DOC_STATUS, FILE_PARTS, addStartupStep, entryName, fetchFileDocs, fetchShutdownIndex, fetchStartupSteps, removeFileDoc, saveFileDoc, setStartupStep, fetchReadings, type PanelReading,
@@ -16,6 +18,7 @@ import { DOC_STATUS, FILE_PARTS, addStartupStep, entryName, fetchFileDocs, fetch
 import { fetchTrackerData, type TrackerData } from '@/data/tracker';
 import type { UserProfile } from '@/data/types';
 import { StepSheet } from '@/features/tracker/TrackerSheets';
+import { ShutdownOverview } from '@/features/tracker/TrackerToday';
 import { BottomSheet, Button, Card, ErrorBox, Field, Spinner, Toast, cx } from '@/ui/components';
 import { localToday, shortDate } from '@/ui/leave';
 import { NewPlanSheet } from './ShutdownListPage';
@@ -67,7 +70,7 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
   // with no tracker the page is about its start-up steps; else the stage running now
   const running: Stage = suSum.startedAt !== null || (miEnd !== null && now > miEnd) || (!trk && startup.length > 0) ? 'startup' : ph?.mi.actualStart != null ? 'mi' : 'shutdown';
   const stage = (['shutdown', 'mi', 'startup'] as const).find((s) => s === q.get('stage')) ?? running;
-  const part = (['progress', 'team', 'record', 'file'] as const).find((p) => p === q.get('part')) ?? 'progress';
+  const part = (['progress', 'team', 'file', 'dates'] as const).find((p) => p === (q.get('part') === 'record' ? 'dates' : q.get('part'))) ?? 'progress';
   // one update for several keys: two in a row would each start from the same old URL and the second would undo the first
   const set = (k: string, v: string, more: Record<string, string> = {}) => { const n = new URLSearchParams(q); n.set(k, v); for (const [a, b] of Object.entries(more)) n.set(a, b); setQ(n, { replace: true }); };
 
@@ -84,6 +87,9 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
   const missing = docs.filter((d) => d.status !== 'available').length;
   const ops = ph?.ops ?? null;
   const w = ph?.mi.weighted ?? null;
+  // the shutdown's open steps after the handover (the stage card says them, not "Done")
+  const opsOpen = opsSum.total - opsSum.done;
+  const late = !!w && w.impactD > 0;
 
   return (
     <div>
@@ -92,11 +98,13 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
       <p className="mb-2 text-sm text-slate-600">{shortDate(entry.start)} – {shortDate(entry.end)} {entry.end.slice(0, 4)} · {len} days · <b className={inStartup ? 'text-amber-700' : 'text-slate-800'}>{state}</b>
         {canDates && <button type="button" onClick={() => setDates(true)} className="ml-1.5 text-[12px] font-semibold text-brand-700">Dates</button>}
         {entry.tentative && <span className="ml-1.5 rounded-full bg-slate-200 px-1.5 text-[10px] font-semibold text-slate-600">tentative</span>}
-        {entry.eventId && docs.length > 0 && <span className={cx('ml-1.5 text-[12px] font-semibold', missing ? 'text-status-red' : 'text-status-green')}>· File: {missing ? `${missing} not ready` : 'ready'}</span>}</p>
+        {entry.eventId && docs.length > 0 && <span className={cx('ml-1.5 text-[12px] font-semibold', missing ? 'text-status-red' : 'text-status-green')}>· File: {missing ? `${missing} not ready` : 'ready'}</span>}
+        {/* one end forecast everywhere: the tracker's (as on its Dashboard) */}
+        {w && <span className="block text-[12.5px]">End ~<b className={late ? 'text-status-red' : 'text-slate-800'}>{at(w.estEnd)}</b> <span className={late ? 'text-status-red' : 'text-status-green'}>{late ? `+${daysAsHours(w.impactD)} vs P6 ${at(w.end)}` : `on P6 ${at(w.end)}`}</span></span>}</p>
 
       <div className="mb-3 grid grid-cols-3 gap-1.5">
         <StageCard on={stage === 'shutdown'} onClick={() => set('stage', 'shutdown', { part: 'progress' })} title="Shutdown" tone={ops?.finishedAt != null ? 'done' : ops && ops.state !== 'NOT_STARTED' ? 'run' : 'idle'}
-          lines={!trk ? ['No tracker'] : ops?.finishedAt != null ? ['Done', `${opsSum.done}/${opsSum.total} steps`] : ops ? [`${ops.actualPct}% · plan ${ops.planPct}%`, `${opsSum.done}/${opsSum.total} steps`] : [`${opsSum.done}/${opsSum.total} steps`]} pct={ops?.actualPct} />
+          warn={ops?.finishedAt != null && opsOpen > 0} lines={!trk ? ['No tracker'] : ops?.finishedAt != null ? (opsOpen > 0 ? [`Handed over ${shortDate(new Date(ops.finishedAt + 3 * H).toISOString().slice(0, 10))}`, `${opsOpen} step${opsOpen > 1 ? 's' : ''} open`] : ['Done', `${opsSum.done}/${opsSum.total} steps`]) : ops ? [`${ops.actualPct}% · plan ${ops.planPct}%`, `${opsSum.done}/${opsSum.total} steps`] : [`${opsSum.done}/${opsSum.total} steps`]} pct={ops?.actualPct} />
         <StageCard on={stage === 'mi'} onClick={() => set('stage', 'mi', { part: 'progress' })} title="M&I" tone={ph?.mi.actualStart != null ? (w && w.actualPct >= 100 ? 'done' : 'run') : 'idle'}
           lines={!trk ? ['No tracker'] : ph?.mi.actualStart != null ? [w ? `${w.actualPct}% · plan ${w.planPct}%` : 'Started', `from ${at(ph.mi.actualStart)}`] : [`plan ${Number.isNaN(ph?.mi.planned ?? NaN) ? '—' : at(ph!.mi.planned)}`]} pct={ph?.mi.actualStart != null ? w?.actualPct : undefined} />
         <StageCard on={stage === 'startup'} onClick={() => set('stage', 'startup', { part: 'progress' })} title="Start-up" tone={suSum.finishedAt != null ? 'done' : suSum.startedAt != null ? 'run' : 'idle'}
@@ -104,15 +112,15 @@ export default function ShutdownPage({ profile }: { profile: UserProfile }) {
       </div>
 
       <div className="mb-3 grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1 text-sm">
-        {([['progress', 'Progress'], ['team', 'Team'], ['record', 'Record'], ['file', 'File']] as const).map(([k, l]) => (
+        {([['progress', 'Progress'], ['team', 'Team'], ['file', 'File'], ['dates', 'Dates']] as const).map(([k, l]) => (
           <button key={k} type="button" aria-pressed={part === k} onClick={() => set('part', k)} className={cx('min-h-9 rounded-lg font-medium', part === k ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{l}</button>))}
       </div>
 
       {part === 'progress' && stage === 'shutdown' && <ShutdownSteps trk={trk} steps={opsSteps} stageStart={ops ? ops.start : null} profile={profile} now={now} onDone={done} />}
-      {part === 'progress' && stage === 'mi' && <MiStage trk={trk} entry={entry} now={now} />}
+      {part === 'progress' && stage === 'mi' && <MiStage trk={trk} entry={entry} now={now} head={profile.role_code === 'section_head'} onDone={done} />}
       {part === 'progress' && stage === 'startup' && <StartupSteps entry={entry} steps={startup} readings={readings} stageStart={miEnd ?? suSum.startedAt} canEdit={EDIT_ROLES.includes(profile.role_code)} isHead={profile.role_code === 'section_head'} now={now} onDone={done} />}
       {part === 'team' && <TeamPart entry={entry} isHead={profile.role_code === 'section_head'} />}
-      {part === 'record' && <RecordPart entry={entry} ops={ops} mi={ph?.mi ?? null} su={suSum} />}
+      {part === 'dates' && <RecordPart entry={entry} ops={ops} mi={ph?.mi ?? null} su={suSum} suPlan={miEnd} />}
       {part === 'file' && <FilePart_ entry={entry} docs={docs} trk={trk} canEdit={FILE_ROLES.includes(profile.role_code)} onDone={done} />}
       {inStartup && canDates && <button type="button" onClick={() => setDates(true)} className="mb-3 block w-full rounded-xl bg-amber-50 px-3 py-2 text-left text-[12px] text-amber-900 ring-1 ring-amber-200">The plan ended {shortDate(entry.end)} but start-up is not finished, so the unit shows as running. <b>Set the expected last day ›</b></button>}
       {dates && entry.eventId && <DatesSheet entry={entry} today={today} onClose={() => setDates(false)} onDone={(m) => { setDates(false); done(m); }} />}
@@ -152,11 +160,11 @@ function DatesSheet({ entry, today, onClose, onDone }: { entry: ShutdownEntry; t
   );
 }
 
-function StageCard({ on, onClick, title, lines, tone, pct }: { on: boolean; onClick: () => void; title: string; lines: string[]; tone: 'done' | 'run' | 'idle'; pct?: number }) {
+function StageCard({ on, onClick, title, lines, tone, pct, warn = false }: { on: boolean; onClick: () => void; title: string; lines: string[]; tone: 'done' | 'run' | 'idle'; pct?: number; warn?: boolean }) {
   return (
     <button type="button" aria-pressed={on} onClick={onClick} className={cx('min-h-[76px] rounded-xl px-2 py-1.5 text-left ring-1', tone === 'done' ? 'bg-green-50 ring-green-200' : tone === 'run' ? 'bg-amber-50 ring-amber-200' : 'bg-white ring-slate-200', on && 'ring-2 ring-brand-600')}>
       <span className="block text-[13px] font-bold text-slate-900">{title}</span>
-      {lines.filter(Boolean).map((l, i) => <span key={i} className="block text-[11px] leading-tight text-slate-600">{l}</span>)}
+      {lines.filter(Boolean).map((l, i, a) => <span key={i} className={cx('block text-[11px] leading-tight', warn && i === a.length - 1 ? 'font-semibold text-status-red' : 'text-slate-600')}>{l}</span>)}
       {pct !== undefined && <span className="mt-1 block h-1.5 rounded bg-slate-200"><span className={cx('block h-1.5 rounded', tone === 'done' ? 'bg-status-green' : 'bg-amber-500')} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} /></span>}
     </button>
   );
@@ -167,62 +175,69 @@ const DOT = { done: 'bg-status-green text-white', running: 'bg-amber-400 text-am
 /** The shutdown steps of the tracker, by stage (gate), each against its standard hours. Tap: the tracker's own sheet. */
 function ShutdownSteps({ trk, steps, stageStart, profile, now, onDone }: { trk: TrackerData | null; steps: TrkStep[]; stageStart: number | null; profile: UserProfile; now: number; onDone: (m: string) => void }) {
   // the open step by its step number (S315): the views are keyed by it
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null); const [shown, setShown] = useState<Set<number>>(new Set());
   const views = useMemo(() => (trk ? stepViews(trk, now) : null), [trk, now]);
   if (!trk) return <Card><p className="text-sm text-slate-600">No tracker for this shutdown. The shutdown steps come with its tracker (Live).</p></Card>;
   const tl = new Map(stdTimeline(steps.map(asStd), stageStart, now).map((v) => [v.id, v]));
   const gates = [...new Set(steps.map((s) => s.gate))];
   const v = open ? views?.get(open) ?? null : null;
+  const isDone = (s: TrkStep) => s.status === 'done' || s.status === 'na';
+  const todo = steps.filter((s) => !isDone(s)); const doneN = steps.length - todo.length;
+  const row = (s: TrkStep, since = false) => { const x = asStd(s); const t = tl.get(s.id); const from = x.startedAt ? Date.parse(x.startedAt) : t?.planStart ?? null; return (
+    <li key={s.id}><button type="button" onClick={() => setOpen(s.stepId)} className="flex w-full items-center gap-2 py-1.5 text-left">
+      <span className={cx('flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold', DOT[x.status])}>{x.status === 'done' ? '✓' : x.status === 'running' ? '▶' : x.status === 'not_required' ? '–' : s.stepId.replace(/^S/, '')}</span>
+      <span className="min-w-0 flex-1"><span className={cx('block text-[13px] font-medium', x.status === 'not_required' ? 'text-slate-400 line-through' : 'text-slate-900')}>{s.shortName}</span>
+        <StdLine std={s.estHours} t={t} status={x.status} startedAt={x.startedAt} doneAt={x.doneAt} proc={s.procedure} group={since ? s.gateName ?? `Stage ${s.gate}` : null} /></span>
+      {since && from != null && <span className={cx('shrink-0 text-right text-[11px] tabular-nums', t?.late && s.estHours != null ? 'font-semibold text-status-red' : 'text-slate-500')}>{at(from)}</span>}
+      <span className="text-slate-400">›</span></button></li>); };
   return (
     <div className="space-y-2">
-      {gates.map((g) => { const list = steps.filter((s) => s.gate === g); const d = list.filter((s) => s.status === 'done' || s.status === 'na').length; return (
-        <Card key={g} className="p-0">
-          <h3 className="flex justify-between px-3 pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-500"><span>{list[0].gateName ?? `Stage ${g}`}</span><span>{d}/{list.length}</span></h3>
-          <ul className="divide-y divide-slate-100 px-3 pb-1">{list.map((s) => { const x = asStd(s); const t = tl.get(s.id); return (
-            <li key={s.id}><button type="button" onClick={() => setOpen(s.stepId)} className="flex w-full items-center gap-2 py-2 text-left">
-              <span className={cx('flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold', DOT[x.status])}>{x.status === 'done' ? '✓' : x.status === 'running' ? '▶' : x.status === 'not_required' ? '–' : s.stepId.replace(/^S/, '')}</span>
-              <span className="min-w-0 flex-1"><span className={cx('block text-[13px] font-medium', x.status === 'not_required' ? 'text-slate-400 line-through' : 'text-slate-900')}>{s.shortName}</span>
-                <StdLine std={s.estHours} t={t} status={x.status} startedAt={x.startedAt} doneAt={x.doneAt} proc={s.procedure} /></span>
-              <span className="text-slate-400">›</span></button></li>); })}</ul>
-        </Card>); })}
+      {/* what is still to do, first: the oldest first */}
+      {todo.length > 0 && <Card className="p-0">
+        <h3 className="flex justify-between px-3 pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-500"><span>Open · {todo.length}</span><span>since</span></h3>
+        <ul className="divide-y divide-slate-100 px-3 pb-1">{todo.map((s) => row(s, true))}</ul></Card>}
+      {/* the finished work, one line a group; tap opens it */}
+      <Card className="p-0">
+        <h3 className="flex justify-between px-3 pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-500"><span>Done · {doneN}</span><span>tap to open</span></h3>
+        <ul className="divide-y divide-slate-100 px-3 pb-1">{gates.map((g) => { const list = steps.filter((s) => s.gate === g); const d = list.filter(isDone); if (!d.length) return null; const on = shown.has(g); return (
+          <li key={g}><button type="button" aria-expanded={on} onClick={() => setShown((x) => { const n = new Set(x); if (n.has(g)) n.delete(g); else n.add(g); return n; })} className="flex min-h-9 w-full items-center gap-2 text-left text-[12.5px]">
+            <span className="w-3 text-slate-500">{on ? '▾' : '▸'}</span><span className="min-w-0 flex-1 text-slate-800">{d.length === list.length ? '✓ ' : ''}{list[0].gateName ?? `Stage ${g}`}</span><span className="tabular-nums text-slate-500">{d.length}/{list.length}</span></button>
+            {on && <ul className="divide-y divide-slate-100 border-t border-slate-100 pl-5">{d.map((s) => row(s))}</ul>}</li>); })}</ul>
+      </Card>
       {v && <StepSheet v={v} isHead={profile.role_code === 'section_head'} canEdit={EDIT_ROLES.includes(profile.role_code)} points={trk.points ?? []} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); onDone(m); }} />}
     </div>
   );
 }
 
-function StdLine({ std, t, status, startedAt, doneAt, proc }: { std: number | null; t?: { planStart: number | null; actualH: number | null; overH: number | null; late: boolean }; status: StdStep['status']; startedAt: string | null; doneAt: string | null; proc?: string | null }) {
+function StdLine({ std, t, status, startedAt, doneAt, proc, group = null }: { std: number | null; t?: { planStart: number | null; actualH: number | null; overH: number | null; late: boolean }; status: StdStep['status']; startedAt: string | null; doneAt: string | null; proc?: string | null; group?: string | null }) {
+  // only the facts there are: no "no plan time", no "done —"; late only against a plan time
   const parts: React.ReactNode[] = [];
-  parts.push(std !== null ? `plan ${hrs(std)}` : 'no plan time');
-  if (status === 'done') parts.push(`done ${at(doneAt)}${t?.actualH != null ? ` · took ${hrs(t.actualH)}` : ''}`);
+  if (group) parts.push(group);
+  if (std !== null) parts.push(`plan ${hrs(std)}`);
+  if (status === 'done') parts.push(doneAt ? `done ${at(doneAt)}${t?.actualH != null ? ` · took ${hrs(t.actualH)}` : ''}` : 'done');
   else if (status === 'running') parts.push(`started ${at(startedAt)}${t?.actualH != null ? ` · ${hrs(t.actualH)} so far` : ''}`);
   else if (status === 'not_required') parts.push('not required');
-  else if (t?.planStart != null) parts.push(`from ${at(t.planStart)}`);
   return (
     <span className="block text-[11px] text-slate-500">{parts.join(' · ')}
-      {t?.overH != null && t.overH > 0 && status !== 'not_required' && <span className={t.overH >= DELAY_MIN_H ? 'font-semibold text-status-red' : ''}> · {hrs(t.overH)} over</span>}
-      {t?.late && status === 'not_started' && <span className="font-semibold text-status-red"> · start late</span>}
-      {proc && <span className="text-slate-400"> · {proc}</span>}</span>
+      {t?.overH != null && t.overH > 0 && std !== null && status !== 'not_required' && <span className={t.overH >= DELAY_MIN_H ? 'font-semibold text-status-red' : ''}> · {hrs(t.overH)} over</span>}
+      {t?.late && std !== null && status === 'not_started' && <span className="font-semibold text-status-red"> · start late</span>}
+      {proc && <span className="text-slate-400">{parts.length ? ' · ' : ''}{proc}</span>}</span>
   );
 }
 
-/** M&I is the P6 bar chart of the tracker: the figures here, the lines on Live. */
-function MiStage({ trk, entry, now }: { trk: TrackerData | null; entry: ShutdownEntry; now: number }) {
+/** M & I is the tracker's: its own Dashboard summary (end forecast, progress, what sets the end, what needs attention),
+ *  so the forecast here is the one on Live; a tap opens Live. */
+function MiStage({ trk, entry, now, head, onDone }: { trk: TrackerData | null; entry: ShutdownEntry; now: number; head: boolean; onDone: (m: string) => void }) {
+  const nav = useNavigate();
   if (!trk || !entry.tracker) return <Card><p className="text-sm text-slate-600">No tracker for this shutdown. M&I comes from its P6 bar chart in the tracker.</p></Card>;
-  const mi = phases(trk, now).mi; const w = mi.weighted;
-  const row = (l: string, a: string, b?: React.ReactNode) => <div className="flex justify-between gap-2 py-1.5 text-[13px]"><span className="text-slate-500">{l}</span><span className="text-right font-medium text-slate-800">{a}{b}</span></div>;
-  return (
-    <Card className="divide-y divide-slate-100">
-      {row('Plan start', Number.isNaN(mi.planned) ? '—' : at(mi.planned))}
-      {row('Actual start', mi.actualStart != null ? at(mi.actualStart) : 'not yet', mi.delayH != null && mi.delayH !== 0 ? <span className={cx('ml-1', mi.delayH > 0 ? 'text-status-red' : 'text-status-green')}>({mi.delayH > 0 ? '+' : ''}{hrs(mi.delayH)})</span> : null)}
-      {row('Plan finish', Number.isNaN(mi.plannedEnd) ? '—' : at(mi.plannedEnd))}
-      {mi.estEnd != null && row('Expected finish now', at(mi.estEnd))}
-      {w && row('Progress', `${w.actualPct}% · plan ${w.planPct}%`)}
-      <div className="flex gap-2 pt-2">
-        <Link to={`/progress/${entry.tracker.id}?tab=timing`} className="flex-1 rounded-xl bg-brand-50 px-3 py-2 text-center text-[13px] font-semibold text-brand-700">Bar chart ›</Link>
-        <Link to={`/progress/${entry.tracker.id}?tab=equipment`} className="flex-1 rounded-xl bg-brand-50 px-3 py-2 text-center text-[13px] font-semibold text-brand-700">Equipment ›</Link>
-      </div>
-    </Card>
-  );
+  const live = () => nav('/shutdowns');
+  return (<>
+    <ShutdownOverview data={trk} now={now} head={head} onItem={live} onGo={live} onDone={onDone} />
+    <div className="mb-2 flex gap-2">
+      <Link to={`/progress/${entry.tracker.id}?tab=timing`} className="flex-1 rounded-xl bg-brand-50 px-3 py-2 text-center text-[13px] font-semibold text-brand-700">Bar chart ›</Link>
+      <Link to="/shutdowns" className="flex-1 rounded-xl bg-brand-50 px-3 py-2 text-center text-[13px] font-semibold text-brand-700">Live: equipment, updates ›</Link>
+    </div>
+  </>);
 }
 
 /** The start-up steps of this shutdown, planned one after another by their standard hours from the M&I finish (no
@@ -230,6 +245,7 @@ function MiStage({ trk, entry, now }: { trk: TrackerData | null; entry: Shutdown
 function StartupSteps({ entry, steps, readings, stageStart, canEdit, isHead, now, onDone }: { entry: ShutdownEntry; steps: StartupStep[]; readings: PanelReading[]; stageStart: number | null; canEdit: boolean; isHead: boolean; now: number; onDone: (m: string) => void }) {
   const [open, setOpen] = useState<StartupStep | 'new' | 'hold' | null>(null); const [sharing, setSharing] = useState(false); const [holdFor, setHoldFor] = useState<string | null>(null);
   const [delay, setDelay] = useState<{ step: StartupStep; kind: 'wait' | 'over'; period: { from: number; to: number | null; h: number } } | null>(null);
+  const [allRows, setAllRows] = useState(false);
   if (!entry.eventId) return <Card><p className="text-sm text-slate-600">This shutdown is not on the Calendar, so it has no start-up steps.</p></Card>;
   const tl = new Map(stdTimeline(steps, stageStart, now).map((v) => [v.id, v]));
   // where a step should start: when the step before it was done (actual), else its plan from the stage start
@@ -257,7 +273,14 @@ function StartupSteps({ entry, steps, readings, stageStart, canEdit, isHead, now
           <button type="button" onClick={() => setOpen('new')} className="inline-flex min-h-8 items-center gap-0.5 text-[12px] font-semibold text-brand-700"><Plus className="h-3.5 w-3.5" />Step</button></span>}</h3>
       {vp.start !== null && <VsPlanBox vp={vp} onShare={() => setSharing(true)} />}
       {!steps.length ? <p className="px-3 pb-3 pt-1 text-sm text-slate-500">No start-up steps yet: add them here.</p>
-        : <ul className="mt-1 divide-y divide-slate-100 border-t border-slate-100">{steps.map((s) => (
+        : <ul className="mt-1 divide-y divide-slate-100 border-t border-slate-100">{(() => {
+          // the finished rows before the first open one fold into one line (owner, mock-up 29 Oct 2026)
+          const first = steps.findIndex((x) => x.status !== 'done' && x.status !== 'not_required'); const head = first < 0 ? steps.length : first;
+          const holds = steps.slice(0, head).filter((x) => x.kind === 'hold').length;
+          return head > 1 && !allRows ? <li><button type="button" onClick={() => setAllRows(true)} className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-[12.5px] text-slate-700">
+            <span className="w-3 text-slate-500">▸</span><span className="flex-1">Done · {head - holds} step{head - holds === 1 ? '' : 's'}{holds ? `, ${holds} hold${holds > 1 ? 's' : ''}` : ''}</span>
+            <span className="tabular-nums text-slate-500">{steps[0].startedAt ? kwD(Date.parse(steps[0].startedAt)) : ''}{steps[head - 1]?.doneAt ? ` – ${kwD(Date.parse(steps[head - 1].doneAt!))}` : ''}</span></button></li> : null; })()}
+          {steps.filter((_s, i) => { const first = steps.findIndex((x) => x.status !== 'done' && x.status !== 'not_required'); const head = first < 0 ? steps.length : first; return allRows || head <= 1 || i >= head; }).map((s) => (
           <li key={s.id}><TimeRow s={s} pv={stepProfile(s, readings, now)} n={steps.filter((x) => x.kind !== 'hold' && x.seq <= s.seq).length} t={tl.get(s.id)} over={s.kind === 'hold' ? undefined : vp.over.get(s.id)} wait={vp.wait.get(s.id)} hours={vp.hold.get(s.id)} now={now}
             onOpen={() => setOpen(s)} onDelay={canEdit ? (kind) => { const p = prevOf(s); const per = delayPeriod(s, p?.doneAt ? Date.parse(p.doneAt) : null, kind, now); if (per) setDelay({ step: s, kind, period: per }); } : undefined} /></li>))}</ul>}
       {delay && <DelaySheet eventId={entry.eventId} steps={steps} step={delay.step} kind={delay.kind} period={delay.period} onClose={() => setDelay(null)} onDone={(m) => { setDelay(null); onDone(m); }} />}
@@ -546,21 +569,20 @@ function ReasonPick({ title, value, note, onValue, onNote }: { title: string; va
 /** The start-up against its plan: the plan end (first start + all plan hours, fixed), the end expected now, the
  *  time behind split into longer steps and waiting, progress against the plan; Share sends it as a picture. */
 function VsPlanBox({ vp, onShare }: { vp: ReturnType<typeof startupVsPlan>; onShare: () => void }) {
+  // two figures: how far from plan (what made it), and the end (against plan)
   const behind = vp.lateH ?? 0; const red = behind >= DELAY_MIN_H;
+  const why = [vp.overH > 0 && `${hrs(vp.overH)} longer`, vp.addedH > 0 && `${hrs(vp.addedH)} added`, vp.waitH > 0 && `${hrs(vp.waitH)} waiting`, vp.holdH > 0 && `${hrs(vp.holdH)} holds not counted`].filter(Boolean).join(' · ');
   return (
-    <div className="mx-3 mt-1.5 rounded-xl bg-slate-50 px-2.5 py-2 ring-1 ring-slate-200">
-      <div className="flex items-center gap-2">
-        <div className="min-w-0 flex-1 text-[12px] leading-snug tabular-nums text-slate-700">
-          <span className="block">Plan end <b>{at(vp.planEnd)}</b></span>
-          <span className="block">{vp.finished ? 'Finished' : 'Expected'} <b>{at(vp.expectedEnd)}</b></span>
-          <span className={cx('block font-bold', red ? 'text-status-red' : 'text-status-green')}>{red ? `${hrs(behind)} behind plan` : behind <= -DELAY_MIN_H ? `${hrs(-behind)} ahead of plan` : 'On plan'}
-            {(vp.overH > 0 || vp.waitH > 0 || vp.addedH > 0) && <span className="font-normal text-slate-500"> · {[vp.overH > 0 && `${hrs(vp.overH)} longer steps`, vp.addedH > 0 && `${hrs(vp.addedH)} added steps`, vp.waitH > 0 && `${hrs(vp.waitH)} waiting`].filter(Boolean).join(' · ')}</span>}</span>
-          {vp.holdH > 0 && <span className="block text-sky-800">+ {hrs(vp.holdH)} on hold (not counted as late)</span>}
-        </div>
-        <button type="button" onClick={onShare} className="min-h-9 shrink-0 rounded-lg bg-[#25d366] px-3 text-[12px] font-bold text-white">Share</button>
+    <div className="mx-3 mt-1.5 space-y-1.5">
+      <div className="grid grid-cols-2 gap-1.5">
+        <div className="rounded-xl bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200"><b className={cx('block text-[18px] leading-tight tabular-nums', red ? 'text-status-red' : 'text-status-green')}>{red ? `+${hrs(behind)}` : behind <= -DELAY_MIN_H ? `−${hrs(-behind)}` : 'On plan'}</b>
+          <span className="block text-[11px] leading-snug text-slate-500">{why || (red ? 'behind plan' : 'vs plan')}</span></div>
+        <div className="rounded-xl bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200"><b className="block text-[18px] leading-tight tabular-nums text-slate-900">{vp.expectedEnd != null ? kwD(vp.expectedEnd) : '—'}</b>
+          <span className="block text-[11px] leading-snug text-slate-500">{vp.finished ? 'finished' : 'expected'} {vp.expectedEnd != null ? kwHM(vp.expectedEnd) : ''} · plan {at(vp.planEnd)}</span></div>
       </div>
-      <div className="mt-1.5 flex items-center gap-2"><div className="relative h-1.5 flex-1 rounded bg-slate-200"><div className="h-1.5 rounded bg-amber-500" style={{ width: `${vp.actualPct}%` }} /><span className="absolute -top-1 h-3.5 w-0.5 bg-slate-800" style={{ left: `${vp.planPct}%` }} /></div>
-        <span className="shrink-0 text-[11px] tabular-nums text-slate-500">{vp.actualPct}% · plan {vp.planPct}%</span></div>
+      <div className="flex items-center gap-2"><div className="relative h-1.5 flex-1 rounded bg-slate-200"><div className="h-1.5 rounded bg-amber-500" style={{ width: `${vp.actualPct}%` }} /><span className="absolute -top-1 h-3.5 w-0.5 bg-slate-800" style={{ left: `${vp.planPct}%` }} /></div>
+        <span className="shrink-0 text-[11px] tabular-nums text-slate-500">{vp.actualPct}% · plan {vp.planPct}%</span>
+        <button type="button" onClick={onShare} className="min-h-8 shrink-0 rounded-lg bg-[#25d366] px-3 text-[12px] font-bold text-white">Share</button></div>
     </div>
   );
 }
@@ -668,7 +690,7 @@ function TeamPart({ entry, isHead }: { entry: ShutdownEntry; isHead: boolean }) 
 }
 
 /** The shutdown's dates as they changed (who, when) and each stage plan vs actual. */
-function RecordPart({ entry, ops, mi, su }: { entry: ShutdownEntry; ops: ReturnType<typeof phases>['ops']; mi: ReturnType<typeof phases>['mi'] | null; su: ReturnType<typeof stageSummary> }) {
+function RecordPart({ entry, ops, mi, su, suPlan }: { entry: ShutdownEntry; ops: ReturnType<typeof phases>['ops']; mi: ReturnType<typeof phases>['mi'] | null; su: ReturnType<typeof stageSummary>; suPlan: number | null }) {
   const [rows, setRows] = useState<UnitStatusChange[] | null>(null); const [err, setErr] = useState<unknown>(null);
   useEffect(() => { if (!entry.eventId) { setRows([]); return; } fetchUnitStatusHistory(500).then((r) => setRows(r.filter((c) => c.entityId === entry.eventId || (entry.plan && c.planId === entry.plan.id)))).catch(setErr); }, [entry]);
   const when = (iso: string) => dateTime12(iso, true);
@@ -677,9 +699,9 @@ function RecordPart({ entry, ops, mi, su }: { entry: ShutdownEntry; ops: ReturnT
     <div className="space-y-2">
       <Card className="divide-y divide-slate-100 py-1">
         <h3 className="py-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Plan vs actual</h3>
-        <RecLine label="Shutdown" plan={ops ? `${at(ops.start)} → ${at(ops.end)}` : '—'} actual={ops?.finishedAt != null ? `finished ${at(ops.finishedAt)}${ops.finishDelayH ? ` (${ops.finishDelayH > 0 ? '+' : ''}${hrs(ops.finishDelayH)})` : ''}` : ops && ops.state !== 'NOT_STARTED' ? 'running' : 'not started'} late={(ops?.finishDelayH ?? 0) > 0} />
+        <RecLine label="Shutdown (P6)" plan={ops ? `${at(ops.start)} → ${at(ops.end)}` : '—'} actual={ops?.finishedAt != null ? `finished ${at(ops.finishedAt)}${ops.finishDelayH ? ` (${ops.finishDelayH > 0 ? '+' : ''}${hrs(ops.finishDelayH)})` : ''}` : ops && ops.state !== 'NOT_STARTED' ? 'running' : 'not started'} late={(ops?.finishDelayH ?? 0) > 0} />
         <RecLine label="M&I" plan={mi && !Number.isNaN(mi.planned) ? `${at(mi.planned)} → ${Number.isNaN(mi.plannedEnd) ? '—' : at(mi.plannedEnd)}` : '—'} actual={mi?.actualStart != null ? `started ${at(mi.actualStart)}${mi.delayH ? ` (${mi.delayH > 0 ? '+' : ''}${hrs(mi.delayH)})` : ''}` : 'not started'} late={(mi?.delayH ?? 0) > 0} />
-        <RecLine label="Start-up" plan={su.stdH ? `${su.stdH} h` : '—'} actual={su.finishedAt != null ? `finished ${at(su.finishedAt)}` : su.startedAt != null ? `started ${at(su.startedAt)}` : 'not started'} late={false} />
+        <RecLine label="Start-up" plan={[suPlan !== null ? `from ${at(suPlan)}` : null, su.stdH ? `${su.stdH} h` : null].filter(Boolean).join(' · ') || '—'} actual={su.finishedAt != null ? `finished ${at(su.finishedAt)}` : su.startedAt != null ? `started ${at(su.startedAt)}` : 'not started'} late={false} />
       </Card>
       <Card className="py-1">
         <h3 className="py-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Date changes</h3>
@@ -722,17 +744,18 @@ function FilePart_({ entry, docs, trk, canEdit, onDone }: { entry: ShutdownEntry
               <span className="min-w-0 flex-1"><span className="block text-[13px] font-medium text-slate-900">{d.ref ? `${d.ref} · ` : ''}{d.title}</span>
                 <span className="block text-[11px] text-slate-500">{[d.location, d.steps ? `steps ${d.steps}` : (d.ref && used.get(sopRefs(d.ref)[0] ?? '') ? `steps ${used.get(sopRefs(d.ref)[0])!.join(', ')}` : null), d.note].filter(Boolean).join(' · ') || '—'}</span></span>
               <span className={cx('shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-semibold', DOC_CLS[d.status])}>{DOC_STATUS[d.status]}</span></button></li>))}</ul>
-            : <p className="px-3 pb-2 pt-1 text-[12px] text-slate-500">Nothing listed yet.</p>}
+            : !(key === 'scope' && entry.tracker) && !(key === 'handover' && entry.tracker) ? <p className="px-3 pb-2 pt-1 text-[12px] text-slate-500">Nothing listed yet.</p> : <div className="h-2" />}
         </Card>); })}
       {canEdit && offer.length > 0 && (
         <Card className="py-1">
-          <h3 className="py-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Procedures the steps use, not in the file ({offer.length})</h3>
-          <ul className="divide-y divide-slate-100">{(allOffer ? offer : offer.slice(0, 5)).map(([ref, steps]) => (
+          <button type="button" aria-expanded={allOffer} onClick={() => setAllOffer(!allOffer)} className="flex min-h-9 w-full items-center gap-2 text-left text-[12.5px]"><span className="w-3 text-slate-500">{allOffer ? '▾' : '▸'}</span>
+            <span className="flex-1 text-slate-800"><b>{offer.length}</b> procedure{offer.length > 1 ? 's' : ''} the steps use, not in the file{noSop.length ? <span className="text-slate-500"> · {noSop.length} steps with none</span> : null}</span></button>
+          {allOffer && <ul className="divide-y divide-slate-100">{offer.map(([ref, steps]) => (
             <li key={ref} className="flex items-center gap-2 py-1.5 text-[12px]"><span className="min-w-0 flex-1"><b className="text-slate-800">{ref}</b><span className="block text-slate-500">steps {steps.join(', ')}</span></span>
-              <button type="button" onClick={() => setOpen({ part: 'shutdown', ref, steps: steps.join(', ') })} className="rounded-lg bg-brand-50 px-2 py-1 font-semibold text-brand-700">Add</button></li>))}</ul>
-          {offer.length > 5 && <button type="button" onClick={() => setAllOffer(!allOffer)} className="pb-1 text-[11px] font-medium text-brand-700">{allOffer ? 'Less' : `All ${offer.length}`}</button>}
+              <button type="button" onClick={() => setOpen({ part: 'shutdown', ref, steps: steps.join(', ') })} className="rounded-lg bg-brand-50 px-2 py-1 font-semibold text-brand-700">Add</button></li>))}</ul>}
+          {allOffer && noSop.length > 0 && <p className="border-t border-slate-100 py-1.5 text-[12px]"><b className="text-slate-800">Steps with no procedure number ({noSop.length})</b><span className="block text-slate-500">{noSop.join(', ')}</span></p>}
         </Card>)}
-      {noSop.length > 0 && <Card className="py-2 text-[12px]"><b className="text-slate-800">Steps with no procedure number ({noSop.length})</b><span className="block text-slate-500">{noSop.join(', ')}</span></Card>}
+      {!(canEdit && offer.length > 0) && noSop.length > 0 && <Card className="py-2 text-[12px]"><b className="text-slate-800">Steps with no procedure number ({noSop.length})</b><span className="block text-slate-500">{noSop.join(', ')}</span></Card>}
       {open && <DocSheet eventId={entry.eventId} doc={'id' in open ? open : null} init={'id' in open ? undefined : open} nextSeq={(docs[docs.length - 1]?.seq ?? 0) + 10} canEdit={canEdit} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); onDone(m); }} />}
     </div>
   );
