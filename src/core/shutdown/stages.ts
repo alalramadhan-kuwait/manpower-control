@@ -33,7 +33,8 @@ export function stdTimeline(steps: StdStep[], stageStart: number | null, now: nu
     const planStart = t;
     let planEnd: number | null;
     if (s.status === 'done') { planEnd = t !== null ? t + std : null; if (s.doneAt) t = Date.parse(s.doneAt); }
-    else if (s.status === 'running' && a !== null) { planEnd = a + std; t = Math.max(planEnd, now, s.expectedDoneAt ? Date.parse(s.expectedDoneAt) : 0); }
+    // a step's own expected finish (re-planned from a reading) is its end, earlier or later than the plan (owner, 29 Oct 2026)
+    else if (s.status === 'running' && a !== null) { planEnd = a + std; t = s.expectedDoneAt ? Math.max(now, Date.parse(s.expectedDoneAt)) : Math.max(planEnd, now); }
     else { planEnd = t !== null ? Math.max(t, now) + std : null; t = planEnd; }
     const late = (s.status === 'not_started' && planStart !== null && now > planStart + DELAY_MIN_H * H) || (s.status === 'running' && planEnd !== null && now > planEnd + DELAY_MIN_H * H);
     return { id: s.id, planStart, planEnd, actualH, overH, late };
@@ -138,7 +139,7 @@ export function startupVsPlan(steps: (StdStep & { seq?: number })[], now: number
     // a step added with no plan (work that was not in the plan) is not over anything: its time is added time
     const planned = s.stdHours != null;
     if (s.status === 'done' && a !== null && d !== null) { const o = (d - a) / H - std; if (planned && o >= DELAY_MIN_H) over.set(s.id, r1(o)); if (!planned) added.set(s.id, r1((d - a) / H)); doneStd += std; t = d; prevDone = d; }
-    else if (s.status === 'running' && a !== null) { const o = (now - a) / H - std; if (planned && o >= DELAY_MIN_H) over.set(s.id, r1(o)); if (!planned) added.set(s.id, r1((now - a) / H)); doneStd += Math.min(std, (now - a) / H); t = Math.max(a + std * H, now, s.expectedDoneAt ? Date.parse(s.expectedDoneAt) : 0); prevDone = null; }
+    else if (s.status === 'running' && a !== null) { const o = (now - a) / H - std; if (planned && o >= DELAY_MIN_H) over.set(s.id, r1(o)); if (!planned) added.set(s.id, r1((now - a) / H)); doneStd += Math.min(std, (now - a) / H); t = s.expectedDoneAt ? Math.max(now, Date.parse(s.expectedDoneAt)) : Math.max(a + std * H, now); prevDone = null; }
     else { if (t !== null) t = Math.max(t, now) + std * H; prevDone = null; }
   }
   const finished = counted.length > 0 && counted.every((s) => s.status === 'done');

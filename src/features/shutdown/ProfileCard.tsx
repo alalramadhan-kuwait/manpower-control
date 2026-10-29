@@ -143,6 +143,7 @@ function ReadingForm({ step, readings, now, onCancel, onDone }: { step: StartupS
       await addReading({ stepId: step.id, at: new Date(atMs).toISOString(), temp: value, black: hasBlack ? bk : null, rx: per ? rxNums : null, holding, reason: behind || holding ? reason : null, note });
       // the step's expected finish follows the re-planned profile (a heat-up); the shutdown end follows it
       if (uni && preview) await setStartupStep(step.id, { expected_done_at: new Date(Math.max(preview.endAt, start + (step.stdHours ?? 0) * H)).toISOString() });
+      else if (hasBlack && preview) await setStartupStep(step.id, { expected_done_at: new Date(preview.endAt).toISOString() });
       onDone(behind ? `Reading saved: ${hrs(preview!.shiftH)} late, end re-planned ${at(preview!.endAt)}.` : hasBlack && preview ? `Reading saved: the table re-timed, ${preview.shiftH <= -0.1 ? `${hrs(-preview.shiftH)} ahead` : preview.shiftH >= 0.1 ? `${hrs(preview.shiftH)} behind` : 'on the SOP'}.` : 'Reading saved.');
     } catch (e) { setErr(e); setBusy(false); }
   }
@@ -168,6 +169,40 @@ function ReadingForm({ step, readings, now, onCancel, onDone }: { step: StartupS
       {err != null && <ErrorBox error={err} />}
       <div className="flex gap-2"><Button variant="secondary" className="flex-1" onClick={onCancel}>Cancel</Button>
         <Button className="flex-1" disabled={busy || (value === null && !hasBlack) || future || ((behind || holding) && !reason)} onClick={save}>Save reading</Button></div>
+    </div>
+  );
+}
+
+/** The running cut-in's one line (owner, 29 Oct 2026): the black oil feed now, one entry and Save; the time is now and
+ *  the SOP table re-times from it. The latest entry and where it put the step are shown under it. */
+export function QuickBlack({ step, readings, now, onDone }: { step: StartupStep; readings: PanelReading[]; now: number; onDone: (m: string) => void }) {
+  const [v, setV] = useState(''); const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const p = step.profile!; const start = Date.parse(step.startedAt!);
+  const mine = readings.filter((r) => r.stepId === step.id); const last = [...mine].reverse().find((r) => r.black != null) ?? null;
+  const n = Number(v); const ok = v.trim() !== '' && Number.isFinite(n) && n >= 0 && n <= 200;
+  const view = (rs: { at: number; temp: number | null; black: number | null; holding: boolean }[]) => profileView(p, start, rs, now);
+  const cur = last ? view(mine.map((r) => ({ at: Date.parse(r.at), temp: r.temp, black: r.black, holding: r.holding }))) : null;
+  const where = (x: ProfileView) => `SOP hour ${Math.round((p[0].sop_h + x.fromH) * 10) / 10}${x.shiftH <= -0.1 ? ` · ${hrs(-x.shiftH)} ahead` : x.shiftH >= 0.1 ? ` · ${hrs(x.shiftH)} behind` : ' · on the table'}`;
+  async function save() {
+    setBusy(true); setErr(null);
+    try {
+      const t = Date.now(); const x = view([...mine.map((r) => ({ at: Date.parse(r.at), temp: r.temp, black: r.black, holding: r.holding })), { at: t, temp: null, black: n, holding: false }]);
+      await addReading({ stepId: step.id, at: new Date(t).toISOString(), temp: null, black: n, rx: null, holding: false, reason: null, note: null });
+      // the feed is a fact: the step's expected finish follows the re-timed table, earlier or later
+      await setStartupStep(step.id, { expected_done_at: new Date(x.endAt).toISOString() });
+      setV(''); onDone(`Black oil ${n} KBPD saved: ${where(x)}.`);
+    } catch (e) { setErr(e); } finally { setBusy(false); }
+  }
+  return (
+    <div className="mx-3 mb-2 rounded-lg bg-amber-50 px-2.5 py-1.5 ring-1 ring-amber-200">
+      <div className="flex items-center gap-2">
+        <span className="shrink-0 text-[12.5px] font-semibold text-amber-950">Black oil now</span>
+        <input className="input min-h-9 w-20 min-w-0 py-1 text-center" inputMode="decimal" placeholder={last?.black != null ? String(last.black) : 'KBPD'} value={v} onChange={(e) => setV(e.target.value)} aria-label="Black oil feed now, KBPD" />
+        <span className="text-[12px] text-amber-900">KBPD</span>
+        <Button className="ml-auto min-h-9 px-3" disabled={busy || !ok} onClick={save}>Save</Button>
+      </div>
+      {last && cur && <p className="mt-0.5 text-[11px] text-amber-900">Last {last.black} KBPD at {kwTime12(Date.parse(last.at))} · {where(cur)}</p>}
+      {err != null && <ErrorBox error={err} />}
     </div>
   );
 }

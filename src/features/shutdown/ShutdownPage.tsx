@@ -23,7 +23,7 @@ import { BottomSheet, Button, Card, ErrorBox, Field, Spinner, Toast, cx } from '
 import { localToday, shortDate } from '@/ui/leave';
 import { NewPlanSheet } from './ShutdownListPage';
 import { drawCard, sharePicture, type CardData, type CardRow } from './shareCard';
-import { ProfileCard, stepProfile } from './ProfileCard';
+import { ProfileCard, QuickBlack, stepProfile } from './ProfileCard';
 import { WaveCard } from './WaveCard';
 import { allBlackRow, blackAt, blackOf, uniform, type ProfileView } from '@/core/shutdown/profile';
 
@@ -282,7 +282,8 @@ function StartupSteps({ entry, steps, readings, stageStart, canEdit, isHead, now
             <span className="tabular-nums text-slate-500">{steps[0].startedAt ? kwD(Date.parse(steps[0].startedAt)) : ''}{steps[head - 1]?.doneAt ? ` – ${kwD(Date.parse(steps[head - 1].doneAt!))}` : ''}</span></button></li> : null; })()}
           {steps.filter((_s, i) => { const first = steps.findIndex((x) => x.status !== 'done' && x.status !== 'not_required'); const head = first < 0 ? steps.length : first; return allRows || head <= 1 || i >= head; }).map((s) => (
           <li key={s.id}><TimeRow s={s} pv={stepProfile(s, readings, now)} n={steps.filter((x) => x.kind !== 'hold' && x.seq <= s.seq).length} t={tl.get(s.id)} over={s.kind === 'hold' ? undefined : vp.over.get(s.id)} wait={vp.wait.get(s.id)} hours={vp.hold.get(s.id)} now={now}
-            onOpen={() => setOpen(s)} onDelay={canEdit ? (kind) => { const p = prevOf(s); const per = delayPeriod(s, p?.doneAt ? Date.parse(p.doneAt) : null, kind, now); if (per) setDelay({ step: s, kind, period: per }); } : undefined} /></li>))}</ul>}
+            onOpen={() => setOpen(s)} onDelay={canEdit ? (kind) => { const p = prevOf(s); const per = delayPeriod(s, p?.doneAt ? Date.parse(p.doneAt) : null, kind, now); if (per) setDelay({ step: s, kind, period: per }); } : undefined} />
+            {canEdit && s.status === 'running' && s.startedAt && s.profile?.some((r) => blackOf(r) > 0) && <QuickBlack step={s} readings={readings} now={now} onDone={onDone} />}</li>))}</ul>}
       {delay && <DelaySheet eventId={entry.eventId} steps={steps} step={delay.step} kind={delay.kind} period={delay.period} onClose={() => setDelay(null)} onDone={(m) => { setDelay(null); onDone(m); }} />}
       {sharing && <ShareSheet entry={entry} steps={plain} vp={vpPlain} tl={tlPlain} now={now} onClose={() => setSharing(false)} />}
       {(open === 'hold' || (open && open !== 'new' && open.kind === 'hold')) && <HoldSheet eventId={entry.eventId} hold={open === 'hold' ? null : open as StartupStep} steps={steps} initialBefore={holdFor} canEdit={canEdit} onMove={move} onClose={() => { setOpen(null); setHoldFor(null); }} onDone={(m) => { setOpen(null); setHoldFor(null); onDone(m); }} />}
