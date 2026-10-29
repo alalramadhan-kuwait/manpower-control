@@ -3,8 +3,8 @@
 // limit (E-129 takes part of the heat) and when it gets there. An estimate: it never changes a step.
 import { useCallback, useEffect, useState } from 'react';
 import { clock12, kwWeekDay, round30 } from '@/core/clock';
-import { E129_POINTS, WAVE_POINTS, WAVE_REACTORS, cutinEstimate, type CutinSpec, type PointKey, type ReactorKey } from '@/core/shutdown/wave';
-import { addWave, fetchWave, removeWave, type StartupStep, type WaveRow } from '@/data/sdPage';
+import { E129_POINTS, EXO_USED, WAVE_POINTS, WAVE_REACTORS, cutinEstimate, type CutinSpec, type PointKey, type ReactorKey } from '@/core/shutdown/wave';
+import { addWave, fetchWave, removeWave, setStartupStep, type StartupStep, type WaveRow } from '@/data/sdPage';
 import { Button, ErrorBox, Field, cx } from '@/ui/components';
 
 const H = 3_600_000;
@@ -15,7 +15,8 @@ const hrs = (h: number) => `${Math.round(Math.abs(h) * 2) / 2} h`;
 const SHORT: Record<PointKey, string> = { r105_in: '105 in', r105_out: '105 out', r101_in: '101 in', r102_in: '102 in', r103_in: '103 in', r104_in: '104 in', r104_out: '104 out', e129_feed: 'E-129 feed', e129_out: 'E-129 out' };
 
 export function WaveCard({ step, canEdit, now }: { step: StartupStep; canEdit: boolean; now: number }) {
-  const spec = step.cutin as CutinSpec;
+  const [saved, setSaved] = useState<CutinSpec | null>(null);
+  const spec = saved ?? (step.cutin as CutinSpec);
   const [rows, setRows] = useState<WaveRow[] | null>(null); const [err, setErr] = useState<unknown>(null);
   const [adding, setAdding] = useState(false); const [list, setList] = useState(false);
   const load = useCallback(() => fetchWave([step.id]).then(setRows).catch(setErr), [step.id]);
@@ -49,9 +50,13 @@ export function WaveCard({ step, canEdit, now }: { step: StartupStep; canEdit: b
               <td className={cx('text-right', r.wont ? 'text-status-red' : 'text-slate-500')}>{r.max !== null ? `~${Math.round(r.max)}` : '—'}</td>
               <td className={cx('text-right', r.done ? 'text-status-green' : r.wont ? 'text-status-red' : r.eta === null ? 'text-amber-700' : '')}>{r.done ? '✓ there' : r.wont ? 'not at this feed' : r.eta !== null ? when(r.eta) : r.now === null ? 'not read' : 'not rising'}</td></tr>))}</tbody>
         </table>
+        {(e.exo.now > 5 || e.exo.expected) && <p className="mx-2.5 rounded-lg bg-orange-50 px-2 py-1 text-[11px] text-orange-900 ring-1 ring-orange-200">
+          {e.exo.now > 5 ? <>🔥 <b>R-105 giving heat: +{Math.round(e.exo.now)} °F</b> on its outlet{e.exo.expected ? `, up to ~${Math.round(e.exo.max)} expected (used catalyst)` : ' (held in the estimate)'}</>
+            : <>Used catalyst: R-105 is expected to give heat from an outlet of ~{EXO_USED.onsetOut} °F, up to ~{EXO_USED.max} °F (Jan-26 start-up)</>}</p>}
         <p className="mx-2.5 rounded-lg bg-slate-50 px-2 py-1 text-[11px] text-slate-600">
-          <b>How:</b> a wave model fitted to the {e.model.readings} readings: each step a delay (R-105 {e.model.r105.tau.toFixed(1)} h, then {(['r102', 'r103', 'r104'] as const).map((k) => e.model.steps[k].tau.toFixed(1)).join(' · ')} h){e.e129 ? (e.e129.eff != null ? `, and E-129 taking ${Math.round(e.e129.eff * 100)}% of (R-105 outlet − feed in)${e.e129.gain ? `, FC-148 hot gas adding ${Math.round(e.e129.gain)} °F` : ''}` : `, and E-129 taking ${Math.round(e.e129.dropNow)} °F now at today's feed (add E-129 feed in / out to the readings: as the feed warms E-129 takes less)`) : ''}. Max: steady with R-105 inlet at {spec.inletMax}. <b>exo</b>: a bed hotter than its inlet (the reaction is not in the model and makes it faster). A reading every 1–2 h keeps it close.</p>
+          <b>How:</b> a wave model fitted to the {e.model.readings} readings: each step a delay (R-105 {e.model.r105.tau.toFixed(1)} h, then {(['r102', 'r103', 'r104'] as const).map((k) => e.model.steps[k].tau.toFixed(1)).join(' · ')} h){e.e129 ? (e.e129.eff != null ? `, and E-129 taking ${Math.round(e.e129.eff * 100)}% of (R-105 outlet − feed in)${e.e129.gain ? `, FC-148 hot gas ${e.e129.gain > 0 ? "+" : ""}${Math.round(e.e129.gain)} °F at R-101 inlet` : ''}` : `, and E-129 taking ${Math.round(e.e129.dropNow)} °F now at today's feed (add E-129 feed in / out to the readings: as the feed warms E-129 takes less)`) : ''}. Max: steady with R-105 inlet at {spec.inletMax}{e.r101Hold != null ? `, R-101 inlet held at ${e.r101Hold} by TC-172` : ''}. Catalyst {spec.catalyst ?? 'not set'}: fresh gave no heat (Oct-26), used gave up to ~{EXO_USED.max} °F (Jan-26). <b>exo</b>: a bed hotter than its inlet. Back-tested on both start-ups: within ~2–3 h. A reading every 1–2 h keeps it close.</p>
       </>}
+      {canEdit && <CutinSettings step={step} spec={spec} onSaved={setSaved} />}
       {canEdit && (adding ? <WaveForm step={step} last={rows?.[rows.length - 1] ?? null} now={now} onCancel={() => setAdding(false)} onDone={() => { setAdding(false); void load(); }} />
         : <div className="mx-2.5"><Button variant="secondary" className="min-h-9 w-full" onClick={() => setAdding(true)}>+ Panel temperatures</Button></div>)}
       {rows && rows.length > 0 && <>
@@ -101,6 +106,30 @@ function WaveForm({ step, last, now, onCancel, onDone }: { step: StartupStep; la
       {err != null && <ErrorBox error={err} />}
       <div className="flex gap-2"><Button variant="secondary" className="flex-1" onClick={onCancel}>Cancel</Button>
         <Button className="flex-1" disabled={busy || !ok} onClick={save}>Save temperatures</Button></div>
+    </div>
+  );
+}
+
+/** The estimate's settings on the step: the R-105 catalyst, the R-105 inlet limit and the R-101 inlet held by TC-172. */
+function CutinSettings({ step, spec, onSaved }: { step: StartupStep; spec: CutinSpec; onSaved: (s: CutinSpec) => void }) {
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const [lim, setLim] = useState(String(spec.inletMax)); const [hold, setHold] = useState(spec.r101Hold != null ? String(spec.r101Hold) : '');
+  const save = async (patch: Partial<CutinSpec>) => {
+    const next = { ...spec, ...patch }; setBusy(true); setErr(null);
+    try { await setStartupStep(step.id, { cutin: next as unknown as Record<string, unknown> }); onSaved(next); } catch (x) { setErr(x); } finally { setBusy(false); }
+  };
+  const num = (v: string) => (v.trim() === '' ? null : Number(v));
+  return (
+    <div className="mx-2.5 space-y-1.5 text-[12px]">
+      <div className="flex flex-wrap items-center gap-1.5"><span className="text-slate-600">R-105 catalyst</span>
+        {(['fresh', 'used'] as const).map((c) => <button key={c} type="button" disabled={busy} onClick={() => void save({ catalyst: spec.catalyst === c ? null : c })}
+          className={cx('min-h-7 rounded-full px-2.5 font-bold', spec.catalyst === c ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{c === 'fresh' ? 'Fresh' : 'Used'}</button>)}</div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-slate-600">R-105 inlet limit</span><input className="input !w-20 !py-1" inputMode="numeric" value={lim} onChange={(x) => setLim(x.target.value)} />
+        <span className="text-slate-600">R-101 held at</span><input className="input !w-20 !py-1" inputMode="numeric" placeholder="—" value={hold} onChange={(x) => setHold(x.target.value)} />
+        {(num(lim) !== spec.inletMax || num(hold) !== (spec.r101Hold ?? null)) && <button type="button" disabled={busy || !(Number(lim) > 300)} onClick={() => void save({ inletMax: Number(lim), r101Hold: num(hold) })} className="font-semibold text-brand-700">Save</button>}
+      </div>
+      {err != null && <ErrorBox error={err} />}
     </div>
   );
 }

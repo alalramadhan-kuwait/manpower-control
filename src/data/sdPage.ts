@@ -75,7 +75,7 @@ export async function addStartupStep(eventId: string, v: { seq: number; title: s
     ...(hold || v.startedAt ? { started_at: v.startedAt ?? null, done_at: v.doneAt ?? null, status: v.doneAt ? 'done' : v.startedAt ? 'running' : 'not_started', remark: v.remark?.trim() || null } : {}) });
   if (error) throw error;
 }
-export async function setStartupStep(id: string, patch: Partial<{ title: string; std_hours: number | null; procedure_ref: string | null; status: StartupStatus; started_at: string | null; done_at: string | null; reason: string | null; remark: string | null; seq: number; active: boolean; delay_reason: DelayReason | null; delay_note: string | null; wait_reason: DelayReason | null; wait_note: string | null; expected_done_at: string | null }>) {
+export async function setStartupStep(id: string, patch: Partial<{ title: string; std_hours: number | null; procedure_ref: string | null; status: StartupStatus; started_at: string | null; done_at: string | null; reason: string | null; remark: string | null; seq: number; active: boolean; delay_reason: DelayReason | null; delay_note: string | null; wait_reason: DelayReason | null; wait_note: string | null; expected_done_at: string | null; cutin: Record<string, unknown> }>) {
   const { error } = await supabase.from('sd_startup_step').update(patch).eq('id', id);
   if (error) throw error;
 }
