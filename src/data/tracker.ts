@@ -187,7 +187,7 @@ export async function addPointStep(r: { tracker_id: string; point_id: string; se
   const { error } = await supabase.from('trk_point_step').insert({ ...r, source: 'Added on site' }); if (error) throw error;
 }
 export const setPointStepTime = (id: string, patch: Partial<{ start_at: string | null; done_at: string | null }>) => upd('trk_point_step', id, patch);
-export const setPoint = (id: string, patch: Partial<{ requirement: 'required' | 'not_required' | 'pending'; requirement_reason: string | null; hold_reason: string | null; status: PointStatus; in_at: string | null; out_at: string | null; fill_at: string | null; soak_at: string | null; drain_at: string | null; done_at: string | null; remark: string | null }>) => upd('trk_points', id, patch);
+export const setPoint = (id: string, patch: Partial<{ requirement: 'required' | 'not_required' | 'pending' | 'n2'; requirement_reason: string | null; hold_reason: string | null; status: PointStatus; in_at: string | null; out_at: string | null; fill_at: string | null; soak_at: string | null; drain_at: string | null; done_at: string | null; remark: string | null }>) => upd('trk_points', id, patch);
 export async function addIat(trackerId: string, v: { tag: string; iatNo: string; jobText: string; discipline: string }) {
   const { error } = await supabase.from('trk_iat').insert({ tracker_id: trackerId, tag: v.tag, iat_no: v.iatNo, job_text: v.jobText || null, discipline: v.discipline || null });
   if (error) throw error;

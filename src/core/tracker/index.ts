@@ -83,7 +83,7 @@ export interface TrkPoint {
   /** a blind: segregation or HP critical (installed by M & I) */
   grp: 'segregation' | 'hp_critical' | null; ref: string; name: string; detail: string | null; fo: string | null; stepId: string | null; items: string[];
   /** neutralization requirement: required (default), not_required (N/R, with a reason; never "done"), pending decision */
-  requirement?: 'required' | 'not_required' | 'pending'; requirementReason?: string | null; requirementBy?: string | null; requirementAt?: string | null;
+  requirement?: 'required' | 'not_required' | 'pending' | 'n2'; requirementReason?: string | null; requirementBy?: string | null; requirementAt?: string | null;
   /** the blinds (refs) that must be in before this neutralization can start */
   requires?: string[];
   /** how a neutralization is done: soak (fill, soak, drain) or spray (start, done: heater tube OD after the burners stop) */
@@ -253,8 +253,19 @@ export function sortActs<T>(xs: T[], get: (x: T) => Orderable = (x) => x as unkn
 /** Blind in (or already out) · neutralization drained. */
 /** The reactor body spray (after the catalyst dumping): part of the reactor's own work, shown with the reactor only. */
 export const withReactor = (p: Pick<TrkPoint, 'afterActs'>) => (p.afterActs ?? []).length > 0;
-/** A loop marked not required (N/R): not outstanding, never counted as neutralized, shown apart. */
-export const isNR = (p: Pick<TrkPoint, 'kind' | 'requirement'>) => p.kind === 'neut' && p.requirement === 'not_required';
+/** A loop marked not required (N/R), or kept under N2 and handed over (owner, 30 Oct 2026): no soda ash, not
+ *  outstanding, never counted as neutralized, shown apart. */
+export const isNR = (p: Pick<TrkPoint, 'kind' | 'requirement'>) => p.kind === 'neut' && (p.requirement === 'not_required' || p.requirement === 'n2');
+export const nrLabel = (p: Pick<TrkPoint, 'requirement'>) => (p.requirement === 'n2' ? 'N2' : 'N/R');
+/** Why a loop is neutralized (owner, 30 Oct 2026: a loop is needed when an item in it has work, an RTJ is to be
+ *  checked, or an IAT is open on it): its items, its RTJs, whether an item is on the Inspection worklist, its open IATs. */
+export function loopBasis(p: Pick<TrkPoint, 'id' | 'items'>, d: { equipment: TrkEquipment[]; loopItems?: TrkEquipment[]; rtj?: TrkRtj[]; iats?: TrkIat[] }): { items: string[]; rtj: number; insp: boolean; iats: number; none: boolean } {
+  const rtj = (d.rtj ?? []).filter((r) => r.pointId === p.id), lines = [...new Set(rtj.map((r) => r.line))];
+  const eqs = [...d.equipment, ...(d.loopItems ?? [])].filter((e) => p.items.includes(e.tag));
+  const iats = (d.iats ?? []).filter((i) => i.status === 'open' && (p.items.includes(i.tag) || (!!i.line && lines.some((l) => i.line!.includes(l))))).length;
+  const insp = eqs.some((e) => !!e.inspRef);
+  return { items: p.items, rtj: rtj.length, insp, iats, none: !p.items.length && !rtj.length && !iats };
+}
 export const pointComplete = (p: Pick<TrkPoint, 'kind' | 'status'>) => (p.kind === 'blind' ? p.status === 'in' || p.status === 'out' : p.status === 'done');
 export const NEUT_FLOW = ['open', 'filling', 'soaking', 'draining', 'done'] as const;
 export const NEUT_LABEL: Record<string, string> = { open: 'Not started', filling: 'Filling', soaking: 'Soaking', draining: 'Draining', done: 'Neutralized' };
@@ -305,7 +316,7 @@ export function isoState(tag: string, stage: number, points: TrkPoint[] = []): I
   if (running.length) return { state: 'neut', why: `Neutralizing ${running.map((p) => `${p.ref} · ${neutLabel(p)}`).join(', ')}`, missing, loops };
   if (missing.length) return { state: 'blind', why: `🔒 ${missing.join(', ')} not in`, missing, loops };
   // N/R is not taken as safe: the handover is still confirmed the normal way, the N/R loops are named
-  const nrText = nr.length ? ` · N/R ${nr.map((p) => p.ref).join(', ')} (confirm)` : '';
+  const nrText = nr.length ? ` · ${nr.map((p) => `${nrLabel(p)} ${p.ref}`).join(', ')} (confirm)` : '';
   if (!open.length) return { state: 'ready', why: `${loops.length > nr.length ? `Neutralized ${loops.filter((p) => !isNR(p)).map((p) => p.ref).join(', ')} → hand over` : 'Blinds in → hand over'}${nrText}`, missing, loops };
   return { state: 'idle', why: `Waiting ${open.map((p) => p.ref).join(', ')} (not started)`, missing, loops };
 }

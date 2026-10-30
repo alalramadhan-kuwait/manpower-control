@@ -16,7 +16,7 @@ import { BlindList } from '@/features/tracker/BlindList';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
-import { bufferCatchUp, isBufferStep, runTogether, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor, stepGroups, bedMatrix, bedRowDone, bedRowOff, bedItemDone, bedLate, bedWindow, type BedSet, type BedRow, type BedDept,
+import { bufferCatchUp, isBufferStep, runTogether, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, nrLabel, loopBasis, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor, stepGroups, bedMatrix, bedRowDone, bedRowOff, bedItemDone, bedLate, bedWindow, type BedSet, type BedRow, type BedDept,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { setFollow, addReturnItem, setReturnItem, BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -943,7 +943,6 @@ function Handover({ d, now, done, focus = null, onClearFocus, initial }: P & { f
   const blinds = pts.filter((p) => p.kind === 'blind');
   const eqLines = d.activities.filter(equipBlind).filter((a) => !focus || a.key === focus).sort((a, b) => a.key.localeCompare(b.key, 'en', { numeric: true }));
   const openL = loops.filter((p) => !pointComplete(p) && !isNR(p)), nrL = loops.filter(isNR), openB = blinds.filter((p) => !pointComplete(p)), openE = eqLines.filter((a) => !a.actualFinish);
-  const [showNR, setShowNR] = useState(false);
   const waiting = d.equipment.filter((e) => e.tracked && e.stage === 0 && (!focus || e.tag === focus) && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e))
     .map((e) => ({ e, iso: isoState(e.tag, 0, all) })).filter((x): x is { e: TrkEquipment; iso: NonNullable<ReturnType<typeof isoState>> } => !!x.iso && x.iso.state !== 'ho');
   const blocked = waiting.filter((x) => x.iso.state !== 'ready'), ready = waiting.filter((x) => x.iso.state === 'ready');
@@ -957,7 +956,7 @@ function Handover({ d, now, done, focus = null, onClearFocus, initial }: P & { f
   const bAll = all.filter((p) => p.kind === 'blind'), eAll = d.activities.filter(equipBlind);
   return (<>
     <p className="mx-1 mb-2 text-[12px] text-slate-600">Blinds in <b>{bAll.filter(pointComplete).length + eAll.filter((a) => a.actualFinish).length}/{bAll.length + eAll.length}</b> · neutralized <b>{gate.filter(pointComplete).length}/{gate.length}</b>{soaking ? <> · soaking <b>{soaking}</b></> : null}</p>
-    <div className="-mx-3 mb-2 flex gap-1.5 overflow-x-auto px-3 [scrollbar-width:none]">{([['block', `Blocking ${blocked.length}`], ['neut', `Neutralization ${openL.length}`], ['blind', `Blinds ${openB.length + openE.length}`], ['list', 'Blind list'], ['back', `Return ${back.length + putBackRows(d).filter((x) => x.status !== 'installed').length}`]] as const).map(([k, l]) =>
+    <div className="-mx-3 mb-2 flex gap-1.5 overflow-x-auto px-3 [scrollbar-width:none]">{([['block', `Blocking ${blocked.length}`], ['neut', `Loops ${loops.length}`], ['blind', `Blinds ${openB.length + openE.length}`], ['list', 'Blind list'], ['back', `Return ${back.length + putBackRows(d).filter((x) => x.status !== 'installed').length}`]] as const).map(([k, l]) =>
       <button key={k} type="button" onClick={() => setV(k)} className={cx('min-h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-[12px] font-bold', v === k ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>)}</div>
     {(v === 'neut' || v === 'blind' || focus) && <div className="mb-2 flex flex-wrap gap-1.5">
       {v !== 'block' && FOS.map((x) => <button key={x} type="button" onClick={() => setFo(x)} className={cx('min-h-8 rounded-full px-3 text-[12px] font-semibold', fo === x ? 'bg-brand-500 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{x}</button>)}
@@ -979,12 +978,14 @@ function Handover({ d, now, done, focus = null, onClearFocus, initial }: P & { f
       {!blocked.length && !ready.length && <Card><p className="text-sm font-semibold text-green-800">✓ Everything is handed over.</p></Card>}
     </>}
     {v === 'neut' && <>
-      {[...openL].sort((a, b) => rank(a) - rank(b) || a.sort - b.sort).map((p) => <Loop key={p.id} d={d} p={p} now={now} done={done} toItem={toItem} />)}
-      {!openL.length && <Card><p className="text-sm font-semibold text-green-800">✓ All required loops neutralized.</p></Card>}
-      {nrL.length > 0 && <button type="button" onClick={() => setShowNR((x) => !x)} className="mx-1 mt-1 block text-[12px] font-semibold text-slate-500">{showNR ? '▾' : '▸'} Not required (N/R) · {nrL.length}</button>}
-      {showNR && <div className="mt-2 space-y-2">{nrL.map((p) => <Loop key={p.id} d={d} p={p} now={now} done={done} toItem={toItem} />)}</div>}
-      <button type="button" onClick={() => setShowDone((x) => !x)} className="mx-1 mt-1 text-[12px] font-semibold text-slate-500">{showDone ? '▾' : '▸'} Neutralized ({loops.filter(pointComplete).length})</button>
-      {showDone && <div className="mt-2"><List>{loops.filter(pointComplete).map((p) => <DoneLoop key={p.id} d={d} p={p} now={now} done={done} toItem={toItem} />)}</List></div>}
+      {/* every loop on one list (owner, 30 Oct 2026): its equipment, why it is needed (RTJ, inspection, IAT), and one tap:
+          Req (neutralize) · N2 (kept under N2 and handed over) · N/R; the loop's card opens on a tap of its name */}
+      <List>{[...openL.sort((a, b) => rank(a) - rank(b) || a.sort - b.sort), ...nrL].map((p) => <LoopRow key={p.id} d={d} p={p} now={now} done={done} toItem={toItem} />)}</List>
+      {!openL.length && !nrL.length && <Card><p className="text-sm font-semibold text-green-800">✓ All required loops neutralized.</p></Card>}
+      <p className="mx-1 mb-1 text-[11px] text-slate-500">Req = neutralize · N2 = keep under N2 and hand over · N/R = not required. Only before the loop starts.</p>
+      {(() => { const fin = loops.filter(pointComplete), noWhy = fin.filter((p) => loopBasis(p, d).none && !p.remark?.trim()).length;
+        return <><button type="button" onClick={() => setShowDone((x) => !x)} className="mx-1 mt-1 text-[12px] font-semibold text-slate-500">{showDone ? '▾' : '▸'} Neutralized {fin.length}{noWhy ? <span className="text-amber-700"> · {noWhy} with no reason</span> : null}</button>
+          {showDone && <div className="mt-2"><List>{fin.map((p) => <LoopRow key={p.id} d={d} p={p} now={now} done={done} toItem={toItem} />)}</List></div>}</>; })()}
     </>}
     {v === 'blind' && <>
       {(['segregation', 'hp_critical'] as const).map((g) => { const xs = blinds.filter((b) => (g === 'hp_critical') === (b.grp === 'hp_critical')); if (!xs.length) return null;
@@ -1102,16 +1103,41 @@ function PointNote({ p, done }: { p: TrkPoint; done: Done }) {
   return <div className="flex gap-1.5"><input className="input min-h-8 flex-1 text-[12px]" placeholder="Note" value={note} onChange={(x) => setNote(x.target.value)} />
     <button type="button" disabled={busy || (note.trim() || null) === was} onClick={async () => { setBusy(true); try { await setPoint(p.id, { remark: note.trim() || null }); done(`${p.ref}: note saved.`, () => setPoint(p.id, { remark: was })); } finally { setBusy(false); } }} className="min-h-8 rounded-lg bg-white px-2.5 text-[12px] font-bold text-brand-700 ring-1 ring-slate-300 disabled:opacity-50">Save</button></div>;
 }
-/** A neutralized loop, one line; a tap opens it. */
-function DoneLoop({ d, p, now, done, toItem }: { d: TrackerData; p: TrkPoint; now: number; done: Done; toItem: (tag: string) => void }) {
-  const [open, setOpen] = useState(false);
-  return <><button type="button" onClick={() => setOpen(true)} className={ROW}><span className="min-w-0 flex-1"><b className="block truncate text-[13px]">{p.ref} · {p.name}</b><span className="block text-[11px] text-slate-500">Neutralized {when(p.doneAt)}</span></span><span className="shrink-0 rounded-md bg-green-100 px-1.5 text-[11px] font-bold text-green-800">✓</span></button>
-    {open && <LoopOpen d={d} p={p} now={now} done={done} toItem={toItem} onClose={() => setOpen(false)} />}</>;
-}
 /** The loop's full sheet (shared with the Section Head mode). */
 function LoopOpen({ d, p, now, done, toItem, onClose }: { d: TrackerData; p: TrkPoint; now: number; done: Done; toItem: (tag: string) => void; onClose: () => void }) {
   const role = useContext(RoleCtx), onStep = useContext(StepCtx);
   return <LoopDetail p={p} d={{ ...d, trackerId: d.tracker.id }} isHead={role === 'head'} canEdit canAttach={role !== 'controller'} now={now} onClose={onClose} onItem={(t) => { onClose(); toItem(t); }} onStep={onStep ?? undefined} onDone={done} />;
+}
+/** One loop on the Loops list: name, its equipment, why it is needed, and Req · N2 · N/R (one tap, Undo; only before
+ *  it starts). A tap on the name opens the loop's card (jobs, fill, hold, schematic); a neutralized one, its note. */
+function LoopRow({ d, p, now, done, toItem }: { d: TrackerData; p: TrkPoint; now: number; done: Done; toItem: (tag: string) => void }) {
+  const manage = useCanManage(); const [open, setOpen] = useState(false); const [sheet, setSheet] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const b = loopBasis(p, d), fin = pointComplete(p), req = p.requirement ?? 'required';
+  const why = [b.rtj ? `RTJ ${b.rtj}` : '', b.insp ? 'inspection' : '', b.iats ? `IAT ${b.iats}` : ''].filter(Boolean).join(' · ');
+  const set = async (to: 'required' | 'n2' | 'not_required') => { if (to === req || busy) return; setBusy(true); setErr(null);
+    const was = { requirement: req, requirement_reason: p.requirementReason ?? null };
+    try { await setPoint(p.id, { requirement: to, requirement_reason: to === 'not_required' ? 'Not required' : to === 'n2' ? 'Kept under N2 and handed over' : null });
+      done(`${p.ref}: ${to === 'n2' ? 'N2 + hand over' : to === 'not_required' ? 'not required' : 'neutralize'}.`, () => setPoint(p.id, was)); } catch (x) { setErr(x); } finally { setBusy(false); } };
+  return <div className="border-b border-slate-100 last:border-b-0">
+    <div className="flex items-center gap-2 px-2.5 py-2">
+      <button type="button" onClick={() => setOpen((x) => !x)} className="min-w-0 flex-1 text-left">
+        <b className="block text-[13px] leading-tight">{p.ref} · {p.name}</b>
+        <span className={cx('block text-[11.5px]', b.items.length ? 'text-slate-800' : 'text-slate-400')}>{b.items.length ? b.items.map(short).join(' · ') : 'no equipment linked'}</span>
+        <span className={cx('block text-[11px]', why ? 'text-slate-500' : 'font-semibold text-amber-700')}>{why || (p.remark?.trim() ? p.remark : 'no reason recorded')}{fin && !why && !p.remark?.trim() ? ' · add one' : ''}</span>
+      </button>
+      {fin ? <span className="shrink-0 rounded-md bg-green-100 px-1.5 text-[11px] font-bold text-green-800">✓</span>
+        : p.status === 'open' && manage ? <span className="flex shrink-0 overflow-hidden rounded-lg ring-1 ring-slate-300">{([['required', 'Req'], ['n2', 'N2'], ['not_required', 'N/R']] as const).map(([k, l]) =>
+            <button key={k} type="button" disabled={busy} aria-pressed={req === k} onClick={() => void set(k)} className={cx('min-h-8 px-2 text-[11.5px] font-bold', k !== 'required' && 'border-l border-slate-300', req === k ? 'bg-brand-700 text-white' : 'bg-white text-slate-600')}>{l}</button>)}</span>
+        : <span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-900">{isNR(p) ? nrLabel(p) : p.holdReason ? 'On hold' : neutLabel(p)}</span>}
+    </div>
+    {err != null && <div className="px-2.5 pb-2"><ErrorBox error={err} /></div>}
+    {open && !fin && !isNR(p) && <div className="px-1.5 pb-1.5"><Loop d={d} p={p} now={now} done={done} toItem={toItem} /></div>}
+    {open && (fin || isNR(p)) && <div className="space-y-1.5 px-2.5 pb-2">
+      {isNR(p) && <p className="text-[12px] text-slate-600">{nrLabel(p)} · {p.requirementReason}{p.requirementBy ? ` · ${p.requirementBy}` : ''}</p>}
+      <PointNote p={p} done={done} />
+      <button type="button" onClick={() => setSheet(true)} className="text-[12px] font-semibold text-brand-700">Open loop ›</button></div>}
+    {sheet && <LoopOpen d={d} p={p} now={now} done={done} toItem={toItem} onClose={() => setSheet(false)} />}
+  </div>;
 }
 function Loop({ d, p, now, done, toItem }: { d: TrackerData; p: TrkPoint; now: number; done: Done; toItem: (tag: string) => void }) {
   const manage = useCanManage(), head = useContext(RoleCtx) === 'head';
@@ -1143,23 +1169,23 @@ function Loop({ d, p, now, done, toItem }: { d: TrackerData; p: TrkPoint; now: n
   };
   return (
     <Card>
-      <div className="flex items-start justify-between gap-2"><button type="button" onClick={() => setSheet(true)} className="min-w-0 text-left text-[14px] font-bold leading-snug">{p.ref} · {p.name} <span className="font-normal text-brand-600">›</span></button><span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold', isNR(p) ? 'bg-slate-100 text-slate-700' : p.status === 'open' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{isNR(p) ? 'N/R' : p.holdReason ? 'On hold' : neutLabel(p)}</span></div>
+      <div className="flex items-start justify-between gap-2"><button type="button" onClick={() => setSheet(true)} className="min-w-0 text-left text-[14px] font-bold leading-snug">{p.ref} · {p.name} <span className="font-normal text-brand-600">›</span></button><span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold', isNR(p) ? 'bg-slate-100 text-slate-700' : p.status === 'open' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900')}>{isNR(p) ? nrLabel(p) : p.holdReason ? 'On hold' : neutLabel(p)}</span></div>
       {p.holdReason && <p className="text-xs font-semibold text-red-700">⏸ {p.holdReason}</p>}
-      {req === 'not_required' && <p className="text-xs font-semibold text-slate-700">N/R · {p.requirementReason}{p.requirementBy ? ` · ${p.requirementBy}` : ''}{p.requirementAt ? ` ${when(p.requirementAt)}` : ''}</p>}
+      {isNR(p) && <p className="text-xs font-semibold text-slate-700">{nrLabel(p)} · {p.requirementReason}{p.requirementBy ? ` · ${p.requirementBy}` : ''}{p.requirementAt ? ` ${when(p.requirementAt)}` : ''}</p>}
       {req === 'pending' && <p className="text-xs font-semibold text-amber-800">Neutralization decision pending</p>}
       {missing.length > 0 && <p className="mt-1 text-xs text-slate-600">Waiting blinds: {missing.join(', ')}</p>}
       {waiting.length > 0 && <p className="mt-1 text-xs text-slate-600">Waiting for: {waiting.join(', ')}</p>}
       <LoopScope p={p} items={[...d.equipment, ...(d.loopItems ?? [])]} rtj={d.rtj ?? []} canEdit={false} onDone={done} compact />
       {jobs.length > 0 && <p className="mt-1 text-xs text-slate-600">Jobs {jobs.filter((c) => c.doneAt).length}/{jobs.length}{job ? ` · next: ${job.crane ? '🏗 ' : ''}${job.text.split(/,|:/)[0]}` : ''}</p>}
       {p.status === 'soaking' && p.soakAt && <p className="mt-1 text-xs text-slate-600">Soaking since {when(p.soakAt)} ({Math.round((now - Date.parse(p.soakAt)) / H)} h)</p>}
-      {req !== 'not_required' && <div className="mt-2 flex gap-1.5">
+      {!isNR(p) && <div className="mt-2 flex gap-1.5">
         {job && <button type="button" disabled={busy} onClick={() => jobTap(job)} className={cx('min-h-9 flex-1 rounded-xl px-2 text-[13px] font-bold', job.startAt ? 'bg-amber-400 text-amber-950' : 'bg-white text-brand-700 ring-1 ring-slate-300')}>{job.startAt ? '✓ Job done' : '▶ Start job'}</button>}
         {nx && !missing.length && !before && !waiting.length && <button type="button" disabled={busy} onClick={() => run(() => setPoint(p.id, { status: nx[0], [nx[2]]: new Date().toISOString() }), `${p.ref}: ${nx[1].replace(/^[▶✓] /, '')}.`, () => setPoint(p.id, { status: p.status, [nx[2]]: null }))} className="min-h-9 flex-1 rounded-xl bg-brand-700 px-2 text-[13px] font-bold text-white">{nx[1]}</button>}
         {nx && head && p.status === 'open' && (missing.length > 0 || before > 0 || waiting.length > 0) && <button type="button" disabled={busy} onClick={() => setForce(true)} className="min-h-9 flex-1 rounded-xl bg-slate-200 px-2 text-[13px] font-bold text-slate-700">🔒 Start anyway</button>}
         <button type="button" disabled={busy} onClick={() => (p.holdReason ? run(() => setPoint(p.id, { hold_reason: null }), `${p.ref}: resumed.`, () => setPoint(p.id, { hold_reason: p.holdReason ?? null })) : setHoldOpen((x) => !x))} className="min-h-9 rounded-xl px-3 text-[12px] font-semibold text-slate-700 ring-1 ring-slate-300">{p.holdReason ? 'Resume' : 'Hold'}</button>
         {diagram}
       </div>}
-      {req === 'not_required' && <div className="mt-1 flex justify-end">{diagram}</div>}
+      {isNR(p) && <div className="mt-1 flex justify-end">{diagram}</div>}
       {force && nx && <div className="mt-2 rounded-lg bg-red-50 p-2 text-xs text-red-900">Start {p.ref} {missing.length ? `without ${missing.join(', ')}` : waiting.length ? `before ${waiting.join(', ')}` : `before ${before} job${before > 1 ? 's are' : ' is'} finished`}? It is logged as a Section Head override.
         <div className="mt-1.5 flex gap-1.5"><button type="button" disabled={busy} onClick={() => { setForce(false); void run(() => setPoint(p.id, { status: nx[0], [nx[2]]: new Date().toISOString() }), `${p.ref}: ${p.method === 'spray' ? 'spraying' : 'filling'} (override).`, () => setPoint(p.id, { status: p.status, [nx[2]]: null })); }} className="min-h-8 rounded-lg bg-brand-700 px-3 font-bold text-white">Start anyway</button>
           <button type="button" onClick={() => setForce(false)} className="min-h-8 rounded-lg bg-white px-3 font-bold text-slate-700 ring-1 ring-slate-300">Cancel</button></div></div>}
