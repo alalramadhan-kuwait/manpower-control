@@ -543,12 +543,12 @@ function BedsPage({ d, set, now, done, onItem, onClose }: { d: TrackerData; set:
       </header>
       <main className="mx-auto max-w-xl px-3 pt-3">
         <List>
-          {chips ? <div className="flex flex-wrap gap-1 bg-slate-50 px-2.5 py-1.5">{cols.map((i) => { const [n, t] = bedCount(rows0, i); return <button key={i} type="button" onClick={() => onItem(set.items[i])} className="rounded-md bg-white px-1.5 py-0.5 text-[11px] font-bold text-brand-700 ring-1 ring-slate-200">{short(set.items[i].tag)} <span className="font-medium tabular-nums text-slate-500">{n}/{t}</span></button>; })}</div>
+          {chips ? <div className="flex flex-wrap gap-1 bg-slate-50 px-2.5 py-1.5">{cols.map((i) => { const [n, t] = bedCount(rows0, i); return <button key={i} type="button" onClick={() => onItem(set.items[i])} className="rounded-md bg-white px-1.5 py-0.5 text-[11px] font-bold text-brand-700 ring-1 ring-slate-200">{short(set.items[i].combine ?? set.items[i].tag)} <span className="font-medium tabular-nums text-slate-500">{n}/{t}</span></button>; })}</div>
             : <div className="grid items-center gap-1 bg-slate-50 px-2 py-1.5" style={grid}><span className="text-[10.5px] font-extrabold uppercase tracking-wider text-slate-500">Step · plan</span>
-              {cols.map((i) => { const [n, t] = bedCount(rows0, i); return <button key={i} type="button" onClick={() => onItem(set.items[i])} className="text-center text-[12px] font-bold text-brand-700 underline decoration-slate-300 underline-offset-2">{short(set.items[i].tag)}<span className="block text-[10px] font-medium tabular-nums text-slate-500 no-underline">{n}/{t}</span></button>; })}</div>}
+              {cols.map((i) => { const [n, t] = bedCount(rows0, i); return <button key={i} type="button" onClick={() => onItem(set.items[i])} className="text-center text-[12px] font-bold text-brand-700 underline decoration-slate-300 underline-offset-2">{short(set.items[i].combine ?? set.items[i].tag)}<span className="block text-[10px] font-medium tabular-nums text-slate-500 no-underline">{n}/{t}</span></button>; })}</div>}
           {handed.length > 0 && handed.length < set.items.length && <div className="flex flex-wrap items-center gap-1 border-t border-green-100 bg-green-50 px-2.5 py-1.5 text-[11.5px] font-semibold text-green-900">✓ Handed back:
             {handed.map((i) => { const f = Math.max(...rows0.map((r) => r.cells[i].a?.actualFinish).filter((x): x is string => !!x).map((x) => Date.parse(x)));
-              return <button key={i} type="button" onClick={() => onItem(set.items[i])} className="rounded bg-green-100 px-1.5 text-[10.5px]">{short(set.items[i].tag)} {dayOf(f)}</button>; })}</div>}
+              return <button key={i} type="button" onClick={() => onItem(set.items[i])} className="rounded bg-green-100 px-1.5 text-[10.5px]">{short(set.items[i].combine ?? set.items[i].tag)} {dayOf(f)}</button>; })}</div>}
           {finished.length > 0 && <button type="button" aria-expanded={showDone} onClick={() => setShowDone((x) => !x)} className="flex w-full justify-between border-t border-green-100 bg-green-50 px-2.5 py-2 text-[12px] font-semibold text-green-900"><span>✓ {finished.length} step{finished.length === 1 ? '' : 's'} done on all</span><span>{showDone ? 'hide ▴' : 'show ▾'}</span></button>}
           {showDone && finished.map(row)}
           {open.map(row)}
@@ -602,7 +602,7 @@ function BedSheet({ d, set, r, col, cols, all, head, done, onClose }: { d: Track
           {same.length > 1 && <div><p className="mb-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">{mode === 'run' ? 'Finish on' : 'Start or done on'}</p>
             <div className="grid grid-cols-4 gap-1.5">{same.map((i) => { const x = on.has(i);
               return <button key={i} type="button" aria-pressed={x} onClick={() => setOn((s) => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; })}
-                className={cx('min-h-9 truncate rounded-lg px-1 text-[12px] font-bold ring-1', x ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>{short(set.items[i].tag)}</button>; })}</div></div>}
+                className={cx('min-h-9 truncate rounded-lg px-1 text-[12px] font-bold ring-1', x ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>{short(set.items[i].combine ?? set.items[i].tag)}</button>; })}</div></div>}
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-bold uppercase text-slate-500">Time</span>
             <input type="datetime-local" className="input min-h-9 flex-1 py-1 text-[13px]" value={at} max={kwInput(Date.now())} onChange={(x) => setAt(x.target.value)} />

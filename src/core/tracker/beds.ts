@@ -13,7 +13,8 @@ export interface BedRow { id: string; name: string; cells: BedCell[] }
 const BED = /^R-(\d+)-(\d)0([1-4])$/;
 const keyOf = (e: TrkEquipment) => e.barchartKey ?? e.tag;
 /** A step name for matching: case, punctuation and a test pressure ("at 225 PSIG", "(2860 psig)") left out. */
-export const bedName = (s: string) => s.toLowerCase().replace(/\(?\s*(at\s*)?\d+\s*psig\s*\)?/g, ' ').replace(/[^a-z0-9/&]+/g, ' ').replace(/\s+/g, ' ').trim();
+const PSIG = /\s*·?\s*\(?\s*(at\s*)?(\d[\d,]*\s*\/\s*)*\d[\d,]*\s*psig\s*\)?/gi;
+export const bedName = (s: string) => s.toLowerCase().replace(PSIG, ' ').replace(/[^a-z0-9/&]+/g, ' ').replace(/\s+/g, ' ').trim();
 const isNotRequired = (a: TrkActivity) => !a.tracked && !a.outOfScope && /^not required/.test(a.disabledReason ?? '');
 export const bedDept = (e: TrkEquipment): BedDept => (e.inspRef ? 'inspection' : 'cleaning');
 
@@ -55,7 +56,7 @@ export function bedMatrix(activities: TrkActivity[], keys: string[]): BedRow[] {
       const n = bedName(a.activity), c = (seen.get(n) ?? 0) + 1; seen.set(n, c);
       const id = c > 1 ? `${n}#${c}` : n;
       let j = rows.findIndex((r) => r.id === id);
-      if (j < 0) { j = last + 1; rows.splice(j, 0, { id, name: a.activity.replace(/\s*\(?\s*(at\s*)?\d+\s*psig\s*\)?/i, '').trim() }); }
+      if (j < 0) { j = last + 1; rows.splice(j, 0, { id, name: a.activity.replace(PSIG, '').trim() }); }
       if (j > last) last = j;
       at.set(id, (at.get(id) ?? new Map()).set(k, a));
     }
