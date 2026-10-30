@@ -396,7 +396,9 @@ function PhaseBar({ acts, now }: { acts: TrkActivity[]; now: number }) {
   const ph = new Map([...new Set(acts.map((a) => a.key))].flatMap((k) => [...stepPhases(acts.filter((a) => a.key === k))]));
   const late = (a: TrkActivity) => !a.actualFinish && ((!!a.finish && now > Date.parse(a.finish)) || (!a.actualStart && !!a.start && now > Date.parse(a.start)));
   return <span className="mt-1 grid grid-cols-6 gap-0.5" title="Isolate & open · Content out · Clean & inspect · Repair & test · Box-up & load · Deblind">{([0, 1, 2, 3, 4, 5] as Phase[]).map((p) => { const xs = acts.filter((a) => ph.get(a.id) === p);
-    return <span key={p} className={cx('h-1.5 rounded-sm', !xs.length ? 'bg-slate-100' : xs.every((a) => a.actualFinish) ? 'bg-status-green' : xs.some((a) => a.actualStart && !a.actualFinish) ? (xs.some(late) ? 'bg-status-red' : 'bg-amber-400') : 'bg-slate-300')} />; })}</span>;
+    // a phase the item has no step in: done once the work is past it (owner, 30 Oct 2026)
+    const past = acts.some((a) => (ph.get(a.id) ?? 0) > p && a.actualStart) || acts.every((a) => a.actualFinish);
+    return <span key={p} className={cx('h-1.5 rounded-sm', !xs.length ? (past ? 'bg-status-green' : 'bg-slate-100') : xs.every((a) => a.actualFinish) ? 'bg-status-green' : xs.some((a) => a.actualStart && !a.actualFinish) ? (xs.some(late) ? 'bg-status-red' : 'bg-amber-400') : 'bg-slate-300')} />; })}</span>;
 }
 function ItemRow({ d, e, now, ageH, mi, onOpen, done }: { d: TrackerData; e: TrkEquipment; now: number; ageH?: number; mi?: MiItem; onOpen: () => void; done: Done }) {
   const keys = e.combine ? d.equipment.filter((x) => x.combine === e.combine).map(keyOf) : [keyOf(e)];
@@ -633,7 +635,7 @@ function BedSheet({ d, set, r, col, cols, all, head, done, onClose }: { d: Track
 /** One item's steps by phase (owner, 30 Oct 2026: "the way that will have clicks and I can see all the steps"): the six
  *  phases of every item, the one it is in open, the others folded with their count and plan dates; one tap per step
  *  (Start / Finish; the sheet has the time, Done, Undo and not required). The list page stays for edit, add and order. */
-function StepBoard({ d, e, keys, done, onList, onClose }: { d: TrackerData; e: TrkEquipment; keys: string[]; done: Done; onList: () => void; onClose: () => void }) {
+function StepBoard({ d, e, keys, done, onList, onDetails, onClose }: { d: TrackerData; e: TrkEquipment; keys: string[]; done: Done; onList: () => void; onDetails: () => void; onClose: () => void }) {
   const isHead = useContext(RoleCtx) === 'head'; const now = Date.now();
   const k0 = keys[0], acts = lines(d, [k0]);
   const ph = stepPhases(acts);
@@ -647,7 +649,8 @@ function StepBoard({ d, e, keys, done, onList, onClose }: { d: TrackerData; e: T
   const behindH = Math.max(0, ...acts.filter((a) => !a.actualFinish).map((a) => lateOf(a)).filter((l) => l.late).map((l) => l.byH));
   const ends = acts.map((a) => (a.finish ? Date.parse(a.finish) : 0)).filter(Boolean);
   const win = (xs: TrkActivity[]) => bedWindow({ id: '', name: '', cells: xs.map((a) => rowOf(a).cells[0]) });
-  const tone = (xs: TrkActivity[]) => (!xs.length ? 'bg-slate-100' : xs.every((a) => a.actualFinish) ? 'bg-status-green' : xs.some((a) => !a.actualFinish && lateOf(a).late) && xs.some((a) => a.actualStart) ? 'bg-status-red' : xs.some((a) => a.actualStart) ? 'bg-amber-400' : 'bg-slate-200');
+  const tone = (xs: TrkActivity[], p: Phase = 0) => (!xs.length ? (passed(p) ? 'bg-status-green' : 'bg-slate-100') : xs.every((a) => a.actualFinish) ? 'bg-status-green' : xs.some((a) => !a.actualFinish && lateOf(a).late) && xs.some((a) => a.actualStart) ? 'bg-status-red' : xs.some((a) => a.actualStart) ? 'bg-amber-400' : 'bg-slate-200');
+  const passed = (p: Phase) => acts.some((a) => (ph.get(a.id) ?? 0) > p && a.actualStart) || acts.every((a) => a.actualFinish);
   const sel = pick ? acts.find((a) => a.id === pick) : undefined;
   const step = (a: TrkActivity) => { const l = lateOf(a), st = a.actualFinish ? 'done' : a.actualStart ? 'run' : 'open';
     const sub = st === 'done' ? `✓ ${when(a.actualFinish)}` : st === 'run' ? `since ${dayOf(Date.parse(a.actualStart!))}${a.finish ? ` · plan end ${dayOf(Date.parse(a.finish))}` : ''}${l.late ? ` · ${lateText(l.byH)}` : ''}`
@@ -663,12 +666,13 @@ function StepBoard({ d, e, keys, done, onList, onClose }: { d: TrackerData; e: T
       <header className="sticky top-0 z-10 flex items-center gap-2 bg-brand-700 px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white">
         <button type="button" onClick={onClose} className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-bold">‹ Back</button>
         <p className="min-w-0 flex-1 truncate text-[16px] font-bold">{short(e.combine ?? e.tag)}{e.description ? ` · ${e.description}` : ''}</p>
+        <button type="button" onClick={onDetails} className="shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-[13px] font-bold">Details ›</button>
       </header>
       <main className="mx-auto max-w-xl px-3 pt-3">
         <Card>
           <p className="text-[12px] text-slate-600"><b className="text-[15px] text-slate-900">{short(e.combine ?? e.tag)}</b> · {acts.filter((a) => a.actualFinish).length}/{acts.length} steps</p>
-          <p className="text-[12px] text-slate-600">Now: <b className="text-slate-900">{phaseName(current, acts)}</b>{behindH > 0 ? <b className="text-status-red"> · {lateText(behindH).replace('late', 'behind')}</b> : ''}{ends.length ? ` · plan end ${dayOf(Math.max(...ends))}` : ''}</p>
-          <div className="mt-1.5 grid grid-cols-6 gap-0.5">{byPhase.map((x) => <span key={x.p} className={cx('h-2 rounded-sm', tone(x.xs))} />)}</div>
+          <p className="text-[12px] text-slate-600">{acts.every((a) => a.actualFinish) ? <b className="text-status-green">✓ All steps done</b> : <>Now: <b className="text-slate-900">{phaseName(current, acts)}</b></>}{behindH > 0 ? <b className="text-status-red"> · {lateText(behindH).replace('late', 'behind')}</b> : ''}{ends.length ? ` · plan end ${dayOf(Math.max(...ends))}` : ''}</p>
+          <div className="mt-1.5 grid grid-cols-6 gap-0.5">{byPhase.map((x) => <span key={x.p} className={cx('h-2 rounded-sm', tone(x.xs, x.p))} />)}</div>
           <div className="mt-0.5 grid grid-cols-6 gap-0.5 text-center text-[8.5px] leading-tight text-slate-500">{byPhase.map((x) => <span key={x.p}>{phaseName(x.p, acts)}</span>)}</div>
         </Card>
         <List>{byPhase.filter((x) => x.xs.length).map((x) => { const n = x.xs.filter((a) => a.actualFinish).length, run = x.xs.filter((a) => a.actualStart && !a.actualFinish).length, all = n === x.xs.length, isOpen = open.has(x.p), w = win(x.xs);
@@ -713,7 +717,8 @@ function ItemSheet({ d, e: e0, now = Date.now(), done, onClose }: { d: TrackerDa
   const [holdOpen, setHoldOpen] = useState(false); const [insp, setInsp] = useState(false);
   const [note, setNote] = useState('');
   const [stage, setStage] = useState<number | null>(null);
-  const [steps, setSteps] = useState<'board' | 'list' | null>(null);
+  // the steps page first (owner, 30 Oct 2026); the item's details (status, hold, issues, updates) one tap away
+  const [steps, setSteps] = useState<'board' | 'list' | null>(() => (lines(d, e0.combine ? d.equipment.filter((x) => x.combine === e0.combine).map(keyOf) : [keyOf(e0)]).length ? 'board' : null));
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const manage = useCanManage();
   const twins = keys.map((k) => d.equipment.find((x) => keyOf(x) === k)!).filter(Boolean);
@@ -730,7 +735,7 @@ function ItemSheet({ d, e: e0, now = Date.now(), done, onClose }: { d: TrackerDa
     for (const t of twins) await setEquipment(t.id, { ...(note.trim() ? { remark: note.trim() } : {}), ...(stage !== null ? { stage } : {}) });
   }, `${short(e.tag)} saved.`, async () => { for (const t of twins) await setEquipment(t.id, { pending_reason: t.pendingReason, remark: t.remark, stage: t.stage }); });
   if (steps === 'list') return <StepsPage d={d} e={e} keys={keys} done={done} onClose={() => setSteps('board')} />;
-  if (steps === 'board') return <StepBoard d={d} e={e} keys={keys} done={done} onList={() => setSteps('list')} onClose={() => setSteps(null)} />;
+  if (steps === 'board') return <StepBoard d={d} e={e} keys={keys} done={done} onList={() => setSteps('list')} onDetails={() => setSteps(null)} onClose={onClose} />;
   return (
     <BottomSheet open onClose={onClose} title={short(e.tag)}>
       <div className="space-y-2.5">
