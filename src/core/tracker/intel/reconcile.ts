@@ -202,7 +202,8 @@ export function reconcile(d: TrkData & { log?: TrkLog[] }, text: string, meta: R
       for (const f of ordered) {
         if (BARE_TAG.test(f.text)) continue;
         const ev = [quote(f)];
-        const nounOnly = f.phrase;
+        // "Demister reinstalled": the state word goes, the work stays ("Demister back", "Fix back …")
+        const nounOnly = /\b(re-?install\w*|re-?fix\w*|fix\w*\s+back)\b/i.test(f.text) && !/\bback\b/i.test(f.phrase) ? `${f.phrase} back` : f.phrase;
         // facts about several unnamed valves or parts: which ones is not known → a person decides, nothing is attributed
         if (/\b(\d+|two|three|four|five|six|several|all)\s+(control valves?|valves?|psvs?|spools?|elements?)\b/i.test(f.text) && !/\b[A-Z]{1,3}-(?:12-)?\d{3}/.test(f.text)
           // "PSV-0643/0719 …: all PSVs fixed back": the parts are named in the line's own tags

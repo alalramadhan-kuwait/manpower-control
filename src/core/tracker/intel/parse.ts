@@ -25,7 +25,7 @@ export function expand(text: string): string { let t = text; for (const [re, to]
 const TAG = /\b([A-Z]{1,3})-(?:12-)?(\d{3})[\s-]*([A-Z])?((?:\s*\/\s*(?:[A-Z](?![A-Z0-9-])|\d{3}[A-Z]?))*)\b/g;
 /** A part of an item written after its tag ("P-205 E-01", "P-12-205 E1", "P-12-203 TK-01", "C-201 E-01A / E-01B"): the
  *  tracker names it P-12-205-E-01, P-12-203-TK-01, C-12-201-E-01A (owner's report, 29 Oct 2026). */
-const PART = /\b([A-Z]{1,3})-(?:12-)?(\d{3})\s*[- ]\s*(E|TK|F|ST|EJ)\s*-?\s*(\d{1,2})([A-Z])?(?:\s*\/\s*(?:\3\s*-?\s*\d{1,2})?([A-Z]))?\b/g;
+const PART = /\b([A-Z]{1,3})-(?:12-)?(\d{3})\s*[- ]\s*(E|TK|F|ST|EJ)\s*-?\s*(\d{1,2})(?:-?([A-Z]))?(?:\s*\/\s*(?:\3\s*-?\s*\d{1,2})?([A-Z]))?\b/g;
 export function tagsIn(text: string): { raw: string; tags: string[]; index: number }[] {
   const out: { raw: string; tags: string[]; index: number }[] = [];
   // "P-205 LO tank" is its lube oil tank, TK-01 ("P-203 TK-01 (LO tank)")
@@ -149,6 +149,9 @@ export function factsOf(s: Statement, scope: Scope = 'unknown'): Fact[] {
     for (const m of c.matchAll(QTY)) {
       const before = c.slice(Math.max(0, (m.index ?? 0) - 12), m.index ?? 0); const after = c.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 12);
       // "today 124 drums", "Tonight: 52 drums", "52 drums tonight": the shift's count, never a total
+      const label = c.slice(0, m.index ?? 0).match(/([A-Za-z][A-Za-z ]{1,30}):\s*$/)?.[1];
+      // "Ceramic balls: 284 drums": a labelled part of the work (owner's report, 30 Oct 2026), never the item's total
+      if (label && !/\b(total|today|tonight|night|shift|cumulative|overall)\b/i.test(label)) continue;
       qty.push({ value: +m[1].replace(/,/g, ''), unit: m[2].toLowerCase().replace(/s$/, ''), mode: /today|tonight|night|this shift|shift/i.test(before) || /^\s*(today|tonight|this shift)\b/i.test(after) ? 'daily' : 'cumulative' });
     }
     // "today 124" without a unit after the total

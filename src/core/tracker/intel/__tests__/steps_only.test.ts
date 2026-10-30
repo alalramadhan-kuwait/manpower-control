@@ -60,3 +60,15 @@ describe('steps only', () => {
     expect(r.proposals.find((p) => p.tag === 'P-12-203-E-01B' && p.type === 'review')?.activityName).toBe('Offer for Rotating');
   });
 });
+
+describe('day report 30 Oct', () => {
+  const d2 = (): TrkData => ({ steps: [], iats: [], log: [], settings: {}, putBack: [], engine: { scopes: [], entries: [], estimates: [], updates: [] },
+    equipment: [eq('V-12-209'), eq('P-12-203-E-01A'), eq('R-12-205')],
+    activities: [act('V-12-209', 'Demister out', { actualStart: S, actualFinish: S }), act('V-12-209', 'Demister back'), act('P-12-203-E-01A', 'Tube test at 135 psig'), act('R-12-205', 'Dump ceramic balls', { actualStart: S })] } as unknown as TrkData);
+  const r = reconcile(d2(), '📌 V-12-209 Demister reinstalled.\n📌 P-12-203-E01-A Parts reinstalled.\n📌 R-12-205 Ceramic balls: 284 drums. Total: 2,640 drums.', MM);
+  it('"reinstalled" finishes the "back" step; "E01-A" is the part E-01A; a labelled count is not the total', () => {
+    expect(r.proposals.find((p) => p.type === 'finish_step')?.activityName).toBe('Demister back');
+    expect(r.proposals.some((p) => p.tag === 'P-12-203-E-01A')).toBe(true);
+    expect(r.facts.flatMap((f) => f.qty ?? []).map((q) => q.value)).toEqual([2640]);
+  });
+});
