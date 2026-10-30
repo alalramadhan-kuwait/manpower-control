@@ -16,7 +16,7 @@ import { BlindList } from '@/features/tracker/BlindList';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
-import { bufferCatchUp, isBufferStep, runTogether, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, nrLabel, loopBasis, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor, stepGroups, bedMatrix, bedRowDone, bedRowOff, bedItemDone, bedLate, bedWindow, type BedSet, type BedRow, type BedDept,
+import { bufferCatchUp, isBufferStep, runTogether, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, nrLabel, loopBasis, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor, stepGroups, bedMatrix, bedRowDone, bedRowOff, bedItemDone, bedLate, bedWindow, stepPhases, phaseName, type Phase, type BedSet, type BedRow, type BedDept,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { setFollow, addReturnItem, setReturnItem, BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -613,6 +613,63 @@ function BedSheet({ d, set, r, col, cols, all, head, done, onClose }: { d: Track
   );
 }
 
+/** One item's steps by phase (owner, 30 Oct 2026: "the way that will have clicks and I can see all the steps"): the six
+ *  phases of every item, the one it is in open, the others folded with their count and plan dates; one tap per step
+ *  (Start / Finish; the sheet has the time, Done, Undo and not required). The list page stays for edit, add and order. */
+function StepBoard({ d, e, keys, done, onList, onClose }: { d: TrackerData; e: TrkEquipment; keys: string[]; done: Done; onList: () => void; onClose: () => void }) {
+  const isHead = useContext(RoleCtx) === 'head'; const now = Date.now();
+  const k0 = keys[0], acts = lines(d, [k0]);
+  const ph = stepPhases(acts);
+  const set: BedSet = { label: short(e.combine ?? e.tag), dept: e.inspRef ? 'inspection' : 'cleaning', items: [e], keys: [k0] };
+  const rowOf = (a: TrkActivity): BedRow => ({ id: a.id, name: a.activity, cells: [{ key: k0, a, state: a.actualFinish ? 'done' : a.actualStart ? 'run' : 'open' }] });
+  const byPhase = ([0, 1, 2, 3, 4, 5] as Phase[]).map((p) => ({ p, xs: acts.filter((a) => ph.get(a.id) === p) }));
+  const current = byPhase.find((x) => x.xs.some((a) => !a.actualFinish))?.p ?? 5;
+  const [open, setOpen] = useState<Set<Phase>>(() => new Set([current, ...byPhase.filter((x) => x.xs.some((a) => a.actualStart && !a.actualFinish)).map((x) => x.p)]));
+  const [pick, setPick] = useState<string | null>(null);
+  const lateOf = (a: TrkActivity) => bedLate(rowOf(a).cells[0], now);
+  const behindH = Math.max(0, ...acts.filter((a) => !a.actualFinish).map((a) => lateOf(a)).filter((l) => l.late).map((l) => l.byH));
+  const ends = acts.map((a) => (a.finish ? Date.parse(a.finish) : 0)).filter(Boolean);
+  const win = (xs: TrkActivity[]) => bedWindow({ id: '', name: '', cells: xs.map((a) => rowOf(a).cells[0]) });
+  const tone = (xs: TrkActivity[]) => (!xs.length ? 'bg-slate-100' : xs.every((a) => a.actualFinish) ? 'bg-status-green' : xs.some((a) => !a.actualFinish && lateOf(a).late) && xs.some((a) => a.actualStart) ? 'bg-status-red' : xs.some((a) => a.actualStart) ? 'bg-amber-400' : 'bg-slate-200');
+  const sel = pick ? acts.find((a) => a.id === pick) : undefined;
+  const step = (a: TrkActivity) => { const l = lateOf(a), st = a.actualFinish ? 'done' : a.actualStart ? 'run' : 'open';
+    const sub = st === 'done' ? `✓ ${when(a.actualFinish)}` : st === 'run' ? `since ${dayOf(Date.parse(a.actualStart!))}${a.finish ? ` · plan end ${dayOf(Date.parse(a.finish))}` : ''}${l.late ? ` · ${lateText(l.byH)}` : ''}`
+      : a.start && a.finish ? `plan ${windowText({ start: Date.parse(a.start), finish: Date.parse(a.finish) }).replace(/^Plan /, '')}${l.late ? ` · ${lateText(l.byH)}` : ''}` : 'no plan time';
+    return <button key={a.id} type="button" onClick={() => setPick(a.id)} className="flex w-full items-center gap-2 border-t border-slate-100 px-2.5 py-1.5 text-left active:bg-slate-50">
+      <span className="min-w-0 flex-1"><span className={cx('block text-[12.5px] font-semibold leading-snug', st === 'done' && 'text-slate-500')}>{a.activity}</span>
+        <span className={cx('block text-[10.5px]', st === 'done' ? (l.late ? 'text-amber-700' : 'text-slate-500') : l.late ? 'font-bold text-status-red' : 'text-slate-500')}>{sub}</span></span>
+      {st === 'done' ? <span className="shrink-0 text-[13px] font-bold text-status-green">✓</span>
+        : <span className={cx('min-w-[4.4rem] shrink-0 rounded-lg py-1.5 text-center text-[11.5px] font-bold', st === 'run' ? (l.late ? 'bg-red-100 text-red-800 ring-1 ring-red-400' : 'bg-amber-400 text-amber-950') : l.late ? 'text-red-800 ring-1 ring-red-400' : 'text-brand-700 ring-1 ring-brand-700')}>{st === 'run' ? '✓ Finish' : '▶ Start'}</span>}
+    </button>; };
+  return (
+    <div className="fixed inset-0 z-[60] overflow-y-auto bg-canvas pb-28">
+      <header className="sticky top-0 z-10 flex items-center gap-2 bg-brand-700 px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white">
+        <button type="button" onClick={onClose} className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-bold">‹ Back</button>
+        <p className="min-w-0 flex-1 truncate text-[16px] font-bold">{short(e.combine ?? e.tag)}{e.description ? ` · ${e.description}` : ''}</p>
+      </header>
+      <main className="mx-auto max-w-xl px-3 pt-3">
+        <Card>
+          <p className="text-[12px] text-slate-600"><b className="text-[15px] text-slate-900">{short(e.combine ?? e.tag)}</b> · {acts.filter((a) => a.actualFinish).length}/{acts.length} steps</p>
+          <p className="text-[12px] text-slate-600">Now: <b className="text-slate-900">{phaseName(current, acts)}</b>{behindH > 0 ? <b className="text-status-red"> · {lateText(behindH).replace('late', 'behind')}</b> : ''}{ends.length ? ` · plan end ${dayOf(Math.max(...ends))}` : ''}</p>
+          <div className="mt-1.5 grid grid-cols-6 gap-0.5">{byPhase.map((x) => <span key={x.p} className={cx('h-2 rounded-sm', tone(x.xs))} />)}</div>
+          <div className="mt-0.5 grid grid-cols-6 gap-0.5 text-center text-[8.5px] leading-tight text-slate-500">{byPhase.map((x) => <span key={x.p}>{phaseName(x.p, acts)}</span>)}</div>
+        </Card>
+        <List>{byPhase.filter((x) => x.xs.length).map((x) => { const n = x.xs.filter((a) => a.actualFinish).length, run = x.xs.filter((a) => a.actualStart && !a.actualFinish).length, all = n === x.xs.length, isOpen = open.has(x.p), w = win(x.xs);
+          return <div key={x.p}>
+            <button type="button" aria-expanded={isOpen} onClick={() => setOpen((s) => { const t = new Set(s); if (t.has(x.p)) t.delete(x.p); else t.add(x.p); return t; })}
+              className={cx('flex w-full items-center justify-between gap-2 border-t border-slate-100 px-2.5 py-2 text-left text-[12.5px] font-bold first:border-t-0', all ? 'bg-green-50 text-green-900' : x.p === current || run ? 'bg-amber-50 text-amber-950' : 'text-slate-700')}>
+              <span>{all ? '✓' : x.p === current || run ? '▶' : ''} {x.p + 1} · {phaseName(x.p, acts)} · {n}/{x.xs.length}{run && x.p !== current ? ` · ${run} running` : ''}</span>
+              <span className="shrink-0 text-[10.5px] font-semibold text-slate-500">{all ? (isOpen ? 'hide ▴' : 'show ▾') : `${windowText(w).replace(/^Plan /, 'plan ')} ${isOpen ? '▴' : '▾'}`}</span></button>
+            {isOpen && x.xs.map(step)}
+          </div>; })}</List>
+        <button type="button" onClick={onList} className="mx-1 text-[12px] font-semibold text-brand-700">≡ List · edit, add, order ›</button>
+        <p className="mx-1 mt-1 text-[11px] text-slate-500">Phases: Isolate &amp; open · {phaseName(1, acts)} · Clean &amp; inspect · Repair &amp; test · Box-up &amp; load · Deblind. Red: not started after its plan start, or not done after its plan finish.</p>
+      </main>
+      {sel && <BedSheet d={d} set={set} r={rowOf(sel)} col={0} cols={[0]} all={false} head={isHead} done={done} onClose={() => setPick(null)} />}
+    </div>
+  );
+}
+
 // holds: the Section Head's reason list (PendingForm) in every view (owner, 25 Oct 2026)
 /** One item: finish the running step / start the next, its status and a short note; drums for a reactor dumping. */
 /** The item sheet, the same in both modes: the steps and the main action, issues, inspection worklist, hold and status
@@ -639,7 +696,7 @@ function ItemSheet({ d, e: e0, now = Date.now(), done, onClose }: { d: TrackerDa
   const [holdOpen, setHoldOpen] = useState(false); const [insp, setInsp] = useState(false);
   const [note, setNote] = useState('');
   const [stage, setStage] = useState<number | null>(null);
-  const [steps, setSteps] = useState(false);
+  const [steps, setSteps] = useState<'board' | 'list' | null>(null);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
   const manage = useCanManage();
   const twins = keys.map((k) => d.equipment.find((x) => keyOf(x) === k)!).filter(Boolean);
@@ -653,11 +710,12 @@ function ItemSheet({ d, e: e0, now = Date.now(), done, onClose }: { d: TrackerDa
   const save = () => run1(async () => {
     for (const t of twins) await setEquipment(t.id, { ...(note.trim() ? { remark: note.trim() } : {}), ...(stage !== null ? { stage } : {}) });
   }, `${short(e.tag)} saved.`, async () => { for (const t of twins) await setEquipment(t.id, { pending_reason: t.pendingReason, remark: t.remark, stage: t.stage }); });
-  if (steps) return <StepsPage d={d} e={e} keys={keys} done={done} onClose={() => setSteps(false)} />;
+  if (steps === 'list') return <StepsPage d={d} e={e} keys={keys} done={done} onClose={() => setSteps('board')} />;
+  if (steps === 'board') return <StepBoard d={d} e={e} keys={keys} done={done} onList={() => setSteps('list')} onClose={() => setSteps(null)} />;
   return (
     <BottomSheet open onClose={onClose} title={short(e.tag)}>
       <div className="space-y-2.5">
-        <button type="button" onClick={() => setSteps(true)} className="flex min-h-10 w-full items-center justify-between rounded-xl bg-slate-50 px-3 text-[13px] font-bold text-brand-700 ring-1 ring-slate-200">
+        <button type="button" onClick={() => setSteps('board')} className="flex min-h-10 w-full items-center justify-between rounded-xl bg-slate-50 px-3 text-[13px] font-bold text-brand-700 ring-1 ring-slate-200">
           <span>📋 All steps{manage ? ' · view, edit, add, order' : ''}</span><span className="text-slate-500">{ls.filter((a) => a.actualFinish).length}/{ls.length} ›</span></button>
         <p className="text-xs text-slate-600">Last: {itemLine(d, e)}{e.updatedAt ? ` · ${when(e.updatedAt)}` : ''}</p>
         <LatestUpdate d={d} tag={e.tag} canEdit onDone={(m: string) => done(m)} />
