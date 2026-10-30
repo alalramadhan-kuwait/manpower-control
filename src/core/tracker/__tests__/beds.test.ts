@@ -17,12 +17,12 @@ describe('items on one page', () => {
     expect(g[0].dept).toBe('cleaning');
     expect(bedSets([...reactors, r205], acts)[0].keys).toEqual(['R-12-201', 'R-12-202', 'R-12-203', 'R-12-204']);
   });
-  it('splits a type by department, leaves out rotating items and groups whose steps do not line up', () => {
-    const v = [eq('V-1', { group: 'Vessels', inspRef: 'x' }), eq('V-2', { group: 'Vessels', inspRef: 'x' }), eq('V-3', { group: 'Vessels' }), eq('V-4', { group: 'Vessels' }), eq('P-1', { group: 'Vessels', list: 'rotating' })];
+  it('splits a large type by department, leaves out rotating items and groups whose steps do not line up', () => {
+    const v = [eq('V-1', { group: 'Vessels', inspRef: 'x' }), eq('V-2', { group: 'Vessels', inspRef: 'x' }), eq('V-3', { group: 'Vessels' }), eq('V-4', { group: 'Vessels' }), eq('V-5', { group: 'Vessels' }), eq('P-1', { group: 'Vessels', list: 'rotating' })];
     const e = [eq('E-1', { group: 'Exchangers' }), eq('E-2', { group: 'Exchangers' })];
-    const acts = [...['V-1', 'V-2', 'V-3', 'V-4', 'P-1'].flatMap((k) => ['Blind', 'Box-up', 'Deblind'].map((s, i) => st(k, s, i))),
+    const acts = [...['V-1', 'V-2', 'V-3', 'V-4', 'V-5', 'P-1'].flatMap((k) => ['Blind', 'Box-up', 'Deblind'].map((s, i) => st(k, s, i))),
       ...['Blind', 'Pull bundle', 'Hydrotest', 'Retube'].map((s, i) => st('E-1', s, i)), ...['Blind', 'Shell out', 'Grit blast', 'Paint'].map((s, i) => st('E-2', s, i))];
-    expect(stepGroups([...v, ...e], acts).map((x) => `${x.label}:${x.keys.join(',')}`)).toEqual(['Vessels · inspection:V-1,V-2', 'Vessels · cleaning / painting:V-3,V-4']);
+    expect(stepGroups([...v, ...e], acts).map((x) => `${x.label}:${x.keys.join(',')}`)).toEqual(['Vessels · inspection:V-1,V-2', 'Vessels · cleaning / painting:V-3,V-4,V-5']);
   });
   it('matches names without case, punctuation or test pressure', () => {
     expect(bedName('Shell Hydrotest at 225 PSIG')).toBe(bedName('shell hydrotest at 300 psig'));
@@ -55,5 +55,16 @@ describe('items on one page', () => {
     expect(b.late).toBe(false);
     expect(c).toEqual({ late: true, byH: 12 });
     expect(bedWindow(m[0])).toEqual({ start: Date.parse('2026-10-28T00:00:00Z'), finish: Date.parse('2026-10-30T06:00:00Z') });
+  });
+});
+
+describe('linked items and small types', () => {
+  it('linked items get their own page; a type of four or fewer is one page across departments when three steps are shared', () => {
+    const items = [eq('E-1', { group: 'Exchangers', inspRef: 'x', linked: 'E-1 + E-2' }), eq('E-2', { group: 'Exchangers', linked: 'E-1 + E-2' }), eq('E-3', { group: 'Exchangers' }),
+      eq('H-1', { group: 'Heaters', inspRef: 'x' }), eq('H-2', { group: 'Heaters' })];
+    const acts = [...['E-1', 'E-2'].flatMap((k) => ['Blind', 'Hydrotest shell & tube · 300 / 200 psig'].map((s, i) => st(k, s, i))), st('E-3', 'Blind', 1),
+      ...['H-1', 'H-2'].flatMap((k) => ['Blind', 'Burners down', 'Fix back burners', 'Deblind'].map((s, i) => st(k, s, i))), st('H-1', 'Pass 1 pigging', 9)];
+    const g = stepGroups(items, acts);
+    expect(g.map((x) => `${x.label}:${x.dept}:${x.keys.join(',')}`)).toEqual(['E-1 + E-2 · linked:mixed:E-1,E-2', 'Heaters:mixed:H-1,H-2']);
   });
 });

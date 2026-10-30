@@ -16,7 +16,7 @@ import { BlindList } from '@/features/tracker/BlindList';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
-import { bufferCatchUp, isBufferStep, runTogether, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, nrLabel, loopBasis, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor, stepGroups, bedMatrix, bedRowDone, bedRowOff, bedItemDone, bedLate, bedWindow, stepPhases, phaseName, type Phase, type BedSet, type BedRow, type BedDept,
+import { bufferCatchUp, isBufferStep, runTogether, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, nrLabel, loopBasis, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor, stepGroups, bedName, isLinkedTest, bedMatrix, bedRowDone, bedRowOff, bedItemDone, bedLate, bedWindow, stepPhases, phaseName, type Phase, type BedSet, type BedRow, type BedDept,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { setFollow, addReturnItem, setReturnItem, BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -385,7 +385,8 @@ function useRowStep(d: TrackerData, e: TrkEquipment, keys: string[]) {
     const run = xs.filter((a) => a.actualStart && !a.actualFinish); if (run.length) return { a: run[0], finish: true, more: run.length - 1 };
     const nx = xs.find((a) => !a.actualStart); return nx ? { a: nx, finish: false, more: 0 } : null; });
   const lead = each.find((x) => x?.finish) ?? each.find((x) => x) ?? null; if (!lead) return null;
-  return { ...lead, also: each.filter((x) => x && x !== lead && x.a.activity === lead.a.activity && (x.finish === lead.finish || lead.finish)).map((x) => x!.a) };
+  const linkedTest = e.linked && isLinkedTest(lead.a.activity) ? d.activities.filter((x) => x.tracked && !x.actualFinish && (lead.finish ? !!x.actualStart : !x.actualStart) && bedName(x.activity) === bedName(lead.a.activity) && d.equipment.some((q) => q.linked === e.linked && q.id !== e.id && keyOf(q) === x.key)) : [];
+  return { ...lead, also: [...each.filter((x) => x && x !== lead && x.a.activity === lead.a.activity && (x.finish === lead.finish || lead.finish)).map((x) => x!.a), ...linkedTest] };
 }
 /** Where an item (or a group) is in the six phases of every item's work: green done · amber running · red running
  *  and late · grey to come (a phase the item does not have stays faint). */
@@ -475,7 +476,7 @@ const lateText = (h: number) => (h < 24 ? `late ${Math.max(1, Math.round(h))} h`
 const windowText = (w: { start: number; finish: number } | null) => { if (!w) return 'no plan time'; const a = dayOf(w.start), b = dayOf(w.finish);
   if (a === b) return `Plan ${a}`; const [da, ma] = a.split(' '), [db, mb] = b.split(' '); return ma === mb ? `Plan ${da}–${db} ${mb}` : `Plan ${a} – ${b}`; };
 const bedCount = (rows: BedRow[], i: number) => { const xs = rows.map((r) => r.cells[i]).filter((c) => c.state !== 'nr' && c.state !== 'none'); return [xs.filter((c) => c.state === 'done').length, xs.length]; };
-const DEPT_TAG = { inspection: ['Inspection', 'bg-indigo-100 text-indigo-800'], cleaning: ['Cleaning', 'bg-amber-100 text-amber-900'] } as const;
+const DEPT_TAG = { inspection: ['Inspection', 'bg-indigo-100 text-indigo-800'], cleaning: ['Cleaning', 'bg-amber-100 text-amber-900'], mixed: ['Insp. + cleaning', 'bg-slate-100 text-slate-700'] } as const;
 const DeptTag = ({ dept }: { dept: BedDept }) => <span className={cx('rounded px-1 text-[9.5px] font-extrabold uppercase tracking-wide', DEPT_TAG[dept][1])}>{DEPT_TAG[dept][0]}</span>;
 /** A group as one row in the Equipment list: what is running (or next), late when past its plan, and each item's
  *  steps done (up to four items; more: how many are finished). */
@@ -545,7 +546,7 @@ function BedsPage({ d, set, now, done, onItem, onClose }: { d: TrackerData; set:
         <List>
           {chips ? <div className="flex flex-wrap gap-1 bg-slate-50 px-2.5 py-1.5">{cols.map((i) => { const [n, t] = bedCount(rows0, i); return <button key={i} type="button" onClick={() => onItem(set.items[i])} className="rounded-md bg-white px-1.5 py-0.5 text-[11px] font-bold text-brand-700 ring-1 ring-slate-200">{short(set.items[i].combine ?? set.items[i].tag)} <span className="font-medium tabular-nums text-slate-500">{n}/{t}</span></button>; })}</div>
             : <div className="grid items-center gap-1 bg-slate-50 px-2 py-1.5" style={grid}><span className="text-[10.5px] font-extrabold uppercase tracking-wider text-slate-500">Step · plan</span>
-              {cols.map((i) => { const [n, t] = bedCount(rows0, i); return <button key={i} type="button" onClick={() => onItem(set.items[i])} className="text-center text-[12px] font-bold text-brand-700 underline decoration-slate-300 underline-offset-2">{short(set.items[i].combine ?? set.items[i].tag)}<span className="block text-[10px] font-medium tabular-nums text-slate-500 no-underline">{n}/{t}</span></button>; })}</div>}
+              {cols.map((i) => { const [n, t] = bedCount(rows0, i); return <button key={i} type="button" onClick={() => onItem(set.items[i])} className="text-center text-[12px] font-bold text-brand-700 underline decoration-slate-300 underline-offset-2">{short(set.items[i].combine ?? set.items[i].tag)}<span className="block text-[10px] font-medium tabular-nums text-slate-500 no-underline">{n}/{t}{set.dept === 'mixed' ? ` · ${set.items[i].inspRef ? 'insp.' : 'clean.'}` : ''}</span></button>; })}</div>}
           {handed.length > 0 && handed.length < set.items.length && <div className="flex flex-wrap items-center gap-1 border-t border-green-100 bg-green-50 px-2.5 py-1.5 text-[11.5px] font-semibold text-green-900">✓ Handed back:
             {handed.map((i) => { const f = Math.max(...rows0.map((r) => r.cells[i].a?.actualFinish).filter((x): x is string => !!x).map((x) => Date.parse(x)));
               return <button key={i} type="button" onClick={() => onItem(set.items[i])} className="rounded bg-green-100 px-1.5 text-[10.5px]">{short(set.items[i].combine ?? set.items[i].tag)} {dayOf(f)}</button>; })}</div>}
@@ -575,8 +576,12 @@ function BedSheet({ d, set, r, col, cols, all, head, done, onClose }: { d: Track
   const tooOld = !!atIso && Date.now() - Date.parse(atIso) > BACKDATE_LIMIT_H * H, future = !!atIso && Date.parse(atIso) > Date.now() + 15 * 60000;
   const kwInput = (ms: number) => new Date(ms + 3 * H).toISOString().slice(0, 16);
   // the same step of the items worked as one with it (E-12-216A/B)
-  const twins = (e: TrkEquipment, a: TrkActivity) => (e.combine ? d.activities.filter((x) => x.id !== a.id && x.activity === a.activity && x.tracked && !x.actualFinish && d.equipment.some((q) => q.combine === e.combine && keyOf(q) === x.key)) : []);
-  const picked = [...on].sort((p, q) => p - q).flatMap((i) => { const a = r.cells[i].a!, e = set.items[i]; return [{ a, e }, ...twins(e, a).map((x) => ({ a: x, e }))]; });
+  const twins = (e: TrkEquipment, a: TrkActivity) => [
+    ...(e.combine ? d.activities.filter((x) => x.id !== a.id && x.activity === a.activity && x.tracked && !x.actualFinish && d.equipment.some((q) => q.combine === e.combine && keyOf(q) === x.key)) : []),
+    // linked items (no blind between them): one test for all (owner, 30 Oct 2026: E-204 and E-205 have the same hydrotest)
+    ...(e.linked && isLinkedTest(a.activity) ? d.activities.filter((x) => x.id !== a.id && x.tracked && !x.actualFinish && bedName(x.activity) === bedName(a.activity) && d.equipment.some((q) => q.linked === e.linked && q.id !== e.id && keyOf(q) === x.key)) : [])];
+  const picked = [...new Map([...on].sort((p, q) => p - q).flatMap((i) => { const a = r.cells[i].a!, e = set.items[i]; return [{ a, e }, ...twins(e, a).map((x) => ({ a: x, e }))]; }).map((x) => [x.a.id, x])).values()];
+  const withLinked = [...new Set(picked.map((x) => x.a.key))].filter((k) => !set.keys.some((sk, i) => on.has(i) && sk === k)).map((k) => short(k));
   const tags = [...on].sort((p, q) => p - q).map((i) => short(set.items[i].tag)).join(', ');
   async function run(f: () => Promise<unknown>, msg: string, undo: () => Promise<unknown>) { setBusy(true); setErr(null); try { await f(); done(msg, undo); onClose(); } catch (x) { setErr(x); } finally { setBusy(false); } }
   const back = (xs: { a: TrkActivity }[]) => xs.map(({ a }) => ({ id: a.id, s: a.actualStart ?? null, f: a.actualFinish ?? null }));
@@ -585,7 +590,7 @@ function BedSheet({ d, set, r, col, cols, all, head, done, onClose }: { d: Track
     return run(async () => {
       for (const { a } of picked) await setActivity(a.id, finish ? { actual_finish: t, ...(a.actualStart ? {} : { actual_start: t }), ...reason } : { actual_start: t, ...reason });
       for (const e of held) await setEquipment(e.id, { pending_reason: null });
-    }, `${r.name}: ${finish ? 'finished' : 'started'} on ${tags}${atIso ? ` · ${when(t)}` : ''}.${held.length ? ' Hold ended.' : ''}`, async () => {
+    }, `${r.name}: ${finish ? 'finished' : 'started'} on ${tags}${withLinked.length ? ` (with ${withLinked.join(', ')})` : ''}${atIso ? ` · ${when(t)}` : ''}.${held.length ? ' Hold ended.' : ''}`, async () => {
       for (const b of was) await setActivity(b.id, { actual_start: b.s, actual_finish: b.f, time_reason: 'Undo' });
       for (const e of held) await setEquipment(e.id, { pending_reason: e.pendingReason });
     }); };
@@ -715,7 +720,9 @@ function ItemSheet({ d, e: e0, now = Date.now(), done, onClose }: { d: TrackerDa
   async function run1(f: () => Promise<unknown>, msg: string, undo?: () => Promise<unknown>) { setBusy(true); setErr(null); try { await f(); done(msg, undo); onClose(); } catch (x) { setErr(x); } finally { setBusy(false); } }
   // the tracker's step action: twins move together, starting ends the hold, Undo restores both
   const step = async (a: TrkActivity, finish: boolean) => {
-    const also = ls.filter((x) => x.id !== a.id && x.key !== a.key && x.activity === a.activity && (finish ? x.actualStart && !x.actualFinish : !x.actualStart));
+    const also = [...ls.filter((x) => x.id !== a.id && x.key !== a.key && x.activity === a.activity && (finish ? x.actualStart && !x.actualFinish : !x.actualStart)),
+      // linked items' test (no blind between them): one hydrotest for all
+      ...(e.linked && isLinkedTest(a.activity) ? d.activities.filter((x) => x.tracked && !x.actualFinish && (finish ? !!x.actualStart : !x.actualStart) && bedName(x.activity) === bedName(a.activity) && d.equipment.some((q) => q.linked === e.linked && q.id !== e.id && keyOf(q) === x.key)) : [])];
     setBusy(true); setErr(null);
     try { const r = await stepNow(a, also, finish, twins); done(r.msg, r.undo); onClose(); } catch (x) { setErr(x); } finally { setBusy(false); }
   };

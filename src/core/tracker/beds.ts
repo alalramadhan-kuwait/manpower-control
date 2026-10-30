@@ -4,7 +4,7 @@
 // across. Each item keeps its own steps, times, plan dates, progress and history; this only lines them up by name.
 import { sortActs, type TrkActivity, type TrkEquipment } from '.';
 
-export type BedDept = 'inspection' | 'cleaning';
+export type BedDept = 'inspection' | 'cleaning' | 'mixed';
 export interface BedSet { label: string; dept: BedDept; items: TrkEquipment[]; keys: string[] }
 export type BedState = 'done' | 'run' | 'open' | 'nr' | 'none';
 export interface BedCell { key: string; a: TrkActivity | null; state: BedState }
@@ -16,25 +16,45 @@ const keyOf = (e: TrkEquipment) => e.barchartKey ?? e.tag;
 const PSIG = /\s*·?\s*\(?\s*(at\s*)?(\d[\d,]*\s*\/\s*)*\d[\d,]*\s*psig\s*\)?/gi;
 export const bedName = (s: string) => s.toLowerCase().replace(PSIG, ' ').replace(/[^a-z0-9/&]+/g, ' ').replace(/\s+/g, ' ').trim();
 const isNotRequired = (a: TrkActivity) => !a.tracked && !a.outOfScope && /^not required/.test(a.disabledReason ?? '');
-export const bedDept = (e: TrkEquipment): BedDept => (e.inspRef ? 'inspection' : 'cleaning');
+export const bedDept = (e: TrkEquipment): 'inspection' | 'cleaning' => (e.inspRef ? 'inspection' : 'cleaning');
+const deptOf = (xs: TrkEquipment[]): BedDept => { const d = new Set(xs.map(bedDept)); return d.size > 1 ? 'mixed' : [...d][0]; };
+/** The test steps of linked items move together (one hydrotest, no blind between them). */
+export const isLinkedTest = (name: string) => /\btest\b|hydro\s?-?test/i.test(name);
 
-/** The groups of the list: same type and department, two items or more, rotating items and machine systems left out,
- *  and only where the steps line up (at least half the step rows are shared by two items or more). */
+/** The groups of the list (owner, 29–30 Oct 2026): rotating items and machine systems left out;
+ *  1. items linked by their test (no blind between them: E-204 + E-205) on a page of their own;
+ *  2. the other items of one type on one page when they are four or fewer (H-201 + H-202), whoever asked for the
+ *     work, if they share at least three steps;
+ *  3. a larger type split by department (on the Inspection worklist, or cleaning / painting), each part kept only
+ *     where at least half its step rows are shared by two items or more. */
 export function stepGroups(items: TrkEquipment[], activities: TrkActivity[]): BedSet[] {
-  const by = new Map<string, TrkEquipment[]>();
-  for (const e of items) { if (e.list === 'rotating' || e.system) continue; const k = `${e.group}|${bedDept(e)}`; by.set(k, [...(by.get(k) ?? []), e]); }
+  const cand = items.filter((e) => e.list !== 'rotating' && !e.system);
+  const sortOf = (xs: TrkEquipment[]) => [...xs].sort((p, q) => p.sort - q.sort || p.tag.localeCompare(q.tag));
+  const shared = (keys: string[]) => bedMatrix(activities, keys).filter((r) => !bedRowOff(r)).map((r) => r.cells.filter((c) => c.state !== 'none').length >= 2);
   const out: BedSet[] = [];
-  for (const [k, xs] of by) {
+  const mk = (label: string, xs: TrkEquipment[]) => { const s = sortOf(xs); out.push({ label, dept: deptOf(s), items: s, keys: s.map(keyOf) }); };
+  const linked = new Map<string, TrkEquipment[]>();
+  for (const e of cand) if (e.linked) linked.set(e.linked, [...(linked.get(e.linked) ?? []), e]);
+  for (const [l, xs] of linked) if (xs.length >= 2) mk(`${l} · linked`, xs);
+  const taken = new Set(out.flatMap((g) => g.items));
+  const byType = new Map<string, TrkEquipment[]>();
+  for (const e of cand) if (!taken.has(e)) byType.set(e.group, [...(byType.get(e.group) ?? []), e]);
+  for (const [grp, xs] of byType) {
     if (xs.length < 2) continue;
-    const [grp, dept] = k.split('|') as [string, BedDept];
-    const sorted = [...xs].sort((p, q) => p.sort - q.sort || p.tag.localeCompare(q.tag)), keys = sorted.map(keyOf);
-    const rows = bedMatrix(activities, keys).filter((r) => !bedRowOff(r));
-    if (!rows.length || rows.filter((r) => r.cells.filter((c) => c.state !== 'none').length >= 2).length < rows.length / 2) continue;
-    const both = by.has(`${grp}|${dept === 'inspection' ? 'cleaning' : 'inspection'}`);
-    const bed = sorted.map((e) => BED.exec(e.tag));
-    const label = bed.every((m) => m) && sorted.length <= 4 ? `R-${bed[0]![2]}0${bed[0]![3]} – R-${bed.at(-1)![2]}0${bed.at(-1)![3]}`
-      : both ? `${grp} · ${dept === 'inspection' ? 'inspection' : 'cleaning / painting'}` : grp;
-    out.push({ label, dept, items: sorted, keys });
+    if (xs.length <= 4) {
+      if (shared(sortOf(xs).map(keyOf)).filter(Boolean).length < 3) continue;
+      const bed = sortOf(xs).map((e) => BED.exec(e.tag));
+      mk(bed.every((m) => m) ? `R-${bed[0]![2]}0${bed[0]![3]} – R-${bed.at(-1)![2]}0${bed.at(-1)![3]}` : grp, xs);
+      continue;
+    }
+    const parts = (['inspection', 'cleaning'] as const).map((d) => [d, xs.filter((e) => bedDept(e) === d)] as const).filter(([, ys]) => ys.length);
+    for (const [d, ys] of parts) {
+      if (ys.length < 2) continue;
+      const sh = shared(sortOf(ys).map(keyOf));
+      if (!sh.length || sh.filter(Boolean).length < sh.length / 2) continue;
+      const bed = sortOf(ys).map((e) => BED.exec(e.tag));
+      mk(bed.every((m) => m) && ys.length <= 4 ? `R-${bed[0]![2]}0${bed[0]![3]} – R-${bed.at(-1)![2]}0${bed.at(-1)![3]}` : parts.length > 1 ? `${grp} · ${d === 'inspection' ? 'inspection' : 'cleaning / painting'}` : grp, ys);
+    }
   }
   return out;
 }
