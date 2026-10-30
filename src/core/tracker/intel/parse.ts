@@ -33,6 +33,12 @@ export function tagsIn(text: string): { raw: string; tags: string[]; index: numb
     out.push({ raw: m[0], tags: [`${m[1]}-12-${m[2]}-TK-01`], index: m.index ?? 0 });
     text = text.slice(0, m.index) + ' '.repeat(m[0].length) + text.slice((m.index ?? 0) + m[0].length);
   }
+  // instrument tags with a 4-digit number ("PSV-12-0643/0719/1322", "FCV-12-1419"): the tracker writes 12-PSV-0643
+  for (const m of text.matchAll(/\b([A-Z]{2,4})-(?:12-)?(\d{4}[A-Z]?)((?:\s*\/\s*\d{4}[A-Z]?)*)/g)) {
+    const nums = [m[2], ...(m[3] ?? '').split('/').map((x) => x.trim()).filter(Boolean)];
+    out.push({ raw: m[0], tags: nums.map((n) => `12-${m[1]}-${n}`), index: m.index ?? 0 });
+    text = text.slice(0, m.index) + ' '.repeat(m[0].length) + text.slice((m.index ?? 0) + m[0].length);
+  }
   for (const m of text.matchAll(PART)) {
     const [raw, pre, num, part, n, l1, l2] = m; const base = `${pre}-12-${num}-${part}-${n.padStart(2, '0')}`;
     out.push({ raw, tags: l2 ? [`${base}${l1 ?? ''}`, `${base}${l2}`] : [`${base}${l1 ?? ''}`], index: m.index ?? 0 });
@@ -134,7 +140,7 @@ export function factsOf(s: Statement, scope: Scope = 'unknown'): Fact[] {
   // a planning line: "Planned 51.01%, Actual 51.01%"
   const pl = spelled.match(/plan(?:ned)?\s*(?:progress|completion)?\s*[:=]?\s*([\d.]+)\s*%.*?actual\s*(?:progress|completion)?\s*[:=]?\s*([\d.]+)\s*%/i);
   if (pl) return [{ id: `${s.line}:p`, line: s.line, raw: s.raw, tagsText: s.tagsText, tags: s.tags, text: clean(spelled), phrase: 'planning progress', state: 'info', kind: 'planning', planning: { planned: +pl[1], actual: +pl[2] }, scope: 'common', confidence: 0.95 }];
-  const clauses = spelled.split(/(?<=[a-z\d)%])(?<!\b[Nn]os?)\.\s+(?=[A-Za-z0-9])|;\s*|\s+\/\s+(?=[A-Z][a-z])/).map(clean).filter(Boolean);
+  const clauses = spelled.split(/(?<=[A-Za-z\d)%])(?<!\b[Nn]os?)\.\s+(?=[A-Za-z0-9])|;\s*|\s+\/\s+(?=[A-Z][a-z])/).map(clean).filter(Boolean);
   const train1 = TRAIN1.test(s.raw) || (scope === 'train1');
   return clauses.map((c, n): Fact => {
     const id = `${s.line}:${n}`;
@@ -188,7 +194,7 @@ export function readReport(text: string): { statements: Statement[]; facts: Fact
     // a clause split at "," or " and " only when every part carries a state ("spools removed and hydroblasting done";
     // "jackhammering and vacuuming in progress" stays one)
     const stated = (p: string) => DONE.test(expand(p)) || RUN.test(expand(p)) || PEND.test(expand(p));
-    const pieces = s.text.split(/(?<=[a-z\d)%])(?<!\b[Nn]os?)[.;]\s+(?=[A-Za-z0-9])/).flatMap((part) => {
+    const pieces = s.text.split(/(?<=[A-Za-z\d)%])(?<!\b[Nn]os?)[.;]\s+(?=[A-Za-z0-9])/).flatMap((part) => {
       const byComma = part.split(/,\s*(?=[A-Za-z])/);
       const xs = byComma.length > 1 && byComma.every(stated) ? byComma : [part];
       return xs.flatMap((x) => { const byAnd = x.split(/\s+and\s+(?=[a-z])/i); return byAnd.length > 1 && byAnd.every(stated) ? byAnd : [x]; });

@@ -95,9 +95,9 @@ describe('acceptance reports', () => {
     expect(r.proposals.filter((p) => p.type === 'info' && /scaffold/i.test(p.title)).length).toBe(2); expect(r.proposals.some((p) => p.type === 'new_step')).toBe(false);
     expect(r.proposals.filter((p) => p.classification === 'unclear' && /control valves/.test(p.title)).length).toBe(2);
   });
-  it('6 · E-122B: not in this tracker → a review item, nothing created, no spare hold invented', () => {
+  it('6 · E-122B: not in this shutdown → listed, nothing created, no spare hold invented', () => {
     const r = run('E-122B: Retubing to start. Buffing and DPT done.', MM);
-    expect(r.proposals.length).toBe(1); expect(r.proposals[0].classification).toBe('unclear'); expect(r.proposals[0].title).toContain('E-12-122B is not in this tracker');
+    expect(r.proposals.length).toBe(1); expect(r.proposals[0].classification).toBe('unclear'); expect(r.proposals[0].title).toContain('E-12-122B is not in this shutdown');
     expect(r.summary.holds).toBe(0);
   });
   it('7 · V-213: inspection status kept, buffing finished, DPT pending, no equipment-wide completion', () => {

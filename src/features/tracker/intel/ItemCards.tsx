@@ -24,8 +24,9 @@ export function toCards(rows: ProposalRow[]): { cards: Card[]; notes: ProposalRo
   for (const p of rows) {
     if (!OPEN.has(p.status)) { if (p.status === 'info') notes.push(p); continue; }
     const tag = p.tag ?? (p.type === 'planning' ? 'Maintenance Planning' : null);
-    // neither a step to move nor a missing step (an item not in this tracker, an unclear line, readiness): a note
-    if (!tag || p.type === 'review') { notes.push(p); continue; }
+    // neither a step to move nor a missing step (an item not in this tracker, an unclear line, readiness): a note; a
+    // question on one step (a not-required step reported, an offer to another party) stays on the item to check
+    if (!tag || (p.type === 'review' && !p.activityId)) { notes.push(p); continue; }
     by.set(tag, [...(by.get(tag) ?? []), p]);
   }
   const cards = [...by].map(([tag, rs]) => ({ tag, rows: rs.sort((a, b) => Date.parse(a.eventAt) - Date.parse(b.eventAt)),
@@ -67,6 +68,7 @@ const line = (p: ProposalRow): { icon: string; text: React.ReactNode } => {
     case 'hold': return { icon: '⛔', text: <>Hold: <b>{String(p.proposed.pendingReason ?? p.title)}</b></> };
     case 'hold_release': return { icon: '▶', text: <>Hold released</> };
     case 'planning': return { icon: '％', text: <>{p.title}</> };
+    case 'review': return { icon: '?', text: <span className="text-amber-900">{p.title.replace(/^[^:]+:\s*/, '')}{p.detail ? <span className="block text-[11px] text-slate-500">{p.detail}</span> : null}</span> };
     default: return { icon: '?', text: <span className="text-slate-600">{p.title}</span> };
   }
 };
@@ -93,7 +95,7 @@ function ItemCard({ c, d, canEdit, onDone }: { c: Card; d: TrackerData; canEdit:
         {c.rows.map((p) => { const l = line(p); return (
           <li key={p.id} className="flex items-start gap-2 text-[13px] leading-snug">
             <span className="w-4 shrink-0 text-center text-slate-500">{l.icon}</span>
-            <span className="min-w-0 flex-1">{l.text}{p.status === 'conflict' && p.issues[0] ? <span className="block text-[11px] text-status-red">⚠ {p.issues[0]}</span> : null}</span>
+            <span className="min-w-0 flex-1">{l.text}{p.status === 'conflict' && p.issues[0] ? <span className="block text-[11px] text-status-red">⚠ {p.issues[0]}</span> : p.issues.find((x) => /psig/.test(x)) ? <span className="block text-[11px] text-amber-700">{p.issues.find((x) => /psig/.test(x))}</span> : null}</span>
             {canEdit && MISSING.has(p.type) && <button type="button" disabled={busy} onClick={() => run([p], 'apply', `${c.tag}: applied · step added`)} className="shrink-0 rounded-lg bg-brand-700 px-2 py-1 text-[11px] font-bold text-white disabled:opacity-50">Add</button>}
           </li>); })}
       </ul>
