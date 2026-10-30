@@ -387,6 +387,16 @@ function useRowStep(d: TrackerData, e: TrkEquipment, keys: string[]) {
   const lead = each.find((x) => x?.finish) ?? each.find((x) => x) ?? null; if (!lead) return null;
   return { ...lead, also: each.filter((x) => x && x !== lead && x.a.activity === lead.a.activity && (x.finish === lead.finish || lead.finish)).map((x) => x!.a) };
 }
+/** Where an item (or a group) is in the six phases of every item's work: green done · amber running · red running
+ *  and late · grey to come (a phase the item does not have stays faint). */
+function PhaseBar({ acts, now }: { acts: TrkActivity[]; now: number }) {
+  if (!acts.length) return null;
+  // each item's steps placed in its own order (a group's items side by side)
+  const ph = new Map([...new Set(acts.map((a) => a.key))].flatMap((k) => [...stepPhases(acts.filter((a) => a.key === k))]));
+  const late = (a: TrkActivity) => !a.actualFinish && ((!!a.finish && now > Date.parse(a.finish)) || (!a.actualStart && !!a.start && now > Date.parse(a.start)));
+  return <span className="mt-1 grid grid-cols-6 gap-0.5" title="Isolate & open · Content out · Clean & inspect · Repair & test · Box-up & load · Deblind">{([0, 1, 2, 3, 4, 5] as Phase[]).map((p) => { const xs = acts.filter((a) => ph.get(a.id) === p);
+    return <span key={p} className={cx('h-1.5 rounded-sm', !xs.length ? 'bg-slate-100' : xs.every((a) => a.actualFinish) ? 'bg-status-green' : xs.some((a) => a.actualStart && !a.actualFinish) ? (xs.some(late) ? 'bg-status-red' : 'bg-amber-400') : 'bg-slate-300')} />; })}</span>;
+}
 function ItemRow({ d, e, now, ageH, mi, onOpen, done }: { d: TrackerData; e: TrkEquipment; now: number; ageH?: number; mi?: MiItem; onOpen: () => void; done: Done }) {
   const keys = e.combine ? d.equipment.filter((x) => x.combine === e.combine).map(keyOf) : [keyOf(e)];
   const t = lastUpdate(d, keys);
@@ -397,7 +407,8 @@ function ItemRow({ d, e, now, ageH, mi, onOpen, done }: { d: TrackerData; e: Trk
       <span className={cx('h-2 w-2 shrink-0 rounded-full', e.pendingReason ? 'bg-status-red' : !mi ? 'bg-slate-300' : mi.done >= mi.lines || mi.svD >= 0.5 ? 'bg-status-green' : mi.svD > -0.5 ? 'bg-slate-400' : 'bg-status-red')} />
       <b className={TAG}>{short(e.combine ?? e.tag)}{probs > 0 && <span className="mt-0.5 block w-fit rounded bg-red-100 px-1 text-[10px] font-bold text-red-800">⚠ {probs}</span>}</b>
       <span className="min-w-0 flex-1"><span className="block truncate text-[13px] text-slate-700">{itemLine(d, e)}</span>
-        <span className="block truncate text-[11px] text-slate-500">{mi ? `${mi.physPct}% / plan ${mi.planPct}% · ` : ''}<span className={ageH !== undefined ? 'font-bold text-amber-700' : ''}>{t ? ago(t, now) : 'no update yet'}</span></span></span>
+        <span className="block truncate text-[11px] text-slate-500">{mi ? `${mi.physPct}% / plan ${mi.planPct}% · ` : ''}<span className={ageH !== undefined ? 'font-bold text-amber-700' : ''}>{t ? ago(t, now) : 'no update yet'}</span></span>
+        <PhaseBar acts={lines(d, [keys[0]])} now={now} /></span>
       {step ? <StepButton key={step.a.id} a={step.a} also={step.also} finish={step.finish} more={step.more} eq={e} onDone={done} /> : <VsPlan mi={mi} />}
     </div>
   );
@@ -479,6 +490,7 @@ function BedsRow({ d, set, now, onOpen }: { d: TrackerData; set: BedSet; now: nu
       <span className="flex items-center gap-1.5"><b className="text-[13px]">{set.label}</b><DeptTag dept={set.dept} /><span className="text-[11px] text-slate-500">· {set.items.length}{fin ? ` · ${fin} done` : ''}</span><span className="ml-auto text-[16px] text-slate-400">›</span></span>
       <span className="block truncate text-[12px] text-slate-700">{run.length ? run.map((x) => `▶ ${x.r.name} ${x.on.map((o) => o.t).join(', ')}`).join(' · ') : next ? `Next: ${next.name}` : 'All steps done'}
         {late > 0 && <b className="text-status-red"> · {late} late</b>}</span>
+      <PhaseBar acts={lines(d, set.keys)} now={now} />
       {set.items.length <= 4 && <span className="mt-1 grid grid-cols-4 gap-1.5">{set.items.map((e, i) => { const [n, t] = bedCount(rows, i);
         return <span key={e.id} className="text-[10px] tabular-nums text-slate-600">{short(e.tag)} {n}/{t}<span className="mt-0.5 block h-1.5 overflow-hidden rounded-full bg-slate-200"><span className="block h-full bg-status-green" style={{ width: `${t ? (n / t) * 100 : 0}%` }} /></span></span>; })}</span>}
     </div>
