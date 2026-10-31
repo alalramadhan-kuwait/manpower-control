@@ -198,13 +198,22 @@ export function BottomSheet({ open, onClose, title, children }: { open: boolean;
   );
 }
 
-/** The one save feedback: a short message at the top (owner, 31 Oct 2026: at the bottom it covered the sheet's buttons),
- *  with Undo when the change can be taken back. Taps pass through it, except on Undo. */
+/** The one save feedback (owner, 31 Oct 2026: at the bottom it covered a sheet's buttons, at the top the page's): a
+ *  short message low on the screen that taps pass through, gone at the next tap anywhere; only Undo takes a tap. */
 export function Toast({ msg, onUndo, className }: { msg: string; onUndo?: () => void; className?: string }) {
+  const [gone, setGone] = useState(false);
+  const undoRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    setGone(false);
+    const off = (e: PointerEvent) => { if (!undoRef.current?.contains(e.target as Node)) setGone(true); };
+    document.addEventListener('pointerdown', off, true);
+    return () => document.removeEventListener('pointerdown', off, true);
+  }, [msg]);
+  if (gone) return null;
   return (
-    <div role="status" className={cx('pointer-events-none fixed inset-x-3 top-[max(10px,env(safe-area-inset-top))] z-[70] mx-auto flex max-w-md items-center gap-2 rounded-xl bg-brand-700/95 px-3 py-2.5 text-sm text-white shadow-xl', className)}>
+    <div role="status" className={cx('pointer-events-none fixed inset-x-3 bottom-[max(12px,env(safe-area-inset-bottom))] z-[70] mx-auto flex max-w-md items-center gap-2 rounded-xl bg-brand-700/95 px-3 py-2 text-[13px] text-white shadow-xl', className)}>
       <span className="min-w-0 flex-1">{msg}</span>
-      {onUndo && <button type="button" onClick={onUndo} className="pointer-events-auto shrink-0 rounded-lg bg-white/15 px-3 py-1.5 text-xs font-bold">↶ Undo</button>}
+      {onUndo && <button ref={undoRef} type="button" onClick={onUndo} className="pointer-events-auto shrink-0 rounded-lg bg-white/15 px-3 py-1.5 text-xs font-bold">↶ Undo</button>}
     </div>
   );
 }

@@ -599,7 +599,8 @@ function BedsPage({ d, set, now, done, onItem, onClose, wide = false }: { d: Tra
     : <div key={r.id} className="grid items-center gap-1 border-t border-slate-100 px-2 py-1.5" style={grid}><span className={cx('min-w-0 self-stretch', stick)}>{label(r)}</span>{cols.map((i) => cell(r, i))}</div>;
   const sel = pick && rows0.find((r) => r.id === pick.row);
   return (
-    <div className="fixed inset-0 z-[60] overflow-y-auto bg-canvas pb-28">
+    // the full page sits on the header colour so the phone's top edge (status bar) takes it, not a white wash (owner, 31 Oct 2026)
+    <div className="fixed inset-0 z-[60] overflow-y-auto bg-brand-700"><div className="min-h-full bg-canvas pb-28">
       <header className="sticky top-0 z-10 flex items-center gap-2 bg-brand-700 px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white">
         <button type="button" onClick={onClose} className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-bold">‹ Back</button>
         <p className="min-w-0 flex-1 truncate text-[16px] font-bold">{set.label}</p><DeptTag dept={set.dept} />
@@ -625,7 +626,7 @@ function BedsPage({ d, set, now, done, onItem, onClose, wide = false }: { d: Tra
       </main>
       {sel && pick && <BedSheet d={d} set={set} r={sel} col={pick.col} cols={cols} all={pick.all} head={isHead} done={done} onClose={() => setPick(null)} />}
       {adding && <AddStepsSheet d={d} set={set} rows={rows0.filter((r) => !bedRowOff(r) || r.cells.some((c) => c.a?.tracked))} initial={adding} done={done} onClose={() => setAdding(null)} />}
-    </div>
+    </div></div>
   );
 }
 /** A small item done in one go (owner, 31 Oct 2026: "for the small items, add an option to mark them all as done … I
@@ -821,7 +822,8 @@ function StepBoard({ d, e, keys, done, onList, onDetails, onClose }: { d: Tracke
         : <span className={cx('min-w-[4.4rem] shrink-0 rounded-lg py-1.5 text-center text-[11.5px] font-bold', st === 'run' ? (l.late ? 'bg-red-100 text-red-800 ring-1 ring-red-400' : 'bg-amber-400 text-amber-950') : l.late ? 'text-red-800 ring-1 ring-red-400' : 'text-brand-700 ring-1 ring-brand-700')}>{st === 'run' ? '✓ Finish' : '▶ Start'}</span>}
     </button>; };
   return (
-    <div className="fixed inset-0 z-[60] overflow-y-auto bg-canvas pb-28">
+    // the full page sits on the header colour so the phone's top edge (status bar) takes it, not a white wash (owner, 31 Oct 2026)
+    <div className="fixed inset-0 z-[60] overflow-y-auto bg-brand-700"><div className="min-h-full bg-canvas pb-28">
       <header className="sticky top-0 z-10 flex items-center gap-2 bg-brand-700 px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white">
         <button type="button" onClick={onClose} className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-bold">‹ Back</button>
         <p className="min-w-0 flex-1 truncate text-[16px] font-bold">{short(e.combine ?? e.tag)}{e.description ? ` · ${e.description}` : ''}</p>
@@ -849,7 +851,7 @@ function StepBoard({ d, e, keys, done, onList, onDetails, onClose }: { d: Tracke
       </main>
       {sel && <BedSheet d={d} set={set} r={rowOf(sel)} col={0} cols={[0]} all={false} head={isHead} done={done} onClose={() => setPick(null)} />}
       {allDone && <AllDoneSheet e={e} acts={acts.filter((a) => !a.actualFinish)} done={done} onClose={() => setAllDone(false)} />}
-    </div>
+    </div></div>
   );
 }
 
@@ -983,7 +985,8 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
   const retime = (a: TrkActivity, field: 'actual_start' | 'actual_finish') => act(() => setActivity(a.id, { [field]: atIso, time_reason: why.trim() }), `${a.activity}: ${field === 'actual_start' ? 'start' : 'finish'} set to ${when(atIso!)}.`,
     () => setActivity(a.id, { [field]: field === 'actual_start' ? a.actualStart ?? null : a.actualFinish ?? null, time_reason: 'Undo of a correction' }));
   return (
-    <div className="fixed inset-0 z-[60] overflow-y-auto bg-canvas pb-28">
+    // the full page sits on the header colour so the phone's top edge (status bar) takes it, not a white wash (owner, 31 Oct 2026)
+    <div className="fixed inset-0 z-[60] overflow-y-auto bg-brand-700"><div className="min-h-full bg-canvas pb-28">
       <header className="sticky top-0 z-10 flex items-center gap-2 bg-brand-700 px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white">
         <button type="button" onClick={onClose} className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-bold">‹ Back</button>
         <p className="min-w-0 flex-1 truncate text-[16px] font-bold">{short(e.combine ?? e.tag)} · steps</p>
@@ -1072,7 +1075,7 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
           </section>; })}
         {isHead && <OpsFieldSteps d={d} keys={keys} done={done} />}
       </main>
-    </div>
+    </div></div>
   );
 }
 /** The operations steps and the field-operator detail steps of an item: for the Section Head, folded (hidden in the
