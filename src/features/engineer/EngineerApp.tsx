@@ -16,7 +16,7 @@ import { BlindList } from '@/features/tracker/BlindList';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
-import { bufferCatchUp, isBufferStep, runTogether, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, nrLabel, loopBasis, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor, stepGroups, bedName, isLinkedTest, bedMatrix, bedRowDone, bedRowOff, bedItemDone, bedLate, bedWindow, stepPhases, phaseName, PHASE_IDS, typeSet, stepLate, doneShare, itemStage, PHASES, type Phase, type BedSet, type BedRow, type BedDept,
+import { bufferCatchUp, isBufferStep, runTogether, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, nrLabel, loopBasis, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor, stepGroups, bedName, isLinkedTest, bedMatrix, bedRowDone, bedRowOff, bedItemDone, bedLate, bedWindow, stepPhases, phaseName, PHASE_IDS, typeSet, stepLate, doneShare, itemStage, PHASES, countShare, type Phase, type BedSet, type BedRow, type BedDept,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { setFollow, addReturnItem, setReturnItem, BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -658,6 +658,54 @@ function BedsPage({ d, set, now, done, onItem, onClose, wide = false }: { d: Tra
     </div></div>
   );
 }
+/** A counted step's progress (owner, 31 Oct 2026: "the total RT required and total completed"): 12 / 40 joints · 30%. */
+function CountBar({ a }: { a: TrkActivity }) {
+  const p = countShare(a) ?? 0;
+  return <span className="mt-0.5 flex items-center gap-1.5 text-[10.5px] font-bold text-slate-700">
+    <span className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-200"><span className="block h-full bg-brand-700" style={{ width: `${p * 100}%` }} /></span>
+    <span className="tabular-nums">{a.countDone ?? 0} / {a.countTotal} {a.countUnit ?? ''} · {Math.round(p * 100)}%</span></span>;
+}
+/** Count the step (RT joints): how many in all, how many done; the step's progress and the forecast follow the share. */
+function CountEdit({ a, done }: { a: TrkActivity; done: Done }) {
+  const [open, setOpen] = useState(!!a.countTotal);
+  const [total, setTotal] = useState(a.countTotal ? String(a.countTotal) : ''); const [n, setN] = useState(a.countDone != null ? String(a.countDone) : '');
+  const [unit, setUnit] = useState(a.countUnit ?? 'joints');
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const T = Math.round(Number(total)), N = Math.round(Number(n || 0));
+  const ok = total !== '' && T >= 1 && N >= 0 && N <= T && unit.trim().length <= 30;
+  const changed = T !== (a.countTotal ?? 0) || N !== (a.countDone ?? 0) || unit.trim() !== (a.countUnit ?? '');
+  async function save(t: number | null, d: number | null, u: string | null) {
+    const was = { count_total: a.countTotal ?? null, count_done: a.countDone ?? null, count_unit: a.countUnit ?? null };
+    setBusy(true); setErr(null);
+    try { await setActivity(a.id, { count_total: t, count_done: d, count_unit: u }); done(t ? `${a.activity}: ${d ?? 0} / ${t} ${u ?? ''} (${Math.round(((d ?? 0) / t) * 100)}%).` : `${a.activity}: count removed.`, () => setActivity(a.id, was)); }
+    catch (x) { setErr(x); } finally { setBusy(false); }
+  }
+  if (!open) return <button type="button" onClick={() => setOpen(true)} className="text-[12.5px] font-semibold text-brand-700"># Count progress (e.g. RT joints)</button>;
+  return (
+    <div className="space-y-2 rounded-xl bg-slate-50 p-2.5 ring-1 ring-slate-200">
+      <div className="flex items-end gap-2">
+        <label className="flex-1 text-[10.5px] font-extrabold uppercase tracking-wider text-slate-500">Done
+          <span className="mt-0.5 flex items-center gap-1">
+            <button type="button" aria-label="One less" onClick={() => setN(String(Math.max(0, N - 1)))} className="h-10 w-9 shrink-0 rounded-lg bg-white text-[18px] font-bold text-slate-700 ring-1 ring-slate-300">−</button>
+            <input inputMode="numeric" className="input h-10 min-w-0 flex-1 px-1 text-center text-[18px] font-black" value={n} onChange={(x) => setN(x.target.value.replace(/\D/g, ''))} />
+            <button type="button" aria-label="One more" onClick={() => setN(String(Math.min(T || N + 1, N + 1)))} className="h-10 w-9 shrink-0 rounded-lg bg-white text-[18px] font-bold text-slate-700 ring-1 ring-slate-300">+</button></span></label>
+        <span className="pb-2.5 text-[16px] font-bold text-slate-400">of</span>
+        <label className="w-[4.5rem] text-[10.5px] font-extrabold uppercase tracking-wider text-slate-500">Total
+          <input inputMode="numeric" className="input mt-0.5 h-10 w-full px-1 text-center text-[18px] font-black" value={total} onChange={(x) => setTotal(x.target.value.replace(/\D/g, ''))} /></label>
+        <label className="w-[5.2rem] text-[10.5px] font-extrabold uppercase tracking-wider text-slate-500">What
+          <input className="input mt-0.5 h-10 w-full px-1.5 text-[13px]" value={unit} maxLength={30} onChange={(x) => setUnit(x.target.value)} /></label>
+      </div>
+      {ok && <div className="flex items-center gap-2"><span className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200"><span className="block h-full bg-brand-700" style={{ width: `${(N / T) * 100}%` }} /></span><b className="text-[15px] tabular-nums text-brand-700">{Math.round((N / T) * 100)}%</b></div>}
+      {total !== '' && N > T && <p className="text-[12px] font-semibold text-status-red">Done cannot be more than the total.</p>}
+      {err != null && <ErrorBox error={err} />}
+      <div className="flex items-center gap-2">
+        <button type="button" disabled={busy || !ok || !changed} onClick={() => void save(T, N, unit.trim() || null)} className="min-h-10 flex-1 rounded-xl bg-brand-700 text-[13.5px] font-bold text-white disabled:opacity-50">Save count</button>
+        {a.countTotal ? <button type="button" disabled={busy} onClick={() => void save(null, null, null)} className="text-[12px] font-semibold text-slate-500">Remove count</button> : null}
+      </div>
+      <p className="text-[11px] text-slate-500">The step’s progress is done ÷ total; the end forecast takes the rest of its planned hours from now.</p>
+    </div>
+  );
+}
 /** A small item done in one go (owner, 31 Oct 2026: "for the small items, add an option to mark them all as done … I
  *  will not follow each step"): every open step finished at one time (now, or an earlier time with a reason past the
  *  back-dating limit); a step not started gets the same start. Section Head; Undo puts every step back. */
@@ -735,6 +783,7 @@ function BedSheet({ d, set, r, col, cols, all, head, done, onClose }: { d: Track
     <BottomSheet open onClose={onClose} title={all ? `${r.name} · ${same.length} items` : `${r.name} · ${short(e0.tag)}`}>
       <div className="space-y-2.5">
         {!all && <PlanVsActual a={a} planH={a.durationH ?? null} />}
+        {!all && mode !== 'done' && <CountEdit a={a} done={done} />}
         {!all && !a.start && <p className="text-[12px] text-slate-500">Added step · no plan dates{a.estH ? ` · est. ${a.estH} h` : ''} · not in the %.</p>}
         {(mode === 'open' || mode === 'run') && same.length > 1 && <div><p className="mb-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">{mode === 'run' ? 'Finish on' : 'Start or done on'}</p>
           <div className="grid grid-cols-4 gap-1.5">{same.map((i) => { const x = on.has(i);
@@ -847,7 +896,8 @@ function StepBoard({ d, e, keys, done, onList, onDetails, onClose }: { d: Tracke
       : a.start && a.finish ? `plan ${windowText({ start: Date.parse(a.start), finish: Date.parse(a.finish) }).replace(/^Plan /, '')}${l.late ? ` · ${lateText(l.byH)}` : ''}` : a.estH ? `added · est. ${a.estH} h` : 'no plan time';
     return <button key={a.id} type="button" onClick={() => setPick(a.id)} className="flex w-full items-center gap-2 border-t border-slate-100 px-2.5 py-1.5 text-left active:bg-slate-50">
       <span className="min-w-0 flex-1"><span className={cx('block text-[12.5px] font-semibold leading-snug', st === 'done' && 'text-slate-500')}>{a.activity}</span>
-        <span className={cx('block text-[10.5px]', st === 'done' ? (l.late ? 'text-amber-700' : 'text-slate-500') : l.late ? 'font-bold text-status-red' : 'text-slate-500')}>{sub}</span></span>
+        <span className={cx('block text-[10.5px]', st === 'done' ? (l.late ? 'text-amber-700' : 'text-slate-500') : l.late ? 'font-bold text-status-red' : 'text-slate-500')}>{sub}</span>
+        {a.countTotal ? <CountBar a={a} /> : null}</span>
       {st === 'done' ? <span className="shrink-0 text-[13px] font-bold text-status-green">✓</span>
         : <span className={cx('min-w-[4.4rem] shrink-0 rounded-lg py-1.5 text-center text-[11.5px] font-bold', st === 'run' ? (l.late ? 'bg-red-100 text-red-800 ring-1 ring-red-400' : 'bg-amber-400 text-amber-950') : l.late ? 'text-red-800 ring-1 ring-red-400' : 'text-brand-700 ring-1 ring-brand-700')}>{st === 'run' ? '✓ Finish' : '▶ Start'}</span>}
     </button>; };

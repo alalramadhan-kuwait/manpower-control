@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { doneShare, stepLate, bedItemDone, bedLate, bedMatrix, bedName, bedRowDone, bedRowOff, bedSets, bedWindow, stepGroups, type TrkActivity, type TrkEquipment } from '..';
+import { countShare, doneShare, stepLate, bedItemDone, bedLate, bedMatrix, bedName, bedRowDone, bedRowOff, bedSets, bedWindow, stepGroups, type TrkActivity, type TrkEquipment } from '..';
 
 let n = 0;
 const eq = (tag: string, x: Partial<TrkEquipment> = {}) => ({ id: tag, tag, barchartKey: tag, group: 'Reactors', sort: n++, ...x } as unknown as TrkEquipment);
@@ -78,5 +78,13 @@ describe('type page helpers (owner, 31 Oct 2026)', () => {
     expect(stepLate({ start: '2026-10-30T00:00:00Z', finish: '2026-11-02T00:00:00Z', actualStart: null, actualFinish: null }, now)).toBe(true);
     expect(stepLate({ start: '2026-10-30T00:00:00Z', finish: '2026-11-02T00:00:00Z', actualStart: 'x', actualFinish: null }, now)).toBe(false);
     expect(stepLate({ start: null, finish: '2026-10-30T00:00:00Z', actualStart: 'x', actualFinish: 'y' }, now)).toBe(false);
+  });
+});
+
+describe('counted steps (owner, 31 Oct 2026: RT joints)', () => {
+  it('share is done / total; a counted open step counts its share in the type %', () => {
+    expect(countShare({ countTotal: 40, countDone: 12 })).toBe(0.3);
+    expect(countShare({ countTotal: null, countDone: 3 })).toBeNull();
+    expect(doneShare([{ durationH: 10, actualFinish: 'x' }, { durationH: 10, actualFinish: null, countTotal: 4, countDone: 1 }])).toBe(0.625);
   });
 });

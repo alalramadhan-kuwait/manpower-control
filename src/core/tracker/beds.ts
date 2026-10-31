@@ -114,8 +114,10 @@ export const typeSet = (label: string, xs: TrkEquipment[]): BedSet => ({ label, 
 export const stepLate = (a: Pick<TrkActivity, 'start' | 'finish' | 'actualStart' | 'actualFinish'>, now: number) =>
   !a.actualFinish && ((!!a.finish && now > Date.parse(a.finish)) || (!a.actualStart && !!a.start && now > Date.parse(a.start)));
 /** Done share of a set of steps by their plan hours (no hours planned: by step count); null when there are no steps. */
-export function doneShare(acts: Pick<TrkActivity, 'durationH' | 'actualFinish'>[]): number | null {
+export function doneShare(acts: Pick<TrkActivity, 'durationH' | 'actualFinish' | 'countTotal' | 'countDone'>[]): number | null {
   if (!acts.length) return null;
+  // a counted step (RT joints) not yet finished counts its share done
+  const part = (a: (typeof acts)[number]) => (a.actualFinish ? 1 : a.countTotal ? Math.min(1, (a.countDone ?? 0) / a.countTotal) : 0);
   const h = acts.reduce((t, a) => t + (a.durationH ?? 0), 0);
-  return h > 0 ? acts.filter((a) => a.actualFinish).reduce((t, a) => t + (a.durationH ?? 0), 0) / h : acts.filter((a) => a.actualFinish).length / acts.length;
+  return h > 0 ? acts.reduce((t, a) => t + (a.durationH ?? 0) * part(a), 0) / h : acts.reduce((t, a) => t + part(a), 0) / acts.length;
 }

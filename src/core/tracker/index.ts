@@ -70,6 +70,8 @@ export interface TrkActivity {
   p6Activity?: string | null;
   /** an added step's estimated hours: shown with it only, never in the % or the forecast */
   estH?: number | null;
+  /** a step measured by a count (RT joints): done of total; its progress is done / total (owner, 31 Oct 2026) */
+  countTotal?: number | null; countDone?: number | null; countUnit?: string | null;
 }
 export interface TrkLog { kind: 'step' | 'equipment' | 'iat' | 'activity' | 'point' | 'event' | 'qty' | 'shift'; ref: string; field: string; oldValue: string | null; newValue: string | null; reason?: string | null; byName: string | null; at: string }
 import { clock12 } from '../clock';
@@ -997,7 +999,11 @@ export function miWeighted(d: TrkData, now: number, eqs: EquipView[]): MiWeighte
       const preds = xs.filter((p) => p !== a && ms(p.finish) === s0 && fc.has(p));
       let f: number;
       if (a.actualFinish) { f = ms(a.actualFinish); got += h; }
-      else if (a.actualStart) {
+      else if (counted(a) && (a.actualStart || (a.countDone ?? 0) > 0)) {
+        // a counted step (RT joints): done / total of its planned hours got, the rest still to go from now
+        const p = countShare(a)!; got += h * p; f = now + h * (1 - p) * H;
+        if (!a.actualStart) unverified.push(`${a.activity}: counted progress, no start recorded`);
+      } else if (a.actualStart) {
         const m = measure(a);
         if (m) { got += h * m.p; f = m.finish ?? now + h * (1 - m.p) * H; }
         else {
@@ -1289,6 +1295,9 @@ export function equipmentList(d: Pick<TrkData, 'equipment' | 'activities'>, head
   const withSteps = new Set(d.activities.filter((a) => a.tracked && !a.detail && a.group !== 'Operations').map((a) => a.key));
   return d.equipment.filter((e) => e.tracked && inEquipmentTab(e) && (head || withSteps.has(e.barchartKey ?? e.tag)) && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e));
 }
+/** A step measured by a count, and its share done (0–1); null when it is not counted. */
+export const counted = (a: Pick<TrkActivity, 'countTotal'>) => !!a.countTotal && a.countTotal > 0;
+export const countShare = (a: Pick<TrkActivity, 'countTotal' | 'countDone'>) => (counted(a) ? Math.min(1, Math.max(0, (a.countDone ?? 0) / a.countTotal!)) : null);
 const LATE_RANK: Record<string, number> = { HO_LATE: 0, LATE: 1, PENDING: 2 };
 /** Late or on hold, the latest first: the Equipment tab badge and its "Late / hold" filter count the same items. */
 export function lateOrHold(items: TrkEquipment[], views: EquipView[]): TrkEquipment[] {
