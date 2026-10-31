@@ -68,6 +68,8 @@ export interface TrkActivity {
   disabledReason?: string | null; outOfScope?: boolean;
   /** the P6 text of a bar-chart line renamed in the field */
   p6Activity?: string | null;
+  /** an added step's estimated hours: shown with it only, never in the % or the forecast */
+  estH?: number | null;
 }
 export interface TrkLog { kind: 'step' | 'equipment' | 'iat' | 'activity' | 'point' | 'event' | 'qty' | 'shift'; ref: string; field: string; oldValue: string | null; newValue: string | null; reason?: string | null; byName: string | null; at: string }
 import { clock12 } from '../clock';

@@ -504,8 +504,9 @@ function BedsRow({ d, set, now, onOpen }: { d: TrackerData; set: BedSet; now: nu
  *  after its plan finish. Items whose steps are all done leave the columns ("Handed back"). Tap to start / finish
  *  (others in the same state can be ticked), or a row's "all". Each item keeps its own records. */
 function BedsPage({ d, set, now, done, onItem, onClose }: { d: TrackerData; set: BedSet; now: number; done: Done; onItem: (e: TrkEquipment) => void; onClose: () => void }) {
-  const isHead = useContext(RoleCtx) === 'head';
+  const isHead = useContext(RoleCtx) === 'head', manage = useCanManage();
   const rows0 = useMemo(() => bedMatrix(d.activities, set.keys), [d.activities, set.keys]);
+  const [adding, setAdding] = useState<{ cols: number[]; row: string | null } | null>(null);
   const [showDone, setShowDone] = useState(false); const [showOff, setShowOff] = useState(false);
   const [pick, setPick] = useState<{ row: string; col: number; all: boolean } | null>(null);
   const handed = set.items.map((_, i) => i).filter((i) => bedItemDone(rows0, i));
@@ -518,10 +519,10 @@ function BedsPage({ d, set, now, done, onItem, onClose }: { d: TrackerData; set:
   const grid = { gridTemplateColumns: `minmax(0,1.4fr) repeat(${cols.length},minmax(0,1fr))` };
   const tap = (r: BedRow, i: number) => setPick({ row: r.id, col: i, all: false });
   const cell = (r: BedRow, i: number) => { const c = r.cells[i], l = bedLate(c, now), go = () => tap(r, i);
-    if (c.state === 'none') return <span key={i} />;
+    if (c.state === 'none') return manage ? <button key={i} type="button" aria-label={`Add ${r.name} to ${short(set.items[i].tag)}`} onClick={() => setAdding({ cols: [i], row: r.id })} className="min-h-8 rounded-lg border border-dashed border-slate-300 text-center text-[14px] font-bold text-slate-400">+</button> : <span key={i} />;
     if (c.state === 'nr') return <span key={i} className="text-center text-slate-300">–</span>;
     if (c.state === 'done') return <button key={i} type="button" onClick={go} className="text-center text-[12px] font-bold text-status-green">✓<span className={cx('block text-[9.5px] font-normal tabular-nums', l.late ? 'text-amber-700' : 'text-slate-500')}>{bedTime(c.a!.actualFinish!)}</span></button>;
-    const sub = l.late ? lateText(l.byH) : c.a!.finish ? `by ${dayOf(Date.parse(c.a!.finish))}` : 'no plan';
+    const sub = l.late ? lateText(l.byH) : c.a!.finish ? `by ${dayOf(Date.parse(c.a!.finish))}` : c.a!.estH ? `est. ${c.a!.estH} h` : 'no plan';
     if (c.state === 'run') return <button key={i} type="button" onClick={go} className={cx('rounded-lg px-0.5 py-1 text-center text-[11px] font-bold ring-1', l.late ? 'bg-red-50 text-red-800 ring-red-400' : 'bg-amber-50 text-amber-900 ring-amber-400')}>▶ Finish<span className="block text-[9.5px] font-medium tabular-nums">{sub}</span></button>;
     return <button key={i} type="button" onClick={go} className={cx('rounded-lg py-1 text-center text-[11px] font-bold ring-1', l.late ? 'text-red-800 ring-red-400' : 'text-brand-700 ring-brand-700')}>Start<span className={cx('block text-[9px] font-semibold tabular-nums', l.late ? 'text-red-700' : 'text-slate-500')}>{sub}</span></button>; };
   const allOf = (r: BedRow) => { const v = view(r), nOpen = v.cells.filter((c) => c.state === 'open').length, nRun = v.cells.filter((c) => c.state === 'run').length;
@@ -543,6 +544,7 @@ function BedsPage({ d, set, now, done, onItem, onClose }: { d: TrackerData; set:
       <header className="sticky top-0 z-10 flex items-center gap-2 bg-brand-700 px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white">
         <button type="button" onClick={onClose} className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-bold">‹ Back</button>
         <p className="min-w-0 flex-1 truncate text-[16px] font-bold">{set.label}</p><DeptTag dept={set.dept} />
+        {manage && <button type="button" onClick={() => setAdding({ cols: cols, row: null })} className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[13px] font-bold text-brand-700">+ Step</button>}
       </header>
       <main className="mx-auto max-w-xl px-3 pt-3">
         <List>
@@ -562,6 +564,7 @@ function BedsPage({ d, set, now, done, onItem, onClose }: { d: TrackerData; set:
         <p className="mx-1 text-[11px] text-slate-500">✓ done · ▶ running, tap to finish · – not required · “by” = that item’s plan finish. <b className="text-status-red">Red</b>: not started after its plan start, or not done after its plan finish; a ✓ date in amber finished late. Tap an item for its own page.</p>
       </main>
       {sel && pick && <BedSheet d={d} set={set} r={sel} col={pick.col} cols={cols} all={pick.all} head={isHead} done={done} onClose={() => setPick(null)} />}
+      {adding && <AddStepsSheet d={d} set={set} rows={rows0.filter((r) => !bedRowOff(r) || r.cells.some((c) => c.a?.tracked))} initial={adding} done={done} onClose={() => setAdding(null)} />}
     </div>
   );
 }
@@ -632,6 +635,63 @@ function BedSheet({ d, set, r, col, cols, all, head, done, onClose }: { d: Track
   );
 }
 
+/** Add steps on a group page (owner, 31 Oct 2026): to one or more items, tick the steps another item has and these
+ *  lack (with that item's planned hours as the estimate), or write a new step with its estimated hours and its place.
+ *  An added step has no plan dates: its estimate is shown with it, never counted in the % or the forecast. */
+function AddStepsSheet({ d, set, rows, initial, done, onClose }: { d: TrackerData; set: BedSet; rows: BedRow[]; initial: { cols: number[]; row: string | null }; done: Done; onClose: () => void }) {
+  const [to, setTo] = useState<Set<number>>(new Set(initial.cols));
+  const [ticks, setTicks] = useState<Set<string>>(new Set(initial.row ? [initial.row] : []));
+  const [name, setName] = useState(''); const [est, setEst] = useState(''); const [after, setAfter] = useState<string>(rows.at(-1)?.id ?? '');
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const hrs = (a: TrkActivity | null) => (a ? (a.durationH ?? a.estH ?? null) : null);
+  // steps another item has and a ticked one lacks
+  const missing = rows.filter((r) => r.cells.some((c) => c.a) && [...to].some((i) => r.cells[i].state === 'none'));
+  const toggle = <T,>(s: Set<T>, x: T) => { const n = new Set(s); if (n.has(x)) n.delete(x); else n.add(x); return n; };
+  const estH = est.trim() ? Number(est) : null; const estBad = estH !== null && (!Number.isFinite(estH) || estH <= 0 || estH > 2000);
+  const count = missing.filter((r) => ticks.has(r.id)).reduce((t, r) => t + [...to].filter((i) => r.cells[i].state === 'none').length, 0) + (name.trim() ? to.size : 0);
+  // the step of item i a new step goes after: its step in the nearest row at or before the chosen one ('' = first)
+  const placeOf = (i: number, rowIdx: number) => { for (let j = rowIdx; j >= 0; j--) { const a = rows[j].cells[i].a; if (a && (a.tracked || /^not required/.test(a.disabledReason ?? ''))) return a.id; } return ''; };
+  async function add() {
+    setBusy(true); setErr(null); const made: string[] = [];
+    try {
+      for (const i of [...to].sort((p, q) => p - q)) {
+        const k = set.keys[i]; let order = sortActs(d.activities.filter((a) => a.key === k && a.tracked)).map((a) => a.id);
+        const put = async (title: string, rowIdx: number, h: number | null) => {
+          const aft = placeOf(i, rowIdx); const id = await addEngStep(d.tracker.id, k, title, order, aft, h); made.push(id);
+          const at = aft ? order.indexOf(aft) + 1 : 0; order = [...order.slice(0, at), id, ...order.slice(at)];
+        };
+        for (const r of missing) if (ticks.has(r.id) && r.cells[i].state === 'none') { const src = r.cells.find((c) => c.a)!.a!; await put(src.activity, rows.indexOf(r) - 1, hrs(src)); }
+        if (name.trim()) await put(name.trim(), after ? rows.findIndex((r) => r.id === after) : rows.length - 1, estH);
+      }
+      done(`${made.length} step${made.length === 1 ? '' : 's'} added.`, async () => { for (const id of made) await setActivity(id, { tracked: false, disabled_reason: 'removed' }); });
+      onClose();
+    } catch (x) { setErr(x); } finally { setBusy(false); }
+  }
+  return (
+    <BottomSheet open onClose={onClose} title="Add steps">
+      <div className="space-y-2.5">
+        <div><p className="mb-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">To · tick one or more</p>
+          <div className="flex flex-wrap gap-1.5">{set.items.map((e, i) => <button key={e.id} type="button" aria-pressed={to.has(i)} onClick={() => setTo((s) => toggle(s, i))}
+            className={cx('min-h-9 rounded-lg px-3 text-[12px] font-bold ring-1', to.has(i) ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>{to.has(i) ? '✓ ' : ''}{short(e.combine ?? e.tag)}</button>)}</div></div>
+        {missing.length > 0 && <div><p className="mb-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Steps missing on a ticked item · tick</p>
+          <div className="divide-y divide-slate-100 rounded-xl ring-1 ring-slate-200">{missing.map((r) => { const src = r.cells.find((c) => c.a)!, h = hrs(src.a), lack = [...to].filter((i) => r.cells[i].state === 'none').map((i) => short(set.items[i].combine ?? set.items[i].tag));
+            return <label key={r.id} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5">
+              <input type="checkbox" className="h-5 w-5 shrink-0" checked={ticks.has(r.id)} onChange={() => setTicks((s) => toggle(s, r.id))} />
+              <span className="min-w-0 flex-1 text-[12.5px]">{r.name}<span className="block text-[10.5px] text-slate-500">missing on {lack.join(', ')}{h ? ` · ${h} h` : ''}</span></span></label>; })}</div></div>}
+        <div><p className="mb-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Or a new step</p>
+          <input className="input text-[13px]" placeholder="Step name, e.g. Burner tile replacement" value={name} onChange={(x) => setName(x.target.value)} />
+          {name.trim() && <div className="mt-1.5 grid grid-cols-[1fr_1.6fr] gap-1.5">
+            <input className="input text-[13px]" inputMode="decimal" placeholder="Est. hours" value={est} onChange={(x) => setEst(x.target.value)} />
+            <select className="input text-[13px]" value={after} onChange={(x) => setAfter(x.target.value)}>{rows.map((r) => <option key={r.id} value={r.id}>After: {r.name}</option>)}</select></div>}
+          {estBad && <p className="mt-1 text-[12px] font-semibold text-status-red">Hours: a number above 0.</p>}</div>
+        <p className="text-[11px] text-slate-500">An added step has no plan dates: its hours are an estimate, shown with it, not counted in the % or the end date.</p>
+        {err != null && <ErrorBox error={err} />}
+        <button type="button" disabled={busy || !to.size || !count || estBad} onClick={() => void add()} className="min-h-11 w-full rounded-xl bg-brand-700 text-[14px] font-bold text-white disabled:opacity-50">Add {count || ''} step{count === 1 ? '' : 's'}</button>
+      </div>
+    </BottomSheet>
+  );
+}
+
 /** One item's steps by phase (owner, 30 Oct 2026: "the way that will have clicks and I can see all the steps"): the six
  *  phases of every item, the one it is in open, the others folded with their count and plan dates; one tap per step
  *  (Start / Finish; the sheet has the time, Done, Undo and not required). The list page stays for edit, add and order. */
@@ -654,7 +714,7 @@ function StepBoard({ d, e, keys, done, onList, onDetails, onClose }: { d: Tracke
   const sel = pick ? acts.find((a) => a.id === pick) : undefined;
   const step = (a: TrkActivity) => { const l = lateOf(a), st = a.actualFinish ? 'done' : a.actualStart ? 'run' : 'open';
     const sub = st === 'done' ? `✓ ${when(a.actualFinish)}` : st === 'run' ? `since ${dayOf(Date.parse(a.actualStart!))}${a.finish ? ` · plan end ${dayOf(Date.parse(a.finish))}` : ''}${l.late ? ` · ${lateText(l.byH)}` : ''}`
-      : a.start && a.finish ? `plan ${windowText({ start: Date.parse(a.start), finish: Date.parse(a.finish) }).replace(/^Plan /, '')}${l.late ? ` · ${lateText(l.byH)}` : ''}` : 'no plan time';
+      : a.start && a.finish ? `plan ${windowText({ start: Date.parse(a.start), finish: Date.parse(a.finish) }).replace(/^Plan /, '')}${l.late ? ` · ${lateText(l.byH)}` : ''}` : a.estH ? `added · est. ${a.estH} h` : 'no plan time';
     return <button key={a.id} type="button" onClick={() => setPick(a.id)} className="flex w-full items-center gap-2 border-t border-slate-100 px-2.5 py-1.5 text-left active:bg-slate-50">
       <span className="min-w-0 flex-1"><span className={cx('block text-[12.5px] font-semibold leading-snug', st === 'done' && 'text-slate-500')}>{a.activity}</span>
         <span className={cx('block text-[10.5px]', st === 'done' ? (l.late ? 'text-amber-700' : 'text-slate-500') : l.late ? 'font-bold text-status-red' : 'text-slate-500')}>{sub}</span></span>
