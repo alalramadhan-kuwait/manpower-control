@@ -3,12 +3,12 @@
 // steps, their order, times and the progress % are unchanged.
 import type { TrkActivity } from '.';
 
-export const PHASES = ['OP to handover', 'Under maintenance', 'Under inspection', 'Under repair', 'To be boxed up', 'OP to take back', 'Completed'] as const;
-export type Phase = 0 | 1 | 2 | 3 | 4 | 5 | 6;
-export const PHASE_IDS: Phase[] = [0, 1, 2, 3, 4, 5, 6];
+export const PHASES = ['OP to handover', 'Under maintenance', 'Under inspection', 'Under repair', 'To be boxed up', 'Completed'] as const;
+export type Phase = 0 | 1 | 2 | 3 | 4 | 5;
+export const PHASE_IDS: Phase[] = [0, 1, 2, 3, 4, 5];
 
 // one vocabulary for every item (owner, 31 Oct 2026): Operations hands over, maintenance opens and cleans, inspection,
-// repair and tests, box-up and loading, Operations takes back (deblind); Completed when every step is done
+// repair and tests, box-up and loading; Completed = back to Operations (the deblind is its step)
 const RULES: [Phase, RegExp][] = [
   [5, /\bde-?blind\w*|\bremove\s+blinds?\b/i],
   [4, /\bbox[\s-]?up\b|\bfix(ing)?\s*b\s?ack\b|\bfix\s+(top|back)\b|\bre-?(install|fix)\w*|\binstall\s+(trays?|psv|bundle|elements?|the tube|tube)|\bload\w*|\bremove\s+(internal\s+)?scaffold\w*|\bscaffold\w*\s+removal|\bprepare\s+for\s+loading|\bconnect\s+piping|\bpush\s+back|\bshift\w*\s+back|\bdemister\s+back|\bcouple\b/i],
@@ -26,8 +26,7 @@ export function phaseOf(name: string): Phase | null {
   for (const [p, re] of RULES) if (re.test(t)) return p;
   return null;
 }
-/** Every step's phase, in the item's order: by its name, else the phase of the step before it (the first: 0). A step is
- *  never in Completed (6): an item is Completed when all its steps are done. */
+/** Every step's phase, in the item's order: by its name, else the phase of the step before it (the first: 0). */
 export function stepPhases(acts: Pick<TrkActivity, 'id' | 'activity'>[]): Map<string, Phase> {
   const out = new Map<string, Phase>(); let prev: Phase = 0;
   for (const a of acts) { const p: Phase = phaseOf(a.activity) ?? prev; out.set(a.id, p); prev = p; }

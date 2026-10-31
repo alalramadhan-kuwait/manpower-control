@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { phaseOf, stepPhases } from '..';
 
-// 0 OP to handover · 1 Under maintenance · 2 Under inspection · 3 Under repair · 4 To be boxed up · 5 OP to take back
+// 0 OP to handover · 1 Under maintenance · 2 Under inspection · 3 Under repair · 4 To be boxed up · 5 Completed (deblind)
 describe('the stages of every item', () => {
   it('places the OCR steps by their words', () => {
     const cases: [string, number][] = [['Blind', 0], ['Soda ash soaking', 0], ['Entry Permit', 0], ['Remove top basket', 1], ['Dump Catalyst by Double Vacuum', 1], ['Open windows & doors of Johnson screen', 1],
