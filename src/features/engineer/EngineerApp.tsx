@@ -478,7 +478,12 @@ function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string)
 // ── The main page by type (owner, 31 Oct 2026, design B) ───────────────────────────────────────────────────────────
 const TYPE_ORDER = ['Reactors', 'Compressor', 'Heaters', 'Exchangers', 'Vessels', 'Filters', 'Pumps / LO', 'CV shells', 'Check valves', 'Process piping', 'PSVs'];
 const NOT_A_TYPE = ['OPR list', 'PMRs', 'RTJ & injection'];
-const STAGE_COLOR = ['#64748b', '#2563eb', '#7c3aed', '#ea580c', '#0d9488', '#16a34a'];
+// colour only where the work still needs following (owner, 31 Oct 2026: "reduce the colors … which are still under
+// inspection, under repair or pending from maintenance"): OP to handover outlined; maintenance, inspection and repair
+// in colour; box-up and completed grey with a small icon, like the late dot ("no need to follow up with it")
+const STAGE_COLOR = ['#ffffff', '#2563eb', '#7c3aed', '#ea580c', '#e2e8f0', '#e2e8f0'];
+const STAGE_ICON = ['', '', '', '', '▣ ', '✓ '];
+const chipTone = (st: number) => (st === 0 ? 'text-slate-700 ring-1 ring-slate-400' : st >= 4 ? 'text-slate-500' : 'text-white');
 /** The followed items of each type, the shutdown scope's small items included (rotating work, the OPR list and PMRs
  *  stay on their own lists); the Section Head also sees items with no steps yet. */
 function typeItems(d: TrackerData, head: boolean): Map<string, TrkEquipment[]> {
@@ -522,7 +527,7 @@ function TypeList({ d, now, types, onType, onItem }: { d: TrackerData; now: numb
   const keysOf = (e: TrkEquipment) => (e.combine ? d.equipment.filter((x) => x.combine === e.combine).map(keyOf) : [keyOf(e)]);
   return (<>
     {w && w.impactD > 0 && <ForecastBox w={w} d={d} />}
-    <div className="mb-2 flex flex-wrap gap-x-2.5 gap-y-1 rounded-xl bg-white px-2.5 py-1.5 ring-1 ring-slate-200">{PHASES.map((p, i) => <span key={p} className="flex items-center gap-1 text-[10.5px] text-slate-700"><i className="inline-block h-2.5 w-2.5 rounded-[3px]" style={{ background: STAGE_COLOR[i] }} />{p}</span>)}
+    <div className="mb-2 flex flex-wrap gap-x-2.5 gap-y-1 rounded-xl bg-white px-2.5 py-1.5 ring-1 ring-slate-200">{PHASES.map((p, i) => <span key={p} className="flex items-center gap-1 text-[10.5px] text-slate-700">{i >= 4 ? <i className="not-italic text-slate-500">{STAGE_ICON[i].trim()}</i> : <i className={cx('inline-block h-2.5 w-2.5 rounded-[3px]', i === 0 && 'ring-1 ring-slate-400')} style={{ background: STAGE_COLOR[i] }} />}{p}</span>)}
       <span className="flex items-center gap-1 text-[10.5px] text-slate-700"><i className="inline-block h-2 w-2 rounded-full bg-status-red" />late</span><span className="text-[10.5px] text-slate-700">🚩 delays the end</span></div>
     <List>{[...types].map(([g, xs]) => {
       const items = xs.map((e) => { const acts = lines(d, keysOf(e)), m = mi.get(keyOf(e));
@@ -533,8 +538,8 @@ function TypeList({ d, now, types, onType, onItem }: { d: TrackerData; now: numb
           {nLate > 0 && <span className="text-[11px] font-bold text-status-red">{nLate} late</span>}
           <span className="text-[14px] font-extrabold tabular-nums">{pct === null ? '–' : `${Math.round(pct * 100)}%`}</span><span className="text-[16px] text-slate-400">›</span></span>
         <span className="mt-1 flex flex-wrap gap-1">{items.map((x) => <button key={x.e.id} type="button" title={PHASES[x.st]} onClick={(ev) => { ev.stopPropagation(); onItem(x.e); }}
-          className={cx('relative min-h-7 rounded-md px-1.5 text-[10.5px] font-bold text-white', x.flag > 0 && 'outline outline-[2.5px] outline-offset-1 outline-red-600')} style={{ background: STAGE_COLOR[x.st] }}>
-          {x.st === 5 && x.acts.length ? '✓ ' : ''}{short(x.e.combine ?? x.e.tag)}{x.flag > 0 && <span className="ml-1 rounded bg-white px-0.5 text-[9.5px] text-red-700">🚩 +{x.flag} d</span>}
+          className={cx('relative min-h-7 rounded-md px-1.5 text-[10.5px] font-bold', chipTone(x.st), x.flag > 0 && 'outline outline-[2.5px] outline-offset-1 outline-red-600')} style={{ background: STAGE_COLOR[x.st] }}>
+          {x.st === 5 && !x.acts.length ? '' : STAGE_ICON[x.st]}{short(x.e.combine ?? x.e.tag)}{x.flag > 0 && <span className="ml-1 rounded bg-white px-0.5 text-[9.5px] text-red-700">🚩 +{x.flag} d</span>}
           {x.late && !x.flag && <i className="absolute -right-1 -top-1 h-2 w-2 rounded-full border-[1.5px] border-white bg-status-red" />}</button>)}</span>
       </div>; })}</List>
     <p className="mx-1 mb-2 text-[11px] text-slate-500">Colour = the item’s stage (its earliest stage still open). % = steps done by plan hours. 🚩 = its forecast finish is after the M &amp; I end, by that much; an item with nothing recorded is forecast from today. Tap a type for all its items, an item for its steps.</p>
