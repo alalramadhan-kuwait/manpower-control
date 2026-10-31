@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { phaseOf, stepPhases } from '..';
+import { itemStage, phaseOf, stepPhases } from '..';
 
 // 0 OP to handover · 1 Under maintenance · 2 Under inspection · 3 Under repair · 4 To be boxed up · 5 Completed (deblind)
 describe('the stages of every item', () => {
@@ -18,5 +18,14 @@ describe('the stages of every item', () => {
     expect(phaseOf('Remove blinds')).toBe(5);
     expect(phaseOf('Install Blinds')).toBe(0);
     expect([...stepPhases([{ id: 'a', activity: 'Offer for Process' }, { id: 'b', activity: 'Collector ring' }, { id: 'c', activity: 'Something new' }]).values()]).toEqual([2, 1, 1]);
+  });
+});
+
+describe('itemStage (owner, 31 Oct 2026)', () => {
+  const a = (id: string, activity: string, actualFinish: string | null = null) => ({ id, activity, actualFinish });
+  it('is the earliest open stage, Completed when all done, OP to handover with no steps', () => {
+    expect(itemStage([])).toBe(0);
+    expect(itemStage([a('1', 'Remove manway', 'x'), a('2', 'Offer for inspection'), a('3', 'Box up')])).toBe(2);
+    expect(itemStage([a('1', 'Box up', 'x'), a('2', 'Deblind', 'x')])).toBe(5);
   });
 });

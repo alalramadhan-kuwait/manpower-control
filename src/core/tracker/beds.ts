@@ -107,3 +107,15 @@ export function bedWindow(r: BedRow): { start: number; finish: number } | null {
   if (!xs.length) return null;
   return { start: Math.min(...xs.map((c) => Date.parse(c.a!.start!))), finish: Math.max(...xs.map((c) => Date.parse(c.a!.finish!))) };
 }
+
+/** All the items of one type as one page (owner, 31 Oct 2026: "all heaters together … scroll left and right"). */
+export const typeSet = (label: string, xs: TrkEquipment[]): BedSet => ({ label, dept: deptOf(xs), items: xs, keys: xs.map(keyOf) });
+/** An open step past its plan: not finished after its plan finish, or not started after its plan start. */
+export const stepLate = (a: Pick<TrkActivity, 'start' | 'finish' | 'actualStart' | 'actualFinish'>, now: number) =>
+  !a.actualFinish && ((!!a.finish && now > Date.parse(a.finish)) || (!a.actualStart && !!a.start && now > Date.parse(a.start)));
+/** Done share of a set of steps by their plan hours (no hours planned: by step count); null when there are no steps. */
+export function doneShare(acts: Pick<TrkActivity, 'durationH' | 'actualFinish'>[]): number | null {
+  if (!acts.length) return null;
+  const h = acts.reduce((t, a) => t + (a.durationH ?? 0), 0);
+  return h > 0 ? acts.filter((a) => a.actualFinish).reduce((t, a) => t + (a.durationH ?? 0), 0) / h : acts.filter((a) => a.actualFinish).length / acts.length;
+}

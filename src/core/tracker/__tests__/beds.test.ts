@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bedItemDone, bedLate, bedMatrix, bedName, bedRowDone, bedRowOff, bedSets, bedWindow, stepGroups, type TrkActivity, type TrkEquipment } from '..';
+import { doneShare, stepLate, bedItemDone, bedLate, bedMatrix, bedName, bedRowDone, bedRowOff, bedSets, bedWindow, stepGroups, type TrkActivity, type TrkEquipment } from '..';
 
 let n = 0;
 const eq = (tag: string, x: Partial<TrkEquipment> = {}) => ({ id: tag, tag, barchartKey: tag, group: 'Reactors', sort: n++, ...x } as unknown as TrkEquipment);
@@ -66,5 +66,17 @@ describe('linked items and small types', () => {
       ...['H-1', 'H-2'].flatMap((k) => ['Blind', 'Burners down', 'Fix back burners', 'Deblind'].map((s, i) => st(k, s, i))), st('H-1', 'Pass 1 pigging', 9)];
     const g = stepGroups(items, acts);
     expect(g.map((x) => `${x.label}:${x.dept}:${x.keys.join(',')}`)).toEqual(['E-1 + E-2 · linked:mixed:E-1,E-2', 'Heaters:mixed:H-1,H-2']);
+  });
+});
+
+describe('type page helpers (owner, 31 Oct 2026)', () => {
+  it('done share by plan hours, else by count; late open steps', () => {
+    expect(doneShare([])).toBeNull();
+    expect(doneShare([{ durationH: 30, actualFinish: 'x' }, { durationH: 10, actualFinish: null }])).toBe(0.75);
+    expect(doneShare([{ durationH: null, actualFinish: 'x' }, { durationH: null, actualFinish: null }])).toBe(0.5);
+    const now = Date.parse('2026-10-31T10:00:00Z');
+    expect(stepLate({ start: '2026-10-30T00:00:00Z', finish: '2026-11-02T00:00:00Z', actualStart: null, actualFinish: null }, now)).toBe(true);
+    expect(stepLate({ start: '2026-10-30T00:00:00Z', finish: '2026-11-02T00:00:00Z', actualStart: 'x', actualFinish: null }, now)).toBe(false);
+    expect(stepLate({ start: null, finish: '2026-10-30T00:00:00Z', actualStart: 'x', actualFinish: 'y' }, now)).toBe(false);
   });
 });

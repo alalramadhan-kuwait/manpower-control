@@ -16,7 +16,7 @@ import { BlindList } from '@/features/tracker/BlindList';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
-import { bufferCatchUp, isBufferStep, runTogether, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, nrLabel, loopBasis, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor, stepGroups, bedName, isLinkedTest, bedMatrix, bedRowDone, bedRowOff, bedItemDone, bedLate, bedWindow, stepPhases, phaseName, PHASE_IDS, type Phase, type BedSet, type BedRow, type BedDept,
+import { bufferCatchUp, isBufferStep, runTogether, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, nrLabel, loopBasis, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor, stepGroups, bedName, isLinkedTest, bedMatrix, bedRowDone, bedRowOff, bedItemDone, bedLate, bedWindow, stepPhases, phaseName, PHASE_IDS, typeSet, stepLate, doneShare, itemStage, PHASES, type Phase, type BedSet, type BedRow, type BedDept,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { setFollow, addReturnItem, setReturnItem, BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -447,12 +447,16 @@ function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string)
   const beds = f === 'todo' || f === 'late' ? [] : allGroups;
   const bedOf = (e: TrkEquipment) => beds.find((b) => b.items.includes(e));
   const [bedLabel, setBedLabel] = useState<string | null>(null); const bed = allGroups.find((b) => b.label === bedLabel);
+  // the main page by type (owner, 31 Oct 2026, design B): one line per type, a chip per item in its stage colour
+  const types = useMemo(() => typeItems(d, head), [d, head]);
+  const [typeOpen, setTypeOpen] = useState<string | null>(null); const tSet = typeOpen && types.has(typeOpen) ? typeSet(typeOpen, types.get(typeOpen)!) : null;
   const chips: [string, string][] = [['all', `All ${main.length}`], ['todo', `To update ${todo.length}`], ...(late.length ? [['late', `Late / hold ${late.length}`] as [string, string]] : []), ...all.map((g): [string, string] => [g, `${g} ${main.filter((e) => grpOf(e) === g).length}`])];
   return (<>
     <div className="-mx-3 mb-2.5 flex gap-1.5 overflow-x-auto px-3 pb-0.5 [scrollbar-width:none]">{chips.map(([k, l]) => <button key={k} type="button" onClick={() => setF(k)} ref={(el) => { if (el && f === k && f !== 'all') el.scrollIntoView({ inline: 'center', block: 'nearest' }); }}
       className={cx('min-h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-[12px] font-bold', f === k ? 'bg-brand-700 text-white' : k === 'todo' && todo.length ? 'bg-amber-50 text-amber-900 ring-1 ring-amber-300' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>)}</div>
     {f === 'todo' && <p className="mx-1 mb-2 text-[12px] text-slate-500">Work running (or due to start) with no update for {'>'}12 h · critical {'>'}6 h. Any step, note, status or drum entry counts as an update.</p>}
-    {groups.map((g) => { const xs = f === 'late' ? shown : shown.filter((e) => grpOf(e) === g); const seen = new Set<string>();
+    {f === 'all' && <TypeList d={d} now={now} types={types} onType={setTypeOpen} onItem={setOpen} />}
+    {f !== 'all' && groups.map((g) => { const xs = f === 'late' ? shown : shown.filter((e) => grpOf(e) === g); const seen = new Set<string>();
       const item = (e: TrkEquipment) => <ItemRow key={e.id} d={d} e={e} now={now} ageH={stale.get(keyOf(e))} mi={mi.get(keyOf(e))} onOpen={() => setOpen(e)} done={done} />;
       return <div key={g}><Sec>{g}</Sec><List>{xs.flatMap((e) => { const b = bedOf(e); if (b) { if (seen.has(b.label)) return []; seen.add(b.label); return [<BedsRow key={`bed:${b.label}`} d={d} set={b} now={now} onOpen={() => setBedLabel(b.label)} />]; }
         const sys = e.system; if (!sys || f === 'todo' || f === 'late') return [item(e)]; if (seen.has(sys)) return []; seen.add(sys);
@@ -465,8 +469,60 @@ function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string)
     {!shown.length && <Card><p className="text-sm font-semibold text-green-800">{f === 'todo' ? '✓ Everything has a recent update.' : f === 'late' ? '✓ Nothing late.' : 'Nothing here.'}</p></Card>}
     {outs.length + off.length > 0 && <button type="button" onClick={() => setShowOut((x) => !x)} className="mx-1 mb-2 block text-[12px] font-semibold text-slate-500">{showOut ? '▾' : '▸'} {head ? `Out of scope ${outs.length}` : ''}{off.length - mine ? ` · switched off ${off.length - mine}` : ''}{mine ? `${head ? ' · ' : ''}not followed by you ${mine}` : ''}</button>}
     {showOut && <List>{[...outs, ...off].map((e) => <button key={e.id} type="button" onClick={() => setOpen(e)} className={cx(ROW, 'opacity-70')}><b className={TAG}>{short(e.tag)}</b><span className="min-w-0 flex-1 truncate text-[12px] text-slate-600">{isOutOfScope(e) ? `⊘ ${scopeReasonText(e.disabledReason)}` : e.notFollowed ? '🔕 not followed by you' : 'switched off (Admin)'}</span></button>)}</List>}
+    {tSet && <BedsPage d={d} set={tSet} now={now} done={done} wide onItem={(e) => { setTypeOpen(null); setOpen(e); }} onClose={() => setTypeOpen(null)} />}
     {bed && <BedsPage d={d} set={bed} now={now} done={done} onItem={(e) => { setBedLabel(null); setOpen(e); }} onClose={() => setBedLabel(null)} />}
     {open && <ItemSheet d={d} e={open} done={done} onClose={() => setOpen(null)} />}
+  </>);
+}
+
+// ── The main page by type (owner, 31 Oct 2026, design B) ───────────────────────────────────────────────────────────
+const TYPE_ORDER = ['Reactors', 'Compressor', 'Heaters', 'Exchangers', 'Vessels', 'Filters', 'Pumps / LO', 'CV shells', 'Check valves', 'Process piping', 'PSVs'];
+const NOT_A_TYPE = ['OPR list', 'PMRs', 'RTJ & injection'];
+const STAGE_COLOR = ['#64748b', '#2563eb', '#7c3aed', '#ea580c', '#0d9488', '#16a34a'];
+/** The followed items of each type, the shutdown scope's small items included (rotating work, the OPR list and PMRs
+ *  stay on their own lists); the Section Head also sees items with no steps yet. */
+function typeItems(d: TrackerData, head: boolean): Map<string, TrkEquipment[]> {
+  const withSteps = new Set(d.activities.filter((a) => a.tracked && !a.detail && a.group !== 'Operations').map((a) => a.key));
+  const xs = d.equipment.filter((e) => e.tracked && !e.list && !NOT_A_TYPE.includes(e.group) && (head || withSteps.has(keyOf(e))) && (!e.combine || d.equipment.find((x) => x.combine === e.combine) === e))
+    .sort((p, q) => p.sort - q.sort || p.tag.localeCompare(q.tag));
+  const m = new Map<string, TrkEquipment[]>();
+  for (const g of [...TYPE_ORDER, ...new Set(xs.map((e) => e.group))]) { const ys = xs.filter((e) => e.group === g); if (ys.length && !m.has(g)) m.set(g, ys); }
+  return m;
+}
+/** Who sets the forecast end, largest first: one item named, several of one type counted ("PSVs ×9 +3.3 d"). */
+function flagText(xs: MiItem[], d: TrackerData) {
+  const typeOf = (i: MiItem) => d.equipment.find((e) => keyOf(e) === i.key)?.group ?? i.group;
+  const out: string[] = [];
+  for (const dd of [...new Set(xs.map((i) => i.impactD))]) { const at = xs.filter((i) => i.impactD === dd);
+    for (const g of [...new Set(at.map(typeOf))]) { const ys = at.filter((i) => typeOf(i) === g);
+      out.push(ys.length === 1 ? `${short(ys[0].tag)} +${dd} d` : `${g} ×${ys.length} +${dd} d`); } }
+  return out.slice(0, 6).join(' · ') + (out.length > 6 ? ' …' : '');
+}
+function TypeList({ d, now, types, onType, onItem }: { d: TrackerData; now: number; types: Map<string, TrkEquipment[]>; onType: (g: string) => void; onItem: (e: TrkEquipment) => void }) {
+  const w = useMemo(() => phases(d, now).mi.weighted, [d, now]);
+  const mi = new Map((w?.items ?? []).map((i) => [i.key, i]));
+  const keysOf = (e: TrkEquipment) => (e.combine ? d.equipment.filter((x) => x.combine === e.combine).map(keyOf) : [keyOf(e)]);
+  const flagged = (w?.items ?? []).filter((i) => i.impactD > 0).sort((a, b) => b.impactD - a.impactD);
+  return (<>
+    {w && w.impactD > 0 && <div className="mb-2 rounded-xl border border-red-200 bg-red-50 px-2.5 py-2">
+      <b className="block text-[13.5px] text-red-900">🚩 Forecast end {dayOf(w.estEnd)} · {w.impactD} day{w.impactD === 1 ? '' : 's'} after the plan ({dayOf(w.end)})</b>
+      <span className="block text-[11.5px] text-red-800">{flagText(flagged, d)}</span></div>}
+    <div className="mb-2 flex flex-wrap gap-x-2.5 gap-y-1 rounded-xl bg-white px-2.5 py-1.5 ring-1 ring-slate-200">{PHASES.map((p, i) => <span key={p} className="flex items-center gap-1 text-[10.5px] text-slate-700"><i className="inline-block h-2.5 w-2.5 rounded-[3px]" style={{ background: STAGE_COLOR[i] }} />{p}</span>)}
+      <span className="flex items-center gap-1 text-[10.5px] text-slate-700"><i className="inline-block h-2 w-2 rounded-full bg-status-red" />late</span><span className="text-[10.5px] text-slate-700">🚩 delays the end</span></div>
+    <List>{[...types].map(([g, xs]) => {
+      const items = xs.map((e) => { const acts = lines(d, keysOf(e)), m = mi.get(keyOf(e));
+        return { e, acts, st: itemStage(acts), late: acts.some((a) => stepLate(a, now)), flag: m && m.impactD > 0 ? m.impactD : 0 }; });
+      const pct = doneShare(items.flatMap((x) => x.acts)), nLate = items.filter((x) => x.late).length, hot = items.some((x) => x.flag);
+      return <div key={g} role="button" tabIndex={0} onClick={() => onType(g)} onKeyDown={(x) => x.key === 'Enter' && onType(g)} className={cx('block cursor-pointer border-b border-slate-100 px-2.5 py-2 last:border-b-0 active:bg-slate-50', hot && 'bg-red-50/40')}>
+        <span className="flex items-baseline gap-1.5"><b className="min-w-0 flex-1 truncate text-[14px] text-slate-900">{g}</b>{hot && <span className="text-[12px]">🚩</span>}
+          {nLate > 0 && <span className="text-[11px] font-bold text-status-red">{nLate} late</span>}
+          <span className="text-[14px] font-extrabold tabular-nums">{pct === null ? '–' : `${Math.round(pct * 100)}%`}</span><span className="text-[16px] text-slate-400">›</span></span>
+        <span className="mt-1 flex flex-wrap gap-1">{items.map((x) => <button key={x.e.id} type="button" title={PHASES[x.st]} onClick={(ev) => { ev.stopPropagation(); onItem(x.e); }}
+          className={cx('relative min-h-7 rounded-md px-1.5 text-[10.5px] font-bold text-white', x.flag > 0 && 'outline outline-[2.5px] outline-offset-1 outline-red-600')} style={{ background: STAGE_COLOR[x.st] }}>
+          {x.st === 5 && x.acts.length ? '✓ ' : ''}{short(x.e.combine ?? x.e.tag)}{x.flag > 0 && <span className="ml-1 rounded bg-white px-0.5 text-[9.5px] text-red-700">🚩 +{x.flag} d</span>}
+          {x.late && !x.flag && <i className="absolute -right-1 -top-1 h-2 w-2 rounded-full border-[1.5px] border-white bg-status-red" />}</button>)}</span>
+      </div>; })}</List>
+    <p className="mx-1 mb-2 text-[11px] text-slate-500">Colour = the item’s stage (its earliest stage still open). % = steps done by plan hours. 🚩 = its forecast finish is after the M &amp; I end, by that much; an item with nothing recorded is forecast from today. Tap a type for all its items, an item for its steps.</p>
   </>);
 }
 
@@ -503,7 +559,7 @@ function BedsRow({ d, set, now, onOpen }: { d: TrackerData; set: BedSet; now: nu
  *  step shows its plan window, each item its own plan finish; red = not started after its plan start or not done
  *  after its plan finish. Items whose steps are all done leave the columns ("Handed back"). Tap to start / finish
  *  (others in the same state can be ticked), or a row's "all". Each item keeps its own records. */
-function BedsPage({ d, set, now, done, onItem, onClose }: { d: TrackerData; set: BedSet; now: number; done: Done; onItem: (e: TrkEquipment) => void; onClose: () => void }) {
+function BedsPage({ d, set, now, done, onItem, onClose, wide = false }: { d: TrackerData; set: BedSet; now: number; done: Done; onItem: (e: TrkEquipment) => void; onClose: () => void; wide?: boolean }) {
   const isHead = useContext(RoleCtx) === 'head', manage = useCanManage();
   const rows0 = useMemo(() => bedMatrix(d.activities, set.keys), [d.activities, set.keys]);
   const [adding, setAdding] = useState<{ cols: number[]; row: string | null } | null>(null);
@@ -515,8 +571,11 @@ function BedsPage({ d, set, now, done, onItem, onClose }: { d: TrackerData; set:
   const view = (r: BedRow): BedRow => ({ ...r, cells: cols.map((i) => r.cells[i]) });
   const finished = rows0.filter((r) => bedRowDone(view(r)) || (bedRowOff(view(r)) && !bedRowOff(r))), off = rows0.filter((r) => bedRowOff(r));
   const open = rows0.filter((r) => !finished.includes(r) && !off.includes(r));
-  const chips = cols.length > 4;
-  const grid = { gridTemplateColumns: `minmax(0,1.4fr) repeat(${cols.length},minmax(0,1fr))` };
+  // a type page (owner, 31 Oct 2026): every item a column, swiped left / right, the step names fixed on the left
+  const chips = !wide && cols.length > 4, scroll = wide && cols.length > 3;
+  const grid = scroll ? { gridTemplateColumns: `8.5rem repeat(${cols.length},5.6rem)` } : { gridTemplateColumns: `minmax(0,1.4fr) repeat(${cols.length},minmax(0,1fr))` };
+  const stick = scroll ? 'sticky left-0 z-[1] bg-white pr-1 shadow-[2px_0_4px_rgba(0,0,0,0.04)]' : '';
+  const band = scroll ? 'sticky left-0 w-[calc(100vw-1.5rem)] max-w-xl' : 'w-full';
   const tap = (r: BedRow, i: number) => setPick({ row: r.id, col: i, all: false });
   const cell = (r: BedRow, i: number) => { const c = r.cells[i], l = bedLate(c, now), go = () => tap(r, i);
     if (c.state === 'none') return manage ? <button key={i} type="button" aria-label={`Add ${r.name} to ${short(set.items[i].tag)}`} onClick={() => setAdding({ cols: [i], row: r.id })} className="min-h-8 rounded-lg border border-dashed border-slate-300 text-center text-[14px] font-bold text-slate-400">+</button> : <span key={i} />;
@@ -537,7 +596,7 @@ function BedsPage({ d, set, now, done, onItem, onClose }: { d: TrackerData; set:
           return <button key={i} type="button" disabled={c.state === 'nr'} onClick={() => tap(r, i)} className={cx('min-h-8 truncate rounded-md px-0.5 text-[10.5px] font-bold ring-1',
             c.state === 'nr' ? 'text-slate-300 ring-slate-100' : c.state === 'done' ? cx('bg-green-100 ring-green-300', l.late ? 'text-amber-800' : 'text-green-800') : c.state === 'run' ? 'bg-amber-50 text-amber-900 ring-amber-400' : l.late ? 'bg-red-50 text-red-800 ring-red-300' : 'bg-white text-slate-700 ring-slate-300')}>
             {c.state === 'done' ? '✓' : c.state === 'run' ? '▶' : ''}{short(set.items[i].tag).replace(/^[A-Z]+-/, '')}</button>; })}</div></div>
-    : <div key={r.id} className="grid items-center gap-1 border-t border-slate-100 px-2 py-1.5" style={grid}><span className="min-w-0">{label(r)}</span>{cols.map((i) => cell(r, i))}</div>;
+    : <div key={r.id} className="grid items-center gap-1 border-t border-slate-100 px-2 py-1.5" style={grid}><span className={cx('min-w-0 self-stretch', stick)}>{label(r)}</span>{cols.map((i) => cell(r, i))}</div>;
   const sel = pick && rows0.find((r) => r.id === pick.row);
   return (
     <div className="fixed inset-0 z-[60] overflow-y-auto bg-canvas pb-28">
@@ -547,20 +606,20 @@ function BedsPage({ d, set, now, done, onItem, onClose }: { d: TrackerData; set:
         {manage && <button type="button" onClick={() => setAdding({ cols: cols, row: null })} className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[13px] font-bold text-brand-700">+ Step</button>}
       </header>
       <main className="mx-auto max-w-xl px-3 pt-3">
-        <List>
+        <List><div className={scroll ? 'overflow-x-auto' : ''}><div className={scroll ? 'min-w-max' : ''}>
           {chips ? <div className="flex flex-wrap gap-1 bg-slate-50 px-2.5 py-1.5">{cols.map((i) => { const [n, t] = bedCount(rows0, i); return <button key={i} type="button" onClick={() => onItem(set.items[i])} className="rounded-md bg-white px-1.5 py-0.5 text-[11px] font-bold text-brand-700 ring-1 ring-slate-200">{short(set.items[i].combine ?? set.items[i].tag)} <span className="font-medium tabular-nums text-slate-500">{n}/{t}</span></button>; })}</div>
-            : <div className="grid items-center gap-1 bg-slate-50 px-2 py-1.5" style={grid}><span className="text-[10.5px] font-extrabold uppercase tracking-wider text-slate-500">Step · plan</span>
+            : <div className="grid items-center gap-1 bg-slate-50 px-2 py-1.5" style={grid}><span className={cx('self-stretch text-[10.5px] font-extrabold uppercase tracking-wider text-slate-500', scroll && 'sticky left-0 z-[1] bg-slate-50')}>Step · plan</span>
               {cols.map((i) => { const [n, t] = bedCount(rows0, i); return <button key={i} type="button" onClick={() => onItem(set.items[i])} className="text-center text-[12px] font-bold text-brand-700 underline decoration-slate-300 underline-offset-2">{short(set.items[i].combine ?? set.items[i].tag)}<span className="block text-[10px] font-medium tabular-nums text-slate-500 no-underline">{n}/{t}{set.dept === 'mixed' ? ` · ${set.items[i].inspRef ? 'insp.' : 'clean.'}` : ''}</span></button>; })}</div>}
-          {handed.length > 0 && handed.length < set.items.length && <div className="flex flex-wrap items-center gap-1 border-t border-green-100 bg-green-50 px-2.5 py-1.5 text-[11.5px] font-semibold text-green-900">✓ Handed back:
+          {handed.length > 0 && handed.length < set.items.length && <div className={cx(band, 'flex flex-wrap items-center gap-1 border-t border-green-100 bg-green-50 px-2.5 py-1.5 text-[11.5px] font-semibold text-green-900')}>✓ Handed back:
             {handed.map((i) => { const f = Math.max(...rows0.map((r) => r.cells[i].a?.actualFinish).filter((x): x is string => !!x).map((x) => Date.parse(x)));
               return <button key={i} type="button" onClick={() => onItem(set.items[i])} className="rounded bg-green-100 px-1.5 text-[10.5px]">{short(set.items[i].combine ?? set.items[i].tag)} {dayOf(f)}</button>; })}</div>}
-          {finished.length > 0 && <button type="button" aria-expanded={showDone} onClick={() => setShowDone((x) => !x)} className="flex w-full justify-between border-t border-green-100 bg-green-50 px-2.5 py-2 text-[12px] font-semibold text-green-900"><span>✓ {finished.length} step{finished.length === 1 ? '' : 's'} done on all</span><span>{showDone ? 'hide ▴' : 'show ▾'}</span></button>}
+          {finished.length > 0 && <button type="button" aria-expanded={showDone} onClick={() => setShowDone((x) => !x)} className={cx(band, 'flex justify-between border-t border-green-100 bg-green-50 px-2.5 py-2 text-[12px] font-semibold text-green-900')}><span>✓ {finished.length} step{finished.length === 1 ? '' : 's'} done on all</span><span>{showDone ? 'hide ▴' : 'show ▾'}</span></button>}
           {showDone && finished.map(row)}
           {open.map(row)}
-          {!open.length && <p className="border-t border-slate-100 px-2.5 py-2 text-[12px] font-semibold text-status-green">✓ All steps done.</p>}
-          {off.length > 0 && <button type="button" aria-expanded={showOff} onClick={() => setShowOff((x) => !x)} className="flex w-full justify-between border-t border-slate-100 bg-slate-50 px-2.5 py-2 text-[12px] font-semibold text-slate-500"><span>– {off.length} not required</span><span>{showOff ? 'hide ▴' : 'show ▾'}</span></button>}
+          {!open.length && <p className={cx(band, 'border-t border-slate-100 px-2.5 py-2 text-[12px] font-semibold text-status-green')}>✓ All steps done.</p>}
+          {off.length > 0 && <button type="button" aria-expanded={showOff} onClick={() => setShowOff((x) => !x)} className={cx(band, 'flex justify-between border-t border-slate-100 bg-slate-50 px-2.5 py-2 text-[12px] font-semibold text-slate-500')}><span>– {off.length} not required</span><span>{showOff ? 'hide ▴' : 'show ▾'}</span></button>}
           {showOff && off.map(row)}
-        </List>
+        </div></div></List>
         <p className="mx-1 text-[11px] text-slate-500">✓ done · ▶ running, tap to finish · – not required · “by” = that item’s plan finish. <b className="text-status-red">Red</b>: not started after its plan start, or not done after its plan finish; a ✓ date in amber finished late. Tap an item for its own page.</p>
       </main>
       {sel && pick && <BedSheet d={d} set={set} r={sel} col={pick.col} cols={cols} all={pick.all} head={isHead} done={done} onClose={() => setPick(null)} />}

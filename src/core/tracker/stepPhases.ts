@@ -34,3 +34,11 @@ export function stepPhases(acts: Pick<TrkActivity, 'id' | 'activity'>[]): Map<st
 }
 /** The phase's name (the same words for every item). */
 export const phaseName = (p: Phase, _acts: Pick<TrkActivity, 'activity'>[] = []) => PHASES[p];
+
+/** An item's stage (owner, 31 Oct 2026): the earliest stage still open among its steps; all done → Completed; no
+ *  steps yet → OP to handover. */
+export function itemStage(acts: Pick<TrkActivity, 'id' | 'activity' | 'actualFinish'>[]): Phase {
+  if (!acts.length) return 0;
+  const ph = stepPhases(acts), open = acts.filter((a) => !a.actualFinish);
+  return open.length ? (Math.min(...open.map((a) => ph.get(a.id) ?? 0)) as Phase) : 5;
+}
