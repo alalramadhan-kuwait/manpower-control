@@ -628,6 +628,44 @@ function BedsPage({ d, set, now, done, onItem, onClose, wide = false }: { d: Tra
     </div>
   );
 }
+/** A small item done in one go (owner, 31 Oct 2026: "for the small items, add an option to mark them all as done … I
+ *  will not follow each step"): every open step finished at one time (now, or an earlier time with a reason past the
+ *  back-dating limit); a step not started gets the same start. Section Head; Undo puts every step back. */
+function AllDoneSheet({ e, acts, done, onClose }: { e: TrkEquipment; acts: TrkActivity[]; done: Done; onClose: () => void }) {
+  const [at, setAt] = useState(''); const [why, setWhy] = useState('');
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const kwInput = (ms: number) => new Date(ms + 3 * H).toISOString().slice(0, 16);
+  const atIso = at ? new Date(`${at}:00+03:00`).toISOString() : null;
+  const tooOld = !!atIso && Date.now() - Date.parse(atIso) > BACKDATE_LIMIT_H * H, future = !!atIso && Date.parse(atIso) > Date.now() + 15 * 60000;
+  async function go() {
+    const t = atIso ?? new Date().toISOString(), was = acts.map((a) => ({ id: a.id, s: a.actualStart ?? null, f: a.actualFinish ?? null }));
+    const reason = { time_reason: why.trim() || 'all steps marked done' };
+    setBusy(true); setErr(null);
+    try {
+      for (const a of acts) await setActivity(a.id, { actual_finish: t, ...(a.actualStart ? {} : { actual_start: t }), ...reason });
+      done(`${short(e.tag)}: all ${acts.length} steps done${atIso ? ` · ${when(t)}` : ''}.`, async () => { for (const b of was) await setActivity(b.id, { actual_start: b.s, actual_finish: b.f, time_reason: 'Undo' }); });
+      onClose();
+    } catch (x) { setErr(x); } finally { setBusy(false); }
+  }
+  return (
+    <BottomSheet open onClose={onClose} title={`All steps done · ${short(e.tag)}`}>
+      <div className="space-y-2.5">
+        <p className="text-[12.5px] text-slate-600">{acts.length} open step{acts.length === 1 ? '' : 's'} will be finished at {at ? 'the time below' : 'now'}:</p>
+        <ul className="rounded-xl bg-slate-50 px-3 py-1.5 text-[12.5px] text-slate-700 ring-1 ring-slate-200">{acts.map((a) => <li key={a.id} className="py-0.5">{a.actualStart ? '▶ ' : ''}{a.activity}</li>)}</ul>
+        {err != null && <ErrorBox error={err} />}
+        <button type="button" disabled={busy || future || (tooOld && !why.trim())} onClick={() => void go()} className="min-h-12 w-full rounded-xl bg-amber-400 text-[14px] font-bold text-amber-950 disabled:opacity-50">✓ Done all {acts.length}</button>
+        {at ? <div className="space-y-1.5 rounded-xl bg-slate-50 p-2 ring-1 ring-slate-200">
+            <div className="flex items-center gap-2"><span className="text-[11px] font-bold uppercase text-slate-500">Time</span>
+              <input type="datetime-local" className="input min-h-9 flex-1 py-1 text-[13px]" value={at} max={kwInput(Date.now())} onChange={(x) => setAt(x.target.value)} />
+              <button type="button" onClick={() => { setAt(''); setWhy(''); }} className="min-h-9 rounded-lg bg-white px-2.5 text-[12px] font-bold text-slate-700 ring-1 ring-slate-300">Now</button></div>
+            {future && <p className="text-[12px] font-semibold text-status-red">The time cannot be in the future.</p>}
+            {tooOld && !future && <input className="input min-h-9 text-[13px]" placeholder={`Reason (over ${BACKDATE_LIMIT_H} h back)`} value={why} onChange={(x) => setWhy(x.target.value)} />}
+          </div>
+          : <button type="button" onClick={() => setAt(kwInput(Date.now()))} className="text-[12.5px] font-semibold text-brand-700">🕒 Time: now · change</button>}
+      </div>
+    </BottomSheet>
+  );
+}
 /** One step on one item (or the row's "all"): its plan against what happened; start or finish it now or at a time
  *  typed in, ticking the others in the same state to move them together (items worked as one move with it); undo a
  *  start / finish; not required (Section Head). */
@@ -765,7 +803,7 @@ function StepBoard({ d, e, keys, done, onList, onDetails, onClose }: { d: Tracke
   const byPhase = PHASE_IDS.map((p) => ({ p, xs: acts.filter((a) => ph.get(a.id) === p) }));
   const current = byPhase.find((x) => x.xs.some((a) => !a.actualFinish))?.p ?? 5;
   const [open, setOpen] = useState<Set<Phase>>(() => new Set([current, ...byPhase.filter((x) => x.xs.some((a) => a.actualStart && !a.actualFinish)).map((x) => x.p)]));
-  const [pick, setPick] = useState<string | null>(null);
+  const [pick, setPick] = useState<string | null>(null); const [allDone, setAllDone] = useState(false);
   const lateOf = (a: TrkActivity) => bedLate(rowOf(a).cells[0], now);
   const behindH = Math.max(0, ...acts.filter((a) => !a.actualFinish).map((a) => lateOf(a)).filter((l) => l.late).map((l) => l.byH));
   const ends = acts.map((a) => (a.finish ? Date.parse(a.finish) : 0)).filter(Boolean);
@@ -805,10 +843,12 @@ function StepBoard({ d, e, keys, done, onList, onDetails, onClose }: { d: Tracke
               <span className="shrink-0 text-[10.5px] font-semibold text-slate-500">{all ? (isOpen ? 'hide ▴' : 'show ▾') : `${windowText(w).replace(/^Plan /, 'plan ')} ${isOpen ? '▴' : '▾'}`}</span></button>
             {isOpen && x.xs.map(step)}
           </div>; })}</List>
+        {isHead && isSmallJob(e.group) && acts.some((a) => !a.actualFinish) && <button type="button" onClick={() => setAllDone(true)} className="mb-2 min-h-11 w-full rounded-xl bg-white text-[13.5px] font-bold text-status-green ring-1 ring-green-300">✓ Mark all steps done</button>}
         <button type="button" onClick={onList} className="mx-1 text-[12px] font-semibold text-brand-700">≡ List · edit, add, order ›</button>
         <p className="mx-1 mt-1 text-[11px] text-slate-500">Stages: OP to handover · Under maintenance · Under inspection · Under repair · To be boxed up · Completed (deblind, back to Operations). Red: not started after its plan start, or not done after its plan finish.</p>
       </main>
       {sel && <BedSheet d={d} set={set} r={rowOf(sel)} col={0} cols={[0]} all={false} head={isHead} done={done} onClose={() => setPick(null)} />}
+      {allDone && <AllDoneSheet e={e} acts={acts.filter((a) => !a.actualFinish)} done={done} onClose={() => setAllDone(false)} />}
     </div>
   );
 }
