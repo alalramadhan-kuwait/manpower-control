@@ -607,29 +607,30 @@ function BedSheet({ d, set, r, col, cols, all, head, done, onClose }: { d: Track
     <BottomSheet open onClose={onClose} title={all ? `${r.name} · ${same.length} items` : `${r.name} · ${short(e0.tag)}`}>
       <div className="space-y-2.5">
         {!all && <PlanVsActual a={a} planH={a.durationH ?? null} />}
-        {!all && !a.start && <p className="text-[12px] text-slate-500">No plan time (an added step): not counted in the %.</p>}
-        {(mode === 'open' || mode === 'run') && <>
-          {same.length > 1 && <div><p className="mb-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">{mode === 'run' ? 'Finish on' : 'Start or done on'}</p>
-            <div className="grid grid-cols-4 gap-1.5">{same.map((i) => { const x = on.has(i);
-              return <button key={i} type="button" aria-pressed={x} onClick={() => setOn((s) => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; })}
-                className={cx('min-h-9 truncate rounded-lg px-1 text-[12px] font-bold ring-1', x ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>{short(set.items[i].combine ?? set.items[i].tag)}</button>; })}</div></div>}
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold uppercase text-slate-500">Time</span>
-            <input type="datetime-local" className="input min-h-9 flex-1 py-1 text-[13px]" value={at} max={kwInput(Date.now())} onChange={(x) => setAt(x.target.value)} />
-            {at ? <button type="button" onClick={() => { setAt(''); setWhy(''); }} className="min-h-9 rounded-lg bg-slate-100 px-2.5 text-[12px] font-bold text-slate-700">Now</button> : <span className="text-[12px] text-slate-500">now</span>}
-          </div>
-          {future && <p className="text-[12px] font-semibold text-status-red">The time cannot be in the future.</p>}
-          {tooOld && !future && <input className="input min-h-9 text-[13px]" placeholder={`Reason (over ${BACKDATE_LIMIT_H} h back)`} value={why} onChange={(x) => setWhy(x.target.value)} />}
-        </>}
+        {!all && !a.start && <p className="text-[12px] text-slate-500">Added step · no plan dates{a.estH ? ` · est. ${a.estH} h` : ''} · not in the %.</p>}
+        {(mode === 'open' || mode === 'run') && same.length > 1 && <div><p className="mb-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">{mode === 'run' ? 'Finish on' : 'Start or done on'}</p>
+          <div className="grid grid-cols-4 gap-1.5">{same.map((i) => { const x = on.has(i);
+            return <button key={i} type="button" aria-pressed={x} onClick={() => setOn((s) => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; })}
+              className={cx('min-h-9 truncate rounded-lg px-1 text-[12px] font-bold ring-1', x ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-300')}>{short(set.items[i].combine ?? set.items[i].tag)}</button>; })}</div></div>}
         {err != null && <ErrorBox error={err} />}
-        <div className="grid grid-cols-2 gap-1.5">
-          {mode === 'open' && !all && head && <button type="button" disabled={busy} onClick={() => void notReq()} className="min-h-11 rounded-xl bg-white text-[13px] font-bold text-slate-700 ring-1 ring-slate-300">⊘ Not required</button>}
-          {(mode === 'done' || mode === 'run') && !all && <button type="button" disabled={busy} onClick={() => void undo()} className="min-h-11 rounded-xl bg-white text-[13px] font-bold text-slate-700 ring-1 ring-slate-300">↶ Undo {mode === 'done' ? 'finish' : 'start'}</button>}
-          {mode === 'open' && !all && head && <span />}
-          {mode === 'open' && <button type="button" disabled={busy || !on.size || future || (tooOld && !why.trim())} onClick={() => void move(false)} className="min-h-11 rounded-xl bg-brand-700 text-[13px] font-bold text-white disabled:opacity-50">▶ Start{on.size > 1 ? ` ${on.size}` : ''}</button>}
-          {mode === 'open' && <button type="button" disabled={busy || !on.size || future || (tooOld && !why.trim())} onClick={() => void move(true)} className="min-h-11 rounded-xl bg-amber-400 text-[13px] font-bold text-amber-950 disabled:opacity-50">✓ Done{on.size > 1 ? ` ${on.size}` : ''}</button>}
-          {mode === 'run' && <button type="button" disabled={busy || !on.size || future || (tooOld && !why.trim())} onClick={() => void move(true)} className={cx('min-h-11 rounded-xl bg-amber-400 text-[13px] font-bold text-amber-950 disabled:opacity-50', all && 'col-span-2')}>✓ Finish{on.size > 1 ? ` ${on.size}` : ''}</button>}
-        </div>
+        {/* the main action(s) side by side; the time is "now" unless an earlier one is set (owner, 31 Oct 2026: nicer, no stacked odd buttons) */}
+        {mode !== 'done' && <div className="grid grid-cols-2 gap-2">
+          {mode === 'open' && <button type="button" disabled={busy || !on.size || future || (tooOld && !why.trim())} onClick={() => void move(false)} className="min-h-12 rounded-xl bg-brand-700 text-[14px] font-bold text-white disabled:opacity-50">▶ Start{on.size > 1 ? ` ${on.size}` : ''}</button>}
+          {mode === 'run' && !all && <button type="button" disabled={busy} onClick={() => void undo()} className="min-h-12 rounded-xl bg-white text-[14px] font-bold text-slate-700 ring-1 ring-slate-300">↶ Undo start</button>}
+          <button type="button" disabled={busy || !on.size || future || (tooOld && !why.trim())} onClick={() => void move(true)} className={cx('min-h-12 rounded-xl bg-amber-400 text-[14px] font-bold text-amber-950 disabled:opacity-50', mode === 'run' && all && 'col-span-2')}>✓ {mode === 'run' ? 'Finish' : 'Done'}{on.size > 1 ? ` ${on.size}` : ''}</button>
+        </div>}
+        {mode === 'done' && !all && <button type="button" disabled={busy} onClick={() => void undo()} className="min-h-12 w-full rounded-xl bg-white text-[14px] font-bold text-slate-700 ring-1 ring-slate-300">↶ Undo finish</button>}
+        {(mode === 'open' || mode === 'run') && (at ? <div className="space-y-1.5 rounded-xl bg-slate-50 p-2 ring-1 ring-slate-200">
+            <div className="flex items-center gap-2"><span className="text-[11px] font-bold uppercase text-slate-500">Time</span>
+              <input type="datetime-local" className="input min-h-9 flex-1 py-1 text-[13px]" value={at} max={kwInput(Date.now())} onChange={(x) => setAt(x.target.value)} />
+              <button type="button" onClick={() => { setAt(''); setWhy(''); }} className="min-h-9 rounded-lg bg-white px-2.5 text-[12px] font-bold text-slate-700 ring-1 ring-slate-300">Now</button></div>
+            {future && <p className="text-[12px] font-semibold text-status-red">The time cannot be in the future.</p>}
+            {tooOld && !future && <input className="input min-h-9 text-[13px]" placeholder={`Reason (over ${BACKDATE_LIMIT_H} h back)`} value={why} onChange={(x) => setWhy(x.target.value)} />}
+          </div>
+          : <div className="flex items-center justify-between text-[12.5px]">
+            <button type="button" onClick={() => setAt(kwInput(Date.now()))} className="font-semibold text-brand-700">🕒 Time: now · change</button>
+            {mode === 'open' && !all && head && <button type="button" disabled={busy} onClick={() => void notReq()} className="font-semibold text-slate-500">⊘ Not required</button>}
+          </div>)}
       </div>
     </BottomSheet>
   );
