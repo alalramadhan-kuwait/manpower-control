@@ -489,24 +489,39 @@ function typeItems(d: TrackerData, head: boolean): Map<string, TrkEquipment[]> {
   for (const g of [...TYPE_ORDER, ...new Set(xs.map((e) => e.group))]) { const ys = xs.filter((e) => e.group === g); if (ys.length && !m.has(g)) m.set(g, ys); }
   return m;
 }
-/** Who sets the forecast end, largest first: one item named, several of one type counted ("PSVs ×9 +3.3 d"). */
-function flagText(xs: MiItem[], d: TrackerData) {
+/** Who sets the forecast end, largest first: one item named, several of one type counted ("PSVs ×6"). */
+function flagRows(xs: MiItem[], d: TrackerData): { label: string; dd: number }[] {
   const typeOf = (i: MiItem) => d.equipment.find((e) => keyOf(e) === i.key)?.group ?? i.group;
-  const out: string[] = [];
+  const out: { label: string; dd: number }[] = [];
   for (const dd of [...new Set(xs.map((i) => i.impactD))]) { const at = xs.filter((i) => i.impactD === dd);
     for (const g of [...new Set(at.map(typeOf))]) { const ys = at.filter((i) => typeOf(i) === g);
-      out.push(ys.length === 1 ? `${short(ys[0].tag)} +${dd} d` : `${g} ×${ys.length} +${dd} d`); } }
-  return out.slice(0, 6).join(' · ') + (out.length > 6 ? ' …' : '');
+      out.push({ label: ys.length === 1 ? short(ys[0].tag) : `${g} ×${ys.length}`, dd }); } }
+  return out;
+}
+/** The forecast box (owner, 31 Oct 2026, design B): plan end → forecast end, the days over, one bar per item pushing it. */
+function ForecastBox({ w, d }: { w: { estEnd: number; end: number; impactD: number; items: MiItem[] }; d: TrackerData }) {
+  const rows = flagRows(w.items.filter((i) => i.impactD > 0).sort((a, b) => b.impactD - a.impactD), d), top = rows.slice(0, 4), max = Math.max(...rows.map((r) => r.dd), 0.1);
+  return (
+    <div className="mb-2 rounded-xl bg-white px-2.5 py-2.5 ring-1 ring-red-200">
+      <div className="flex items-center gap-2">
+        <div className="flex-1 rounded-lg bg-slate-100 py-1 text-center"><span className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Plan end</span><b className="block text-[20px] font-black leading-tight text-slate-900">{dayOf(w.end)}</b></div>
+        <span className="text-[18px] text-slate-400">→</span>
+        <div className="flex-1 rounded-lg bg-red-50 py-1 text-center"><span className="block text-[10px] font-extrabold uppercase tracking-wider text-red-700">Forecast</span><b className="block text-[20px] font-black leading-tight text-red-700">{dayOf(w.estEnd)}</b></div>
+        <b className="w-[4.4rem] text-center text-[22px] font-black tabular-nums text-red-700">+{w.impactD}<span className="text-[12px]"> d</span></b>
+      </div>
+      {top.length > 0 && <div className="mt-2 grid items-center gap-x-2 gap-y-1 text-[12px] font-bold" style={{ gridTemplateColumns: 'minmax(0,6.5rem) 1fr 3.2rem' }}>
+        {top.map((r) => <Fragment key={r.label}><span className="truncate text-slate-800">{r.label}</span><span className="h-3 rounded-[3px] bg-status-red" style={{ width: `${(r.dd / max) * 100}%` }} /><span className="text-right tabular-nums text-red-700">+{r.dd} d</span></Fragment>)}
+      </div>}
+      {rows.length > top.length && <p className="mt-1 text-[11px] text-slate-500">+{rows.length - top.length} more flagged below (🚩)</p>}
+    </div>
+  );
 }
 function TypeList({ d, now, types, onType, onItem }: { d: TrackerData; now: number; types: Map<string, TrkEquipment[]>; onType: (g: string) => void; onItem: (e: TrkEquipment) => void }) {
   const w = useMemo(() => phases(d, now).mi.weighted, [d, now]);
   const mi = new Map((w?.items ?? []).map((i) => [i.key, i]));
   const keysOf = (e: TrkEquipment) => (e.combine ? d.equipment.filter((x) => x.combine === e.combine).map(keyOf) : [keyOf(e)]);
-  const flagged = (w?.items ?? []).filter((i) => i.impactD > 0).sort((a, b) => b.impactD - a.impactD);
   return (<>
-    {w && w.impactD > 0 && <div className="mb-2 rounded-xl border border-red-200 bg-red-50 px-2.5 py-2">
-      <b className="block text-[13.5px] text-red-900">🚩 Forecast end {dayOf(w.estEnd)} · {w.impactD} day{w.impactD === 1 ? '' : 's'} after the plan ({dayOf(w.end)})</b>
-      <span className="block text-[11.5px] text-red-800">{flagText(flagged, d)}</span></div>}
+    {w && w.impactD > 0 && <ForecastBox w={w} d={d} />}
     <div className="mb-2 flex flex-wrap gap-x-2.5 gap-y-1 rounded-xl bg-white px-2.5 py-1.5 ring-1 ring-slate-200">{PHASES.map((p, i) => <span key={p} className="flex items-center gap-1 text-[10.5px] text-slate-700"><i className="inline-block h-2.5 w-2.5 rounded-[3px]" style={{ background: STAGE_COLOR[i] }} />{p}</span>)}
       <span className="flex items-center gap-1 text-[10.5px] text-slate-700"><i className="inline-block h-2 w-2 rounded-full bg-status-red" />late</span><span className="text-[10.5px] text-slate-700">🚩 delays the end</span></div>
     <List>{[...types].map(([g, xs]) => {
