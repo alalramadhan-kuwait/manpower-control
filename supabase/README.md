@@ -299,6 +299,7 @@ Saleh Al-Ajmi (workbook notes "Covering C-shift" Feb X48 and Mar E49). The other
 | `20261031093917_trk_activities_est_h` | `trk_activities.est_h`: estimated hours of a step added in the app; display only, not in the % or the forecast |
 | `20261031105532_trk_small_items_service` | The service (line, from → to) of the CV shells, check valves and process piping, from the P&ID lineup, in their description |
 | `20261031110428_trk_check_valves_short_service` | Check valves: description shortened to the valve they sit after ("d/s XV-542") |
+| `20261031110529_trk_hv534_536_service` | HV-534/535/536: recycle gas filter F-202 bypass (FC) / inlet (FO) / outlet (FO), from the owner |
 | `20261029120402_sd_reading_black_oil` | A start-up reading can be the black oil feed (KBPD, `black`) instead of a temperature; the cut-in SOP table is re-timed from the row where that much black oil goes in. Train-1: 29 Oct 12:30 PM, 25 KBPD all black |
 | `20261029113527_trk_reactors_same_steps` | R-201..R-204 one step list (same internals and scope): R-201 names aligned and Remove scaffolding not required; R-202 Manual cleaning (done, time not recorded) and Collector ring added, steps ordered as R-203; 'not required' choices kept |
 | `20261029105356_sd_cutin_catalyst` | Cut-in estimate v3: the R-105 catalyst on the start-up step's cut-in settings (fresh / used); Train-1's Oct-26 heat-up marked fresh |
