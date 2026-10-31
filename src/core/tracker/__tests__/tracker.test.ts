@@ -203,7 +203,7 @@ describe('change log in words', () => {
     const acts = [{ id: 'a', activityId: 'A1', key: 'E-12-207', activity: 'Hydroblasting', group: null, durationH: 1, start: null, finish: null, stage: null, tracked: true }];
     expect(logText(L('activity', 'E-12-207 · A1', 'actual_finish', null, '2026-10-23T10:00:00+00:00'), acts)).toEqual({ item: 'E-207', what: '✓ finished Hydroblasting' });
     expect(logText(L('equipment', 'R-12-205', 'note', 'old', 'Vacuum dumping stopped'))).toEqual({ item: 'R-205', what: '📝 note "Vacuum dumping stopped"' });
-    expect(logText(L('equipment', 'V-12-212', 'stage', '0', '1')).what).toBe('stage Not HO → HO');
+    expect(logText(L('equipment', 'V-12-212', 'stage', '0', '1')).what).toBe('stage OP to handover → Under maintenance');
     expect(logText(L('qty', 'R-12-203 removal 2026-10-23 D', 'removal', null, '2 free_fall'))).toEqual({ item: 'R-203', what: '🛢 2 drums (2026-10-23 D)' });
     expect(logText(L('event', 'V-12-209', 'event ended', null, 'Last gas test failed')).what).toBe('✓ issue resolved "Last gas test failed"');
     expect(logText(L('shift', '2026-10-23 D', 'temperatures', null, '{"R205":"700","R203":""}')).what).toBe('🌡 R-205 700°F');

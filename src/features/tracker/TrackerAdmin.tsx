@@ -76,7 +76,7 @@ export function TrackerAdmin({ data, eqs, by = 'Section Head', onDone }: { data:
                 <input type="checkbox" checked={a.tracked} disabled={busy} onChange={(e) => run(() => setActivity(a.id, { tracked: e.target.checked }), `${a.activityId} ${e.target.checked ? 'on' : 'off'}.`)} />
                 <span className="w-24 shrink-0 font-semibold">{a.key}</span><span className="min-w-0 flex-1 truncate">{a.activity}</span>
                 <select className="rounded border border-slate-300 px-1 py-0.5" value={a.stage ?? ''} disabled={busy} onChange={(e) => run(() => setActivity(a.id, { stage: e.target.value === '' ? null : Number(e.target.value) }), `${a.activityId}: stage ${e.target.value || 'none'}.`)}>
-                  <option value="">–</option>{STAGES.map((s, i) => <option key={s} value={i}>{i}</option>)}</select>
+                  <option value="">–</option>{STAGES.map((_s, i) => <option key={i} value={i}>{i}</option>)}</select>
               </label>
             ))}
           </div>

@@ -16,7 +16,7 @@ import { BlindList } from '@/features/tracker/BlindList';
 import { stepNow } from '@/features/tracker/actions';
 import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
-import { bufferCatchUp, isBufferStep, runTogether, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, nrLabel, loopBasis, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor, stepGroups, bedName, isLinkedTest, bedMatrix, bedRowDone, bedRowOff, bedItemDone, bedLate, bedWindow, stepPhases, phaseName, type Phase, type BedSet, type BedRow, type BedDept,
+import { bufferCatchUp, isBufferStep, runTogether, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, nrLabel, loopBasis, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor, stepGroups, bedName, isLinkedTest, bedMatrix, bedRowDone, bedRowOff, bedItemDone, bedLate, bedWindow, stepPhases, phaseName, PHASE_IDS, type Phase, type BedSet, type BedRow, type BedDept,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
 import { setFollow, addReturnItem, setReturnItem, BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
@@ -395,7 +395,7 @@ function PhaseBar({ acts, now }: { acts: TrkActivity[]; now: number }) {
   // each item's steps placed in its own order (a group's items side by side)
   const ph = new Map([...new Set(acts.map((a) => a.key))].flatMap((k) => [...stepPhases(acts.filter((a) => a.key === k))]));
   const late = (a: TrkActivity) => !a.actualFinish && ((!!a.finish && now > Date.parse(a.finish)) || (!a.actualStart && !!a.start && now > Date.parse(a.start)));
-  return <span className="mt-1 grid grid-cols-6 gap-0.5" title="Isolate & open · Content out · Clean & inspect · Repair & test · Box-up & load · Deblind">{([0, 1, 2, 3, 4, 5] as Phase[]).map((p) => { const xs = acts.filter((a) => ph.get(a.id) === p);
+  return <span className="mt-1 grid grid-cols-7 gap-0.5" title="OP to handover · Under maintenance · Under inspection · Under repair · To be boxed up · OP to take back · Completed">{PHASE_IDS.map((p) => { const xs = acts.filter((a) => ph.get(a.id) === p);
     // a phase the item has no step in: done once the work is past it (owner, 30 Oct 2026)
     const past = acts.some((a) => (ph.get(a.id) ?? 0) > p && a.actualStart) || acts.every((a) => a.actualFinish);
     return <span key={p} className={cx('h-1.5 rounded-sm', !xs.length ? (past ? 'bg-status-green' : 'bg-slate-100') : xs.every((a) => a.actualFinish) ? 'bg-status-green' : xs.some((a) => a.actualStart && !a.actualFinish) ? (xs.some(late) ? 'bg-status-red' : 'bg-amber-400') : 'bg-slate-300')} />; })}</span>;
@@ -702,8 +702,8 @@ function StepBoard({ d, e, keys, done, onList, onDetails, onClose }: { d: Tracke
   const ph = stepPhases(acts);
   const set: BedSet = { label: short(e.combine ?? e.tag), dept: e.inspRef ? 'inspection' : 'cleaning', items: [e], keys: [k0] };
   const rowOf = (a: TrkActivity): BedRow => ({ id: a.id, name: a.activity, cells: [{ key: k0, a, state: a.actualFinish ? 'done' : a.actualStart ? 'run' : 'open' }] });
-  const byPhase = ([0, 1, 2, 3, 4, 5] as Phase[]).map((p) => ({ p, xs: acts.filter((a) => ph.get(a.id) === p) }));
-  const current = byPhase.find((x) => x.xs.some((a) => !a.actualFinish))?.p ?? 5;
+  const byPhase = PHASE_IDS.map((p) => ({ p, xs: acts.filter((a) => ph.get(a.id) === p) }));
+  const current = byPhase.find((x) => x.xs.some((a) => !a.actualFinish))?.p ?? 6;
   const [open, setOpen] = useState<Set<Phase>>(() => new Set([current, ...byPhase.filter((x) => x.xs.some((a) => a.actualStart && !a.actualFinish)).map((x) => x.p)]));
   const [pick, setPick] = useState<string | null>(null);
   const lateOf = (a: TrkActivity) => bedLate(rowOf(a).cells[0], now);
@@ -733,8 +733,8 @@ function StepBoard({ d, e, keys, done, onList, onDetails, onClose }: { d: Tracke
         <Card>
           <p className="text-[12px] text-slate-600"><b className="text-[15px] text-slate-900">{short(e.combine ?? e.tag)}</b> · {acts.filter((a) => a.actualFinish).length}/{acts.length} steps</p>
           <p className="text-[12px] text-slate-600">{acts.every((a) => a.actualFinish) ? <b className="text-status-green">✓ All steps done</b> : <>Now: <b className="text-slate-900">{phaseName(current, acts)}</b></>}{behindH > 0 ? <b className="text-status-red"> · {lateText(behindH).replace('late', 'behind')}</b> : ''}{ends.length ? ` · plan end ${dayOf(Math.max(...ends))}` : ''}</p>
-          <div className="mt-1.5 grid grid-cols-6 gap-0.5">{byPhase.map((x) => <span key={x.p} className={cx('h-2 rounded-sm', tone(x.xs, x.p))} />)}</div>
-          <div className="mt-0.5 grid grid-cols-6 gap-0.5 text-center text-[8.5px] leading-tight text-slate-500">{byPhase.map((x) => <span key={x.p}>{phaseName(x.p, acts)}</span>)}</div>
+          <div className="mt-1.5 grid grid-cols-7 gap-0.5">{byPhase.map((x) => <span key={x.p} className={cx('h-2 rounded-sm', tone(x.xs, x.p))} />)}</div>
+          <div className="mt-0.5 grid grid-cols-7 gap-0.5 text-center text-[8.5px] leading-tight text-slate-500">{byPhase.map((x) => <span key={x.p}>{phaseName(x.p, acts)}</span>)}</div>
         </Card>
         <List>{byPhase.filter((x) => x.xs.length).map((x) => { const n = x.xs.filter((a) => a.actualFinish).length, run = x.xs.filter((a) => a.actualStart && !a.actualFinish).length, all = n === x.xs.length, isOpen = open.has(x.p), w = win(x.xs);
           return <div key={x.p}>
@@ -745,7 +745,7 @@ function StepBoard({ d, e, keys, done, onList, onDetails, onClose }: { d: Tracke
             {isOpen && x.xs.map(step)}
           </div>; })}</List>
         <button type="button" onClick={onList} className="mx-1 text-[12px] font-semibold text-brand-700">≡ List · edit, add, order ›</button>
-        <p className="mx-1 mt-1 text-[11px] text-slate-500">Phases: Isolate &amp; open · {phaseName(1, acts)} · Clean &amp; inspect · Repair &amp; test · Box-up &amp; load · Deblind. Red: not started after its plan start, or not done after its plan finish.</p>
+        <p className="mx-1 mt-1 text-[11px] text-slate-500">Stages: OP to handover · Under maintenance · Under inspection · Under repair · To be boxed up · OP to take back · Completed. Red: not started after its plan start, or not done after its plan finish.</p>
       </main>
       {sel && <BedSheet d={d} set={set} r={rowOf(sel)} col={0} cols={[0]} all={false} head={isHead} done={done} onClose={() => setPick(null)} />}
     </div>
@@ -814,7 +814,7 @@ function ItemSheet({ d, e: e0, now = Date.now(), done, onClose }: { d: TrackerDa
         {next && [next, ...alsoNow].map((x, j) => <button key={x.id} type="button" disabled={busy} onClick={() => step(x, false)} className="w-full rounded-xl bg-brand-700 px-3 py-2 text-left text-white"><span className="block text-[11px] font-bold uppercase tracking-wide opacity-80">▶ Start{j > 0 || (alsoNow.length && j === 0) || run.some((r) => together.get(r.id) && together.get(r.id) === together.get(x.id)) ? ' · runs together' : ''}</span><span className="line-clamp-2 text-[13px] font-semibold leading-snug">{x.activity}</span></button>)}
         {!ls.length ? <>{e.description && <p className="text-[13px] font-semibold">{e.description}</p>}
           <p className="pt-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Stage</p>
-          <div className="flex flex-wrap gap-1.5">{STAGE_SHORT.map((l, i) => <button key={l} type="button" onClick={() => setStage(i)} className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', (stage ?? e.stage) === i ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{l}</button>)}</div></>
+          <div className="flex flex-wrap gap-1.5">{STAGE_SHORT.map((l, i) => (i === 2 && (stage ?? e.stage) !== 2 ? null : <button key={i} type="button" onClick={() => setStage(i)} className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', (stage ?? e.stage) === i ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{l}</button>))}</div></>
           : !run.length && !next && <p className="rounded-xl bg-green-50 p-2 text-sm font-semibold text-green-800">✓ All steps done</p>}
         <Issues d={d} done={done} item={e} keys={keys} />
         {(e.inspWork || e.inspRef) && <div className="rounded-2xl bg-white p-2.5 ring-1 ring-slate-200">

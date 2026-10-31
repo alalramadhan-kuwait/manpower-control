@@ -157,8 +157,10 @@ export const isSmallJob = (group: string) => isMisc(group) || group === 'Pumps /
 export const WITH_EQUIP = ['Pumps / LO', 'PSVs'];
 /** Where an item is listed: the Equipment tab, or the SD scope / Hot work lists (rotating scope, small jobs, PMRs). */
 export const inEquipmentTab = (e: Pick<TrkEquipment, 'list' | 'group' | 'system'>) => !e.list && (!isSmallJob(e.group) || WITH_EQUIP.includes(e.group) || !!e.system);
-export const STAGES = ['Not handed over', 'Handed over', 'Opened / cleaning', 'Inspection', 'Repair', 'Box-up', 'Deblinded / returned'] as const;
-export const STAGE_SHORT = ['Not HO', 'HO', 'Cleaning', 'Inspection', 'Repair', 'Box-up', 'Returned'] as const;
+// the item's stage in the same words as the steps' stages (owner, 31 Oct 2026); the numbers keep their meaning:
+// 0 not handed over, 1 handed over, 2 opened / cleaning, 3 inspection, 4 repair, 5 box-up, 6 deblinded / returned
+export const STAGES = ['OP to handover', 'Under maintenance', 'Under maintenance (cleaning)', 'Under inspection', 'Under repair', 'To be boxed up', 'Completed'] as const;
+export const STAGE_SHORT = ['OP to handover', 'Under maintenance', 'Under maintenance', 'Under inspection', 'Under repair', 'To be boxed up', 'Completed'] as const;
 export const PENDING_REASONS = ['Stuck / seized bolts', 'Waiting material', 'Waiting manpower', 'Waiting scaffolding', 'Waiting permit / gas test', 'Waiting inspection (IAT)',
   'Line choked', 'Valve passing', 'Waiting blind / gasket', 'Waiting crane / equipment', 'Waiting previous step', 'Waiting N2 / steam / soda ash', 'Weather', 'Other'] as const;
 export const FO_NAMES: Record<string, string> = { FO1: 'Reactors', FO2: 'HP', FO3: 'LP + Heaters' };
@@ -838,7 +840,9 @@ export function leaderReportText(d: TrkData, now: number, opts: { title?: string
   const lines = LEADER_GROUPS.flatMap((g) => {
     const xs = eqs.filter((e) => e.eq.group === g); if (!xs.length) return [];
     const n = STAGE_SHORT.map((_, s) => xs.filter((e) => e.stage === s).length);
-    return [`• ${g} ${xs.length}: ${STAGE_SHORT.flatMap((s, k) => (n[k] ? [`${s === 'HO' || s === 'Box-up' ? s : s.toLowerCase()} ${n[k]}`] : [])).join(' · ')}`];
+    // the same words counted once (stages 1 and 2 are both under maintenance)
+    const by = new Map<string, number>(); STAGE_SHORT.forEach((s, k) => { if (n[k]) by.set(s, (by.get(s) ?? 0) + n[k]); });
+    return [`• ${g} ${xs.length}: ${[...by].map(([s, c]) => `${s.toLowerCase()} ${c}`).join(' · ')}`];
   });
   if (lines.length) out.push('', '*Equipment status*', ...lines);
   // the small jobs and the hot work, one short count each (done / total): an item is done when all its jobs are; one
