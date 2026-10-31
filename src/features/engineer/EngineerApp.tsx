@@ -526,6 +526,17 @@ function TypeList({ d, now, types, onType, onItem }: { d: TrackerData; now: numb
   </>);
 }
 
+/** While a full page is open, the page behind (and the phone's top edge, which takes its colour) is the header blue. */
+function useTopColor() {
+  useEffect(() => {
+    const els = [document.documentElement, document.body], was = els.map((x) => x.style.backgroundColor);
+    const meta = document.querySelector('meta[name="theme-color"]'), wasMeta = meta?.getAttribute('content');
+    const blue = getComputedStyle(document.documentElement).getPropertyValue('--color-brand-700').trim() || '#0e2a63';
+    for (const x of els) x.style.backgroundColor = blue;
+    meta?.setAttribute('content', blue);
+    return () => { els.forEach((x, i) => { x.style.backgroundColor = was[i]; }); if (meta && wasMeta) meta.setAttribute('content', wasMeta); };
+  }, []);
+}
 // ── Items worked to one step list, on one page (owner, 29 Oct 2026) ─────────────────────────────────────────────────
 const MON3 = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const dayOf = (t: number) => { const k = new Date(t + 3 * H); return `${k.getUTCDate()} ${MON3[k.getUTCMonth()]}`; };
@@ -560,6 +571,7 @@ function BedsRow({ d, set, now, onOpen }: { d: TrackerData; set: BedSet; now: nu
  *  after its plan finish. Items whose steps are all done leave the columns ("Handed back"). Tap to start / finish
  *  (others in the same state can be ticked), or a row's "all". Each item keeps its own records. */
 function BedsPage({ d, set, now, done, onItem, onClose, wide = false }: { d: TrackerData; set: BedSet; now: number; done: Done; onItem: (e: TrkEquipment) => void; onClose: () => void; wide?: boolean }) {
+  useTopColor();
   const isHead = useContext(RoleCtx) === 'head', manage = useCanManage();
   const rows0 = useMemo(() => bedMatrix(d.activities, set.keys), [d.activities, set.keys]);
   const [adding, setAdding] = useState<{ cols: number[]; row: string | null } | null>(null);
@@ -599,13 +611,15 @@ function BedsPage({ d, set, now, done, onItem, onClose, wide = false }: { d: Tra
     : <div key={r.id} className="grid items-center gap-1 border-t border-slate-100 px-2 py-1.5" style={grid}><span className={cx('min-w-0 self-stretch', stick)}>{label(r)}</span>{cols.map((i) => cell(r, i))}</div>;
   const sel = pick && rows0.find((r) => r.id === pick.row);
   return (
-    // the full page sits on the header colour so the phone's top edge (status bar) takes it, not a white wash (owner, 31 Oct 2026)
-    <div className="fixed inset-0 z-[60] overflow-y-auto bg-brand-700"><div className="min-h-full bg-canvas pb-28">
-      <header className="sticky top-0 z-10 flex items-center gap-2 bg-brand-700 px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white">
+    // the full page: the header stays put on top and only the page below it scrolls, nothing passes under the phone's
+    // status bar, and the page behind takes the header colour (owner, 31 Oct 2026: "still there is white at the top")
+    <div className="fixed inset-0 z-[60] flex flex-col bg-brand-700">
+      <header className="relative z-10 flex shrink-0 items-center gap-2 bg-brand-700 px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white">
         <button type="button" onClick={onClose} className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-bold">‹ Back</button>
         <p className="min-w-0 flex-1 truncate text-[16px] font-bold">{set.label}</p><DeptTag dept={set.dept} />
         {manage && <button type="button" onClick={() => setAdding({ cols: cols, row: null })} className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[13px] font-bold text-brand-700">+ Step</button>}
       </header>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-canvas pb-28">
       <main className="mx-auto max-w-xl px-3 pt-3">
         <List><div className={scroll ? 'overflow-x-auto' : ''}><div className={scroll ? 'min-w-max' : ''}>
           {chips ? <div className="flex flex-wrap gap-1 bg-slate-50 px-2.5 py-1.5">{cols.map((i) => { const [n, t] = bedCount(rows0, i); return <button key={i} type="button" onClick={() => onItem(set.items[i])} className="rounded-md bg-white px-1.5 py-0.5 text-[11px] font-bold text-brand-700 ring-1 ring-slate-200">{short(set.items[i].combine ?? set.items[i].tag)} <span className="font-medium tabular-nums text-slate-500">{n}/{t}</span></button>; })}</div>
@@ -796,6 +810,7 @@ function AddStepsSheet({ d, set, rows, initial, done, onClose }: { d: TrackerDat
  *  phases of every item, the one it is in open, the others folded with their count and plan dates; one tap per step
  *  (Start / Finish; the sheet has the time, Done, Undo and not required). The list page stays for edit, add and order. */
 function StepBoard({ d, e, keys, done, onList, onDetails, onClose }: { d: TrackerData; e: TrkEquipment; keys: string[]; done: Done; onList: () => void; onDetails: () => void; onClose: () => void }) {
+  useTopColor();
   const isHead = useContext(RoleCtx) === 'head'; const now = Date.now();
   const k0 = keys[0], acts = lines(d, [k0]);
   const ph = stepPhases(acts);
@@ -822,13 +837,15 @@ function StepBoard({ d, e, keys, done, onList, onDetails, onClose }: { d: Tracke
         : <span className={cx('min-w-[4.4rem] shrink-0 rounded-lg py-1.5 text-center text-[11.5px] font-bold', st === 'run' ? (l.late ? 'bg-red-100 text-red-800 ring-1 ring-red-400' : 'bg-amber-400 text-amber-950') : l.late ? 'text-red-800 ring-1 ring-red-400' : 'text-brand-700 ring-1 ring-brand-700')}>{st === 'run' ? '✓ Finish' : '▶ Start'}</span>}
     </button>; };
   return (
-    // the full page sits on the header colour so the phone's top edge (status bar) takes it, not a white wash (owner, 31 Oct 2026)
-    <div className="fixed inset-0 z-[60] overflow-y-auto bg-brand-700"><div className="min-h-full bg-canvas pb-28">
-      <header className="sticky top-0 z-10 flex items-center gap-2 bg-brand-700 px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white">
+    // the full page: the header stays put on top and only the page below it scrolls, nothing passes under the phone's
+    // status bar, and the page behind takes the header colour (owner, 31 Oct 2026: "still there is white at the top")
+    <div className="fixed inset-0 z-[60] flex flex-col bg-brand-700">
+      <header className="relative z-10 flex shrink-0 items-center gap-2 bg-brand-700 px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white">
         <button type="button" onClick={onClose} className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-bold">‹ Back</button>
         <p className="min-w-0 flex-1 truncate text-[16px] font-bold">{short(e.combine ?? e.tag)}{e.description ? ` · ${e.description}` : ''}</p>
         <button type="button" onClick={onDetails} className="shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-[13px] font-bold">Details ›</button>
       </header>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-canvas pb-28">
       <main className="mx-auto max-w-xl px-3 pt-3">
         <Card>
           <p className="text-[12px] text-slate-600"><b className="text-[15px] text-slate-900">{short(e.combine ?? e.tag)}</b> · {acts.filter((a) => a.actualFinish).length}/{acts.length} steps</p>
@@ -947,6 +964,7 @@ function ItemSheet({ d, e: e0, now = Date.now(), done, onClose }: { d: TrackerDa
  *  step added here. The P6 lines keep their dates and their P6 text (shown when renamed); added steps have no planned
  *  time, so they change neither the % nor the forecast. */
 function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipment; keys: string[]; done: Done; onClose: () => void }) {
+  useTopColor();
   const manage = useCanManage();
   // a bar-chart step not required: off the timing and the %, kept with its reason (Section Head, as on the tracker)
   const isHead = useContext(RoleCtx) === 'head';
@@ -985,12 +1003,14 @@ function StepsPage({ d, e, keys, done, onClose }: { d: TrackerData; e: TrkEquipm
   const retime = (a: TrkActivity, field: 'actual_start' | 'actual_finish') => act(() => setActivity(a.id, { [field]: atIso, time_reason: why.trim() }), `${a.activity}: ${field === 'actual_start' ? 'start' : 'finish'} set to ${when(atIso!)}.`,
     () => setActivity(a.id, { [field]: field === 'actual_start' ? a.actualStart ?? null : a.actualFinish ?? null, time_reason: 'Undo of a correction' }));
   return (
-    // the full page sits on the header colour so the phone's top edge (status bar) takes it, not a white wash (owner, 31 Oct 2026)
-    <div className="fixed inset-0 z-[60] overflow-y-auto bg-brand-700"><div className="min-h-full bg-canvas pb-28">
-      <header className="sticky top-0 z-10 flex items-center gap-2 bg-brand-700 px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white">
+    // the full page: the header stays put on top and only the page below it scrolls, nothing passes under the phone's
+    // status bar, and the page behind takes the header colour (owner, 31 Oct 2026: "still there is white at the top")
+    <div className="fixed inset-0 z-[60] flex flex-col bg-brand-700">
+      <header className="relative z-10 flex shrink-0 items-center gap-2 bg-brand-700 px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white">
         <button type="button" onClick={onClose} className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-bold">‹ Back</button>
         <p className="min-w-0 flex-1 truncate text-[16px] font-bold">{short(e.combine ?? e.tag)} · steps</p>
       </header>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-canvas pb-28">
       <main className="mx-auto max-w-xl px-3 pt-3">
         {err != null && <div className="mb-2"><ErrorBox error={err} /></div>}
         {keys.map((k) => { const all = allOf(k), ls = lines(d, [k]);
