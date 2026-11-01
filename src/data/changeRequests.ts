@@ -91,3 +91,10 @@ export async function fetchChangeCounts(year: number): Promise<Map<string, numbe
   for (const r of (data ?? []) as { employee_id: string }[]) out.set(r.employee_id, (out.get(r.employee_id) ?? 0) + 1);
   return out;
 }
+
+/** The leave record a decided reschedule made (null until it is approved). */
+export async function changeResultRecord(id: string): Promise<string | null> {
+  const { data, error } = await supabase.from('leave_change_requests').select('result_record_id').eq('id', id).maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data?.result_record_id as string | null) ?? null;
+}

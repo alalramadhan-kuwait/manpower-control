@@ -8,7 +8,7 @@ import { personOn, type MpAbsence, type MpPerson } from '@/core/manpower';
 import { expectedRequest, isRestDay, oracleDays } from '@/core/oracle/expected';
 import { addDaysIso, isValidIsoDate } from '@/core/roster';
 import { fetchLeaveApprovals } from '@/data/controllers';
-import { createChangeRequest, decideChangeRequest, fetchChangeCounts, fetchRequesterNames, withdrawChangeRequest, type ChangeRequest, type ChangeStatus } from '@/data/changeRequests';
+import { changeResultRecord, createChangeRequest, decideChangeRequest, fetchChangeCounts, fetchRequesterNames, withdrawChangeRequest, type ChangeRequest, type ChangeStatus } from '@/data/changeRequests';
 import { fetchManpowerInputs, type ManpowerInputs } from '@/data/manpower';
 import { saveWorkingPlan } from '@/data/workingPlan';
 import { BottomSheet, Button, Chip, ErrorBox, Field, Spinner, cx, type Tone } from '@/ui/components';
@@ -20,6 +20,7 @@ import { checkProposal, type Check as ScheduleCheck } from '@/data/validation';
 import { hasHardStop } from '@/core/validation';
 import { gateVerdict } from '@/core/requests/gate';
 import { amendChangeRequest } from '@/data/changeRequests';
+import { approveLeave } from '@/data/leave';
 
 const range = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
 const weekday = (iso: string) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(`${iso}T00:00:00Z`).getUTCDay()];
@@ -146,10 +147,14 @@ export function ProposeSheet({ person, leave, inputs, approvals, today, changes,
   async function send() {
     setBusy(true); setErr(null);
     try {
-      const id = await createChangeRequest({ records: leave.records.map((r) => r.id!), start, end: planEnd, remark: remark.trim(), impact: impact ?? { short: 0, dates: [], clash: [] }, estimated });
+      // the Section Head's own change (owner, 1 Nov 2026: "don't ask for remarks … save it and approve it"): the remark
+      // is optional, and the leave with its new dates is approved in the same tap
+      const id = await createChangeRequest({ records: leave.records.map((r) => r.id!), start, end: planEnd, remark: remark.trim() || (isHead ? 'Dates changed by the Section Head' : ''), impact: impact ?? { short: 0, dates: [], clash: [] }, estimated });
       if (isHead) {
         await decideChangeRequest(id, true, '', check);
-        onDone(`${person.name}: leave ${replan ? 'given new dates' : 'moved'}: ${range(start, planEnd)}${estimated ? ' (estimate)' : ''}. Oracle: submit the request in EasyHR.`);
+        const rid = await changeResultRecord(id);
+        const ok = rid ? await approveLeave([rid]) : 0;
+        onDone(`${person.name}: leave ${replan ? 'given new dates' : 'moved'}: ${range(start, planEnd)}${estimated ? ' (estimate)' : ''}${ok ? ' · approved' : ''}. Oracle: submit the request in EasyHR.`);
       } else onDone(`${person.name}: request for ${range(start, planEnd)} sent to the Section Head.`);
     } catch (e) { setErr(e); setBusy(false); }
   }
@@ -175,14 +180,14 @@ export function ProposeSheet({ person, leave, inputs, approvals, today, changes,
           {verdict && !verdict.allowed && !hard && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-900 ring-1 ring-red-200">{isHead ? 'Cover the crew first (Shift change / cover), then save these dates.' : 'The crew must be covered before the Section Head can approve these dates. You can send it: say how in the remark.'}</p>}
         </>}
         <EstimateSwitch value={estimated} onChange={setEstimated} />
-        <Field label="Remark"><input className="input" value={remark} onChange={(e) => setRemark(e.target.value)} placeholder={replan ? 'e.g. Leave owed after the Train-2 shutdown' : 'e.g. Employee asked to move it a week later'} /></Field>
-        <p className="text-xs text-slate-500">{isHead ? 'Saved and approved at once, after the same check the server runs.' : 'Nothing changes in the plan until the Section Head approves.'}</p>
+        <Field label={isHead ? 'Remark (optional)' : 'Remark'}><input className="input" value={remark} onChange={(e) => setRemark(e.target.value)} placeholder={replan ? 'e.g. Leave owed after the Train-2 shutdown' : 'e.g. Employee asked to move it a week later'} /></Field>
+        <p className="text-xs text-slate-500">{isHead ? 'Save approves the leave with the new dates at once (same check the server runs). Remark optional.' : 'Nothing changes in the plan until the Section Head approves.'}</p>
         {err != null && <ErrorBox error={err} />}
         <div className="flex gap-2">
           <Button variant="secondary" className="flex-1" onClick={onBack}>Back</Button>
-          <Button className="flex-1" disabled={busy || !valid || unchanged || !remark.trim() || !check || hard || headBlocked} onClick={send}>{busy ? 'Saving…' : isHead ? 'Save' : 'Send request'}</Button>
+          <Button className="flex-1" disabled={busy || !valid || unchanged || (!isHead && !remark.trim()) || !check || hard || headBlocked} onClick={send}>{busy ? 'Saving…' : isHead ? 'Save' : 'Send request'}</Button>
         </div>
-        {valid && !unchanged && !busy && (hard || headBlocked || !remark.trim()) && (
+        {valid && !unchanged && !busy && (hard || headBlocked || (!isHead && !remark.trim())) && (
           <p className="text-xs font-medium text-red-800">{hard ? `${isHead ? 'Save' : 'Send'} is off: a hard stop above. ${sdFix ? 'Apply the fix above, or choose other dates' : 'Choose dates that avoid it'}.` : headBlocked ? 'Save is off: cover the crew first.' : `Add a remark to ${isHead ? 'save' : 'send'}.`}</p>
         )}
       </div>
