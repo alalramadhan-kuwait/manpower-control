@@ -3,7 +3,7 @@
 // reactors' issues and temperatures), Isolation (neutralization and blinds), Small jobs & IATs. Every change is
 // stamped with the ID; Undo for a few seconds after each one.
 import { LatestUpdate } from '@/features/tracker/intel/LatestUpdate';
-import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ItemMore, PendingForm } from '@/features/tracker/TrackerSheets';
 import { ShutdownOverview } from '@/features/tracker/TrackerToday';
 import { ActivityRow } from '@/features/tracker/Timing';
@@ -450,9 +450,14 @@ function Equipment({ d, now, done, f, setF }: P & { f: string; setF: (f: string)
   // the main page by type (owner, 31 Oct 2026, design B): one line per type, a chip per item in its stage colour
   const types = useMemo(() => typeItems(d, head), [d, head]);
   const [typeOpen, setTypeOpen] = useState<string | null>(null); const tSet = typeOpen && types.has(typeOpen) ? typeSet(typeOpen, types.get(typeOpen)!) : null;
+  // the chosen filter centred in its row when it changes: the row scrolls sideways only, never the page (owner, 2 Nov
+  // 2026: after a start / finish the page jumped to the top, because every refresh scrolled the chip into view)
+  const chipRow = useRef<HTMLDivElement>(null);
+  useEffect(() => { const row = chipRow.current, el = row?.querySelector<HTMLElement>(`[data-f="${CSS.escape(f)}"]`);
+    if (row && el && f !== 'all') row.scrollLeft = el.offsetLeft - row.clientWidth / 2 + el.offsetWidth / 2; }, [f]);
   const chips: [string, string][] = [['all', `All ${main.length}`], ['todo', `To update ${todo.length}`], ...(late.length ? [['late', `Late / hold ${late.length}`] as [string, string]] : []), ...all.map((g): [string, string] => [g, `${g} ${main.filter((e) => grpOf(e) === g).length}`])];
   return (<>
-    <div className="-mx-3 mb-2.5 flex gap-1.5 overflow-x-auto px-3 pb-0.5 [scrollbar-width:none]">{chips.map(([k, l]) => <button key={k} type="button" onClick={() => setF(k)} ref={(el) => { if (el && f === k && f !== 'all') el.scrollIntoView({ inline: 'center', block: 'nearest' }); }}
+    <div ref={chipRow} className="-mx-3 mb-2.5 flex gap-1.5 overflow-x-auto px-3 pb-0.5 [scrollbar-width:none]">{chips.map(([k, l]) => <button key={k} type="button" data-f={k} onClick={() => setF(k)}
       className={cx('min-h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-[12px] font-bold', f === k ? 'bg-brand-700 text-white' : k === 'todo' && todo.length ? 'bg-amber-50 text-amber-900 ring-1 ring-amber-300' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>{l}</button>)}</div>
     {f === 'todo' && <p className="mx-1 mb-2 text-[12px] text-slate-500">Work running (or due to start) with no update for {'>'}12 h · critical {'>'}6 h. Any step, note, status or drum entry counts as an update.</p>}
     {f === 'all' && <TypeList d={d} now={now} types={types} onType={setTypeOpen} onItem={setOpen} />}
