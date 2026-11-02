@@ -602,6 +602,9 @@ function BedsPage({ d, set, now, done, onItem, onClose, wide = false }: { d: Tra
   const [adding, setAdding] = useState<{ cols: number[]; row: string | null } | null>(null);
   const [showDone, setShowDone] = useState(false); const [showOff, setShowOff] = useState(false);
   const [pick, setPick] = useState<{ row: string; col: number; all: boolean } | null>(null);
+  // small items closed together (owner, 2 Nov 2026: "most of the steps are done … a button to close them all")
+  const [manyDone, setManyDone] = useState(false);
+  const openOf = set.items.map((e, i) => ({ e, acts: rows0.map((r) => r.cells[i]).filter((c) => c.state === 'open' || c.state === 'run').map((c) => c.a!) })).filter((x) => x.acts.length);
   const handed = set.items.map((_, i) => i).filter((i) => bedItemDone(rows0, i));
   const cols = handed.length === set.items.length ? set.items.map((_, i) => i) : set.items.map((_, i) => i).filter((i) => !handed.includes(i));
   // the rows as the shown columns see them (an item handed back no longer keeps a row open)
@@ -641,7 +644,8 @@ function BedsPage({ d, set, now, done, onItem, onClose, wide = false }: { d: Tra
     <div className="fixed inset-0 z-[60] flex flex-col bg-brand-700">
       <header className="relative z-10 flex shrink-0 items-center gap-2 bg-brand-700 px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white">
         <button type="button" onClick={onClose} className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-bold">‹ Back</button>
-        <p className="min-w-0 flex-1 truncate text-[16px] font-bold">{set.label}</p><DeptTag dept={set.dept} />
+        <p className="min-w-0 flex-1 truncate text-[16px] font-bold">{set.label}</p>{!(isHead && set.items.every((e) => isSmallJob(e.group)) && openOf.length > 0) && <DeptTag dept={set.dept} />}
+        {isHead && set.items.every((e) => isSmallJob(e.group)) && openOf.length > 0 && <button type="button" onClick={() => setManyDone(true)} className="shrink-0 rounded-full bg-white/15 px-3 py-1.5 text-[13px] font-bold text-white ring-1 ring-white/40">✓ All done</button>}
         {manage && <button type="button" onClick={() => setAdding({ cols: cols, row: null })} className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[13px] font-bold text-brand-700">+ Step</button>}
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-canvas pb-28">
@@ -664,6 +668,7 @@ function BedsPage({ d, set, now, done, onItem, onClose, wide = false }: { d: Tra
         <p className="mx-1 text-[11px] text-slate-500">✓ done · ▶ running, tap to finish · – not required · “by” = that item’s plan finish. <b className="text-status-red">Red</b>: not started after its plan start, or not done after its plan finish; a ✓ date in amber finished late. Tap an item for its own page.</p>
       </main>
       {sel && pick && <BedSheet d={d} set={set} r={sel} col={pick.col} cols={cols} all={pick.all} head={isHead} done={done} onClose={() => setPick(null)} />}
+      {manyDone && <ManyDoneSheet items={openOf} done={done} onClose={() => setManyDone(false)} />}
       {adding && <AddStepsSheet d={d} set={set} rows={rows0.filter((r) => !bedRowOff(r) || r.cells.some((c) => c.a?.tracked))} initial={adding} done={done} onClose={() => setAdding(null)} />}
     </div></div>
   );
@@ -742,6 +747,50 @@ function AllDoneSheet({ e, acts, done, onClose }: { e: TrkEquipment; acts: TrkAc
         <ul className="rounded-xl bg-slate-50 px-3 py-1.5 text-[12.5px] text-slate-700 ring-1 ring-slate-200">{acts.map((a) => <li key={a.id} className="py-0.5">{a.actualStart ? '▶ ' : ''}{a.activity}</li>)}</ul>
         {err != null && <ErrorBox error={err} />}
         <button type="button" disabled={busy || future || (tooOld && !why.trim())} onClick={() => void go()} className="min-h-12 w-full rounded-xl bg-amber-400 text-[14px] font-bold text-amber-950 disabled:opacity-50">✓ Done all {acts.length}</button>
+        {at ? <div className="space-y-1.5 rounded-xl bg-slate-50 p-2 ring-1 ring-slate-200">
+            <div className="flex items-center gap-2"><span className="text-[11px] font-bold uppercase text-slate-500">Time</span>
+              <input type="datetime-local" className="input min-h-9 flex-1 py-1 text-[13px]" value={at} max={kwInput(Date.now())} onChange={(x) => setAt(x.target.value)} />
+              <button type="button" onClick={() => { setAt(''); setWhy(''); }} className="min-h-9 rounded-lg bg-white px-2.5 text-[12px] font-bold text-slate-700 ring-1 ring-slate-300">Now</button></div>
+            {future && <p className="text-[12px] font-semibold text-status-red">The time cannot be in the future.</p>}
+            {tooOld && !future && <input className="input min-h-9 text-[13px]" placeholder={`Reason (over ${BACKDATE_LIMIT_H} h back)`} value={why} onChange={(x) => setWhy(x.target.value)} />}
+          </div>
+          : <button type="button" onClick={() => setAt(kwInput(Date.now()))} className="text-[12.5px] font-semibold text-brand-700">🕒 Time: now · change</button>}
+      </div>
+    </BottomSheet>
+  );
+}
+/** Small items of one page closed together (Section Head): the items ticked (all by default), every open step of each
+ *  finished at one time (now, or an earlier time with a reason past the back-dating limit); Undo puts them all back. */
+function ManyDoneSheet({ items, done, onClose }: { items: { e: TrkEquipment; acts: TrkActivity[] }[]; done: Done; onClose: () => void }) {
+  const [on, setOn] = useState<Set<string>>(new Set(items.map((x) => x.e.id)));
+  const [at, setAt] = useState(''); const [why, setWhy] = useState('');
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const kwInput = (ms: number) => new Date(ms + 3 * H).toISOString().slice(0, 16);
+  const atIso = at ? new Date(`${at}:00+03:00`).toISOString() : null;
+  const tooOld = !!atIso && Date.now() - Date.parse(atIso) > BACKDATE_LIMIT_H * H, future = !!atIso && Date.parse(atIso) > Date.now() + 15 * 60000;
+  const picked = items.filter((x) => on.has(x.e.id)), acts = picked.flatMap((x) => x.acts);
+  async function go() {
+    const t = atIso ?? new Date().toISOString(), was = acts.map((a) => ({ id: a.id, s: a.actualStart ?? null, f: a.actualFinish ?? null }));
+    const reason = { time_reason: why.trim() || 'all steps marked done' };
+    const each = async <T,>(xs: T[], f: (x: T) => Promise<unknown>) => { for (let i = 0; i < xs.length; i += 6) await Promise.all(xs.slice(i, i + 6).map(f)); };
+    setBusy(true); setErr(null);
+    try {
+      await each(acts, (a) => setActivity(a.id, { actual_finish: t, ...(a.actualStart ? {} : { actual_start: t }), ...reason }));
+      done(`${picked.length} item${picked.length === 1 ? '' : 's'} done: ${acts.length} steps${atIso ? ` · ${when(t)}` : ''}.`, () => each(was, (b) => setActivity(b.id, { actual_start: b.s, actual_finish: b.f, time_reason: 'Undo' })));
+      onClose();
+    } catch (x) { setErr(x); } finally { setBusy(false); }
+  }
+  return (
+    <BottomSheet open onClose={onClose} title="All steps done">
+      <div className="space-y-2.5">
+        <p className="text-[12.5px] text-slate-600">Every open step of the items ticked is finished at {at ? 'the time below' : 'now'}. Untick an item still being worked.</p>
+        <div className="grid grid-cols-3 gap-1.5">{items.map((x) => { const y = on.has(x.e.id);
+          return <button key={x.e.id} type="button" aria-pressed={y} onClick={() => setOn((s) => { const n = new Set(s); if (n.has(x.e.id)) n.delete(x.e.id); else n.add(x.e.id); return n; })}
+            className={cx('min-h-11 rounded-lg px-1 text-[12px] font-bold ring-1', y ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-600 ring-slate-300')}>
+            {short(x.e.tag)}<span className={cx('block text-[10px] font-medium', y ? 'text-white/80' : 'text-slate-500')}>{x.acts.length} open</span></button>; })}</div>
+        <div className="flex gap-3 text-[12px] font-semibold text-brand-700"><button type="button" onClick={() => setOn(new Set(items.map((x) => x.e.id)))}>Tick all</button><button type="button" onClick={() => setOn(new Set())}>Clear</button></div>
+        {err != null && <ErrorBox error={err} />}
+        <button type="button" disabled={busy || !acts.length || future || (tooOld && !why.trim())} onClick={() => void go()} className="min-h-12 w-full rounded-xl bg-amber-400 text-[14px] font-bold text-amber-950 disabled:opacity-50">{busy ? 'Saving…' : `✓ Done: ${picked.length} item${picked.length === 1 ? '' : 's'} · ${acts.length} steps`}</button>
         {at ? <div className="space-y-1.5 rounded-xl bg-slate-50 p-2 ring-1 ring-slate-200">
             <div className="flex items-center gap-2"><span className="text-[11px] font-bold uppercase text-slate-500">Time</span>
               <input type="datetime-local" className="input min-h-9 flex-1 py-1 text-[13px]" value={at} max={kwInput(Date.now())} onChange={(x) => setAt(x.target.value)} />
