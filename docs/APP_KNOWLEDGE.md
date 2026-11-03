@@ -413,6 +413,7 @@ Estimate ~88 % (verified functionality). Recommendation: **ready for operational
 | 1 Nov 2026 | Section Head's Reschedule: the remark is optional ("Dates changed by the Section Head" is stored when empty) and Save approves the leave with its new dates in the same tap; no second Approve. The Coordinator's request still needs a remark and the Section Head's decision. | "when I'm changing the date, don't ask for remarks … I can save it and approve it" |
 | 2 Nov 2026 | Fix: with a filter on (To update, Late / hold, a type), a start / finish no longer jumps the page to the top. Every refresh used to scroll the chosen filter chip into view; now only the chip row scrolls sideways, and only when the filter changes. | "this will reload and take me all the way up … sometimes I miss to put an update" |
 | 2 Nov 2026 | Type page of small items (CV shells, check valves, PSVs, piping): the Section Head has "✓ All done" in the header: tick the items (all by default), every open step of each is finished at one time (now or a time typed in); one Undo puts them all back. | "Can I do a mass approval? … most of the steps are done … a button to close them all" |
+| 3 Nov 2026 | A neutralization loop marked not required (N/R or N2) makes its guideline step N/A by itself instead of late; marked required again, the step reopens. S118 (H-202 in/out) set not required: no RTJ in the loop. | "No rtj in this loop so it is not required to neutralize" |
 
 ## 11. Tracker update intelligence (27 Oct 2026)
 
