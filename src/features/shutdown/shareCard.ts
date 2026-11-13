@@ -162,7 +162,11 @@ export async function sharePicture(blob: Blob, name: string, caption: string): P
 export interface TableRow { label: string; sub: string; state: 'done' | 'run' | 'next'; oil: boolean; plan: [string, string]; act: [string, string]; varText: string; varRed: boolean; reason: string }
 export interface TableCardData {
   title: string; when: string;
-  kpis: { label: string; big: string; sub: string; tone: 'plain' | 'red' | 'green' }[];
+  kpis: { label: string; big: string; sub: string; tone: 'plain' | 'red' | 'green' | 'est' }[];
+  /** under the figures: the estimate is not confirmed (owner, 13 Nov 2026: plan first, estimate secondary) */
+  note?: string;
+  /** the roadmap (option 2): each stage's plan bar (solid, the reference) and its estimate (dashed, under it) */
+  roadmap?: { from: number; to: number; now: number; bars: { label: string; sub: string; state: 'done' | 'run' | 'next'; oil: boolean; planStart: number | null; planEnd: number | null; start: number | null; end: number | null }[] };
   rows: TableRow[]; footLeft: string; footRight: string;
 }
 export function drawTableCard(canvas: HTMLCanvasElement, d: TableCardData) {
@@ -182,15 +186,68 @@ export function drawTableCard(canvas: HTMLCanvasElement, d: TableCardData) {
     d.kpis.forEach((k, i) => {
       const x = M + i * (kw + kg); let h = 0;
       h += put(k.label.toUpperCase(), x + 18, ky + 36, 20, 800, C.grey, kw - 36);
-      h += put(k.big, x + 18, ky + 44 + h + 8, 34, 800, k.tone === 'red' ? C.red : k.tone === 'green' ? C.green : C.ink, kw - 36);
+      h += put(k.big, x + 18, ky + 44 + h + 8, 34, 800, k.tone === 'red' ? C.red : k.tone === 'green' ? C.green : k.tone === 'est' ? '#475569' : C.ink, kw - 36);
       if (k.sub) h += put(k.sub, x + 18, ky + 52 + h + 4, 21, 600, k.tone === 'red' ? C.red : C.grey, kw - 36);
       kh = Math.max(kh, h + 64);
     });
-    d.kpis.forEach((k, i) => shapes.push((c) => round(c, M + i * (kw + kg), ky, kw, kh, 18, k.tone === 'red' ? '#fef2f2' : k.tone === 'green' ? '#ecfdf3' : '#f1f5f9')));
+    d.kpis.forEach((k, i) => shapes.push((c) => {
+      const x = M + i * (kw + kg);
+      if (k.tone === 'est') { round(c, x, ky, kw, kh, 18, '#ffffff'); c.save(); c.setLineDash([10, 7]); c.lineWidth = 3; c.strokeStyle = '#94a3b8'; c.beginPath(); c.roundRect(x + 1.5, ky + 1.5, kw - 3, kh - 3, 17); c.stroke(); c.restore(); }
+      else round(c, x, ky, kw, kh, 18, k.tone === 'red' ? '#fef2f2' : k.tone === 'green' ? '#ecfdf3' : '#f1f5f9');
+    }));
+    let ty = ky + kh + 18;
+    if (d.note) { const ny = ty; const nh = put(d.note, M + 18, ty + 32, 21, 500, '#92400e', W - 2 * M - 36) + 24; shapes.push((c) => round(c, M, ny, W - 2 * M, nh, 14, '#fffbeb')); ty += nh + 18; }
+    // the roadmap: plan bar first (solid), the estimate under it (dashed); done green, over plan striped, now orange
+    if (d.roadmap) {
+      const rm = d.roadmap, nx = M, cx0 = 360, cx1 = W - M, span = rm.to - rm.from;
+      const X = (t: number) => cx0 + ((t - rm.from) / span) * (cx1 - cx0);
+      const ay = ty + 28; const days: number[] = [];
+      for (let t = Math.ceil((rm.from + 3 * 36e5) / 864e5) * 864e5 - 3 * 36e5; t < rm.to; t += 864e5) days.push(t);
+      days.forEach((t, i) => put(`${new Date(t + 3 * 36e5).getUTCDate()}${i === 0 ? ` ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][new Date(t + 3 * 36e5).getUTCMonth()]}` : ''}`, X(t) + 6, ay, 19, 600, C.grey, 120));
+      const top = ay + 14; let ry = top; const RH = 74;
+      const rowsY: number[] = [];
+      for (const b of rm.bars) { rowsY.push(ry); put(b.label, nx, ry + 32, 22, 800, b.oil ? C.brandRedDark : C.ink, cx0 - nx - 20); put(b.sub, nx, ry + 58, 17, 500, C.grey, cx0 - nx - 20); ry += RH; }
+      const bottom = ry;
+      shapes.push((c) => {
+        c.fillStyle = '#eef2f7'; for (const t of days) c.fillRect(X(t), top, 2, bottom - top);
+        rm.bars.forEach((b, i) => {
+          const y = rowsY[i]; c.fillStyle = '#f1f5f9'; c.fillRect(nx, y + RH - 1, W - 2 * M, 1);
+          if (b.planStart !== null && b.planEnd !== null) {
+            const x0 = X(b.planStart), w = Math.max(10, X(b.planEnd) - x0);
+            round(c, x0, y + 16, w, 22, 5, b.oil ? C.brandRed : b.state === 'done' ? C.green : b.state === 'run' ? '#d97706' : '#1e3a8a');
+            // done past its plan: striped green from the plan end to the actual end
+            if (b.state === 'done' && b.end !== null && b.end > b.planEnd) {
+              const sx = X(b.planEnd), sw = X(b.end) - sx; c.save(); c.beginPath(); c.rect(sx, y + 16, sw, 22); c.clip(); c.fillStyle = '#86efac'; c.fillRect(sx, y + 16, sw, 22);
+              c.strokeStyle = C.green; c.lineWidth = 5; for (let k = sx - 30; k < sx + sw + 30; k += 11) { c.beginPath(); c.moveTo(k, y + 40); c.lineTo(k + 22, y + 14); c.stroke(); } c.restore();
+            }
+          }
+          // the estimate (not confirmed), dashed under the plan, for what is not done
+          if (b.state !== 'done' && b.start !== null && b.end !== null) {
+            const x0 = X(b.start), w = Math.max(10, X(b.end) - x0);
+            c.fillStyle = b.oil ? 'rgba(254,226,226,0.7)' : 'rgba(219,234,254,0.7)'; c.fillRect(x0, y + 44, w, 16);
+            c.save(); c.setLineDash([8, 5]); c.lineWidth = 2.5; c.strokeStyle = b.oil ? C.red : '#2563eb'; c.strokeRect(x0, y + 44, w, 16); c.restore();
+          }
+        });
+        const n = X(Math.min(Math.max(rm.now, rm.from), rm.to)); c.fillStyle = '#d97706'; c.fillRect(n - 2, top - 6, 4, bottom - top + 6);
+      });
+      put('NOW', X(Math.min(Math.max(rm.now, rm.from), rm.to)), top - 2, 17, 800, '#d97706', 80, 'center');
+      // the legend
+      const ly = bottom + 30; const items: [string, string][] = [['Plan', '#1e3a8a'], ['Done', C.green], ['In progress', '#d97706'], ['Estimate · not confirmed', 'est'], ['Cut-in', C.brandRed], ['Now', 'now']];
+      let lx = M; const probeC = ctx ?? probe; font(probeC, 19, 600);
+      for (const [t, col] of items) {
+        const x0 = lx; shapes.push((c) => {
+          if (col === 'est') { c.fillStyle = 'rgba(219,234,254,0.9)'; c.fillRect(x0, ly - 15, 30, 14); c.save(); c.setLineDash([6, 4]); c.lineWidth = 2; c.strokeStyle = '#2563eb'; c.strokeRect(x0, ly - 15, 30, 14); c.restore(); }
+          else if (col === 'now') { c.fillStyle = '#d97706'; c.fillRect(x0 + 13, ly - 19, 4, 22); }
+          else round(c, x0, ly - 15, 30, 14, 3, col);
+        });
+        put(t, lx + 38, ly, 19, 600, '#334155', 400); lx += 38 + probeC.measureText(t).width + 26;
+      }
+      ty = ly + 26;
+    }
     // the table
-    let ty = ky + kh + 26; const th = 46; const hy = ty;
+    ty += 8; const th = 46; const hy = ty;
     shapes.push((c) => { c.fillStyle = '#f1f5f9'; c.fillRect(0, hy, W, th); });
-    ['Stage', 'Plan', 'Actual / exp.', 'Var', 'Reason'].forEach((h, i) => put(h.toUpperCase(), cols[i].x, ty + 30, 18, 800, C.grey, cols[i].w - 8));
+    ['Stage', 'Plan', 'Actual / est.', 'Var', 'Reason'].forEach((h, i) => put(h.toUpperCase(), cols[i].x, ty + 30, 18, 800, C.grey, cols[i].w - 8));
     ty += th;
     for (const r of d.rows) {
       const y0 = ty + 34; const ink = r.state === 'done' ? C.green : r.state === 'run' ? C.blue : r.oil ? C.brandRedDark : C.ink;

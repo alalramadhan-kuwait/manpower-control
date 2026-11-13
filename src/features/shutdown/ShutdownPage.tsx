@@ -693,14 +693,25 @@ function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEnt
     });
     const oilG = rep.stages.find((g) => g.oil);
     const kpiAt = (t: number | null) => (t === null ? '—' : `${day(t)} ${hm24(t)}`);
-    const k2 = oilG ? { label: 'Cut-in · plan', big: kpiAt(oilG.planStart), sub: '', tone: 'plain' as const } : { label: 'End · plan', big: kpiAt(rep.planEnd), sub: '', tone: 'plain' as const };
-    const nowAt = oilG ? (oilG.state === 'next' && oilG.start !== null ? round30(oilG.start) : oilG.start) : rep.expectedEnd !== null ? round30(rep.expectedEnd) : null;
-    const v = oilG ? oilG.varH !== null && oilG.planEnd !== null && oilG.planStart !== null && oilG.start !== null ? Math.round((oilG.start - oilG.planStart) / H * 10) / 10 : null : rep.varH;
-    const k3 = { label: oilG ? (oilG.state === 'next' ? 'Cut-in · expected' : 'Cut-in · actual') : rep.done === rep.total ? 'End · actual' : 'End · expected', big: kpiAt(nowAt), sub: v === null ? '' : varText(v) === '0' ? 'on plan' : varText(v), tone: (v ?? 0) >= DELAY_MIN_H ? 'red' as const : 'green' as const };
-    const td: TableCardData = { title: d.title, when: `${d.when} · down since ${shortDate(entry.start)} (day ${day0})`,
-      kpis: [{ label: 'Progress', big: `${vp.actualPct}%`, sub: `${rep.done} of ${rep.total} steps`, tone: 'plain' }, k2, k3],
-      rows: tRows, footLeft: `Plan ${Math.round(rep.stdTotal * 10) / 10} h · ${rep.stages.length} stages (${rep.total} steps)`, footRight: 'Expected = plan hours from now' };
-    setCaption(`${entryName(entry)} start-up ${vp.actualPct}% · ${rep.done}/${rep.total} steps · ${k3.label.toLowerCase()} ${k3.big}${k3.sub ? ` (${k3.sub} vs plan ${k2.big})` : ''}`);
+    // plan first, the estimate second and marked not confirmed (owner, 13 Nov 2026)
+    const planAt = oilG ? oilG.planStart : rep.planEnd;
+    const estDone = oilG ? oilG.state !== 'next' : rep.done === rep.total;
+    const estAt = oilG ? (oilG.start !== null ? (estDone ? oilG.start : round30(oilG.start)) : null) : rep.expectedEnd !== null ? (estDone ? rep.expectedEnd : round30(rep.expectedEnd)) : null;
+    const v = planAt !== null && estAt !== null ? Math.round(((oilG ? oilG.start! : rep.expectedEnd!) - planAt) / H * 10) / 10 : null;
+    const what = oilG ? 'cut-in' : 'end';
+    const k1 = { label: `Plan ${what}`, big: kpiAt(planAt), sub: 'official target', tone: 'plain' as const };
+    const k2 = estDone ? { label: oilG ? 'Cut-in · actual' : 'End · actual', big: kpiAt(estAt), sub: 'recorded', tone: 'plain' as const }
+      : { label: `Estimated ${what}`, big: estAt !== null ? `~${kpiAt(estAt)}` : '—', sub: 'not confirmed', tone: 'est' as const };
+    const k3 = { label: 'Variance vs plan', big: v === null ? '—' : varText(v) === '0' ? 'On plan' : varText(v), sub: estDone ? 'actual − plan' : 'estimate − plan', tone: (v ?? 0) >= DELAY_MIN_H ? 'red' as const : 'green' as const };
+    const bars = rep.stages.map((g) => ({ label: g.short, sub: g.sub, state: g.state, oil: g.oil, planStart: g.planStart, planEnd: g.planEnd, start: g.start, end: g.end }));
+    const ts = rep.stages.flatMap((g) => [g.planStart, g.planEnd, g.start, g.end]).filter((x): x is number => x !== null);
+    const dayStart = (t: number) => Math.floor((t + 3 * H) / 864e5) * 864e5 - 3 * H;
+    const td: TableCardData = { title: d.title, when: `${d.when} · day ${day0} · ${rep.done} of ${rep.total} steps done (${vp.actualPct}%)`,
+      kpis: [k1, k2, k3],
+      note: estDone ? undefined : 'Estimate only — not confirmed. Each remaining stage is taken at its planned hours from now; it changes as steps are recorded.',
+      roadmap: ts.length ? { from: dayStart(Math.min(...ts)), to: dayStart(Math.max(...ts)) + 864e5, now, bars } : undefined,
+      rows: tRows, footLeft: `Plan ${Math.round(rep.stdTotal * 10) / 10} h · ${rep.stages.length} stages (${rep.total} steps)`, footRight: 'Plan = official target · est. = not confirmed' };
+    setCaption(`${entryName(entry)} start-up ${vp.actualPct}% · ${rep.done}/${rep.total} steps · plan ${what} ${k1.big} · ${k2.label.toLowerCase()} ${k2.big}${!estDone ? ' (not confirmed)' : ''} · ${k3.big}`);
     const c = document.createElement('canvas'); drawTableCard(c, td);
     c.toBlob((b) => { if (b) { setBlob(b); setUrl(URL.createObjectURL(b)); } }, 'image/png');
   }, [entry, steps, vp, tl, now, done, counted.length, running, day0]);

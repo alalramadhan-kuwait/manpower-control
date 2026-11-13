@@ -15,7 +15,7 @@ export interface ReportStep {
 }
 export type StageState = 'done' | 'run' | 'next';
 export interface ReportStage {
-  label: string; sub: string; state: StageState; oil: boolean;
+  label: string; /** a short name for the roadmap */ short: string; sub: string; state: StageState; oil: boolean;
   planStart: number | null; planEnd: number | null; start: number | null; end: number | null;
   /** hours the stage ends after (+) or before (−) its plan end */
   varH: number | null; reasons: string[];
@@ -23,6 +23,7 @@ export interface ReportStage {
 export interface StartupReport { stages: ReportStage[]; planEnd: number | null; expectedEnd: number | null; varH: number | null; stdTotal: number; done: number; total: number }
 
 type Cls = 'oil' | 'sulf' | 'feed' | 'heat' | 'h2' | 'comp' | 'prep' | null;
+const SHORT: Record<Exclude<Cls, null>, string> = { oil: 'Black oil cut-in', sulf: 'Catalyst sulfiding', feed: 'Feed-in & pre-wet', heat: 'Heat-up & MPT', h2: 'H2 pressure test', comp: 'Recycle gas compressor', prep: 'Preparation' };
 const CLASSES: [Exclude<Cls, null>, RegExp, string][] = [
   ['oil', /black\s*oil/i, 'Black oil cut-in'],
   ['sulf', /sul(f|ph)id/i, 'Catalyst sulfiding'],
@@ -86,7 +87,8 @@ export function startupReport(steps: ReportStep[], now: number): StartupReport {
     const state: StageState = st.every((r) => r.s.status === 'done') ? 'done' : st.some((r) => r.s.status !== 'not_started') ? 'run' : 'next';
     const planStart = st[0]?.ps ?? null, planEnd = st[st.length - 1]?.pe ?? null;
     const start = g.find((r) => r.a !== null)?.a ?? null, end = [...g].reverse().find((r) => r.e !== null)?.e ?? null;
-    return { label, sub: n > 1 ? `${n} steps · ${r1(h)} h` : `${r1(h)} h`, state, oil: cls === 'oil', planStart, planEnd, start, end,
+    const short = cls ? SHORT[cls] : label.length > 24 ? `${label.slice(0, 23)}…` : label;
+    return { label, short, sub: n > 1 ? `${n} steps · ${r1(h)} h` : `${r1(h)} h`, state, oil: cls === 'oil', planStart, planEnd, start, end,
       varH: planEnd !== null && end !== null ? r1((end - planEnd) / H) : null, reasons: g.flatMap((r) => r.why) };
   });
   const stdTotal = counted.reduce((x, s) => x + (s.stdHours ?? 0), 0);
