@@ -509,8 +509,30 @@ function flagRows(xs: MiItem[], d: TrackerData): { label: string; dd: number }[]
   return out;
 }
 /** The forecast box (owner, 31 Oct 2026, design B): plan end → forecast end, the days over, one bar per item pushing it. */
+/** M & I is complete when every main item (not the small jobs, the OPR list or the rotating scope) has all its steps
+ *  done (owner, 13 Nov 2026: "Still not showing M&I completed"). */
+const mainOf = (w: { items: MiItem[] }, d: TrackerData) => w.items.filter((i) => !i.small && d.equipment.find((e) => keyOf(e) === i.key)?.list !== 'rotating');
+const mainDone = (w: { items: MiItem[] }, d: TrackerData) => { const m = mainOf(w, d); return m.length > 0 && m.every((i) => i.done >= i.lines); };
+function MiDoneBox({ w, d }: { w: { end: number; items: MiItem[] }; d: TrackerData }) {
+  const keys = new Set(mainOf(w, d).map((i) => i.key));
+  const at = Math.max(...d.activities.filter((a) => keys.has(a.key) && a.tracked && a.actualFinish).map((a) => Date.parse(a.actualFinish!)));
+  const after = Math.round(((at - w.end) / 864e5) * 10) / 10;
+  const rest = flagRows(w.items.filter((i) => !keys.has(i.key) && i.done < i.lines).map((i) => ({ ...i, impactD: 0 })), d).map((r) => r.label.replace(/ \+0 d$/, ''));
+  return (
+    <div className="mb-2 rounded-xl bg-green-50 px-2.5 py-2.5 ring-1 ring-green-300">
+      <div className="flex items-center gap-2">
+        <div className="flex-1 rounded-lg bg-white py-1 text-center"><span className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Plan end</span><b className="block text-[20px] font-black leading-tight text-slate-900">{dayOf(w.end)}</b></div>
+        <span className="text-[18px] text-slate-400">→</span>
+        <div className="flex-1 rounded-lg bg-white py-1 text-center"><span className="block text-[10px] font-extrabold uppercase tracking-wider text-green-700">✓ M&amp;I completed</span><b className="block text-[20px] font-black leading-tight text-green-700">{Number.isFinite(at) ? dayOf(at) : '—'}</b></div>
+        {Number.isFinite(at) && <b className={cx('w-[4.4rem] text-center text-[20px] font-black tabular-nums', after > 0 ? 'text-red-700' : 'text-green-700')}>{after > 0 ? `+${after}` : after}<span className="text-[12px]"> d</span></b>}
+      </div>
+      {rest.length > 0 && <p className="mt-1.5 text-[11.5px] text-green-900">Still open, outside the main equipment: {rest.slice(0, 6).join(' · ')}{rest.length > 6 ? ' …' : ''}. Close them, or make them Non-SD on their profile.</p>}
+    </div>
+  );
+}
 function ForecastBox({ w, d }: { w: { estEnd: number; end: number; impactD: number; items: MiItem[] }; d: TrackerData }) {
-  const rows = flagRows(w.items.filter((i) => i.impactD > 0).sort((a, b) => b.impactD - a.impactD), d), top = rows.slice(0, 4), max = Math.max(...rows.map((r) => r.dd), 0.1);
+  // only items still open push the end; a finished item's lateness is history (owner, 13 Nov 2026)
+  const rows = flagRows(w.items.filter((i) => i.impactD > 0 && i.done < i.lines).sort((a, b) => b.impactD - a.impactD), d), top = rows.slice(0, 4), max = Math.max(...rows.map((r) => r.dd), 0.1);
   return (
     <div className="mb-2 rounded-xl bg-white px-2.5 py-2.5 ring-1 ring-red-200">
       <div className="flex items-center gap-2">
@@ -531,12 +553,12 @@ function TypeList({ d, now, types, onType, onItem }: { d: TrackerData; now: numb
   const mi = new Map((w?.items ?? []).map((i) => [i.key, i]));
   const keysOf = (e: TrkEquipment) => (e.combine ? d.equipment.filter((x) => x.combine === e.combine).map(keyOf) : [keyOf(e)]);
   return (<>
-    {w && w.impactD > 0 && <ForecastBox w={w} d={d} />}
+    {w && (mainDone(w, d) ? <MiDoneBox w={w} d={d} /> : w.impactD > 0 && <ForecastBox w={w} d={d} />)}
     <div className="mb-2 flex flex-wrap gap-x-2.5 gap-y-1 rounded-xl bg-white px-2.5 py-1.5 ring-1 ring-slate-200">{PHASES.map((p, i) => <span key={p} className="flex items-center gap-1 text-[10.5px] text-slate-700">{i >= 4 ? <i className="not-italic text-slate-500">{STAGE_ICON[i].trim()}</i> : <i className={cx('inline-block h-2.5 w-2.5 rounded-[3px]', i === 0 && 'ring-1 ring-slate-400')} style={{ background: STAGE_COLOR[i] }} />}{p}</span>)}
       <span className="flex items-center gap-1 text-[10.5px] text-slate-700"><i className="inline-block h-2 w-2 rounded-full bg-status-red" />late</span><span className="text-[10.5px] text-slate-700">🚩 delays the end</span></div>
     <List>{[...types].map(([g, xs]) => {
       const items = xs.map((e) => { const acts = lines(d, keysOf(e)), m = mi.get(keyOf(e));
-        return { e, acts, st: itemStage(acts), late: acts.some((a) => stepLate(a, now)), flag: m && m.impactD > 0 ? m.impactD : 0 }; });
+        return { e, acts, st: itemStage(acts), late: acts.some((a) => stepLate(a, now)), flag: m && m.impactD > 0 && acts.some((a) => !a.actualFinish) ? m.impactD : 0 }; });
       const pct = doneShare(items.flatMap((x) => x.acts)), nLate = items.filter((x) => x.late).length, hot = items.some((x) => x.flag);
       return <div key={g} role="button" tabIndex={0} onClick={() => onType(g)} onKeyDown={(x) => x.key === 'Enter' && onType(g)} className={cx('block cursor-pointer border-b border-slate-100 px-2.5 py-2 last:border-b-0 active:bg-slate-50', hot && 'bg-red-50/40')}>
         <span className="flex items-baseline gap-1.5"><b className="min-w-0 flex-1 truncate text-[14px] text-slate-900">{g}</b>{hot && <span className="text-[12px]">🚩</span>}
