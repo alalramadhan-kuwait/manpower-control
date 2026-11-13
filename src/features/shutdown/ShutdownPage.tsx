@@ -22,7 +22,8 @@ import { ShutdownOverview } from '@/features/tracker/TrackerToday';
 import { BottomSheet, Button, Card, ErrorBox, Field, Spinner, Toast, cx } from '@/ui/components';
 import { localToday, shortDate } from '@/ui/leave';
 import { NewPlanSheet } from './ShutdownListPage';
-import { drawCard, sharePicture, type CardData, type CardRow } from './shareCard';
+import { drawTableCard, sharePicture, type CardData, type CardRow, type TableCardData, type TableRow } from './shareCard';
+import { startupReport } from '@/core/shutdown/startupReport';
 import { ProfileCard, QuickBlack, stepProfile } from './ProfileCard';
 import { WaveCard } from './WaveCard';
 import { CUTIN_SOP, HEATUP_PLAN, allBlackRow, blackAt, blackOf, heatupHours, heatupProfile, heatupRef, uniform, type ProfileView } from '@/core/shutdown/profile';
@@ -611,7 +612,7 @@ function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEnt
   const [url, setUrl] = useState<string | null>(null); const [blob, setBlob] = useState<Blob | null>(null); const [msg, setMsg] = useState<string | null>(null);
   const counted = steps.filter((x) => x.status !== 'not_required' && x.kind !== 'hold'); const done = counted.filter((x) => x.status === 'done').length;
   const running = counted.find((x) => x.status === 'running') ?? null;
-  const today = localToday(); const day = dayNo(today) - dayNo(entry.start) + 1;
+  const today = localToday(); const day0 = dayNo(today) - dayNo(entry.start) + 1;
   const [caption, setCaption] = useState('');
   useEffect(() => {
     // the picture's times, to the half hour (owner)
@@ -669,12 +670,40 @@ function ShareSheet({ entry, steps, vp, tl, now, onClose }: { entry: ShutdownEnt
       title: `${entryName(entry)} · Start-up`, when: `Unit-12 · ${kwWeekDay(now)} ${clock12(now)}`, pct: vp.actualPct, box,
       steps: `${done} of ${counted.length} steps done`, running: running ? `Running: ${running.title}` : null,
       hold: vp.holdH > 0 ? `+ ${hrs(vp.holdH)} on hold` : null, chips,
-      rows, footLeft: `Plan ${Math.round(counted.reduce((n, x) => n + (x.stdHours ?? 0), 0) * 10) / 10} h`, footRight: `Down since ${shortDate(entry.start)} · day ${day}`,
+      rows, footLeft: `Plan ${Math.round(counted.reduce((n, x) => n + (x.stdHours ?? 0), 0) * 10) / 10} h`, footRight: `Down since ${shortDate(entry.start)} · day ${day0}`,
     };
     setCaption(`${entryName(entry)} start-up ${vp.actualPct}% · ${done}/${counted.length} steps${box ? ` · ${box.label.toLowerCase().replace(/^\w/, (ch) => ch.toUpperCase())} ${box.line1} ${box.big}` : ''}${chips.slice(1).map((c) => ` · ${c.label.startsWith('ALL') ? `All black oil (${c.label.split(' · ')[1]})` : '42 KBPD black oil'} ${c.sub.split(' · ')[0]} ${c.big}`).join('')}`);
-    const c = document.createElement('canvas'); drawCard(c, d);
+    void d;
+    // design A (owner, 13 Nov 2026): stages, plan against actual face to face, variance and the reason given
+    const rep = startupReport(steps, now);
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const kw = (t: number) => new Date(t + 3 * H);
+    const day = (t: number) => `${kw(t).getUTCDate()} ${MON[kw(t).getUTCMonth()]}`;
+    const hm24 = (t: number) => kw(t).toISOString().slice(11, 16);
+    const two = (a: number | null, b: number | null, est: boolean): [string, string] => {
+      if (a === null || b === null) return ['—', ''];
+      const x = est ? round30(a) : a, y = est ? round30(b) : b;
+      return [`${day(x)} ${hm24(x)}`, day(y) === day(x) ? hm24(y) : `${day(y)} ${hm24(y)}`];
+    };
+    const varText = (v: number | null) => (v === null ? '' : Math.abs(v) < DELAY_MIN_H ? '0' : v > 0 ? `+${hrs(v)}` : `−${hrs(-v)}`);
+    const tRows: TableRow[] = rep.stages.map((g) => {
+      const act = two(g.start, g.end, g.state !== 'done');
+      if (g.state === 'done') act[1] = `${act[1]} ✓`; if (g.state === 'run') act[0] = `▶ ${act[0]}`;
+      return { label: g.label, sub: g.sub, state: g.state, oil: g.oil, plan: two(g.planStart, g.planEnd, false), act, varText: varText(g.varH), varRed: (g.varH ?? 0) >= DELAY_MIN_H && (g.state !== 'next' || g.oil), reason: g.reasons.join(' · ') };
+    });
+    const oilG = rep.stages.find((g) => g.oil);
+    const kpiAt = (t: number | null) => (t === null ? '—' : `${day(t)} ${hm24(t)}`);
+    const k2 = oilG ? { label: 'Cut-in · plan', big: kpiAt(oilG.planStart), sub: '', tone: 'plain' as const } : { label: 'End · plan', big: kpiAt(rep.planEnd), sub: '', tone: 'plain' as const };
+    const nowAt = oilG ? (oilG.state === 'next' && oilG.start !== null ? round30(oilG.start) : oilG.start) : rep.expectedEnd !== null ? round30(rep.expectedEnd) : null;
+    const v = oilG ? oilG.varH !== null && oilG.planEnd !== null && oilG.planStart !== null && oilG.start !== null ? Math.round((oilG.start - oilG.planStart) / H * 10) / 10 : null : rep.varH;
+    const k3 = { label: oilG ? (oilG.state === 'next' ? 'Cut-in · expected' : 'Cut-in · actual') : rep.done === rep.total ? 'End · actual' : 'End · expected', big: kpiAt(nowAt), sub: v === null ? '' : varText(v) === '0' ? 'on plan' : varText(v), tone: (v ?? 0) >= DELAY_MIN_H ? 'red' as const : 'green' as const };
+    const td: TableCardData = { title: d.title, when: `${d.when} · down since ${shortDate(entry.start)} (day ${day0})`,
+      kpis: [{ label: 'Progress', big: `${vp.actualPct}%`, sub: `${rep.done} of ${rep.total} steps`, tone: 'plain' }, k2, k3],
+      rows: tRows, footLeft: `Plan ${Math.round(rep.stdTotal * 10) / 10} h · ${rep.stages.length} stages (${rep.total} steps)`, footRight: 'Expected = plan hours from now' };
+    setCaption(`${entryName(entry)} start-up ${vp.actualPct}% · ${rep.done}/${rep.total} steps · ${k3.label.toLowerCase()} ${k3.big}${k3.sub ? ` (${k3.sub} vs plan ${k2.big})` : ''}`);
+    const c = document.createElement('canvas'); drawTableCard(c, td);
     c.toBlob((b) => { if (b) { setBlob(b); setUrl(URL.createObjectURL(b)); } }, 'image/png');
-  }, [entry, steps, vp, tl, now, done, counted.length, running, day]);
+  }, [entry, steps, vp, tl, now, done, counted.length, running, day0]);
   useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
   const name = `${entryName(entry).replace(/[^\w-]+/g, '-').toLowerCase()}-startup.png`;
   return (

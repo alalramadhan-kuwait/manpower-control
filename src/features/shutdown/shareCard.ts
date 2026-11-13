@@ -157,3 +157,59 @@ export async function sharePicture(blob: Blob, name: string, caption: string): P
   window.setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
   return 'saved';
 }
+
+// ── Design A (owner, 13 Nov 2026): the start-up as a table, plan against actual face to face, with the reason ────────
+export interface TableRow { label: string; sub: string; state: 'done' | 'run' | 'next'; oil: boolean; plan: [string, string]; act: [string, string]; varText: string; varRed: boolean; reason: string }
+export interface TableCardData {
+  title: string; when: string;
+  kpis: { label: string; big: string; sub: string; tone: 'plain' | 'red' | 'green' }[];
+  rows: TableRow[]; footLeft: string; footRight: string;
+}
+export function drawTableCard(canvas: HTMLCanvasElement, d: TableCardData) {
+  const probe = document.createElement('canvas').getContext('2d')!;
+  const M = 30, cols = [{ x: M, w: 290 }, { x: 330, w: 170 }, { x: 510, w: 190 }, { x: 710, w: 110 }, { x: 830, w: W - M - 830 }];
+  const draw = (ctx: CanvasRenderingContext2D | null) => {
+    const lines: Line[] = []; const shapes: ((c: CanvasRenderingContext2D) => void)[] = [];
+    const put = (t: string, x: number, y: number, size: number, weight: number, color: string, max: number, align: CanvasTextAlign = 'left') => {
+      const c = ctx ?? probe; font(c, size, weight); const ls = wrap(c, t, max); const lh = Math.round(size * 1.24);
+      ls.forEach((l, i) => lines.push({ t: l, x, y: y + i * lh, size, weight, color, align })); return ls.length * lh;
+    };
+    // header
+    let y = 64; y += put(d.title, M + 10, y, 48, 800, '#ffffff', W - 2 * M - 20); y += put(d.when, M + 10, y + 4, 26, 400, 'rgba(255,255,255,0.85)', W - 2 * M - 20); const headH = y + 22;
+    shapes.push((c) => { c.fillStyle = C.blue; c.fillRect(0, 0, W, headH); });
+    // the three figures
+    const ky = headH + 22, kg = 16, kw = (W - 2 * M - 2 * kg) / 3; let kh = 0;
+    d.kpis.forEach((k, i) => {
+      const x = M + i * (kw + kg); let h = 0;
+      h += put(k.label.toUpperCase(), x + 18, ky + 36, 20, 800, C.grey, kw - 36);
+      h += put(k.big, x + 18, ky + 44 + h + 8, 34, 800, k.tone === 'red' ? C.red : k.tone === 'green' ? C.green : C.ink, kw - 36);
+      if (k.sub) h += put(k.sub, x + 18, ky + 52 + h + 4, 21, 600, k.tone === 'red' ? C.red : C.grey, kw - 36);
+      kh = Math.max(kh, h + 64);
+    });
+    d.kpis.forEach((k, i) => shapes.push((c) => round(c, M + i * (kw + kg), ky, kw, kh, 18, k.tone === 'red' ? '#fef2f2' : k.tone === 'green' ? '#ecfdf3' : '#f1f5f9')));
+    // the table
+    let ty = ky + kh + 26; const th = 46; const hy = ty;
+    shapes.push((c) => { c.fillStyle = '#f1f5f9'; c.fillRect(0, hy, W, th); });
+    ['Stage', 'Plan', 'Actual / exp.', 'Var', 'Reason'].forEach((h, i) => put(h.toUpperCase(), cols[i].x, ty + 30, 18, 800, C.grey, cols[i].w - 8));
+    ty += th;
+    for (const r of d.rows) {
+      const y0 = ty + 34; const ink = r.state === 'done' ? C.green : r.state === 'run' ? C.blue : r.oil ? C.brandRedDark : C.ink;
+      let h0 = put(r.label, cols[0].x, y0, 25, 800, r.oil ? C.brandRedDark : C.ink, cols[0].w - 10);
+      h0 += put(r.sub, cols[0].x, y0 + h0 - 4, 19, 500, C.grey, cols[0].w - 10);
+      const h1 = put(r.plan[0], cols[1].x, y0, 22, 500, C.ink, cols[1].w - 6) + put(r.plan[1], cols[1].x, y0 + 28, 22, 500, C.ink, cols[1].w - 6);
+      const h2 = put(r.act[0], cols[2].x, y0, 22, r.state === 'next' && !r.oil ? 500 : 800, ink, cols[2].w - 6) + put(r.act[1], cols[2].x, y0 + 28, 22, r.state === 'next' && !r.oil ? 500 : 800, ink, cols[2].w - 6);
+      const h3 = put(r.varText, cols[3].x, y0, 24, 800, r.varRed ? C.red : C.grey, cols[3].w - 6);
+      const h4 = r.reason ? put(r.reason, cols[4].x, y0, 20, 500, '#7c2d12', cols[4].w) : 0;
+      const rh = Math.max(h0, h1, h2, h3, h4) + 30; const yy = ty;
+      shapes.push((c) => { c.fillStyle = r.oil ? '#fdeeee' : r.state === 'done' ? '#eef8f2' : r.state === 'run' ? '#eef3fb' : '#ffffff'; c.fillRect(0, yy, W, rh); c.fillStyle = '#e2e8f0'; c.fillRect(0, yy + rh - 2, W, 2); });
+      ty += rh;
+    }
+    const fy = ty + 44; put(d.footLeft, M, fy, 22, 500, C.grey, W / 2 - M); put(d.footRight, W - M, fy, 22, 500, C.grey, W / 2 - M, 'right');
+    return { lines, shapes, height: fy + 30 };
+  };
+  const lay = draw(null);
+  canvas.width = W; canvas.height = Math.max(MIN_H, lay.height);
+  const ctx = canvas.getContext('2d')!; ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, canvas.height);
+  for (const f of lay.shapes) f(ctx);
+  for (const l of lay.lines) { font(ctx, l.size, l.weight); ctx.fillStyle = l.color; ctx.textAlign = l.align ?? 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(l.t, l.x, l.y); }
+}
