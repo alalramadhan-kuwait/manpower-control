@@ -18,7 +18,7 @@ import { ClipboardList, Flame, Handshake, LayoutDashboard, Wrench, type LucideIc
 import { LoopDiagramButton } from '@/features/tracker/LoopDiagram';
 import { bufferCatchUp, isBufferStep, runTogether, putBackRows, RETURN_KIND, type PutBackRow, type TrkReturnItem, equipmentList, lateOrHold, WITH_EQUIP, blindLink, neutLink, isOutOfScope, scopeReasonText, timing, equipBlind, equipViews, scopeImpact, relatedWork, isolationOf, inEquipmentTab, isNR, nrLabel, loopBasis, shownGroup, ROTATING, daysAsHours, EVENT_LABEL, IAT_LABELS, type IatLabel, hoursText, isoState, soakLeft, IAT_STATUSES, iatClosedBy, reportText, leaderReportText, shiftReport, iatStatus, isSmallJob, lineOnEquipment, lineStreams, kwDay, kwTime, linkedStep, missingBlinds, neutLabel, phases, waitingSteps, pointComplete, shiftOf, sortActs, STAGE_SHORT, staleItems, withReactor, stepGroups, bedName, isLinkedTest, bedMatrix, bedRowDone, bedRowOff, bedItemDone, bedLate, bedWindow, stepPhases, phaseName, PHASE_IDS, typeSet, stepLate, doneShare, itemStage, PHASES, countShare, type Phase, type BedSet, type BedRow, type BedDept,
   type MiItem, spanText, type PointStatus, type TrkEvent, type TrkActivity, type TrkEquipment, type TrkIat, type TrkPoint, type TrkPointStep } from '@/core/tracker';
-import { setFollow, addReturnItem, setReturnItem, BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
+import { fetchItemNotes, addItemNote, type ItemNote, setFollow, addReturnItem, setReturnItem, BACKDATE_LIMIT_H, CONFLICT_EVENT, addEngStep, addEvent, endEvent, setEventText, fetchTrackerData, restoreIat, saveShiftLog, setActivity, setEquipment, setIatStatus, setOrder, setPoint, setPointStepTime, type TrackerData } from '@/data/tracker';
 import { engineerLink, setEngineerLink, supabase } from '@/data/supabase';
 import { ensureAppRules } from '@/data/rulesClient';
 import { BottomSheet, ErrorBox, Spinner, Toast, cx } from '@/ui/components';
@@ -721,6 +721,79 @@ function CountEdit({ a, done }: { a: TrkActivity; done: Done }) {
     </div>
   );
 }
+// ── The item's scope: shutdown or Non-SD (owner, 13 Nov 2026) ──────────────────────────────────────────────────────
+const NONSD_REASONS = ['Unit started up · work continues on-stream', 'Waiting for spares / material'];
+const kwToday = () => new Date(Date.now() + 3 * H).toISOString().slice(0, 10);
+const dateText = (iso: string) => { const [y, m, dd] = iso.split('-').map(Number); return `${dd} ${MON3[m - 1]}${y !== new Date().getUTCFullYear() ? ` ${y}` : ''}`; };
+function ScopeTag({ e }: { e: TrkEquipment }) {
+  return e.scope === 'non_sd' ? <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10.5px] font-extrabold text-amber-900">Non-SD</span>
+    : <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[10.5px] font-extrabold text-indigo-800">SD item</span>;
+}
+/** The scope switch on the profile: a shutdown item counts in the shutdown; a Non-SD item leaves its %, forecast and 🚩
+ *  and is followed on Shutdowns › Maintenance with why and an optional due date, until it is back in service. Section
+ *  Head changes it; others see it. Items worked as one (E-216A/B) move together. Undo puts it back. */
+function ScopeCard({ e, twins, done }: { e: TrkEquipment; twins: TrkEquipment[]; done: Done }) {
+  const head = useContext(RoleCtx) === 'head', non = e.scope === 'non_sd';
+  const [form, setForm] = useState(false); const [why, setWhy] = useState(NONSD_REASONS[0]); const [other, setOther] = useState('');
+  const [due, setDue] = useState(e.dueDate ?? ''); const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const all = twins.length ? twins : [e];
+  const was = all.map((t) => ({ id: t.id, scope: t.scope ?? 'sd', nonsd_reason: t.nonsdReason ?? null, due_date: t.dueDate ?? null, back_at: t.backAt ?? null }));
+  const back = async () => { for (const w of was) await setEquipment(w.id, { scope: w.scope as 'sd' | 'non_sd', nonsd_reason: w.nonsd_reason, due_date: w.due_date, back_at: w.back_at }); };
+  async function go(patch: Parameters<typeof setEquipment>[1], msg: string) {
+    setBusy(true); setErr(null);
+    try { for (const t of all) await setEquipment(t.id, patch); done(msg, back); setForm(false); } catch (x) { setErr(x); } finally { setBusy(false); }
+  }
+  const reason = why === 'other' ? other.trim() : why;
+  const overdue = non && !e.backAt && !!e.dueDate && e.dueDate < kwToday();
+  return (
+    <div className="rounded-2xl bg-white p-2.5 ring-1 ring-slate-200">
+      <p className="mb-1.5 text-[10.5px] font-extrabold uppercase tracking-wider text-slate-500">Scope</p>
+      <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
+        <button type="button" disabled={!head || busy || (!non && !form)} onClick={() => (form ? setForm(false) : void go({ scope: 'sd' }, `${short(e.tag)}: back in the shutdown.`))}
+          className={cx('min-h-9 rounded-lg text-[13px] font-extrabold', !non && !form ? 'bg-brand-700 text-white' : 'text-slate-600')}>Shutdown item</button>
+        <button type="button" disabled={!head || busy || non} onClick={() => setForm(true)}
+          className={cx('min-h-9 rounded-lg text-[13px] font-extrabold', non || form ? 'bg-amber-700 text-white' : 'text-slate-600')}>Non-SD item</button>
+      </div>
+      {!non && !form && <p className="mt-1 text-[11px] text-slate-500">Counted in the shutdown %, forecast end and 🚩.{head ? '' : ' The Section Head changes it.'}</p>}
+      {form && <div className="mt-2 space-y-1.5">
+        <p className="text-[10.5px] font-extrabold uppercase tracking-wider text-slate-500">Why</p>
+        {[...NONSD_REASONS, 'other'].map((r) => <button key={r} type="button" onClick={() => setWhy(r)} className={cx('block w-full rounded-lg px-2.5 py-1.5 text-left text-[12.5px] ring-1', why === r ? 'bg-amber-50 ring-amber-500' : 'ring-slate-300')}>{why === r ? '● ' : '○ '}{r === 'other' ? 'Other' : r}</button>)}
+        {why === 'other' && <input className="input min-h-9 text-[13px]" maxLength={200} placeholder="Why it stays with Maintenance" value={other} onChange={(x) => setOther(x.target.value)} />}
+        <p className="pt-1 text-[10.5px] font-extrabold uppercase tracking-wider text-slate-500">Due date (optional)</p>
+        <input type="date" className="input min-h-9 text-[13px]" value={due} onChange={(x) => setDue(x.target.value)} />
+        <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11.5px] text-amber-900">Out of the shutdown %, forecast end, 🚩 and "late". Its open steps stay to follow on Shutdowns › Maintenance; its done steps stay in the shutdown record. Switch back any time.</p>
+        <button type="button" disabled={busy || !reason} onClick={() => void go({ scope: 'non_sd', nonsd_reason: reason, due_date: due || null }, `${short(e.tag)}: Non-SD · followed on Maintenance.`)} className="min-h-11 w-full rounded-xl bg-amber-700 text-[14px] font-bold text-white disabled:opacity-50">Make it Non-SD</button>
+      </div>}
+      {non && <div className="mt-2 space-y-1.5 text-[12.5px]">
+        <p className="text-slate-700">{e.nonsdReason ?? 'Non-SD'}{e.nonsdAt ? ` · since ${dayOf(Date.parse(e.nonsdAt))}` : ''}{e.origin === 'daily' ? ' · day-to-day job' : ''}</p>
+        <p>Due: {e.dueDate ? <b className={overdue ? 'text-status-red' : 'text-slate-900'}>{dateText(e.dueDate)}{overdue ? ' · overdue' : ''}</b> : <span className="text-slate-500">no date</span>}{e.backAt ? <b className="text-status-green"> · ✓ back in service {dayOf(Date.parse(e.backAt))}</b> : ''}</p>
+        {head && <div className="flex flex-wrap items-center gap-1.5">
+          <input type="date" className="input min-h-9 w-40 text-[13px]" value={due} onChange={(x) => setDue(x.target.value)} />
+          <button type="button" disabled={busy || due === (e.dueDate ?? '')} onClick={() => void go({ due_date: due || null }, `${short(e.tag)}: due ${due ? dateText(due) : 'date removed'}.`)} className="min-h-9 rounded-lg bg-white px-2.5 text-[12px] font-bold text-slate-700 ring-1 ring-slate-300 disabled:opacity-50">📅 Save date</button>
+          <button type="button" disabled={busy} onClick={() => void go({ back_at: e.backAt ? null : new Date().toISOString() }, e.backAt ? `${short(e.tag)}: not back in service.` : `${short(e.tag)}: back in service.`)} className={cx('min-h-9 rounded-lg px-2.5 text-[12px] font-bold ring-1', e.backAt ? 'bg-white text-slate-700 ring-slate-300' : 'bg-green-600 text-white ring-green-600')}>{e.backAt ? '↶ Not back yet' : '✓ Back in service'}</button>
+        </div>}
+      </div>}
+      {err != null && <ErrorBox error={err} />}
+    </div>
+  );
+}
+/** Notes / updates on an item, newest first (owner, 13 Nov 2026); hidden, never deleted. */
+function ItemNotes({ trackerId, e }: { trackerId: string; e: TrkEquipment }) {
+  const [notes, setNotes] = useState<ItemNote[] | null>(null); const [text, setText] = useState(''); const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const load = useCallback(() => { fetchItemNotes([e.id]).then(setNotes).catch(setErr); }, [e.id]);
+  useEffect(load, [load]);
+  async function add() { setBusy(true); setErr(null); try { await addItemNote(trackerId, e.id, text); setText(''); load(); } catch (x) { setErr(x); } finally { setBusy(false); } }
+  return (
+    <div className="rounded-2xl bg-white p-2.5 ring-1 ring-slate-200">
+      <p className="mb-1 text-[10.5px] font-extrabold uppercase tracking-wider text-slate-500">Notes / updates</p>
+      {(notes ?? []).slice(0, 6).map((n) => <p key={n.id} className="border-t border-slate-100 py-1 text-[12.5px] text-slate-800 first:border-t-0">{n.body}<span className="block text-[10.5px] text-slate-500">{when(n.at)}{n.byName ? ` · ${n.byName}` : ''}</span></p>)}
+      {notes && !notes.length && <p className="text-[12px] text-slate-500">No notes yet.</p>}
+      <div className="mt-1.5 flex gap-1.5"><input className="input min-h-9 flex-1 text-[13px]" maxLength={1000} placeholder="Add a note, e.g. waiting for permit" value={text} onChange={(x) => setText(x.target.value)} />
+        <button type="button" disabled={busy || !text.trim()} onClick={() => void add()} className="min-h-9 rounded-lg bg-brand-700 px-3 text-[12.5px] font-bold text-white disabled:opacity-50">+ Note</button></div>
+      {err != null && <ErrorBox error={err} />}
+    </div>
+  );
+}
 /** A small item done in one go (owner, 31 Oct 2026: "for the small items, add an option to mark them all as done … I
  *  will not follow each step"): every open step finished at one time (now, or an earlier time with a reason past the
  *  back-dating limit); a step not started gets the same start. Section Head; Undo puts every step back. */
@@ -967,12 +1040,12 @@ function StepBoard({ d, e, keys, done, onList, onDetails, onClose }: { d: Tracke
       <header className="relative z-10 flex shrink-0 items-center gap-2 bg-brand-700 px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))] text-white">
         <button type="button" onClick={onClose} className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-bold">‹ Back</button>
         <p className="min-w-0 flex-1 truncate text-[16px] font-bold">{short(e.combine ?? e.tag)}{e.description ? ` · ${e.description}` : ''}</p>
-        <button type="button" onClick={onDetails} className="shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-[13px] font-bold">Details ›</button>
+        <button type="button" onClick={onDetails} className="shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-[13px] font-bold">Profile ›</button>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-canvas pb-28">
       <main className="mx-auto max-w-xl px-3 pt-3">
         <Card>
-          <p className="text-[12px] text-slate-600"><b className="text-[15px] text-slate-900">{short(e.combine ?? e.tag)}</b> · {acts.filter((a) => a.actualFinish).length}/{acts.length} steps</p>
+          <p className="text-[12px] text-slate-600"><b className="text-[15px] text-slate-900">{short(e.combine ?? e.tag)}</b> · {acts.filter((a) => a.actualFinish).length}/{acts.length} steps <ScopeTag e={e} /></p>
           {e.description && <p className="text-[12.5px] font-semibold leading-snug text-slate-800">{e.description}</p>}
           <p className="text-[12px] text-slate-600">{acts.every((a) => a.actualFinish) ? <b className="text-status-green">✓ All steps done</b> : <>Now: <b className="text-slate-900">{phaseName(current, acts)}</b></>}{behindH > 0 ? <b className="text-status-red"> · {lateText(behindH).replace('late', 'behind')}</b> : ''}{ends.length ? ` · plan end ${dayOf(Math.max(...ends))}` : ''}</p>
           <div className="mt-1.5 grid grid-cols-6 gap-0.5">{byPhase.map((x) => <span key={x.p} className={cx('h-2 rounded-sm', tone(x.xs, x.p))} />)}</div>
@@ -1042,15 +1115,17 @@ function ItemSheet({ d, e: e0, now = Date.now(), done, onClose }: { d: TrackerDa
   if (steps === 'list') return <StepsPage d={d} e={e} keys={keys} done={done} onClose={() => setSteps('board')} />;
   if (steps === 'board') return <StepBoard d={d} e={e} keys={keys} done={done} onList={() => setSteps('list')} onDetails={() => setSteps(null)} onClose={onClose} />;
   return (
-    <BottomSheet open onClose={onClose} title={short(e.tag)}>
+    <BottomSheet open onClose={onClose} title={`${short(e.tag)} · Profile`}>
       <div className="space-y-2.5">
+        {e.description && ls.length > 0 && <p className="-mt-1 text-[13px] font-semibold text-slate-800">{e.description}</p>}
+        <ScopeCard e={e} twins={twins} done={done} />
         <button type="button" onClick={() => setSteps('board')} className="flex min-h-10 w-full items-center justify-between rounded-xl bg-slate-50 px-3 text-[13px] font-bold text-brand-700 ring-1 ring-slate-200">
           <span>📋 All steps{manage ? ' · view, edit, add, order' : ''}</span><span className="text-slate-500">{ls.filter((a) => a.actualFinish).length}/{ls.length} ›</span></button>
         <p className="text-xs text-slate-600">Last: {itemLine(d, e)}{e.updatedAt ? ` · ${when(e.updatedAt)}` : ''}</p>
         <LatestUpdate d={d} tag={e.tag} canEdit onDone={(m: string) => done(m)} />
         <BufferBox d={d} k={keyOf(e)} now={now} head={role === 'head'} done={done} />
         <FollowRow d={d} e={e} keys={keys} done={done} />
-        {v && <ItemMore part="top" v={v} system={e.system ? views.filter((x) => x.eq.system === e.system && x.eq.tag !== e.tag) : []} groups={[...new Set(d.equipment.map((x) => x.group))]} systems={[...new Set(d.equipment.map((x) => x.system).filter((x): x is string => !!x))]}
+        {v && e.scope !== 'non_sd' && <ItemMore part="top" v={v} system={e.system ? views.filter((x) => x.eq.system === e.system && x.eq.tag !== e.tag) : []} groups={[...new Set(d.equipment.map((x) => x.group))]} systems={[...new Set(d.equipment.map((x) => x.system).filter((x): x is string => !!x))]}
           canManage={manage} canScope={role === 'head'} totalH={scopeImpact(d).totalH} onItem={setTag} mi={miAll.get(e.tag)} related={relatedWork(e.tag, keyOf(e), d.activities)} allIats={d.iats} lineup={d.lineup} lineupEq={d.lineupEq} tags={d.equipment.map((x) => x.tag)}
           trackerId={d.tracker.id} canEdit isHead={role === 'head'} activities={d.activities.filter((a) => a.key === keyOf(e))} now={now} iso={isolationOf(e.tag, d.points ?? [])} points={d.points ?? []} engine={d.engine} settings={d.settings} me={me}
           onIsolation={() => { onClose(); toIso?.(e.tag); }} onDone={done} />}
@@ -1061,6 +1136,7 @@ function ItemSheet({ d, e: e0, now = Date.now(), done, onClose }: { d: TrackerDa
           <div className="flex flex-wrap gap-1.5">{STAGE_SHORT.map((l, i) => (i === 2 && (stage ?? e.stage) !== 2 ? null : <button key={i} type="button" onClick={() => setStage(i)} className={cx('min-h-8 rounded-full px-2.5 text-[12px] font-semibold', (stage ?? e.stage) === i ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300')}>{l}</button>))}</div></>
           : !run.length && !next && <p className="rounded-xl bg-green-50 p-2 text-sm font-semibold text-green-800">✓ All steps done</p>}
         <Issues d={d} done={done} item={e} keys={keys} />
+        <ItemNotes trackerId={d.tracker.id} e={e} />
         {(e.inspWork || e.inspRef) && <div className="rounded-2xl bg-white p-2.5 ring-1 ring-slate-200">
           <button type="button" onClick={() => setInsp((x) => !x)} className="flex w-full items-center gap-1.5 text-left text-[11px] font-extrabold uppercase tracking-wider text-slate-500"><span className="w-3">{insp ? '▾' : '▸'}</span>Inspection worklist</button>
           {insp && <div className="mt-1.5"><InspWork ref_={e.inspRef} work={e.inspWork} /></div>}</div>}

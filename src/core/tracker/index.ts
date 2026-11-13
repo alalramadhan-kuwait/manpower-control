@@ -20,6 +20,9 @@ export interface TrkEquipment {
   blindsIn: string | null; blindsOut: string | null; updatedBy: string | null; updatedAt: string | null;
   /** items worked as one (E-12-216A/B): one row in the list, a step started / finished on all of them */
   combine?: string | null;
+  /** the item's scope (owner, 13 Nov 2026): 'sd' counts in the shutdown; 'non_sd' is followed on the Maintenance tab,
+   *  with why, since when, an optional due date and when it was back in service; origin 'daily' = a day-to-day job */
+  scope?: 'sd' | 'non_sd'; nonsdReason?: string | null; nonsdAt?: string | null; dueDate?: string | null; backAt?: string | null; origin?: 'sd' | 'daily';
   /** items tested together, no blind between them (E-204 + E-205): one page, a test recorded on one is recorded on the others */
   linked?: string | null;
   /** not followed by this login (trk_follow_off): off its no-update list, update requests, progress and forecast; others keep it */

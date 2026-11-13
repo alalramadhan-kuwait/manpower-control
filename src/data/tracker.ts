@@ -22,7 +22,7 @@ export function currentTracker(list: Tracker[], today: string): Tracker | null {
 }
 
 interface StepRow { id: string; step_id: string; fo: string; gate: number; gate_name: string | null; short_name: string; step_text: string | null; procedure: string | null; prereq: string[] | null; est_hours: number | null; note: string | null; target_at: string | null; status: StepStatus; pending_reason: string | null; remark: string | null; updated_by_name: string | null; updated_at: string | null; started_at: string | null; done_at: string | null }
-interface EqRow { id: string; tag: string; grp: string; description: string | null; fo: string | null; ho_step: string | null; procedure: string | null; barchart_key: string | null; ops_item: boolean; critical: boolean; tracked: boolean; disabled_reason: string | null; planned_ho: string | null; planned_finish: string | null; sort: number; stage: number; pending_reason: string | null; remark: string | null; blinds_in_at: string | null; blinds_out_at: string | null; updated_by_name: string | null; updated_at: string | null; combine?: string | null; linked?: string | null; system?: string | null; list?: string | null; insp_ref?: string | null; insp_work?: string | null; covered_by?: string | null }
+interface EqRow { id: string; tag: string; grp: string; description: string | null; fo: string | null; ho_step: string | null; procedure: string | null; barchart_key: string | null; ops_item: boolean; critical: boolean; tracked: boolean; disabled_reason: string | null; planned_ho: string | null; planned_finish: string | null; sort: number; stage: number; pending_reason: string | null; remark: string | null; blinds_in_at: string | null; blinds_out_at: string | null; updated_by_name: string | null; updated_at: string | null; combine?: string | null; linked?: string | null; system?: string | null; list?: string | null; insp_ref?: string | null; insp_work?: string | null; covered_by?: string | null; scope?: string | null; nonsd_reason?: string | null; nonsd_at?: string | null; due_date?: string | null; back_at?: string | null; origin?: string | null }
 interface IatRow { ops_label?: string | null; updated_by_name?: string | null; updated_at?: string | null; ops_none?: boolean | null; spool_only?: boolean | null; ops_action?: boolean | null; ho_required?: boolean | null; id: string; tag: string; iat_no: string; job_text: string | null; discipline: string | null; issued_at: string; status: 'open' | 'closed'; closed_at: string | null; wo?: string | null; line?: string | null; sheet_status?: string | null; remark?: string | null;
   finding?: string | null; recommendation?: string | null; line_class?: string | null; material?: string | null; checks?: Record<string, string> | null; painting?: Record<string, string> | null; action_by?: string | null }
 interface ActRow { id: string; activity_id: string; grp: string | null; equipment_key: string; activity: string; duration_h: number | null; planned_start: string | null; planned_finish: string | null; stage: number | null; tracked: boolean; baseline: number; actual_start: string | null; actual_finish: string | null; actual_note: string | null; disabled_reason: string | null; seq?: number | null; detail?: boolean | null; p6_activity?: string | null; est_h?: number | null; count_total?: number | null; count_done?: number | null; count_unit?: string | null; updated_by_name: string | null; updated_at: string | null }
@@ -38,7 +38,9 @@ let lineupOnce: ReturnType<typeof fetchLineup> | null = null;
 const fetchLineup = () => Promise.all([supabase.from('lu_streams').select('id,frm,to_tag,fluid,line,line_nos,sheets,size,conf').limit(2000),
   supabase.from('lu_equipment').select('tag,plant_tag,name,data,primary_sheet').limit(2000)]);
 
-export async function fetchTrackerData(id: string): Promise<TrackerData> {
+/** The tracker's data. part 'sd' (default): the shutdown's own items, Non-SD items and their steps left out of every
+ *  shutdown count; part 'nonsd': only the Non-SD items and their steps, for the Maintenance tab (owner, 13 Nov 2026). */
+export async function fetchTrackerData(id: string, part: 'sd' | 'nonsd' = 'sd'): Promise<TrackerData> {
   const since = new Date(Date.now() - 4 * 864e5).toISOString();
   // everything in one round: the tracker, its lists, the lineup (cached), the SOP field steps and the drum records
   if (!lineupOnce) lineupOnce = fetchLineup().then((x) => { if (x.some((y) => y.error)) lineupOnce = null; return x; });
@@ -76,10 +78,13 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
   const outKeys = new Set((e.data as EqRow[]).filter((r) => (r.disabled_reason ?? '').startsWith('out of scope')).map((r) => r.barchart_key ?? r.tag));
   // the items this login chose not to follow: off for this login only, as if switched off
   const offKeys = new Set(fo.error ? [] : (fo.data as { item_key: string }[]).map((r) => r.item_key));
+  const nonSdKeys = new Set((e.data as EqRow[]).filter((r) => r.scope === 'non_sd').map((r) => r.barchart_key ?? r.tag));
+  const inPart = (key: string) => (part === 'nonsd' ? nonSdKeys.has(key) : !nonSdKeys.has(key));
   const eqMap = (r: EqRow): TrkEquipment => ({ id: r.id, tag: r.tag, group: r.grp, description: r.description, fo: r.fo, hoStep: r.ho_step, procedure: r.procedure, barchartKey: r.barchart_key,
     opsItem: r.ops_item, critical: r.critical, tracked: r.tracked && !offKeys.has(r.barchart_key ?? r.tag), notFollowed: offKeys.has(r.barchart_key ?? r.tag), disabledReason: r.disabled_reason, plannedHo: r.planned_ho, plannedFinish: r.planned_finish, sort: r.sort, stage: r.stage,
     pendingReason: r.pending_reason, remark: r.remark, blindsIn: r.blinds_in_at, blindsOut: r.blinds_out_at, updatedBy: r.updated_by_name, updatedAt: r.updated_at, combine: r.combine ?? null, linked: r.linked ?? null, system: r.system ?? null,
-    list: r.list === 'rotating' ? 'rotating' : null, inspRef: r.insp_ref ?? null, inspWork: r.insp_work ?? null, coveredBy: r.covered_by ?? null });
+    list: r.list === 'rotating' ? 'rotating' : null, inspRef: r.insp_ref ?? null, inspWork: r.insp_work ?? null, coveredBy: r.covered_by ?? null,
+    scope: r.scope === 'non_sd' ? 'non_sd' : 'sd', nonsdReason: r.nonsd_reason ?? null, nonsdAt: r.nonsd_at ?? null, dueDate: r.due_date ?? null, backAt: r.back_at ?? null, origin: r.origin === 'daily' ? 'daily' : 'sd' });
   return {
     engine,
     // RTJ / injection locations covered by their loop: off the Equipment list, kept for the loop's handover
@@ -99,11 +104,11 @@ export async function fetchTrackerData(id: string): Promise<TrackerData> {
     tracker: toTracker(t.data as unknown as TrackerRow),
     steps: (s.data as StepRow[]).map((r): TrkStep => ({ id: r.id, stepId: r.step_id, fo: r.fo, gate: r.gate, gateName: r.gate_name, shortName: r.short_name, text: r.step_text, procedure: r.procedure,
       prereq: r.prereq ?? [], estHours: r.est_hours, note: r.note, target: r.target_at, status: r.status, pendingReason: r.pending_reason, remark: r.remark, updatedBy: r.updated_by_name, updatedAt: r.updated_at, startedAt: r.started_at, doneAt: r.done_at })),
-    equipment: (e.data as EqRow[]).filter((r) => !r.covered_by).map(eqMap),
+    equipment: (e.data as EqRow[]).filter((r) => !r.covered_by && inPart(r.barchart_key ?? r.tag)).map(eqMap),
     iats: (i.data as IatRow[]).map((r): TrkIat => ({ id: r.id, tag: r.tag, iatNo: r.iat_no, jobText: r.job_text, discipline: r.discipline, issuedAt: r.issued_at, status: r.status, closedAt: r.closed_at, wo: r.wo ?? null, line: r.line ?? null, sheetStatus: r.sheet_status ?? null, remark: r.remark ?? null,
       finding: r.finding ?? null, recommendation: r.recommendation ?? null, lineClass: r.line_class ?? null, material: r.material ?? null, checks: r.checks ?? {}, painting: r.painting ?? {}, actionBy: r.action_by ?? null, opsAction: !!r.ops_action, hoRequired: !!r.ho_required, opsLabel: (r.ops_label ?? null) as TrkIat['opsLabel'], opsNone: !!r.ops_none, spoolOnly: !!r.spool_only, updatedBy: r.updated_by_name ?? null, updatedAt: r.updated_at ?? null })),
     // a combined bar-chart line split into its jobs (the database keeps it, off) is not shown: its parts are
-    activities: acts.filter((x) => x.baseline === base && !['split', 'removed', 'unit'].includes(x.disabled_reason ?? '')).map((r): TrkActivity => ({ id: r.id, activityId: r.activity_id, group: r.grp, key: r.equipment_key, activity: r.activity, durationH: r.duration_h,
+    activities: acts.filter((x) => x.baseline === base && inPart(x.equipment_key) && !['split', 'removed', 'unit'].includes(x.disabled_reason ?? '')).map((r): TrkActivity => ({ id: r.id, activityId: r.activity_id, group: r.grp, key: r.equipment_key, activity: r.activity, durationH: r.duration_h,
       start: r.planned_start, finish: r.planned_finish, stage: r.stage, tracked: r.tracked && !outKeys.has(r.equipment_key) && !offKeys.has(r.equipment_key), disabledReason: r.disabled_reason, outOfScope: outKeys.has(r.equipment_key),
       actualStart: r.actual_start, actualFinish: r.actual_finish, actualNote: r.actual_note, seq: r.seq ?? null, detail: !!r.detail, p6Activity: r.p6_activity ?? null, estH: r.est_h != null ? +r.est_h : null, countTotal: r.count_total ?? null, countDone: r.count_done ?? null, countUnit: r.count_unit ?? null, updatedBy: r.updated_by_name, updatedAt: r.updated_at })),
     log: (l.data as LogRow[]).map((r): TrkLog => ({ kind: r.kind, ref: r.ref, field: r.field, oldValue: r.old_value, newValue: r.new_value, byName: r.by_name, at: r.at })),
@@ -155,7 +160,7 @@ const upd = async (table: string, id: string, patch: Record<string, unknown>) =>
   throw new ConflictError('Not saved: this login may not change this record.');
 };
 export const setStep = (id: string, patch: Partial<{ status: StepStatus; pending_reason: string | null; remark: string | null; prereq: string[]; target_at: string | null; started_at: string | null; done_at: string | null; est_hours: number | null }>) => upd('trk_steps', id, patch);
-export const setEquipment = (id: string, patch: Partial<{ stage: number; pending_reason: string | null; remark: string | null; blinds_in_at: string | null; blinds_out_at: string | null; tracked: boolean; disabled_reason: string | null; critical: boolean; planned_ho: string | null; planned_finish: string | null; description: string | null; grp: string; system: string | null; list: 'rotating' | null }>) => upd('trk_equipment', id, patch);
+export const setEquipment = (id: string, patch: Partial<{ stage: number; pending_reason: string | null; remark: string | null; blinds_in_at: string | null; blinds_out_at: string | null; tracked: boolean; disabled_reason: string | null; critical: boolean; planned_ho: string | null; planned_finish: string | null; description: string | null; grp: string; system: string | null; list: 'rotating' | null; scope: 'sd' | 'non_sd'; nonsd_reason: string | null; due_date: string | null; back_at: string | null }>) => upd('trk_equipment', id, patch);
 export const setActivity = (id: string, patch: Partial<{ activity: string; planned_start: string | null; planned_finish: string | null; duration_h: number | null; tracked: boolean; disabled_reason: string | null; stage: number | null; actual_start: string | null; actual_finish: string | null; actual_note: string | null; time_reason: string | null; count_total: number | null; count_done: number | null; count_unit: string | null }>) => upd('trk_activities', id, patch);
 /** A procedure activity the bar chart does not list, on an item (Section Head); in the bar chart's current baseline. */
 export async function addActivity(trackerId: string, v: { key: string; activity: string; start: string | null; hours: number | null; stage: number | null }) {
@@ -308,4 +313,30 @@ export async function setReturnItem(id: string, patch: { status?: TrkReturnItem[
 }
 export async function addReturnItem(trackerId: string, v: { tag: string; kind: TrkReturnItem['kind']; what: string | null }) {
   const { error } = await supabase.from('trk_return_item').insert({ tracker_id: trackerId, tag: v.tag, kind: v.kind, what: v.what, removed_at: new Date().toISOString() }); if (error) throw error;
+}
+
+// ── Maintenance follow-up (owner, 13 Nov 2026) ─────────────────────────────────────────────────────────────────────
+export interface ItemNote { id: string; equipmentId: string; body: string; byName: string | null; at: string }
+/** The notes on items (newest first), for the given item ids. */
+export async function fetchItemNotes(equipmentIds: string[]): Promise<ItemNote[]> {
+  if (!equipmentIds.length) return [];
+  const { data, error } = await supabase.from('trk_item_notes').select('id,equipment_id,body,by_name,created_at').in('equipment_id', equipmentIds).eq('removed', false).order('created_at', { ascending: false }).limit(500);
+  if (error) throw error;
+  return (data as { id: string; equipment_id: string; body: string; by_name: string | null; created_at: string }[]).map((r) => ({ id: r.id, equipmentId: r.equipment_id, body: r.body, byName: r.by_name, at: r.created_at }));
+}
+export async function addItemNote(trackerId: string, equipmentId: string, body: string): Promise<string> {
+  const { data, error } = await supabase.from('trk_item_notes').insert({ tracker_id: trackerId, equipment_id: equipmentId, body: body.trim() }).select('id').single();
+  if (error) throw error;
+  return (data as { id: string }).id;
+}
+export const hideItemNote = (id: string, removed = true) => upd('trk_item_notes', id, { removed });
+/** A day-to-day maintenance job (never in a shutdown): the item, Non-SD, with its steps in order (Section Head). */
+export async function addDailyItem(trackerId: string, v: { tag: string; job: string; reason: string | null; dueDate: string | null; steps: string[] }): Promise<string> {
+  const id = crypto.randomUUID();
+  const { error } = await supabase.from('trk_equipment').insert({ id, tracker_id: trackerId, tag: v.tag.trim(), grp: 'Day-to-day', description: v.job.trim() || null, tracked: true, sort: 9000, stage: 1,
+    ops_item: false, critical: false, scope: 'non_sd', origin: 'daily', nonsd_reason: v.reason, due_date: v.dueDate });
+  if (error) throw error;
+  const order: string[] = [];
+  for (const st of v.steps.map((x) => x.trim()).filter(Boolean)) order.push(await addEngStep(trackerId, v.tag.trim(), st, [...order], null));
+  return id;
 }

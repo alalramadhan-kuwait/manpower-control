@@ -21,6 +21,7 @@ import UsersPage from '@/features/users/UsersPage';
 import AuditPage from '@/features/audit/AuditPage';
 import UserActivityPage from '@/features/audit/UserActivityPage';
 import UnitStatusPage from '@/features/operation/UnitStatusPage';
+import MaintenancePage from '@/features/maintenance/MaintenancePage';
 import ShutdownListPage from '@/features/shutdown/ShutdownListPage';
 import FoLevelsPage from '@/features/shutdown/FoLevelsPage';
 import LeavePlanPage from '@/features/leave/LeavePlanPage';
@@ -74,7 +75,8 @@ export function ShutdownsWorkspace({ profile }: { profile: UserProfile }) {
   return <Workspace title="Shutdowns" param="section" tabs={[
     { key: 'progress', label: 'Live', el: <TrackerPage profile={profile} /> },
     { key: 'plans', label: 'Shutdowns', el: <ShutdownListPage /> },
-    { key: 'modes', label: 'Unit status', el: <UnitStatusPage profile={profile} /> }]} />;
+    { key: 'modes', label: 'Unit status', el: <UnitStatusPage profile={profile} /> },
+    { key: 'maintenance', label: 'Maintenance', el: <MaintenancePage profile={profile} /> }]} />;
 }
 
 export function DataQualityWorkspace({ profile }: { profile: UserProfile }) {
