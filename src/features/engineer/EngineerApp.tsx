@@ -203,7 +203,7 @@ function Dashboard({ d, now, go, by, done, report: withReport = true, more, inte
     {withReport && <button type="button" onClick={() => setReport(true)} className="mb-2 flex min-h-10 w-full items-center justify-center gap-2 rounded-2xl bg-whatsapp text-[14px] font-bold text-white active:opacity-90">💬 WhatsApp report</button>}
     {report && <ReportSheet d={d} now={now} by={by} onClose={() => setReport(false)} />}
     {intel}
-    <ShutdownOverview data={d} now={now} head={head} onItem={toItem} onDone={(m) => done(m)} onGo={(to) => (to === 'todo' || to === 'late' || to === 'all' ? go('equip', to) : to === 'ho' ? go('ho') : to === 'hot' ? go('hot') : head ? go('dash', 'focus') : undefined)} />
+    <ShutdownOverview data={d} now={now} head={head} onItem={toItem} onDone={(m) => done(m)} onGo={(to) => (to === 'todo' || to === 'late' || to === 'all' ? go('equip', to) : to === 'ho' ? go('ho') : to === 'hot' ? go('hot') : to === 'timing' ? go('dash', 'timing') : head ? go('dash', 'focus') : undefined)} />
     <DashFold title="Progress by group"><GroupProgress d={d} now={now} onGroup={(g) => go('equip', g)} onSmall={() => go('scope')} /></DashFold>
     <DashFold title={`Issues · ${issues ? `${issues} open` : 'none open'}`} open={issues > 0}><Issues d={d} done={done} /></DashFold>
     <DashFold title="Team today"><TeamToday now={now} /></DashFold>
@@ -1366,6 +1366,8 @@ function ReportSheet({ d, now, by, onClose }: { d: TrackerData; now: number; by:
 
 /** The problems: open ones with Edit and ✓ Resolved, a new one, the resolved ones with Reopen. On the dashboard all
  *  of them (the shutdown's N2 / reactors events and every item's problems); on an item, its own. */
+/** The open issues of the shutdown, for the Live page's start-up view. */
+export function IssuesPanel({ d, done, role }: { d: TrackerData; done: Done; role: EngRole }) { return <RoleCtx.Provider value={role}><Issues d={d} done={done} /></RoleCtx.Provider>; }
 function Issues({ d, done, item, keys }: { d: TrackerData; done: Done; item?: TrkEquipment; keys?: string[] }) {
   const all = (d.events ?? []).filter((x) => !item || (x.key && keys!.includes(x.key)));
   const open = all.filter((x) => !x.endedAt), past = all.filter((x) => x.endedAt);

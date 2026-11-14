@@ -340,3 +340,9 @@ export async function addDailyItem(trackerId: string, v: { tag: string; job: str
   for (const st of v.steps.map((x) => x.trim()).filter(Boolean)) order.push(await addEngStep(trackerId, v.tag.trim(), st, [...order], null));
   return id;
 }
+/** How many items are followed on Maintenance (Non-SD, not back in service) for a tracker. */
+export async function countNonSd(trackerId: string): Promise<number> {
+  const { count, error } = await supabase.from('trk_equipment').select('id', { count: 'exact', head: true }).eq('tracker_id', trackerId).eq('scope', 'non_sd').is('back_at', null);
+  if (error) throw error;
+  return count ?? 0;
+}

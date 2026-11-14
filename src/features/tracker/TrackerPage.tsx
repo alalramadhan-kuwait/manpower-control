@@ -7,11 +7,15 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Share2, Copy, MessageCircle, LayoutDashboard, Handshake, Wrench, Flame, ClipboardList, Settings, type LucideIcon } from 'lucide-react';
 import { phases, equipmentList, lateOrHold, isNR, totals, FO_NAMES, REACTORS, STAGE_SHORT, pointComplete, bannerText, equipViews, flagText, kwDay, kwTime, reportText, leaderReportText, shiftOf, shiftReport, staleItems, stepViews, type StepView } from '@/core/tracker';
 import { StageReview } from './StageReview';
-import { CONFLICT_EVENT, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
+import { CONFLICT_EVENT, countNonSd, currentTracker, fetchTrackerData, fetchTrackers, saveShiftLog, type Tracker, type TrackerData } from '@/data/tracker';
+import { fetchStartupSteps, type StartupStep } from '@/data/sdPage';
+import { livePhase } from '@/core/shutdown/livePhase';
+import { criticalHandover } from '@/core/tracker';
+import { LiveStartup, PhaseStrip } from './LiveStartup';
 import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Spinner, Toast, cx } from '@/ui/components';
 import { AskUpdates } from './Ask';
-import { DashFold, DashboardTab, EquipmentListTab, HandoverTab, HotWorkTab, ItemSheetFor, ScopeLists } from '@/features/engineer/EngineerApp';
+import { DashFold, DashboardTab, IssuesPanel, EquipmentListTab, HandoverTab, HotWorkTab, ItemSheetFor, ScopeLists } from '@/features/engineer/EngineerApp';
 import { StepSheet } from './TrackerSheets';
 import { TrackerAdmin, clockKey } from './TrackerAdmin';
 import { TimingTab } from './Timing';
@@ -106,6 +110,15 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
     setDelta({ tag: p.tag, before: p.before, after: { total: w?.actualPct ?? null, item: it?.physPct ?? null } });
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
   const steps = useMemo(() => (data ? stepViews(data, now) : null), [data, now]);
+  // the start-up of this shutdown and the items on Maintenance, refreshed with the tracker (owner, 14 Nov 2026)
+  const [startup, setStartup] = useState<StartupStep[]>([]); const [nonSd, setNonSd] = useState(0);
+  useEffect(() => {
+    const ev = data?.tracker.eventId, tid = data?.tracker.id; if (!tid) return;
+    let off = false;
+    void (ev ? fetchStartupSteps(ev) : Promise.resolve([] as StartupStep[])).then((x) => { if (!off) setStartup(x); }).catch(() => {});
+    void countNonSd(tid).then((n) => { if (!off) setNonSd(n); }).catch(() => {});
+    return () => { off = true; };
+  }, [data]);
   const eqs = useMemo(() => (data && steps ? equipViews(data, now, steps) : null), [data, now, steps]);
 
   // a step sheet closes after its action, the equipment sheet stays open (several actions in a row) and refreshes
@@ -141,6 +154,11 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
   const isoOpen = points.filter((p) => (p.kind === 'blind' || p.beforeHo) && !pointComplete(p) && !isNR(p)).length;
   const open = (a: { kind: 'step' | 'equipment'; ref: string }) => setSheet(a.kind === 'step' ? { kind: 'step', id: a.ref } : { kind: 'eq', tag: a.ref });
 
+  const dashboard = <DashboardTab d={data} now={now} role={role} by={profile.display_name} done={(m, u) => done(m, true, u)} intel={<IntelSummary d={data} onOpen={() => setTab('updates')} />}
+        go={(t, g) => { if (t === 'equip') { setEqInit(g ?? 'all'); setTab('equipment'); } else setTab(t === 'ho' ? 'isolation' : t === 'hot' ? 'iats' : t === 'scope' ? 'scope' : g === 'focus' ? 'guideline' : g === 'timing' ? 'timing' : 'today'); }}
+        onItem={(tag) => setSheet({ kind: 'eq', tag })}
+        more={isHead ? <><DashFold title="Stage review"><StageReview data={data} eqs={eqs} canEdit={canEdit} onOpen={(tag) => open({ kind: 'equipment', ref: tag })} onDone={() => load(true)} /></DashFold>
+          <DashFold title="Operations focus"><FocusList data={data} now={now} onOpen={open} /></DashFold></> : undefined} />;
   return (
     <div className="mx-auto max-w-3xl pb-24">
       {test && <div className="mb-2 rounded-lg bg-amber-200 px-3 py-1.5 text-center text-xs font-bold tracking-wide text-amber-950">TEST · a copy for trying; nothing here is live{now !== Date.now() && Math.abs(now - Date.now()) > 120_000 ? ` · clock ${kwDay(now)} ${kwTime(now)}` : ''}{other.filter((o) => o.mode === 'live').map((o) => <Link key={o.id} to={`/progress/${o.id}`} className="ml-2 underline">Live ›</Link>)}</div>}
@@ -172,11 +190,22 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {delta && (tab === 'updates' || paste) && <ProgressDelta v={delta} onClose={() => setDelta(null)} />}
       {tab === 'updates' && <UpdateIntelligence d={data} canEdit={canEdit} onDone={intelDone} onPaste={() => setPaste(true)} />}
       {paste && <PasteUpdate d={data} canEdit={canEdit} onClose={() => setPaste(false)} onDone={intelDone} />}
-      {tab === 'today' && <DashboardTab d={data} now={now} role={role} by={profile.display_name} done={(m, u) => done(m, true, u)} intel={<IntelSummary d={data} onOpen={() => setTab('updates')} />}
-        go={(t, g) => { if (t === 'equip') { setEqInit(g ?? 'all'); setTab('equipment'); } else setTab(t === 'ho' ? 'isolation' : t === 'hot' ? 'iats' : t === 'scope' ? 'scope' : g === 'focus' ? 'guideline' : 'today'); }}
-        onItem={(tag) => setSheet({ kind: 'eq', tag })}
-        more={isHead ? <><DashFold title="Stage review"><StageReview data={data} eqs={eqs} canEdit={canEdit} onOpen={(tag) => open({ kind: 'equipment', ref: tag })} onDone={() => load(true)} /></DashFold>
-          <DashFold title="Operations focus"><FocusList data={data} now={now} onOpen={open} /></DashFold></> : undefined} />}
+      {tab === 'today' && (() => {
+        // the phase, from what is recorded; the start-up leads once it has begun, M & I folded under it
+        const ho = criticalHandover(data, steps), phase = livePhase(ho.at, now, startup);
+        const w = phases(data, now, steps).mi.weighted;
+        const isMain = (i: { small: boolean; key: string }) => !i.small && data.equipment.find((e) => (e.barchartKey ?? e.tag) === i.key)?.list !== 'rotating';
+        const mainOpen = (w?.items ?? []).filter((i) => isMain(i) && i.done < i.lines), smallOpen = (w?.items ?? []).filter((i) => !isMain(i) && i.done < i.lines).length;
+        const strip = <PhaseStrip phase={phase} miOpen={mainOpen.length > 0} />;
+        if ((phase === 'startup' || phase === 'service') && data.tracker.eventId) return <>{strip}
+          <LiveStartup d={data} startup={startup} eventId={data.tracker.eventId} now={now} canEdit={canEdit} mainOpen={mainOpen} smallOpen={smallOpen} nonSd={nonSd}
+            issues={(data.events ?? []).filter((x) => !x.endedAt).length} onItem={(tag) => setSheet({ kind: 'eq', tag })} onEquip={() => { setEqInit('all'); setTab('equipment'); }}
+            onDone={(m, u) => { done(m, true, u); void fetchStartupSteps(data.tracker.eventId!).then(setStartup); }}>
+            <IssuesPanel d={data} done={(m, u) => done(m, true, u)} role={role} /></LiveStartup>
+          <DashFold title="M&I record (end, progress, Planning figure)">{dashboard}</DashFold></>;
+        return <>{strip}{dashboard}</>;
+      })()}
+
       {tab === 'isolation' && <HandoverTab key={`iso-${isoKind}-${focus}`} d={data} now={now} role={role} focus={focus} onClearFocus={() => setFocus(null)} initial={isoKind} onItem={(tag) => setSheet({ kind: 'eq', tag })} onStep={(id) => setSheet({ kind: 'step', id })} done={(m, u) => done(m, true, u)} />}
       {tab === 'guideline' && <SequenceTab steps={steps} auto={auto} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {tab === 'equipment' && <EquipmentListTab key={`eq-${eqInit}`} initial={eqInit} d={data} now={now} role={role} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}

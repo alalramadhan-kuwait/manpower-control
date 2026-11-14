@@ -25,15 +25,18 @@ const STATE_WORD: Record<Banner['state'], string> = { AHEAD: 'AHEAD', BEHIND: 'B
 /** The shutdown at a glance (owner, 25 Oct: the situation in 5 seconds, no scrolling): the end, the progress, the 3 items
  *  that set the end, Operations and M & I in one line each, and what needs attention. Each line opens its detail. */
 export function ShutdownOverview({ data, now, head = false, onItem, onGo, onDone }: { data: TrackerData; now: number; head?: boolean; onItem: (tag: string) => void; onDone?: (msg: string) => void;
-  onGo: (to: 'todo' | 'late' | 'all' | 'ho' | 'hot' | 'focus') => void }) {
+  onGo: (to: 'todo' | 'late' | 'all' | 'ho' | 'hot' | 'focus' | 'timing') => void }) {
   const [sheet, setSheet] = useState<'ops' | 'mi' | null>(null);
   const steps = useMemo(() => stepViews(data, now), [data, now]);
   const eqs = useMemo(() => equipViews(data, now, steps), [data, now, steps]);
   const { ops, mi } = useMemo(() => phases(data, now, steps), [data, now, steps]);
-  const s = data.settings; const w = mi.weighted;
+  const s = data.settings; const w0 = mi.weighted;
+  // a main item still open never reads 100% (99.6% rounded): shown as 99%
+  const w = w0 && w0.main.physPct >= 100 && w0.items.some((i) => !i.small && i.done < i.lines) ? { ...w0, main: { ...w0.main, physPct: 99 } } : w0;
   const res = opsResults(data, eqs); const bl = miBlinds(data);
   const start = iso(s.opsStart), miPlan = iso(s.miStart ?? s.hoTarget), end = iso(s.miEnd);
-  const day = Math.max(1, Math.floor((now - start) / DAY) + 1), total = Math.round((end - start) / DAY);
+  const evS = data.tracker.eventStart ? Date.parse(`${data.tracker.eventStart}T00:00:00+03:00`) : start, evE = data.tracker.eventEnd ? Date.parse(`${data.tracker.eventEnd}T00:00:00+03:00`) + DAY : end;
+  const day = Math.max(1, Math.floor((now - evS) / DAY) + 1), total = Math.round((evE - evS) / DAY);
   const behind = eqs.filter((e) => e.stage >= 1 && e.plan && e.plan.variance < 0 && e.eq.tracked).sort((a, b) => Number(isMisc(a.eq.group)) - Number(isMisc(b.eq.group)) || a.plan!.variance - b.plan!.variance || b.plan!.days - a.plan!.days);
   const opsBadge = !ops ? null : ops.finishedAt !== null && ops.finishDelayH !== null
     ? { text: ops.finishDelayH <= 0 ? `${hrs(ops.finishDelayH)} early` : `${hrs(ops.finishDelayH)} late`, tone: ops.finishDelayH <= 0 ? 'green' as const : 'red' as const }
@@ -55,7 +58,7 @@ export function ShutdownOverview({ data, now, head = false, onItem, onGo, onDone
         <div className="flex items-baseline justify-between gap-2"><H3>Shutdown end · forecast</H3><span className="flex items-baseline gap-1.5">
           {/* the forecast follows the P6 dates without the activity links: unverified until they are validated */}
           {!s.p6LinksVerified && <span title="P6 activity relationships not validated yet" className="rounded bg-amber-100 px-1.5 py-px text-[10px] font-bold uppercase text-amber-900">Unverified</span>}
-          {total > 0 && <span className="text-[11px] font-semibold text-slate-500">Day {Math.min(day, total)} / {total}</span>}</span></div>
+          {total > 0 && <span className={cx('text-[11px] font-semibold', day > total ? 'text-status-red' : 'text-slate-500')}>Day {day} / {total}</span>}</span></div>
         {w ? <>
           <p className="flex flex-wrap items-baseline gap-x-2"><b className={cx('text-[22px] font-extrabold leading-tight', late ? 'text-status-red' : 'text-brand-700')}>{at(w.estEnd)}</b>
             <span className={cx('rounded-md px-1.5 py-0.5 text-[12px] font-bold', late ? tone('red') : tone('green'))}>{late ? `${daysAsHours(w.impactD)} behind P6` : 'on P6'}</span></p>
@@ -72,7 +75,7 @@ export function ShutdownOverview({ data, now, head = false, onItem, onGo, onDone
         {w.small.items > 0 && <p className="mt-1 text-[11px] text-slate-500">Small jobs {w.small.physPct}% · plan {w.small.planPct}%</p>}
       </section>}
       {/* 2b · the official Maintenance Planning figure, apart from the tracker's own progress and forecast */}
-      <PlanningBlock d={data} tracker={w ? { planPct: w.main.planPct, actualPct: w.main.physPct } : null} onDone={onDone ?? (() => undefined)} />
+      <PlanningBlock d={data} canEdit={head} tracker={w ? { planPct: w.main.planPct, actualPct: w.main.physPct } : null} onDone={onDone ?? (() => undefined)} />
       {/* 3 · what sets the end */}
       {top.length > 0 && <section className="rounded-2xl bg-white px-3 py-2 ring-1 ring-slate-200">
         <H3>Critical · setting the end</H3>
@@ -97,8 +100,8 @@ export function ShutdownOverview({ data, now, head = false, onItem, onGo, onDone
         {lateN > 0 && <Line onClick={() => onGo('late')}><span className="min-w-0 flex-1 text-[13px]"><b className="text-status-red">{lateN} late or on hold</b><span className="text-slate-600"> · equipment</span></span></Line>}
         {lateSteps > 0 && <Line onClick={() => onGo('focus')}><span className="min-w-0 flex-1 text-[13px]"><b className="text-status-red">{lateSteps} guideline step{lateSteps > 1 ? 's' : ''} late</b><span className="text-slate-600"> · operations</span></span></Line>}
       </section>}
-      {sheet === 'ops' && <OpsSheet data={data} eqs={eqs} plan={[start, miPlan]} finished={ops?.finishedAt ?? null} badge={opsBadge?.text ?? ''} onOpen={(a) => { setSheet(null); if (a.kind === 'equipment') onItem(a.ref); else onGo('focus'); }} onNav={(n) => { setSheet(null); onGo(n.tab === 'iats' ? 'hot' : n.tab === 'isolation' ? 'ho' : n.tab === 'equipment' ? (n.lateFirst ? 'late' : 'all') : 'focus'); }} onClose={() => setSheet(null)} />}
-      {sheet === 'mi' && <MiSheet data={data} steps={steps} now={now} mi={mi} behind={behind} onOpen={(a) => { setSheet(null); if (a.kind === 'equipment') onItem(a.ref); }} onNav={(n) => { setSheet(null); onGo(n.tab === 'iats' ? 'hot' : n.tab === 'isolation' ? 'ho' : n.tab === 'equipment' ? (n.lateFirst ? 'late' : 'all') : 'focus'); }} onClose={() => setSheet(null)} />}
+      {sheet === 'ops' && <OpsSheet data={data} eqs={eqs} plan={[start, miPlan]} finished={ops?.finishedAt ?? null} badge={opsBadge?.text ?? ''} onOpen={(a) => { setSheet(null); if (a.kind === 'equipment') onItem(a.ref); else onGo('focus'); }} onNav={(n) => { setSheet(null); onGo(n.tab === 'iats' ? 'hot' : n.tab === 'isolation' ? 'ho' : n.tab === 'equipment' ? (n.lateFirst ? 'late' : 'all') : n.tab === 'timing' ? 'timing' : 'focus'); }} onClose={() => setSheet(null)} />}
+      {sheet === 'mi' && <MiSheet data={data} steps={steps} now={now} mi={mi} behind={behind} onOpen={(a) => { setSheet(null); if (a.kind === 'equipment') onItem(a.ref); }} onNav={(n) => { setSheet(null); onGo(n.tab === 'iats' ? 'hot' : n.tab === 'isolation' ? 'ho' : n.tab === 'equipment' ? (n.lateFirst ? 'late' : 'all') : n.tab === 'timing' ? 'timing' : 'focus'); }} onClose={() => setSheet(null)} />}
     </div>
   );
 }
@@ -169,7 +172,7 @@ function OpsSheet({ data, eqs, plan, finished, badge, onOpen, onNav, onClose }: 
   return (
     <BottomSheet open onClose={onClose} title="Operations">
       <div className="space-y-3">
-        <p className="text-xs text-slate-500">Plan {at(plan[0])} → {at(plan[1])} · Actual {at(plan[0])} → {finished === null ? 'running' : at(finished)} {badge && <b className={badge.includes('EARLY') ? 'text-status-green' : 'text-status-red'}>{badge.toLowerCase()}</b>}</p>
+        <p className="text-xs text-slate-500">Plan {at(plan[0])} → {at(plan[1])} · Actual {at(plan[0])} → {finished === null ? 'running' : at(finished)} {badge && <b className={/early/i.test(badge) ? 'text-status-green' : 'text-status-red'}>{badge.toLowerCase()}</b>}</p>
         <table className="w-full text-[13px]">
           <thead><tr><Th>By field operator</Th><Th>Neutralized</Th><Th>Handed over</Th></tr></thead>
           <tbody>
