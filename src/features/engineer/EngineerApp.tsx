@@ -1027,13 +1027,29 @@ function AddStepsSheet({ d, set, rows, initial, done, onClose }: { d: TrackerDat
 /** One item's steps by phase (owner, 30 Oct 2026: "the way that will have clicks and I can see all the steps"): the six
  *  phases of every item, the one it is in open, the others folded with their count and plan dates; one tap per step
  *  (Start / Finish; the sheet has the time, Done, Undo and not required). The list page stays for edit, add and order. */
+/** One row per step of items worked as one: the first item's order, each step the least advanced of the twins (one not
+ *  finished before one finished), plus steps only the others have. */
+function boardActs(d: TrackerData, keys: string[]): TrkActivity[] {
+  if (keys.length < 2) return lines(d, keys);
+  const by = keys.map((k) => lines(d, [k]));
+  const rank = (a: TrkActivity) => (a.actualFinish ? 2 : a.actualStart ? 1 : 0);
+  const pick = (xs: TrkActivity[]) => [...xs].sort((p, q) => rank(p) - rank(q))[0];
+  const seen = new Set<string>(); const out: TrkActivity[] = [];
+  for (const a of by.flat()) {
+    const n = bedName(a.activity); if (seen.has(n)) continue; seen.add(n);
+    out.push(pick(by.flatMap((xs) => xs.filter((x) => bedName(x.activity) === n))));
+  }
+  return out;
+}
 function StepBoard({ d, e, keys, done, onList, onDetails, onClose }: { d: TrackerData; e: TrkEquipment; keys: string[]; done: Done; onList: () => void; onDetails: () => void; onClose: () => void }) {
   useTopColor();
   const isHead = useContext(RoleCtx) === 'head'; const now = Date.now();
-  const k0 = keys[0], acts = lines(d, [k0]);
+  // items worked as one (E-216A/B): a step shows open until it is done on every one of them, and is the open one's
+  // (owner, 14 Nov 2026: E-216B's hydroblast was open while the page read "all steps done" from E-216A)
+  const k0 = keys[0], acts = boardActs(d, keys);
   const ph = stepPhases(acts);
   const set: BedSet = { label: short(e.combine ?? e.tag), dept: e.inspRef ? 'inspection' : 'cleaning', items: [e], keys: [k0] };
-  const rowOf = (a: TrkActivity): BedRow => ({ id: a.id, name: a.activity, cells: [{ key: k0, a, state: a.actualFinish ? 'done' : a.actualStart ? 'run' : 'open' }] });
+  const rowOf = (a: TrkActivity): BedRow => ({ id: a.id, name: a.activity, cells: [{ key: a.key, a, state: a.actualFinish ? 'done' : a.actualStart ? 'run' : 'open' }] });
   const byPhase = PHASE_IDS.map((p) => ({ p, xs: acts.filter((a) => ph.get(a.id) === p) }));
   const current = byPhase.find((x) => x.xs.some((a) => !a.actualFinish))?.p ?? 5;
   const [open, setOpen] = useState<Set<Phase>>(() => new Set([current, ...byPhase.filter((x) => x.xs.some((a) => a.actualStart && !a.actualFinish)).map((x) => x.p)]));
@@ -1049,7 +1065,7 @@ function StepBoard({ d, e, keys, done, onList, onDetails, onClose }: { d: Tracke
     const sub = st === 'done' ? `✓ ${when(a.actualFinish)}` : st === 'run' ? `since ${dayOf(Date.parse(a.actualStart!))}${a.finish ? ` · plan end ${dayOf(Date.parse(a.finish))}` : ''}${l.late ? ` · ${lateText(l.byH)}` : ''}`
       : a.start && a.finish ? `plan ${windowText({ start: Date.parse(a.start), finish: Date.parse(a.finish) }).replace(/^Plan /, '')}${l.late ? ` · ${lateText(l.byH)}` : ''}` : a.estH ? `added · est. ${a.estH} h` : 'no plan time';
     return <button key={a.id} type="button" onClick={() => setPick(a.id)} className="flex w-full items-center gap-2 border-t border-slate-100 px-2.5 py-1.5 text-left active:bg-slate-50">
-      <span className="min-w-0 flex-1"><span className={cx('block text-[12.5px] font-semibold leading-snug', st === 'done' && 'text-slate-500')}>{a.activity}</span>
+      <span className="min-w-0 flex-1"><span className={cx('block text-[12.5px] font-semibold leading-snug', st === 'done' && 'text-slate-500')}>{a.activity}{keys.length > 1 && st !== 'done' && a.key !== k0 ? <span className="font-bold text-amber-700"> · on {short(a.key)}</span> : null}</span>
         <span className={cx('block text-[10.5px]', st === 'done' ? (l.late ? 'text-amber-700' : 'text-slate-500') : l.late ? 'font-bold text-status-red' : 'text-slate-500')}>{sub}</span>
         {a.countTotal ? <CountBar a={a} /> : null}</span>
       {st === 'done' ? <span className="shrink-0 text-[13px] font-bold text-status-green">✓</span>
