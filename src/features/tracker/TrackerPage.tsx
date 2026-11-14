@@ -196,7 +196,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
         const open = openFromMi(data);
         const strip = <PhaseStrip phase={phase} miOpen={open.total} />;
         if ((phase === 'startup' || phase === 'service') && data.tracker.eventId) return <>{strip}
-          <LiveStartup startup={startup} eventId={data.tracker.eventId} now={now} canEdit={canEdit} open={open} nonSd={nonSd}
+          <LiveStartup d={data} canClose={isHead} startup={startup} eventId={data.tracker.eventId} now={now} canEdit={canEdit} open={open} nonSd={nonSd}
             issues={(data.events ?? []).filter((x) => !x.endedAt).length} onItem={(tag) => setSheet({ kind: 'eq', tag })} onEquip={() => { setEqInit('all'); setTab('equipment'); }} onTab={(t) => { setTab(t); window.scrollTo(0, 0); }}
             onDone={(m, u) => { done(m, true, u); void fetchStartupSteps(data.tracker.eventId!).then(setStartup); }}>
             <IssuesPanel d={data} done={(m, u) => done(m, true, u)} role={role} /></LiveStartup>

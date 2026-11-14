@@ -1728,6 +1728,27 @@ export function openFromMi(d: TrackerData): MiOpen {
   const iats = d.iats.filter((i) => i.status === 'open').length;
   return { main, rotating, small, pmr, iats, total: open.length + iats };
 }
+export const CLOSED_AT_MI_END = 'Closed at M&I end by the Section Head · no time recorded';
+/** Close everything still open from M & I at once (owner, 14 Nov 2026: in start-up all M & I items must be closed, with
+ *  an option to close them all). Open IATs become Completed; each open item's unfinished tracked steps are marked not
+ *  required with a note (no finish time is made up) and the item is set Completed. Returns an undo that puts every row
+ *  back as it was. */
+export async function closeAllMi(d: TrackerData, open: MiOpen): Promise<() => Promise<unknown>> {
+  const items = [...open.main, ...open.rotating, ...open.small, ...open.pmr];
+  const steps = lines(d, items.map(keyOf)).filter((a) => !a.actualFinish);
+  const iats = d.iats.filter((i) => i.status === 'open');
+  const note = 'Closed at M&I end (Section Head)';
+  await Promise.all([
+    ...steps.map((a) => setActivity(a.id, { tracked: false, disabled_reason: CLOSED_AT_MI_END })),
+    ...iats.map((i) => setIatStatus(i.id, 'Completed', true, i.remark?.trim() ? `${i.remark.trim()} · ${note}` : note)),
+  ]);
+  await Promise.all(items.filter((e) => e.stage < STAGE_SHORT.length - 1).map((e) => setEquipment(e.id, { stage: STAGE_SHORT.length - 1 })));
+  return () => Promise.all([
+    ...steps.map((a) => setActivity(a.id, { tracked: true, disabled_reason: a.disabledReason ?? null })),
+    ...iats.map((i) => restoreIat(i.id, { sheetStatus: i.sheetStatus ?? null, status: 'open', closedAt: i.closedAt, remark: i.remark ?? null })),
+    ...items.map((e) => setEquipment(e.id, { stage: e.stage })),
+  ]);
+}
 function Scope({ d, now, done }: P) {
   const [group, setGroup] = useState<string | null>(null);
   const items = smallItems(d).filter((e) => scopeOf(e) !== 'PMRs');

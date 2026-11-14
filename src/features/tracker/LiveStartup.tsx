@@ -5,11 +5,11 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { setStartupStep, type StartupStep } from '@/data/sdPage';
-import { BACKDATE_LIMIT_H } from '@/data/tracker';
+import { BACKDATE_LIMIT_H, type TrackerData } from '@/data/tracker';
 import { startupReport } from '@/core/shutdown/startupReport';
 import { startupVsPlan, DELAY_MIN_H } from '@/core/shutdown/stages';
 import { startupNow, type LivePhase } from '@/core/shutdown/livePhase';
-import type { MiOpen } from '@/features/engineer/EngineerApp';
+import { closeAllMi, type MiOpen } from '@/features/engineer/EngineerApp';
 import { BottomSheet, ErrorBox, cx } from '@/ui/components';
 
 const H = 36e5;
@@ -34,10 +34,10 @@ export function PhaseStrip({ phase, miOpen }: { phase: LivePhase; miOpen: number
   );
 }
 
-export function LiveStartup({ startup, eventId, now, canEdit, open, nonSd, issues, onItem, onEquip, onTab, onDone, children }: {
-  startup: StartupStep[]; eventId: string; now: number; canEdit: boolean; open: MiOpen; nonSd: number; issues: number;
+export function LiveStartup({ d, startup, eventId, now, canEdit, canClose, open, nonSd, issues, onItem, onEquip, onTab, onDone, children }: {
+  d: TrackerData; startup: StartupStep[]; eventId: string; now: number; canEdit: boolean; canClose: boolean; open: MiOpen; nonSd: number; issues: number;
   onItem: (tag: string) => void; onEquip: () => void; onTab: (t: 'iats' | 'pmr') => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void; children?: React.ReactNode }) {
-  const [showIssues, setShowIssues] = useState(false);
+  const [showIssues, setShowIssues] = useState(false); const [closing, setClosing] = useState(false);
   const rep = startupReport(startup, now), vp = startupVsPlan(startup, now);
   const oil = rep.stages.find((g) => g.oil);
   const plan = oil ? oil.planStart : rep.planEnd;
@@ -69,10 +69,13 @@ export function LiveStartup({ startup, eventId, now, canEdit, open, nonSd, issue
           <Row key={l} label={l} right={`${xs.length}${xs.length <= 2 ? ` · ${xs.map((e) => short(e.tag)).join(', ')}` : ''} ›`} tone="red"
             onClick={() => (xs.length === 1 && l !== 'PMRs' ? onItem(xs[0].tag) : l === 'PMRs' ? onTab('pmr') : onEquip())} />)}
         {open.iats > 0 && <Row label="Hot work IATs" right={`${open.iats} ›`} tone="red" onClick={() => onTab('iats')} />}
+        <p className="px-1 pb-1 text-[12px] text-slate-600">Start-up has begun: everything from M&I should be closed.</p>
+        {canClose && <button type="button" onClick={() => setClosing(true)} className="min-h-11 w-full rounded-xl bg-status-red text-[14px] font-bold text-white">Close all {open.total}…</button>}
       </section> : <Row label="M&I" right="✓ everything closed" tone="grey" />}
       <Row label="Maintenance (Non-SD)" right={nonSd ? `${nonSd} ›` : 'none'} tone={nonSd ? undefined : 'grey'} to="/shutdowns?section=maintenance" />
       <Row label="Issues" right={issues ? `${issues} open ${showIssues ? '▴' : '›'}` : 'none'} tone={issues ? 'red' : 'grey'} onClick={issues ? () => setShowIssues((x) => !x) : undefined} />
       {showIssues && children}
+      {closing && <CloseAllSheet d={d} open={open} onClose={() => setClosing(false)} onDone={(m, u) => { setClosing(false); onDone(m, u); }} />}
     </div>
   );
 }
@@ -174,6 +177,31 @@ function FinishSheet({ step, now, busy, onClose, onSave }: { step: StartupStep; 
         {bad && pick === 'other' && <p className="text-[12px] font-semibold text-status-red">Not before its start, not in the future, and within {BACKDATE_LIMIT_H} h (older: on the steps page with a reason).</p>}
         <button type="button" disabled={busy || bad} onClick={() => onSave(new Date(t).toISOString())} className="min-h-12 w-full rounded-xl bg-brand-700 text-[15px] font-bold text-white disabled:opacity-50">✓ Done at {Number.isNaN(t) ? '—' : at(t)}</button>
         <p className="text-center text-[11.5px] text-slate-500">Undo right after · the next step starts when you tap Start</p>
+      </div>
+    </BottomSheet>
+  );
+}
+
+/** Confirm closing everything still open from M & I (Section Head). */
+function CloseAllSheet({ d, open, onClose, onDone }: { d: TrackerData; open: MiOpen; onClose: () => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void }) {
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<unknown>(null);
+  const rows = ([['Main equipment', open.main.length], ['Rotating', open.rotating.length], ['Small items', open.small.length], ['PMRs', open.pmr.length], ['Hot work IATs', open.iats]] as const).filter(([, n]) => n > 0);
+  async function go() {
+    setBusy(true); setErr(null);
+    try { const undo = await closeAllMi(d, open); onDone(`M&I: ${open.total} closed.`, undo); } catch (x) { setErr(x); } finally { setBusy(false); }
+  }
+  return (
+    <BottomSheet open onClose={onClose} title={`Close all ${open.total} from M&I`}>
+      <div className="space-y-2">
+        <div className="divide-y divide-slate-100 rounded-xl ring-1 ring-slate-200">{rows.map(([l, n]) => <div key={l} className="flex justify-between px-3 py-2 text-[13.5px]"><span>{l}</span><b>{n}</b></div>)}</div>
+        <ul className="list-disc space-y-1 pl-5 text-[12.5px] text-slate-600">
+          <li>Items are set to <b>Completed</b>; hot work IATs to <b>Completed</b>.</li>
+          <li>Steps not yet done are marked <b>not required</b> with the note “Closed at M&I end · no time recorded” — no finish time is made up.</li>
+          <li>Undo right after puts everything back.</li>
+        </ul>
+        {err != null && <ErrorBox error={err} />}
+        <button type="button" disabled={busy} onClick={() => void go()} className="min-h-12 w-full rounded-xl bg-status-red text-[15px] font-bold text-white disabled:opacity-50">{busy ? 'Closing…' : `Close all ${open.total}`}</button>
+        <button type="button" onClick={onClose} className="min-h-11 w-full rounded-xl text-[14px] font-semibold text-slate-600 ring-1 ring-slate-300">Cancel</button>
       </div>
     </BottomSheet>
   );
