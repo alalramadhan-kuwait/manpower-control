@@ -5,17 +5,18 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { setStartupStep, type StartupStep } from '@/data/sdPage';
-import { BACKDATE_LIMIT_H, type TrackerData } from '@/data/tracker';
+import { BACKDATE_LIMIT_H } from '@/data/tracker';
 import { startupReport } from '@/core/shutdown/startupReport';
 import { startupVsPlan, DELAY_MIN_H } from '@/core/shutdown/stages';
 import { startupNow, type LivePhase } from '@/core/shutdown/livePhase';
-import type { MiItem, TrkEquipment } from '@/core/tracker';
+import type { MiOpen } from '@/features/engineer/EngineerApp';
 import { BottomSheet, ErrorBox, cx } from '@/ui/components';
 
 const H = 36e5;
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const kw = (t: number) => new Date(t + 3 * H);
 /** Kuwait time, 12-hour (owner, 14 Nov 2026): "8:13 pm". */
+const short = (tag: string) => tag.replace(/^([A-Z]{1,3})-12-/, '$1-');
 const hm = (t: number) => { const d = kw(t), h = d.getUTCHours(), m = d.getUTCMinutes(); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`; };
 const at = (t: number) => `${kw(t).getUTCDate()} ${MON[kw(t).getUTCMonth()]} ${hm(t)}`;
 const r30 = (t: number) => Math.round(t / (30 * 60e3)) * 30 * 60e3;
@@ -23,19 +24,19 @@ const hrs = (h: number) => (Math.abs(h) >= 48 ? `${Math.round((h / 24) * 10) / 1
 
 const LABEL: Record<LivePhase, string> = { ops: 'Ops', mi: 'M&I', startup: 'Start-up', service: 'In service' };
 /** Operations → M & I → Start-up → In service: done ✓, the current one dark, M & I amber while it still has open main steps. */
-export function PhaseStrip({ phase, miOpen }: { phase: LivePhase; miOpen: boolean }) {
+export function PhaseStrip({ phase, miOpen }: { phase: LivePhase; miOpen: number }) {
   const order: LivePhase[] = ['ops', 'mi', 'startup', 'service']; const cur = order.indexOf(phase);
   return (
     <div className="mb-2 flex gap-1 text-[11.5px] font-extrabold">
       {order.map((p, i) => <span key={p} className={cx('flex-1 rounded-lg py-1.5 text-center', i === cur ? 'bg-brand-700 text-white' : i < cur ? (p === 'mi' && miOpen ? 'bg-amber-100 text-amber-900' : 'bg-green-100 text-green-800') : 'bg-slate-200 text-slate-500')}>
-        {i < cur && !(p === 'mi' && miOpen) ? '✓ ' : ''}{LABEL[p]}</span>)}
+        {i < cur && !(p === 'mi' && miOpen) ? '✓ ' : ''}{LABEL[p]}{p === 'mi' && miOpen > 0 && i < cur ? ` · ${miOpen} open` : ''}</span>)}
     </div>
   );
 }
 
-export function LiveStartup({ d, startup, eventId, now, canEdit, mainOpen, smallOpen, nonSd, issues, onItem, onEquip, onDone, children }: {
-  d: TrackerData; startup: StartupStep[]; eventId: string; now: number; canEdit: boolean; mainOpen: MiItem[]; smallOpen: number; nonSd: number; issues: number;
-  onItem: (tag: string) => void; onEquip: () => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void; children?: React.ReactNode }) {
+export function LiveStartup({ startup, eventId, now, canEdit, open, nonSd, issues, onItem, onEquip, onTab, onDone, children }: {
+  startup: StartupStep[]; eventId: string; now: number; canEdit: boolean; open: MiOpen; nonSd: number; issues: number;
+  onItem: (tag: string) => void; onEquip: () => void; onTab: (t: 'iats' | 'pmr') => void; onDone: (msg: string, undo?: () => Promise<unknown>) => void; children?: React.ReactNode }) {
   const [showIssues, setShowIssues] = useState(false);
   const rep = startupReport(startup, now), vp = startupVsPlan(startup, now);
   const oil = rep.stages.find((g) => g.oil);
@@ -44,7 +45,6 @@ export function LiveStartup({ d, startup, eventId, now, canEdit, mainOpen, small
   const est = oil ? oil.start : rep.expectedEnd;
   const v = plan !== null && est !== null ? Math.round(((est - plan) / H) * 10) / 10 : null;
   const what = oil ? 'Black oil cut-in' : 'Start-up end';
-  const mainTags = mainOpen.map((i) => d.equipment.find((e) => (e.barchartKey ?? e.tag) === i.key)).filter((e): e is TrkEquipment => !!e);
   const Row = ({ label, right, tone, onClick, to }: { label: string; right: string; tone?: 'red' | 'grey'; onClick?: () => void; to?: string }) => {
     const cls = 'mb-1.5 flex min-h-11 w-full items-center justify-between rounded-xl bg-white px-3 text-left text-[13.5px] font-bold ring-1 ring-slate-200 active:bg-slate-50';
     const r = <span className={cx(tone === 'red' ? 'text-status-red' : tone === 'grey' ? 'font-medium text-slate-500' : 'text-slate-900')}>{right}</span>;
@@ -55,18 +55,21 @@ export function LiveStartup({ d, startup, eventId, now, canEdit, mainOpen, small
       <section className="mb-2 rounded-2xl bg-white p-3 ring-1 ring-slate-200">
         <div className="flex justify-between text-[10.5px] font-extrabold uppercase tracking-wider text-slate-500"><span>{what}</span><span>{rep.done} / {rep.total} steps</span></div>
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <div className="rounded-xl bg-slate-100 px-2.5 py-1.5"><span className="block text-[11px] text-slate-500">Plan</span><b className="text-[17px] tabular-nums">{plan !== null ? at(plan) : '—'}</b></div>
-          {done ? <div className="rounded-xl bg-green-50 px-2.5 py-1.5"><span className="block text-[11px] text-green-800">Actual</span><b className="text-[17px] tabular-nums text-green-800">{est !== null ? at(est) : '—'}</b></div>
-            : <div className="rounded-xl border-[1.5px] border-dashed border-slate-400 px-2.5 py-1.5"><span className="block text-[11px] text-slate-500">Estimated · not confirmed</span><b className="text-[17px] tabular-nums text-slate-600">{est !== null ? `~${at(r30(est))}` : '—'}</b></div>}
+          <div className="rounded-xl bg-slate-100 px-2.5 py-1.5"><span className="block text-[11px] text-slate-500">Plan</span><b className="whitespace-nowrap text-[16px] tabular-nums">{plan !== null ? at(plan) : '—'}</b></div>
+          {done ? <div className="rounded-xl bg-green-50 px-2.5 py-1.5"><span className="block text-[11px] text-green-800">Actual</span><b className="whitespace-nowrap text-[16px] tabular-nums text-green-800">{est !== null ? at(est) : '—'}</b></div>
+            : <div className="rounded-xl border-[1.5px] border-dashed border-slate-400 px-2.5 py-1.5"><span className="block text-[11px] text-slate-500">Estimated · not confirmed</span><b className="whitespace-nowrap text-[16px] tabular-nums text-slate-600">{est !== null ? `~${at(r30(est))}` : '—'}</b></div>}
         </div>
         <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-200"><div className="h-full bg-blue-600" style={{ width: `${vp.actualPct}%` }} /></div>
         {v !== null && <p className="mt-1 text-[12.5px]"><b className={v >= DELAY_MIN_H ? 'text-status-red' : 'text-status-green'}>{Math.abs(v) < DELAY_MIN_H ? 'On plan' : `${v > 0 ? '+' : '−'}${hrs(Math.abs(v))}`}</b> <span className="text-slate-500">vs plan · {vp.actualPct}% by plan hours</span></p>}
         <CurrentStep startup={startup} eventId={eventId} now={now} canEdit={canEdit} reasons={rep.stages.flatMap((g) => g.reasons)} onDone={onDone} />
       </section>
-      {mainTags.length > 0
-        ? <Row label={`M&I · ${mainTags.length} item${mainTags.length === 1 ? '' : 's'} to finish`} right={`${mainTags.slice(0, 2).map((e) => e.tag.replace(/^([A-Z]{1,3})-12-/, '$1-')).join(', ')}${mainTags.length > 2 ? ' …' : ''} ›`} tone="red" onClick={() => (mainTags.length === 1 ? onItem(mainTags[0].tag) : onEquip())} />
-        : <Row label="M&I · main equipment" right="✓ done" tone="grey" />}
-      <Row label="Small items open" right={smallOpen ? `${smallOpen} ›` : '✓ none'} tone={smallOpen ? undefined : 'grey'} onClick={smallOpen ? onEquip : undefined} />
+      {open.total > 0 ? <section className="mb-2 rounded-2xl bg-white p-2 ring-2 ring-status-red/60">
+        <p className="mb-1.5 px-1 text-[12px] font-extrabold uppercase tracking-wider text-status-red">Still open from M&I · {open.total}</p>
+        {([['Main equipment', open.main], ['Rotating', open.rotating], ['Small items', open.small], ['PMRs', open.pmr]] as const).map(([l, xs]) => xs.length > 0 &&
+          <Row key={l} label={l} right={`${xs.length}${xs.length <= 2 ? ` · ${xs.map((e) => short(e.tag)).join(', ')}` : ''} ›`} tone="red"
+            onClick={() => (xs.length === 1 && l !== 'PMRs' ? onItem(xs[0].tag) : l === 'PMRs' ? onTab('pmr') : onEquip())} />)}
+        {open.iats > 0 && <Row label="Hot work IATs" right={`${open.iats} ›`} tone="red" onClick={() => onTab('iats')} />}
+      </section> : <Row label="M&I" right="✓ everything closed" tone="grey" />}
       <Row label="Maintenance (Non-SD)" right={nonSd ? `${nonSd} ›` : 'none'} tone={nonSd ? undefined : 'grey'} to="/shutdowns?section=maintenance" />
       <Row label="Issues" right={issues ? `${issues} open ${showIssues ? '▴' : '›'}` : 'none'} tone={issues ? 'red' : 'grey'} onClick={issues ? () => setShowIssues((x) => !x) : undefined} />
       {showIssues && children}

@@ -1715,6 +1715,19 @@ const smallItems = (d: TrackerData) => d.equipment.filter((e) => e.tracked && (!
 /** the SD scope heading of a small item: its group, or Rotating scope */
 const scopeOf = (e: TrkEquipment) => (e.list === 'rotating' ? ROTATING : e.group);
 const finishedOf = (d: TrackerData) => (e: TrkEquipment) => { const ls = lines(d, [keyOf(e)]); return ls.length ? ls.every((a) => a.actualFinish) : e.stage >= STAGE_SHORT.length - 1; };
+/** Everything still open from M & I, by kind (owner, 14 Nov 2026: "it was buried, I had no way to know they were
+ *  open"): main equipment, rotating, small items, PMRs (an item is open while a tracked step is unfinished, or, with no
+ *  steps, until its stage is Completed) and the open hot work IATs. Out-of-scope and Non-SD items are not counted. */
+export interface MiOpen { main: TrkEquipment[]; rotating: TrkEquipment[]; small: TrkEquipment[]; pmr: TrkEquipment[]; iats: number; total: number }
+export function openFromMi(d: TrackerData): MiOpen {
+  const fin = finishedOf(d);
+  const open = d.equipment.filter((e) => e.tracked && !isOutOfScope(e) && !fin(e));
+  const rotating = open.filter((e) => e.list === 'rotating'), pmr = open.filter((e) => e.list !== 'rotating' && e.group === 'PMRs');
+  const rest = open.filter((e) => e.list !== 'rotating' && e.group !== 'PMRs');
+  const small = rest.filter((e) => !!e.list || isSmallJob(e.group)), main = rest.filter((e) => !e.list && !isSmallJob(e.group));
+  const iats = d.iats.filter((i) => i.status === 'open').length;
+  return { main, rotating, small, pmr, iats, total: open.length + iats };
+}
 function Scope({ d, now, done }: P) {
   const [group, setGroup] = useState<string | null>(null);
   const items = smallItems(d).filter((e) => scopeOf(e) !== 'PMRs');
@@ -1731,12 +1744,12 @@ function Scope({ d, now, done }: P) {
 }
 /** Hot work, the same page in both modes: the IATs (status and Operations label on the card, a tap opens the full
  *  IAT) and the PMRs. */
-export function HotWorkTab({ d, now, done, role, onItem }: { d: TrackerData; now: number; done: Done; role: EngRole; onItem?: (tag: string) => void }) {
-  return <RoleCtx.Provider value={role}><OpenItemCtx.Provider value={onItem ?? null}><HotWork d={d} now={now} done={done} go={() => {}} by="" /></OpenItemCtx.Provider></RoleCtx.Provider>;
+export function HotWorkTab({ d, now, done, role, onItem, view }: { d: TrackerData; now: number; done: Done; role: EngRole; onItem?: (tag: string) => void; view?: 'iat' | 'pmr' }) {
+  return <RoleCtx.Provider value={role}><OpenItemCtx.Provider value={onItem ?? null}><HotWork d={d} now={now} done={done} go={() => {}} by="" view={view} /></OpenItemCtx.Provider></RoleCtx.Provider>;
 }
 type IatFilter = 'open' | 'items' | 'lines' | 'material' | 'all';
-function HotWork({ d, now, done }: P) {
-  const [v, setV] = useState<'iat' | 'pmr'>('iat');
+function HotWork({ d, now, done, view }: P & { view?: 'iat' | 'pmr' }) {
+  const [v, setV] = useState<'iat' | 'pmr'>(view ?? 'iat');
   const [lf, setLf] = useState<IatLabel | 'none' | 'all'>('all');
   const [q, setQ] = useState(''); const [f, setF] = useState<IatFilter>('open'); const [showClosed, setShowClosed] = useState(false);
   const [iat, setIat] = useState<TrkIat | null>(null); const [item, setItem] = useState<TrkEquipment | null>(null);

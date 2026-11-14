@@ -15,7 +15,7 @@ import { LiveStartup, PhaseStrip } from './LiveStartup';
 import type { UserProfile } from '@/data/types';
 import { BottomSheet, Button, ErrorBox, Spinner, Toast, cx } from '@/ui/components';
 import { AskUpdates } from './Ask';
-import { DashFold, DashboardTab, IssuesPanel, EquipmentListTab, HandoverTab, HotWorkTab, ItemSheetFor, ScopeLists } from '@/features/engineer/EngineerApp';
+import { DashFold, DashboardTab, IssuesPanel, openFromMi, EquipmentListTab, HandoverTab, HotWorkTab, ItemSheetFor, ScopeLists } from '@/features/engineer/EngineerApp';
 import { StepSheet } from './TrackerSheets';
 import { TrackerAdmin, clockKey } from './TrackerAdmin';
 import { TimingTab } from './Timing';
@@ -193,13 +193,11 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {tab === 'today' && (() => {
         // the phase, from what is recorded; the start-up leads once it has begun, M & I folded under it
         const ho = criticalHandover(data, steps), phase = livePhase(ho.at, now, startup);
-        const w = phases(data, now, steps).mi.weighted;
-        const isMain = (i: { small: boolean; key: string }) => !i.small && data.equipment.find((e) => (e.barchartKey ?? e.tag) === i.key)?.list !== 'rotating';
-        const mainOpen = (w?.items ?? []).filter((i) => isMain(i) && i.done < i.lines), smallOpen = (w?.items ?? []).filter((i) => !isMain(i) && i.done < i.lines).length;
-        const strip = <PhaseStrip phase={phase} miOpen={mainOpen.length > 0} />;
+        const open = openFromMi(data);
+        const strip = <PhaseStrip phase={phase} miOpen={open.total} />;
         if ((phase === 'startup' || phase === 'service') && data.tracker.eventId) return <>{strip}
-          <LiveStartup d={data} startup={startup} eventId={data.tracker.eventId} now={now} canEdit={canEdit} mainOpen={mainOpen} smallOpen={smallOpen} nonSd={nonSd}
-            issues={(data.events ?? []).filter((x) => !x.endedAt).length} onItem={(tag) => setSheet({ kind: 'eq', tag })} onEquip={() => { setEqInit('all'); setTab('equipment'); }}
+          <LiveStartup startup={startup} eventId={data.tracker.eventId} now={now} canEdit={canEdit} open={open} nonSd={nonSd}
+            issues={(data.events ?? []).filter((x) => !x.endedAt).length} onItem={(tag) => setSheet({ kind: 'eq', tag })} onEquip={() => { setEqInit('all'); setTab('equipment'); }} onTab={(t) => { setTab(t); window.scrollTo(0, 0); }}
             onDone={(m, u) => { done(m, true, u); void fetchStartupSteps(data.tracker.eventId!).then(setStartup); }}>
             <IssuesPanel d={data} done={(m, u) => done(m, true, u)} role={role} /></LiveStartup>
           <DashFold title="M&I record (end, progress, Planning figure)">{dashboard}</DashFold></>;
@@ -210,7 +208,7 @@ export default function TrackerPage({ profile }: { profile: UserProfile }) {
       {tab === 'guideline' && <SequenceTab steps={steps} auto={auto} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {tab === 'equipment' && <EquipmentListTab key={`eq-${eqInit}`} initial={eqInit} d={data} now={now} role={role} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}
       {tab === 'timing' && <TimingTab activities={data.activities} steps={data.steps} now={now} canEdit={canEdit} isHead={isHead} title={tracker.title} neutKeys={new Set(data.equipment.filter((e) => points.some((p) => p.kind === 'neut' && p.items.includes(e.tag))).map((e) => e.barchartKey ?? e.tag))} onDone={(m, u) => done(m, false, u)} />}
-      {(tab === 'iats' || tab === 'pmr') && <HotWorkTab d={data} now={now} role={role} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}
+      {(tab === 'iats' || tab === 'pmr') && <HotWorkTab key={tab} view={tab === 'pmr' ? 'pmr' : 'iat'} d={data} now={now} role={role} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}
       {tab === 'scope' && <ScopeLists d={data} now={now} role={role} onItem={(tag) => setSheet({ kind: 'eq', tag })} done={(m, u) => done(m, true, u)} />}
       {tab === 'map' && <MapTab steps={steps} onOpen={(id) => setSheet({ kind: 'step', id })} />}
       {sheetTab === 'report' && <BottomSheet open onClose={closeSheetTab} title="💬 Shift report"><ReportTab data={data} now={now} canEdit={canEdit} isHead={isHead} onDone={(m) => done(m, false)} by={profile.display_name} onSaved={() => load(true)} /></BottomSheet>}
