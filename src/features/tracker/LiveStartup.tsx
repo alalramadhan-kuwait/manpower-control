@@ -15,8 +15,9 @@ import { BottomSheet, ErrorBox, cx } from '@/ui/components';
 const H = 36e5;
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const kw = (t: number) => new Date(t + 3 * H);
-const at = (t: number) => `${kw(t).getUTCDate()} ${MON[kw(t).getUTCMonth()]} ${kw(t).toISOString().slice(11, 16)}`;
-const hm = (t: number) => kw(t).toISOString().slice(11, 16);
+/** Kuwait time, 12-hour (owner, 14 Nov 2026): "8:13 pm". */
+const hm = (t: number) => { const d = kw(t), h = d.getUTCHours(), m = d.getUTCMinutes(); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`; };
+const at = (t: number) => `${kw(t).getUTCDate()} ${MON[kw(t).getUTCMonth()]} ${hm(t)}`;
 const r30 = (t: number) => Math.round(t / (30 * 60e3)) * 30 * 60e3;
 const hrs = (h: number) => (Math.abs(h) >= 48 ? `${Math.round((h / 24) * 10) / 10} d` : `${Math.round(h * 10) / 10} h`);
 
