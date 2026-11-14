@@ -245,7 +245,7 @@ function MiStage({ trk, entry, now, head, onDone }: { trk: TrackerData | null; e
 /** The start-up steps of this shutdown, planned one after another by their standard hours from the M&I finish (no
  *  tracker: from the first step's actual start). */
 function StartupSteps({ entry, steps, readings, stageStart, canEdit, isHead, now, onDone }: { entry: ShutdownEntry; steps: StartupStep[]; readings: PanelReading[]; stageStart: number | null; canEdit: boolean; isHead: boolean; now: number; onDone: (m: string) => void }) {
-  const [open, setOpen] = useState<StartupStep | 'new' | 'hold' | null>(null); const [sharing, setSharing] = useState(false); const [holdFor, setHoldFor] = useState<string | null>(null);
+  const [open, setOpen] = useState<StartupStep | 'new' | 'hold' | null>(null); const [sharing, setSharing] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('share') === '1'); const [holdFor, setHoldFor] = useState<string | null>(null);
   const [delay, setDelay] = useState<{ step: StartupStep; kind: 'wait' | 'over'; period: { from: number; to: number | null; h: number } } | null>(null);
   const [allRows, setAllRows] = useState(false);
   if (!entry.eventId) return <Card><p className="text-sm text-slate-600">This shutdown is not on the Calendar, so it has no start-up steps.</p></Card>;
@@ -287,7 +287,7 @@ function StartupSteps({ entry, steps, readings, stageStart, canEdit, isHead, now
             onOpen={() => setOpen(s)} onDelay={canEdit ? (kind) => { const p = prevOf(s); const per = delayPeriod(s, p?.doneAt ? Date.parse(p.doneAt) : null, kind, now); if (per) setDelay({ step: s, kind, period: per }); } : undefined} />
             {canEdit && s.status === 'running' && s.startedAt && s.profile?.some((r) => blackOf(r) > 0) && <QuickBlack step={s} readings={readings} now={now} onDone={onDone} />}</li>))}</ul>}
       {delay && <DelaySheet eventId={entry.eventId} steps={steps} step={delay.step} kind={delay.kind} period={delay.period} onClose={() => setDelay(null)} onDone={(m) => { setDelay(null); onDone(m); }} />}
-      {sharing && <ShareSheet entry={entry} steps={plain} vp={vpPlain} tl={tlPlain} now={now} onClose={() => setSharing(false)} />}
+      {sharing && <ShareSheet entry={entry} steps={plain} vp={vpPlain} tl={tlPlain} now={now} onClose={() => { setSharing(false); if (window.location.search.includes('share=1')) window.history.replaceState(window.history.state, '', window.location.pathname); }} />}
       {(open === 'hold' || (open && open !== 'new' && open.kind === 'hold')) && <HoldSheet eventId={entry.eventId} hold={open === 'hold' ? null : open as StartupStep} steps={steps} initialBefore={holdFor} canEdit={canEdit} onMove={move} onClose={() => { setOpen(null); setHoldFor(null); }} onDone={(m) => { setOpen(null); setHoldFor(null); onDone(m); }} />}
       {open && open !== 'hold' && (open === 'new' || open.kind !== 'hold') && <StartupSheet eventId={entry.eventId} step={open === 'new' ? null : open} planStart={open === 'new' ? null : planStartOf(open)} prevDone={open === 'new' ? null : (() => { const p = prevOf(open); return p?.doneAt ? Date.parse(p.doneAt) : null; })()} nextSeq={(steps[steps.length - 1]?.seq ?? 0) + 10} all={steps} readings={readings} canEdit={canEdit} isHead={isHead} onMove={move} onHold={(id) => { setHoldFor(id); setOpen('hold'); }} onClose={() => setOpen(null)} onDone={(m) => { setOpen(null); onDone(m); }} />}
     </Card>
