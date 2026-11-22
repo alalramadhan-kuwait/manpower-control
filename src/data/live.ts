@@ -4,6 +4,7 @@
 // while the app is open, and at once when the app comes back to the screen.
 import { useEffect, useRef } from 'react';
 import { supabase } from './supabase';
+import { clearCache } from './cache';
 
 async function version(): Promise<number | null> {
   const { data, error } = await supabase.from('manpower_version').select('v').eq('id', 1).maybeSingle();
@@ -25,6 +26,7 @@ export function useLiveRefresh(onChange: () => void, enabled = true, everyMs = 1
       try {
         const v = await version();
         if (!live || v === null) return;
+        if (seen !== null && v !== seen) clearCache();
         if (seen !== null && v !== seen && Date.now() > ownUntil) cb.current();
         seen = v;
       } finally { busy = false; }

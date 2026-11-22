@@ -1,9 +1,12 @@
 // What the app is waiting for: every request to the database goes through `trackedFetch`, which counts the saves
 // (writes) and the loads (reads) in flight, so one indicator for the whole app can say so (src/app/BusyIndicator).
+import { clearCache, sharedGet } from './cache';
 
 /** Calls that only read, though sent as POST; and calls nobody needs to see (the visit record, the sign-in refresh). */
 const READ_RPC = new Set(['trk_access_me', 'trk_sd_team', 'user_activity_summary', 'push_public_key', 'app_current_role']);
 const SILENT = /\/rpc\/app_visit\b|\/auth\/v1\/|version\.json/;
+/** Saves that do not touch the plan's data (the shared read copy is kept). */
+const KEEPS_CACHE = /\/rpc\/issues_sync\b/;
 
 type Kind = 'save' | 'load';
 const count: Record<Kind, number> = { save: 0, load: 0 };
@@ -24,5 +27,12 @@ export const trackedFetch: typeof fetch = async (input, init) => {
   // no connection: nothing is saved (no offline queue); the banner says so and the screen shows the error
   if (k === 'save' && typeof navigator !== 'undefined' && navigator.onLine === false) throw new Error('No connection: not saved. Reconnect and try again.');
   if (k) { count[k]++; emit(); }
-  try { return await fetch(input, init); } finally { if (k) { count[k] = Math.max(0, count[k] - 1); emit(); } }
+  // a save drops the shared read copy before and after it, so the next read sees it (src/data/cache.ts)
+  const save = k === 'save' && !KEEPS_CACHE.test(url);
+  if (save) clearCache();
+  const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+  try {
+    // identical reads a few seconds apart share one answer (src/data/cache.ts)
+    return method === 'GET' && typeof input === 'string' ? await sharedGet(url, init, () => fetch(input, init)) : await fetch(input, init);
+  } finally { if (save) clearCache(); if (k) { count[k] = Math.max(0, count[k] - 1); emit(); } }
 };
