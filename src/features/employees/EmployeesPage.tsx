@@ -11,6 +11,7 @@ import { BottomSheet, Button, Chip, ErrorBox, PageHeader, Spinner, cx } from '@/
 import { CREW_IDENTITY, CrewBadge, isCrew } from '@/ui/crew';
 import { OnLeaveChip, localToday } from '@/ui/leave';
 import { positionRank } from '@/ui/positions';
+import { CrewOverview, crewOnShiftNow } from './CrewOverview';
 import { nameFilter } from '@/ui/nameSearch';
 
 const ROLE_FILTERS = [['', 'All roles'], ['controller', 'Controllers'], ['panel', 'Panel'], ['field', 'Field']] as const;
@@ -65,7 +66,7 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
       .filter((r) => view !== 'action' || r.actions.length > 0)
       .filter((r) => !need || r.actions.some((a) => a.code === need))
       .filter((r) => !role || r.position_category === role)
-      .filter((r) => !crew || r.crew_code === crew)
+      .filter((r) => !crew || crew === 'all' || r.crew_code === crew)
       .filter((r) => !emp || r.employment_type === emp)
       .filter((r) => match([r.employee_number, r.official_name, r.display_name, r.short_name, r.arabic_name]))
       .sort((a, b) => positionRank(a.position_code) - positionRank(b.position_code) || (a.crew_code ?? 'Z').localeCompare(b.crew_code ?? 'Z') || a.display_name.localeCompare(b.display_name));
@@ -82,7 +83,7 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
   if (error && !rows) return <ErrorBox error={error} />;
   return (
     <div className={cx(selected.size > 0 && 'pb-28')}>
-      <PageHeader title="Employees" subtitle={rows ? `${filtered.length} shown${needingAction ? ` · ${needingAction} need action` : ''}` : undefined} info={`Everyone in Unit 12 Section 1 (${rows?.length ?? 0}). "Needs action" lists missing grade, Take-Charge, Panel qualification or employment type: until confirmed they may not count.`} />
+      <PageHeader title="Employees" subtitle={rows && view === 'action' ? `${filtered.length} shown · ${needingAction} need action` : undefined} info={`Everyone in Unit 12 Section 1 (${rows?.length ?? 0}). "Needs action" lists missing grade, Take-Charge, Panel qualification or employment type: until confirmed they may not count.`} />
 
       <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm sm:inline-grid sm:w-auto">
         <button onClick={() => set('view', '')} className={cx('min-h-9 rounded-lg px-4 font-medium', view !== 'action' ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>All employees</button>
@@ -98,6 +99,9 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
         </div>
       )}
 
+      {view !== 'action' ? (
+        !rows ? <Spinner /> : <CrewOverview rows={rows} spans={spans} onLeave={onLeave} today={localToday()} crew={crew === 'all' ? 'all' : isCrew(crew) ? crew : crewOnShiftNow()} onCrew={(c) => set('crew', c)} />
+      ) : (<>
       <div className="lg:flex lg:items-start lg:gap-3">
         <label className="relative block lg:w-72 lg:shrink-0">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
@@ -171,6 +175,8 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
           </ul>
         </>
       )}
+
+      </>)}
 
       {selected.size > 0 && (
         <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] z-30 mx-auto max-w-5xl px-4 lg:max-w-7xl sm:bottom-4 sm:pl-48">
