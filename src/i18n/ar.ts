@@ -35,7 +35,7 @@ export const AR: Record<string, string> = {
   'Sending this withdraws the request it corrects (both are kept in the history).': 'إرسال هذا يسحب الطلب الذي يصححه (يبقى الاثنان في السجل).',
   'Hard stop · cannot be sent': 'منع قطعي · لا يمكن الإرسال', 'Below the minimum · cover the crew first': 'أقل من الحد الأدنى · غطِّ الشفت أولًا', 'Saving…': 'جارٍ الحفظ…',
   'As Section Head you can still go ahead. The crew stays short and shows as a critical alert until it is covered.': 'بصفتك رئيس القسم يمكنك المتابعة. يبقى الشفت ناقصًا ويظهر كتنبيه حرج حتى تتم تغطيته.',
-  'Reason (kept with the record)': 'السبب (يُحفظ مع السجل)', 'e.g. Cover arranged, to be entered later': 'مثال: تم ترتيب التغطية وستُسجل لاحقًا', 'below the minimum': 'أقل من الحد الأدنى',
+  'Reason (optional)': 'السبب (اختياري)', 'e.g. Cover arranged, to be entered later': 'مثال: تم ترتيب التغطية وستُسجل لاحقًا', 'below the minimum': 'أقل من الحد الأدنى',
   'Record': 'تسجيل', 'Record · Section Head told': 'تسجيل · مع إبلاغ رئيس القسم', 'Send for approval': 'إرسال للموافقة',
   'extended': 'مُدد', 'return confirmed': 'تأكدت العودة', 'back on': 'العودة يوم', 'cancelled': 'ملغاة',
   'sent to the Section Head (the plan changes once approved).': 'أُرسل إلى رئيس القسم (تتغير الخطة بعد الموافقة).', 'recorded, the Section Head is told.': 'سُجل، وأُبلغ رئيس القسم.', 'recorded, the plan is updated.': 'سُجل، وحُدثت الخطة.',

@@ -1176,7 +1176,7 @@ function gateProposal(r) {
   }
 }
 var isFactual = (r) => r.entryMode === "tracked" && ["new", "extend"].includes(str(r.detail.action) ?? "new");
-var overrideNote = (reason) => `Below the minimum, accepted by the Section Head: ${reason.trim()}`;
+var overrideNote = (reason) => reason.trim() ? `Below the minimum, accepted by the Section Head: ${reason.trim()}` : "Below the minimum, accepted by the Section Head";
 function gateVerdict(findings, factual) {
   const hard = findings.filter((f) => f.severity === "hard_stop");
   if (hard.length) return { allowed: false, reason: `Hard stop: ${hard.map((f) => f.message).join(" ")}`, blocking: hard, overridable: false };
@@ -1415,9 +1415,8 @@ Deno.serve(async (req) => {
       }
       const sc = await serverCheck(gr);
       if (body.action === "check") return reply(200, { check: sc.check, verdict: sc.verdict, factual: sc.factual });
-      const reasonGiven = typeof body.override === "string" ? body.override.trim() : "";
-      const overridden = !sc.verdict.allowed && !!sc.verdict.overridable && me.role_code === "section_head" && reasonGiven.length >= 3;
-      const note = overridden ? overrideNote(reasonGiven) : null;
+      const overridden = !sc.verdict.allowed && !!sc.verdict.overridable && me.role_code === "section_head" && typeof body.override === "string";
+      const note = overridden ? overrideNote(body.override) : null;
       const { data: row, error: insErr } = await supabase.from("server_checks").insert({
         created_for: who.user.id,
         stamp,

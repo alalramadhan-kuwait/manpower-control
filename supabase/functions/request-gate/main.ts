@@ -20,7 +20,8 @@ const CORS = {
 const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 const TYPES: GateType[] = ['pv_reschedule', 'unscheduled_pv', 'personal_pc', 'absence', 'shift_change', 'vr_placement', 'controller_cover', 'task_release'];
 
-// override: the Section Head's reason for recording or approving a change that leaves a crew below its minimum
+// override: present (a string, possibly empty) when the Section Head records or approves a change that leaves a crew
+// below its minimum; the text is the optional reason
 interface SubmitBody { action: 'submit' | 'check'; type: GateType; employeeId: string; planYear: number; summary: string; remarks?: string | null; detail: Record<string, unknown>; workflow?: string | null; override?: string | null }
 interface DecideBody { action: 'decide'; id: string; approve: boolean; note?: string; accepted?: unknown[]; override?: string | null }
 
@@ -68,11 +69,10 @@ Deno.serve(async (req) => {
       }
       const sc = await serverCheck(gr);
       if (body.action === 'check') return reply(200, { check: sc.check, verdict: sc.verdict, factual: sc.factual });
-      // the Section Head may go below the minimum with a reason (never past a hard stop); the reason is kept with the
-      // check and with the request, and the crew stays short until it is covered
-      const reasonGiven = typeof body.override === 'string' ? body.override.trim() : '';
-      const overridden = !sc.verdict.allowed && !!sc.verdict.overridable && me.role_code === 'section_head' && reasonGiven.length >= 3;
-      const note = overridden ? overrideNote(reasonGiven) : null;
+      // the Section Head may go below the minimum (never past a hard stop); it is noted, with the optional reason, on the
+      // check and on the request, and the crew stays short until it is covered
+      const overridden = !sc.verdict.allowed && !!sc.verdict.overridable && me.role_code === 'section_head' && typeof body.override === 'string';
+      const note = overridden ? overrideNote(body.override as string) : null;
       const { data: row, error: insErr } = await admin.from('server_checks').insert({
         created_for: who.user.id, stamp, request_id: requestId, employee_id: gr.employeeId, type: gr.type, start_date: start, end_date: end,
         allowed: sc.verdict.allowed || overridden, factual: sc.factual, reason: overridden ? `${note}. ${sc.verdict.reason}` : sc.verdict.reason, check_body: recordOf(sc.check)

@@ -27,7 +27,6 @@ import { nameFilter } from '@/ui/nameSearch';
 import { InWorkspace } from '@/ui/workspace';
 import { CheckPanel } from './CheckPanel';
 import { ProposeSheet } from './ChangeRequests';
-import { HeadOverride } from './HeadOverride';
 import { mergedLeaves, type MergedLeave } from './leaveTools';
 import { fetchOwedLeave, type OwedLeave } from '@/data/changeRequests';
 import { ControllerAssign } from '@/features/controllers/ControllersPage';
@@ -292,6 +291,8 @@ function LeaveForm({ person, data, today, isHead, draft, prefill, replaces, onDo
   const route = mode === 'cancel' ? 'approval' : type?.workflow ?? null;
   const label = isHead ? t('Record') : route === 'record_notify' ? t('Record · Section Head told') : route === 'record' ? t('Record') : t('Send for approval');
   const stop = preview ? !preview.verdict.allowed : false;
+  // the Section Head goes ahead below a crew minimum (never past a hard stop); the remark above stays the remark
+  const headGoes = isHead && ((stop && !!preview?.verdict.overridable) || !!blocked?.verdict?.overridable);
   const needsPreview = mode === 'new' || (mode === 'extend' && !!target && target.end !== null);
 
   async function go(override: string | null = null) {
@@ -428,11 +429,17 @@ function LeaveForm({ person, data, today, isHead, draft, prefill, replaces, onDo
       {replaces && <p className="text-xs text-slate-600">{t('Sending this withdraws the request it corrects (both are kept in the history).')}</p>}
       <div className="flex gap-2">
         {mode === 'new' && <Button variant="secondary" className="min-h-12 shrink-0" onClick={keepDraft}><FileText className="h-4 w-4" />{t('Save draft')}</Button>}
-        <Button className="min-h-12 flex-1" disabled={!valid || busy || (needsPreview && (!preview || stop))} onClick={() => go()}>
-          {stop ? <><OctagonX className="h-4 w-4" />{preview?.verdict.reason?.startsWith('Hard stop') ? t('Hard stop · cannot be sent') : t('Below the minimum · cover the crew first')}</> : busy ? t('Saving…') : label}
-        </Button>
+        {headGoes ? (
+          <Button variant="danger" className="min-h-12 flex-1" disabled={!valid || busy} onClick={() => go('')}>
+            {busy ? t('Saving…') : `${t('Record')} · ${t('below the minimum')}`}
+          </Button>
+        ) : (
+          <Button className="min-h-12 flex-1" disabled={!valid || busy || (needsPreview && (!preview || stop))} onClick={() => go()}>
+            {stop ? <><OctagonX className="h-4 w-4" />{preview?.verdict.reason?.startsWith('Hard stop') ? t('Hard stop · cannot be sent') : t('Below the minimum · cover the crew first')}</> : busy ? t('Saving…') : label}
+          </Button>
+        )}
       </div>
-      {isHead && valid && ((stop && preview?.verdict.overridable) || blocked?.verdict?.overridable) && <HeadOverride action="Record" busy={busy} onConfirm={(why) => go(why)} />}
+      {headGoes && <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-300">{t('As Section Head you can still go ahead. The crew stays short and shows as a critical alert until it is covered.')}</p>}
     </div>
   );
 }

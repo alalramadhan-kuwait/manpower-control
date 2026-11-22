@@ -12,7 +12,10 @@ describe('server check verdict', () => {
   it('a hard stop is never overridable, even alongside a shortage', () => {
     expect(gateVerdict([f('crew_minimum', 'critical'), f('min_rest_hours', 'hard_stop')], false)).toMatchObject({ allowed: false, overridable: false });
   });
-  it('the override reason is kept in plain words', () => { expect(overrideNote('  cover by phone ')).toBe('Below the minimum, accepted by the Section Head: cover by phone'); });
+  it('the override is noted in plain words; the reason is optional', () => {
+    expect(overrideNote('  cover by phone ')).toBe('Below the minimum, accepted by the Section Head: cover by phone');
+    expect(overrideNote('')).toBe('Below the minimum, accepted by the Section Head');
+  });
   it('a factual operational absence is recorded even when a crew falls short', () => { expect(gateVerdict([f('crew_minimum', 'critical')], true).allowed).toBe(true); });
   it('warnings pass', () => { expect(gateVerdict([f('leave_overlap', 'warning')], false).allowed).toBe(true); });
 });

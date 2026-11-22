@@ -4,7 +4,7 @@
 // - A change that makes a crew short of its operating minimum on a day it was not short before is not allowed either:
 //   neither the Coordinator's request nor the Section Head's own entry can push a crew below the minimum.
 // - The Section Head may still record or approve such a change (owner, 22 Nov 2026: "I am section head, I should be
-//   able to approve anything"), with a reason. The verdict says it is `overridable`; the server accepts the override
+//   able to approve anything"; the reason is optional, owner same day). The verdict says it is `overridable`; the server accepts the override
 //   only from the Section Head, keeps the reason with the check and the request, and the crew stays short (a critical
 //   alert) until it is covered. A hard stop (duties overlap, no rest) is never overridden.
 // - A factual absence (an operational absence that is already happening: injury, surgery, long sick) is recorded even
@@ -79,7 +79,7 @@ export interface GateVerdict {
 }
 
 /** The reason the Section Head gave for going below the minimum, as kept with the check and the request. */
-export const overrideNote = (reason: string) => `Below the minimum, accepted by the Section Head: ${reason.trim()}`;
+export const overrideNote = (reason: string) => (reason.trim() ? `Below the minimum, accepted by the Section Head: ${reason.trim()}` : 'Below the minimum, accepted by the Section Head');
 
 export function gateVerdict(findings: Finding[], factual: boolean): GateVerdict {
   const hard = findings.filter((f) => f.severity === 'hard_stop');
