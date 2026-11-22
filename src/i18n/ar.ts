@@ -34,6 +34,8 @@ export const AR: Record<string, string> = {
   'The person is not there whatever the paperwork says: it is recorded, and the shortage stays a critical alert until the crew is covered.': 'الشخص غير موجود فعليًا مهما كانت الإجراءات: يُسجل الغياب ويبقى النقص تنبيهًا حرجًا حتى تُغطى الشفت.',
   'Sending this withdraws the request it corrects (both are kept in the history).': 'إرسال هذا يسحب الطلب الذي يصححه (يبقى الاثنان في السجل).',
   'Hard stop · cannot be sent': 'منع قطعي · لا يمكن الإرسال', 'Below the minimum · cover the crew first': 'أقل من الحد الأدنى · غطِّ الشفت أولًا', 'Saving…': 'جارٍ الحفظ…',
+  'As Section Head you can still go ahead. The crew stays short and shows as a critical alert until it is covered.': 'بصفتك رئيس القسم يمكنك المتابعة. يبقى الشفت ناقصًا ويظهر كتنبيه حرج حتى تتم تغطيته.',
+  'Reason (kept with the record)': 'السبب (يُحفظ مع السجل)', 'e.g. Cover arranged, to be entered later': 'مثال: تم ترتيب التغطية وستُسجل لاحقًا', 'below the minimum': 'أقل من الحد الأدنى',
   'Record': 'تسجيل', 'Record · Section Head told': 'تسجيل · مع إبلاغ رئيس القسم', 'Send for approval': 'إرسال للموافقة',
   'extended': 'مُدد', 'return confirmed': 'تأكدت العودة', 'back on': 'العودة يوم', 'cancelled': 'ملغاة',
   'sent to the Section Head (the plan changes once approved).': 'أُرسل إلى رئيس القسم (تتغير الخطة بعد الموافقة).', 'recorded, the Section Head is told.': 'سُجل، وأُبلغ رئيس القسم.', 'recorded, the plan is updated.': 'سُجل، وحُدثت الخطة.',
@@ -46,7 +48,7 @@ export const AR: Record<string, string> = {
   'Waiting': 'بالانتظار', 'Approved': 'معتمد', 'Not approved': 'غير معتمد', 'Withdrawn': 'مسحوب',
   'Choose the VR Controller': 'اختر مراقب VR', 'Shift cover': 'تغطية شفت', 'VR placement': 'تنسيب VR', 'Assign cover': 'تعيين تغطية', 'Rotation': 'مناوبة', 'Assign': 'تعيين', 'Move': 'نقل',
   'Extension': 'تمديد', 'Confirmed return': 'عودة مؤكدة', 'Cancellation': 'إلغاء',
-  'Approving checks it again on the server, with every change approved meanwhile: a crew below its minimum is refused.': 'الموافقة تُعيد الفحص على الخادم مع كل التغييرات المعتمدة في الأثناء: يُرفض أي نقص عن الحد الأدنى للشفت.',
+  'Approving checks it again on the server, with every change approved meanwhile. If a crew falls below its minimum you can still approve it, with a reason.': 'الموافقة تُعيد الفحص على الخادم مع كل التغييرات المعتمدة في الأثناء. إذا نقص الشفت عن الحد الأدنى يمكنك الموافقة مع ذكر السبب.',
   // leave & oracle
   'On leave now': 'في إجازة الآن', '14 days': '14 يومًا', '5 weeks': '5 أسابيع', 'Later': 'لاحقًا', 'All': 'الكل', 'Not approved in Oracle': 'غير معتمد في أوراكل', 'Submitted': 'مقدم', 'Rejected': 'مرفوض', 'Any': 'أي حالة', 'Not submitted': 'غير مقدم',
   'Oracle': 'أوراكل', 'Day': 'نهاري', 'Now': 'الآن', 'in {n} d': 'بعد {n} يوم', '{n} approved changes this year': '{n} تعديلات معتمدة هذا العام', 'In the plan': 'في الخطة', 'authorised': 'معتمدة', 'Change waiting': 'تعديل بالانتظار',

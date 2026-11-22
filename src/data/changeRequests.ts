@@ -49,10 +49,10 @@ export async function createChangeRequest(v: { records: string[]; start: string;
 }
 
 /** Decide a reschedule. With the check seen, it goes through its request record (the check is kept with it). */
-export async function decideChangeRequest(id: string, approve: boolean, remarks: string, check?: Check | null) {
+export async function decideChangeRequest(id: string, approve: boolean, remarks: string, check?: Check | null, override: string | null = null) {
   // through its request record and the server check (approval is checked again on the server)
   await gateDecide(await headerOfLegacy('leave_change_requests', id), approve, remarks,
-    approve && check ? acceptable(check.findings).map(({ rule, severity, message }) => ({ rule, severity, message })) : []);
+    approve && check ? acceptable(check.findings).map(({ rule, severity, message }) => ({ rule, severity, message })) : [], override);
   changed();
 }
 

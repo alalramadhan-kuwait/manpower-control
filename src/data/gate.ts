@@ -26,13 +26,15 @@ async function call<T>(body: Record<string, unknown>): Promise<T & { check?: Che
 }
 const changed = () => { dataChanged(); window.dispatchEvent(new Event('requests-changed')); };
 
-export interface SubmitInput { type: GateType; employeeId: string; summary: string; remarks?: string | null; detail: Record<string, unknown>; workflow?: 'approval' | 'record' | 'record_notify' | null }
+export interface SubmitInput { type: GateType; employeeId: string; summary: string; remarks?: string | null; detail: Record<string, unknown>; workflow?: 'approval' | 'record' | 'record_notify' | null;
+  /** Section Head only: the reason for recording it although a crew falls below its minimum (the server checks the role). */
+  override?: string | null }
 
 /** Record (Section Head, or a type recorded without approval) or send for approval (Coordinator). Checked on the server first. */
 export async function gateSubmit(v: SubmitInput): Promise<GateResult & { check?: Check }> {
   const start = String(v.detail.start_date);
   const r = await call<{ result: GateResult }>({ action: 'submit', type: v.type, employeeId: v.employeeId, planYear: Number(start.slice(0, 4)), summary: v.summary,
-    remarks: v.remarks ?? null, detail: v.detail, workflow: v.workflow ?? null });
+    remarks: v.remarks ?? null, detail: v.detail, workflow: v.workflow ?? null, override: v.override ?? null });
   changed();
   return { ...r.result, check: r.check };
 }
@@ -45,8 +47,8 @@ export async function gateCheck(v: SubmitInput): Promise<{ check: Check; verdict
 }
 
 /** The Section Head's decision on a waiting request (approval is checked again on the server, at that moment). */
-export async function gateDecide(headerId: string, approve: boolean, note: string, accepted: { rule: string; severity: string; message: string }[] = []): Promise<GateResult> {
-  const r = await call<{ result: GateResult }>({ action: 'decide', id: headerId, approve, note, accepted });
+export async function gateDecide(headerId: string, approve: boolean, note: string, accepted: { rule: string; severity: string; message: string }[] = [], override: string | null = null): Promise<GateResult> {
+  const r = await call<{ result: GateResult }>({ action: 'decide', id: headerId, approve, note, accepted, override });
   changed();
   return r.result;
 }

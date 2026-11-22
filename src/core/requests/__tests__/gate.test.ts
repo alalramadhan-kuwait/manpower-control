@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { gateDates, gateProposal, gateVerdict, isFactual, OPEN_CHECK_DAYS } from '../gate';
+import { gateDates, gateProposal, gateVerdict, isFactual, OPEN_CHECK_DAYS, overrideNote } from '../gate';
 import type { Finding } from '../../validation';
 
 const f = (rule: Finding['rule'], severity: Finding['severity']): Finding => ({ rule, severity, message: rule, key: rule } as Finding);
 
 describe('server check verdict', () => {
   it('hard stop never allowed', () => { expect(gateVerdict([f('max_consecutive_duty_days', 'hard_stop')], true).allowed).toBe(false); });
-  it('a new shortage blocks a normal change, even for the Section Head', () => { expect(gateVerdict([f('crew_minimum', 'critical')], false).allowed).toBe(false); });
+  it('a new shortage blocks a normal change; only the Section Head may go ahead, with a reason (overridable)', () => {
+    expect(gateVerdict([f('crew_minimum', 'critical')], false)).toMatchObject({ allowed: false, overridable: true });
+  });
+  it('a hard stop is never overridable, even alongside a shortage', () => {
+    expect(gateVerdict([f('crew_minimum', 'critical'), f('min_rest_hours', 'hard_stop')], false)).toMatchObject({ allowed: false, overridable: false });
+  });
+  it('the override reason is kept in plain words', () => { expect(overrideNote('  cover by phone ')).toBe('Below the minimum, accepted by the Section Head: cover by phone'); });
   it('a factual operational absence is recorded even when a crew falls short', () => { expect(gateVerdict([f('crew_minimum', 'critical')], true).allowed).toBe(true); });
   it('warnings pass', () => { expect(gateVerdict([f('leave_overlap', 'warning')], false).allowed).toBe(true); });
 });

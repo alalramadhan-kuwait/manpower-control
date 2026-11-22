@@ -27,6 +27,7 @@ import { nameFilter } from '@/ui/nameSearch';
 import { InWorkspace } from '@/ui/workspace';
 import { CheckPanel } from './CheckPanel';
 import { ProposeSheet } from './ChangeRequests';
+import { HeadOverride } from './HeadOverride';
 import { mergedLeaves, type MergedLeave } from './leaveTools';
 import { fetchOwedLeave, type OwedLeave } from '@/data/changeRequests';
 import { ControllerAssign } from '@/features/controllers/ControllersPage';
@@ -293,7 +294,7 @@ function LeaveForm({ person, data, today, isHead, draft, prefill, replaces, onDo
   const stop = preview ? !preview.verdict.allowed : false;
   const needsPreview = mode === 'new' || (mode === 'extend' && !!target && target.end !== null);
 
-  async function go() {
+  async function go(override: string | null = null) {
     if (!type || busy) return;
     setBusy(true); setErr(null); setBlocked(null);
     try {
@@ -312,7 +313,7 @@ function LeaveForm({ person, data, today, isHead, draft, prefill, replaces, onDo
         detail = { absence_type_code: type.code, start_date: cancelTarget.start, end_date: cancelTarget.end, action: 'cancel', target_record_id: cancelTarget.id };
         summary = `${type.label} ${range(cancelTarget.start, cancelTarget.end)} ${t('cancelled')}`;
       } else return;
-      const r = await submitEntry({ type: leaveType(type.code), employeeId: person.id, summary, remarks: remark, detail, workflow: mode === 'cancel' ? 'approval' : null });
+      const r = await submitEntry({ type: leaveType(type.code), employeeId: person.id, summary, remarks: remark, detail, workflow: mode === 'cancel' ? 'approval' : null, override });
       if (draft) await deleteDraft(draft.id).catch(() => undefined);
       onDone(`${person.name} · ${summary}: ${r.status === 'submitted' ? t('sent to the Section Head (the plan changes once approved).') : route === 'record_notify' && !isHead ? t('recorded, the Section Head is told.') : t('recorded, the plan is updated.')}`);
     } catch (e) {
@@ -427,10 +428,11 @@ function LeaveForm({ person, data, today, isHead, draft, prefill, replaces, onDo
       {replaces && <p className="text-xs text-slate-600">{t('Sending this withdraws the request it corrects (both are kept in the history).')}</p>}
       <div className="flex gap-2">
         {mode === 'new' && <Button variant="secondary" className="min-h-12 shrink-0" onClick={keepDraft}><FileText className="h-4 w-4" />{t('Save draft')}</Button>}
-        <Button className="min-h-12 flex-1" disabled={!valid || busy || (needsPreview && (!preview || stop))} onClick={go}>
+        <Button className="min-h-12 flex-1" disabled={!valid || busy || (needsPreview && (!preview || stop))} onClick={() => go()}>
           {stop ? <><OctagonX className="h-4 w-4" />{preview?.verdict.reason?.startsWith('Hard stop') ? t('Hard stop · cannot be sent') : t('Below the minimum · cover the crew first')}</> : busy ? t('Saving…') : label}
         </Button>
       </div>
+      {isHead && valid && ((stop && preview?.verdict.overridable) || blocked?.verdict?.overridable) && <HeadOverride action="Record" busy={busy} onConfirm={(why) => go(why)} />}
     </div>
   );
 }

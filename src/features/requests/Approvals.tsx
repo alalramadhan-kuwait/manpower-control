@@ -17,7 +17,9 @@ import { BottomSheet, Button, Card, Chip, EmptyState, ErrorBox, Field, Spinner, 
 import { CrewBadge, isCrew } from '@/ui/crew';
 import { shortDate } from '@/ui/leave';
 import { nameFilter } from '@/ui/nameSearch';
+import { GateBlocked } from '@/data/gate';
 import { CHANGE_LABEL, ChangeRequestSheet } from './ChangeRequests';
+import { HeadOverride } from './HeadOverride';
 import { CheckPanel } from './CheckPanel';
 import { ImpactPreview } from '@/features/calendar/ImpactPreview';
 import type { Check } from '@/data/validation';
@@ -188,7 +190,7 @@ function ApprovalSheet({ item, person, isHead, onClose, onDone }: { item: Item; 
           <div className="rounded-xl p-2.5 ring-1 ring-slate-200"><ImpactPreview leave={{ employeeId: a.employee_id, start: a.start_date, end: a.end_date ?? '9999-12-31', typeCode: (p.type as string | null) ?? null, recordIds: [] }} counted={false} /></div>
         )}
         {a.status === 'pending' && <CheckPanel check={check} error={checkErr} />}
-        {isHead && a.status === 'pending' && <p className="text-[11px] text-slate-500">{t('Approving checks it again on the server, with every change approved meanwhile: a crew below its minimum is refused.')}</p>}
+        {isHead && a.status === 'pending' && <p className="text-[11px] text-slate-500">{t('Approving checks it again on the server, with every change approved meanwhile. If a crew falls below its minimum you can still approve it, with a reason.')}</p>}
         {a.status === 'pending' && (
           <>
             <Field label={isHead ? 'Remarks (optional)' : 'Reason to withdraw (optional)'}><input className="input" value={note} onChange={(e) => setNote(e.target.value)} /></Field>
@@ -199,6 +201,7 @@ function ApprovalSheet({ item, person, isHead, onClose, onDone }: { item: Item; 
                 <Button disabled={busy || !check || hard} onClick={() => run(() => decideApproval(a.id, true, note, check), `Approved: ${a.summary}`)}>Approve</Button>
               </div>
             ) : <p className="text-xs text-slate-500">Waiting for the Section Head. Nothing changes in the plan until it is approved.</p>}
+            {isHead && err instanceof GateBlocked && err.verdict?.overridable && <HeadOverride action="Approve" busy={busy} onConfirm={(why) => run(() => decideApproval(a.id, true, note, check, why), `Approved below the minimum: ${a.summary}`)} />}
             <button type="button" disabled={busy} onClick={() => run(() => withdrawApproval(a.id, note), `Withdrawn: ${a.summary}`)} className="text-sm font-medium text-slate-600 underline">Withdraw the request</button>
           </>
         )}

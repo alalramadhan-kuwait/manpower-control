@@ -15,6 +15,7 @@ import { BottomSheet, Button, Chip, ErrorBox, Field, Spinner, cx, type Tone } fr
 import { localToday, shortDate } from '@/ui/leave';
 import { OraclePill } from '@/ui/oracle';
 import { leaveImpact, type LeaveImpact, type MergedLeave } from './leaveTools';
+import { HeadOverride } from './HeadOverride';
 import { CheckPanel } from './CheckPanel';
 import { checkProposal, type Check as ScheduleCheck } from '@/data/validation';
 import { hasHardStop } from '@/core/validation';
@@ -144,14 +145,14 @@ export function ProposeSheet({ person, leave, inputs, approvals, today, changes,
   const sdFix = useSdFix(hard ? check : null);
   // the Section Head's own change is approved at once: only when the server would approve it
   const headBlocked = isHead && !!verdict && !verdict.allowed;
-  async function send() {
+  async function send(override: string | null = null) {
     setBusy(true); setErr(null);
     try {
       // the Section Head's own change (owner, 1 Nov 2026: "don't ask for remarks … save it and approve it"): the remark
       // is optional, and the leave with its new dates is approved in the same tap
       const id = await createChangeRequest({ records: leave.records.map((r) => r.id!), start, end: planEnd, remark: remark.trim() || (isHead ? 'Dates changed by the Section Head' : ''), impact: impact ?? { short: 0, dates: [], clash: [] }, estimated });
       if (isHead) {
-        await decideChangeRequest(id, true, '', check);
+        await decideChangeRequest(id, true, '', check, override);
         const rid = await changeResultRecord(id);
         const ok = rid ? await approveLeave([rid]) : 0;
         onDone(`${person.name}: leave ${replan ? 'given new dates' : 'moved'}: ${range(start, planEnd)}${estimated ? ' (estimate)' : ''}${ok ? ' · approved' : ''}. Oracle: submit the request in EasyHR.`);
@@ -177,7 +178,7 @@ export function ProposeSheet({ person, leave, inputs, approvals, today, changes,
           <p className="text-sm font-medium text-slate-800">New plan {range(start, planEnd)} · {oracleDays(start, end)} working days{replan && oracleDays(start, end) !== days ? ` (owed ${days})` : ''}{exp ? ` · back ${weekday(exp.backOn)} ${shortDate(exp.backOn)}` : ''}</p>
           {impact && <ImpactBox impact={impact} />}
           <CheckPanel check={check} error={checkErr} fix={hard && sdFix ? <SdFixLine fix={sdFix} person={person} inputs={inputs} onApplied={() => setNonce((n) => n + 1)} /> : undefined} />
-          {verdict && !verdict.allowed && !hard && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-900 ring-1 ring-red-200">{isHead ? 'Cover the crew first (Shift change / cover), then save these dates.' : 'The crew must be covered before the Section Head can approve these dates. You can send it: say how in the remark.'}</p>}
+          {verdict && !verdict.allowed && !hard && !isHead && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-900 ring-1 ring-red-200">The crew must be covered before the Section Head can approve these dates. You can send it: say how in the remark.</p>}
         </>}
         <EstimateSwitch value={estimated} onChange={setEstimated} />
         <Field label={isHead ? 'Remark (optional)' : 'Remark'}><input className="input" value={remark} onChange={(e) => setRemark(e.target.value)} placeholder={replan ? 'e.g. Leave owed after the Train-2 shutdown' : 'e.g. Employee asked to move it a week later'} /></Field>
@@ -185,10 +186,11 @@ export function ProposeSheet({ person, leave, inputs, approvals, today, changes,
         {err != null && <ErrorBox error={err} />}
         <div className="flex gap-2">
           <Button variant="secondary" className="flex-1" onClick={onBack}>Back</Button>
-          <Button className="flex-1" disabled={busy || !valid || unchanged || (!isHead && !remark.trim()) || !check || hard || headBlocked} onClick={send}>{busy ? 'Saving…' : isHead ? 'Save' : 'Send request'}</Button>
+          <Button className="flex-1" disabled={busy || !valid || unchanged || (!isHead && !remark.trim()) || !check || hard || headBlocked} onClick={() => send()}>{busy ? 'Saving…' : isHead ? 'Save' : 'Send request'}</Button>
         </div>
-        {valid && !unchanged && !busy && (hard || headBlocked || (!isHead && !remark.trim())) && (
-          <p className="text-xs font-medium text-red-800">{hard ? `${isHead ? 'Save' : 'Send'} is off: a hard stop above. ${sdFix ? 'Apply the fix above, or choose other dates' : 'Choose dates that avoid it'}.` : headBlocked ? 'Save is off: cover the crew first.' : `Add a remark to ${isHead ? 'save' : 'send'}.`}</p>
+        {valid && !unchanged && headBlocked && !hard && verdict?.overridable && <HeadOverride action="Save" busy={busy} onConfirm={(why) => send(why)} />}
+        {valid && !unchanged && !busy && (hard || (!isHead && !remark.trim())) && (
+          <p className="text-xs font-medium text-red-800">{hard ? `${isHead ? 'Save' : 'Send'} is off: a hard stop above. ${sdFix ? 'Apply the fix above, or choose other dates' : 'Choose dates that avoid it'}.` : `Add a remark to ${isHead ? 'save' : 'send'}.`}</p>
         )}
       </div>
     </BottomSheet>
@@ -220,11 +222,11 @@ export function ChangeRequestSheet({ req, name, isHead, onClose, onDone }: { req
   const first = records[0];
   const { check, err: checkErr, verdict } = useDatesCheck(req.employee_id, req.record_ids, first?.typeCode, first?.typeShort, start, end, open && !stale && valid && (req.replan || !!first));
   const blocked = !!verdict && !verdict.allowed;
-  async function decide(approve: boolean) {
+  async function decide(approve: boolean, override: string | null = null) {
     setBusy(approve ? 'yes' : 'no'); setErr(null);
     try {
       if (approve && changed) await amendChangeRequest(req.id, start, end, estimated);
-      await decideChangeRequest(req.id, approve, remarks.trim(), check);
+      await decideChangeRequest(req.id, approve, remarks.trim(), check, override);
       onDone(approve ? `${name}: leave ${req.replan ? 'given new dates' : 'moved'}: ${range(start, end)}${estimated ? ' (estimate)' : ''}. Oracle is back to Not submitted: submit the new request in EasyHR.` : `${name}: change not approved. The plan stays as it was.`);
     } catch (e) { setErr(e); setBusy(null); }
   }
@@ -270,6 +272,7 @@ export function ChangeRequestSheet({ req, name, isHead, onClose, onDone }: { req
               <Button variant="danger" className="flex-1" disabled={busy !== null} onClick={() => decide(false)}><X className="h-4 w-4" />{busy === 'no' ? 'Saving…' : 'Not approved'}</Button>
               <Button className="flex-1" disabled={busy !== null || stale || !valid || !check || blocked} onClick={() => decide(true)}><Check className="h-4 w-4" />{busy === 'yes' ? 'Saving…' : changed ? 'Approve new dates' : 'Approve'}</Button>
             </div>
+            {blocked && verdict?.overridable && !stale && valid && !!check && <HeadOverride action={changed ? 'Approve new dates' : 'Approve'} busy={busy !== null} onConfirm={(why) => decide(true, why)} />}
           </>
         )}
         {open && !isHead && <p className="text-xs text-slate-500">Waiting for the Section Head to decide.</p>}

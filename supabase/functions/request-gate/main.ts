@@ -8,7 +8,7 @@
 // This file is bundled with the app's engine into index.ts by scripts/build-shift-alerts.mjs (a test keeps them in step).
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { requestFromHeader, serverCheck, typeInfo, recordOf } from '../../../src/data/gateServer';
-import type { GateRequest, GateType } from '../../../src/core/requests/gate';
+import { overrideNote, type GateRequest, type GateType } from '../../../src/core/requests/gate';
 import { supabase as admin } from './supabase-shim';
 import { loadAppRules } from '../../../src/data/rules';
 
@@ -20,8 +20,9 @@ const CORS = {
 const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 const TYPES: GateType[] = ['pv_reschedule', 'unscheduled_pv', 'personal_pc', 'absence', 'shift_change', 'vr_placement', 'controller_cover', 'task_release'];
 
-interface SubmitBody { action: 'submit' | 'check'; type: GateType; employeeId: string; planYear: number; summary: string; remarks?: string | null; detail: Record<string, unknown>; workflow?: string | null }
-interface DecideBody { action: 'decide'; id: string; approve: boolean; note?: string; accepted?: unknown[] }
+// override: the Section Head's reason for recording or approving a change that leaves a crew below its minimum
+interface SubmitBody { action: 'submit' | 'check'; type: GateType; employeeId: string; planYear: number; summary: string; remarks?: string | null; detail: Record<string, unknown>; workflow?: string | null; override?: string | null }
+interface DecideBody { action: 'decide'; id: string; approve: boolean; note?: string; accepted?: unknown[]; override?: string | null }
 
 Deno.serve(async (req) => {
   // the organization rules as they stand now (Rules page), before anything is computed
@@ -67,20 +68,26 @@ Deno.serve(async (req) => {
       }
       const sc = await serverCheck(gr);
       if (body.action === 'check') return reply(200, { check: sc.check, verdict: sc.verdict, factual: sc.factual });
+      // the Section Head may go below the minimum with a reason (never past a hard stop); the reason is kept with the
+      // check and with the request, and the crew stays short until it is covered
+      const reasonGiven = typeof body.override === 'string' ? body.override.trim() : '';
+      const overridden = !sc.verdict.allowed && !!sc.verdict.overridable && me.role_code === 'section_head' && reasonGiven.length >= 3;
+      const note = overridden ? overrideNote(reasonGiven) : null;
       const { data: row, error: insErr } = await admin.from('server_checks').insert({
         created_for: who.user.id, stamp, request_id: requestId, employee_id: gr.employeeId, type: gr.type, start_date: start, end_date: end,
-        allowed: sc.verdict.allowed, factual: sc.factual, reason: sc.verdict.reason, check_body: recordOf(sc.check)
+        allowed: sc.verdict.allowed || overridden, factual: sc.factual, reason: overridden ? `${note}. ${sc.verdict.reason}` : sc.verdict.reason, check_body: recordOf(sc.check)
       }).select('id').single();
       if (insErr) throw insErr;
-      if (!sc.verdict.allowed) return reply(200, { blocked: true, reason: sc.verdict.reason, check: sc.check, verdict: sc.verdict });
+      if (!sc.verdict.allowed && !overridden) return reply(200, { blocked: true, reason: sc.verdict.reason, check: sc.check, verdict: sc.verdict });
       const id = (row as { id: string }).id;
+      const withNote = (text: string | null | undefined) => (note ? [text?.trim(), note].filter(Boolean).join(' · ') : text ?? null);
       const { data, error } = body.action === 'decide'
-        ? await asUser.rpc('request_header_decide_checked', { p_server_check: id, p_id: body.id, p_approve: true, p_note: body.note ?? '', p_accepted: body.accepted ?? [] })
+        ? await asUser.rpc('request_header_decide_checked', { p_server_check: id, p_id: body.id, p_approve: true, p_note: withNote(body.note) ?? '', p_accepted: body.accepted ?? [] })
         : await asUser.rpc('request_header_submit_checked', { p_server_check: id, p_type: gr.type, p_employee: gr.employeeId, p_plan_year: body.planYear,
-            p_summary: body.summary, p_remarks: body.remarks ?? null, p_detail: body.detail, p_workflow: body.workflow ?? null });
+            p_summary: body.summary, p_remarks: withNote(body.remarks), p_detail: body.detail, p_workflow: body.workflow ?? null });
       if (error && /STALE_CHECK/.test(error.message)) continue;
       if (error) return reply(400, { error: error.message, check: sc.check, verdict: sc.verdict });
-      return reply(200, { result: data, check: sc.check, verdict: sc.verdict, factual: sc.factual });
+      return reply(200, { result: data, check: sc.check, verdict: sc.verdict, factual: sc.factual, overridden });
     }
     return reply(409, { error: 'The plan kept changing while this was checked. Try again in a moment.' });
   } catch (e) {

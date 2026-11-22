@@ -14,6 +14,8 @@ import { Button, Card, ErrorBox, Field, Row, Spinner, cx, fmtDate } from '@/ui/c
 import { CrewTag, isCrew } from '@/ui/crew';
 import { localToday, shortDate } from '@/ui/leave';
 import { StatusChip, dayCount } from './shared';
+import { GateBlocked } from '@/data/gate';
+import { HeadOverride } from './HeadOverride';
 
 const DOT: Record<DayMark, string> = { green: 'bg-status-green', amber: 'bg-status-amber', red: 'bg-status-red', pending: 'bg-slate-400', off: 'bg-transparent' };
 const MARK: Record<DayMark, string> = { green: 'Green', amber: 'Amber', red: 'Red', pending: 'Pending', off: 'Off' };
@@ -267,9 +269,9 @@ function ReviewCard({ req, open, impactRed, onDone }: { req: LeaveRequest; open:
 function DecisionCard({ req, open, isHead, onDone }: { req: LeaveRequest; open: boolean; isHead: boolean; onDone: (m: string) => void }) {
   const [remarks, setRemarks] = useState('');
   const [busy, setBusy] = useState<null | 'yes' | 'no'>(null); const [err, setErr] = useState<unknown>(null);
-  async function decide(approve: boolean) {
+  async function decide(approve: boolean, override: string | null = null) {
     setBusy(approve ? 'yes' : 'no'); setErr(null);
-    try { await decideRequest(req.id, approve, remarks); onDone(approve ? 'Approved. The leave is now in the plan, the calendar and Today.' : 'Not approved. The request is closed and kept in the history.'); }
+    try { await decideRequest(req.id, approve, remarks, override); onDone(approve ? 'Approved. The leave is now in the plan, the calendar and Today.' : 'Not approved. The request is closed and kept in the history.'); }
     catch (e) { setErr(e); } finally { setBusy(null); }
   }
   return (
@@ -291,6 +293,7 @@ function DecisionCard({ req, open, isHead, onDone }: { req: LeaveRequest; open: 
             <Button variant="danger" className="flex-1" disabled={busy !== null} onClick={() => decide(false)}>{busy === 'no' ? 'Saving…' : 'Not approved'}</Button>
             <Button className="flex-1" disabled={busy !== null} onClick={() => decide(true)}>{busy === 'yes' ? 'Saving…' : 'Approve'}</Button>
           </div>
+          {err instanceof GateBlocked && err.verdict?.overridable && <HeadOverride action="Approve" busy={busy !== null} onConfirm={(why) => decide(true, why)} />}
         </div>
       )}
     </Card>

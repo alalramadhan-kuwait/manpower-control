@@ -3,6 +3,10 @@
 // - A hard stop is never allowed.
 // - A change that makes a crew short of its operating minimum on a day it was not short before is not allowed either:
 //   neither the Coordinator's request nor the Section Head's own entry can push a crew below the minimum.
+// - The Section Head may still record or approve such a change (owner, 22 Nov 2026: "I am section head, I should be
+//   able to approve anything"), with a reason. The verdict says it is `overridable`; the server accepts the override
+//   only from the Section Head, keeps the reason with the check and the request, and the crew stays short (a critical
+//   alert) until it is covered. A hard stop (duties overlap, no rest) is never overridden.
 // - A factual absence (an operational absence that is already happening: injury, surgery, long sick) is recorded even
 //   when it leaves a crew short: the person is not there whatever the paperwork says. The shortage stays visible as a
 //   critical alert until it is covered.
@@ -68,13 +72,20 @@ export function gateProposal(r: GateRequest): Proposal | null {
 /** An operational absence that is already a fact (recorded even when a crew falls short; the shortage stays an alert). */
 export const isFactual = (r: GateRequest) => r.entryMode === 'tracked' && ['new', 'extend'].includes(str(r.detail.action) ?? 'new');
 
-export interface GateVerdict { allowed: boolean; reason: string | null; blocking: Finding[] }
+export interface GateVerdict {
+  allowed: boolean; reason: string | null; blocking: Finding[];
+  /** Blocked only because a crew falls below its minimum: the Section Head may record or approve it anyway, with a reason. */
+  overridable?: boolean;
+}
+
+/** The reason the Section Head gave for going below the minimum, as kept with the check and the request. */
+export const overrideNote = (reason: string) => `Below the minimum, accepted by the Section Head: ${reason.trim()}`;
 
 export function gateVerdict(findings: Finding[], factual: boolean): GateVerdict {
   const hard = findings.filter((f) => f.severity === 'hard_stop');
-  if (hard.length) return { allowed: false, reason: `Hard stop: ${hard.map((f) => f.message).join(' ')}`, blocking: hard };
+  if (hard.length) return { allowed: false, reason: `Hard stop: ${hard.map((f) => f.message).join(' ')}`, blocking: hard, overridable: false };
   const short = findings.filter((f) => f.rule === 'crew_minimum');
-  if (short.length && !factual) return { allowed: false, reason: `Below the operating minimum: ${short.map((f) => f.message).join(' ')} Cover the crew first, then try again.`, blocking: short };
+  if (short.length && !factual) return { allowed: false, reason: `Below the operating minimum: ${short.map((f) => f.message).join(' ')} Cover the crew first, then try again.`, blocking: short, overridable: true };
   return { allowed: true, reason: null, blocking: [] };
 }
 

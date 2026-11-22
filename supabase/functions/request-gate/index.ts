@@ -1176,11 +1176,12 @@ function gateProposal(r) {
   }
 }
 var isFactual = (r) => r.entryMode === "tracked" && ["new", "extend"].includes(str(r.detail.action) ?? "new");
+var overrideNote = (reason) => `Below the minimum, accepted by the Section Head: ${reason.trim()}`;
 function gateVerdict(findings, factual) {
   const hard = findings.filter((f) => f.severity === "hard_stop");
-  if (hard.length) return { allowed: false, reason: `Hard stop: ${hard.map((f) => f.message).join(" ")}`, blocking: hard };
+  if (hard.length) return { allowed: false, reason: `Hard stop: ${hard.map((f) => f.message).join(" ")}`, blocking: hard, overridable: false };
   const short = findings.filter((f) => f.rule === "crew_minimum");
-  if (short.length && !factual) return { allowed: false, reason: `Below the operating minimum: ${short.map((f) => f.message).join(" ")} Cover the crew first, then try again.`, blocking: short };
+  if (short.length && !factual) return { allowed: false, reason: `Below the operating minimum: ${short.map((f) => f.message).join(" ")} Cover the crew first, then try again.`, blocking: short, overridable: true };
   return { allowed: true, reason: null, blocking: [] };
 }
 function gateDates(detail) {
@@ -1414,6 +1415,9 @@ Deno.serve(async (req) => {
       }
       const sc = await serverCheck(gr);
       if (body.action === "check") return reply(200, { check: sc.check, verdict: sc.verdict, factual: sc.factual });
+      const reasonGiven = typeof body.override === "string" ? body.override.trim() : "";
+      const overridden = !sc.verdict.allowed && !!sc.verdict.overridable && me.role_code === "section_head" && reasonGiven.length >= 3;
+      const note = overridden ? overrideNote(reasonGiven) : null;
       const { data: row, error: insErr } = await supabase.from("server_checks").insert({
         created_for: who.user.id,
         stamp,
@@ -1422,27 +1426,28 @@ Deno.serve(async (req) => {
         type: gr.type,
         start_date: start,
         end_date: end,
-        allowed: sc.verdict.allowed,
+        allowed: sc.verdict.allowed || overridden,
         factual: sc.factual,
-        reason: sc.verdict.reason,
+        reason: overridden ? `${note}. ${sc.verdict.reason}` : sc.verdict.reason,
         check_body: recordOf(sc.check)
       }).select("id").single();
       if (insErr) throw insErr;
-      if (!sc.verdict.allowed) return reply(200, { blocked: true, reason: sc.verdict.reason, check: sc.check, verdict: sc.verdict });
+      if (!sc.verdict.allowed && !overridden) return reply(200, { blocked: true, reason: sc.verdict.reason, check: sc.check, verdict: sc.verdict });
       const id = row.id;
-      const { data, error } = body.action === "decide" ? await asUser.rpc("request_header_decide_checked", { p_server_check: id, p_id: body.id, p_approve: true, p_note: body.note ?? "", p_accepted: body.accepted ?? [] }) : await asUser.rpc("request_header_submit_checked", {
+      const withNote = (text) => note ? [text?.trim(), note].filter(Boolean).join(" · ") : text ?? null;
+      const { data, error } = body.action === "decide" ? await asUser.rpc("request_header_decide_checked", { p_server_check: id, p_id: body.id, p_approve: true, p_note: withNote(body.note) ?? "", p_accepted: body.accepted ?? [] }) : await asUser.rpc("request_header_submit_checked", {
         p_server_check: id,
         p_type: gr.type,
         p_employee: gr.employeeId,
         p_plan_year: body.planYear,
         p_summary: body.summary,
-        p_remarks: body.remarks ?? null,
+        p_remarks: withNote(body.remarks),
         p_detail: body.detail,
         p_workflow: body.workflow ?? null
       });
       if (error && /STALE_CHECK/.test(error.message)) continue;
       if (error) return reply(400, { error: error.message, check: sc.check, verdict: sc.verdict });
-      return reply(200, { result: data, check: sc.check, verdict: sc.verdict, factual: sc.factual });
+      return reply(200, { result: data, check: sc.check, verdict: sc.verdict, factual: sc.factual, overridden });
     }
     return reply(409, { error: "The plan kept changing while this was checked. Try again in a moment." });
   } catch (e) {

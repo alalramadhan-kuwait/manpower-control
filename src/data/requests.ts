@@ -54,8 +54,8 @@ export async function reviewRequest(id: string, overtime: boolean, signedBy: str
   dataChanged();
 }
 /** The Section Head's decision on a paper leave form: through its request record and the server check. */
-export async function decideRequest(id: string, approve: boolean, remarks: string) {
-  await gateDecide(await headerOfLegacy('leave_requests', id), approve, remarks);
+export async function decideRequest(id: string, approve: boolean, remarks: string, override: string | null = null) {
+  await gateDecide(await headerOfLegacy('leave_requests', id), approve, remarks, [], override);
   dataChanged();
 }
 export async function withdrawRequest(id: string, reason: string) {

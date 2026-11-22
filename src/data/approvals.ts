@@ -78,8 +78,8 @@ export async function submitApproval(v: { kind: ApprovalKind; employee: string; 
   return { id: r.id, status: r.status === 'submitted' ? 'pending' : 'approved', result: r.result ?? undefined };
 }
 /** Approve (with the check seen: its warnings and critical findings are accepted, a hard stop is refused) or not approve. */
-export async function decideApproval(id: string, approve: boolean, note: string, check?: Check | null): Promise<void> {
-  await gateDecide(id, approve, note, approve && check ? acceptable(check.findings).map(({ rule, severity, message }) => ({ rule, severity, message })) : []);
+export async function decideApproval(id: string, approve: boolean, note: string, check?: Check | null, override: string | null = null): Promise<void> {
+  await gateDecide(id, approve, note, approve && check ? acceptable(check.findings).map(({ rule, severity, message }) => ({ rule, severity, message })) : [], override);
   notify();
 }
 export async function withdrawApproval(id: string, reason: string): Promise<void> {
