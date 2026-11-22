@@ -180,3 +180,23 @@ export function delayPeriod(s: StdStep, prevDone: number | null, kind: 'wait' | 
   if (a === null || d === null || s.stdHours == null) return null;
   const h = (d - a) / H - s.stdHours; return h >= DELAY_MIN_H ? { from: a, to: d - s.stdHours * H, h: r1(h) } : null;
 }
+
+// ── A hold moves the steps after it ──────────────────────────────────────────────────────────────────────────
+export interface Shift { id: string; startedAt: string; doneAt: string | null }
+/**
+ * The rows after a hold, with times recorded, move later so the first of them starts when the hold ends (owner,
+ * 22 Nov 2026: "adding hold should shift the other steps based on the hold"). All move by the same amount, so each
+ * keeps its own length and the gaps between them; rows with no times (not started) follow on the plan by themselves.
+ * Never earlier: when the first row already starts at or after the hold's end, nothing moves. A move that would put a
+ * time after now (+15 min) is refused ('future'): a time still to come cannot be recorded.
+ */
+export function shiftAfterHold(after: { id: string; startedAt: string | null; doneAt: string | null; status: StdStep['status'] }[], holdEnd: number, now: number): { by: number; moves: Shift[] } | 'future' {
+  const timed = after.filter((s) => s.status !== 'not_required' && s.startedAt);
+  if (!timed.length) return { by: 0, moves: [] };
+  const by = holdEnd - Date.parse(timed[0].startedAt!);
+  if (by <= 0) return { by: 0, moves: [] };
+  const iso = (t: number) => new Date(t).toISOString();
+  const moves = timed.map((s) => ({ id: s.id, startedAt: iso(Date.parse(s.startedAt!) + by), doneAt: s.doneAt ? iso(Date.parse(s.doneAt) + by) : null }));
+  const last = Math.max(...moves.map((m) => Date.parse(m.doneAt ?? m.startedAt)));
+  return last > now + 15 * 60_000 ? 'future' : { by, moves };
+}

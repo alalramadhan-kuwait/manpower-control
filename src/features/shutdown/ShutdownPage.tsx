@@ -8,7 +8,7 @@
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { DELAY_MIN_H, DELAY_REASONS, delayPeriod, reasonLabel, sopRefs, stageSummary, startupVsPlan, stdTimeline, swapTimes, type DelayReason, type StdStep } from '@/core/shutdown/stages';
+import { DELAY_MIN_H, DELAY_REASONS, delayPeriod, reasonLabel, sopRefs, stageSummary, startupVsPlan, stdTimeline, shiftAfterHold, swapTimes, type DelayReason, type StdStep } from '@/core/shutdown/stages';
 import { clock12, dateTime12, dayRange, kwWeekDay, round30 } from '@/core/clock';
 import { daysAsHours, kwDay, kwTime12, phases, stepViews, type TrkStep } from '@/core/tracker';
 import { saveEvent } from '@/data/calendar';
@@ -432,11 +432,25 @@ function HoldSheet({ eventId, hold, steps, initialBefore = null, canEdit, onMove
   const len = a && b && b >= a ? hrs((Date.parse(`${b}:00+03:00`) - Date.parse(`${a}:00+03:00`)) / H) : null;
   // a new hold sits just before the step chosen
   const seqFor = () => { const at_ = steps.findIndex((x) => x.id === before); if (at_ < 0) return (steps[steps.length - 1]?.seq ?? 0) + 10; const prev = at_ > 0 ? steps[at_ - 1].seq : steps[at_].seq - 10; return Math.floor((prev + steps[at_].seq) / 2) === prev ? steps[at_].seq - 1 : Math.floor((prev + steps[at_].seq) / 2); };
+  // the rows after the hold with times move later so the first starts when the hold ends (owner, 22 Nov 2026)
+  const [shift, setShift] = useState(true);
+  const holdEnd = b ? Date.parse(`${b}:00+03:00`) : null;
+  const afterRows = (() => {
+    const i = hold ? steps.findIndex((x) => x.id === hold.id) + 1 : steps.findIndex((x) => x.id === before);
+    if (i < 0) return [];
+    // with "the step took its plan", that step starts at the hold's end already
+    return steps.slice(i).map((x) => (!hold && canPlan && onPlan && b && x.id === step?.id ? { ...x, startedAt: fromLocal(b) } : x));
+  })();
+  const moved = holdEnd !== null ? shiftAfterHold(afterRows, holdEnd, Date.now()) : null;
+  const moves = moved && moved !== 'future' ? moved.moves : [];
   async function save() {
-    if (hold) { await setStartupStep(hold.id, { title: title.trim(), started_at: fromLocal(a), done_at: fromLocal(b), status: b ? 'done' : 'running', remark: note.trim() || null }); return; }
-    await addStartupStep(eventId, { seq: seqFor(), title, stdHours: null, procedureRef: null, kind: 'hold', startedAt: fromLocal(a), doneAt: fromLocal(b), remark: note });
-    // the step after it: the wait is the hold now (its reasons go), and on its plan when chosen
-    if (step) await setStartupStep(step.id, { wait_reason: null, wait_note: null, ...(canPlan && onPlan && b ? { started_at: fromLocal(b), delay_reason: null, delay_note: null } : {}) });
+    if (hold) await setStartupStep(hold.id, { title: title.trim(), started_at: fromLocal(a), done_at: fromLocal(b), status: b ? 'done' : 'running', remark: note.trim() || null });
+    else {
+      await addStartupStep(eventId, { seq: seqFor(), title, stdHours: null, procedureRef: null, kind: 'hold', startedAt: fromLocal(a), doneAt: fromLocal(b), remark: note });
+      // the step after it: the wait is the hold now (its reasons go), and on its plan when chosen
+      if (step) await setStartupStep(step.id, { wait_reason: null, wait_note: null, ...(canPlan && onPlan && b ? { started_at: fromLocal(b), delay_reason: null, delay_note: null } : {}) });
+    }
+    if (shift) for (const m of moves) await setStartupStep(m.id, { started_at: m.startedAt, done_at: m.doneAt });
   }
   return (
     <BottomSheet open onClose={onClose} title={hold ? 'Hold' : 'Add a hold'}>
@@ -457,13 +471,17 @@ function HoldSheet({ eventId, hold, steps, initialBefore = null, canEdit, onMove
           <Field label="To (empty: still on hold)"><input type="datetime-local" className="input w-full min-w-0 appearance-none" disabled={!canEdit} value={b} onChange={(e) => setB(e.target.value)} /></Field>
           {len && <p className="-mt-1 text-[11px] text-slate-600">Hold {len}</p>}
         </>}
+        {canEdit && moves.length > 0 && moved && moved !== 'future' && <label className="flex items-start gap-2 rounded-xl bg-sky-50 p-2.5 text-[12px] text-sky-900 ring-1 ring-sky-200">
+          <input type="checkbox" className="mt-0.5 h-4 w-4" checked={shift} onChange={(e) => setShift(e.target.checked)} />
+          <span>Move the {moves.length === 1 ? 'step' : `${moves.length} steps`} after it {hrs(moved.by / H)} later, each keeping its length: {steps.find((x) => x.id === moves[0].id)?.title ?? 'the next step'} starts {at(Date.parse(moves[0].startedAt))}.</span></label>}
+        {canEdit && moved === 'future' && <p className="rounded-xl bg-amber-50 px-3 py-2 text-[12px] text-amber-900 ring-1 ring-amber-200">The steps after it would move past now, so they keep their times. Check them after saving.</p>}
         <Field label="Note"><input className="input w-full min-w-0" disabled={!canEdit} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. clearance through Operations Planning" /></Field>
         {!!a && !!b && b < a && <p className="text-xs text-status-red">The end is before the start.</p>}
         {(future(a) || future(b)) && <p className="text-xs text-status-red">A time still to come cannot be recorded.</p>}
         {err != null && <ErrorBox error={err} />}
         {canEdit && <div className="flex gap-2">
           {hold && <Button variant="danger" className="flex-1" disabled={busy} onClick={() => run(() => setStartupStep(hold.id, { active: false }), 'Hold removed from the list (kept in the history).')}>Remove</Button>}
-          <Button className="flex-1" disabled={busy || bad} onClick={() => run(save, hold ? 'Hold saved.' : 'Hold added.')}>Save</Button>
+          <Button className="flex-1" disabled={busy || bad} onClick={() => run(save, `${hold ? 'Hold saved' : 'Hold added'}${shift && moves.length ? ` · ${moves.length} step${moves.length === 1 ? '' : 's'} after it moved ${hrs((moved as { by: number }).by / H)} later` : ''}.`)}>Save</Button>
         </div>}
       </div>
     </BottomSheet>
