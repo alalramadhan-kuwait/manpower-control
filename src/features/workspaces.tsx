@@ -2,35 +2,38 @@
 // in More. Each groups pages that used to stand alone; a tab is kept in the address (?tab=, ?sub= for a second level,
 // ?section= for Shutdowns because the tracker uses ?tab= itself). Only what the role may use is shown, and the
 // database enforces it too.
-import { useEffect, useState, type ReactNode } from 'react';
+import { lazy, useEffect, useState, type ReactNode } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import type { UserProfile } from '@/data/types';
 import { countPendingApprovals } from '@/data/approvals';
 import { cx } from '@/ui/components';
 import { t } from '@/i18n';
-import RequestsPage from '@/features/requests/RequestsPage';
-import EmployeesPage from '@/features/employees/EmployeesPage';
-import TrackerPage from '@/features/tracker/TrackerPage';
 import { Workspace } from '@/ui/workspace';
-import HomePage from '@/features/home/HomePage';
-import DataQualityPage from '@/features/review/DataQualityPage';
-import TakeChargeBulkPage from '@/features/review/TakeChargeBulkPage';
-import ImportCenterPage from '@/features/imports/ImportCenterPage';
-import ImportHistoryPage from '@/features/imports/ImportHistoryPage';
-import UsersPage from '@/features/users/UsersPage';
-import AuditPage from '@/features/audit/AuditPage';
-import UserActivityPage from '@/features/audit/UserActivityPage';
-import UnitStatusPage from '@/features/operation/UnitStatusPage';
-import MaintenancePage from '@/features/maintenance/MaintenancePage';
-import ShutdownListPage from '@/features/shutdown/ShutdownListPage';
-import FoLevelsPage from '@/features/shutdown/FoLevelsPage';
-import LeavePlanPage from '@/features/leave/LeavePlanPage';
-import PvPage from '@/features/pv/PvPage';
-import VacationPlanPage from '@/features/vacation/VacationPlanPage';
-import ControllersPage from '@/features/controllers/ControllersPage';
-import MorningPlanPage from '@/features/controllers/MorningPlanPage';
-import { OracleStatsPanel, OracleStatsImport } from '@/features/oracle/OracleStats';
-import { EmployeeRecords } from '@/features/review/EmployeeRecords';
+
+// each screen is downloaded when it is first opened (the app opens on Today without the rest)
+const RequestsPage = lazy(() => import('@/features/requests/RequestsPage'));
+const EmployeesPage = lazy(() => import('@/features/employees/EmployeesPage'));
+const TrackerPage = lazy(() => import('@/features/tracker/TrackerPage'));
+const HomePage = lazy(() => import('@/features/home/HomePage'));
+const DataQualityPage = lazy(() => import('@/features/review/DataQualityPage'));
+const TakeChargeBulkPage = lazy(() => import('@/features/review/TakeChargeBulkPage'));
+const ImportCenterPage = lazy(() => import('@/features/imports/ImportCenterPage'));
+const ImportHistoryPage = lazy(() => import('@/features/imports/ImportHistoryPage'));
+const UsersPage = lazy(() => import('@/features/users/UsersPage'));
+const AuditPage = lazy(() => import('@/features/audit/AuditPage'));
+const UserActivityPage = lazy(() => import('@/features/audit/UserActivityPage'));
+const UnitStatusPage = lazy(() => import('@/features/operation/UnitStatusPage'));
+const MaintenancePage = lazy(() => import('@/features/maintenance/MaintenancePage'));
+const ShutdownListPage = lazy(() => import('@/features/shutdown/ShutdownListPage'));
+const FoLevelsPage = lazy(() => import('@/features/shutdown/FoLevelsPage'));
+const LeavePlanPage = lazy(() => import('@/features/leave/LeavePlanPage'));
+const PvPage = lazy(() => import('@/features/pv/PvPage'));
+const VacationPlanPage = lazy(() => import('@/features/vacation/VacationPlanPage'));
+const ControllersPage = lazy(() => import('@/features/controllers/ControllersPage'));
+const MorningPlanPage = lazy(() => import('@/features/controllers/MorningPlanPage'));
+const OracleStatsPanel = lazy(() => import('@/features/oracle/OracleStats').then((m) => ({ default: m.OracleStatsPanel })));
+const OracleStatsImport = lazy(() => import('@/features/oracle/OracleStats').then((m) => ({ default: m.OracleStatsImport })));
+const EmployeeRecords = lazy(() => import('@/features/review/EmployeeRecords').then((m) => ({ default: m.EmployeeRecords })));
 
 const head = (p: UserProfile) => p.role_code === 'section_head';
 

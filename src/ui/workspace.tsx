@@ -1,9 +1,9 @@
 // A workspace: one entry in More (or one bottom tab) with its own tabs, kept in the address (?tab=) so a link or the
 // back button returns to the same tab. Pages shown inside a workspace render their own title as a section heading.
-import { createContext, useContext, type ReactNode } from 'react';
+import { Suspense, createContext, useContext, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { t } from '@/i18n';
-import { cx } from './components';
+import { Spinner, cx } from './components';
 
 export const InWorkspace = createContext(false);
 export const useInWorkspace = () => useContext(InWorkspace);
@@ -27,7 +27,7 @@ export function Workspace({ title, tabs, param = 'tab', subtitle }: { title: str
           </button>
         ))}
       </div>
-      <InWorkspace.Provider value>{active.el}</InWorkspace.Provider>
+      <InWorkspace.Provider value><Suspense fallback={<Spinner />}>{active.el}</Suspense></InWorkspace.Provider>
     </div>
   );
 }

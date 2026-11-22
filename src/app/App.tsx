@@ -1,34 +1,41 @@
-import { useEffect } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
+import { useSession } from '@/features/auth/useSession';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { recordVisit } from '@/data/activity';
-import { useSession } from '@/features/auth/useSession';
 import { appAccess, isAdminStaff } from '@/core/users/access';
 import LoginPage from '@/features/auth/LoginPage';
 import { OwnLogin, ownLoginStep } from '@/features/auth/OwnLogin';
 import DayOverviewPage from '@/features/day/DayOverviewPage';
-import EmployeeProfilePage from '@/features/employees/EmployeeProfilePage';
-import ImportBatchPage from '@/features/imports/ImportBatchPage';
-import MorePage from '@/features/more/MorePage';
-import CalendarPage from '@/features/calendar/CalendarPage';
-import ShutdownPage from '@/features/shutdown/ShutdownPage';
-import SdPlanPage from '@/features/shutdown/SdPlanPage';
-import { SdOvertimePage, SdSchedulePage } from '@/features/shutdown/SdDocuments';
-import { SdMemoPage } from '@/features/shutdown/SdMemo';
-import TrackerPage from '@/features/tracker/TrackerPage';
-import NotificationsPage from '@/features/notifications/NotificationsPage';
-import { AdminWorkspace, DataQualityWorkspace, ImportWorkspace, ManpowerWorkspace, ShutdownsWorkspace } from '@/features/workspaces';
-import RequestPage from '@/features/requests/RequestPage';
 import { Shell } from './Shell';
-import { Button } from '@/ui/components';
+import { Button, Spinner } from '@/ui/components';
 import { SplashScreen } from '@/ui/brand';
 import { engineerLink, supabase } from '@/data/supabase';
-import EngineerApp from '@/features/engineer/EngineerApp';
-import RulesPage from '@/features/rules/RulesPage';
 import { useAppRules } from './useAppRules';
+
+// each screen is downloaded when it is first opened (the app opens on Today without the rest)
+const EmployeeProfilePage = lazy(() => import('@/features/employees/EmployeeProfilePage'));
+const ImportBatchPage = lazy(() => import('@/features/imports/ImportBatchPage'));
+const MorePage = lazy(() => import('@/features/more/MorePage'));
+const CalendarPage = lazy(() => import('@/features/calendar/CalendarPage'));
+const ShutdownPage = lazy(() => import('@/features/shutdown/ShutdownPage'));
+const SdPlanPage = lazy(() => import('@/features/shutdown/SdPlanPage'));
+const SdOvertimePage = lazy(() => import('@/features/shutdown/SdDocuments').then((m) => ({ default: m.SdOvertimePage })));
+const SdSchedulePage = lazy(() => import('@/features/shutdown/SdDocuments').then((m) => ({ default: m.SdSchedulePage })));
+const SdMemoPage = lazy(() => import('@/features/shutdown/SdMemo').then((m) => ({ default: m.SdMemoPage })));
+const TrackerPage = lazy(() => import('@/features/tracker/TrackerPage'));
+const NotificationsPage = lazy(() => import('@/features/notifications/NotificationsPage'));
+const AdminWorkspace = lazy(() => import('@/features/workspaces').then((m) => ({ default: m.AdminWorkspace })));
+const DataQualityWorkspace = lazy(() => import('@/features/workspaces').then((m) => ({ default: m.DataQualityWorkspace })));
+const ImportWorkspace = lazy(() => import('@/features/workspaces').then((m) => ({ default: m.ImportWorkspace })));
+const ManpowerWorkspace = lazy(() => import('@/features/workspaces').then((m) => ({ default: m.ManpowerWorkspace })));
+const ShutdownsWorkspace = lazy(() => import('@/features/workspaces').then((m) => ({ default: m.ShutdownsWorkspace })));
+const RequestPage = lazy(() => import('@/features/requests/RequestPage'));
+const EngineerApp = lazy(() => import('@/features/engineer/EngineerApp'));
+const RulesPage = lazy(() => import('@/features/rules/RulesPage'));
 
 /** An engineer's personal link (?sd=…) or one already opened on this device: the shutdown tracker only, no login. */
 export default function App() {
-  return new URLSearchParams(window.location.search).has('sd') || engineerLink() ? <EngineerApp /> : <MainApp />;
+  return new URLSearchParams(window.location.search).has('sd') || engineerLink() ? <Suspense fallback={<SplashScreen />}><EngineerApp /></Suspense> : <MainApp />;
 }
 
 function MainApp() {
@@ -82,6 +89,7 @@ function MainApp() {
     <Shell profile={profile}>
       <VisitRecorder />
       <div className="sm:pl-44 lg:pl-0 print:pl-0">
+        <Suspense fallback={<Spinner />}>
         <Routes>
           <Route path="/" element={<DayOverviewPage />} />
           <Route path="/calendar" element={<CalendarPage profile={profile} />} />
@@ -113,6 +121,7 @@ function MainApp() {
           {/* an old or mistyped address lands on Today with a short note (no old page is kept) */}
           <Route path="*" element={<Navigate to="/" replace state={{ moved: true }} />} />
         </Routes>
+        </Suspense>
       </div>
     </Shell>
   );
@@ -143,11 +152,13 @@ function TrackerOnly({ profile }: { profile: NonNullable<ReturnType<typeof useSe
         <button type="button" className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-semibold" onClick={() => supabase.auth.signOut()}>Sign out</button>
       </header>
       <div className="mx-auto max-w-6xl p-3">
+        <Suspense fallback={<Spinner />}>
         <Routes>
           <Route path="/progress" element={<TrackerPage profile={profile} />} />
           <Route path="/progress/:id" element={<TrackerPage profile={profile} />} />
           <Route path="*" element={<Navigate to="/progress" replace />} />
         </Routes>
+        </Suspense>
       </div>
     </div>
   );
