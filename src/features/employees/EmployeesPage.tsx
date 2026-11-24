@@ -12,6 +12,7 @@ import { CREW_IDENTITY, CrewBadge, isCrew } from '@/ui/crew';
 import { OnLeaveChip, localToday } from '@/ui/leave';
 import { positionRank } from '@/ui/positions';
 import { CrewOverview, crewOnShiftNow } from './CrewOverview';
+import { fetchMovements, type CrewMovement } from '@/data/movements';
 import { nameFilter } from '@/ui/nameSearch';
 
 const ROLE_FILTERS = [['', 'All roles'], ['controller', 'Controllers'], ['panel', 'Panel'], ['field', 'Field']] as const;
@@ -44,7 +45,8 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
   const need = (params.get('need') ?? '') as ActionCode | '';
   const load = () => fetchDirectory().then((r) => setRows(r.filter((x) => x.in_unit12_scope && x.is_active).map((x) => ({ ...x, actions: actionsFor(x) })))).catch(setError);
   const [spans, setSpans] = useState<LeaveSpan[]>([]);
-  useEffect(() => { load(); fetchLeaveSpans(localToday()).then(setSpans).catch(() => { /* marker only; the list still works */ }); }, []);
+  const [moves, setMoves] = useState<CrewMovement[]>([]);
+  useEffect(() => { load(); fetchLeaveSpans(localToday()).then(setSpans).catch(() => { /* marker only; the list still works */ }); fetchMovements().then(setMoves).catch(() => { /* moves only add a label */ }); }, []);
   const onLeave = useMemo(() => {
     const crewOf = new Map((rows ?? []).map((r) => [r.id, isCrew(r.crew_code) ? r.crew_code : null]));
     return onLeaveOn(localToday(), spans, (id) => crewOf.get(id) ?? null);
@@ -100,7 +102,7 @@ export default function EmployeesPage({ profile }: { profile: UserProfile }) {
       )}
 
       {view !== 'action' ? (
-        !rows ? <Spinner /> : <CrewOverview rows={rows} spans={spans} onLeave={onLeave} today={localToday()} crew={crew === 'all' ? 'all' : isCrew(crew) ? crew : crewOnShiftNow()} onCrew={(c) => set('crew', c)} />
+        !rows ? <Spinner /> : <CrewOverview rows={rows} spans={spans} moves={moves} today={localToday()} crew={crew === 'all' ? 'all' : isCrew(crew) ? crew : crewOnShiftNow()} onCrew={(c) => set('crew', c)} />
       ) : (<>
       <div className="lg:flex lg:items-start lg:gap-3">
         <label className="relative block lg:w-72 lg:shrink-0">
