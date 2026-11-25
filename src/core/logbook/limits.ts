@@ -62,7 +62,9 @@ export interface ReadingMatch { kind: 'reading'; key: string; scale?: number }
 export interface LabMatch { kind: 'lab'; material: string; component: string; equipment?: string }
 /** Several readings added per train (injection water: the four passes against the per-train limit). */
 export interface SumMatch { kind: 'reading_sum'; key: string; scale?: number }
-export type LimitMatch = (ReadingMatch | LabMatch | SumMatch) & { paramId: string };
+/** One reading minus another per train (a reactor's exotherm); without key2, the same key with OUTLET → INLET. */
+export interface DiffMatch { kind: 'reading_diff'; key: string; key2?: string | null; scale?: number }
+export type LimitMatch = (ReadingMatch | LabMatch | SumMatch | DiffMatch) & { paramId: string };
 
 /** Reading keys are matched exactly, or as a pattern when the rule is written /…/. */
 export const keyMatches = (rule: string, key: string) => (rule.startsWith('/') && rule.endsWith('/') ? new RegExp(rule.slice(1, -1)).test(key) : rule === key);

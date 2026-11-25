@@ -37,7 +37,9 @@ export function trainOfEquipment(eq: string | null): TrainId | null {
 const hasNumericLimit = (l: Limit) => l.normalLo !== null || l.normalHi !== null || !!iowBand(l.iowStd) || !!iowBand(l.iowCrit);
 /** The library's traffic light in board terms (critical counts as a breach and is named in the note). */
 const toSt = (x: ReturnType<typeof limitState>): St => (x === 'breach' || x === 'critical' ? 'bad' : x === 'off' ? 'off' : 'ok');
-const fmt = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100));
+/** "OUTLETTEMPERATURER12103203" → "R-103" on train 1, "R-203" on train 2. */
+const reactorOf = (key: string, side: 'tr1' | 'tr2') => { const m = /R-?12-?1(\d\d)/.exec(key); return m ? `R-${side === 'tr2' ? 2 : 1}${m[1]}` : key; };
+export const fmt = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100));
 
 export interface BoardInput { log: StoredLog; controller: StoredLog | null; lab: StoredSample[]; limits: Map<string, Limit>; matches: LimitMatch[]; overrides: Override[] }
 
@@ -63,7 +65,7 @@ export function checksOf({ log, lab, limits, matches }: BoardInput): Check[] {
       for (const t of trains) if (!seen.has(t)) out.push({ ...base, train: t, value: null, state: 'grey', note: 'no sample that day' });
       continue;
     }
-    const rm = ms.filter((m) => m.kind === 'reading' || m.kind === 'reading_sum');
+    const rm = ms.filter((m) => m.kind !== 'lab');
     if (!rm.length) { for (const t of trains) out.push({ ...base, train: t, value: null, state: 'grey', note: 'not in the e-logbook' }); continue; }
     for (const t of trains) {
       const side = t === 'TR-2' ? 'tr2' : 'tr1';
@@ -75,6 +77,19 @@ export function checksOf({ log, lab, limits, matches }: BoardInput): Check[] {
           if (!rs.length || vals.some((v) => v === null)) { missing += 1; continue; }
           found += 1; const sum = (vals as number[]).reduce((a, b) => a + b, 0);
           shown = fmt(sum); states.push(toSt(limitState(sum, l, m.scale ?? 1))); note = `${rs.length} passes: ${vals.join(' + ')}`;
+          continue;
+        }
+        if (m.kind === 'reading_diff') {
+          const parts: string[] = [];
+          for (const r of rs) {
+            const sub = m.key2 ? log.readings.find((y) => keyMatches(m.key2 as string, y.key)) : log.readings.find((y) => y.key === r.key.replace(/^OUTLET/, 'INLET'));
+            const a = plainNumber(r[side]), b = plainNumber(sub?.[side] ?? null);
+            if (a === null || b === null) { missing += 1; continue; }
+            found += 1; const d = a - b; const st = toSt(limitState(d, l, m.scale ?? 1)); states.push(st);
+            parts.push(rs.length > 1 ? `${reactorOf(r.key, side)} ${fmt(d)}` : `${a} − ${b}`);
+            if (shown === null || RANK[st] < RANK[shownSt] || (st === shownSt && d > shownX)) { shown = fmt(d); shownSt = st; shownX = d; }
+          }
+          if (parts.length) note = parts.join(' · ');
           continue;
         }
         for (const r of rs) {
@@ -89,8 +104,8 @@ export function checksOf({ log, lab, limits, matches }: BoardInput): Check[] {
         }
       }
       let st: St = found ? worstOf(states) : 'grey';
-      if (found && missing && st === 'ok') { st = 'grey'; note = `${missing} of ${found + missing} not read`; }
-      else if (found && missing) note = `${note ? `${note} · ` : ''}${missing} of ${found + missing} not read`;
+      if (found && missing && st === 'ok') st = 'grey';
+      if (found && missing) note = `${note ? `${note} · ` : ''}${missing} of ${found + missing} not read`;
       out.push({ ...base, train: t, value: shown, state: st, note: found ? note : 'not in this log' });
     }
   }
@@ -176,4 +191,23 @@ export function whatsappText(log: StoredLog, lines: HandoverLine[]): string {
   const one = (k: string, label: string) => { const l = pick(k); return `• ${label}: ${l ? l.items.slice(0, 2).map((x) => x.text).join('; ') : 'normal'}`; };
   const ov = pick('Override');
   return [head, one('TR-1', 'TR-1'), one('TR-2', 'TR-2'), ...(pick('Both') ? [one('Both', 'Both trains')] : []), one('Common', 'Common'), `• Overrides open: ${ov ? `${ov.items.length} – ${ov.items.map((x) => x.text.split(' (')[0]).join('; ')}` : '0'}`].join('\n');
+}
+
+/** Each reactor's ΔP and exotherm (outlet − inlet) on one train, in flow order, plus the net rise (R-x04 outlet − OCR
+ *  inlet; owner, 25 Nov 2026), each judged by its library limit when there is one. */
+export interface StripCell { name: string; value: string | null; st: St }
+const REACTORS: [string, string][] = [['OCR', '105'], ['x01', '101'], ['x02', '102'], ['x03', '103'], ['x04', '104']];
+export function reactorStrip(log: StoredLog, limits: Map<string, Limit>, train: 'TR-1' | 'TR-2'): { dp: StripCell[]; dt: StripCell[] } {
+  const side = train === 'TR-2' ? 'tr2' : 'tr1';
+  const n = (x: string) => x.replace('x', train === 'TR-2' ? '2' : '1');
+  const get = (prefix: string) => plainNumber(log.readings.find((r) => r.key.startsWith(prefix))?.[side] ?? null);
+  const cell = (name: string, v: number | null, paramId: string): StripCell => {
+    const l = limits.get(paramId);
+    return { name, value: v === null ? null : fmt(v), st: v === null ? 'grey' : l ? toSt(limitState(v, l)) : 'ok' };
+  };
+  const diff = (out: string, inn: string) => { const a = get(`OUTLETTEMPERATURER12${out}`), b = get(`INLETTEMPERATURER12${inn}`); return a === null || b === null ? null : a - b; };
+  return {
+    dp: REACTORS.map(([name, c]) => cell(n(name), get(`REACTORDELTAPRESSURER12${c}`), c === '105' ? 'OCR-DP-TOT' : 'FB-DP')),
+    dt: [...REACTORS.map(([name, c]) => cell(n(name), diff(c, c), c === '105' ? 'OCR-DT' : 'FB-AXDT')), cell('net', diff('104', '105'), 'RX-RISE')],
+  };
 }

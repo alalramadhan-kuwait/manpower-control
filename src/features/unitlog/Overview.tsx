@@ -5,9 +5,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { cx } from '@/ui/components';
-import { checksOf, handover, summarize, trainOfEquipment, whatsappText, type BoardInput, type Check, type HandoverLine, type SectionId, type St, type TrainId } from '@/core/logbook/board';
+import { checksOf, handover, reactorStrip, summarize, trainOfEquipment, whatsappText, type BoardInput, type Check, type HandoverLine, type SectionId, type St, type StripCell, type TrainId } from '@/core/logbook/board';
 import { kuwaitParts, type StoredLog, type StoredSample } from '@/core/logbook/view';
-import type { ProductRow } from '@/core/logbook/parse';
 import { iowBand, type Limit, type LimitMatch } from '@/core/logbook/limits';
 import type { Override } from '@/core/logbook/board';
 import { drawSection, tileIcon, type DrawCtx } from './drawings';
@@ -54,7 +53,7 @@ export default function Overview(p: OverviewProps) {
   const cat = ['CATALYSTADDITIONTR1TR2', 'CATALYSTWITHDRWALTR1TR2'].map((k) => p.log.readings.find((r) => r.key === k));
   return (
     <div className="space-y-2.5">
-      <TrainCards checks={checks} overrides={p.overrides} products={p.log.products} pick={(t) => nav({ train: t })} />
+      <TrainCards checks={checks} overrides={p.overrides} log={p.log} limits={p.limits} pick={(t) => nav({ train: t })} />
       <HandoverCard lines={lines} />
       <div className="flex gap-2">
         <a href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer" className="grid min-h-11 flex-1 place-items-center rounded-xl bg-brand-800 text-[15px] font-bold text-white">Share to WhatsApp</a>
@@ -113,7 +112,8 @@ KPI['TR-2'] = KPI['TR-1'];
 const UNIT_SHORT: Record<string, string> = { KBPD: 'KBPD', '°F': '°F', '%vol': '%', '%wt': '%', 'wt%': '%', gpm: 'gpm', ppm: 'ppm', pH: '' };
 
 /** TR-1, TR-2 and Common, one full-width card each: counts, then that train's key figures; each opens the train's page. */
-function TrainCards({ checks, overrides, products, pick }: { checks: Check[]; overrides: Override[]; products: ProductRow[]; pick: (t: TrainId) => void }) {
+function TrainCards({ checks, overrides, log, limits, pick }: { checks: Check[]; overrides: Override[]; log: StoredLog; limits: Map<string, Limit>; pick: (t: TrainId) => void }) {
+  const products = log.products;
   const kpis = (t: TrainId) => KPI[t].map((x) => { const c = checks.find((y) => y.paramId === x.id && (y.train === t || (t !== 'Common' && y.train === 'Common'))); return { ...x, c }; }).filter((x) => x.c);
   const prods = products.filter((x) => x.value && /naphtha|distillate|diesel|lsar/i.test(x.product)).slice(0, 4);
   return (
@@ -137,6 +137,7 @@ function TrainCards({ checks, overrides, products, pick }: { checks: Check[]; ov
                 <span className={cx('whitespace-nowrap text-[15px] font-bold leading-tight tabular-nums', k!.state === 'ok' ? 'text-slate-900' : TXT[k!.state])}>
                   {k!.state !== 'ok' ? `${ICON[k!.state]} ` : ''}{k!.value ?? '—'}<span className="text-[10.5px] font-semibold text-slate-500"> {UNIT_SHORT[k!.unit] ?? k!.unit}</span></span>
               </span>))}
+            {t !== 'Common' && <Strips strip={reactorStrip(log, limits, t)} wash={log.readings.find((r) => r.key === 'WASHWATERRATE')?.[t === 'TR-2' ? 'tr2' : 'tr1'] ?? null} />}
             {t === 'Common' && prods.map((x) => (
               <span key={x.product} className="flex flex-col rounded-lg bg-slate-50 px-1.5 py-1">
                 <span className="truncate text-[11px] font-semibold leading-tight text-slate-500">{x.product.replace(/\s*\(.*\)/, '')}</span>
@@ -146,6 +147,26 @@ function TrainCards({ checks, overrides, products, pick }: { checks: Check[]; ov
         </button>); })}
     </div>
   );
+}
+
+/** ΔP and ΔT across each reactor in flow order (OCR → x01 … x04, then the net rise), and wash water, on a train card. */
+function Strips({ strip, wash }: { strip: { dp: StripCell[]; dt: StripCell[] }; wash: string | null }) {
+  const row = (label: string, unit: string, cells: StripCell[]) => (
+    <span className="col-span-4 flex items-stretch gap-1">
+      <span className="flex w-[46px] shrink-0 flex-col justify-center text-[12px] font-bold leading-tight text-slate-700">{label}<span className="text-[10.5px] font-semibold text-slate-500">{unit}</span></span>
+      <span className="grid flex-1 grid-cols-6 gap-1">
+        {cells.map((c) => (
+          <span key={c.name} className={cx('flex flex-col items-center rounded-md py-0.5', c.st === 'ok' ? 'bg-slate-50' : PILL[c.st])}>
+            <span className="text-[10.5px] font-semibold leading-tight text-slate-500">{c.name.replace(/^R-/, '')}</span>
+            <span className={cx('text-[13.5px] font-bold leading-tight tabular-nums', c.st === 'ok' ? 'text-slate-900' : TXT[c.st])}>{c.st !== 'ok' && c.st !== 'grey' ? ICON[c.st] : ''}{c.value ?? '—'}</span>
+          </span>))}
+      </span>
+    </span>);
+  return (<>
+    {row('ΔP', 'psi', strip.dp)}
+    {row('ΔT', '°F', strip.dt)}
+    <span className="col-span-4 text-[12.5px] text-slate-600">Wash water <b className="text-slate-900 tabular-nums">{wash ?? '—'}</b> gpm</span>
+  </>);
 }
 
 function Tiles({ ids, sum, line, gasOverride, open }: { ids: SectionId[]; sum: ReturnType<typeof summarize>; line: (id: SectionId) => string; gasOverride: boolean; open: (id: SectionId) => void }) {

@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Limit, LimitMatch } from '../limits';
 import type { StoredLog, StoredSample } from '../view';
-import { checksOf, handover, incidentsOf, sectionOf, summarize, trainOfEquipment, whatsappText, type BoardInput, type Override } from '../board';
+import { checksOf, handover, incidentsOf, reactorStrip, sectionOf, summarize, trainOfEquipment, whatsappText, type BoardInput, type Override } from '../board';
 
 const L = (o: Partial<Limit> & { paramId: string; section: string }): Limit => ({ description: o.paramId, unit: 'u', target: null, normalLo: null, normalHi: null,
   iowStd: null, iowCrit: null, trip: null, roc: null, source: 'src', action: null, status: 'active', ...o });
@@ -81,5 +81,27 @@ describe('handover', () => {
     const w = whatsappText(log, h);
     expect(w.split('\n')[0]).toBe('*ARDS – Shift Handover Morning 2 Jan*');
     expect(w).toContain('• Overrides open: 1 – TR-2 C-201 overspeed trip on 2oo2');
+  });
+});
+
+describe('reactor exotherm and ΔP', () => {
+  const dl = (o: Partial<Limit> & { paramId: string }) => L({ section: 'E Reactors', ...o });
+  const lims = new Map([dl({ paramId: 'OCR-DT', normalHi: 45 }), dl({ paramId: 'FB-AXDT', normalHi: 30 }), dl({ paramId: 'RX-RISE', normalHi: 70 }), dl({ paramId: 'FB-DP', normalHi: 90 }), dl({ paramId: 'OCR-DP-TOT', normalHi: 65 })].map((l) => [l.paramId, l]));
+  const m: LimitMatch[] = [{ paramId: 'OCR-DT', kind: 'reading_diff', key: 'OUTLETTEMPERATURER12105205', key2: 'INLETTEMPERATURER12105205' },
+    { paramId: 'FB-AXDT', kind: 'reading_diff', key: '/^OUTLETTEMPERATURER1210[1-4]/' }, { paramId: 'RX-RISE', kind: 'reading_diff', key: 'OUTLETTEMPERATURER12104204', key2: 'INLETTEMPERATURER12105205' }];
+  const rd: StoredLog = { ...log, sections: [], readings: [r('INLETTEMPERATURER12105205', '600', '600'), r('OUTLETTEMPERATURER12105205', '640', '660'),
+    r('INLETTEMPERATURER12101201', '610', '610'), r('OUTLETTEMPERATURER12101201', '630', '615'), r('INLETTEMPERATURER12104204', '620', null), r('OUTLETTEMPERATURER12104204', '625', '640'),
+    r('REACTORDELTAPRESSURER12105205', '20', '70'), r('REACTORDELTAPRESSURER12103R12203', '40', '120')] };
+  const cs = checksOf({ ...input, log: rd, controller: null, limits: lims, matches: m });
+  const c = (p: string, t: string) => cs.find((x) => x.paramId === p && x.train === t)!;
+  it('works out outlet − inlet per reactor and the net rise', () => {
+    expect([c('OCR-DT', 'TR-1').value, c('OCR-DT', 'TR-1').state, c('OCR-DT', 'TR-2').value, c('OCR-DT', 'TR-2').state]).toEqual(['40', 'ok', '60', 'off']);
+    expect([c('FB-AXDT', 'TR-1').value, c('FB-AXDT', 'TR-1').note, c('FB-AXDT', 'TR-2').state, c('FB-AXDT', 'TR-2').note]).toEqual(['20', 'R-101 20 · R-104 5', 'grey', 'R-201 5 · 1 of 2 not read']);
+    expect([c('RX-RISE', 'TR-1').value, c('RX-RISE', 'TR-2').value]).toEqual(['25', '40']);
+  });
+  it('lays out ΔP and ΔT per reactor in flow order', () => {
+    const s1 = reactorStrip(rd, lims, 'TR-2');
+    expect(s1.dp.map((x) => `${x.name} ${x.value} ${x.st}`)).toEqual(['OCR 70 off', 'R-201 null grey', 'R-202 null grey', 'R-203 120 off', 'R-204 null grey'].map((x) => x.replace(/R-/, '')));
+    expect(s1.dt.map((x) => x.value)).toEqual(['60', '5', null, null, null, '40']);
   });
 });
