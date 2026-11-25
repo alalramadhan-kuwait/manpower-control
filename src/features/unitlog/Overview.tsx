@@ -176,7 +176,11 @@ function TrainPage(p: OverviewProps & { train: TrainId; checks: Check[]; lines: 
         {c.chk > 0 && <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-slate-600">⚑ {c.chk} check</span>}
         {c.grey > 0 && <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-slate-600">○ {c.grey} not checked</span>}
       </div>
-      <Tiles ids={ids} sum={sum} line={(id) => p.k.one(id, t)} gasOverride={p.overrides.some((o) => o.train === t)} open={p.openSec} />
+      {t === 'Common'
+        ? <><div className="rounded-2xl bg-white p-1.5 ring-1 ring-slate-200"><Svg make={() => drawSection('frac', drawCtx(p, p.checks, 'Common', 1))} /></div>
+            <LimitTable checks={p.checks.filter((c) => c.train === 'Common')} common />
+            <p className="px-1 text-[12.5px] text-slate-500">Shared by both trains: H-103, the fractionator side (T-102 to T-105) and V-115. ○ = the library has a limit but the e-logbook or lab has no value.</p></>
+        : <Tiles ids={ids} sum={sum} line={(id) => p.k.one(id, t)} gasOverride={p.overrides.some((o) => o.train === t)} open={p.openSec} />}
       {cat && <div className="flex gap-2.5 rounded-xl bg-white px-3 py-2 text-[14px] ring-1 ring-slate-200"><b className="shrink-0">Catalyst</b><span>{cat}</span></div>}
     </div>
   );
@@ -192,27 +196,8 @@ function SectionPage(p: OverviewProps & { sec: SectionId; checks: Check[]; side:
   const tr = p.side; const setTr = p.setSide;
   const common = p.sec === 'frac';
   const train: TrainId = common ? 'Common' : tr === 1 ? 'TR-1' : 'TR-2';
-  const sideKey = tr === 1 ? 'tr1' : 'tr2';
-  const ctx: DrawCtx = {
-    train: tr,
-    r: (key) => p.log.readings.find((r) => r.key === key)?.[sideKey] ?? null,
-    st: (id) => { const cs = p.checks.filter((c) => c.paramId === id && (c.train === train || c.train === 'Common')); const order: St[] = ['bad', 'off', 'chk', 'grey', 'ok']; return order.find((s) => cs.some((c) => c.state === s)) ?? 'ok'; },
-    lab: (material, comp) => {
-      const hits = p.lab.filter((s) => kuwaitParts(s.collectedAt)?.date === p.log.date && (s.material ?? '').toUpperCase() === material.toUpperCase() && [train, 'Common'].includes(trainOfEquipment(s.equipment) ?? 'Common'));
-      for (const s of hits) { const r = s.results.find((x) => x.component === comp); if (r) return r.value; }
-      return null;
-    },
-    iow: (id) => iowBand(p.limits.get(id)?.iowStd ?? null)?.hi ?? null,
-    feed: p.log.feed.find((f) => f.train === (tr === 1 ? 'TR-1' : 'TR-2')) ?? null, products: p.log.products,
-    override: !common && p.overrides.some((o) => o.train === train),
-  };
+  const ctx = drawCtx(p, p.checks, train, tr);
   const make = () => drawSection(p.sec, ctx);
-  const cs = p.checks.filter((c) => c.section === p.sec);
-  const ids = [...new Set(cs.map((c) => c.paramId))];
-  const rank = (id: string) => Math.min(...cs.filter((c) => c.paramId === id).map((c) => ({ bad: 0, off: 1, chk: 2, ok: 3, grey: 4 }[c.state])));
-  ids.sort((a, b) => rank(a) - rank(b));
-  const cell = (c: Check | undefined) => (!c ? <span className="text-slate-300">—</span> : c.state === 'ok' ? <span className="tabular-nums">{c.value}</span>
-    : <span className={cx('whitespace-nowrap rounded px-1 font-bold tabular-nums', PILL[c.state])}>{ICON[c.state]} {c.value ?? 'none'}</span>);
   const ov = p.sec === 'gas' ? p.overrides : [];
   return (
     <div className="space-y-2.5">
@@ -221,21 +206,50 @@ function SectionPage(p: OverviewProps & { sec: SectionId; checks: Check[]; side:
       {!common && <div className="flex gap-1.5">{([1, 2] as const).map((t) => <button key={t} type="button" onClick={() => setTr(t)} className={cx('min-h-11 flex-1 rounded-xl border-[1.5px] bg-white text-[15px] font-bold', tr === t ? 'border-brand-800 text-brand-800' : 'border-slate-200 text-slate-500')}>Train {t}</button>)}</div>}
       <div className="rounded-2xl bg-white p-1.5 ring-1 ring-slate-200"><Svg key={`${p.sec}${tr}`} make={make} /></div>
       {ov.map((o) => <div key={o.id} className="rounded-xl bg-red-50 px-3 py-2 text-[14px] text-red-800"><b>● {o.train} {o.item}</b>{o.reason ? ` (${o.reason})` : ''}{o.startedOn ? ` since ${o.startedOn}` : ''} · {o.expiresOn ? `expires ${o.expiresOn}` : 'expiry not set'}{o.moc ? ` · MOC ${o.moc}` : ' · MOC not set'}<div className="text-[12.5px] text-red-700/80">{o.source}</div></div>)}
-      <div className="rounded-2xl bg-white px-2.5 py-1 ring-1 ring-slate-200">
-        <table className="w-full text-[14.5px]">
-          <thead><tr className="text-[11.5px] font-bold text-slate-500"><td className="py-1.5" /><td className="text-right">{common ? 'Value' : 'TR-1'}</td>{!common && <td className="text-right">TR-2</td>}<td /></tr></thead>
-          <tbody>
-            {ids.map((id) => { const one = cs.filter((c) => c.paramId === id); const l = one[0].limit; const a = common ? one[0] : one.find((c) => c.train === 'TR-1') ?? one.find((c) => c.train === 'Common'); const b = one.find((c) => c.train === 'TR-2');
-              const notes = [...new Set(one.map((c) => c.note).filter((x): x is string => !!x && !/^not in /.test(x) && !/^no sample/.test(x)))];
-              const action = one.some((c) => c.state === 'bad' || c.state === 'off') && l.action ? l.action : null;
-              return [
-                <tr key={id} className="border-t border-slate-100 align-top"><td className="pb-0.5 pr-2 pt-2 leading-tight">{l.description}</td><td className="pt-2 text-right">{cell(a)}</td>{!common && <td className="pl-2 pt-2 text-right">{cell(b)}</td>}<td className="whitespace-nowrap pl-1.5 pt-2 text-[12px] text-slate-500">{one[0].unit}</td></tr>,
-                <tr key={`${id}-l`}><td colSpan={4} className="pb-2 text-[12.5px] leading-snug text-slate-500">{one[0].band}{l.source ? ` · ${l.source}` : ''}{notes.length ? ` · ${notes.join(' · ')}` : ''}{action ? <span className="text-slate-700"> · do: {action}</span> : null}</td></tr>,
-              ]; })}
-          </tbody>
-        </table>
-      </div>
+      <LimitTable checks={p.checks.filter((c) => c.section === p.sec)} common={common} />
       <p className="px-1 text-[12.5px] text-slate-500">Your limit library as written; ○ = the library has a limit but the e-logbook or lab has no value. {common ? 'Shared by both trains.' : 'Train-2 tags generated from Train 1, to verify.'}</p>
+    </div>
+  );
+}
+
+function drawCtx(p: OverviewProps, checks: Check[], train: TrainId, tr: 1 | 2): DrawCtx {
+  const sideKey = tr === 1 ? 'tr1' : 'tr2';
+  return {
+    train: tr,
+    r: (key) => p.log.readings.find((r) => r.key === key)?.[sideKey] ?? null,
+    st: (id) => { const cs = checks.filter((c) => c.paramId === id && (c.train === train || c.train === 'Common')); const order: St[] = ['bad', 'off', 'chk', 'grey', 'ok']; return order.find((s) => cs.some((c) => c.state === s)) ?? 'ok'; },
+    lab: (material, comp) => {
+      const hits = p.lab.filter((s) => kuwaitParts(s.collectedAt)?.date === p.log.date && (s.material ?? '').toUpperCase() === material.toUpperCase() && [train, 'Common'].includes(trainOfEquipment(s.equipment) ?? 'Common'));
+      for (const s of hits) { const r = s.results.find((x) => x.component === comp); if (r) return r.value; }
+      return null;
+    },
+    iow: (id) => iowBand(p.limits.get(id)?.iowStd ?? null)?.hi ?? null,
+    feed: p.log.feed.find((f) => f.train === (tr === 1 ? 'TR-1' : 'TR-2')) ?? null, products: p.log.products,
+    override: train !== 'Common' && p.overrides.some((o) => o.train === train),
+  };
+}
+
+/** The limits of a section (or of Common), worst first: value per train, then band, source, notes and the action. */
+function LimitTable({ checks: cs, common }: { checks: Check[]; common: boolean }) {
+  const ids = [...new Set(cs.map((c) => c.paramId))];
+  const rank = (id: string) => Math.min(...cs.filter((c) => c.paramId === id).map((c) => ({ bad: 0, off: 1, chk: 2, ok: 3, grey: 4 }[c.state])));
+  ids.sort((a, b) => rank(a) - rank(b));
+  const cell = (c: Check | undefined) => (!c ? <span className="text-slate-300">—</span> : c.state === 'ok' ? <span className="tabular-nums">{c.value}</span>
+    : <span className={cx('whitespace-nowrap rounded px-1 font-bold tabular-nums', PILL[c.state])}>{ICON[c.state]} {c.value ?? 'none'}</span>);
+  return (
+    <div className="rounded-2xl bg-white px-2.5 py-1 ring-1 ring-slate-200">
+      <table className="w-full text-[14.5px]">
+        <thead><tr className="text-[11.5px] font-bold text-slate-500"><td className="py-1.5" /><td className="text-right">{common ? 'Value' : 'TR-1'}</td>{!common && <td className="text-right">TR-2</td>}<td /></tr></thead>
+        <tbody>
+          {ids.map((id) => { const one = cs.filter((c) => c.paramId === id); const l = one[0].limit; const a = common ? one[0] : one.find((c) => c.train === 'TR-1') ?? one.find((c) => c.train === 'Common'); const b = one.find((c) => c.train === 'TR-2');
+            const notes = [...new Set(one.map((c) => c.note).filter((x): x is string => !!x && !/^not in /.test(x) && !/^no sample/.test(x)))];
+            const action = one.some((c) => c.state === 'bad' || c.state === 'off') && l.action ? l.action : null;
+            return [
+              <tr key={id} className="border-t border-slate-100 align-top"><td className="pb-0.5 pr-2 pt-2 leading-tight">{l.description}</td><td className="pt-2 text-right">{cell(a)}</td>{!common && <td className="pl-2 pt-2 text-right">{cell(b)}</td>}<td className="whitespace-nowrap pl-1.5 pt-2 text-[12px] text-slate-500">{one[0].unit}</td></tr>,
+              <tr key={`${id}-l`}><td colSpan={4} className="pb-2 text-[12.5px] leading-snug text-slate-500">{one[0].band}{l.source ? ` · ${l.source}` : ''}{notes.length ? ` · ${notes.join(' · ')}` : ''}{action ? <span className="text-slate-700"> · do: {action}</span> : null}</td></tr>,
+            ]; })}
+        </tbody>
+      </table>
     </div>
   );
 }

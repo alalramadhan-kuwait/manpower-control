@@ -175,11 +175,13 @@ export function drawSection(sec: DrawSection, c: DrawCtx): SVGSVGElement {
   const prod = (re: RegExp) => c.products.find((p) => re.test(p.product));
   g.stub(4, 20, 'V-113 · V-213'); g.lbl(4, 36, 'LP hot seps'); g.pipe('M40 42 L40 52', 'bot');
   g.furnace(12, 66, 54, 52, c.st('H103-SKIN') === 'grey' ? 'ok' : c.st('H103-SKIN')); g.tag(39, 138, 'H-103', 'middle'); g.pipe('M66 96 L118 96', 'bot');
-  g.stub(4, 172, 'V-109 · V-209'); g.lbl(4, 188, 'via E-110/210 · E-108'); g.pipe('M4 198 L118 198', 'bot');
+  g.stub(4, 172, 'V-109 · V-209'); g.lbl(4, 188, 'via E-110/210'); g.lbl(4, 216, 'and E-108'); g.pipe('M4 198 L118 198', 'bot');
   g.column(120, 28, 36, 276); g.tag(114, 300, 'T-102', 'end');
-  g.pipe('M138 28 L138 14 L194 14 L194 20', 'gas'); g.drum(176, 22, 52, 18); g.tag(202, 58, 'V-115', 'middle');
+  g.pipe('M138 28 L138 14 L194 14 L194 20', 'gas'); g.drum(176, 22, 52, 18, c.st('SW-CL') === 'grey' ? 'ok' : worst(c.st('SW-CL'), c.st('SW-FE'), c.st('SW-PH'))); g.tag(202, 58, 'V-115', 'middle');
+  { const cl = c.lab('SOUR WATER', 'Chloride (Cl)'), fe = c.lab('SOUR WATER', 'IRON Fe'), ph = c.lab('SOUR WATER', 'pH');
+    if (cl !== null || fe !== null || ph !== null) { g.lbl(164, 76, 'sour water'); g.val(164, 92, `Cl ${or(cl)} · Fe ${or(fe)} · pH ${or(ph)}`, worst(c.st('SW-CL'), c.st('SW-FE'), c.st('SW-PH'))); } }
   g.pipe('M228 31 L313 31 L313 50', 'prod'); g.lbl(270, 24, 'via V-117 · E-125', 'middle');
-  const nap = c.st('NAP-H2S'); g.column(300, 52, 26, 112, nap === 'grey' ? 'ok' : nap, 7); g.badge(326, 54, nap === 'grey' ? 'ok' : nap); g.tag(294, 74, 'T-104', 'end');
+  const nap = c.st('NAP-H2S'); g.column(300, 52, 26, 112, nap === 'grey' ? 'ok' : nap, 7); g.badge(326, 54, nap === 'grey' ? 'ok' : nap); g.tag(294, 116, 'T-104', 'end');
   const h2s = c.lab('NAPHTHA', 'H2S'), np = prod(/naphtha/i);
   g.pipe('M313 164 L313 178', 'prod'); g.val(356, 196, `Naphtha H₂S ${or(h2s, 'ppm')}`, nap, 'end'); g.lbl(356, 212, `${or(np?.value ?? null, np?.unit ?? '')} → ${np?.route ?? '—'}`, 'end');
   const dist = prod(/distillate/i), dsl = prod(/diesel/i), lsar = prod(/lsar/i);
