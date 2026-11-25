@@ -11,7 +11,7 @@ export interface Page { h: number; pieces: Piece[] }
 export type LogKind = 'ards' | 'htu' | 'controller1';
 export interface RemarkGroup { group: string; items: string[] }
 export interface RemarkSection { role: string; groups: RemarkGroup[] }
-export interface Reading { label: string; tr1: string | null; tr2: string | null; unit: string | null }
+export interface Reading { label: string; key: string; tr1: string | null; tr2: string | null; unit: string | null }
 export interface FeedRow { train: string; total: string | null; hot: string | null; cold: string | null; backwashMin: string | null }
 export interface ProductRow { product: string; route: string | null; value: string | null; unit: string | null }
 export interface ShiftLog {
@@ -54,9 +54,20 @@ export function parseHeader(text: string): Pick<ShiftLog, 'kind' | 'logNo' | 'da
 }
 
 // ── Remarks ─────────────────────────────────────────────────────────────────────────────────────────────────────
-const SECTION = /^(.*?)\s*Remarks$/i;
-const GROUP = /^(OCR|LP|HP|Low Pressure|High Pressure|Utilities|General|Common|Train\s*-?\s*\d(\s*&\s*\d)?|TR\s*-?\s*\d|TRAIN\s*-?\s*\d)\s*:?$/i;
-const isGroup = (t: string) => !/^[#*]/.test(t) && t.length <= 30 && (GROUP.test(t) || /:$/.test(t));
+// "CONTROLLER Remarks" (ARDS) or a plain "CONTROLLER" / "CONTROL ROOM OPERATOR" heading (HTU)
+const SECTION = /^(?:(.*?)\s*Remarks|(CONTROLLER|CONTROL ROOM(?: OPERATOR)?|FIELD OPERATOR))$/i;
+const GROUP = /^(OCR|LP|HP|Low Pressure|High Pressure|Utilities|General|Common|Train\s*-?\s*\d(\s*&\s*\d)?|TR\s*-?\s*\d|TRAIN\s*-?\s*\d|Unit\s*-?\s*\d+)\s*:?$/i;
+/** A new item: "# …", "* …", "- …", "• …" or "1) …". */
+const ITEM = /^([#*•-]|\d{1,2}[).])/;
+const isGroup = (t: string) => !ITEM.test(t) && t.length <= 30 && (GROUP.test(t) || /:$/.test(t));
+/** Headings of the tables that follow the remarks (they end a remark section). */
+const TABLE_HEAD = /^(FEED & PRODUCTS|HIGH PRESSURE SECTION|LOW PRESSURE SECTION|Train\s*1\s*&\s*2|Lab Test Results|ByPass Conditions|Feed & frequency|Products$)/i;
+/** The same reading across logs, whatever the spacing or a dash lost at a page break ("PASS 2 … (H 12-102" = "PASS-2 … (H-12-102"). */
+export const readingKey = (label: string) => label.toUpperCase().replace(/[^A-Z0-9]/g, '');
+const addLine = (g: RemarkGroup, t: string) => {
+  if (ITEM.test(t) || !g.items.length) g.items.push(t.replace(/^([#*•]|\d{1,2}[).])\s*/, '').replace(/^-\s+/, '').trim());
+  else g.items[g.items.length - 1] = `${g.items[g.items.length - 1]} ${t}`;
+};
 
 /** Remark sections ("CONTROLLER Remarks", "CONTROL ROOM REMARKS", "FIELD OPERATOR Remarks"): groups (OCR, Train 1 …)
  *  and their items ("# …"); a line that is neither continues the item before it. A section ends at a table or heading. */
@@ -66,16 +77,16 @@ export function parseRemarks(pages: Page[]): RemarkSection[] {
   for (const page of pages) for (const l of linesOf(page.pieces)) {
     const first = l.pieces[0];
     const m = SECTION.exec(l.text);
-    if (m && l.pieces.length === 1) { cur = { role: norm(m[1]).toUpperCase() || 'REMARKS', groups: [] }; out.push(cur); continue; }
+    if (m && l.pieces.length === 1) { cur = { role: norm(m[1] ?? m[2] ?? '').toUpperCase() || 'REMARKS', groups: [] }; out.push(cur); continue; }
     if (!cur) continue;
-    // remark lines are single, left-aligned text; anything else (a table row, a heading further right) ends the section
-    if (l.pieces.length > 1 || first.x > 50) { cur = null; continue; }
+    // remark lines are single, left-aligned text; anything else (a table row, a heading further right, a table's
+    // heading) ends the section
+    if (l.pieces.length > 1 || first.x > 50 || TABLE_HEAD.test(l.text)) { cur = null; continue; }
     const t = l.text;
     if (isGroup(t)) { cur.groups.push({ group: t.replace(/:$/, '').trim(), items: [] }); continue; }
     let g = cur.groups[cur.groups.length - 1];
     if (!g) { g = { group: '', items: [] }; cur.groups.push(g); }
-    if (/^[#*]/.test(t) || !g.items.length) g.items.push(t.replace(/^[#*]\s*/, '').trim());
-    else g.items[g.items.length - 1] = `${g.items[g.items.length - 1]} ${t}`;
+    addLine(g, t);
   }
   return out.filter((s) => s.groups.some((g) => g.items.length));
 }
@@ -91,8 +102,7 @@ export function parseControllerArds(pages: Page[]): RemarkSection[] {
     if (isGroup(t)) { groups.push({ group: t.replace(/:$/, '').trim(), items: [] }); continue; }
     let g = groups[groups.length - 1];
     if (!g) { g = { group: '', items: [] }; groups.push(g); }
-    if (/^[#*]/.test(t) || !g.items.length) g.items.push(t.replace(/^[#*]\s*/, '').trim());
-    else g.items[g.items.length - 1] = `${g.items[g.items.length - 1]} ${t}`;
+    addLine(g, t);
   }
   const kept = groups.filter((g) => g.items.length);
   return kept.length ? [{ role: 'CONTROLLER I', groups: kept }] : [];
@@ -108,24 +118,31 @@ const blockOf = (q: Piece) => (q.x < 400 ? 0 : 1);
  * belongs to the value line nearest to it.
  */
 export function parseReadings(pages: Page[]): { readings: Reading[]; unplaced: number } {
-  // the table starts at "Train1 & 2" and ends at "Lab Test Results" (or the next section)
-  let started = false, ended = false;
-  const blocks: { key: string; order: number; h: number; pieces: Piece[] }[] = [];
-  pages.forEach((page, pi) => {
-    if (ended) return;
-    for (const l of linesOf(page.pieces)) {
-      if (!started) { if (/^Train\s*1\s*&\s*2$/i.test(l.text)) { started = true; } continue; }
-      if (/^(Lab Test Results|ByPass Conditions|FIELD OPERATOR)/i.test(l.text)) { ended = true; break; }
-      for (const q of l.pieces) {
-        const key = `${pi}:${blockOf(q)}`;
-        let b = blocks.find((x) => x.key === key);
-        if (!b) { b = { key, order: pi * 2 + blockOf(q), h: page.h, pieces: [] }; blocks.push(b); }
-        b.pieces.push(q);
-      }
-    }
-  });
-  blocks.sort((a, b) => a.order - b.order);
-  // end to end: each block starts where the one before it ends (a page height further down)
+  // where the table starts: the "Train1 & 2" line (its right half may already hold table rows)
+  let si = -1, y0 = 0;
+  for (let pi = 0; pi < pages.length && si < 0; pi++) for (const l of linesOf(pages[pi].pieces)) {
+    if (/^Train\s*1\s*&\s*2$/i.test(norm(l.pieces[0].s))) { si = pi; y0 = l.y; break; }
+  }
+  if (si < 0) return { readings: [], unplaced: 0 };
+  // the right block of that page starts below the last remark line on the left, which can be above the title
+  const before = pages[si].pieces.filter((q) => blockOf(q) === 0 && q.y < y0 - 2 && q.s.trim());
+  const rightFrom = before.length ? Math.max(...before.map((q) => q.y)) + 2 : 0;
+  // where it ends: "Lab Test Results" (or the next section) on the left
+  let ei = pages.length - 1, y1 = Infinity;
+  outer: for (let pi = si; pi < pages.length; pi++) for (const l of linesOf(pages[pi].pieces.filter((q) => blockOf(q) === 0))) {
+    if (pi === si && l.y <= y0) continue;
+    if (/^(Lab Test Results|ByPass Conditions|FIELD OPERATOR)/i.test(l.text)) { ei = pi; y1 = l.y; break outer; }
+  }
+  const blocks: { order: number; pieces: Piece[] }[] = [];
+  for (let pi = si; pi <= ei; pi++) for (const side of [0, 1]) {
+    const pieces = pages[pi].pieces.filter((q) => q.s.trim() && blockOf(q) === side
+      && (pi !== si || (side === 0 ? q.y > y0 + 2 : q.y >= rightFrom))
+      && (pi !== ei || q.y < y1 - 2));
+    if (pieces.length) blocks.push({ order: pi * 2 + side, pieces });
+  }
+  // end to end: each block starts one line gap after the last piece of the block before it, so a name cut by a
+  // block or page break stays next to its value line
+  const GAP = 8;
   let offset = 0;
   type Tup = { y: number; tr1: string | null; tr2: string | null; unit: string | null; labels: { y: number; s: string }[] };
   const tuples: Tup[] = []; const labels: { y: number; s: string }[] = [];
@@ -133,6 +150,8 @@ export function parseReadings(pages: Page[]): { readings: Reading[]; unplaced: n
     const left = b.order % 2 === 0;
     const nameMax = left ? 130 : 510;
     const col = left ? [142, 235, 329] : [522, 615, 708];
+    const top = Math.min(...b.pieces.map((q) => q.y)), bottom = Math.max(...b.pieces.map((q) => q.y));
+    const at = (y: number) => offset + y - top;
     const vals = b.pieces.filter((q) => q.x >= nameMax);
     for (const l of linesOf(vals, 3)) {
       if (l.pieces.some((q) => /Reading/i.test(q.s))) continue;            // the header row
@@ -141,13 +160,13 @@ export function parseReadings(pages: Page[]): { readings: Reading[]; unplaced: n
         const i = col.map((c) => Math.abs(q.x - c)).reduce((bi, d, j, a) => (d < a[bi] ? j : bi), 0);
         cell[i] = norm(`${cell[i] ?? ''} ${q.s}`);
       }
-      tuples.push({ y: offset + l.y, tr1: cell[0], tr2: cell[1], unit: cell[2], labels: [] });
+      tuples.push({ y: at(l.y), tr1: cell[0], tr2: cell[1], unit: cell[2], labels: [] });
     }
     for (const q of b.pieces.filter((x) => x.x < nameMax)) {
       if (/^Parameters/i.test(q.s.trim())) continue;
-      labels.push({ y: offset + q.y, s: q.s });
+      labels.push({ y: at(q.y), s: q.s });
     }
-    offset += b.h;
+    offset += bottom - top + GAP;
   }
   let unplaced = 0;
   for (const lab of labels) {
@@ -155,11 +174,11 @@ export function parseReadings(pages: Page[]): { readings: Reading[]; unplaced: n
     for (const t of tuples) if (!best || Math.abs(t.y - lab.y) < Math.abs(best.y - lab.y)) best = t;
     if (best && Math.abs(best.y - lab.y) <= 20) best.labels.push(lab); else unplaced++;
   }
-  const clean = (v: string | null) => (v === null || /^nan$/i.test(v) || v === '' ? null : v);
+  const clean = (v: string | null) => (v === null || /^(nan|-+)$/i.test(v) || v === '' ? null : v);
   const readings = tuples.map((t) => ({
     label: t.labels.sort((a, b) => a.y - b.y).map((l) => l.s.trim()).reduce((acc, s) => (acc.endsWith('-') ? acc + s : acc ? `${acc} ${s}` : s), ''),
     tr1: clean(t.tr1), tr2: clean(t.tr2), unit: t.unit ? t.unit.replace(/^°?\s*F$/, '°F') : null,
-  }));
+  })).map((r) => ({ ...r, key: readingKey(r.label) }));
   return { readings: readings.filter((r) => r.label || r.tr1 || r.tr2), unplaced };
 }
 
@@ -256,8 +275,13 @@ export function parseLabReport(pages: Page[]): LabSample[] {
           const v = (cells.get(`${i}:${c}`) ?? []).join(' ').trim();
           if (v) results.push({ component: r.name, unit: r.unit && r.unit !== '-' ? r.unit.replace(/^°\s*F$/, '°F') : null, value: v });
         });
-        out.push({ sampleId: id, unitNo: get(/^UNIT NO\.?$/i, c), material: get(/^MATERIAL$/i, c), equipment: get(/^EQUIPMENT$/i, c),
-          collectedAt: labTime(get(/^COLLECTION DATE$/i, c) ?? '', year), note: get(/^COMPONENT$/i, c), results });
+        const s: LabSample = { sampleId: id, unitNo: get(/^UNIT NO\.?$/i, c), material: get(/^MATERIAL$/i, c), equipment: get(/^EQUIPMENT$/i, c),
+          collectedAt: labTime(get(/^COLLECTION DATE$/i, c) ?? '', year), note: get(/^COMPONENT$/i, c), results };
+        // a long report repeats the same samples on the next pages with the rest of their tests: one sample each
+        const seen = out.find((x) => x.sampleId === id);
+        if (!seen) { out.push(s); return; }
+        for (const k of ['unitNo', 'material', 'equipment', 'collectedAt', 'note'] as const) seen[k] ??= s[k];
+        for (const r of results) if (!seen.results.some((x) => x.component === r.component)) seen.results.push(r);
       });
     });
   }
