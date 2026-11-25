@@ -26,6 +26,7 @@ const UnitStatusPage = lazy(() => import('@/features/operation/UnitStatusPage'))
 const MaintenancePage = lazy(() => import('@/features/maintenance/MaintenancePage'));
 const ShutdownListPage = lazy(() => import('@/features/shutdown/ShutdownListPage'));
 const FoLevelsPage = lazy(() => import('@/features/shutdown/FoLevelsPage'));
+const UnitLogPage = lazy(() => import('@/features/unitlog/UnitLogPage'));
 const LeavePlanPage = lazy(() => import('@/features/leave/LeavePlanPage'));
 const PvPage = lazy(() => import('@/features/pv/PvPage'));
 const VacationPlanPage = lazy(() => import('@/features/vacation/VacationPlanPage'));
@@ -71,13 +72,14 @@ export function ManpowerWorkspace({ profile }: { profile: UserProfile }) {
 }
 
 /** Shutdowns (28 Oct 2026): Live (the running shutdown's tracker, its own ?tab=), every shutdown (each opens its own
- *  page) and Unit status. FO levels moved to Data quality (an old ?section=fo address goes there). */
+ *  page), the Unit log (shift log, trains, lab from the e-mailed PDFs; 25 Nov 2026) and Unit status. FO levels moved to Data quality (an old ?section=fo address goes there). */
 export function ShutdownsWorkspace({ profile }: { profile: UserProfile }) {
   const [params] = useSearchParams();
   if (params.get('section') === 'fo') return <Navigate to="/data-quality?tab=fo-levels" replace />;
   return <Workspace title="Shutdowns" param="section" tabs={[
     { key: 'progress', label: 'Live', el: <TrackerPage profile={profile} /> },
     { key: 'plans', label: 'Shutdowns', el: <ShutdownListPage /> },
+    { key: 'log', label: 'Unit log', el: <UnitLogPage /> },
     { key: 'modes', label: 'Unit status', el: <UnitStatusPage profile={profile} /> },
     { key: 'maintenance', label: 'Maintenance', el: <MaintenancePage profile={profile} /> }]} />;
 }
