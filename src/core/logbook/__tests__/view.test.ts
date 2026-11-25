@@ -40,7 +40,7 @@ describe('skinGrid', () => {
   it('lays the pass rows out as heater columns', () => {
     const g = skinGrid([rd('PASS-1 SKIN TEMP (H-12-101/201)', 'PASS1SKINTEMPH12101201', '800', '700'), rd('PASS-1 SKIN TEMP (H-12-102 /202)', 'PASS1SKINTEMPH12102202', '810', null),
       rd('PASS 2 SKIN TEMP (H 12-101/201)', 'PASS2SKINTEMPH12101201', '805', '705'), rd('FEED', 'FEED', '1', '2')]);
-    expect(g).toEqual({ heaters: ['H-101', 'H-201', 'H-102', 'H-202'], unit: '°F', passes: [
+    expect(g).toEqual({ heaters: ['H-101', 'H-201', 'H-102', 'H-202'], unit: '°F', keys: ['PASS#SKINTEMPH12101201', 'PASS#SKINTEMPH12102202'], passes: [
       { pass: 1, values: ['800', '700', '810', null] }, { pass: 2, values: ['805', '705', null, null] }] });
     expect(skinGrid([rd('FEED', 'FEED', '1', '2')])).toBeNull();
   });

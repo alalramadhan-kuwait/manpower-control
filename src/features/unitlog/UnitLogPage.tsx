@@ -2,10 +2,11 @@
 // the ARDS shift log, the trains' readings and the lab results, read from the e-mails the owner's Mac saves at 6:30 am
 // and pm. ARDS only; the HTU log is behind a switch ("only for information"), and the Controller I log adds its ARDS part.
 // Read only, and nothing is judged: no limits are set, so no value is called high or low.
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { BottomSheet, Chip, EmptyState, ErrorBox, Spinner, cx } from '@/ui/components';
-import { fetchLabSamples, fetchUnitLogs } from '@/data/unitLog';
+import { fetchLabSamples, fetchLimits, fetchUnitLogs } from '@/data/unitLog';
+import { limitBand, limitForLab, limitForReading, limitState, type Limit, type LimitMatch, type LimitState } from '@/core/logbook/limits';
 import {
   byShiftDesc, eventsIn, followUps, isSkin, kuwaitParts, labDays, labTrend, readingBy, samplePoint, samplesOn, sameShift, skinGrid, trendOf,
   type StoredLog, type StoredSample,
@@ -18,6 +19,34 @@ const shiftName = (l: StoredLog) => `${day(l.date)} · ${l.shift ?? '?'}`;
 const pair = (a: string | null | undefined, b: string | null | undefined) => (a ?? '—') === (b ?? '—') ? (a ?? '—') : `${a ?? '—'} / ${b ?? '—'}`;
 
 type Tab = 'shift' | 'trains' | 'lab';
+
+// The limit library (owner's spec §4.1): a value is coloured by its traffic light; nothing is coloured without a library.
+interface Lib { limits: Map<string, Limit>; matches: LimitMatch[] }
+const LibCtx = createContext<Lib>({ limits: new Map(), matches: [] });
+const TONE: Record<LimitState, string> = { normal: '', off: 'bg-amber-100 text-amber-900', breach: 'bg-red-100 text-red-800', critical: 'bg-red-700 text-white' };
+const WORD: Record<LimitState, string> = { normal: 'In range', off: 'Off target', breach: 'Limit breach', critical: 'Critical' };
+const Val = ({ v, st }: { v: ReactNode; st: LimitState | null }) => <span className={cx('rounded px-1 tabular-nums', st && TONE[st])}>{v}</span>;
+function readingLimit(lib: Lib, key: string) { return limitForReading(key, lib.matches, lib.limits); }
+const stateOf = (lib: Lib, key: string, v: string | null) => { const m = readingLimit(lib, key); return m ? limitState(v, m.limit, m.scale) : null; };
+interface Exception { what: string; where: string; value: string; band: string; state: LimitState; limit: Limit }
+/** What is outside its limits in this log and in that day's lab results, worst first. */
+function exceptionsOf(lib: Lib, log: StoredLog, lab: StoredSample[]): Exception[] {
+  const out: Exception[] = [];
+  for (const r of log.readings) {
+    const m = readingLimit(lib, r.key); if (!m) continue;
+    for (const [side, v] of [['TR-1', r.tr1], ['TR-2', r.tr2]] as const) {
+      const st = limitState(v, m.limit, m.scale);
+      if (st && st !== 'normal') out.push({ what: r.label, where: side, value: `${v} ${r.unit ?? ''}`.trim(), band: limitBand(m.limit), state: st, limit: m.limit });
+    }
+  }
+  for (const smp of samplesOn(lab, log.date)) for (const r of smp.results) {
+    const l = limitForLab(smp.material, smp.equipment, r.component, lib.matches, lib.limits); if (!l) continue;
+    const st = limitState(r.value, l);
+    if (st && st !== 'normal') out.push({ what: `${r.component}`, where: `${samplePoint(smp)} · ${kuwaitParts(smp.collectedAt)?.time ?? ''}`, value: `${r.value}${r.unit ? ` ${r.unit}` : ''}`, band: limitBand(l), state: st, limit: l });
+  }
+  const rank = { critical: 0, breach: 1, off: 2, normal: 3 };
+  return out.sort((a, b) => rank[a.state] - rank[b.state]);
+}
 const TABS: { key: Tab; label: string }[] = [{ key: 'shift', label: 'Shift log' }, { key: 'trains', label: 'Trains' }, { key: 'lab', label: 'Lab' }];
 
 export default function UnitLogPage() {
@@ -28,9 +57,11 @@ export default function UnitLogPage() {
   const [last, setLast] = useState<string | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const [i, setI] = useState(0);
+  const [lib, setLib] = useState<Lib>({ limits: new Map(), matches: [] });
 
   useEffect(() => {
     Promise.all([fetchUnitLogs(), fetchLabSamples()]).then(([l, s]) => { setLogs(l.logs); setLast(l.lastReceived); setLab(s); }).catch(setErr);
+    fetchLimits().then(setLib).catch(() => undefined);
   }, []);
 
   const ards = useMemo(() => byShiftDesc((logs ?? []).filter((l) => l.kind === 'ards')), [logs]);
@@ -39,6 +70,7 @@ export default function UnitLogPage() {
   const go = (k: Tab) => { const n = new URLSearchParams(params); n.set('tab', k); setParams(n, { replace: true }); };
 
   return (
+    <LibCtx.Provider value={lib}>
     <div className="space-y-3 lg:max-w-3xl">
       <div className="flex gap-1 rounded-xl bg-slate-100 p-1 text-sm" role="tablist">
         {TABS.map((x) => (
@@ -50,11 +82,14 @@ export default function UnitLogPage() {
         <>
           <Picker label={<><b>{shiftName(ards[i])}</b><div className="text-[12px] text-slate-500">{ards[i].crew ?? '?'} Shift · Log #{ards[i].logNo}</div></>}
             older={i < ards.length - 1 ? () => setI(i + 1) : undefined} newer={i > 0 ? () => setI(i - 1) : undefined} />
-          {tab === 'shift' ? <ShiftView log={ards[i]} before={ards.slice(i + 1)} all={logs} /> : <TrainsView log={ards[i]} before={ards.slice(i + 1)} />}
+          {tab === 'shift' ? <ShiftView log={ards[i]} before={ards.slice(i + 1)} all={logs} lab={lab} /> : <TrainsView log={ards[i]} before={ards.slice(i + 1)} />}
         </>
       )}
-      <p className="text-[11px] text-slate-500">From the log and lab e-mails, read at 6:30 am and pm{last ? ` · last received ${when(last)}` : ''}. Read only: nothing here is marked high or low until limits are set.</p>
+      <p className="text-[11px] text-slate-500">From the log and lab e-mails, read at 6:30 am and pm{last ? ` · last received ${when(last)}` : ''}. {lib.limits.size
+        ? <>Colours follow the limit library: <span className="rounded bg-amber-100 px-1 text-amber-900">off target</span> <span className="rounded bg-red-100 px-1 text-red-800">IOW breach</span> <span className="rounded bg-red-700 px-1 text-white">critical</span>; limits marked “verify” are still to be checked.</>
+        : 'Read only: nothing here is marked high or low until limits are set.'}</p>
     </div>
+    </LibCtx.Provider>
   );
 }
 
@@ -73,7 +108,9 @@ const Head = ({ children, tone = 'text-slate-500' }: { children: ReactNode; tone
 const Box = ({ children, className }: { children: ReactNode; className?: string }) => <div className={cx('rounded-2xl bg-white ring-1 ring-slate-200', className)}>{children}</div>;
 
 // ── Shift log ─────────────────────────────────────────────────────────────────────────────────────────────────
-function ShiftView({ log, before, all }: { log: StoredLog; before: StoredLog[]; all: StoredLog[] }) {
+function ShiftView({ log, before, all, lab }: { log: StoredLog; before: StoredLog[]; all: StoredLog[]; lab: StoredSample[] }) {
+  const lib = useContext(LibCtx);
+  const ex = exceptionsOf(lib, log, lab);
   const [htu, setHtu] = useState(false);
   const [allTags, setAllTags] = useState(false);
   const ctl = all.find((l) => l.kind === 'controller1' && sameShift(l, log));
@@ -91,6 +128,21 @@ function ShiftView({ log, before, all }: { log: StoredLog; before: StoredLog[]; 
         {figs.map(([v, l]) => <div key={l}><div className="text-[17px] font-bold leading-tight text-slate-900">{v}</div><div className="text-[10px] font-semibold uppercase text-slate-500">{l}</div></div>)}
       </Box>}
       {figs.length > 0 && <p className="-mt-2 px-1 text-[11px] text-slate-500">TR-1 / TR-2 when they differ</p>}
+      {lib.limits.size > 0 && <>
+        <Head tone={ex.some((x) => x.state !== 'off') ? 'text-red-800' : 'text-amber-800'}>Outside limits · {ex.length ? ex.length : 'none'}</Head>
+        {ex.length > 0 && <Box className="divide-y divide-slate-100">
+          {ex.map((x, k) => (
+            <div key={k} className="px-3 py-2 text-[13px]">
+              <div className="flex items-start gap-2">
+                <span className={cx('shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold', TONE[x.state])}>{WORD[x.state]}</span>
+                <span className="min-w-0 flex-1"><b>{x.what}</b> <span className="text-slate-500">· {x.where}</span></span>
+                <b className="shrink-0 tabular-nums">{x.value}</b>
+              </div>
+              <div className="mt-0.5 text-[11px] text-slate-500">Limit {x.band}{x.limit.status === 'verify' ? ' (verify)' : ''} · {x.limit.source}{x.limit.action ? ` · ${x.limit.action}` : ''}</div>
+            </div>
+          ))}
+        </Box>}
+      </>}
       {events.length > 0 && <>
         <Head tone="text-red-800">Events this shift</Head>
         <Box className="divide-y divide-slate-100">{events.map((e) => <div key={e.text} className="flex gap-2 px-3 py-2 text-[13px]"><Chip tone="red" className="shrink-0">{e.word}</Chip><span>{e.text}{e.group ? <span className="text-slate-500"> · {e.group}</span> : null}</span></div>)}</Box>
@@ -141,6 +193,7 @@ function Remarks({ sections, open = false }: { sections: RemarkSection[]; open?:
 
 // ── Trains ────────────────────────────────────────────────────────────────────────────────────────────────────
 function TrainsView({ log, before }: { log: StoredLog; before: StoredLog[] }) {
+  const lib = useContext(LibCtx);
   const [trend, setTrend] = useState<string | null>(null);
   const prev = before[0];
   const rows = log.readings.filter((r) => !isSkin(r));
@@ -156,9 +209,9 @@ function TrainsView({ log, before }: { log: StoredLog; before: StoredLog[] }) {
           <tbody className="divide-y divide-slate-100">
             {rows.map((r) => (
               <tr key={r.key} className="cursor-pointer active:bg-slate-50" onClick={() => setTrend(r.key)}>
-                <td className="px-3 py-1.5 text-[12px] leading-tight text-slate-800">{r.label}</td>
+                <td className="px-3 py-1.5 text-[12px] leading-tight text-slate-800">{r.label}{(() => { const m = readingLimit(lib, r.key); return m ? <div className="text-[10px] text-slate-500">{limitBand(m.limit)}{m.scale !== 1 ? ` ${m.limit.unit}` : ''}{m.limit.status === 'verify' ? ' · verify' : ''}</div> : null; })()}</td>
                 {(['tr1', 'tr2'] as const).map((side) => { const w = was(r.key, side, r[side]); return (
-                  <td key={side} className="px-1 text-right tabular-nums">{r[side] ?? <span className="text-slate-400">—</span>}{w !== null && <div className="text-[10px] text-slate-400">{w}</div>}</td>); })}
+                  <td key={side} className="px-1 text-right">{r[side] !== null ? <Val v={r[side]} st={stateOf(lib, r.key, r[side])} /> : <span className="text-slate-400">—</span>}{w !== null && <div className="text-[10px] text-slate-400">{w}</div>}</td>); })}
                 <td className="px-3 text-right text-[11px] text-slate-500">{r.unit}</td>
               </tr>
             ))}
@@ -166,12 +219,12 @@ function TrainsView({ log, before }: { log: StoredLog; before: StoredLog[] }) {
         </table>
       </Box>
       {grid && <>
-        <Head>Heater skin temperatures · {grid.unit}</Head>
+        <Head>Heater skin temperatures · {grid.unit}{(() => { const b = grid.keys.map((k) => readingLimit(lib, k.replace('#', '1'))).filter(Boolean).map((m) => `${m!.limit.paramId} ${limitBand(m!.limit)}`); return b.length ? <span className="font-normal normal-case"> · {b.join(' · ')}</span> : null; })()}</Head>
         <Box className="overflow-hidden">
           <table className="w-full text-[13px] tabular-nums">
             <thead><tr className="text-[10px] uppercase tracking-wide text-slate-500"><th className="px-3 py-1.5 text-left">Pass</th>{grid.heaters.map((h) => <th key={h} className="px-2 text-right">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {grid.passes.map((p) => <tr key={p.pass}><td className="px-3 py-1.5">{p.pass}</td>{p.values.map((v, k) => <td key={k} className="px-2 text-right">{v ?? <Chip tone="red">no reading</Chip>}</td>)}</tr>)}
+              {grid.passes.map((p) => <tr key={p.pass}><td className="px-3 py-1.5">{p.pass}</td>{p.values.map((v, k) => <td key={k} className="px-2 text-right">{v !== null ? <Val v={v} st={stateOf(lib, grid.keys[Math.floor(k / 2)]?.replace('#', String(p.pass)) ?? '', v)} /> : <Chip tone="red">no reading</Chip>}</td>)}</tr>)}
             </tbody>
           </table>
         </Box>
@@ -201,6 +254,7 @@ function TrainsView({ log, before }: { log: StoredLog; before: StoredLog[] }) {
 
 // ── Lab ───────────────────────────────────────────────────────────────────────────────────────────────────────
 function LabView({ samples }: { samples: StoredSample[] }) {
+  const lib = useContext(LibCtx);
   const days = labDays(samples);
   const [i, setI] = useState(0);
   const [pick, setPick] = useState<{ s: StoredSample; component: string } | null>(null);
@@ -218,12 +272,12 @@ function LabView({ samples }: { samples: StoredSample[] }) {
             <div className="flex justify-between gap-2 text-[13px]"><b className="text-slate-900">{samplePoint(s)}</b><span className="shrink-0 text-slate-500">{kuwaitParts(s.collectedAt)?.time ?? '—'}</span></div>
             {s.note && <div className="text-[11px] text-slate-500">{s.note}</div>}
             <div className="mt-1 flex flex-wrap gap-1">
-              {s.results.map((r) => (
+              {s.results.map((r) => { const l = limitForLab(s.material, s.equipment, r.component, lib.matches, lib.limits); const st = l ? limitState(r.value, l) : null; return (
                 <button key={r.component} type="button" onClick={() => setPick({ s, component: r.component })}
-                  className="rounded-lg bg-slate-50 px-2 py-0.5 text-left text-[12px] ring-1 ring-slate-200 active:bg-slate-100">
-                  <span className="text-slate-500">{r.component}</span> <b className="tabular-nums text-slate-900">{r.value}</b>{r.unit ? <span className="text-slate-500"> {r.unit}</span> : null}
-                </button>
-              ))}
+                  className={cx('rounded-lg px-2 py-0.5 text-left text-[12px] ring-1 active:bg-slate-100', st && st !== 'normal' ? cx(TONE[st], 'ring-transparent') : 'bg-slate-50 ring-slate-200')}>
+                  <span className={st && st !== 'normal' ? '' : 'text-slate-500'}>{r.component}</span> <b className="tabular-nums">{r.value}</b>{r.unit ? <span className={st && st !== 'normal' ? '' : 'text-slate-500'}> {r.unit}</span> : null}
+                  {l && <span className="ms-1 text-[10px] opacity-70">({limitBand(l)})</span>}
+                </button>); })}
               {!s.results.length && <span className="text-[12px] text-slate-500">No results on the report.</span>}
             </div>
             <div className="mt-0.5 text-[10px] text-slate-400">{s.sampleId}</div>
@@ -234,7 +288,7 @@ function LabView({ samples }: { samples: StoredSample[] }) {
         <table className="w-full text-[13px] tabular-nums">
           <tbody className="divide-y divide-slate-100">{series.map(({ s, r }) => <tr key={s.sampleId}><td className="py-1.5">{when(s.collectedAt)}</td><td className="text-right font-semibold">{r!.value}</td><td className="ps-2 text-[11px] text-slate-500">{r!.unit}</td></tr>)}</tbody>
         </table>
-        <p className="mt-2 text-[11px] text-slate-500">Every result for this point received so far, newest first. No limits are set yet.</p>
+        <p className="mt-2 text-[11px] text-slate-500">Every result for this point received so far, newest first.{(() => { const l = pick && limitForLab(pick.s.material, pick.s.equipment, pick.component, lib.matches, lib.limits); return l ? ` Limit ${limitBand(l)} · ${l.source ?? ''}` : ' No limit set for it.'; })()}</p>
       </BottomSheet>
     </>
   );

@@ -2,6 +2,7 @@
 // the app never writes them (only the logbook-ingest function does).
 import { supabase } from './supabase';
 import type { StoredLog, StoredSample } from '@/core/logbook/view';
+import type { Limit, LimitMatch } from '@/core/logbook/limits';
 
 interface LogRow { kind: StoredLog['kind']; log_no: number; log_date: string; shift: string | null; crew: string | null; shift_day: string | null; recorded_at: string | null;
   sections: StoredLog['sections']; readings: StoredLog['readings']; feed: StoredLog['feed']; products: StoredLog['products']; received_at: string }
@@ -28,4 +29,22 @@ export async function fetchLabSamples(days = 30): Promise<StoredSample[]> {
     .gte('collected_at', `${daysAgo(days)}T00:00:00+03:00`).order('collected_at', { ascending: false }).limit(1000);
   if (error) throw error;
   return (data as SampleRow[]).map((r) => ({ sampleId: r.sample_id, material: r.material, equipment: r.equipment, collectedAt: r.collected_at, note: r.note, results: r.results ?? [] }));
+}
+
+// ── The limit library (owner's spec of 25 Nov 2026) and its match rules: kept in the database only ──────────────────
+interface LimitRow { param_id: string; section: string; description: string; unit: string; target: string | null; normal_lo: number | null; normal_hi: number | null;
+  iow_std: string | null; iow_crit: string | null; trip: string | null; roc_max: string | null; source: string | null; action: string | null; status: Limit['status'] }
+interface MatchRow { param_id: string; kind: 'reading' | 'lab'; reading_key: string | null; scale: number | null; material: string | null; component: string | null; equipment: string | null }
+
+/** The current limits and which readings / lab results each one judges (empty until the library is loaded). */
+export async function fetchLimits(): Promise<{ limits: Map<string, Limit>; matches: LimitMatch[] }> {
+  const [l, m] = await Promise.all([supabase.from('unit_limits').select('param_id,section,description,unit,target,normal_lo,normal_hi,iow_std,iow_crit,trip,roc_max,source,action,status').neq('status', 'retired'),
+    supabase.from('unit_limit_matches').select('param_id,kind,reading_key,scale,material,component,equipment')]);
+  if (l.error || m.error) return { limits: new Map(), matches: [] };       // no library yet: the page shows values without colours
+  const limits = new Map((l.data as LimitRow[]).map((r) => [r.param_id, { paramId: r.param_id, section: r.section, description: r.description, unit: r.unit, target: r.target,
+    normalLo: r.normal_lo, normalHi: r.normal_hi, iowStd: r.iow_std, iowCrit: r.iow_crit, trip: r.trip, roc: r.roc_max, source: r.source, action: r.action, status: r.status } as Limit]));
+  const matches = (m.data as MatchRow[]).map((r): LimitMatch => (r.kind === 'reading'
+    ? { paramId: r.param_id, kind: 'reading', key: r.reading_key ?? '', scale: r.scale ?? 1 }
+    : { paramId: r.param_id, kind: 'lab', material: r.material ?? '', component: r.component ?? '', equipment: r.equipment ?? undefined }));
+  return { limits, matches };
 }

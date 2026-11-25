@@ -59,7 +59,8 @@ export function eventsIn(sections: RemarkSection[]): { word: string; text: strin
 export const readingBy = (l: StoredLog | undefined, key: string) => l?.readings.find((r) => r.key === key);
 /** Heater skin temperatures: "PASS-n SKIN TEMP (H-12-101/201)" rows as a pass × heater grid (TR-1 heater, TR-2 heater). */
 const SKIN = /^PASS(\d)SKINTEMPH(?:12)?(\d{3})(\d{3})$/;
-export interface SkinGrid { heaters: string[]; passes: { pass: number; values: (string | null)[] }[]; unit: string | null }
+/** keys: one per heater pair, with # where the pass number goes (to find the pair's limit). */
+export interface SkinGrid { heaters: string[]; passes: { pass: number; values: (string | null)[] }[]; unit: string | null; keys: string[] }
 export function skinGrid(readings: Reading[]): SkinGrid | null {
   const rows = readings.map((r) => ({ r, m: SKIN.exec(r.key) })).filter((x) => x.m);
   if (!rows.length) return null;
@@ -68,7 +69,8 @@ export function skinGrid(readings: Reading[]): SkinGrid | null {
   const passes = [...new Set(rows.map((x) => Number(x.m![1])))].sort((a, b) => a - b).map((pass) => ({
     pass, values: pairs.flatMap((p) => { const x = rows.find((y) => Number(y.m![1]) === pass && `${y.m![2]}/${y.m![3]}` === p); return [x?.r.tr1 ?? null, x?.r.tr2 ?? null]; }),
   }));
-  return { heaters, passes, unit: rows[0].r.unit };
+  const keys = pairs.map((p) => { const x = rows.find((y) => `${y.m![2]}/${y.m![3]}` === p)!; return x.r.key.replace(/^PASS\d/, 'PASS#'); });
+  return { heaters, passes, unit: rows[0].r.unit, keys };
 }
 export const isSkin = (r: Reading) => SKIN.test(r.key);
 
