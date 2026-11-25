@@ -5,7 +5,9 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { BottomSheet, Chip, EmptyState, ErrorBox, Spinner, cx } from '@/ui/components';
-import { fetchLabSamples, fetchLimits, fetchUnitLogs } from '@/data/unitLog';
+import { fetchLabSamples, fetchLimits, fetchOverrides, fetchUnitLogs } from '@/data/unitLog';
+import type { Override } from '@/core/logbook/board';
+import Overview from './Overview';
 import { limitBand, limitForLab, limitForReading, limitState, type Limit, type LimitMatch, type LimitState } from '@/core/logbook/limits';
 import {
   byShiftDesc, eventsIn, followUps, isSkin, kuwaitParts, labDays, labTrend, readingBy, samplePoint, samplesOn, sameShift, skinGrid, trendOf,
@@ -18,7 +20,7 @@ const when = (iso: string | null) => { const k = kuwaitParts(iso); return k ? `$
 const shiftName = (l: StoredLog) => `${day(l.date)} · ${l.shift ?? '?'}`;
 const pair = (a: string | null | undefined, b: string | null | undefined) => (a ?? '—') === (b ?? '—') ? (a ?? '—') : `${a ?? '—'} / ${b ?? '—'}`;
 
-type Tab = 'shift' | 'trains' | 'lab';
+type Tab = 'overview' | 'shift' | 'trains' | 'lab';
 
 // The limit library (owner's spec §4.1): a value is coloured by its traffic light; nothing is coloured without a library.
 interface Lib { limits: Map<string, Limit>; matches: LimitMatch[] }
@@ -47,27 +49,29 @@ function exceptionsOf(lib: Lib, log: StoredLog, lab: StoredSample[]): Exception[
   const rank = { critical: 0, breach: 1, off: 2, normal: 3 };
   return out.sort((a, b) => rank[a.state] - rank[b.state]);
 }
-const TABS: { key: Tab; label: string }[] = [{ key: 'shift', label: 'Shift log' }, { key: 'trains', label: 'Trains' }, { key: 'lab', label: 'Lab' }];
+const TABS: { key: Tab; label: string }[] = [{ key: 'overview', label: 'Overview' }, { key: 'trains', label: 'Trains' }, { key: 'lab', label: 'Lab' }, { key: 'shift', label: 'Shift log' }];
 
 export default function UnitLogPage() {
   const [params, setParams] = useSearchParams();
-  const tab = (TABS.find((x) => x.key === params.get('tab'))?.key ?? 'shift') as Tab;
+  const tab = (TABS.find((x) => x.key === params.get('tab'))?.key ?? 'overview') as Tab;
   const [logs, setLogs] = useState<StoredLog[] | null>(null);
   const [lab, setLab] = useState<StoredSample[] | null>(null);
   const [last, setLast] = useState<string | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const [i, setI] = useState(0);
   const [lib, setLib] = useState<Lib>({ limits: new Map(), matches: [] });
+  const [overrides, setOverrides] = useState<Override[]>([]);
 
   useEffect(() => {
     Promise.all([fetchUnitLogs(), fetchLabSamples()]).then(([l, s]) => { setLogs(l.logs); setLast(l.lastReceived); setLab(s); }).catch(setErr);
     fetchLimits().then(setLib).catch(() => undefined);
+    fetchOverrides().then(setOverrides).catch(() => undefined);
   }, []);
 
   const ards = useMemo(() => byShiftDesc((logs ?? []).filter((l) => l.kind === 'ards')), [logs]);
   if (err) return <ErrorBox error={err} />;
   if (!logs || !lab) return <Spinner />;
-  const go = (k: Tab) => { const n = new URLSearchParams(params); n.set('tab', k); setParams(n, { replace: true }); };
+  const go = (k: Tab) => { const n = new URLSearchParams(params); n.set('tab', k); n.delete('sec'); setParams(n, { replace: true }); };
 
   return (
     <LibCtx.Provider value={lib}>
@@ -75,14 +79,15 @@ export default function UnitLogPage() {
       <div className="flex gap-1 rounded-xl bg-slate-100 p-1 text-sm" role="tablist">
         {TABS.map((x) => (
           <button key={x.key} type="button" role="tab" aria-selected={tab === x.key} onClick={() => go(x.key)}
-            className={cx('min-h-9 flex-1 rounded-lg font-medium', tab === x.key ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{x.label}</button>
+            className={cx('min-h-11 flex-1 rounded-lg text-[15px] font-medium', tab === x.key ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{x.label}</button>
         ))}
       </div>
       {tab === 'lab' ? <LabView samples={lab} /> : !ards.length ? <EmptyState title="No shift log yet" body="Logs arrive after the 6:30 am and pm e-mail export on the Mac." /> : (
         <>
-          <Picker label={<><b>{shiftName(ards[i])}</b><div className="text-[12px] text-slate-500">{ards[i].crew ?? '?'} Shift · Log #{ards[i].logNo}</div></>}
+          <Picker label={<><b>{shiftName(ards[i])}</b><div className="text-[12.5px] text-slate-500">{ards[i].crew ?? '?'} Shift · Log #{ards[i].logNo}{tab === 'overview' ? ' · mode not set (Normal limits)' : ''}</div></>}
             older={i < ards.length - 1 ? () => setI(i + 1) : undefined} newer={i > 0 ? () => setI(i - 1) : undefined} />
-          {tab === 'shift' ? <ShiftView log={ards[i]} before={ards.slice(i + 1)} all={logs} lab={lab} /> : <TrainsView log={ards[i]} before={ards.slice(i + 1)} />}
+          {tab === 'overview' ? <Overview log={ards[i]} controller={logs.find((l) => l.kind === 'controller1' && sameShift(l, ards[i])) ?? null} lab={lab} limits={lib.limits} matches={lib.matches} overrides={overrides} />
+            : tab === 'shift' ? <ShiftView log={ards[i]} before={ards.slice(i + 1)} all={logs} lab={lab} /> : <TrainsView log={ards[i]} before={ards.slice(i + 1)} />}
         </>
       )}
       <p className="text-[11px] text-slate-500">From the log and lab e-mails, read at 6:30 am and pm{last ? ` · last received ${when(last)}` : ''}. {lib.limits.size
@@ -94,7 +99,7 @@ export default function UnitLogPage() {
 }
 
 function Picker({ label, older, newer }: { label: ReactNode; older?: () => void; newer?: () => void }) {
-  const b = 'h-10 w-10 shrink-0 rounded-xl bg-white text-lg ring-1 ring-slate-200 disabled:opacity-30';
+  const b = 'h-11 w-11 shrink-0 rounded-xl bg-white text-lg ring-1 ring-slate-200 disabled:opacity-30';
   return (
     <div className="flex items-center gap-2">
       <button type="button" className={b} disabled={!older} onClick={older} aria-label="Older">‹</button>

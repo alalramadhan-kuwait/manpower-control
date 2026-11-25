@@ -45,7 +45,7 @@ export function followUps(current: RemarkSection[], before: RemarkSection[][]): 
 }
 
 /** Remarks that report a trip, a leak, a fire or an emergency, with the word that matched. */
-const EVENT = /\b(trip(?:ped|s)?|leak(?:ing|age|s)?|fire|emergency)\b/i;
+const EVENT = /\b(trip(?:ped|led|s)?|leak(?:ing|age|s)?|fire|emergency)\b/i;
 export function eventsIn(sections: RemarkSection[]): { word: string; text: string; group: string }[] {
   const out: { word: string; text: string; group: string }[] = [];
   for (const it of itemsOf(sections)) {

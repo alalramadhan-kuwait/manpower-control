@@ -3,6 +3,7 @@
 import { supabase } from './supabase';
 import type { StoredLog, StoredSample } from '@/core/logbook/view';
 import type { Limit, LimitMatch } from '@/core/logbook/limits';
+import type { Override, TrainId } from '@/core/logbook/board';
 
 interface LogRow { kind: StoredLog['kind']; log_no: number; log_date: string; shift: string | null; crew: string | null; shift_day: string | null; recorded_at: string | null;
   sections: StoredLog['sections']; readings: StoredLog['readings']; feed: StoredLog['feed']; products: StoredLog['products']; received_at: string }
@@ -34,7 +35,7 @@ export async function fetchLabSamples(days = 30): Promise<StoredSample[]> {
 // ── The limit library (owner's spec of 25 Nov 2026) and its match rules: kept in the database only ──────────────────
 interface LimitRow { param_id: string; section: string; description: string; unit: string; target: string | null; normal_lo: number | null; normal_hi: number | null;
   iow_std: string | null; iow_crit: string | null; trip: string | null; roc_max: string | null; source: string | null; action: string | null; status: Limit['status'] }
-interface MatchRow { param_id: string; kind: 'reading' | 'lab'; reading_key: string | null; scale: number | null; material: string | null; component: string | null; equipment: string | null }
+interface MatchRow { param_id: string; kind: 'reading' | 'reading_sum' | 'lab'; reading_key: string | null; scale: number | null; material: string | null; component: string | null; equipment: string | null }
 
 /** The current limits and which readings / lab results each one judges (empty until the library is loaded). */
 export async function fetchLimits(): Promise<{ limits: Map<string, Limit>; matches: LimitMatch[] }> {
@@ -42,9 +43,17 @@ export async function fetchLimits(): Promise<{ limits: Map<string, Limit>; match
     supabase.from('unit_limit_matches').select('param_id,kind,reading_key,scale,material,component,equipment')]);
   if (l.error || m.error) return { limits: new Map(), matches: [] };       // no library yet: the page shows values without colours
   const limits = new Map((l.data as LimitRow[]).map((r) => [r.param_id, { paramId: r.param_id, section: r.section, description: r.description, unit: r.unit, target: r.target,
-    normalLo: r.normal_lo, normalHi: r.normal_hi, iowStd: r.iow_std, iowCrit: r.iow_crit, trip: r.trip, roc: r.roc_max, source: r.source, action: r.action, status: r.status } as Limit]));
-  const matches = (m.data as MatchRow[]).map((r): LimitMatch => (r.kind === 'reading'
-    ? { paramId: r.param_id, kind: 'reading', key: r.reading_key ?? '', scale: r.scale ?? 1 }
-    : { paramId: r.param_id, kind: 'lab', material: r.material ?? '', component: r.component ?? '', equipment: r.equipment ?? undefined }));
+    normalLo: r.normal_lo === null ? null : Number(r.normal_lo), normalHi: r.normal_hi === null ? null : Number(r.normal_hi), iowStd: r.iow_std, iowCrit: r.iow_crit, trip: r.trip, roc: r.roc_max, source: r.source, action: r.action, status: r.status } as Limit]));
+  const matches = (m.data as MatchRow[]).map((r): LimitMatch => (r.kind === 'lab'
+    ? { paramId: r.param_id, kind: 'lab', material: r.material ?? '', component: r.component ?? '', equipment: r.equipment ?? undefined }
+    : { paramId: r.param_id, kind: r.kind, key: r.reading_key ?? '', scale: Number(r.scale ?? 1) }));
   return { limits, matches };
+}
+
+/** Open overrides / bypasses (spec §5.1); they lead the handover. */
+export async function fetchOverrides(): Promise<Override[]> {
+  const { data, error } = await supabase.from('unit_overrides').select('id,train,item,tags,reason,moc,started_on,expires_on,source').eq('status', 'open').order('started_on');
+  if (error) return [];
+  return (data as { id: string; train: TrainId; item: string; tags: string | null; reason: string | null; moc: string | null; started_on: string | null; expires_on: string | null; source: string | null }[])
+    .map((r) => ({ id: r.id, train: r.train, item: r.item, tags: r.tags, reason: r.reason, moc: r.moc, startedOn: r.started_on, expiresOn: r.expires_on, source: r.source }));
 }

@@ -60,10 +60,12 @@ export const worse = (a: LimitState | null, b: LimitState | null): LimitState | 
 // ── Which library parameter a logbook reading or a lab result is judged by (the match rules are stored with the library)
 export interface ReadingMatch { kind: 'reading'; key: string; scale?: number }
 export interface LabMatch { kind: 'lab'; material: string; component: string; equipment?: string }
-export type LimitMatch = (ReadingMatch | LabMatch) & { paramId: string };
+/** Several readings added per train (injection water: the four passes against the per-train limit). */
+export interface SumMatch { kind: 'reading_sum'; key: string; scale?: number }
+export type LimitMatch = (ReadingMatch | LabMatch | SumMatch) & { paramId: string };
 
 /** Reading keys are matched exactly, or as a pattern when the rule is written /…/. */
-const keyMatches = (rule: string, key: string) => (rule.startsWith('/') && rule.endsWith('/') ? new RegExp(rule.slice(1, -1)).test(key) : rule === key);
+export const keyMatches = (rule: string, key: string) => (rule.startsWith('/') && rule.endsWith('/') ? new RegExp(rule.slice(1, -1)).test(key) : rule === key);
 export function limitForReading(key: string, matches: LimitMatch[], limits: Map<string, Limit>) {
   const m = matches.find((x): x is ReadingMatch & { paramId: string } => x.kind === 'reading' && keyMatches(x.key, key));
   const l = m && limits.get(m.paramId);
