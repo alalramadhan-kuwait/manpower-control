@@ -27,6 +27,7 @@ describe('parseRemarks', () => {
       { group: 'OCR', items: ['Pump A started after the check.'] },
       { group: 'TR-1', items: ['Feed steady', 'Valve B closed'] },
     ] }]);
+    expect(parseRemarks([page([pc(44, 10, 'FIELD OPERATOR Remarks'), pc(44, 30, '# all normal'), pc(44, 45, 'FIELD OPERATOR READINGS'), pc(44, 60, 'stray')])])[0].groups[0].items).toEqual(['all normal']);
   });
   it('reads the other section’s plain headings and numbered items', () => {
     const s = parseRemarks([page([pc(59, 100, 'CONTROL ROOM OPERATOR'), pc(44, 120, 'Unit-9'), pc(44, 135, 'Feed rate 10.'), pc(44, 150, '1) Pump X running'), pc(44, 200, 'FEED & PRODUCTS - Unit-9')])]);
@@ -37,6 +38,10 @@ describe('parseRemarks', () => {
 describe('parseControllerArds', () => {
   it('keeps only the unit’s own section', () => {
     const s = parseControllerArds([page([pc(44, 50, 'Section-1 U-12 ARDS'), pc(44, 70, '# ours'), pc(44, 90, 'Section-2 U-15 Other'), pc(44, 110, '# theirs')])]);
+    expect(s).toEqual([{ role: 'CONTROLLER I', groups: [{ group: '', items: ['ours'] }] }]);
+  });
+  it('stops at the tables that follow the remarks', () => {
+    const s = parseControllerArds([page([pc(44, 50, 'Section-1 U-12 ARDS'), pc(44, 70, '# ours'), pc(44, 90, 'TRAIN-1 FEED'), pc(200, 90, 'OCR'), pc(44, 110, '5 Cold Feed')])]);
     expect(s).toEqual([{ role: 'CONTROLLER I', groups: [{ group: '', items: ['ours'] }] }]);
   });
 });

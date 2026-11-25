@@ -61,7 +61,7 @@ const GROUP = /^(OCR|LP|HP|Low Pressure|High Pressure|Utilities|General|Common|T
 const ITEM = /^([#*•-]|\d{1,2}[).])/;
 const isGroup = (t: string) => !ITEM.test(t) && t.length <= 30 && (GROUP.test(t) || /:$/.test(t));
 /** Headings of the tables that follow the remarks (they end a remark section). */
-const TABLE_HEAD = /^(FEED & PRODUCTS|HIGH PRESSURE SECTION|LOW PRESSURE SECTION|Train\s*1\s*&\s*2|Lab Test Results|ByPass Conditions|Feed & frequency|Products$)/i;
+const TABLE_HEAD = /^(FEED & PRODUCTS|HIGH PRESSURE SECTION|LOW PRESSURE SECTION|Train\s*1\s*&\s*2|Lab Test Results|ByPass Conditions|Feed & frequency|Products$|.*\bREADINGS$)/i;
 /** The same reading across logs, whatever the spacing or a dash lost at a page break ("PASS 2 … (H 12-102" = "PASS-2 … (H-12-102"). */
 export const readingKey = (label: string) => label.toUpperCase().replace(/[^A-Z0-9]/g, '');
 const addLine = (g: RemarkGroup, t: string) => {
@@ -99,6 +99,8 @@ export function parseControllerArds(pages: Page[]): RemarkSection[] {
     const t = l.text;
     if (/^Section-\d/i.test(t)) { on = /U-?12\b.*ARDS|ARDS.*U-?12\b/i.test(t); continue; }
     if (!on) continue;
+    // the remarks are single left-aligned lines; a table (several pieces on a line) or a table heading ends them
+    if (l.pieces.length > 1 || l.pieces[0].x > 50 || TABLE_HEAD.test(t)) { on = false; continue; }
     if (isGroup(t)) { groups.push({ group: t.replace(/:$/, '').trim(), items: [] }); continue; }
     let g = groups[groups.length - 1];
     if (!g) { g = { group: '', items: [] }; groups.push(g); }
