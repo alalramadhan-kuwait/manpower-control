@@ -1,5 +1,5 @@
-// Unit log › Overview (owner, 25 Nov 2026, after two team reviews): TR-1 · TR-2 · Common cards across the top (each
-// opens that train's page: its handover, counts and section tiles), then the handover, then one tile per section; a tile
+// Unit log › Overview (owner, 25 Nov 2026, after two team reviews): TR-1, TR-2 and Common full-width cards with each
+// train's key figures first (each opens that train's page: its handover, counts and section tiles), then the handover, then one tile per section; a tile
 // opens its drawing and every library limit of that section. Statuses come from the owner's limit library as
 // written (src/core/logbook/board.ts); a limit with no reading is shown as "not checked", never as fine.
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -7,6 +7,7 @@ import { useSearchParams } from 'react-router-dom';
 import { cx } from '@/ui/components';
 import { checksOf, handover, summarize, trainOfEquipment, whatsappText, type BoardInput, type Check, type HandoverLine, type SectionId, type St, type TrainId } from '@/core/logbook/board';
 import { kuwaitParts, type StoredLog, type StoredSample } from '@/core/logbook/view';
+import type { ProductRow } from '@/core/logbook/parse';
 import { iowBand, type Limit, type LimitMatch } from '@/core/logbook/limits';
 import type { Override } from '@/core/logbook/board';
 import { drawSection, tileIcon, type DrawCtx } from './drawings';
@@ -53,7 +54,7 @@ export default function Overview(p: OverviewProps) {
   const cat = ['CATALYSTADDITIONTR1TR2', 'CATALYSTWITHDRWALTR1TR2'].map((k) => p.log.readings.find((r) => r.key === k));
   return (
     <div className="space-y-2.5">
-      <TrainCards checks={checks} overrides={p.overrides} k={k} pick={(t) => nav({ train: t })} />
+      <TrainCards checks={checks} overrides={p.overrides} products={p.log.products} pick={(t) => nav({ train: t })} />
       <HandoverCard lines={lines} />
       <div className="flex gap-2">
         <a href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer" className="grid min-h-11 flex-1 place-items-center rounded-xl bg-brand-800 text-[15px] font-bold text-white">Share to WhatsApp</a>
@@ -101,19 +102,47 @@ function counts(checks: Check[], overrides: Override[], t: TrainId) {
   return { ...c, st };
 }
 
-/** TR-1 · TR-2 · Common across the top; each opens that train's page. */
-function TrainCards({ checks, overrides, k, pick }: { checks: Check[]; overrides: Override[]; k: Keys; pick: (t: TrainId) => void }) {
+/** The key figures on each train's card (owner, 25 Nov 2026: "train 1 card will show the KPI for train 1"); each is a library
+ *  parameter, so its colour is that train's check. Common adds the products of the shift. */
+const KPI: Record<TrainId, { id: string; label: string }[]> = {
+  'TR-1': [{ id: 'FEED-RATE', label: 'Feed' }, { id: 'FB-CAT', label: 'WABT' }, { id: 'OCR-TIN', label: 'OCR in' }, { id: 'OCR-MAXBED', label: 'OCR bed' },
+    { id: 'RG-PURITY', label: 'H₂ purity' }, { id: 'MEA-CONC', label: 'Rich MEA' }, { id: 'H1-SKIN', label: 'Skin max' }, { id: 'H1-INJW', label: 'Inj. water' }],
+  'TR-2': [], Common: [{ id: 'NAP-H2S', label: 'Naph. H₂S' }, { id: 'SW-CL', label: 'SW Cl' }, { id: 'SW-FE', label: 'SW Fe' }, { id: 'SW-PH', label: 'SW pH' }],
+};
+KPI['TR-2'] = KPI['TR-1'];
+const UNIT_SHORT: Record<string, string> = { KBPD: 'KBPD', '°F': '°F', '%vol': '%', '%wt': '%', 'wt%': '%', gpm: 'gpm', ppm: 'ppm', pH: '' };
+
+/** TR-1, TR-2 and Common, one full-width card each: counts, then that train's key figures; each opens the train's page. */
+function TrainCards({ checks, overrides, products, pick }: { checks: Check[]; overrides: Override[]; products: ProductRow[]; pick: (t: TrainId) => void }) {
+  const kpis = (t: TrainId) => KPI[t].map((x) => { const c = checks.find((y) => y.paramId === x.id && (y.train === t || (t !== 'Common' && y.train === 'Common'))); return { ...x, c }; }).filter((x) => x.c);
+  const prods = products.filter((x) => x.value && /naphtha|distillate|diesel|lsar/i.test(x.product)).slice(0, 4);
   return (
-    <div className="grid grid-cols-3 gap-2">
+    <div className="space-y-2">
       {TRAINS.map((t) => { const c = counts(checks, overrides, t); return (
-        <button key={t} type="button" onClick={() => pick(t)} className={cx('flex min-h-[104px] flex-col rounded-2xl bg-white p-2.5 text-left', TILE[c.st])}>
-          <span className="text-[17px] font-bold leading-tight text-brand-800">{t}</span>
-          {(c.bad + c.ov) > 0 && <span className="text-[12.5px] font-bold leading-tight text-red-700">● {c.bad + c.ov} {c.ov ? (c.bad ? 'IOW / ovr' : 'override') : 'IOW'}</span>}
-          {c.off > 0 && <span className="text-[12.5px] font-bold leading-tight text-amber-800">▲ {c.off} off</span>}
-          {c.chk > 0 && <span className="text-[12.5px] font-bold leading-tight text-slate-600">⚑ {c.chk} check</span>}
-          {c.st === 'ok' && <span className="text-[12.5px] font-bold text-green-700">✓ In range</span>}
-          <span className="mt-auto pt-1 text-[12px] leading-snug text-slate-600 [&_b]:text-slate-900" dangerouslySetInnerHTML={{ __html: t === 'Common' ? k.one('frac', t) : k.one('feed', t) }} />
-          <span className="text-right text-[13px] font-bold text-brand-800">›</span>
+        <button key={t} type="button" onClick={() => pick(t)} className={cx('block w-full rounded-2xl bg-white p-2.5 text-left', TILE[c.st])}>
+          <span className="flex items-center gap-2">
+            <span className="text-[18px] font-bold leading-none text-brand-800">{TNAME[t]}</span>
+            <span className="flex min-w-0 flex-1 flex-wrap justify-end gap-x-2 text-[12.5px] font-bold">
+              {(c.bad + c.ov) > 0 && <span className="text-red-700">● {c.bad ? `${c.bad} IOW` : ''}{c.bad && c.ov ? ' · ' : ''}{c.ov ? `${c.ov} override` : ''}</span>}
+              {c.off > 0 && <span className="text-amber-800">▲ {c.off} off</span>}
+              {c.chk > 0 && <span className="text-slate-600">⚑ {c.chk}</span>}
+              {c.st === 'ok' && <span className="text-green-700">✓ In range</span>}
+            </span>
+            <span className="text-[18px] font-bold leading-none text-brand-800">›</span>
+          </span>
+          <span className="mt-2 grid grid-cols-4 gap-1">
+            {kpis(t).map(({ id, label, c: k }) => (
+              <span key={id} className={cx('flex flex-col rounded-lg px-1.5 py-1', k!.state === 'ok' ? 'bg-slate-50' : PILL[k!.state])}>
+                <span className="truncate text-[11px] font-semibold leading-tight text-slate-500">{label}</span>
+                <span className={cx('whitespace-nowrap text-[15px] font-bold leading-tight tabular-nums', k!.state === 'ok' ? 'text-slate-900' : TXT[k!.state])}>
+                  {k!.state !== 'ok' ? `${ICON[k!.state]} ` : ''}{k!.value ?? '—'}<span className="text-[10.5px] font-semibold text-slate-500"> {UNIT_SHORT[k!.unit] ?? k!.unit}</span></span>
+              </span>))}
+            {t === 'Common' && prods.map((x) => (
+              <span key={x.product} className="flex flex-col rounded-lg bg-slate-50 px-1.5 py-1">
+                <span className="truncate text-[11px] font-semibold leading-tight text-slate-500">{x.product.replace(/\s*\(.*\)/, '')}</span>
+                <span className="whitespace-nowrap text-[15px] font-bold leading-tight tabular-nums text-slate-900">{x.value}<span className="text-[10.5px] font-semibold text-slate-500"> {x.unit ?? ''}</span></span>
+              </span>))}
+          </span>
         </button>); })}
     </div>
   );
