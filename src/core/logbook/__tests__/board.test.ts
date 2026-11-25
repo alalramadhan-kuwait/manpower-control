@@ -58,6 +58,8 @@ describe('sections and incidents', () => {
     const s = summarize(checksOf(input), overrides);
     expect([s.feed.off, s.feed.state, s.heat.off, s.heat.chk, s.heat.grey, s.gas.bad, s.gas.state, s.sep.grey, s.sep.greyIow, s.frac.off]).toEqual([1, 'off', 1, 1, 1, 3, 'bad', 1, 1, 1]);
     expect(sectionOf(lim[0])).toBe('feed');
+    const t1 = summarize(checksOf(input), overrides, 'TR-1'), t2 = summarize(checksOf(input), overrides, 'TR-2');
+    expect([t1.feed.off, t2.feed.off, t1.gas.bad, t2.gas.bad, t1.heat.chk, summarize(checksOf(input), overrides, 'Common').frac.off]).toEqual([0, 1, 1, 2, 1, 1]);
   });
   it('joins remarks about the same trip (same time or same tag) and keeps its train', () => {
     const inc = incidentsOf(log, ctl);

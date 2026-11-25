@@ -111,13 +111,14 @@ function copiedSkins(log: StoredLog, checks: Check[]): Check[] {
 }
 
 export interface SectionSummary { id: SectionId; bad: number; off: number; chk: number; grey: number; greyIow: number; state: St }
-export function summarize(checks: Check[], overrides: Override[]): Record<SectionId, SectionSummary> {
+/** Counts per section; with `train`, only that train's checks (and its overrides). */
+export function summarize(checks: Check[], overrides: Override[], train?: TrainId): Record<SectionId, SectionSummary> {
   const ids: SectionId[] = ['feed', 'heat', 'rx', 'gas', 'sep', 'frac'];
   return Object.fromEntries(ids.map((id) => {
-    const cs = checks.filter((c) => c.section === id);
+    const cs = checks.filter((c) => c.section === id && (!train || c.train === train));
     const greyParams = new Set(cs.filter((c) => c.state === 'grey').map((c) => c.paramId));
     const greyIow = [...greyParams].filter((p) => { const l = cs.find((c) => c.paramId === p)!.limit; return !!iowBand(l.iowStd) || !!iowBand(l.iowCrit); }).length;
-    const ov = id === 'gas' ? overrides.filter((o) => /C-?(12-)?[12]01|compressor/i.test(o.item)).length : 0;
+    const ov = id === 'gas' ? overrides.filter((o) => (!train || o.train === train) && /C-?(12-)?[12]01|compressor/i.test(o.item)).length : 0;
     const s = { id, bad: cs.filter((c) => c.state === 'bad').length + ov, off: cs.filter((c) => c.state === 'off').length, chk: cs.filter((c) => c.state === 'chk').length, grey: greyParams.size, greyIow };
     const state: St = s.bad ? 'bad' : s.off ? 'off' : s.chk ? 'chk' : s.grey ? 'grey' : 'ok';
     return [id, { ...s, state }];

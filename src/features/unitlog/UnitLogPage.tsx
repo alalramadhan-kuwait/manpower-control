@@ -71,7 +71,7 @@ export default function UnitLogPage() {
   const ards = useMemo(() => byShiftDesc((logs ?? []).filter((l) => l.kind === 'ards')), [logs]);
   if (err) return <ErrorBox error={err} />;
   if (!logs || !lab) return <Spinner />;
-  const go = (k: Tab) => { const n = new URLSearchParams(params); n.set('tab', k); n.delete('sec'); setParams(n, { replace: true }); };
+  const go = (k: Tab) => { const n = new URLSearchParams(params); n.set('tab', k); n.delete('sec'); n.delete('train'); n.delete('side'); setParams(n, { replace: true }); };
 
   return (
     <LibCtx.Provider value={lib}>

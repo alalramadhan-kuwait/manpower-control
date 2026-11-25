@@ -1,10 +1,11 @@
-// Unit log › Overview (owner, 25 Nov 2026, after two team reviews): the handover first, then one tile per section;
-// a tile opens its drawing and every library limit of that section. Statuses come from the owner's limit library as
+// Unit log › Overview (owner, 25 Nov 2026, after two team reviews): TR-1 · TR-2 · Common cards across the top (each
+// opens that train's page: its handover, counts and section tiles), then the handover, then one tile per section; a tile
+// opens its drawing and every library limit of that section. Statuses come from the owner's limit library as
 // written (src/core/logbook/board.ts); a limit with no reading is shown as "not checked", never as fine.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { cx } from '@/ui/components';
-import { checksOf, handover, summarize, trainOfEquipment, whatsappText, type BoardInput, type Check, type SectionId, type St, type TrainId } from '@/core/logbook/board';
+import { checksOf, handover, summarize, trainOfEquipment, whatsappText, type BoardInput, type Check, type HandoverLine, type SectionId, type St, type TrainId } from '@/core/logbook/board';
 import { kuwaitParts, type StoredLog, type StoredSample } from '@/core/logbook/view';
 import { iowBand, type Limit, type LimitMatch } from '@/core/logbook/limits';
 import type { Override } from '@/core/logbook/board';
@@ -16,6 +17,8 @@ const PILL: Record<St, string> = { bad: 'bg-red-50 text-red-700', off: 'bg-amber
 const TILE: Record<St, string> = { bad: 'border-2 border-red-600', off: 'border-2 border-amber-500', chk: 'border border-slate-300', grey: 'border-2 border-dashed border-slate-400', ok: 'border border-slate-200' };
 const NAMES: Record<SectionId, string> = { feed: 'Feed & charge', heat: 'Heaters', rx: 'Reactors', gas: 'Gas loop', sep: 'Separators & water', frac: 'Fractionation' };
 const ORDER: SectionId[] = ['feed', 'heat', 'rx', 'gas', 'sep', 'frac'];
+const TRAINS: TrainId[] = ['TR-1', 'TR-2', 'Common'];
+const TNAME: Record<TrainId, string> = { 'TR-1': 'Train 1', 'TR-2': 'Train 2', Common: 'Common' };
 
 function Svg({ make }: { make: () => SVGSVGElement }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -28,41 +31,30 @@ export interface OverviewProps { log: StoredLog; controller: StoredLog | null; l
 export default function Overview(p: OverviewProps) {
   const [params, setParams] = useSearchParams();
   const sec = ORDER.find((x) => x === params.get('sec')) ?? null;
+  const train = TRAINS.find((t) => t === params.get('train')) ?? null;
+  const side: 1 | 2 = params.get('side') === '2' ? 2 : 1;
   const input: BoardInput = { log: p.log, controller: p.controller, lab: p.lab, limits: p.limits, matches: p.matches, overrides: p.overrides };
   const checks = useMemo(() => checksOf(input), [p.log, p.controller, p.lab, p.limits, p.matches]); // eslint-disable-line react-hooks/exhaustive-deps
-  const open = (s: SectionId | null) => { const nx = new URLSearchParams(params); if (s) nx.set('sec', s); else nx.delete('sec'); setParams(nx); };
+  const nav = (set: Record<string, string | null>) => { const nx = new URLSearchParams(params); for (const [k, v] of Object.entries(set)) { if (v) nx.set(k, v); else nx.delete(k); } setParams(nx); };
   if (!p.limits.size) return <p className="rounded-2xl bg-white p-4 text-[14px] text-slate-600 ring-1 ring-slate-200">The limit library is not loaded, so nothing can be checked yet.</p>;
-  if (sec) return <SectionPage sec={sec} checks={checks} {...p} back={() => open(null)} />;
+  if (sec) return <SectionPage sec={sec} checks={checks} {...p} side={side} setSide={(t) => nav({ side: String(t) })} backTo={train ? TNAME[train] : 'Overview'} back={() => nav({ sec: null, side: null })} />;
+
+  const lines = handover(input, checks);
+  const k = keys(p);
+  const openSec = (id: SectionId, t?: TrainId) => nav({ sec: id, side: t === 'TR-2' ? '2' : null });
+  if (train) return <TrainPage {...p} train={train} checks={checks} lines={lines} k={k} pick={(t) => nav({ train: t })} back={() => nav({ train: null })} openSec={(id) => openSec(id, train)} />;
 
   const sum = summarize(checks, p.overrides);
-  const lines = handover(input, checks);
   const text = whatsappText(p.log, lines);
   const all = Object.values(sum);
   const greyParams = new Set(checks.filter((c) => c.state === 'grey').map((c) => c.paramId));
   const greyIow = [...greyParams].filter((id) => { const l = p.limits.get(id)!; return !!iowBand(l.iowStd) || !!iowBand(l.iowCrit); }).length;
   const tot = { bad: checks.filter((c) => c.state === 'bad').length, ov: p.overrides.length, off: all.reduce((n, s) => n + s.off, 0), chk: all.reduce((n, s) => n + s.chk, 0) };
-  const val = (key: string, t: 'tr1' | 'tr2') => p.log.readings.find((r) => r.key === key)?.[t] ?? '—';
-  const labOf = (material: string, comp: string, train: TrainId) => p.lab.find((s) => kuwaitParts(s.collectedAt)?.date === p.log.date && s.material === material && trainOfEquipment(s.equipment) === train)?.results.find((r) => r.component === comp)?.value ?? '—';
-  const skinMax = (t: 'tr1' | 'tr2') => { const xs = p.log.readings.filter((r) => /^PASS\dSKINTEMPH12/.test(r.key)).map((r) => Number(r[t])).filter((x) => Number.isFinite(x) && r0(x)); return xs.length ? String(Math.max(...xs)) : '—'; };
-  const key: Record<SectionId, string> = {
-    feed: `Feed TR-1 <b>${val('FEEDRATE', 'tr1')}</b> · TR-2 <b>${val('FEEDRATE', 'tr2')}</b> KBPD`,
-    heat: `Skin max TR-1 <b>${skinMax('tr1')}</b> · TR-2 <b>${skinMax('tr2')}</b> °F`,
-    rx: `OCR inlet TR-1 <b>${val('INLETTEMPERATURER12105205', 'tr1')}</b> · TR-2 <b>${val('INLETTEMPERATURER12105205', 'tr2')}</b> °F`,
-    gas: `Total MEA TR-1 <b>${labOf('RICH MEA', 'Total MEA', 'TR-1')}</b> · TR-2 <b>${labOf('RICH MEA', 'Total MEA', 'TR-2')}</b> wt%`,
-    sep: `Wash water TR-1 <b>${val('WASHWATERRATE', 'tr1')}</b> · TR-2 <b>${val('WASHWATERRATE', 'tr2')}</b> gpm`,
-    frac: `Naphtha H₂S <b>${p.lab.filter((s) => kuwaitParts(s.collectedAt)?.date === p.log.date && s.material === 'NAPHTHA').map((s) => s.results.find((r) => r.component === 'H2S')?.value).filter(Boolean).join(' · ') || '—'}</b> ppm`,
-  };
   const cat = ['CATALYSTADDITIONTR1TR2', 'CATALYSTWITHDRWALTR1TR2'].map((k) => p.log.readings.find((r) => r.key === k));
   return (
     <div className="space-y-2.5">
-      {lines.length > 0 && <div className="rounded-2xl bg-white px-3 py-1 ring-1 ring-slate-200">
-        {lines.map((l) => (
-          <div key={l.key} className="flex gap-2.5 border-t border-slate-100 py-2 text-[14.5px] first:border-0">
-            <span className={cx('w-[66px] shrink-0 font-bold', l.key.startsWith('TR') ? 'text-brand-800' : 'text-slate-900')}>{l.key}</span>
-            <span className="min-w-0">{l.items.slice(0, 4).map((x, k) => <span key={k} className={cx(x.st !== 'ok' && TXT[x.st], x.st === 'bad' && 'font-semibold')}>{k ? ' · ' : ''}{ICON[x.st]} {x.text}</span>)}{l.items.length > 4 && <span className="text-slate-500"> · +{l.items.length - 4}</span>}</span>
-          </div>
-        ))}
-      </div>}
+      <TrainCards checks={checks} overrides={p.overrides} k={k} pick={(t) => nav({ train: t })} />
+      <HandoverCard lines={lines} />
       <div className="flex gap-2">
         <a href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer" className="grid min-h-11 flex-1 place-items-center rounded-xl bg-brand-800 text-[15px] font-bold text-white">Share to WhatsApp</a>
         <CopyButton text={text} />
@@ -74,25 +66,121 @@ export default function Overview(p: OverviewProps) {
         {tot.chk > 0 && <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-slate-600">⚑ {tot.chk} check</span>}
       </div>
       {greyParams.size > 0 && <p className="px-1 text-[12.5px] text-slate-500">{greyParams.size} limits have no reading in this e-logbook; they come with panel entry.</p>}
-      <div className="grid grid-cols-2 gap-2">
-        {ORDER.map((id) => { const s = sum[id]; const st = s.state; return (
-          <button key={id} type="button" onClick={() => open(id)} className={cx('flex min-h-[128px] flex-col rounded-2xl bg-white p-2.5 text-left', TILE[st])}>
-            <Svg make={() => tileIcon(id)} />
-            <span className="mt-1 text-[15px] font-bold leading-tight text-slate-900">{NAMES[id]}</span>
-            {s.bad > 0 && <span className="text-[12.5px] font-bold leading-tight text-red-700">● {s.bad} {id === 'gas' && p.overrides.length ? 'IOW / override' : 'IOW breach'}</span>}
-            {s.off > 0 && <span className="text-[12.5px] font-bold leading-tight text-amber-800">▲ {s.off} off target</span>}
-            {s.grey > 0 && <span className="text-[12.5px] font-bold leading-tight text-slate-600">○ {s.grey} not checked{s.greyIow ? ` · ${s.greyIow} IOW` : ''}</span>}
-            {s.chk > 0 && <span className="text-[12.5px] font-bold leading-tight text-slate-600">⚑ {s.chk} check</span>}
-            {st === 'ok' && <span className="text-[12.5px] font-bold text-green-700">✓ In range</span>}
-            <span className="mt-auto pt-1 text-[12.5px] leading-snug text-slate-600 [&_b]:text-slate-900" dangerouslySetInnerHTML={{ __html: key[id] }} />
-          </button>); })}
-      </div>
+      <Tiles ids={ORDER} sum={sum} line={(id) => k.both[id]} gasOverride={p.overrides.length > 0} open={(id) => openSec(id)} />
       {cat.some(Boolean) && <div className="flex gap-2.5 rounded-xl bg-white px-3 py-2 text-[14px] ring-1 ring-slate-200"><b className="shrink-0">Catalyst</b>
         <span>addition {cat[0]?.tr1 ?? '—'} / {cat[0]?.tr2 ?? '—'} · withdrawal {cat[1]?.tr1 ?? '—'} / {cat[1]?.tr2 ?? '—'} <span className="text-slate-500">(TR-1 / TR-2)</span></span></div>}
     </div>
   );
 }
-const r0 = (x: number) => x > 0;
+
+/** Each tile's key figure: for both trains (Overview) or one train (its page). */
+interface Keys { both: Record<SectionId, string>; one: (id: SectionId, t: TrainId) => string; cat: (t: TrainId) => string | null }
+function keys(p: OverviewProps): Keys {
+  const val = (key: string, t: 'tr1' | 'tr2') => p.log.readings.find((r) => r.key === key)?.[t] ?? '—';
+  const day = p.lab.filter((s) => kuwaitParts(s.collectedAt)?.date === p.log.date);
+  const labOf = (material: string, comp: string, train: TrainId) => day.find((s) => s.material === material && trainOfEquipment(s.equipment) === train)?.results.find((r) => r.component === comp)?.value ?? '—';
+  const skinMax = (t: 'tr1' | 'tr2') => { const xs = p.log.readings.filter((r) => /^PASS\dSKINTEMPH12/.test(r.key)).map((r) => Number(r[t])).filter((x) => Number.isFinite(x) && x > 0); return xs.length ? String(Math.max(...xs)) : '—'; };
+  const naphtha = day.filter((s) => s.material === 'NAPHTHA').map((s) => s.results.find((r) => r.component === 'H2S')?.value).filter(Boolean).join(' · ') || '—';
+  const one = (id: SectionId, t: TrainId): string => {
+    if (id === 'frac') return `Naphtha H₂S <b>${naphtha}</b> ppm`;
+    if (t === 'Common') return '';
+    const s = t === 'TR-2' ? 'tr2' : 'tr1';
+    return { feed: `Feed <b>${val('FEEDRATE', s)}</b> KBPD`, heat: `Skin max <b>${skinMax(s)}</b> °F`, rx: `OCR inlet <b>${val('INLETTEMPERATURER12105205', s)}</b> °F`,
+      gas: `Total MEA <b>${labOf('RICH MEA', 'Total MEA', t)}</b> wt%`, sep: `Wash water <b>${val('WASHWATERRATE', s)}</b> gpm` }[id];
+  };
+  const both = Object.fromEntries(ORDER.map((id) => [id, id === 'frac' ? one(id, 'Common') : one(id, 'TR-1').replace('<b>', 'TR-1 <b>').replace(/ (\S+)$/, '') + ` · TR-2 ${one(id, 'TR-2').replace(/^.*?<b>/, '<b>')}`])) as Record<SectionId, string>;
+  const cat = (t: TrainId) => { if (t === 'Common') return null; const s = t === 'TR-2' ? 'tr2' : 'tr1'; const r = ['CATALYSTADDITIONTR1TR2', 'CATALYSTWITHDRWALTR1TR2'].map((k) => p.log.readings.find((x) => x.key === k)?.[s]); return r.some(Boolean) ? `addition ${r[0] ?? '—'} · withdrawal ${r[1] ?? '—'}` : null; };
+  return { both, one, cat };
+}
+
+function counts(checks: Check[], overrides: Override[], t: TrainId) {
+  const cs = checks.filter((c) => c.train === t);
+  const ov = overrides.filter((o) => o.train === t).length;
+  const c = { bad: cs.filter((x) => x.state === 'bad').length, ov, off: cs.filter((x) => x.state === 'off').length, chk: cs.filter((x) => x.state === 'chk').length, grey: new Set(cs.filter((x) => x.state === 'grey').map((x) => x.paramId)).size };
+  const st: St = c.bad || c.ov ? 'bad' : c.off ? 'off' : c.chk ? 'chk' : c.grey ? 'grey' : 'ok';
+  return { ...c, st };
+}
+
+/** TR-1 · TR-2 · Common across the top; each opens that train's page. */
+function TrainCards({ checks, overrides, k, pick }: { checks: Check[]; overrides: Override[]; k: Keys; pick: (t: TrainId) => void }) {
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {TRAINS.map((t) => { const c = counts(checks, overrides, t); return (
+        <button key={t} type="button" onClick={() => pick(t)} className={cx('flex min-h-[104px] flex-col rounded-2xl bg-white p-2.5 text-left', TILE[c.st])}>
+          <span className="text-[17px] font-bold leading-tight text-brand-800">{t}</span>
+          {(c.bad + c.ov) > 0 && <span className="text-[12.5px] font-bold leading-tight text-red-700">● {c.bad + c.ov} {c.ov ? (c.bad ? 'IOW / ovr' : 'override') : 'IOW'}</span>}
+          {c.off > 0 && <span className="text-[12.5px] font-bold leading-tight text-amber-800">▲ {c.off} off</span>}
+          {c.chk > 0 && <span className="text-[12.5px] font-bold leading-tight text-slate-600">⚑ {c.chk} check</span>}
+          {c.st === 'ok' && <span className="text-[12.5px] font-bold text-green-700">✓ In range</span>}
+          <span className="mt-auto pt-1 text-[12px] leading-snug text-slate-600 [&_b]:text-slate-900" dangerouslySetInnerHTML={{ __html: t === 'Common' ? k.one('frac', t) : k.one('feed', t) }} />
+          <span className="text-right text-[13px] font-bold text-brand-800">›</span>
+        </button>); })}
+    </div>
+  );
+}
+
+function Tiles({ ids, sum, line, gasOverride, open }: { ids: SectionId[]; sum: ReturnType<typeof summarize>; line: (id: SectionId) => string; gasOverride: boolean; open: (id: SectionId) => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {ids.map((id) => { const s = sum[id]; const st = s.state; return (
+        <button key={id} type="button" onClick={() => open(id)} className={cx('flex min-h-[128px] flex-col rounded-2xl bg-white p-2.5 text-left', TILE[st])}>
+          <Svg make={() => tileIcon(id)} />
+          <span className="mt-1 text-[15px] font-bold leading-tight text-slate-900">{NAMES[id]}</span>
+          {s.bad > 0 && <span className="text-[12.5px] font-bold leading-tight text-red-700">● {s.bad} {id === 'gas' && gasOverride ? 'IOW / override' : 'IOW breach'}</span>}
+          {s.off > 0 && <span className="text-[12.5px] font-bold leading-tight text-amber-800">▲ {s.off} off target</span>}
+          {s.grey > 0 && <span className="text-[12.5px] font-bold leading-tight text-slate-600">○ {s.grey} not checked{s.greyIow ? ` · ${s.greyIow} IOW` : ''}</span>}
+          {s.chk > 0 && <span className="text-[12.5px] font-bold leading-tight text-slate-600">⚑ {s.chk} check</span>}
+          {st === 'ok' && <span className="text-[12.5px] font-bold text-green-700">✓ In range</span>}
+          <span className="mt-auto pt-1 text-[12.5px] leading-snug text-slate-600 [&_b]:text-slate-900" dangerouslySetInnerHTML={{ __html: line(id) }} />
+        </button>); })}
+    </div>
+  );
+}
+
+function HandoverCard({ lines, all = false }: { lines: HandoverLine[]; all?: boolean }) {
+  if (!lines.length) return null;
+  return (
+    <div className="rounded-2xl bg-white px-3 py-1 ring-1 ring-slate-200">
+      {lines.map((l) => (
+        <div key={l.key} className="flex gap-2.5 border-t border-slate-100 py-2 text-[14.5px] first:border-0">
+          <span className={cx('w-[66px] shrink-0 font-bold leading-tight', l.key.startsWith('TR') ? 'text-brand-800' : 'text-slate-900')}>{l.key}</span>
+          <span className="min-w-0">{l.items.slice(0, all ? undefined : 4).map((x, k) => <span key={k} className={cx(x.st !== 'ok' && TXT[x.st], x.st === 'bad' && 'font-semibold')}>{k ? ' · ' : ''}{ICON[x.st]} {x.text}</span>)}{!all && l.items.length > 4 && <span className="text-slate-500"> · +{l.items.length - 4}</span>}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** One train: its part of the handover, its counts and its section tiles; a tile opens the drawing on this train. */
+function TrainPage(p: OverviewProps & { train: TrainId; checks: Check[]; lines: HandoverLine[]; k: Keys; pick: (t: TrainId) => void; back: () => void; openSec: (id: SectionId) => void }) {
+  const t = p.train;
+  const mine: HandoverLine[] = p.lines.flatMap((l): HandoverLine[] => {
+    if (l.key === 'Override') { const items = l.items.filter((x) => x.text.startsWith(`${t} `)); return items.length ? [{ key: 'Override', items }] : []; }
+    if (l.key === 'Both') return t === 'Common' ? [] : [{ key: 'Both trains', items: l.items }];
+    if (l.key === t) return [{ key: 'Now', items: l.items }];
+    return [];
+  });
+  const sum = summarize(p.checks, p.overrides, t);
+  const ids = ORDER.filter((id) => p.checks.some((c) => c.section === id && c.train === t));
+  const c = counts(p.checks, p.overrides, t);
+  const cat = p.k.cat(t);
+  return (
+    <div className="space-y-2.5">
+      <button type="button" onClick={p.back} className="-ml-1 flex min-h-11 items-center px-1 text-[16px] font-bold text-brand-800">‹ Overview</button>
+      <div className="flex gap-1.5">{TRAINS.map((x) => <button key={x} type="button" onClick={() => p.pick(x)} className={cx('min-h-11 flex-1 rounded-xl border-[1.5px] bg-white text-[15px] font-bold', x === t ? 'border-brand-800 text-brand-800' : 'border-slate-200 text-slate-500')}>{x}</button>)}</div>
+      <h2 className="text-[24px] font-bold text-brand-800">{TNAME[t]}</h2>
+      {mine.length ? <HandoverCard lines={mine} all /> : <p className="rounded-2xl bg-white px-3 py-2.5 text-[14.5px] font-semibold text-green-700 ring-1 ring-slate-200">✓ Nothing out of range on {TNAME[t]} this shift.</p>}
+      <div className="flex flex-wrap gap-1.5 text-[13.5px] font-bold">
+        {(c.bad + c.ov) > 0 && <span className="rounded-lg bg-red-50 px-2.5 py-1.5 text-red-700">● {c.bad} IOW{c.ov ? ` · ${c.ov} override` : ''}</span>}
+        {c.off > 0 && <span className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-amber-800">▲ {c.off} off target</span>}
+        {c.chk > 0 && <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-slate-600">⚑ {c.chk} check</span>}
+        {c.grey > 0 && <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-slate-600">○ {c.grey} not checked</span>}
+      </div>
+      <Tiles ids={ids} sum={sum} line={(id) => p.k.one(id, t)} gasOverride={p.overrides.some((o) => o.train === t)} open={p.openSec} />
+      {cat && <div className="flex gap-2.5 rounded-xl bg-white px-3 py-2 text-[14px] ring-1 ring-slate-200"><b className="shrink-0">Catalyst</b><span>{cat}</span></div>}
+    </div>
+  );
+}
 
 function CopyButton({ text }: { text: string }) {
   const [done, setDone] = useState(false);
@@ -100,14 +188,14 @@ function CopyButton({ text }: { text: string }) {
     className="grid min-h-11 flex-1 place-items-center rounded-xl bg-white text-[15px] font-bold text-slate-900 ring-1 ring-slate-200">{done ? 'Copied' : 'Copy'}</button>;
 }
 
-function SectionPage(p: OverviewProps & { sec: SectionId; checks: Check[]; back: () => void }) {
-  const [tr, setTr] = useState<1 | 2>(1);
+function SectionPage(p: OverviewProps & { sec: SectionId; checks: Check[]; side: 1 | 2; setSide: (t: 1 | 2) => void; backTo: string; back: () => void }) {
+  const tr = p.side; const setTr = p.setSide;
   const common = p.sec === 'frac';
   const train: TrainId = common ? 'Common' : tr === 1 ? 'TR-1' : 'TR-2';
-  const side = tr === 1 ? 'tr1' : 'tr2';
+  const sideKey = tr === 1 ? 'tr1' : 'tr2';
   const ctx: DrawCtx = {
     train: tr,
-    r: (key) => p.log.readings.find((r) => r.key === key)?.[side] ?? null,
+    r: (key) => p.log.readings.find((r) => r.key === key)?.[sideKey] ?? null,
     st: (id) => { const cs = p.checks.filter((c) => c.paramId === id && (c.train === train || c.train === 'Common')); const order: St[] = ['bad', 'off', 'chk', 'grey', 'ok']; return order.find((s) => cs.some((c) => c.state === s)) ?? 'ok'; },
     lab: (material, comp) => {
       const hits = p.lab.filter((s) => kuwaitParts(s.collectedAt)?.date === p.log.date && (s.material ?? '').toUpperCase() === material.toUpperCase() && [train, 'Common'].includes(trainOfEquipment(s.equipment) ?? 'Common'));
@@ -128,7 +216,7 @@ function SectionPage(p: OverviewProps & { sec: SectionId; checks: Check[]; back:
   const ov = p.sec === 'gas' ? p.overrides : [];
   return (
     <div className="space-y-2.5">
-      <button type="button" onClick={p.back} className="-ml-1 flex min-h-11 items-center px-1 text-[16px] font-bold text-brand-800">‹ Overview</button>
+      <button type="button" onClick={p.back} className="-ml-1 flex min-h-11 items-center px-1 text-[16px] font-bold text-brand-800">‹ {p.backTo}</button>
       <h2 className="-mt-2 text-[24px] font-bold text-brand-800">{NAMES[p.sec]}</h2>
       {!common && <div className="flex gap-1.5">{([1, 2] as const).map((t) => <button key={t} type="button" onClick={() => setTr(t)} className={cx('min-h-11 flex-1 rounded-xl border-[1.5px] bg-white text-[15px] font-bold', tr === t ? 'border-brand-800 text-brand-800' : 'border-slate-200 text-slate-500')}>Train {t}</button>)}</div>}
       <div className="rounded-2xl bg-white p-1.5 ring-1 ring-slate-200"><Svg key={`${p.sec}${tr}`} make={make} /></div>
