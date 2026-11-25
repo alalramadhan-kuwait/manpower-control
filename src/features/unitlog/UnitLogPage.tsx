@@ -48,7 +48,7 @@ export default function UnitLogPage() {
       </div>
       {tab === 'lab' ? <LabView samples={lab} /> : !ards.length ? <EmptyState title="No shift log yet" body="Logs arrive after the 6:30 am and pm e-mail export on the Mac." /> : (
         <>
-          <Picker label={<><b>{shiftName(ards[i])}</b><span className="text-slate-500"> · {ards[i].crew ?? '?'} Shift · Log #{ards[i].logNo}</span></>}
+          <Picker label={<><b>{shiftName(ards[i])}</b><div className="text-[12px] text-slate-500">{ards[i].crew ?? '?'} Shift · Log #{ards[i].logNo}</div></>}
             older={i < ards.length - 1 ? () => setI(i + 1) : undefined} newer={i > 0 ? () => setI(i - 1) : undefined} />
           {tab === 'shift' ? <ShiftView log={ards[i]} before={ards.slice(i + 1)} all={logs} /> : <TrainsView log={ards[i]} before={ards.slice(i + 1)} />}
         </>
@@ -63,7 +63,7 @@ function Picker({ label, older, newer }: { label: ReactNode; older?: () => void;
   return (
     <div className="flex items-center gap-2">
       <button type="button" className={b} disabled={!older} onClick={older} aria-label="Older">‹</button>
-      <div className="min-w-0 flex-1 truncate text-center text-[14px] text-slate-800">{label}</div>
+      <div className="min-w-0 flex-1 text-center text-[14px] leading-tight text-slate-800">{label}</div>
       <button type="button" className={b} disabled={!newer} onClick={newer} aria-label="Newer">›</button>
     </div>
   );
