@@ -140,45 +140,62 @@ export function parseReadings(pages: Page[]): { readings: Reading[]; unplaced: n
       && (pi !== ei || q.y < y1 - 2));
     if (pieces.length) blocks.push({ order: pi * 2 + side, pieces });
   }
-  // end to end: each block starts one line gap after the last piece of the block before it, so a name cut by a
-  // block or page break stays next to its value line
-  const GAP = 8;
-  let offset = 0;
-  type Tup = { y: number; tr1: string | null; tr2: string | null; unit: string | null; labels: { y: number; s: string }[] };
-  const tuples: Tup[] = []; const labels: { y: number; s: string }[] = [];
+  // Each block: value lines (tuples) and name lines. A name wraps over up to three lines about 12 px apart, while rows
+  // are 17 px or more apart, so name lines closer than 15 px are one name (a run), and a run owns the value line that
+  // sits within it. A run with no value line beside it was cut by a block or page break: at the bottom of a block it is
+  // the start of the next block's first row, at the top the end of the previous block's last row.
+  type Tup = { y: number; tr1: string | null; tr2: string | null; unit: string | null; head: Piece[]; own: Piece[]; tail: Piece[] };
+  type Run = { pieces: Piece[]; a: number; b: number };
+  const perBlock: { tuples: Tup[]; runs: Run[] }[] = [];
   for (const b of blocks) {
     const left = b.order % 2 === 0;
     const nameMax = left ? 130 : 510;
     const col = left ? [142, 235, 329] : [522, 615, 708];
-    const top = Math.min(...b.pieces.map((q) => q.y)), bottom = Math.max(...b.pieces.map((q) => q.y));
-    const at = (y: number) => offset + y - top;
-    const vals = b.pieces.filter((q) => q.x >= nameMax);
-    for (const l of linesOf(vals, 3)) {
+    const tuples: Tup[] = [];
+    for (const l of linesOf(b.pieces.filter((q) => q.x >= nameMax), 3)) {
       if (l.pieces.some((q) => /Reading/i.test(q.s))) continue;            // the header row
       const cell: (string | null)[] = [null, null, null];
       for (const q of l.pieces) {
         const i = col.map((c) => Math.abs(q.x - c)).reduce((bi, d, j, a) => (d < a[bi] ? j : bi), 0);
         cell[i] = norm(`${cell[i] ?? ''} ${q.s}`);
       }
-      tuples.push({ y: at(l.y), tr1: cell[0], tr2: cell[1], unit: cell[2], labels: [] });
+      tuples.push({ y: l.y, tr1: cell[0], tr2: cell[1], unit: cell[2], head: [], own: [], tail: [] });
     }
-    for (const q of b.pieces.filter((x) => x.x < nameMax)) {
-      if (/^Parameters/i.test(q.s.trim())) continue;
-      labels.push({ y: at(q.y), s: q.s });
+    const names = b.pieces.filter((q) => q.x < nameMax && !/^Parameters/i.test(q.s.trim())).sort((p, q) => p.y - q.y || p.x - q.x);
+    const runs: Run[] = [];
+    for (const q of names) {
+      const r = runs[runs.length - 1];
+      if (r && q.y - r.b <= 15) { r.pieces.push(q); r.b = q.y; } else runs.push({ pieces: [q], a: q.y, b: q.y });
     }
-    offset += bottom - top + GAP;
+    perBlock.push({ tuples, runs });
   }
   let unplaced = 0;
-  for (const lab of labels) {
-    let best: Tup | null = null;
-    for (const t of tuples) if (!best || Math.abs(t.y - lab.y) < Math.abs(best.y - lab.y)) best = t;
-    if (best && Math.abs(best.y - lab.y) <= 20) best.labels.push(lab); else unplaced++;
-  }
+  perBlock.forEach(({ tuples, runs }, bi) => {
+    runs.forEach((r, ri) => {
+      const inside = tuples.filter((t) => t.y >= r.a - 8 && t.y <= r.b + 8);
+      if (inside.length === 1) { inside[0].own.push(...r.pieces); return; }
+      if (inside.length > 1) {                                                 // two rows' names ran together: split
+        for (const q of r.pieces) inside.reduce((x, t) => (Math.abs(t.y - q.y) < Math.abs(x.y - q.y) ? t : x)).own.push(q);
+        return;
+      }
+      const last = ri === runs.length - 1 && !tuples.some((t) => t.y > r.b);
+      const first = ri === 0 && !tuples.some((t) => t.y < r.a);
+      const next = perBlock.slice(bi + 1).find((x) => x.tuples.length)?.tuples[0];
+      const prev = [...perBlock.slice(0, bi)].reverse().find((x) => x.tuples.length)?.tuples.slice(-1)[0];
+      if (last && next) next.head.push(...r.pieces);
+      else if (first && prev) prev.tail.push(...r.pieces);
+      else unplaced += 1;
+    });
+  });
   const clean = (v: string | null) => (v === null || /^(nan|-+)$/i.test(v) || v === '' ? null : v);
-  const readings = tuples.map((t) => ({
-    label: t.labels.sort((a, b) => a.y - b.y).map((l) => l.s.trim()).reduce((acc, s) => (acc.endsWith('-') ? acc + s : acc ? `${acc} ${s}` : s), ''),
-    tr1: clean(t.tr1), tr2: clean(t.tr2), unit: t.unit ? t.unit.replace(/^°?\s*F$/, '°F') : null,
-  })).map((r) => ({ ...r, key: readingKey(r.label) }));
+  const joinName = (ps: Piece[]) => linesOf(ps, 3).map((l) => l.text).reduce((acc, s) => (acc.endsWith('-') ? acc + s : acc ? `${acc} ${s}` : s), '');
+  const readings: Reading[] = [];
+  for (const t of perBlock.flatMap((x) => x.tuples)) {
+    // a row cut by a break is drawn again, clipped, at the top of the next block: no unit, broken text ("CO SSO S", ". 5")
+    if (!t.unit) continue;
+    const label = [joinName(t.head), joinName(t.own), joinName(t.tail)].filter(Boolean).reduce((acc, s) => (acc.endsWith('-') ? acc + s : acc ? `${acc} ${s}` : s), '');
+    readings.push({ label, key: readingKey(label), tr1: clean(t.tr1), tr2: clean(t.tr2), unit: t.unit.replace(/^°?\s*F$/, '°F') });
+  }
   return { readings: readings.filter((r) => r.label || r.tr1 || r.tr2), unplaced };
 }
 
