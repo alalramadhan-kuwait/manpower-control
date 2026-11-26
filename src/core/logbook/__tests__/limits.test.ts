@@ -24,23 +24,23 @@ describe('limitState (spec §4.1)', () => {
     expect(limitState('41', band)).toBe('critical');
   });
   it('an IOW band that equals the normal band makes leaving it a breach', () => {
-    expect(limitState('20.7', L({ normalLo: 15, normalHi: 20, iowStd: '15–20' }))).toBe('breach');
+    expect(limitState('31.5', L({ normalLo: 22, normalHi: 31, iowStd: '22–31' }))).toBe('breach');
   });
   it('IOW only: below it is normal', () => {
-    expect(limitState('940', L({ iowStd: '988', iowCrit: '1280' }))).toBe('normal');
+    expect(limitState('700', L({ iowStd: '750', iowCrit: '900' }))).toBe('normal');
   });
   it('no colour without a number or a numeric limit; retired limits ignored; scale applied', () => {
     expect(limitState('no activity', band)).toBeNull();
     expect(limitState('5', L({ target: '100' }))).toBeNull();
     expect(limitState('30', L({ ...band, status: 'retired' }))).toBeNull();
-    expect(limitState('12.2', L({ normalHi: 14837 }), 1000)).toBe('normal');
-    expect(limitState('15', L({ normalHi: 14837 }), 1000)).toBe('off');
+    expect(limitState('8.5', L({ normalHi: 9100 }), 1000)).toBe('normal');
+    expect(limitState('9.2', L({ normalHi: 9100 }), 1000)).toBe('off');
   });
   it('shows the band', () => {
-    expect(limitBand(L({ normalHi: 42 }))).toBe('≤ 42');
-    expect(limitBand(L({ normalLo: 15, normalHi: 20, iowStd: '15–20' }))).toBe('15–20');
-    expect(limitBand(L({ iowStd: '988' }))).toBe('IOW 988');
-    expect(limitBand(L({ target: '104' }))).toBe('target 104');
+    expect(limitBand(L({ normalHi: 77 }))).toBe('≤ 77');
+    expect(limitBand(L({ normalLo: 22, normalHi: 31, iowStd: '22–31' }))).toBe('22–31');
+    expect(limitBand(L({ iowStd: '750' }))).toBe('IOW 750');
+    expect(limitBand(L({ target: '55' }))).toBe('target 55');
     expect(worse('off', 'breach')).toBe('breach');
     expect(worse(null, 'normal')).toBe('normal');
   });

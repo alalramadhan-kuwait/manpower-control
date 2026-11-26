@@ -7,15 +7,15 @@ import { checksOf, handover, incidentsOf, reactorStrip, sectionOf, summarize, tr
 const L = (o: Partial<Limit> & { paramId: string; section: string }): Limit => ({ description: o.paramId, unit: 'u', target: null, normalLo: null, normalHi: null,
   iowStd: null, iowCrit: null, trip: null, roc: null, source: 'src', action: null, status: 'active', ...o });
 const lim = [
-  L({ paramId: 'F1', section: 'A Feed', description: 'Feed rate', unit: 'KBPD', normalHi: 42 }),
-  L({ paramId: 'W1', section: 'B Heater', description: 'Water per train', unit: 'gpm', normalLo: 24, normalHi: 37, status: 'verify' }),
-  L({ paramId: 'H1-SKIN', section: 'B Heater', description: 'Skin A', unit: '°F', iowStd: '988', iowCrit: '1280' }),
-  L({ paramId: 'H2-SKIN', section: 'C Heater', description: 'Skin B', unit: '°F', iowStd: '1042', iowCrit: '1280' }),
-  L({ paramId: 'X-DP', section: 'D Reactor', description: 'Outlet ΔP', unit: 'psi', normalLo: 2, normalHi: 5 }),
-  L({ paramId: 'M1', section: 'H Amine', description: 'Total amine', unit: 'wt%', normalLo: 15, normalHi: 20, iowStd: '15–20', action: 'Inform U-9' }),
-  L({ paramId: 'Z1', section: 'G Water', description: 'Outlet temp', unit: '°F', iowStd: '550' }),
-  L({ paramId: 'N1', section: 'J Common', description: 'Naphtha H2S', unit: 'ppm', normalHi: 1 }),
-  L({ paramId: 'T1', section: 'F Gas', description: 'Target only', target: '190' }),
+  L({ paramId: 'F1', section: 'A Feed', description: 'Feed rate', unit: 'KBPD', normalHi: 40 }),
+  L({ paramId: 'W1', section: 'B Heater', description: 'Water per train', unit: 'gpm', normalLo: 22, normalHi: 30, status: 'verify' }),
+  L({ paramId: 'H1-SKIN', section: 'B Heater', description: 'Skin A', unit: '°F', iowStd: '960', iowCrit: '1200' }),
+  L({ paramId: 'H2-SKIN', section: 'C Heater', description: 'Skin B', unit: '°F', iowStd: '1010', iowCrit: '1200' }),
+  L({ paramId: 'X-DP', section: 'D Reactor', description: 'Outlet ΔP', unit: 'psi', normalLo: 1, normalHi: 4 }),
+  L({ paramId: 'M1', section: 'H Amine', description: 'Total amine', unit: 'wt%', normalLo: 16, normalHi: 19, iowStd: '16–19', action: 'Inform U-9' }),
+  L({ paramId: 'Z1', section: 'G Water', description: 'Outlet temp', unit: '°F', iowStd: '530' }),
+  L({ paramId: 'N1', section: 'J Common', description: 'Naphtha H2S', unit: 'ppm', normalHi: 2 }),
+  L({ paramId: 'T1', section: 'F Gas', description: 'Target only', target: '160' }),
 ];
 const limits = new Map(lim.map((l) => [l.paramId, l]));
 const matches: LimitMatch[] = [
@@ -31,8 +31,8 @@ const log: StoredLog = { kind: 'ards', logNo: 1, date: '2030-01-02', shift: 'Mor
     ...skins('101201', ['900', '910', '920', '930'], ['600', '610', null, '630']), ...skins('102202', ['901', '911', '919', '931'], ['700', '700', '700', '700'])] };
 const ctl: StoredLog = { ...log, kind: 'controller1', logNo: 2, readings: [], sections: [{ role: 'CONTROLLER I', groups: [{ group: 'TRAIN-1', items: ['@ 09:28 Feed pump trip due to instrument.'] }, { group: 'LP', items: ['P-901-A trip and start again.'] }] }] };
 const S = (id: string, mat: string, eq: string, comp: string, v: string, t = '2030-01-02T04:00:00+00:00'): StoredSample => ({ sampleId: id, material: mat, equipment: eq, collectedAt: t, note: null, results: [{ component: comp, value: v, unit: 'x' }] });
-const lab = [S('a', 'AMINE', 'T-101', 'Total', '20.7'), S('b', 'AMINE', 'T-201', 'Total', '20.9'), S('c', 'NAPHTHA', 'T-104', 'H2S', '5.5'), S('d', 'AMINE', 'T-101', 'Total', '99', '2030-01-05T04:00:00+00:00')];
-const overrides: Override[] = [{ id: 'o', train: 'TR-2', item: 'C-201 overspeed trip on 2oo2', tags: null, reason: 'SI module faulty', moc: null, startedOn: '2030-01-01', expiresOn: null, source: 'spec' }];
+const lab = [S('a', 'AMINE', 'T-101', 'Total', '20.7'), S('b', 'AMINE', 'T-201', 'Total', '20.9'), S('c', 'NAPHTHA', 'T-104', 'H2S', '6.1'), S('d', 'AMINE', 'T-101', 'Total', '99', '2030-01-05T04:00:00+00:00')];
+const overrides: Override[] = [{ id: 'o', train: 'TR-2', item: 'Compressor overspeed trip bypassed', tags: null, reason: 'speed probe faulty', moc: null, startedOn: '2030-01-01', expiresOn: null, source: 'spec' }];
 const input: BoardInput = { log, controller: ctl, lab, limits, matches, overrides };
 const get = (p: string, t: string) => checksOf(input).find((c) => c.paramId === p && c.train === t)!;
 
@@ -40,7 +40,7 @@ describe('checksOf', () => {
   it('judges readings, sums, lab results and missing values', () => {
     expect([get('F1', 'TR-1').state, get('F1', 'TR-2').state]).toEqual(['ok', 'off']);
     expect([get('W1', 'TR-1').value, get('W1', 'TR-1').state, get('W1', 'TR-2').value, get('W1', 'TR-2').state]).toEqual(['24', 'ok', '21', 'off']);
-    expect(get('W1', 'TR-2').band).toBe('24–37 (verify)');
+    expect(get('W1', 'TR-2').band).toBe('22–30 (verify)');
     expect([get('M1', 'TR-1').state, get('M1', 'TR-2').state, get('M1', 'TR-1').value]).toEqual(['bad', 'bad', '20.7']);      // other days' samples ignored
     expect([get('N1', 'Common').state, get('Z1', 'TR-1').state, get('Z1', 'TR-1').note]).toEqual(['off', 'grey', 'not in the e-logbook']);
     expect(checksOf(input).some((c) => c.paramId === 'T1')).toBe(false);          // a target alone is not a limit
@@ -75,12 +75,12 @@ describe('handover', () => {
   it('puts overrides first, then both-train breaches, then each train', () => {
     const h = handover(input, checksOf(input));
     expect(h.map((l) => l.key)).toEqual(['Override', 'Both', 'TR-1', 'TR-2', 'Common']);
-    expect(h[0].items[0].text).toBe('TR-2 C-201 overspeed trip on 2oo2 (SI module faulty) since 01/01 · expiry not set, MOC not set');
+    expect(h[0].items[0].text).toBe('TR-2 Compressor overspeed trip bypassed (speed probe faulty) since 01/01 · expiry not set, MOC not set');
     expect(h[1].items[0].text).toContain('Inform U-9');
     expect(h[2].items[0]).toEqual({ st: 'bad', text: 'Trip: P-901 09:28 · P-901 A tripled at 9:28, restarted' });
     const w = whatsappText(log, h);
     expect(w.split('\n')[0]).toBe('*ARDS – Shift Handover Morning 2 Jan*');
-    expect(w).toContain('• Overrides open: 1 – TR-2 C-201 overspeed trip on 2oo2');
+    expect(w).toContain('• Overrides open: 1 – TR-2 Compressor overspeed trip bypassed');
   });
 });
 

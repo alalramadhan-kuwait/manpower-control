@@ -6,7 +6,7 @@
 //   breach    beyond the IOW standard limit                                             (red, comment required)
 //   critical  beyond the IOW critical limit                                             (dark red)
 // A value that is not a plain number, or a parameter with no numeric limit, gets no colour. Trip settings are text
-// ("FSL 16,000 / FSLL 14,000") and are shown for awareness only; they never colour a value.
+// ("FSL 9,000 / FSLL 8,000") and are shown for awareness only; they never colour a value.
 
 export interface Limit {
   paramId: string; section: string; description: string; unit: string;
@@ -45,7 +45,7 @@ export function limitState(value: string | number | null, l: Limit, scale = 1): 
   return outside(v, l.normalLo, l.normalHi) ? 'off' : 'normal';
 }
 
-/** The band to show beside a value: "≤ 42", "677–682", "≥ 1500", plus "IOW 988" when there is one. */
+/** The band to show beside a value: "≤ 77", "300–310", "≥ 900", plus "IOW 750" when there is one. */
 export function limitBand(l: Limit): string {
   const { normalLo: lo, normalHi: hi } = l;
   const n = lo !== null && hi !== null ? `${lo}–${hi}` : hi !== null ? `≤ ${hi}` : lo !== null ? `≥ ${lo}` : '';
