@@ -4,10 +4,13 @@
 // written (src/core/logbook/board.ts); a limit with no reading is shown as "not checked", never as fine.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { cx } from '@/ui/components';
-import { checksOf, handover, reactorStrip, summarize, trainOfEquipment, whatsappText, type BoardInput, type Check, type HandoverLine, type SectionId, type St, type StripCell, type TrainId } from '@/core/logbook/board';
-import { kuwaitParts, type StoredLog, type StoredSample } from '@/core/logbook/view';
-import { iowBand, type Limit, type LimitMatch } from '@/core/logbook/limits';
+import { BottomSheet, cx } from '@/ui/components';
+import { checksOf, handover, reactorStrip, trainCounts, summarize, trainOfEquipment, whatsappText, type BoardInput, type Check, type HandoverLine, type SectionId, type St, type StripCell, type TrainId } from '@/core/logbook/board';
+import { kuwaitParts, labTrend, type StoredLog, type StoredSample } from '@/core/logbook/view';
+import { productCards, shiftEnd, type ProductCard } from '@/core/logbook/products';
+import { enablePush, pushEndpoint, pushState } from '@/data/push';
+import { setUnitLogAlerts, unitLogAlertsOn } from '@/data/unitLog';
+import { iowBand, limitBand, type Limit, type LimitMatch } from '@/core/logbook/limits';
 import type { Override } from '@/core/logbook/board';
 import { drawSection, tileIcon, type DrawCtx } from './drawings';
 
@@ -54,6 +57,7 @@ export default function Overview(p: OverviewProps) {
   return (
     <div className="space-y-2.5">
       <TrainCards checks={checks} overrides={p.overrides} log={p.log} limits={p.limits} pick={(t) => nav({ train: t })} />
+      <ProductCards cards={productCards(p.lab, shiftEnd(p.log.date, p.log.shift), p.log.date, p.limits, p.matches)} lab={p.lab} />
       <HandoverCard lines={lines} />
       <div className="flex gap-2">
         <a href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer" className="grid min-h-11 flex-1 place-items-center rounded-xl bg-brand-800 text-[15px] font-bold text-white">Share to WhatsApp</a>
@@ -69,6 +73,7 @@ export default function Overview(p: OverviewProps) {
       <Tiles ids={ORDER} sum={sum} line={(id) => k.both[id]} gasOverride={p.overrides.length > 0} open={(id) => openSec(id)} />
       {cat.some(Boolean) && <div className="flex gap-2.5 rounded-xl bg-white px-3 py-2 text-[14px] ring-1 ring-slate-200"><b className="shrink-0">Catalyst</b>
         <span>addition {cat[0]?.tr1 ?? '—'} / {cat[0]?.tr2 ?? '—'} · withdrawal {cat[1]?.tr1 ?? '—'} / {cat[1]?.tr2 ?? '—'} <span className="text-slate-500">(TR-1 / TR-2)</span></span></div>}
+      <AlertsToggle />
     </div>
   );
 }
@@ -93,13 +98,6 @@ function keys(p: OverviewProps): Keys {
   return { both, one, cat };
 }
 
-function counts(checks: Check[], overrides: Override[], t: TrainId) {
-  const cs = checks.filter((c) => c.train === t);
-  const ov = overrides.filter((o) => o.train === t).length;
-  const c = { bad: cs.filter((x) => x.state === 'bad').length, ov, off: cs.filter((x) => x.state === 'off').length, chk: cs.filter((x) => x.state === 'chk').length, grey: new Set(cs.filter((x) => x.state === 'grey').map((x) => x.paramId)).size };
-  const st: St = c.bad || c.ov ? 'bad' : c.off ? 'off' : c.chk ? 'chk' : c.grey ? 'grey' : 'ok';
-  return { ...c, st };
-}
 
 /** The key figures on each train's card (owner, 25 Nov 2026: "train 1 card will show the KPI for train 1"); each is a library
  *  parameter, so its colour is that train's check. Common adds the products of the shift. */
@@ -118,7 +116,7 @@ function TrainCards({ checks, overrides, log, limits, pick }: { checks: Check[];
   const prods = products.filter((x) => x.value && /naphtha|distillate|diesel|lsar/i.test(x.product)).slice(0, 4);
   return (
     <div className="space-y-2">
-      {TRAINS.map((t) => { const c = counts(checks, overrides, t); return (
+      {TRAINS.map((t) => { const c = trainCounts(checks, overrides, t); return (
         <button key={t} type="button" onClick={() => pick(t)} className={cx('block w-full rounded-2xl bg-white p-2.5 text-left', TILE[c.st])}>
           <span className="flex items-center gap-2">
             <span className="text-[18px] font-bold leading-none text-brand-800">{TNAME[t]}</span>
@@ -212,7 +210,7 @@ function TrainPage(p: OverviewProps & { train: TrainId; checks: Check[]; lines: 
   });
   const sum = summarize(p.checks, p.overrides, t);
   const ids = ORDER.filter((id) => p.checks.some((c) => c.section === id && c.train === t));
-  const c = counts(p.checks, p.overrides, t);
+  const c = trainCounts(p.checks, p.overrides, t);
   const cat = p.k.cat(t);
   return (
     <div className="space-y-2.5">
@@ -232,6 +230,81 @@ function TrainPage(p: OverviewProps & { train: TrainId; checks: Check[]; lines: 
             <p className="px-1 text-[12.5px] text-slate-500">Shared by both trains: H-103, the fractionator side (T-102 to T-105) and V-115. ○ = the library has a limit but the e-logbook or lab has no value.</p></>
         : <Tiles ids={ids} sum={sum} line={(id) => p.k.one(id, t)} gasOverride={p.overrides.some((o) => o.train === t)} open={p.openSec} />}
       {cat && <div className="flex gap-2.5 rounded-xl bg-white px-3 py-2 text-[14px] ring-1 ring-slate-200"><b className="shrink-0">Catalyst</b><span>{cat}</span></div>}
+    </div>
+  );
+}
+
+const ARROW = { up: '↑', down: '↓', same: '=', } as const;
+const LTONE = { off: 'bg-amber-50 text-amber-800', breach: 'bg-red-50 text-red-700', critical: 'bg-red-700 text-white' } as const;
+/** Product quality (owner, 26 Nov 2026): one full-width card per product with its latest lab results and which way each
+ *  moved since the sample before; a value opens every result for it. */
+function ProductCards({ cards, lab }: { cards: ProductCard[]; lab: StoredSample[] }) {
+  const [pick, setPick] = useState<{ c: ProductCard; component: string } | null>(null);
+  const pv = pick?.c.values.find((v) => v.component === pick.component);
+  const series = pv ? labTrend(lab, pv.sample, pv.component) : [];
+  const lim = pv?.limit ?? null;
+  return (
+    <div className="space-y-2">
+      <h3 className="px-1 pt-1 text-[13px] font-bold uppercase tracking-wide text-slate-500">Product quality</h3>
+      {cards.map((c) => { const worst = c.values.some((v) => v.state === 'breach' || v.state === 'critical') ? 'bad' : c.values.some((v) => v.state === 'off') ? 'off' : c.sample ? 'ok' : 'grey'; return (
+        <div key={c.def.material} className={cx('rounded-2xl bg-white p-2.5', TILE[worst as St])}>
+          <div className="flex items-baseline gap-2">
+            <span className="text-[17px] font-bold leading-none text-brand-800">{c.def.name}</span>
+            <span className="min-w-0 flex-1 truncate text-[12.5px] text-slate-500">{c.sample ? `${c.sample.equipment ?? ''} · ${c.when ?? ''}` : 'no sample yet'}</span>
+            {worst === 'ok' && c.values.some((v) => v.limit) && <span className="text-[12.5px] font-bold text-green-700">✓ In spec</span>}
+          </div>
+          {c.values.length > 0 && <div className="mt-2 grid grid-cols-4 gap-1">
+            {c.values.map((v) => { const bad = v.state && v.state !== 'normal'; return (
+              <button key={v.component} type="button" onClick={() => setPick({ c, component: v.component })} className={cx('flex flex-col rounded-lg px-1.5 py-1 text-left active:ring-2 active:ring-brand-800', bad ? LTONE[v.state as keyof typeof LTONE] : 'bg-slate-50')}>
+                <span className="truncate text-[11px] font-semibold leading-tight text-slate-500">{v.label}</span>
+                <span className="whitespace-nowrap text-[15px] font-bold leading-tight tabular-nums">{bad ? (v.state === 'off' ? '▲ ' : '● ') : ''}{v.value}
+                  {v.move && v.move !== 'same' && <span className="ms-0.5 text-[11px] font-semibold text-slate-500" title={`was ${v.prev}`}>{ARROW[v.move]}</span>}
+                  {v.unit && <span className="text-[10.5px] font-semibold text-slate-500"> {v.unit.replace('%mass', '%').replace('%vol', '%')}</span>}</span>
+              </button>); })}
+          </div>}
+        </div>); })}
+      <p className="px-1 text-[12px] text-slate-500">Latest lab result up to the end of this shift; ↑ ↓ against the result before. Tap a value for all its results.</p>
+      <BottomSheet open={!!pick} onClose={() => setPick(null)} title={pick ? `${pick.c.def.name} · ${pick.component}` : 'Trend'}>
+        <table className="w-full text-[13px] tabular-nums">
+          <tbody className="divide-y divide-slate-100">{series.map(({ s, r }) => { const k = kuwaitParts(s.collectedAt); return <tr key={s.sampleId}><td className="py-1.5">{k ? `${k.date.slice(8, 10)}/${k.date.slice(5, 7)} ${k.time}` : '—'}</td><td className="text-right font-semibold">{r!.value}</td><td className="ps-2 text-[11px] text-slate-500">{r!.unit}</td></tr>; })}</tbody>
+        </table>
+        <p className="mt-2 text-[11px] text-slate-500">Every result received so far, newest first.{lim ? ` Limit ${limitBand(lim)} · ${lim.source ?? ''}` : ' No limit for it in the library.'}</p>
+      </BottomSheet>
+    </div>
+  );
+}
+
+/** This phone: a push for each new log and new lab results (owner, 26 Nov 2026). */
+function AlertsToggle() {
+  const [state, setState] = useState<'loading' | 'unsupported' | 'blocked' | 'off' | 'on'>('loading');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  useEffect(() => { let live = true; (async () => {
+    const ps = await pushState().catch(() => 'unsupported' as const);
+    if (ps !== 'on') { if (live) setState(ps === 'blocked' ? 'blocked' : ps === 'off' ? 'off' : 'unsupported'); return; }
+    const ep = await pushEndpoint(); const on = ep ? await unitLogAlertsOn(ep).catch(() => false) : false;
+    if (live) setState(on ? 'on' : 'off');
+  })(); return () => { live = false; }; }, []);
+  const flip = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      if (state === 'off' && (await pushState()) !== 'on') await enablePush('iPhone');
+      const ep = await pushEndpoint(); if (!ep) throw new Error('This phone gave no push address.');
+      const ok = await setUnitLogAlerts(ep, state !== 'on');
+      if (!ok) throw new Error('This phone is not registered for alerts yet. Turn on shift alerts in More first.');
+      setState(state === 'on' ? 'off' : 'on');
+    } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
+  };
+  if (state === 'loading') return null;
+  return (
+    <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
+      <div className="flex items-center gap-2">
+        <span className="min-w-0 flex-1 text-[14px]"><b>🔔 Phone alerts</b><span className="text-slate-500"> · new log and lab results</span></span>
+        {state === 'on' || state === 'off'
+          ? <button type="button" disabled={busy} onClick={flip} className={cx('min-h-11 min-w-[64px] rounded-xl px-3 text-[14px] font-bold', state === 'on' ? 'bg-brand-800 text-white' : 'bg-slate-100 text-slate-700')}>{busy ? '…' : state === 'on' ? 'On' : 'Off'}</button>
+          : <span className="text-[12.5px] text-slate-500">{state === 'blocked' ? 'Blocked in phone settings' : 'Open the app from the Home Screen icon'}</span>}
+      </div>
+      {msg && <p className="mt-1 text-[12.5px] text-red-700">{msg}</p>}
     </div>
   );
 }

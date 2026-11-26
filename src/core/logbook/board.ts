@@ -211,3 +211,12 @@ export function reactorStrip(log: StoredLog, limits: Map<string, Limit>, train: 
     dt: [...REACTORS.map(([name, c]) => cell(n(name), diff(c, c), c === '105' ? 'OCR-DT' : 'FB-AXDT')), cell('net', diff('104', '105'), 'RX-RISE')],
   };
 }
+
+/** One train's counts for its card and its alert: IOW breaches, its open overrides, off target, to check, not checked. */
+export function trainCounts(checks: Check[], overrides: Override[], t: TrainId) {
+  const cs = checks.filter((c) => c.train === t);
+  const ov = overrides.filter((o) => o.train === t).length;
+  const c = { bad: cs.filter((x) => x.state === 'bad').length, ov, off: cs.filter((x) => x.state === 'off').length, chk: cs.filter((x) => x.state === 'chk').length, grey: new Set(cs.filter((x) => x.state === 'grey').map((x) => x.paramId)).size };
+  const st: St = c.bad || c.ov ? 'bad' : c.off ? 'off' : c.chk ? 'chk' : c.grey ? 'grey' : 'ok';
+  return { ...c, st };
+}

@@ -1,5 +1,5 @@
 // Unit log (owner, 24–25 Nov 2026: "build logbook dashboard based on it; it have the normal logbook and samples result"):
-// the ARDS shift log, the trains' readings and the lab results, read from the e-mails the owner's Mac saves at 6:30 am
+// the ARDS shift log, the trains' readings and the lab results, read from the e-mails the owner's Mac saves at 6:50 am
 // and pm. ARDS only; the HTU log is behind a switch ("only for information"), and the Controller I log adds its ARDS part.
 // Read only, and nothing is judged: no limits are set, so no value is called high or low.
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -82,7 +82,7 @@ export default function UnitLogPage() {
             className={cx('min-h-11 flex-1 rounded-lg text-[15px] font-medium', tab === x.key ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{x.label}</button>
         ))}
       </div>
-      {tab === 'lab' ? <LabView samples={lab} /> : !ards.length ? <EmptyState title="No shift log yet" body="Logs arrive after the 6:30 am and pm e-mail export on the Mac." /> : (
+      {tab === 'lab' ? <LabView samples={lab} /> : !ards.length ? <EmptyState title="No shift log yet" body="Logs arrive after the 6:50 am and pm e-mail export on the Mac." /> : (
         <>
           <Picker label={<><b>{shiftName(ards[i])}</b><div className="text-[12.5px] text-slate-500">{ards[i].crew ?? '?'} Shift · Log #{ards[i].logNo}{tab === 'overview' ? ' · mode not set (Normal limits)' : ''}</div></>}
             older={i < ards.length - 1 ? () => setI(i + 1) : undefined} newer={i > 0 ? () => setI(i - 1) : undefined} />
@@ -90,7 +90,7 @@ export default function UnitLogPage() {
             : tab === 'shift' ? <ShiftView log={ards[i]} before={ards.slice(i + 1)} all={logs} lab={lab} /> : <TrainsView log={ards[i]} before={ards.slice(i + 1)} />}
         </>
       )}
-      <p className="text-[11px] text-slate-500">From the log and lab e-mails, read at 6:30 am and pm{last ? ` · last received ${when(last)}` : ''}. {lib.limits.size
+      <p className="text-[11px] text-slate-500">From the log and lab e-mails, read at 6:50 am and pm{last ? ` · last received ${when(last)}` : ''}. {lib.limits.size
         ? <>Colours follow the limit library: <span className="rounded bg-amber-100 px-1 text-amber-900">off target</span> <span className="rounded bg-red-100 px-1 text-red-800">IOW breach</span> <span className="rounded bg-red-700 px-1 text-white">critical</span>; limits marked “verify” are still to be checked.</>
         : 'Read only: nothing here is marked high or low until limits are set.'}</p>
     </div>
@@ -263,7 +263,7 @@ function LabView({ samples }: { samples: StoredSample[] }) {
   const days = labDays(samples);
   const [i, setI] = useState(0);
   const [pick, setPick] = useState<{ s: StoredSample; component: string } | null>(null);
-  if (!days.length) return <EmptyState title="No lab results yet" body="Results arrive after the 6:30 am and pm e-mail export on the Mac." />;
+  if (!days.length) return <EmptyState title="No lab results yet" body="Results arrive after the 6:50 am and pm e-mail export on the Mac." />;
   const list = samplesOn(samples, days[i]);
   const latest = kuwaitParts(list[list.length - 1]?.collectedAt ?? null)?.time;
   const series = pick ? labTrend(samples, pick.s, pick.component) : [];

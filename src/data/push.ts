@@ -44,6 +44,12 @@ export async function enablePush(label: string): Promise<void> {
   if (error) throw error;
 }
 
+/** This phone's push address, or null when push is not on here. */
+export async function pushEndpoint(): Promise<string | null> {
+  const reg = await worker();
+  return (await reg?.pushManager.getSubscription())?.endpoint ?? null;
+}
+
 export async function disablePush(): Promise<void> {
   const reg = await worker();
   const sub = await reg?.pushManager.getSubscription();

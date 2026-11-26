@@ -1,5 +1,5 @@
 // Bundles the edge functions that run the app's engine (src/core, src/data): supabase/functions/<name>/main.ts into
-// index.ts, the file that is deployed (shift-alerts, sd-plan-approve). Run: npm run functions:build. A test rebuilds them
+// index.ts, the file that is deployed (shift-alerts, sd-plan-approve, request-gate, vacation-plan, logbook-ingest). Run: npm run functions:build. A test rebuilds them
 // and fails when a committed index.ts is stale.
 import { build } from 'esbuild';
 import { writeFileSync } from 'node:fs';
@@ -7,7 +7,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export const FUNCTIONS = ['shift-alerts', 'sd-plan-approve', 'request-gate', 'vacation-plan'];
+export const FUNCTIONS = ['shift-alerts', 'sd-plan-approve', 'request-gate', 'vacation-plan', 'logbook-ingest'];
 const dirOf = (name) => resolve(root, 'supabase/functions', name);
 const dir = dirOf('shift-alerts');
 export const OUT = resolve(dir, 'index.ts');
