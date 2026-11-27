@@ -41,12 +41,16 @@ export default function Overview(p: OverviewProps) {
   const checks = useMemo(() => checksOf(input), [p.log, p.controller, p.lab, p.limits, p.matches]); // eslint-disable-line react-hooks/exhaustive-deps
   const nav = (set: Record<string, string | null>) => { const nx = new URLSearchParams(params); for (const [k, v] of Object.entries(set)) { if (v) nx.set(k, v); else nx.delete(k); } setParams(nx); };
   if (!p.limits.size) return <p className="rounded-2xl bg-white p-4 text-[14px] text-slate-600 ring-1 ring-slate-200">The limit library is not loaded, so nothing can be checked yet.</p>;
-  if (sec) return <SectionPage sec={sec} checks={checks} {...p} side={side} setSide={(t) => nav({ side: String(t) })} backTo={train ? TNAME[train] : 'Overview'} back={() => nav({ sec: null, side: null })} />;
+  const show = SHOWS.find((x) => x === params.get('show')) ?? null;
+  const setShow = (x: Show | null) => nav({ show: x });
+  if (sec) return <SectionPage sec={sec} checks={checks} {...p} side={side} setSide={(t) => nav({ side: String(t) })} show={show} setShow={setShow}
+    backTo={show ? SHOW_NAME[show] : train ? TNAME[train] : 'Overview'} back={() => nav({ sec: null, side: null })} />;
 
   const lines = handover(input, checks);
   const k = keys(p);
   const openSec = (id: SectionId, t?: TrainId) => nav({ sec: id, side: t === 'TR-2' ? '2' : null });
-  if (train) return <TrainPage {...p} train={train} checks={checks} lines={lines} k={k} pick={(t) => nav({ train: t })} back={() => nav({ train: null })} openSec={(id) => openSec(id, train)} />;
+  if (show) return <StatePage {...p} checks={checks} train={train} show={show} setShow={setShow} back={() => nav({ show: null })} openSec={(id) => openSec(id, train ?? undefined)} />;
+  if (train) return <TrainPage {...p} train={train} checks={checks} lines={lines} k={k} pick={(t) => nav({ train: t })} back={() => nav({ train: null })} openSec={(id) => openSec(id, train)} setShow={setShow} />;
 
   const sum = summarize(checks, p.overrides);
   const text = whatsappText(p.log, lines);
@@ -65,12 +69,12 @@ export default function Overview(p: OverviewProps) {
         <CopyButton text={text} />
       </div>
       <div className="flex flex-wrap gap-1.5 text-[13.5px] font-bold">
-        {(tot.bad + tot.ov) > 0 && <span className="rounded-lg bg-red-50 px-2.5 py-1.5 text-red-700">● {tot.bad} IOW{tot.ov ? ` · ${tot.ov} override` : ''}</span>}
-        {tot.off > 0 && <span className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-amber-800">▲ {tot.off} off target</span>}
-        {greyIow > 0 && <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-slate-600">○ {greyIow} IOW not checked</span>}
-        {tot.chk > 0 && <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-slate-600">⚑ {tot.chk} check</span>}
+        {(tot.bad + tot.ov) > 0 && <button type="button" onClick={() => setShow('bad')} className="min-h-11 rounded-lg bg-red-50 px-2.5 text-red-700">● {tot.bad} IOW{tot.ov ? ` · ${tot.ov} override` : ''} ›</button>}
+        {tot.off > 0 && <button type="button" onClick={() => setShow('off')} className="min-h-11 rounded-lg bg-amber-50 px-2.5 text-amber-800">▲ {tot.off} off target ›</button>}
+        {tot.chk > 0 && <button type="button" onClick={() => setShow('chk')} className="min-h-11 rounded-lg bg-slate-100 px-2.5 text-slate-600">⚑ {tot.chk} check ›</button>}
+        {greyParams.size > 0 && <button type="button" onClick={() => setShow('grey')} className="min-h-11 rounded-lg bg-slate-100 px-2.5 text-slate-600">○ {greyParams.size} not checked{greyIow ? ` (${greyIow} IOW)` : ''} ›</button>}
       </div>
-      {greyParams.size > 0 && <p className="px-1 text-[12.5px] text-slate-500">{greyParams.size} limits have no reading in this e-logbook; they come with panel entry.</p>}
+      {greyParams.size > 0 && <p className="px-1 text-[12.5px] text-slate-500">Tap a count to see its limits. Not checked = the library has a limit but this e-logbook has no reading; they come with panel entry.</p>}
       <Tiles ids={ORDER} sum={sum} line={(id) => k.both[id]} gasOverride={p.overrides.length > 0} open={(id) => openSec(id)} />
       {cat.some(Boolean) && <div className="flex gap-2.5 rounded-xl bg-white px-3 py-2 text-[14px] ring-1 ring-slate-200"><b className="shrink-0">Catalyst</b>
         <span>addition {cat[0]?.tr1 ?? '—'} / {cat[0]?.tr2 ?? '—'} · withdrawal {cat[1]?.tr1 ?? '—'} / {cat[1]?.tr2 ?? '—'} <span className="text-slate-500">(TR-1 / TR-2)</span></span></div>}
@@ -201,7 +205,7 @@ function HandoverCard({ lines, all = false }: { lines: HandoverLine[]; all?: boo
 }
 
 /** One train: its part of the handover, its counts and its section tiles; a tile opens the drawing on this train. */
-function TrainPage(p: OverviewProps & { train: TrainId; checks: Check[]; lines: HandoverLine[]; k: Keys; pick: (t: TrainId) => void; back: () => void; openSec: (id: SectionId) => void }) {
+function TrainPage(p: OverviewProps & { train: TrainId; checks: Check[]; lines: HandoverLine[]; k: Keys; pick: (t: TrainId) => void; back: () => void; openSec: (id: SectionId) => void; setShow: (x: Show) => void }) {
   const t = p.train;
   const mine: HandoverLine[] = p.lines.flatMap((l): HandoverLine[] => {
     if (l.key === 'Override') { const items = l.items.filter((x) => x.text.startsWith(`${t} `)); return items.length ? [{ key: 'Override', items }] : []; }
@@ -220,10 +224,10 @@ function TrainPage(p: OverviewProps & { train: TrainId; checks: Check[]; lines: 
       <h2 className="text-[24px] font-bold text-brand-800">{TNAME[t]}</h2>
       {mine.length ? <HandoverCard lines={mine} all /> : <p className="rounded-2xl bg-white px-3 py-2.5 text-[14.5px] font-semibold text-green-700 ring-1 ring-slate-200">✓ Nothing out of range on {TNAME[t]} this shift.</p>}
       <div className="flex flex-wrap gap-1.5 text-[13.5px] font-bold">
-        {(c.bad + c.ov) > 0 && <span className="rounded-lg bg-red-50 px-2.5 py-1.5 text-red-700">● {c.bad} IOW{c.ov ? ` · ${c.ov} override` : ''}</span>}
-        {c.off > 0 && <span className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-amber-800">▲ {c.off} off target</span>}
-        {c.chk > 0 && <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-slate-600">⚑ {c.chk} check</span>}
-        {c.grey > 0 && <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-slate-600">○ {c.grey} not checked</span>}
+        {(c.bad + c.ov) > 0 && <button type="button" onClick={() => p.setShow('bad')} className="min-h-11 rounded-lg bg-red-50 px-2.5 text-red-700">● {c.bad} IOW{c.ov ? ` · ${c.ov} override` : ''} ›</button>}
+        {c.off > 0 && <button type="button" onClick={() => p.setShow('off')} className="min-h-11 rounded-lg bg-amber-50 px-2.5 text-amber-800">▲ {c.off} off target ›</button>}
+        {c.chk > 0 && <button type="button" onClick={() => p.setShow('chk')} className="min-h-11 rounded-lg bg-slate-100 px-2.5 text-slate-600">⚑ {c.chk} check ›</button>}
+        {c.grey > 0 && <button type="button" onClick={() => p.setShow('grey')} className="min-h-11 rounded-lg bg-slate-100 px-2.5 text-slate-600">○ {c.grey} not checked ›</button>}
       </div>
       {t === 'Common'
         ? <><div className="rounded-2xl bg-white p-1.5 ring-1 ring-slate-200"><Svg make={() => drawSection('frac', drawCtx(p, p.checks, 'Common', 1))} /></div>
@@ -317,13 +321,58 @@ function AlertsToggle() {
   );
 }
 
+// ── Tap a count to see its limits (owner, 27 Nov 2026: "allow me to click and see what is off target and what is not checked")
+const SHOWS = ['bad', 'off', 'chk', 'grey'] as const;
+type Show = (typeof SHOWS)[number];
+const SHOW_NAME: Record<Show, string> = { bad: 'IOW breach', off: 'Off target', chk: 'To check', grey: 'Not checked' };
+const SHOW_CHIP: Record<Show, string> = { bad: 'IOW breach', off: 'off target', chk: 'to check', grey: 'not checked' };
+const SHOW_TONE: Record<Show, string> = { bad: 'bg-red-50 text-red-700', off: 'bg-amber-50 text-amber-800', chk: 'bg-slate-100 text-slate-600', grey: 'bg-slate-100 text-slate-600' };
+/** The limits with at least one value in that state (both trains' values stay, for comparison). */
+const onlyState = (cs: Check[], show: Show | null) => { if (!show) return cs; const ids = new Set(cs.filter((c) => c.state === show).map((c) => c.paramId)); return cs.filter((c) => ids.has(c.paramId)); };
+/** Counted as on the Overview: values for IOW / off / check, limits for not checked. */
+const countOf = (cs: Check[], s: Show) => (s === 'grey' ? new Set(cs.filter((c) => c.state === 'grey').map((c) => c.paramId)).size : cs.filter((c) => c.state === s).length);
+
+function StateFilter({ checks, show, setShow }: { checks: Check[]; show: Show | null; setShow: (x: Show | null) => void }) {
+  const n = new Set(checks.map((c) => c.paramId)).size;
+  return (
+    <div className="flex flex-wrap gap-1.5 text-[13.5px] font-bold" role="group" aria-label="Show">
+      <button type="button" aria-pressed={!show} onClick={() => setShow(null)} className={cx('min-h-11 rounded-lg px-3', !show ? 'bg-brand-800 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200')}>All {n}</button>
+      {SHOWS.map((x) => { const k = countOf(checks, x); return k > 0 && (
+        <button key={x} type="button" aria-pressed={show === x} onClick={() => setShow(show === x ? null : x)} className={cx('min-h-11 rounded-lg px-3', SHOW_TONE[x], show === x && 'ring-2 ring-brand-800')}>{ICON[x]} {k} {SHOW_CHIP[x]}</button>); })}
+    </div>
+  );
+}
+
+/** Every limit in one state, by section (whole unit, or one train when it came from a train page). */
+function StatePage(p: OverviewProps & { checks: Check[]; train: TrainId | null; show: Show; setShow: (x: Show | null) => void; back: () => void; openSec: (id: SectionId) => void }) {
+  const scope = p.train ? p.checks.filter((c) => c.train === p.train) : p.checks;
+  const ov = p.show === 'bad' ? p.overrides.filter((o) => !p.train || o.train === p.train) : [];
+  const groups = ORDER.map((id) => ({ id, cs: onlyState(scope.filter((c) => c.section === id), p.show) })).filter((g) => g.cs.length);
+  return (
+    <div className="space-y-2.5">
+      <button type="button" onClick={p.back} className="-ml-1 flex min-h-11 items-center px-1 text-[16px] font-bold text-brand-800">‹ {p.train ? TNAME[p.train] : 'Overview'}</button>
+      <h2 className="-mt-2 text-[24px] font-bold text-brand-800">{SHOW_NAME[p.show]}{p.train ? ` · ${TNAME[p.train]}` : ''}</h2>
+      <StateFilter checks={scope} show={p.show} setShow={(x) => p.setShow(x ?? null)} />
+      {ov.map((o) => <div key={o.id} className="rounded-xl bg-red-50 px-3 py-2 text-[14px] text-red-800"><b>● Override {o.train} {o.item}</b>{o.reason ? ` (${o.reason})` : ''}</div>)}
+      {groups.map((g) => (
+        <section key={g.id} className="space-y-1.5">
+          <button type="button" onClick={() => p.openSec(g.id)} className="flex min-h-11 w-full items-center px-1 text-left text-[16px] font-bold text-slate-900">{NAMES[g.id]}<span className="ms-auto text-[13px] font-semibold text-brand-800">drawing ›</span></button>
+          <LimitTable checks={g.cs} common={!!p.train || g.id === 'frac'} />
+        </section>
+      ))}
+      {!groups.length && !ov.length && <p className="rounded-2xl bg-white px-3 py-2.5 text-[14.5px] text-slate-600 ring-1 ring-slate-200">Nothing {SHOW_NAME[p.show].toLowerCase()} this shift.</p>}
+      {p.show === 'grey' && <p className="px-1 text-[12.5px] text-slate-500">Not checked: the library has a limit but this e-logbook or that day's lab has no value. They come with panel entry.</p>}
+    </div>
+  );
+}
+
 function CopyButton({ text }: { text: string }) {
   const [done, setDone] = useState(false);
   return <button type="button" onClick={() => navigator.clipboard?.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1500); }).catch(() => undefined)}
     className="grid min-h-11 flex-1 place-items-center rounded-xl bg-white text-[15px] font-bold text-slate-900 ring-1 ring-slate-200">{done ? 'Copied' : 'Copy'}</button>;
 }
 
-function SectionPage(p: OverviewProps & { sec: SectionId; checks: Check[]; side: 1 | 2; setSide: (t: 1 | 2) => void; backTo: string; back: () => void }) {
+function SectionPage(p: OverviewProps & { sec: SectionId; checks: Check[]; side: 1 | 2; setSide: (t: 1 | 2) => void; show: Show | null; setShow: (x: Show | null) => void; backTo: string; back: () => void }) {
   const tr = p.side; const setTr = p.setSide;
   const common = p.sec === 'frac';
   const train: TrainId = common ? 'Common' : tr === 1 ? 'TR-1' : 'TR-2';
@@ -337,7 +386,8 @@ function SectionPage(p: OverviewProps & { sec: SectionId; checks: Check[]; side:
       {!common && <div className="flex gap-1.5">{([1, 2] as const).map((t) => <button key={t} type="button" onClick={() => setTr(t)} className={cx('min-h-11 flex-1 rounded-xl border-[1.5px] bg-white text-[15px] font-bold', tr === t ? 'border-brand-800 text-brand-800' : 'border-slate-200 text-slate-500')}>Train {t}</button>)}</div>}
       <div className="rounded-2xl bg-white p-1.5 ring-1 ring-slate-200"><Svg key={`${p.sec}${tr}`} make={make} /></div>
       {ov.map((o) => <div key={o.id} className="rounded-xl bg-red-50 px-3 py-2 text-[14px] text-red-800"><b>● {o.train} {o.item}</b>{o.reason ? ` (${o.reason})` : ''}{o.startedOn ? ` since ${o.startedOn}` : ''} · {o.expiresOn ? `expires ${o.expiresOn}` : 'expiry not set'}{o.moc ? ` · MOC ${o.moc}` : ' · MOC not set'}<div className="text-[12.5px] text-red-700/80">{o.source}</div></div>)}
-      <LimitTable checks={p.checks.filter((c) => c.section === p.sec)} common={common} />
+      <StateFilter checks={p.checks.filter((c) => c.section === p.sec)} show={p.show} setShow={p.setShow} />
+      <LimitTable checks={onlyState(p.checks.filter((c) => c.section === p.sec), p.show)} common={common} />
       <p className="px-1 text-[12.5px] text-slate-500">Your limit library as written; ○ = the library has a limit but the e-logbook or lab has no value. {common ? 'Shared by both trains.' : 'Train-2 tags generated from Train 1, to verify.'}</p>
     </div>
   );
