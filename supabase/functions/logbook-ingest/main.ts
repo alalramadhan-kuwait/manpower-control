@@ -6,12 +6,14 @@
 // No login (the Mac has none): verify_jwt is off and the key is the only way in.
 // Alerts (owner, 26 Nov 2026): when a new ARDS shift log or new lab samples arrive, the phones that turned on Unit log
 // alerts get a push (src/core/logbook/alerts.ts): the newest new log's status per train, then the new lab results
-// beyond the library's limits. At most two pushes per send; a failed push never fails the save.
+// beyond the library's limits; the log alert adds the sample points overdue by the sample schedule (27 Nov 2026).
+// At most two pushes per send; a failed push never fails the save.
 // This file is bundled with the app's src/core into index.ts by scripts/build-shift-alerts.mjs (npm run functions:build).
 import webpush from 'npm:web-push@3';
 import { labAlert, logAlert, type PushText } from '../../../src/core/logbook/alerts';
 import { byShiftDesc, sameShift } from '../../../src/core/logbook/view';
-import { LIMIT_COLS, LOG_COLS, MATCH_COLS, OVERRIDE_COLS, SAMPLE_COLS, toLimit, toLog, toMatch, toOverride, toSample, type LimitRow, type LogRow, type MatchRow, type OverrideRow, type SampleRow } from '../../../src/core/logbook/rows';
+import { LIMIT_COLS, LOG_COLS, MATCH_COLS, OVERRIDE_COLS, SAMPLE_COLS, SCHEDULE_COLS, toLimit, toLog, toMatch, toOverride, toSample, toSchedule, type LimitRow, type LogRow, type MatchRow, type OverrideRow, type SampleRow, type ScheduleRow } from '../../../src/core/logbook/rows';
+import { overdueByPoint, scheduleStatus } from '../../../src/core/logbook/schedule';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -60,11 +62,14 @@ async function notify(newLogs: LogRow[], newSamples: SampleRow[]) {
   const texts: PushText[] = [];
   const newest = byShiftDesc(newLogs.map(toLog))[0];
   if (newest) {
-    const from = new Date(Date.parse(`${newest.date}T00:00:00Z`) - 864e5).toISOString().slice(0, 10);
-    const [labRows, ctlRows] = await Promise.all([getRows<SampleRow>(`unit_lab_samples?select=${SAMPLE_COLS}&collected_at=gte.${from}T00:00:00%2B03:00`),
-      getRows<LogRow>(`unit_shift_logs?select=${LOG_COLS}&kind=eq.controller1&log_date=eq.${newest.date}`)]);
+    // ten days of lab: the log's day for its checks, and enough for the weekly sample schedule
+    const from = new Date(Math.min(Date.parse(`${newest.date}T00:00:00Z`) - 864e5, Date.now() - 10 * 864e5)).toISOString().slice(0, 10);
+    const [labRows, ctlRows, schedRows] = await Promise.all([getRows<SampleRow>(`unit_lab_samples?select=${SAMPLE_COLS}&collected_at=gte.${from}T00:00:00%2B03:00`),
+      getRows<LogRow>(`unit_shift_logs?select=${LOG_COLS}&kind=eq.controller1&log_date=eq.${newest.date}`),
+      getRows<ScheduleRow>(`unit_sample_schedule?select=${SCHEDULE_COLS}&status=eq.active`).catch(() => [] as ScheduleRow[])]);
     const controller = ctlRows.map(toLog).find((c) => sameShift(c, newest)) ?? null;
-    texts.push(logAlert({ log: newest, controller, lab: labRows.map(toSample), limits, matches, overrides }));
+    const lab = labRows.map(toSample);
+    texts.push(logAlert({ log: newest, controller, lab, limits, matches, overrides }, overdueByPoint(scheduleStatus(lab, schedRows.map(toSchedule), new Date()))));
   }
   const lab = labAlert(newSamples.map(toSample), limits, matches);
   if (lab) texts.push(lab);

@@ -5,7 +5,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { BottomSheet, Chip, EmptyState, ErrorBox, Spinner, cx } from '@/ui/components';
-import { fetchLabSamples, fetchLimits, fetchOverrides, fetchUnitLogs } from '@/data/unitLog';
+import { fetchLabSamples, fetchLimits, fetchOverrides, fetchSchedule, fetchUnitLogs } from '@/data/unitLog';
+import { dueFor, overdueByPoint, scheduleStatus, type ScheduleItem } from '@/core/logbook/schedule';
 import type { Override } from '@/core/logbook/board';
 import Overview from './Overview';
 import { limitBand, limitForLab, limitForReading, limitState, type Limit, type LimitMatch, type LimitState } from '@/core/logbook/limits';
@@ -61,11 +62,13 @@ export default function UnitLogPage() {
   const [i, setI] = useState(0);
   const [lib, setLib] = useState<Lib>({ limits: new Map(), matches: [] });
   const [overrides, setOverrides] = useState<Override[]>([]);
+  const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
 
   useEffect(() => {
     Promise.all([fetchUnitLogs(), fetchLabSamples()]).then(([l, s]) => { setLogs(l.logs); setLast(l.lastReceived); setLab(s); }).catch(setErr);
     fetchLimits().then(setLib).catch(() => undefined);
     fetchOverrides().then(setOverrides).catch(() => undefined);
+    fetchSchedule().then(setSchedule).catch(() => undefined);
   }, []);
 
   const ards = useMemo(() => byShiftDesc((logs ?? []).filter((l) => l.kind === 'ards')), [logs]);
@@ -82,16 +85,16 @@ export default function UnitLogPage() {
             className={cx('min-h-11 flex-1 rounded-lg text-[15px] font-medium', tab === x.key ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600')}>{x.label}</button>
         ))}
       </div>
-      {tab === 'lab' ? <LabView samples={lab} /> : !ards.length ? <EmptyState title="No shift log yet" body="Logs arrive after the 6:50 am and pm e-mail export on the Mac." /> : (
+      {tab === 'lab' ? <LabView samples={lab} schedule={schedule} /> : !ards.length ? <EmptyState title="No shift log yet" body="Logs arrive after the 6:50 am and pm e-mail export on the Mac." /> : (
         <>
           <Picker label={<><b>{shiftName(ards[i])}</b><div className="text-[12.5px] text-slate-500">{ards[i].crew ?? '?'} Shift · Log #{ards[i].logNo}{tab === 'overview' ? ' · mode not set (Normal limits)' : ''}</div></>}
             older={i < ards.length - 1 ? () => setI(i + 1) : undefined} newer={i > 0 ? () => setI(i - 1) : undefined} />
-          {tab === 'overview' ? <Overview log={ards[i]} controller={logs.find((l) => l.kind === 'controller1' && sameShift(l, ards[i])) ?? null} lab={lab} limits={lib.limits} matches={lib.matches} overrides={overrides} />
+          {tab === 'overview' ? <Overview log={ards[i]} controller={logs.find((l) => l.kind === 'controller1' && sameShift(l, ards[i])) ?? null} lab={lab} limits={lib.limits} matches={lib.matches} overrides={overrides} schedule={schedule} />
             : tab === 'shift' ? <ShiftView log={ards[i]} before={ards.slice(i + 1)} all={logs} lab={lab} /> : <TrainsView log={ards[i]} before={ards.slice(i + 1)} />}
         </>
       )}
       <p className="text-[11px] text-slate-500">From the log and lab e-mails, read at 6:50 am and pm{last ? ` · last received ${when(last)}` : ''}. {lib.limits.size
-        ? <>Colours follow the limit library: <span className="rounded bg-amber-100 px-1 text-amber-900">off target</span> <span className="rounded bg-red-100 px-1 text-red-800">IOW breach</span> <span className="rounded bg-red-700 px-1 text-white">critical</span>; limits marked “verify” are still to be checked.</>
+        ? <>Colours follow the limit library: <span className="rounded bg-amber-100 px-1 text-amber-900">off target</span> <span className="rounded bg-red-100 px-1 text-red-800">IOW breach</span> <span className="rounded bg-red-700 px-1 text-white">critical</span>{schedule.length ? <> <span className="rounded border border-dashed border-violet-500 bg-violet-50 px-1 text-violet-800">⏱ sample overdue</span></> : null}; limits marked “verify” are still to be checked.</>
         : 'Read only: nothing here is marked high or low until limits are set.'}</p>
     </div>
     </LibCtx.Provider>
@@ -258,17 +261,29 @@ function TrainsView({ log, before }: { log: StoredLog; before: StoredLog[] }) {
 }
 
 // ── Lab ───────────────────────────────────────────────────────────────────────────────────────────────────────
-function LabView({ samples }: { samples: StoredSample[] }) {
+function LabView({ samples, schedule }: { samples: StoredSample[]; schedule: ScheduleItem[] }) {
   const lib = useContext(LibCtx);
   const days = labDays(samples);
   const [i, setI] = useState(0);
   const [pick, setPick] = useState<{ s: StoredSample; component: string } | null>(null);
+  const [showLate, setShowLate] = useState(false);
+  const states = useMemo(() => scheduleStatus(samples, schedule, new Date()), [samples, schedule]);
+  const late = overdueByPoint(states);
   if (!days.length) return <EmptyState title="No lab results yet" body="Results arrive after the 6:50 am and pm e-mail export on the Mac." />;
   const list = samplesOn(samples, days[i]);
   const latest = kuwaitParts(list[list.length - 1]?.collectedAt ?? null)?.time;
   const series = pick ? labTrend(samples, pick.s, pick.component) : [];
   return (
     <>
+      {schedule.length > 0 && <Box className="px-3 py-2">
+        <button type="button" onClick={() => setShowLate(!showLate)} className="flex min-h-11 w-full items-center gap-2 text-left">
+          <b className={cx('text-[14.5px]', late.length ? 'text-violet-800' : 'text-green-700')}>{late.length ? `⏱ ${late.length} sample point${late.length === 1 ? '' : 's'} overdue` : '✓ Every scheduled sample is in'}</b>
+          <span className="ms-auto text-[12.5px] text-slate-500">{states.filter((d) => !d.overdue).length} of {states.length} tests on time {late.length ? (showLate ? '▴' : '▾') : ''}</span>
+        </button>
+        {showLate && <div className="divide-y divide-slate-100 pb-1">{late.map((x) => (
+          <div key={x.point} className="flex gap-2 py-1.5 text-[13px]"><b className="w-[44%] shrink-0 text-slate-900">{x.point}</b><span className="min-w-0 text-violet-800">{x.tests.join(', ')}<span className="text-slate-500"> · last {x.last}</span></span></div>))}
+          <p className="pt-1.5 text-[11px] text-slate-500">Daily tests are due on the morning shift and late from 19:00; weekly tests on Sunday morning, late from Monday 19:00. From your sampling schedule.</p></div>}
+      </Box>}
       <Picker label={<><b>{day(days[i])}</b><span className="text-slate-500"> · {list.length} sample{list.length === 1 ? '' : 's'}{latest ? ` · latest ${latest}` : ''}</span></>}
         older={i < days.length - 1 ? () => setI(i + 1) : undefined} newer={i > 0 ? () => setI(i - 1) : undefined} />
       <Box className="divide-y divide-slate-100">
@@ -277,9 +292,10 @@ function LabView({ samples }: { samples: StoredSample[] }) {
             <div className="flex justify-between gap-2 text-[13px]"><b className="text-slate-900">{samplePoint(s)}</b><span className="shrink-0 text-slate-500">{kuwaitParts(s.collectedAt)?.time ?? '—'}</span></div>
             {s.note && <div className="text-[11px] text-slate-500">{s.note}</div>}
             <div className="mt-1 flex flex-wrap gap-1">
-              {s.results.map((r) => { const l = limitForLab(s.material, s.equipment, r.component, lib.matches, lib.limits); const st = l ? limitState(r.value, l) : null; return (
+              {s.results.map((r) => { const l = limitForLab(s.material, s.equipment, r.component, lib.matches, lib.limits); const st = l ? limitState(r.value, l) : null;
+                const d = dueFor(states, s.material, s.equipment, r.component); const stale = !!d?.overdue && d.last === s.collectedAt; return (
                 <button key={r.component} type="button" onClick={() => setPick({ s, component: r.component })}
-                  className={cx('rounded-lg px-2 py-0.5 text-left text-[12px] ring-1 active:bg-slate-100', st && st !== 'normal' ? cx(TONE[st], 'ring-transparent') : 'bg-slate-50 ring-slate-200')}>
+                  className={cx('rounded-lg px-2 py-0.5 text-left text-[12px] ring-1 active:bg-slate-100', st && st !== 'normal' ? cx(TONE[st], 'ring-transparent') : 'bg-slate-50 ring-slate-200', stale && 'outline-dashed outline-1 outline-violet-500')}>
                   <span className={st && st !== 'normal' ? '' : 'text-slate-500'}>{r.component}</span> <b className="tabular-nums">{r.value}</b>{r.unit ? <span className={st && st !== 'normal' ? '' : 'text-slate-500'}> {r.unit}</span> : null}
                   {l && <span className="ms-1 text-[10px] opacity-70">({limitBand(l)})</span>}
                 </button>); })}

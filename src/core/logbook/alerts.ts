@@ -12,7 +12,8 @@ const LAB_URL = './shutdowns?section=log&tab=lab';
 const dayName = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 
 /** "TR-1 ● 1 IOW ▲ 2 off ⚑ 2" per train, "✓ in range" when clear, then each trip or leak with its train. */
-export function logAlert(input: BoardInput): PushText {
+/** `late`: overdue sample points by the sample schedule (overdueByPoint), added as one line. */
+export function logAlert(input: BoardInput, late: { point: string; tests: string[]; last: string }[] = []): PushText {
   const checks = checksOf(input);
   const line = (t: TrainId) => {
     const c = trainCounts(checks, input.overrides, t);
@@ -23,7 +24,8 @@ export function logAlert(input: BoardInput): PushText {
   const l = input.log;
   return {
     title: `Unit log · ${dayName(l.date)} ${l.shift ?? ''}`.trim(),
-    body: [...(['TR-1', 'TR-2', 'Common'] as TrainId[]).map(line), ...inc.slice(0, 2), ...(inc.length > 2 ? [`+${inc.length - 2} more`] : [])].join('\n'),
+    body: [...(['TR-1', 'TR-2', 'Common'] as TrainId[]).map(line), ...inc.slice(0, 2), ...(inc.length > 2 ? [`+${inc.length - 2} more`] : []),
+      ...(late.length ? [`⏱ Samples overdue: ${late.slice(0, 3).map((x) => x.point).join(', ')}${late.length > 3 ? ` +${late.length - 3}` : ''}`] : [])].join('\n'),
     tag: `unitlog-${l.kind}-${l.logNo}`, url: LOG_URL,
   };
 }

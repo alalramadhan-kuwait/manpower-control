@@ -4,7 +4,8 @@ import { supabase } from './supabase';
 import type { StoredLog, StoredSample } from '@/core/logbook/view';
 import type { Limit, LimitMatch } from '@/core/logbook/limits';
 import type { Override } from '@/core/logbook/board';
-import { LIMIT_COLS, LOG_COLS, MATCH_COLS, OVERRIDE_COLS, SAMPLE_COLS, toLimit, toLog, toMatch, toOverride, toSample, type LimitRow, type LogRow, type MatchRow, type OverrideRow, type SampleRow } from '@/core/logbook/rows';
+import { LIMIT_COLS, LOG_COLS, MATCH_COLS, OVERRIDE_COLS, SAMPLE_COLS, SCHEDULE_COLS, toLimit, toLog, toMatch, toOverride, toSample, toSchedule, type LimitRow, type LogRow, type MatchRow, type OverrideRow, type SampleRow, type ScheduleRow } from '@/core/logbook/rows';
+import type { ScheduleItem } from '@/core/logbook/schedule';
 
 const daysAgo = (n: number) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
 
@@ -37,6 +38,13 @@ export async function fetchOverrides(): Promise<Override[]> {
   const { data, error } = await supabase.from('unit_overrides').select(OVERRIDE_COLS).eq('status', 'open').order('started_on');
   if (error) return [];
   return (data as OverrideRow[]).map(toOverride);
+}
+
+/** The routine sample schedule (owner's sampling document; database only). Empty when not loaded. */
+export async function fetchSchedule(): Promise<ScheduleItem[]> {
+  const { data, error } = await supabase.from('unit_sample_schedule').select(SCHEDULE_COLS).eq('status', 'active').order('id');
+  if (error) return [];
+  return (data as ScheduleRow[]).map(toSchedule);
 }
 
 /** Unit log alerts on this phone (its push subscription): read and set. */

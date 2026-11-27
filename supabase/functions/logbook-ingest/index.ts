@@ -246,7 +246,7 @@ function trainCounts(checks, overrides, t) {
 var LOG_URL = "./shutdowns?section=log&tab=overview";
 var LAB_URL = "./shutdowns?section=log&tab=lab";
 var dayName = (date) => (/* @__PURE__ */ new Date(`${date}T00:00:00Z`)).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
-function logAlert(input) {
+function logAlert(input, late = []) {
   const checks = checksOf(input);
   const line = (t) => {
     const c = trainCounts(checks, input.overrides, t);
@@ -257,7 +257,12 @@ function logAlert(input) {
   const l = input.log;
   return {
     title: `Unit log · ${dayName(l.date)} ${l.shift ?? ""}`.trim(),
-    body: [...["TR-1", "TR-2", "Common"].map(line), ...inc.slice(0, 2), ...inc.length > 2 ? [`+${inc.length - 2} more`] : []].join("\n"),
+    body: [
+      ...["TR-1", "TR-2", "Common"].map(line),
+      ...inc.slice(0, 2),
+      ...inc.length > 2 ? [`+${inc.length - 2} more`] : [],
+      ...late.length ? [`⏱ Samples overdue: ${late.slice(0, 3).map((x) => x.point).join(", ")}${late.length > 3 ? ` +${late.length - 3}` : ""}`] : []
+    ].join("\n"),
     tag: `unitlog-${l.kind}-${l.logNo}`,
     url: LOG_URL
   };
@@ -320,6 +325,53 @@ var toLimit = (r) => ({
 });
 var toMatch = (r) => r.kind === "lab" ? { paramId: r.param_id, kind: "lab", material: r.material ?? "", component: r.component ?? "", equipment: r.equipment ?? void 0 } : r.kind === "reading_diff" ? { paramId: r.param_id, kind: "reading_diff", key: r.reading_key ?? "", key2: r.reading_key2, scale: Number(r.scale ?? 1) } : { paramId: r.param_id, kind: r.kind, key: r.reading_key ?? "", scale: Number(r.scale ?? 1) };
 var toOverride = (r) => ({ id: r.id, train: r.train, item: r.item, tags: r.tags, reason: r.reason, moc: r.moc, startedOn: r.started_on, expiresOn: r.expires_on, source: r.source });
+var SCHEDULE_COLS = "id,point,material,equipment,test,components,frequency";
+var toSchedule = (r) => ({ id: r.id, point: r.point, material: r.material, equipment: r.equipment, test: r.test, components: r.components ?? [], frequency: r.frequency });
+
+// src/core/logbook/schedule.ts
+var H = 36e5;
+var KW = 3 * H;
+var SAMPLE_HOUR = 7;
+var GRACE = { daily: 12 * H, weekly_sun: 36 * H };
+function lastDue(freq, asOf) {
+  const k = new Date(asOf.getTime() + KW);
+  let due = Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate(), SAMPLE_HOUR) - KW;
+  const step = freq === "daily" ? 24 * H : 7 * 24 * H;
+  if (freq === "weekly_sun") due -= k.getUTCDay() * 24 * H;
+  while (due + GRACE[freq] > asOf.getTime()) due -= step;
+  return new Date(due);
+}
+var norm = (s) => (s ?? "").trim().toUpperCase();
+function scheduleStatus(lab, items, asOf) {
+  const upTo = asOf.toISOString();
+  return items.map((item) => {
+    const due = lastDue(item.frequency, asOf);
+    const dayStart = new Date(due.getTime() - SAMPLE_HOUR * H);
+    const comps = item.components.map(norm);
+    let last = null, value = null;
+    for (const s of lab) {
+      if (!s.collectedAt || s.collectedAt > upTo || norm(s.material) !== norm(item.material) || item.equipment && norm(s.equipment) !== norm(item.equipment)) continue;
+      const r = s.results.find((x) => comps.includes(norm(x.component)));
+      if (r && (!last || Date.parse(s.collectedAt) > Date.parse(last))) {
+        last = s.collectedAt;
+        value = r.value;
+      }
+    }
+    return { item, due: due.toISOString(), last, value, overdue: !last || Date.parse(last) < dayStart.getTime() };
+  });
+}
+function lastLabel(d) {
+  const k = kuwaitParts(d.last);
+  return k ? (/* @__PURE__ */ new Date(`${k.date}T00:00:00Z`)).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }) : "none in 30 days";
+}
+function overdueByPoint(states) {
+  const m = /* @__PURE__ */ new Map();
+  for (const d of states) if (d.overdue) m.set(d.item.point, [...m.get(d.item.point) ?? [], d]);
+  return [...m.entries()].map(([point, ds]) => {
+    const newest = ds.map((d) => d.last).filter((x) => !!x).sort().pop() ?? null;
+    return { point, tests: ds.map((d) => d.item.test), last: newest ? lastLabel({ ...ds[0], last: newest }) : "none in 30 days" };
+  });
+}
 
 // supabase/functions/logbook-ingest/main.ts
 var URL_ = Deno.env.get("SUPABASE_URL");
@@ -368,13 +420,15 @@ async function notify(newLogs, newSamples) {
   const texts = [];
   const newest = byShiftDesc(newLogs.map(toLog))[0];
   if (newest) {
-    const from = new Date(Date.parse(`${newest.date}T00:00:00Z`) - 864e5).toISOString().slice(0, 10);
-    const [labRows, ctlRows] = await Promise.all([
+    const from = new Date(Math.min(Date.parse(`${newest.date}T00:00:00Z`) - 864e5, Date.now() - 10 * 864e5)).toISOString().slice(0, 10);
+    const [labRows, ctlRows, schedRows] = await Promise.all([
       getRows(`unit_lab_samples?select=${SAMPLE_COLS}&collected_at=gte.${from}T00:00:00%2B03:00`),
-      getRows(`unit_shift_logs?select=${LOG_COLS}&kind=eq.controller1&log_date=eq.${newest.date}`)
+      getRows(`unit_shift_logs?select=${LOG_COLS}&kind=eq.controller1&log_date=eq.${newest.date}`),
+      getRows(`unit_sample_schedule?select=${SCHEDULE_COLS}&status=eq.active`).catch(() => [])
     ]);
     const controller = ctlRows.map(toLog).find((c) => sameShift(c, newest)) ?? null;
-    texts.push(logAlert({ log: newest, controller, lab: labRows.map(toSample), limits, matches, overrides }));
+    const lab2 = labRows.map(toSample);
+    texts.push(logAlert({ log: newest, controller, lab: lab2, limits, matches, overrides }, overdueByPoint(scheduleStatus(lab2, schedRows.map(toSchedule), /* @__PURE__ */ new Date()))));
   }
   const lab = labAlert(newSamples.map(toSample), limits, matches);
   if (lab) texts.push(lab);

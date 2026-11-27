@@ -20,6 +20,8 @@ describe('logAlert', () => {
     expect(a.title).toBe('Unit log · Mon 4 Mar Night');
     expect(a.body.split('\n')).toEqual(['TR-1 ✓ in range', 'TR-2 ▲ 1 off', 'Common ✓ in range', 'Trip: P-950 02:10 (TR-2)']);
     expect(a.url).toContain('tab=overview');
+    const late = [1, 2, 3, 4].map((n) => ({ point: `Point ${n}`, tests: ['pH'], last: '1 Mar' }));
+    expect(logAlert({ log, controller: null, lab: [], limits, matches, overrides: [] }, late).body.split('\n').pop()).toBe('⏱ Samples overdue: Point 1, Point 2, Point 3 +1');
   });
 });
 

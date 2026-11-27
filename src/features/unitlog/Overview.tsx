@@ -8,6 +8,7 @@ import { BottomSheet, cx } from '@/ui/components';
 import { checksOf, handover, reactorStrip, trainCounts, summarize, trainOfEquipment, whatsappText, type BoardInput, type Check, type HandoverLine, type SectionId, type St, type StripCell, type TrainId } from '@/core/logbook/board';
 import { kuwaitParts, labTrend, type StoredLog, type StoredSample } from '@/core/logbook/view';
 import { productCards, shiftEnd, type ProductCard } from '@/core/logbook/products';
+import { dueFor, lastLabel, scheduleStatus, type DueState, type ScheduleItem } from '@/core/logbook/schedule';
 import { enablePush, pushEndpoint, pushState } from '@/data/push';
 import { setUnitLogAlerts, unitLogAlertsOn } from '@/data/unitLog';
 import { iowBand, limitBand, type Limit, type LimitMatch } from '@/core/logbook/limits';
@@ -29,7 +30,7 @@ function Svg({ make }: { make: () => SVGSVGElement }) {
   return <div ref={ref} />;
 }
 
-export interface OverviewProps { log: StoredLog; controller: StoredLog | null; lab: StoredSample[]; limits: Map<string, Limit>; matches: LimitMatch[]; overrides: Override[] }
+export interface OverviewProps { log: StoredLog; controller: StoredLog | null; lab: StoredSample[]; limits: Map<string, Limit>; matches: LimitMatch[]; overrides: Override[]; schedule?: ScheduleItem[] }
 
 export default function Overview(p: OverviewProps) {
   const [params, setParams] = useSearchParams();
@@ -57,7 +58,7 @@ export default function Overview(p: OverviewProps) {
   return (
     <div className="space-y-2.5">
       <TrainCards checks={checks} overrides={p.overrides} log={p.log} limits={p.limits} pick={(t) => nav({ train: t })} />
-      <ProductCards cards={productCards(p.lab, shiftEnd(p.log.date, p.log.shift), p.log.date, p.limits, p.matches)} lab={p.lab} />
+      <ProductCards cards={productCards(p.lab, shiftEnd(p.log.date, p.log.shift), p.log.date, p.limits, p.matches)} lab={p.lab} states={scheduleStatus(p.lab, p.schedule ?? [], asOfShift(p.log))} />
       <HandoverCard lines={lines} />
       <div className="flex gap-2">
         <a href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer" className="grid min-h-11 flex-1 place-items-center rounded-xl bg-brand-800 text-[15px] font-bold text-white">Share to WhatsApp</a>
@@ -238,7 +239,10 @@ const ARROW = { up: '↑', down: '↓', same: '=', } as const;
 const LTONE = { off: 'bg-amber-50 text-amber-800', breach: 'bg-red-50 text-red-700', critical: 'bg-red-700 text-white' } as const;
 /** Product quality (owner, 26 Nov 2026): one full-width card per product with its latest lab results and which way each
  *  moved since the sample before; a value opens every result for it. */
-function ProductCards({ cards, lab }: { cards: ProductCard[]; lab: StoredSample[] }) {
+/** The moment a shift is looked at: its end, or now while it is still running. */
+const asOfShift = (log: StoredLog) => { const [d, hm] = shiftEnd(log.date, log.shift).split(' '); return new Date(Math.min(Date.now(), Date.parse(`${d}T${hm}:00+03:00`))); };
+
+function ProductCards({ cards, lab, states }: { cards: ProductCard[]; lab: StoredSample[]; states: DueState[] }) {
   const [pick, setPick] = useState<{ c: ProductCard; component: string } | null>(null);
   const pv = pick?.c.values.find((v) => v.component === pick.component);
   const series = pv ? labTrend(lab, pv.sample, pv.component) : [];
@@ -246,24 +250,28 @@ function ProductCards({ cards, lab }: { cards: ProductCard[]; lab: StoredSample[
   return (
     <div className="space-y-2">
       <h3 className="px-1 pt-1 text-[13px] font-bold uppercase tracking-wide text-slate-500">Product quality</h3>
-      {cards.map((c) => { const worst = c.values.some((v) => v.state === 'breach' || v.state === 'critical') ? 'bad' : c.values.some((v) => v.state === 'off') ? 'off' : c.sample ? 'ok' : 'grey'; return (
+      {cards.map((c) => { const worst = c.values.some((v) => v.state === 'breach' || v.state === 'critical') ? 'bad' : c.values.some((v) => v.state === 'off') ? 'off' : c.sample ? 'ok' : 'grey';
+        const late = (v: ProductCard['values'][number]) => { const d = dueFor(states, v.sample.material, v.sample.equipment, v.component); return d?.overdue ? d : null; };
+        const nLate = c.values.filter((v) => late(v)).length; return (
         <div key={c.def.material} className={cx('rounded-2xl bg-white p-2.5', TILE[worst as St])}>
           <div className="flex items-baseline gap-2">
             <span className="text-[17px] font-bold leading-none text-brand-800">{c.def.name}</span>
             <span className="min-w-0 flex-1 truncate text-[12.5px] text-slate-500">{c.sample ? `${c.sample.equipment ?? ''} · ${c.when ?? ''}` : 'no sample yet'}</span>
-            {worst === 'ok' && c.values.some((v) => v.limit) && <span className="text-[12.5px] font-bold text-green-700">✓ In spec</span>}
+            {nLate > 0 && <span className="shrink-0 rounded-md border border-dashed border-violet-500 bg-violet-50 px-1.5 text-[12.5px] font-bold text-violet-800">⏱ {nLate} overdue</span>}
+            {worst === 'ok' && !nLate && c.values.some((v) => v.limit) && <span className="text-[12.5px] font-bold text-green-700">✓ In spec</span>}
           </div>
           {c.values.length > 0 && <div className="mt-2 grid grid-cols-4 gap-1">
-            {c.values.map((v) => { const bad = v.state && v.state !== 'normal'; return (
-              <button key={v.component} type="button" onClick={() => setPick({ c, component: v.component })} className={cx('flex flex-col rounded-lg px-1.5 py-1 text-left active:ring-2 active:ring-brand-800', bad ? LTONE[v.state as keyof typeof LTONE] : 'bg-slate-50')}>
+            {c.values.map((v) => { const bad = v.state && v.state !== 'normal'; const d = late(v); return (
+              <button key={v.component} type="button" onClick={() => setPick({ c, component: v.component })} className={cx('flex flex-col rounded-lg px-1.5 py-1 text-left active:ring-2 active:ring-brand-800', bad ? LTONE[v.state as keyof typeof LTONE] : d ? 'bg-violet-50' : 'bg-slate-50', d && 'border border-dashed border-violet-500')}>
                 <span className="truncate text-[11px] font-semibold leading-tight text-slate-500">{v.label}</span>
                 <span className="whitespace-nowrap text-[15px] font-bold leading-tight tabular-nums">{bad ? (v.state === 'off' ? '▲ ' : '● ') : ''}{v.value}
                   {v.move && v.move !== 'same' && <span className="ms-0.5 text-[11px] font-semibold text-slate-500" title={`was ${v.prev}`}>{ARROW[v.move]}</span>}
                   {v.unit && <span className="text-[10.5px] font-semibold text-slate-500"> {v.unit.replace('%mass', '%').replace('%vol', '%')}</span>}</span>
+                {d && <span className="text-[10.5px] font-bold leading-tight text-violet-800">⏱ {lastLabel(d)}</span>}
               </button>); })}
           </div>}
         </div>); })}
-      <p className="px-1 text-[12px] text-slate-500">Latest lab result up to the end of this shift; ↑ ↓ against the result before. Tap a value for all its results.</p>
+      <p className="px-1 text-[12px] text-slate-500">Latest lab result up to the end of this shift; ↑ ↓ against the result before; ⏱ = overdue by the sample schedule (date of the last result). Tap a value for all its results.</p>
       <BottomSheet open={!!pick} onClose={() => setPick(null)} title={pick ? `${pick.c.def.name} · ${pick.component}` : 'Trend'}>
         <table className="w-full text-[13px] tabular-nums">
           <tbody className="divide-y divide-slate-100">{series.map(({ s, r }) => { const k = kuwaitParts(s.collectedAt); return <tr key={s.sampleId}><td className="py-1.5">{k ? `${k.date.slice(8, 10)}/${k.date.slice(5, 7)} ${k.time}` : '—'}</td><td className="text-right font-semibold">{r!.value}</td><td className="ps-2 text-[11px] text-slate-500">{r!.unit}</td></tr>; })}</tbody>

@@ -3,6 +3,7 @@
 import type { Limit, LimitMatch } from './limits';
 import type { Override, TrainId } from './board';
 import type { StoredLog, StoredSample } from './view';
+import type { ScheduleItem } from './schedule';
 
 export interface LogRow { kind: StoredLog['kind']; log_no: number; log_date: string; shift: string | null; crew: string | null; shift_day: string | null; recorded_at: string | null;
   sections: StoredLog['sections']; readings: StoredLog['readings']; feed: StoredLog['feed']; products: StoredLog['products']; received_at?: string }
@@ -29,3 +30,7 @@ export const toMatch = (r: MatchRow): LimitMatch => (r.kind === 'lab'
   : r.kind === 'reading_diff' ? { paramId: r.param_id, kind: 'reading_diff', key: r.reading_key ?? '', key2: r.reading_key2, scale: Number(r.scale ?? 1) }
     : { paramId: r.param_id, kind: r.kind, key: r.reading_key ?? '', scale: Number(r.scale ?? 1) });
 export const toOverride = (r: OverrideRow): Override => ({ id: r.id, train: r.train, item: r.item, tags: r.tags, reason: r.reason, moc: r.moc, startedOn: r.started_on, expiresOn: r.expires_on, source: r.source });
+
+export interface ScheduleRow { id: number; point: string; material: string; equipment: string | null; test: string; components: string[]; frequency: ScheduleItem['frequency'] }
+export const SCHEDULE_COLS = 'id,point,material,equipment,test,components,frequency';
+export const toSchedule = (r: ScheduleRow): ScheduleItem => ({ id: r.id, point: r.point, material: r.material, equipment: r.equipment, test: r.test, components: r.components ?? [], frequency: r.frequency });
