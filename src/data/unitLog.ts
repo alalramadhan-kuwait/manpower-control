@@ -57,3 +57,23 @@ export async function setUnitLogAlerts(endpoint: string, on: boolean): Promise<b
   if (error) throw error;
   return !!data;
 }
+
+// ── Limit changes (Section Head only; the database checks the role, the reason and the values) ─────────────────────
+export interface LimitChange { id: number; changedAt: string; oldValues: Record<string, unknown>; newValues: Record<string, unknown>; reason: string; undoes: number | null }
+export interface LimitEdit { target: string | null; normalLo: number | null; normalHi: number | null; iowStd: string | null; iowCrit: string | null }
+
+export async function setLimit(paramId: string, v: LimitEdit, reason: string): Promise<void> {
+  const { error } = await supabase.rpc('unit_limit_set', { p_param: paramId, p_target: v.target, p_lo: v.normalLo, p_hi: v.normalHi, p_iow_std: v.iowStd, p_iow_crit: v.iowCrit, p_reason: reason });
+  if (error) throw error;
+}
+export async function undoLimitChange(changeId: number): Promise<void> {
+  const { error } = await supabase.rpc('unit_limit_undo', { p_change: changeId });
+  if (error) throw error;
+}
+/** The latest changes of one limit, newest first. */
+export async function fetchLimitChanges(paramId: string): Promise<LimitChange[]> {
+  const { data, error } = await supabase.from('unit_limit_changes').select('id,changed_at,old_values,new_values,reason,undoes').eq('param_id', paramId).order('changed_at', { ascending: false }).limit(5);
+  if (error) return [];
+  return (data as { id: number; changed_at: string; old_values: Record<string, unknown>; new_values: Record<string, unknown>; reason: string; undoes: number | null }[])
+    .map((r) => ({ id: r.id, changedAt: r.changed_at, oldValues: r.old_values, newValues: r.new_values, reason: r.reason, undoes: r.undoes }));
+}

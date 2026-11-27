@@ -79,7 +79,7 @@ export function ShutdownsWorkspace({ profile }: { profile: UserProfile }) {
   return <Workspace title="Shutdowns" param="section" tabs={[
     { key: 'progress', label: 'Live', el: <TrackerPage profile={profile} /> },
     { key: 'plans', label: 'Shutdowns', el: <ShutdownListPage /> },
-    { key: 'log', label: 'Unit log', el: <UnitLogPage /> },
+    { key: 'log', label: 'Unit log', el: <UnitLogPage isHead={head(profile)} /> },
     { key: 'modes', label: 'Unit status', el: <UnitStatusPage profile={profile} /> },
     { key: 'maintenance', label: 'Maintenance', el: <MaintenancePage profile={profile} /> }]} />;
 }

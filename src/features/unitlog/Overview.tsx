@@ -2,7 +2,7 @@
 // train's key figures first (each opens that train's page: its handover, counts and section tiles), then the handover, then one tile per section; a tile
 // opens its drawing and every library limit of that section. Statuses come from the owner's limit library as
 // written (src/core/logbook/board.ts); a limit with no reading is shown as "not checked", never as fine.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { BottomSheet, cx } from '@/ui/components';
 import { checksOf, handover, reactorStrip, trainCounts, summarize, trainOfEquipment, whatsappText, type BoardInput, type Check, type HandoverLine, type SectionId, type St, type StripCell, type TrainId } from '@/core/logbook/board';
@@ -10,7 +10,7 @@ import { kuwaitParts, labTrend, type StoredLog, type StoredSample } from '@/core
 import { productCards, shiftEnd, type ProductCard } from '@/core/logbook/products';
 import { dueFor, lastLabel, scheduleStatus, type DueState, type ScheduleItem } from '@/core/logbook/schedule';
 import { enablePush, pushEndpoint, pushState } from '@/data/push';
-import { setUnitLogAlerts, unitLogAlertsOn } from '@/data/unitLog';
+import { fetchLimitChanges, setLimit, setUnitLogAlerts, undoLimitChange, unitLogAlertsOn, type LimitChange } from '@/data/unitLog';
 import { iowBand, limitBand, type Limit, type LimitMatch } from '@/core/logbook/limits';
 import type { Override } from '@/core/logbook/board';
 import { drawSection, tileIcon, type DrawCtx } from './drawings';
@@ -30,9 +30,13 @@ function Svg({ make }: { make: () => SVGSVGElement }) {
   return <div ref={ref} />;
 }
 
-export interface OverviewProps { log: StoredLog; controller: StoredLog | null; lab: StoredSample[]; limits: Map<string, Limit>; matches: LimitMatch[]; overrides: Override[]; schedule?: ScheduleItem[] }
+export interface OverviewProps { log: StoredLog; controller: StoredLog | null; lab: StoredSample[]; limits: Map<string, Limit>; matches: LimitMatch[]; overrides: Override[]; schedule?: ScheduleItem[]; canEdit?: boolean; onLimitsChanged?: () => void }
 
 export default function Overview(p: OverviewProps) {
+  return <EditCtx.Provider value={{ canEdit: !!p.canEdit, changed: p.onLimitsChanged ?? (() => undefined) }}><OverviewBody {...p} /></EditCtx.Provider>;
+}
+
+function OverviewBody(p: OverviewProps) {
   const [params, setParams] = useSearchParams();
   const sec = ORDER.find((x) => x === params.get('sec')) ?? null;
   const train = TRAINS.find((t) => t === params.get('train')) ?? null;
@@ -388,7 +392,7 @@ function SectionPage(p: OverviewProps & { sec: SectionId; checks: Check[]; side:
       {ov.map((o) => <div key={o.id} className="rounded-xl bg-red-50 px-3 py-2 text-[14px] text-red-800"><b>● {o.train} {o.item}</b>{o.reason ? ` (${o.reason})` : ''}{o.startedOn ? ` since ${o.startedOn}` : ''} · {o.expiresOn ? `expires ${o.expiresOn}` : 'expiry not set'}{o.moc ? ` · MOC ${o.moc}` : ' · MOC not set'}<div className="text-[12.5px] text-red-700/80">{o.source}</div></div>)}
       <StateFilter checks={p.checks.filter((c) => c.section === p.sec)} show={p.show} setShow={p.setShow} />
       <LimitTable checks={onlyState(p.checks.filter((c) => c.section === p.sec), p.show)} common={common} />
-      <p className="px-1 text-[12.5px] text-slate-500">Your limit library as written; ○ = the library has a limit but the e-logbook or lab has no value. {common ? 'Shared by both trains.' : 'Train-2 tags generated from Train 1, to verify.'}</p>
+      <p className="px-1 text-[12px] text-slate-500">Tap a row for its limit, source and history.</p>
     </div>
   );
 }
@@ -411,26 +415,97 @@ function drawCtx(p: OverviewProps, checks: Check[], train: TrainId, tr: 1 | 2): 
 }
 
 /** The limits of a section (or of Common), worst first: value per train, then band, source, notes and the action. */
+/** Who may change limits on this page, and how the page reloads them after a change. */
+const EditCtx = createContext<{ canEdit: boolean; changed: () => void }>({ canEdit: false, changed: () => undefined });
+
+/** The limits of a section (or a state), worst first: one short row each (name, value per train, unit); a tap opens the
+ *  band, source, notes, action, its change history and, for the Section Head, "Change limit". */
 function LimitTable({ checks: cs, common }: { checks: Check[]; common: boolean }) {
+  const [open, setOpen] = useState<string | null>(null);
   const ids = [...new Set(cs.map((c) => c.paramId))];
   const rank = (id: string) => Math.min(...cs.filter((c) => c.paramId === id).map((c) => ({ bad: 0, off: 1, chk: 2, ok: 3, grey: 4 }[c.state])));
   ids.sort((a, b) => rank(a) - rank(b));
   const cell = (c: Check | undefined) => (!c ? <span className="text-slate-300">—</span> : c.state === 'ok' ? <span className="tabular-nums">{c.value}</span>
-    : <span className={cx('whitespace-nowrap rounded px-1 font-bold tabular-nums', PILL[c.state])}>{ICON[c.state]} {c.value ?? 'none'}</span>);
+    : <span className={cx('whitespace-nowrap rounded px-1 font-bold tabular-nums', PILL[c.state])}>{ICON[c.state]} {c.value ?? '—'}</span>);
   return (
     <div className="rounded-2xl bg-white px-2.5 py-1 ring-1 ring-slate-200">
-      <table className="w-full text-[14.5px]">
-        <thead><tr className="text-[11.5px] font-bold text-slate-500"><td className="py-1.5" /><td className="text-right">{common ? 'Value' : 'TR-1'}</td>{!common && <td className="text-right">TR-2</td>}<td /></tr></thead>
-        <tbody>
-          {ids.map((id) => { const one = cs.filter((c) => c.paramId === id); const l = one[0].limit; const a = common ? one[0] : one.find((c) => c.train === 'TR-1') ?? one.find((c) => c.train === 'Common'); const b = one.find((c) => c.train === 'TR-2');
-            const notes = [...new Set(one.map((c) => c.note).filter((x): x is string => !!x && !/^not in /.test(x) && !/^no sample/.test(x)))];
-            const action = one.some((c) => c.state === 'bad' || c.state === 'off') && l.action ? l.action : null;
-            return [
-              <tr key={id} className="border-t border-slate-100 align-top"><td className="pb-0.5 pr-2 pt-2 leading-tight">{l.description}</td><td className="pt-2 text-right">{cell(a)}</td>{!common && <td className="pl-2 pt-2 text-right">{cell(b)}</td>}<td className="whitespace-nowrap pl-1.5 pt-2 text-[12px] text-slate-500">{one[0].unit}</td></tr>,
-              <tr key={`${id}-l`}><td colSpan={4} className="pb-2 text-[12.5px] leading-snug text-slate-500">{one[0].band}{l.source ? ` · ${l.source}` : ''}{notes.length ? ` · ${notes.join(' · ')}` : ''}{action ? <span className="text-slate-700"> · do: {action}</span> : null}</td></tr>,
-            ]; })}
-        </tbody>
-      </table>
+      <div className="flex py-1.5 text-[11.5px] font-bold text-slate-500"><span className="flex-1" /><span className="w-[72px] text-right">{common ? 'Value' : 'TR-1'}</span>{!common && <span className="w-[72px] text-right">TR-2</span>}<span className="w-[46px]" /></div>
+      {ids.map((id) => { const one = cs.filter((c) => c.paramId === id); const a = common ? one[0] : one.find((c) => c.train === 'TR-1') ?? one.find((c) => c.train === 'Common'); const b = one.find((c) => c.train === 'TR-2');
+        return (
+          <div key={id} className="border-t border-slate-100">
+            <button type="button" aria-expanded={open === id} onClick={() => setOpen(open === id ? null : id)} className="flex min-h-11 w-full items-center py-1.5 text-left text-[14.5px]">
+              <span className="min-w-0 flex-1 pr-2 leading-tight">{one[0].limit.description.replace(/\s*\(.*?\)\s*$/, '')}</span>
+              <span className="w-[72px] text-right">{cell(a)}</span>{!common && <span className="w-[72px] text-right">{cell(b)}</span>}
+              <span className="w-[46px] whitespace-nowrap pl-1.5 text-[12px] text-slate-500">{one[0].unit}<span className="ms-1 text-slate-400">{open === id ? '▴' : '▾'}</span></span>
+            </button>
+            {open === id && <LimitDetail checks={one} />}
+          </div>); })}
     </div>
+  );
+}
+
+const valText = (v: Record<string, unknown>) => {
+  const lo = v.normal_lo as number | null, hi = v.normal_hi as number | null;
+  const n = lo != null && hi != null ? `${lo}–${hi}` : hi != null ? `≤ ${hi}` : lo != null ? `≥ ${lo}` : 'no range';
+  return `${n}${v.iow_std ? ` · IOW ${v.iow_std}` : ''}${v.iow_crit ? ` · crit ${v.iow_crit}` : ''}${v.target ? ` · target ${v.target}` : ''}`;
+};
+
+function LimitDetail({ checks: one }: { checks: Check[] }) {
+  const { canEdit, changed } = useContext(EditCtx);
+  const l = one[0].limit;
+  const [hist, setHist] = useState<LimitChange[] | null>(null);
+  const [edit, setEdit] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => { let live = true; fetchLimitChanges(l.paramId).then((h) => live && setHist(h)).catch(() => live && setHist([])); return () => { live = false; }; }, [l.paramId, l]);
+  const notes = [...new Set(one.map((c) => c.note).filter((x): x is string => !!x && !/^not in /.test(x) && !/^no sample/.test(x)))];
+  const action = one.some((c) => c.state === 'bad' || c.state === 'off') && l.action ? l.action : null;
+  const undo = async (id: number) => { setErr(null); try { await undoLimitChange(id); changed(); } catch (e) { setErr((e as Error).message); } };
+  return (
+    <div className="mb-2 space-y-1 rounded-xl bg-slate-50 px-3 py-2 text-[13px] leading-snug text-slate-700">
+      <div><b>Limit</b> {one[0].band || 'no number'}{l.trip ? <span className="text-slate-500"> · trip {l.trip}</span> : null}</div>
+      {action && <div><b>Do</b> {action}</div>}
+      {notes.length > 0 && <div className="text-slate-600">{notes.join(' · ')}</div>}
+      {l.source && <div className="text-[12px] text-slate-500">{l.source}</div>}
+      {hist && hist.length > 0 && <div className="border-t border-slate-200 pt-1 text-[12px] text-slate-600">
+        {hist.slice(0, 2).map((h, k) => <div key={h.id}>{new Date(h.changedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}: {valText(h.oldValues)} → <b>{valText(h.newValues)}</b> · {h.reason}
+          {k === 0 && canEdit && !h.undoes && <button type="button" onClick={() => undo(h.id)} className="ms-2 min-h-8 font-bold text-brand-800 underline">Undo</button>}</div>)}
+      </div>}
+      {canEdit && <button type="button" onClick={() => setEdit(true)} className="mt-1 min-h-11 w-full rounded-xl bg-white text-[14px] font-bold text-brand-800 ring-1 ring-slate-200">Change limit</button>}
+      {err && <p className="text-[12.5px] text-red-700">{err}</p>}
+      {edit && <LimitForm limit={l} onClose={() => setEdit(false)} onSaved={() => { setEdit(false); changed(); }} />}
+    </div>
+  );
+}
+
+function LimitForm({ limit: l, onClose, onSaved }: { limit: Limit; onClose: () => void; onSaved: () => void }) {
+  const [v, setV] = useState({ target: l.target ?? '', lo: l.normalLo?.toString() ?? '', hi: l.normalHi?.toString() ?? '', iowStd: l.iowStd ?? '', iowCrit: l.iowCrit ?? '', reason: '' });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const num = (x: string) => (x.trim() === '' ? null : Number(x));
+  const save = async () => {
+    setErr(null);
+    const lo = num(v.lo), hi = num(v.hi);
+    if ((lo !== null && Number.isNaN(lo)) || (hi !== null && Number.isNaN(hi))) { setErr('Normal low and high must be numbers.'); return; }
+    if (v.reason.trim().length < 3) { setErr('Give a reason for the change.'); return; }
+    setBusy(true);
+    try { await setLimit(l.paramId, { target: v.target.trim() || null, normalLo: lo, normalHi: hi, iowStd: v.iowStd.trim() || null, iowCrit: v.iowCrit.trim() || null }, v.reason.trim()); onSaved(); }
+    catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  };
+  const field = (key: keyof typeof v, label: string, mode: 'decimal' | 'text' = 'text') => (
+    <label className="block text-[13px] font-semibold text-slate-600">{label}
+      <input value={v[key]} inputMode={mode} onChange={(e) => setV({ ...v, [key]: e.target.value })} className="mt-1 block min-h-11 w-full rounded-xl border border-slate-300 px-3 text-[16px] text-slate-900" /></label>);
+  return (
+    <BottomSheet open onClose={onClose} title={`Change limit · ${l.description}`}>
+      <div className="space-y-2.5 pb-2">
+        <div className="grid grid-cols-2 gap-2">{field('lo', `Normal low${l.unit ? ` (${l.unit})` : ''}`, 'decimal')}{field('hi', `Normal high${l.unit ? ` (${l.unit})` : ''}`, 'decimal')}</div>
+        <div className="grid grid-cols-2 gap-2">{field('iowStd', 'IOW standard')}{field('iowCrit', 'IOW critical')}</div>
+        {field('target', 'Target')}
+        {field('reason', 'Reason (required)')}
+        <p className="text-[12px] text-slate-500">Empty = no limit on that side. IOW: one number (a maximum) or a band like 15–20.{l.trip ? ` Trip ${l.trip} stays as it is.` : ''} The old values are kept and the change can be undone.</p>
+        {err && <p className="text-[13px] font-semibold text-red-700">{err}</p>}
+        <div className="flex gap-2"><button type="button" onClick={onClose} className="min-h-11 flex-1 rounded-xl bg-white font-bold text-slate-700 ring-1 ring-slate-200">Cancel</button>
+          <button type="button" disabled={busy} onClick={save} className="min-h-11 flex-1 rounded-xl bg-brand-800 font-bold text-white">{busy ? 'Saving…' : 'Save'}</button></div>
+      </div>
+    </BottomSheet>
   );
 }
