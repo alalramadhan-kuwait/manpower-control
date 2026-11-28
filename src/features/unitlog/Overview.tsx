@@ -78,7 +78,7 @@ function OverviewBody(p: OverviewProps) {
         {tot.chk > 0 && <button type="button" onClick={() => setShow('chk')} className="min-h-11 rounded-lg bg-slate-100 px-2.5 text-slate-600">⚑ {tot.chk} check ›</button>}
         {greyParams.size > 0 && <button type="button" onClick={() => setShow('grey')} className="min-h-11 rounded-lg bg-slate-100 px-2.5 text-slate-600">○ {greyParams.size} not checked{greyIow ? ` (${greyIow} IOW)` : ''} ›</button>}
       </div>
-      {greyParams.size > 0 && <p className="px-1 text-[12.5px] text-slate-500">Tap a count to see its limits. Not checked = the library has a limit but this e-logbook has no reading; they come with panel entry.</p>}
+      {greyParams.size > 0 && <p className="px-1 text-[12.5px] text-slate-500">Tap a count to see which. ○ = no reading in this log.</p>}
       <Tiles ids={ORDER} sum={sum} line={(id) => k.both[id]} gasOverride={p.overrides.length > 0} open={(id) => openSec(id)} />
       {cat.some(Boolean) && <div className="flex gap-2.5 rounded-xl bg-white px-3 py-2 text-[14px] ring-1 ring-slate-200"><b className="shrink-0">Catalyst</b>
         <span>addition {cat[0]?.tr1 ?? '—'} / {cat[0]?.tr2 ?? '—'} · withdrawal {cat[1]?.tr1 ?? '—'} / {cat[1]?.tr2 ?? '—'} <span className="text-slate-500">(TR-1 / TR-2)</span></span></div>}
@@ -205,13 +205,18 @@ function Tiles({ ids, sum, line, gasOverride, open }: { ids: SectionId[]; sum: R
   );
 }
 
-const GROUP_NAME: Record<string, string> = { Override: 'Overrides open', Both: 'Both trains', Now: 'This shift', 'Both trains': 'Both trains', 'TR-1': 'Train 1', 'TR-2': 'Train 2', Common: 'Common' };
+const GROUP_NAME: Record<string, string> = { Override: 'Overrides', Both: 'Both trains', Now: 'This shift', 'Both trains': 'Both trains', 'TR-1': 'Train 1', 'TR-2': 'Train 2', Common: 'Common' };
 
 /** The handover: a heading per group (overrides, both trains, each train, common), then one line per point. */
+/** A remark's first sentence, cut at about 70 characters. */
+const firstSentence = (t: string) => { const s1 = t.split(/(?<=[.!?])\s+/)[0].replace(/[.,;]+$/, ''); return s1.length > 72 ? `${s1.slice(0, s1.lastIndexOf(' ', 70))}…` : s1; };
+
 function HandoverCard({ lines, all = false }: { lines: HandoverLine[]; all?: boolean }) {
   const { canEdit, overrides } = useContext(EditCtx);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [sheet, setSheet] = useState<{ o?: Override; add?: { train: TrainId; text: string } } | null>(null);
+  const [full, setFull] = useState<Set<string>>(new Set());
+  const flip = (id: string) => setFull((f) => { const n = new Set(f); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   if (!lines.length && !canEdit) return null;
   return (
     <div className="rounded-2xl bg-white px-3 py-1 ring-1 ring-slate-200">
@@ -219,25 +224,28 @@ function HandoverCard({ lines, all = false }: { lines: HandoverLine[]; all?: boo
         <section key={l.key} className="border-t border-slate-100 py-2 first:border-0">
           <h3 className={cx('text-[13px] font-bold uppercase tracking-wide', l.key.startsWith('TR') ? 'text-brand-800' : 'text-slate-500')}>{GROUP_NAME[l.key] ?? l.key}</h3>
           <ul className="mt-1 space-y-1.5">
-            {shown.map((x, k) => { const p = x.remark ? { head: x.text.replace(/^In the remarks: /, ''), lines: [] as string[] } : splitPoint(x.text); const o = x.overrideId ? overrides.find((y) => y.id === x.overrideId) : undefined;
+            {shown.map((x, k) => { const id = `${l.key}-${k}`; const isFull = full.has(id);
+              const p = x.remark ? { head: isFull ? x.text : firstSentence(x.text), lines: [] as string[] } : splitPoint(x.text); const o = x.overrideId ? overrides.find((y) => y.id === x.overrideId) : undefined;
+              const tag = x.age && <b className={cx('ms-1.5 whitespace-nowrap rounded px-1 text-[11px]', x.age === 'NEW' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-500')}>{x.age === 'NEW' ? 'NEW' : x.age.replace(' shifts', ' sh')}</b>;
               const body = (
                 <span className="min-w-0 flex-1">
-                  <span className={cx('block', x.st === 'bad' ? 'font-semibold text-red-700' : x.st === 'off' ? 'text-amber-900' : 'text-slate-800')}>{x.suggest ? 'In the remarks: ' : ''}{p.head}</span>
+                  <span className={cx('block', x.st === 'bad' ? 'font-semibold text-red-700' : x.st === 'off' ? 'text-amber-900' : 'text-slate-800')}>{x.suggest ? 'Remark: ' : ''}{p.head}{tag}</span>
                   {p.lines.map((d, j) => <span key={j} className="block text-[13px] text-slate-600">{d}</span>)}
-                  {x.remark && <span className="block text-[12.5px] text-slate-500">{x.by}{x.age && <> · <b className={x.age === 'NEW' ? 'text-blue-700' : 'text-slate-500'}>{x.age === 'NEW' ? 'NEW' : `open ${x.age}`}</b></>}</span>}
-                  {x.suggest && canEdit && <button type="button" onClick={() => setSheet({ add: x.suggest })} className="mt-1 min-h-10 rounded-lg bg-red-50 px-3 text-[13px] font-bold text-red-800">＋ Add to the override register</button>}
+                  {x.remark && isFull && <span className="block text-[12.5px] text-slate-500">{x.by}</span>}
+                  {x.suggest && canEdit && <button type="button" onClick={() => setSheet({ add: x.suggest })} className="mt-1 min-h-10 rounded-lg bg-red-50 px-3 text-[13px] font-bold text-red-800">＋ Add to overrides</button>}
                 </span>);
               return (
                 <li key={k} className="flex gap-2 text-[14.5px] leading-snug">
                   <span className={cx('w-4 shrink-0 text-center', x.st !== 'ok' && TXT[x.st])} aria-hidden="true">{x.remark ? '✎' : ICON[x.st]}</span>
-                  {o && canEdit ? <button type="button" onClick={() => setSheet({ o })} className="flex min-w-0 flex-1 items-start text-left">{body}<span className="ms-2 shrink-0 text-[13px] font-bold text-brand-800">Action ›</span></button> : body}
+                  {o && canEdit ? <button type="button" onClick={() => setSheet({ o })} className="flex min-w-0 flex-1 items-start text-left">{body}<span className="ms-2 shrink-0 text-[13px] font-bold text-brand-800">Action ›</span></button>
+                    : x.remark && !x.suggest ? <button type="button" aria-expanded={isFull} onClick={() => flip(id)} className="flex min-w-0 flex-1 text-left">{body}</button> : body}
                 </li>); })}
           </ul>
           {!all && l.items.length > 5 && <button type="button" onClick={() => setOpen((o) => { const n = new Set(o); if (n.has(l.key)) n.delete(l.key); else n.add(l.key); return n; })}
             className="mt-1 min-h-10 text-[13px] font-bold text-brand-800">{open.has(l.key) ? 'Show less ▴' : `＋ ${l.items.length - 5} more ▾`}</button>}
         </section>); })}
       {canEdit && <button type="button" onClick={() => setSheet({ add: { train: 'TR-1', text: '' } })} className="min-h-11 w-full border-t border-slate-100 text-left text-[13.5px] font-bold text-brand-800">＋ Add an override</button>}
-      <p className="border-t border-slate-100 py-1.5 text-[11.5px] text-slate-500">● ▲ ⚑ from the readings and lab · ✎ from the remarks (problems only; routine lines are in the Shift log)</p>
+      <p className="border-t border-slate-100 py-1.5 text-[11.5px] text-slate-500">✎ = remark (tap for all of it and who wrote it)</p>
       {sheet && <OverrideSheet o={sheet.o} add={sheet.add} onClose={() => setSheet(null)} />}
     </div>
   );

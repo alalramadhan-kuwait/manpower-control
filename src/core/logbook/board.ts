@@ -114,7 +114,7 @@ export function checksOf({ log, lab, limits, matches }: BoardInput): Check[] {
           if (x === null) { missing += 1; continue; }
           found += 1;
           let st: St = toSt(limitState(x, l, m.scale ?? 1));
-          if (x < 0 && /ΔP|DP/.test(l.description + l.paramId)) { st = 'chk'; note = `${v} is negative: check the transmitter`; }
+          if (x < 0 && /ΔP|DP/.test(l.description + l.paramId)) { st = 'chk'; note = `${v} negative: check transmitter`; }
           states.push(st);
           // show the worst value; among equals, the highest
           if (shown === null || RANK[st] < RANK[shownSt] || (st === shownSt && x > shownX)) { shown = (m.scale ?? 1) === 1 ? v : fmt(x * (m.scale ?? 1)); shownSt = st; shownX = x; }
@@ -136,7 +136,7 @@ function copiedSkins(log: StoredLog, checks: Check[]): Check[] {
     const a = passes('101201', side), b = passes('102202', side);
     if (a.every((x, k) => x !== null && b[k] !== null && Math.abs(x - (b[k] as number)) <= 2)) {
       const c = checks.find((x) => x.paramId === 'H1-SKIN' && x.train === (side === 'tr1' ? 'TR-1' : 'TR-2'));
-      if (c && RANK[c.state] > RANK.chk) { c.state = 'chk'; c.note = 'every pass within 2 °F of the recycle gas heater: check the entry'; }
+      if (c && RANK[c.state] > RANK.chk) { c.state = 'chk'; c.note = 'same as RG heater: check entry'; }
     }
   }
   return checks;
@@ -183,10 +183,21 @@ export interface HandoverItem { st: St; text: string; by?: string; age?: string;
 export interface HandoverLine { key: string; items: HandoverItem[] }
 const ROLE: Record<string, string> = { CONTROLLER: 'Controller', 'CONTROLLER I': 'Controller I', 'CONTROL ROOM': 'Control room', 'CONTROL ROOM OPERATOR': 'Control room', 'FIELD OPERATOR': 'Field operator' };
 const roleName = (r: string) => ROLE[r.trim().toUpperCase()] ?? r.trim().toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
-const short = (c: Check) => `${c.label.replace(/\s*\(.*?\)\s*/g, ' ').trim()} ${c.value ?? ''}${c.unit && c.value ? ` ${c.unit}` : ''}`.trim();
+/** Short names for the handover and WhatsApp (owner, 28 Nov 2026: "simplify the text as much as possible"). */
+export const SHORT: Record<string, string> = {
+  'FEED-RATE': 'Feed', 'SYS-P': 'System P', 'FB-CAT': 'WABT', 'OCR-TIN': 'OCR inlet', 'OCR-MAXBED': 'OCR bed max', 'OCR-DP-TOT': 'OCR ΔP', 'OCR-DP-IN': 'OCR tray ΔP',
+  'OCR-DP-OUT': 'OCR basket ΔP', 'OCR-DT': 'OCR ΔT', 'FB-OUT': 'Last bed outlet', 'FB-ANY': 'Bed max', 'FB-AXDT': 'Bed ΔT', 'FB-DP': 'Bed ΔP', 'RX-RISE': 'Net rise', 'GOR': 'Gas/oil ratio',
+  'CX-SPEED': 'Compressor speed', 'WASHW': 'Wash water', 'H1-SKIN': 'Charge heater skin', 'H2-SKIN': 'RG heater skin', 'H1-INJW': 'Injection water', 'RG-PURITY': 'H₂ purity',
+  'RG-H2S': 'Recycle gas H₂S', 'MEA-CONC': 'Rich MEA', 'MEA-AGL': 'Amine loading', 'SW-PH': 'Sour water pH', 'SW-CL': 'Sour water Cl', 'SW-FE': 'Sour water Fe',
+  'NAP-H2S': 'Naphtha H₂S', 'NAP-EP': 'Naphtha EP', 'NAP-COL': 'Naphtha colour', 'RES-S': 'Residue S', 'RES-API': 'Residue API', 'DIST-95': 'Distillate 95%', 'DIST-COL': 'Distillate colour',
+};
+const unitShort = (u: string) => u.replace(/^%\s*(vol|mass|wt)$|^(wt|vol)\s*%$/i, '%').replace(/^mol%$/, '%');
+export const shortName = (c: Pick<Check, 'paramId' | 'label'>) => SHORT[c.paramId] ?? c.label.replace(/\s*\(.*?\)\s*/g, ' ').trim();
+const short = (c: Check) => `${shortName(c)} ${c.value ?? ''}${c.unit && c.value ? ` ${unitShort(c.unit)}` : ''}`.trim();
+const dm = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 export function handover(input: BoardInput, checks: Check[]): HandoverLine[] {
   const lines: HandoverLine[] = [];
-  const ov: HandoverItem[] = input.overrides.map((o) => ({ st: 'bad' as St, overrideId: o.id, text: `${o.train} ${o.item}${o.reason ? ` (${o.reason})` : ''}${o.startedOn ? ` since ${o.startedOn.slice(8, 10)}/${o.startedOn.slice(5, 7)}` : ''} · ${o.expiresOn ? `expires ${o.expiresOn}` : 'expiry not set'}${o.moc ? '' : ', MOC not set'}` }));
+  const ov: HandoverItem[] = input.overrides.map((o) => ({ st: 'bad' as St, overrideId: o.id, text: [`${o.train} ${o.item}`, o.reason, o.startedOn ? `since ${dm(o.startedOn)}` : null, o.expiresOn ? `expires ${dm(o.expiresOn)}` : 'no expiry', o.moc ? `MOC ${o.moc}` : 'no MOC'].filter(Boolean).join(' · ') }));
   // remarks that need attention (rule-based; trips and leaks are already incidents)
   const points = attentionOf(input.log, input.controller, input.before ?? []).filter((a) => !EVENT.test(a.text));
   const known = input.overrides.map((o) => `${o.item} ${o.tags ?? ''}`.toUpperCase());
@@ -199,7 +210,7 @@ export function handover(input: BoardInput, checks: Check[]): HandoverLine[] {
   if (ov.length) lines.push({ key: 'Override', items: ov });
   const sev = (c: Check) => c.state === 'bad' || c.state === 'off';
   const both = new Set(checks.filter((c) => c.state === 'bad' && c.train === 'TR-1' && checks.some((d) => d.paramId === c.paramId && d.train === 'TR-2' && d.state === 'bad')).map((c) => c.paramId));
-  if (both.size) lines.push({ key: 'Both', items: [...both].map((p) => { const c = checks.find((x) => x.paramId === p)!; return { st: 'bad' as St, text: `${short(c)} beyond IOW ${c.limit.iowStd ?? ''}${c.limit.action ? ` · ${c.limit.action}` : ''}` }; }) });
+  if (both.size) lines.push({ key: 'Both', items: [...both].map((p) => { const c = checks.find((x) => x.paramId === p)!; return { st: 'bad' as St, text: `${short(c)} > IOW ${c.limit.iowStd ?? ''}${c.limit.action ? ` · ${c.limit.action}` : ''}` }; }) });
   const inc = incidentsOf(input.log, input.controller);
   for (const t of ['TR-1', 'TR-2', 'Common'] as TrainId[]) {
     const items: HandoverItem[] = [];
@@ -209,7 +220,7 @@ export function handover(input: BoardInput, checks: Check[]): HandoverLine[] {
     items.push(...rem('high'));
     for (const c of checks.filter((x) => x.train === t && sev(x) && !both.has(x.paramId)).sort((a, b) => RANK[a.state] - RANK[b.state])) items.push({ st: c.state, text: short(c) });
     items.push(...rem('medium'));
-    for (const c of checks.filter((x) => x.train === t && x.state === 'chk')) items.push({ st: 'chk', text: `${c.label} · ${c.note ?? 'check'}` });
+    for (const c of checks.filter((x) => x.train === t && x.state === 'chk')) items.push({ st: 'chk', text: `${shortName(c)} · ${(c.note ?? 'check').replace(/ · \d+ of \d+ not read$/, '')}` });
     if (items.length) lines.push({ key: t, items });
   }
   // an incident the remarks don't place on a train is shown on its own, never guessed onto one
@@ -225,7 +236,7 @@ export function whatsappText(log: StoredLog, lines: HandoverLine[]): string {
   const pick = (k: string) => lines.find((l) => l.key === k);
   const one = (k: string, label: string) => { const l = pick(k); return `• ${label}: ${l ? l.items.slice(0, 2).map((x) => x.text).join('; ') : 'normal'}`; };
   const ov = pick('Override');
-  return [head, one('TR-1', 'TR-1'), one('TR-2', 'TR-2'), ...(pick('Both') ? [one('Both', 'Both trains')] : []), one('Common', 'Common'), `• Overrides open: ${ov ? `${ov.items.length} – ${ov.items.map((x) => x.text.split(' (')[0]).join('; ')}` : '0'}`].join('\n');
+  return [head, one('TR-1', 'TR-1'), one('TR-2', 'TR-2'), ...(pick('Both') ? [one('Both', 'Both trains')] : []), one('Common', 'Common'), `• Overrides open: ${ov && ov.items.some((x) => x.overrideId) ? `${ov.items.filter((x) => x.overrideId).length} – ${ov.items.filter((x) => x.overrideId).map((x) => x.text.split(' · ')[0]).join('; ')}` : '0'}`].join('\n');
 }
 
 /** Each reactor's ΔP and exotherm (outlet − inlet) on one train, in flow order, plus the net rise (R-x04 outlet − OCR
@@ -260,6 +271,6 @@ export function trainCounts(checks: Check[], overrides: Override[], t: TrainId) 
  *  one sentence per line (owner, 28 Nov 2026: "if a sentence ends it should start on a new line"). */
 export function splitPoint(text: string): { head: string; lines: string[] } {
   const [head, ...rest] = text.split(' · ');
-  const lines = rest.join(' · ').split(/(?<=[.!?])\s+(?=\S)/).flatMap((x) => x.split(/\s+·\s+/)).map((x) => x.trim()).filter(Boolean);
+  const lines = rest.join(' · ').split(/(?<=[.!?])\s+(?=\S)/).map((x) => x.trim()).filter(Boolean);
   return { head: head.replace(/^(Trip|Leak|Fire|Emergency):\s*/, '$1 '), lines };
 }

@@ -75,7 +75,7 @@ describe('handover', () => {
   it('puts overrides first, then both-train breaches, then each train', () => {
     const h = handover(input, checksOf(input));
     expect(h.map((l) => l.key)).toEqual(['Override', 'Both', 'TR-1', 'TR-2', 'Common']);
-    expect(h[0].items[0].text).toBe('TR-2 Compressor overspeed trip bypassed (speed probe faulty) since 01/01 · expiry not set, MOC not set');
+    expect(h[0].items[0].text).toBe('TR-2 Compressor overspeed trip bypassed · speed probe faulty · since 01/01 · no expiry · no MOC');
     expect(h[1].items[0].text).toContain('Inform U-9');
     expect(h[2].items[0]).toEqual({ st: 'bad', text: 'Trip: P-901 09:28 · P-901 A tripled at 9:28, restarted' });
     const w = whatsappText(log, h);
