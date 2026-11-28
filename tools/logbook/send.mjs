@@ -1,4 +1,4 @@
-// Sends what the 6:50 job saved to the app (owner, 25 Nov 2026): reads every PDF in <folder>/logbook and <folder>/lab
+// Sends what the 6:50 / 14:50 / 22:50 job saved to the app (owner, 25 Nov 2026): reads every PDF in <folder>/logbook and <folder>/lab
 // with read.mjs and posts the records to the logbook-ingest function. The folder only ever holds the last 20 e-mails
 // of each kind, and a record sent again replaces itself, so everything is sent every time.
 //   node send.mjs <folder>

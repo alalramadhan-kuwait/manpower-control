@@ -1,4 +1,4 @@
-// Unit log intake (owner, 25 Nov 2026). The owner's Mac reads the shift-log and lab PDFs after each 6:50 am / pm export
+// Unit log intake (owner, 25 Nov 2026). The owner's Mac reads the shift-log and lab PDFs after each export (6:50, 14:50, 22:50)
 // (tools/logbook/send.mjs) and posts the records here. It holds a random key; this function keeps only its SHA-256 (in
 // logbook_ingest_keys, readable by the server alone), so a key can be revoked without touching anything else.
 // Records replace the same log / sample when sent again, so a re-send is harmless. Nothing is read back to the caller.

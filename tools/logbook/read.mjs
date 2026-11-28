@@ -1,4 +1,4 @@
-// Reads the shift-log and lab PDFs saved by the Mac's 6:50 job (owner, 24 Nov 2026) and turns them into records with
+// Reads the shift-log and lab PDFs saved by the Mac's 6:50 / 14:50 / 22:50 job (owner, 24 Nov 2026) and turns them into records with
 // the parser in src/core/logbook/parse.ts (copied next to this file on the Mac; node reads TypeScript directly).
 //   node read.mjs check <folder>     what each file holds (nothing is sent)
 //   node read.mjs json <file.pdf>    the full record of one file

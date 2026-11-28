@@ -213,7 +213,7 @@ function checksOf({ log, lab, limits, matches }) {
           let st2 = toSt(limitState(x, l, m.scale ?? 1));
           if (x < 0 && /ΔP|DP/.test(l.description + l.paramId)) {
             st2 = "chk";
-            note = `${v} is negative: check the transmitter`;
+            note = `${v} negative: check transmitter`;
           }
           states.push(st2);
           if (shown === null || RANK[st2] < RANK[shownSt] || st2 === shownSt && x > shownX) {
@@ -239,7 +239,7 @@ function copiedSkins(log, checks) {
       const c = checks.find((x) => x.paramId === "H1-SKIN" && x.train === (side === "tr1" ? "TR-1" : "TR-2"));
       if (c && RANK[c.state] > RANK.chk) {
         c.state = "chk";
-        c.note = "every pass within 2 °F of the recycle gas heater: check the entry";
+        c.note = "same as RG heater: check entry";
       }
     }
   }
