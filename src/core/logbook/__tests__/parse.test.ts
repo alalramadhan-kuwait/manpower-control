@@ -141,3 +141,18 @@ describe('parseManpower', () => {
     ]);
   });
 });
+
+describe('parseManpower without role headings', () => {
+  const P = (x: number, y: number, s: string) => ({ p: 1, x, y, w: s.length * 5, s });
+  it('takes the controller from the position and joins a name broken at a hyphen', () => {
+    const page = { h: 595, pieces: [
+      P(44, 100, 'Manpower'), P(50, 120, 'Unit'), P(199, 120, 'Employee'), P(349, 120, 'Position'), P(499, 120, 'Designated Area'),
+      P(199, 140, '90011 - MU NU AL-'), P(349, 146, 'Controller'), P(199, 152, 'XI'),
+      P(199, 170, '90012 - OMICRON PI'), P(349, 176, 'Operator I'), P(199, 182, 'RHO'),
+    ] };
+    expect(parseManpower([page])).toEqual([
+      { role: 'Controller', empNo: '90011', name: 'MU NU AL-XI', position: 'Controller', area: null },
+      { role: 'Staff', empNo: '90012', name: 'OMICRON PI RHO', position: 'Operator I', area: null },
+    ]);
+  });
+});

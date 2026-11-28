@@ -91,7 +91,7 @@ function logRow(x: Record<string, unknown>) {
     kind, log_no: logNo, log_date: date,
     shift: oneOf(x.shift, ['Morning', 'Afternoon', 'Night'] as const), crew: oneOf(x.crew, ['A', 'B', 'C', 'D'] as const),
     shift_day: oneOf(x.day, ['1st', '2nd'] as const), recorded_at: iso(x.createdAt),
-    sections: arr(x.sections), readings: arr(x.readings), feed: arr(x.feed), products: arr(x.products),
+    sections: arr(x.sections), readings: arr(x.readings), feed: arr(x.feed), products: arr(x.products), manpower: arr(x.manpower),
     unplaced: Number.isInteger(x.unplaced) ? x.unplaced : 0, source_file: str(x.file), received_at: new Date().toISOString(),
   };
 }

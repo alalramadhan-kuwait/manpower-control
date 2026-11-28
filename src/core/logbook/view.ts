@@ -1,11 +1,11 @@
 // What the Unit log screens show, worked out from the stored logs and lab samples (owner, 25 Nov 2026). Nothing here
 // judges a value: there are no limits until the owner sets them, so a reading is never called high or low. A
 // "follow-up" is only an equipment tag the remarks name, and how many logs in a row have named it.
-import type { LabResult, RemarkSection, Reading, FeedRow, ProductRow, LogKind } from './parse';
+import type { LabResult, RemarkSection, Reading, FeedRow, ProductRow, LogKind, StaffRow } from './parse';
 
 export interface StoredLog {
   kind: LogKind; logNo: number; date: string; shift: string | null; crew: string | null; day: string | null; recordedAt: string | null;
-  sections: RemarkSection[]; readings: Reading[]; feed: FeedRow[]; products: ProductRow[];
+  sections: RemarkSection[]; readings: Reading[]; feed: FeedRow[]; products: ProductRow[]; manpower?: StaffRow[];
 }
 export interface StoredSample { sampleId: string; material: string | null; equipment: string | null; collectedAt: string | null; note: string | null; results: LabResult[] }
 

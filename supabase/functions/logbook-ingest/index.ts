@@ -320,7 +320,7 @@ function labAlert(samples, limits, matches) {
 }
 
 // src/core/logbook/rows.ts
-var LOG_COLS = "kind,log_no,log_date,shift,crew,shift_day,recorded_at,sections,readings,feed,products,received_at";
+var LOG_COLS = "kind,log_no,log_date,shift,crew,shift_day,recorded_at,sections,readings,feed,products,manpower,received_at";
 var SAMPLE_COLS = "sample_id,material,equipment,collected_at,note,results";
 var LIMIT_COLS = "param_id,section,description,unit,target,normal_lo,normal_hi,iow_std,iow_crit,trip,roc_max,source,action,status";
 var MATCH_COLS = "param_id,kind,reading_key,reading_key2,scale,material,component,equipment";
@@ -336,7 +336,8 @@ var toLog = (r) => ({
   sections: r.sections ?? [],
   readings: r.readings ?? [],
   feed: r.feed ?? [],
-  products: r.products ?? []
+  products: r.products ?? [],
+  manpower: r.manpower ?? []
 });
 var toSample = (r) => ({ sampleId: r.sample_id, material: r.material, equipment: r.equipment, collectedAt: r.collected_at, note: r.note, results: r.results ?? [] });
 var num = (v) => v === null ? null : Number(v);
@@ -498,6 +499,7 @@ function logRow(x) {
     readings: arr(x.readings),
     feed: arr(x.feed),
     products: arr(x.products),
+    manpower: arr(x.manpower),
     unplaced: Number.isInteger(x.unplaced) ? x.unplaced : 0,
     source_file: str(x.file),
     received_at: (/* @__PURE__ */ new Date()).toISOString()

@@ -239,9 +239,10 @@ export function parseManpower(pages: Page[]): StaffRow[] {
       const at = (w: RegExp) => l.pieces.find((q) => w.test(q.s))?.x;
       const pos = at(/^Position/), area = at(/^Designated/);
       if (pos !== undefined && area !== undefined) cols = { pos: pos - 20, area: area - 20 };
+      role ??= '';                                          // a table with no role headings (seen in an HTU log)
       continue;
     }
-    if (!role) continue;
+    if (role === null) continue;
     // a line only at the left margin that is not a role heading is the next section
     if (l.pieces.every((q) => q.x < 150)) { on = false; role = null; cur = null; continue; }
     for (const q of l.pieces) {
@@ -250,11 +251,13 @@ export function parseManpower(pages: Page[]): StaffRow[] {
       if (q.x < cols.pos) {
         const m = EMP.exec(t);
         if (m) { cur = { role, empNo: m[1], name: norm(m[2]), position: null, area: null }; out.push(cur); }
-        else if (cur) cur.name = norm(`${cur.name} ${t}`);
+        else if (cur) cur.name = cur.name.endsWith('-') ? cur.name + t : norm(`${cur.name} ${t}`);
       } else if (cur && q.x < cols.area) cur.position = norm(`${cur.position ?? ''} ${t}`);
       else if (cur) cur.area = norm(`${cur.area ?? ''} ${t}`);
     }
   }
+  // no heading: the role is the position when it says Controller, otherwise not stated
+  for (const r of out) if (!r.role) r.role = /^Controller$/i.test(r.position ?? '') ? 'Controller' : 'Staff';
   return out;
 }
 
