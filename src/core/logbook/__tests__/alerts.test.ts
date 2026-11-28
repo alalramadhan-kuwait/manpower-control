@@ -52,6 +52,7 @@ describe('productCards', () => {
   });
   it('shortens the lab names', () => {
     expect(['FBP', '10%', 'Sulphur', '5%', 'IBP', 'API'].sort((a, b) => componentRank(a) - componentRank(b))).toEqual(['API', 'Sulphur', 'IBP', '5%', '10%', 'FBP']);
-    expect(['Distillation 05%', 'Distillaiton 10%', 'Distillation FBP', 'Sulphur, Total', 'Colour, Saybolt', 'Recovery'].map(shortComponent)).toEqual(['5%', '10%', 'FBP', 'Sulphur', 'Colour', 'Recovery']);
+    expect(['Distillation 05%', 'Distillaiton 10%', 'Distillation FBP', 'Sulphur, Total', 'Colour, Saybolt', 'Recovery', 'Vapoure Pressure', 'Doctor Test H2S', 'Relative Density @ 60/60', 'SIM Dist. Recv. 90%'].map(shortComponent))
+      .toEqual(['5%', '10%', 'FBP', 'Sulphur', 'Colour', 'Recovery', 'RVP', 'Doctor H₂S', 'Density', '90%']);
   });
 });

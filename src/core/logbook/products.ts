@@ -19,6 +19,18 @@ export function shortComponent(c: string): string {
   if (/^colou?r/i.test(t)) return 'Colour';
   if (/^sulph?ur/i.test(t)) return 'Sulphur';
   if (/^H2S$/i.test(t)) return 'H₂S';
+  if (/^vapou?re?\s*pressure|^rvp/i.test(t)) return 'RVP';
+  if (/^doctor\s*test\s*h2s/i.test(t)) return 'Doctor H₂S';
+  if (/^doctor\s*test\s*rsh/i.test(t)) return 'Doctor RSH';
+  if (/^doctor\s*test/i.test(t)) return 'Doctor';
+  if (/^relative\s*density/i.test(t)) return 'Density';
+  if (/^flash/i.test(t)) return 'Flash';
+  if (/^pour/i.test(t)) return 'Pour';
+  if (/^cloud/i.test(t)) return 'Cloud';
+  if (/cu\s*strip/i.test(t)) return 'Cu strip';
+  if (/^carbon\s*residue/i.test(t)) return 'Conradson';
+  const sim = /^sim\.?\s*dist\.?\s*recv\.?\s*(.+)$/i.exec(t);
+  if (sim) return sim[1];
   const d = /^distil\w*\s+(.+)$/i.exec(t);
   if (d) return d[1].replace(/^0(\d%)$/, '$1');
   return t;

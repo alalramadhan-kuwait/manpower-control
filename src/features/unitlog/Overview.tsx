@@ -116,12 +116,23 @@ const KPI: Record<TrainId, { id: string; label: string }[]> = {
   'TR-2': [], Common: [{ id: 'NAP-H2S', label: 'Naph. H₂S' }, { id: 'SW-CL', label: 'SW Cl' }, { id: 'SW-FE', label: 'SW Fe' }, { id: 'SW-PH', label: 'SW pH' }],
 };
 KPI['TR-2'] = KPI['TR-1'];
-const UNIT_SHORT: Record<string, string> = { KBPD: 'KBPD', '°F': '°F', '%vol': '%', '%wt': '%', 'wt%': '%', gpm: 'gpm', ppm: 'ppm', pH: '' };
+/** Short names for common limits shown on the Common card when off (the rest use their description). */
+const COMMON_SHORT: Record<string, string> = { 'RES-S': 'Residue S', 'RES-API': 'Residue API', 'DIST-95': 'Dist. 95%', 'NAP-COL': 'Naph. colour', 'NAP-EP': 'Naph. EP', 'DIST-COL': 'Dist. colour', 'T102-FZ': 'Flash zone', 'T102-TOP': 'T-102 top', 'DIST-DRAW': 'Dist. draw', 'DEB-P': 'Debut. P', 'H103-SKIN': 'H-103 skin', 'H103-PASS': 'H-103 pass' };
+const UNIT_SHORT: Record<string, string> = { '%mass': '%', KBPD: 'KBPD', '°F': '°F', '%vol': '%', '%wt': '%', 'wt%': '%', gpm: 'gpm', ppm: 'ppm', pH: '' };
 
 /** TR-1, TR-2 and Common, one full-width card each: counts, then that train's key figures; each opens the train's page. */
 function TrainCards({ checks, overrides, log, limits, pick }: { checks: Check[]; overrides: Override[]; log: StoredLog; limits: Map<string, Limit>; pick: (t: TrainId) => void }) {
   const products = log.products;
-  const kpis = (t: TrainId) => KPI[t].map((x) => { const c = checks.find((y) => y.paramId === x.id && (y.train === t || (t !== 'Common' && y.train === 'Common'))); return { ...x, c }; }).filter((x) => x.c);
+  const kpis = (t: TrainId) => {
+    const fixed = KPI[t].map((x) => { const c = checks.find((y) => y.paramId === x.id && (y.train === t || (t !== 'Common' && y.train === 'Common'))); return { ...x, c }; }).filter((x) => x.c);
+    if (t !== 'Common') return fixed;
+    // what the "▲ n off" counts: every other common limit beyond its band, first (owner, 28 Nov 2026)
+    const seen = new Set(fixed.map((x) => x.id));
+    const extra = checks.filter((c) => c.train === 'Common' && (c.state === 'bad' || c.state === 'off') && !seen.has(c.paramId))
+      .map((c) => ({ id: c.paramId, label: COMMON_SHORT[c.paramId] ?? c.label.replace(/\s*\(.*?\)\s*/g, ' ').trim(), c }));
+    const bad = (x: { c?: Check }) => (x.c?.state === 'bad' || x.c?.state === 'off' ? 0 : 1);
+    return [...fixed, ...extra].sort((a, b) => bad(a) - bad(b));
+  };
   const prods = products.filter((x) => x.value && /naphtha|distillate|diesel|lsar/i.test(x.product)).slice(0, 4);
   return (
     <div className="space-y-2">
@@ -141,14 +152,14 @@ function TrainCards({ checks, overrides, log, limits, pick }: { checks: Check[];
             {kpis(t).map(({ id, label, c: k }) => (
               <span key={id} className={cx('flex flex-col rounded-lg px-1.5 py-1', k!.state === 'ok' ? 'bg-slate-50' : PILL[k!.state])}>
                 <span className="truncate text-[11px] font-semibold leading-tight text-slate-500">{label}</span>
-                <span className={cx('whitespace-nowrap text-[15px] font-bold leading-tight tabular-nums', k!.state === 'ok' ? 'text-slate-900' : TXT[k!.state])}>
+                <span className={cx('break-words text-[15px] font-bold leading-tight tabular-nums', k!.state === 'ok' ? 'text-slate-900' : TXT[k!.state])}>
                   {k!.state !== 'ok' ? `${ICON[k!.state]} ` : ''}{k!.value ?? '—'}<span className="text-[10.5px] font-semibold text-slate-500"> {UNIT_SHORT[k!.unit] ?? k!.unit}</span></span>
               </span>))}
             {t !== 'Common' && <Strips strip={reactorStrip(log, limits, t)} wash={log.readings.find((r) => r.key === 'WASHWATERRATE')?.[t === 'TR-2' ? 'tr2' : 'tr1'] ?? null} />}
             {t === 'Common' && prods.map((x) => (
-              <span key={x.product} className="flex flex-col rounded-lg bg-slate-50 px-1.5 py-1">
+              <span key={x.product} className="flex min-w-0 flex-col rounded-lg bg-slate-50 px-1.5 py-1">
                 <span className="truncate text-[11px] font-semibold leading-tight text-slate-500">{x.product.replace(/\s*\(.*\)/, '')}</span>
-                <span className="whitespace-nowrap text-[15px] font-bold leading-tight tabular-nums text-slate-900">{x.value}<span className="text-[10.5px] font-semibold text-slate-500"> {x.unit ?? ''}</span></span>
+                <span className={cx('break-words font-bold leading-tight tabular-nums text-slate-900', (x.value ?? '').length > 6 ? 'text-[13px]' : 'text-[15px]')}>{x.value}<span className="text-[10.5px] font-semibold text-slate-500"> {x.unit ?? ''}</span></span>
               </span>))}
           </span>
         </button>); })}
@@ -252,6 +263,9 @@ const asOfShift = (log: StoredLog) => { const [d, hm] = shiftEnd(log.date, log.s
 
 function ProductCards({ cards, lab, states }: { cards: ProductCard[]; lab: StoredSample[]; states: DueState[] }) {
   const [pick, setPick] = useState<{ c: ProductCard; component: string } | null>(null);
+  const [more, setMore] = useState<Set<string>>(new Set());
+  /** The results shown first: those with a spec, on the sample schedule, off spec or overdue, and API / sulphur / colour / H₂S. */
+  const main = (v: ProductCard['values'][number]) => !!v.limit || (!!v.state && v.state !== 'normal') || !!dueFor(states, v.sample.material, v.sample.equipment, v.component) || ['API', 'Sulphur', 'Colour', 'H₂S'].includes(v.label);
   const pv = pick?.c.values.find((v) => v.component === pick.component);
   const series = pv ? labTrend(lab, pv.sample, pv.component) : [];
   const lim = pv?.limit ?? null;
@@ -269,7 +283,7 @@ function ProductCards({ cards, lab, states }: { cards: ProductCard[]; lab: Store
             {worst === 'ok' && !nLate && c.values.some((v) => v.limit) && <span className="text-[12.5px] font-bold text-green-700">✓ In spec</span>}
           </div>
           {c.values.length > 0 && <div className="mt-2 grid grid-cols-4 gap-1">
-            {c.values.map((v) => { const bad = v.state && v.state !== 'normal'; const d = late(v); return (
+            {c.values.filter((v) => more.has(c.def.material) || main(v)).map((v) => { const bad = v.state && v.state !== 'normal'; const d = late(v); return (
               <button key={v.component} type="button" onClick={() => setPick({ c, component: v.component })} className={cx('flex flex-col rounded-lg px-1.5 py-1 text-left active:ring-2 active:ring-brand-800', bad ? LTONE[v.state as keyof typeof LTONE] : d ? 'bg-violet-50' : 'bg-slate-50', d && 'border border-dashed border-violet-500')}>
                 <span className="truncate text-[11px] font-semibold leading-tight text-slate-500">{v.label}</span>
                 <span className="whitespace-nowrap text-[15px] font-bold leading-tight tabular-nums">{bad ? (v.state === 'off' ? '▲ ' : '● ') : ''}{v.value}
@@ -278,6 +292,8 @@ function ProductCards({ cards, lab, states }: { cards: ProductCard[]; lab: Store
                 {d && <span className="text-[10.5px] font-bold leading-tight text-violet-800">⏱ {lastLabel(d)}</span>}
               </button>); })}
           </div>}
+          {c.values.some((v) => !main(v)) && <button type="button" onClick={() => setMore((m) => { const n = new Set(m); if (n.has(c.def.material)) n.delete(c.def.material); else n.add(c.def.material); return n; })}
+            className="mt-1 min-h-10 w-full rounded-lg text-left text-[13px] font-bold text-brand-800">{more.has(c.def.material) ? 'Show less ▴' : `＋ ${c.values.filter((v) => !main(v)).length} more results ▾`}</button>}
         </div>); })}
       <p className="px-1 text-[12px] text-slate-500">Latest lab result up to the end of this shift; ↑ ↓ against the result before; ⏱ = overdue by the sample schedule (date of the last result). Tap a value for all its results.</p>
       <BottomSheet open={!!pick} onClose={() => setPick(null)} title={pick ? `${pick.c.def.name} · ${pick.component}` : 'Trend'}>
