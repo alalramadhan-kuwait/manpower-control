@@ -113,3 +113,24 @@ describe('splitPoint', () => {
     expect(splitPoint('OCR inlet 664 °F')).toEqual({ head: 'OCR inlet 664 °F', lines: [] });
   });
 });
+
+describe('handover from the remarks and repeated samples', () => {
+  it('judges a lab test once per point: the newest sample in the shift, earlier ones in the note', () => {
+    const lab2 = [S('n1', 'NAPHTHA', 'T-104', 'H2S', '11', '2030-01-02T04:00:00+00:00'), S('n2', 'NAPHTHA', 'T-104', 'H2S', '1.5', '2030-01-02T08:00:00+00:00'), S('n3', 'NAPHTHA', 'T-104', 'H2S', '9', '2030-01-02T19:00:00+00:00')];
+    const n = checksOf({ ...input, lab: lab2 }).filter((c) => c.paramId === 'N1');
+    expect(n.map((c) => [c.value, c.state, c.note])).toEqual([['1.5', 'ok', 'T-104 11:00 · earlier 11 at 07:00']]);   // 22:00 sample is after the morning shift
+  });
+  it('adds remarks that need attention with who wrote them, and a remark naming an unknown override', () => {
+    const lg: StoredLog = { ...log, sections: [
+      { role: 'CONTROLLER', groups: [{ group: 'Train 2', items: ['Feed rate: 40 KBPD', 'LB 901 pumps need to replace. FSLL 947 override.', 'TV 977 bypass one turn open.'] }] },
+      { role: 'CONTROL ROOM OPERATOR', groups: [{ group: 'Train 2', items: ['TV 977 bypass one turn open.'] }, { group: 'Low Pressure', items: ['P-908 B suction strainer to be cleaned.', 'Naphtha sample sent for H2S: 0.38 ppm.'] }] }] };
+    const h = handover({ ...input, log: lg, controller: null, before: [] }, checksOf({ ...input, log: lg, controller: null }));
+    const ov = h.find((l) => l.key === 'Override')!.items;
+    expect(ov.map((x) => [!!x.overrideId, !!x.suggest])).toEqual([[true, false], [false, true]]);
+    const t2 = h.find((l) => l.key === 'TR-2')!.items.filter((x) => x.remark);
+    expect(t2.map((x) => [x.st, x.text, x.by, x.age])).toEqual([
+      ['bad', 'LB 901 pumps need to replace. FSLL 947 override', 'Controller', 'NEW'],
+      ['off', 'TV 977 bypass one turn open', 'Controller, Control room', 'NEW']]);
+    expect(h.find((l) => l.key === 'Common')!.items.filter((x) => x.remark).map((x) => x.text)).toEqual(['P-908 B suction strainer to be cleaned']);
+  });
+});

@@ -77,3 +77,17 @@ export async function fetchLimitChanges(paramId: string): Promise<LimitChange[]>
   return (data as { id: number; changed_at: string; old_values: Record<string, unknown>; new_values: Record<string, unknown>; reason: string; undoes: number | null }[])
     .map((r) => ({ id: r.id, changedAt: r.changed_at, oldValues: r.old_values, newValues: r.new_values, reason: r.reason, undoes: r.undoes }));
 }
+
+// ── Override actions (Section Head only; the database checks the role and the values) ─────────────────────────────
+export async function addOverride(v: { train: string; item: string; tags: string | null; reason: string | null; moc: string | null; startedOn: string | null; expiresOn: string | null; source: string | null }): Promise<void> {
+  const { error } = await supabase.rpc('unit_override_add', { p_train: v.train, p_item: v.item, p_tags: v.tags, p_reason: v.reason, p_moc: v.moc, p_started: v.startedOn, p_expires: v.expiresOn, p_source: v.source });
+  if (error) throw error;
+}
+export async function updateOverride(id: string, v: { reason: string | null; moc: string | null; expiresOn: string | null }): Promise<void> {
+  const { error } = await supabase.rpc('unit_override_update', { p_id: id, p_reason: v.reason, p_moc: v.moc, p_expires: v.expiresOn });
+  if (error) throw error;
+}
+export async function closeOverride(id: string, note: string): Promise<void> {
+  const { error } = await supabase.rpc('unit_override_close', { p_id: id, p_note: note });
+  if (error) throw error;
+}

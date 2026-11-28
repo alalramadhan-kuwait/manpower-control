@@ -8,7 +8,9 @@
 //   grey  the library has a limit for it but the log / lab has no value            ○
 //   ok    inside every limit
 import { iowBand, keyMatches, limitBand, limitState, plainNumber, type Limit, type LimitMatch } from './limits';
-import { eventsIn, kuwaitParts, tagsIn, type StoredLog, type StoredSample } from './view';
+import { EVENT, eventsIn, kuwaitParts, tagsIn, type StoredLog, type StoredSample } from './view';
+import { attentionOf } from './attention';
+import { shiftEnd } from './products';
 
 export type St = 'bad' | 'off' | 'chk' | 'grey' | 'ok';
 export type TrainId = 'TR-1' | 'TR-2' | 'Common';
@@ -41,12 +43,14 @@ const toSt = (x: ReturnType<typeof limitState>): St => (x === 'breach' || x === 
 const reactorOf = (key: string, side: 'tr1' | 'tr2') => { const m = /R-?12-?1(\d\d)/.exec(key); return m ? `R-${side === 'tr2' ? 2 : 1}${m[1]}` : key; };
 export const fmt = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100));
 
-export interface BoardInput { log: StoredLog; controller: StoredLog | null; lab: StoredSample[]; limits: Map<string, Limit>; matches: LimitMatch[]; overrides: Override[] }
+/** `before`: the earlier ARDS logs, newest first (to tell a new remark from one carried over). */
+export interface BoardInput { log: StoredLog; controller: StoredLog | null; lab: StoredSample[]; limits: Map<string, Limit>; matches: LimitMatch[]; overrides: Override[]; before?: StoredLog[] }
 
 /** Every check for one shift: one per limit and train (or Common). */
 export function checksOf({ log, lab, limits, matches }: BoardInput): Check[] {
   const out: Check[] = [];
-  const dayLab = lab.filter((s) => kuwaitParts(s.collectedAt)?.date === log.date);
+  const end = shiftEnd(log.date, log.shift);
+  const dayLab = lab.filter((s) => { const k = kuwaitParts(s.collectedAt); return k?.date === log.date && `${k.date} ${k.time}` < end; });
   for (const l of limits.values()) {
     if (l.status === 'retired' || !hasNumericLimit(l)) continue;
     const ms = matches.filter((m) => m.paramId === l.paramId);
@@ -56,11 +60,24 @@ export function checksOf({ log, lab, limits, matches }: BoardInput): Check[] {
     if (lm && lm.kind === 'lab') {
       const hits = dayLab.flatMap((s) => s.results.filter((r) => r.component.trim().toUpperCase() === lm.component.trim().toUpperCase() && (s.material ?? '').trim().toUpperCase() === lm.material.trim().toUpperCase())
         .map((r) => ({ s, r, train: trainOfEquipment(s.equipment) })));
+      // one value per train: the newest sample up to the end of the shift; earlier ones of the day go in the note
+      // (owner, 28 Nov 2026: "why many samples of H2S are showing")
       const seen = new Set<TrainId>();
-      for (const h of hits) {
-        const train = h.train ?? 'Common'; seen.add(train);
-        const st = toSt(limitState(h.r.value, l));
-        out.push({ ...base, train, value: h.r.value, unit: h.r.unit ?? base.unit, state: st, note: `${h.s.equipment ?? ''} ${kuwaitParts(h.s.collectedAt)?.time ?? ''}`.trim() });
+      const byTrain = new Map<TrainId, typeof hits>();
+      for (const h of hits) { const t = h.train ?? 'Common'; byTrain.set(t, [...(byTrain.get(t) ?? []), h]); }
+      for (const [train, hs] of byTrain) {
+        seen.add(train);
+        // one sample point per train normally; when several (e.g. T-101 and T-201 both on Common), each point stays
+        const points = new Map<string, typeof hits>();
+        for (const h of hs) { const k = h.s.equipment ?? ''; points.set(k, [...(points.get(k) ?? []), h]); }
+        for (const ph of points.values()) {
+          const sorted = [...ph].sort((a, b) => (b.s.collectedAt ?? '').localeCompare(a.s.collectedAt ?? ''));
+          const h = sorted[0];
+          const st = toSt(limitState(h.r.value, l));
+          const earlier = sorted.slice(1).map((x) => `${x.r.value} at ${kuwaitParts(x.s.collectedAt)?.time ?? '?'}`);
+          out.push({ ...base, train, value: h.r.value, unit: h.r.unit ?? base.unit, state: st,
+            note: `${h.s.equipment ?? ''} ${kuwaitParts(h.s.collectedAt)?.time ?? ''}`.trim() + (earlier.length ? ` · earlier ${earlier.join(', ')}` : '') });
+        }
       }
       for (const t of trains) if (!seen.has(t)) out.push({ ...base, train: t, value: null, state: 'grey', note: 'no sample that day' });
       continue;
@@ -160,20 +177,38 @@ export function incidentsOf(log: StoredLog, controller: StoredLog | null): Incid
 }
 
 // ── Handover (spec §8): most serious first; one line per train, then common, then overrides
-export interface HandoverLine { key: string; items: { st: St; text: string }[] }
+/** One handover point. `by`/`age` for a remark (who wrote it, NEW or how many shifts); `overrideId` for an open override;
+ *  `suggest` for a remark that names an override the register does not hold. */
+export interface HandoverItem { st: St; text: string; by?: string; age?: string; remark?: boolean; overrideId?: string; suggest?: { train: TrainId; text: string } }
+export interface HandoverLine { key: string; items: HandoverItem[] }
+const ROLE: Record<string, string> = { CONTROLLER: 'Controller', 'CONTROLLER I': 'Controller I', 'CONTROL ROOM': 'Control room', 'CONTROL ROOM OPERATOR': 'Control room', 'FIELD OPERATOR': 'Field operator' };
+const roleName = (r: string) => ROLE[r.trim().toUpperCase()] ?? r.trim().toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 const short = (c: Check) => `${c.label.replace(/\s*\(.*?\)\s*/g, ' ').trim()} ${c.value ?? ''}${c.unit && c.value ? ` ${c.unit}` : ''}`.trim();
 export function handover(input: BoardInput, checks: Check[]): HandoverLine[] {
   const lines: HandoverLine[] = [];
-  const ov = input.overrides.map((o) => ({ st: 'bad' as St, text: `${o.train} ${o.item}${o.reason ? ` (${o.reason})` : ''}${o.startedOn ? ` since ${o.startedOn.slice(8, 10)}/${o.startedOn.slice(5, 7)}` : ''} · ${o.expiresOn ? `expires ${o.expiresOn}` : 'expiry not set'}${o.moc ? '' : ', MOC not set'}` }));
+  const ov: HandoverItem[] = input.overrides.map((o) => ({ st: 'bad' as St, overrideId: o.id, text: `${o.train} ${o.item}${o.reason ? ` (${o.reason})` : ''}${o.startedOn ? ` since ${o.startedOn.slice(8, 10)}/${o.startedOn.slice(5, 7)}` : ''} · ${o.expiresOn ? `expires ${o.expiresOn}` : 'expiry not set'}${o.moc ? '' : ', MOC not set'}` }));
+  // remarks that need attention (rule-based; trips and leaks are already incidents)
+  const points = attentionOf(input.log, input.controller, input.before ?? []).filter((a) => !EVENT.test(a.text));
+  const known = input.overrides.map((o) => `${o.item} ${o.tags ?? ''}`.toUpperCase());
+  for (const a of points.filter((x) => /\boverrid/i.test(x.text))) {
+    const tags = a.tags.filter((t) => /^(FSLL|FSL|LSLL|LSHH|PSLL|PSHH|TSHH|SSHH|FSHH|[A-Z]{1,4})-\d/.test(t));
+    if (!tags.some((t) => known.some((k) => k.includes(t) || k.includes(t.replace('-', ' ')) || k.includes(t.replace('-', ''))))) {
+      ov.push({ st: 'bad', remark: true, text: `In the remarks: ${a.text}`, by: a.roles.map(roleName).join(', '), age: a.isNew ? 'NEW' : `${a.shifts} shifts`, suggest: { train: a.train, text: a.text } });
+    }
+  }
   if (ov.length) lines.push({ key: 'Override', items: ov });
   const sev = (c: Check) => c.state === 'bad' || c.state === 'off';
   const both = new Set(checks.filter((c) => c.state === 'bad' && c.train === 'TR-1' && checks.some((d) => d.paramId === c.paramId && d.train === 'TR-2' && d.state === 'bad')).map((c) => c.paramId));
   if (both.size) lines.push({ key: 'Both', items: [...both].map((p) => { const c = checks.find((x) => x.paramId === p)!; return { st: 'bad' as St, text: `${short(c)} beyond IOW ${c.limit.iowStd ?? ''}${c.limit.action ? ` · ${c.limit.action}` : ''}` }; }) });
   const inc = incidentsOf(input.log, input.controller);
   for (const t of ['TR-1', 'TR-2', 'Common'] as TrainId[]) {
-    const items: { st: St; text: string }[] = [];
+    const items: HandoverItem[] = [];
+    const rem = (lvl: 'high' | 'medium') => points.filter((a) => a.train === t && a.level === lvl)
+      .map((a): HandoverItem => ({ st: lvl === 'high' ? 'bad' : 'off', remark: true, text: a.text, by: a.roles.map(roleName).join(', '), age: a.isNew ? 'NEW' : `${a.shifts} shifts` }));
     for (const e of inc.filter((x) => x.train === t)) items.push({ st: 'bad', text: `${e.word}: ${e.tags[0] ?? ''}${e.time ? ` ${e.time}` : ''} · ${e.texts[0]}` });
+    items.push(...rem('high'));
     for (const c of checks.filter((x) => x.train === t && sev(x) && !both.has(x.paramId)).sort((a, b) => RANK[a.state] - RANK[b.state])) items.push({ st: c.state, text: short(c) });
+    items.push(...rem('medium'));
     for (const c of checks.filter((x) => x.train === t && x.state === 'chk')) items.push({ st: 'chk', text: `${c.label} · ${c.note ?? 'check'}` });
     if (items.length) lines.push({ key: t, items });
   }

@@ -73,6 +73,14 @@ function kuwaitParts(iso2) {
   return { date: s.slice(0, 10), time: s.slice(11, 16) };
 }
 
+// src/core/logbook/products.ts
+var SHIFT_END = { Morning: [0, "14:00"], Afternoon: [0, "22:00"], Night: [1, "06:00"] };
+function shiftEnd(date, shift) {
+  const [plus, hm] = SHIFT_END[shift ?? ""] ?? [1, "00:00"];
+  const d = new Date(Date.parse(`${date}T00:00:00Z`) + plus * 864e5).toISOString().slice(0, 10);
+  return `${d} ${hm}`;
+}
+
 // src/core/logbook/board.ts
 var RANK = { bad: 0, off: 1, chk: 2, grey: 3, ok: 4 };
 var worstOf = (xs) => xs.reduce((w, x) => RANK[x] < RANK[w] ? x : w, "ok");
@@ -98,7 +106,11 @@ var reactorOf = (key, side) => {
 var fmt = (n) => Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
 function checksOf({ log, lab, limits, matches }) {
   const out = [];
-  const dayLab = lab.filter((s) => kuwaitParts(s.collectedAt)?.date === log.date);
+  const end = shiftEnd(log.date, log.shift);
+  const dayLab = lab.filter((s) => {
+    const k = kuwaitParts(s.collectedAt);
+    return k?.date === log.date && `${k.date} ${k.time}` < end;
+  });
   for (const l of limits.values()) {
     if (l.status === "retired" || !hasNumericLimit(l)) continue;
     const ms = matches.filter((m) => m.paramId === l.paramId);
@@ -108,11 +120,32 @@ function checksOf({ log, lab, limits, matches }) {
     if (lm && lm.kind === "lab") {
       const hits = dayLab.flatMap((s) => s.results.filter((r) => r.component.trim().toUpperCase() === lm.component.trim().toUpperCase() && (s.material ?? "").trim().toUpperCase() === lm.material.trim().toUpperCase()).map((r) => ({ s, r, train: trainOfEquipment(s.equipment) })));
       const seen = /* @__PURE__ */ new Set();
+      const byTrain = /* @__PURE__ */ new Map();
       for (const h of hits) {
-        const train = h.train ?? "Common";
+        const t = h.train ?? "Common";
+        byTrain.set(t, [...byTrain.get(t) ?? [], h]);
+      }
+      for (const [train, hs] of byTrain) {
         seen.add(train);
-        const st = toSt(limitState(h.r.value, l));
-        out.push({ ...base, train, value: h.r.value, unit: h.r.unit ?? base.unit, state: st, note: `${h.s.equipment ?? ""} ${kuwaitParts(h.s.collectedAt)?.time ?? ""}`.trim() });
+        const points = /* @__PURE__ */ new Map();
+        for (const h of hs) {
+          const k = h.s.equipment ?? "";
+          points.set(k, [...points.get(k) ?? [], h]);
+        }
+        for (const ph of points.values()) {
+          const sorted = [...ph].sort((a, b) => (b.s.collectedAt ?? "").localeCompare(a.s.collectedAt ?? ""));
+          const h = sorted[0];
+          const st = toSt(limitState(h.r.value, l));
+          const earlier = sorted.slice(1).map((x) => `${x.r.value} at ${kuwaitParts(x.s.collectedAt)?.time ?? "?"}`);
+          out.push({
+            ...base,
+            train,
+            value: h.r.value,
+            unit: h.r.unit ?? base.unit,
+            state: st,
+            note: `${h.s.equipment ?? ""} ${kuwaitParts(h.s.collectedAt)?.time ?? ""}`.trim() + (earlier.length ? ` · earlier ${earlier.join(", ")}` : "")
+          });
+        }
       }
       for (const t of trains) if (!seen.has(t)) out.push({ ...base, train: t, value: null, state: "grey", note: "no sample that day" });
       continue;

@@ -10,7 +10,7 @@ import { kuwaitParts, labTrend, type StoredLog, type StoredSample } from '@/core
 import { productCards, shiftEnd, type ProductCard } from '@/core/logbook/products';
 import { dueFor, lastLabel, scheduleStatus, type DueState, type ScheduleItem } from '@/core/logbook/schedule';
 import { enablePush, pushEndpoint, pushState } from '@/data/push';
-import { fetchLimitChanges, setLimit, setUnitLogAlerts, undoLimitChange, unitLogAlertsOn, type LimitChange } from '@/data/unitLog';
+import { addOverride, closeOverride, fetchLimitChanges, setLimit, setUnitLogAlerts, undoLimitChange, unitLogAlertsOn, updateOverride, type LimitChange } from '@/data/unitLog';
 import { iowBand, limitBand, type Limit, type LimitMatch } from '@/core/logbook/limits';
 import type { Override } from '@/core/logbook/board';
 import { drawSection, tileIcon, type DrawCtx } from './drawings';
@@ -30,10 +30,10 @@ function Svg({ make }: { make: () => SVGSVGElement }) {
   return <div ref={ref} />;
 }
 
-export interface OverviewProps { log: StoredLog; controller: StoredLog | null; lab: StoredSample[]; limits: Map<string, Limit>; matches: LimitMatch[]; overrides: Override[]; schedule?: ScheduleItem[]; canEdit?: boolean; onLimitsChanged?: () => void }
+export interface OverviewProps { log: StoredLog; controller: StoredLog | null; lab: StoredSample[]; limits: Map<string, Limit>; matches: LimitMatch[]; overrides: Override[]; schedule?: ScheduleItem[]; canEdit?: boolean; onLimitsChanged?: () => void; before?: StoredLog[]; onOverridesChanged?: () => void }
 
 export default function Overview(p: OverviewProps) {
-  return <EditCtx.Provider value={{ canEdit: !!p.canEdit, changed: p.onLimitsChanged ?? (() => undefined) }}><OverviewBody {...p} /></EditCtx.Provider>;
+  return <EditCtx.Provider value={{ canEdit: !!p.canEdit, changed: p.onLimitsChanged ?? (() => undefined), overrides: p.overrides, overridesChanged: p.onOverridesChanged ?? (() => undefined) }}><OverviewBody {...p} /></EditCtx.Provider>;
 }
 
 function OverviewBody(p: OverviewProps) {
@@ -41,7 +41,7 @@ function OverviewBody(p: OverviewProps) {
   const sec = ORDER.find((x) => x === params.get('sec')) ?? null;
   const train = TRAINS.find((t) => t === params.get('train')) ?? null;
   const side: 1 | 2 = params.get('side') === '2' ? 2 : 1;
-  const input: BoardInput = { log: p.log, controller: p.controller, lab: p.lab, limits: p.limits, matches: p.matches, overrides: p.overrides };
+  const input: BoardInput = { log: p.log, controller: p.controller, lab: p.lab, limits: p.limits, matches: p.matches, overrides: p.overrides, before: p.before ?? [] };
   const checks = useMemo(() => checksOf(input), [p.log, p.controller, p.lab, p.limits, p.matches]); // eslint-disable-line react-hooks/exhaustive-deps
   const nav = (set: Record<string, string | null>) => { const nx = new URLSearchParams(params); for (const [k, v] of Object.entries(set)) { if (v) nx.set(k, v); else nx.delete(k); } setParams(nx); };
   if (!p.limits.size) return <p className="rounded-2xl bg-white p-4 text-[14px] text-slate-600 ring-1 ring-slate-200">The limit library is not loaded, so nothing can be checked yet.</p>;
@@ -209,27 +209,72 @@ const GROUP_NAME: Record<string, string> = { Override: 'Overrides open', Both: '
 
 /** The handover: a heading per group (overrides, both trains, each train, common), then one line per point. */
 function HandoverCard({ lines, all = false }: { lines: HandoverLine[]; all?: boolean }) {
+  const { canEdit, overrides } = useContext(EditCtx);
   const [open, setOpen] = useState<Set<string>>(new Set());
-  if (!lines.length) return null;
+  const [sheet, setSheet] = useState<{ o?: Override; add?: { train: TrainId; text: string } } | null>(null);
+  if (!lines.length && !canEdit) return null;
   return (
     <div className="rounded-2xl bg-white px-3 py-1 ring-1 ring-slate-200">
-      {lines.map((l) => { const shown = all || open.has(l.key) ? l.items : l.items.slice(0, 4); return (
+      {lines.map((l) => { const shown = all || open.has(l.key) ? l.items : l.items.slice(0, 5); return (
         <section key={l.key} className="border-t border-slate-100 py-2 first:border-0">
           <h3 className={cx('text-[13px] font-bold uppercase tracking-wide', l.key.startsWith('TR') ? 'text-brand-800' : 'text-slate-500')}>{GROUP_NAME[l.key] ?? l.key}</h3>
           <ul className="mt-1 space-y-1.5">
-            {shown.map((x, k) => { const p = splitPoint(x.text); return (
-              <li key={k} className="flex gap-2 text-[14.5px] leading-snug">
-                <span className={cx('w-4 shrink-0 text-center', x.st !== 'ok' && TXT[x.st])} aria-hidden="true">{ICON[x.st]}</span>
-                <span className="min-w-0">
-                  <span className={cx('block', x.st === 'bad' ? 'font-semibold text-red-700' : x.st === 'off' ? 'text-amber-900' : 'text-slate-800')}>{p.head}</span>
+            {shown.map((x, k) => { const p = x.remark ? { head: x.text.replace(/^In the remarks: /, ''), lines: [] as string[] } : splitPoint(x.text); const o = x.overrideId ? overrides.find((y) => y.id === x.overrideId) : undefined;
+              const body = (
+                <span className="min-w-0 flex-1">
+                  <span className={cx('block', x.st === 'bad' ? 'font-semibold text-red-700' : x.st === 'off' ? 'text-amber-900' : 'text-slate-800')}>{x.suggest ? 'In the remarks: ' : ''}{p.head}</span>
                   {p.lines.map((d, j) => <span key={j} className="block text-[13px] text-slate-600">{d}</span>)}
-                </span>
-              </li>); })}
+                  {x.remark && <span className="block text-[12.5px] text-slate-500">{x.by}{x.age && <> · <b className={x.age === 'NEW' ? 'text-blue-700' : 'text-slate-500'}>{x.age === 'NEW' ? 'NEW' : `open ${x.age}`}</b></>}</span>}
+                  {x.suggest && canEdit && <button type="button" onClick={() => setSheet({ add: x.suggest })} className="mt-1 min-h-10 rounded-lg bg-red-50 px-3 text-[13px] font-bold text-red-800">＋ Add to the override register</button>}
+                </span>);
+              return (
+                <li key={k} className="flex gap-2 text-[14.5px] leading-snug">
+                  <span className={cx('w-4 shrink-0 text-center', x.st !== 'ok' && TXT[x.st])} aria-hidden="true">{x.remark ? '✎' : ICON[x.st]}</span>
+                  {o && canEdit ? <button type="button" onClick={() => setSheet({ o })} className="flex min-w-0 flex-1 items-start text-left">{body}<span className="ms-2 shrink-0 text-[13px] font-bold text-brand-800">Action ›</span></button> : body}
+                </li>); })}
           </ul>
-          {!all && l.items.length > 4 && <button type="button" onClick={() => setOpen((o) => { const n = new Set(o); if (n.has(l.key)) n.delete(l.key); else n.add(l.key); return n; })}
-            className="mt-1 min-h-10 text-[13px] font-bold text-brand-800">{open.has(l.key) ? 'Show less ▴' : `＋ ${l.items.length - 4} more ▾`}</button>}
+          {!all && l.items.length > 5 && <button type="button" onClick={() => setOpen((o) => { const n = new Set(o); if (n.has(l.key)) n.delete(l.key); else n.add(l.key); return n; })}
+            className="mt-1 min-h-10 text-[13px] font-bold text-brand-800">{open.has(l.key) ? 'Show less ▴' : `＋ ${l.items.length - 5} more ▾`}</button>}
         </section>); })}
+      {canEdit && <button type="button" onClick={() => setSheet({ add: { train: 'TR-1', text: '' } })} className="min-h-11 w-full border-t border-slate-100 text-left text-[13.5px] font-bold text-brand-800">＋ Add an override</button>}
+      <p className="border-t border-slate-100 py-1.5 text-[11.5px] text-slate-500">● ▲ ⚑ from the readings and lab · ✎ from the remarks (problems only; routine lines are in the Shift log)</p>
+      {sheet && <OverrideSheet o={sheet.o} add={sheet.add} onClose={() => setSheet(null)} />}
     </div>
+  );
+}
+
+/** Override actions (Section Head): set the reason, MOC and expiry, or close it with a note; or add one (from a remark). */
+function OverrideSheet({ o, add, onClose }: { o?: Override; add?: { train: TrainId; text: string }; onClose: () => void }) {
+  const { overridesChanged } = useContext(EditCtx);
+  const today = new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 10);
+  const [v, setV] = useState({ train: add?.train ?? 'TR-1', item: add?.text ?? '', tags: '', reason: o?.reason ?? '', moc: o?.moc ?? '', started: today, expires: o?.expiresOn ?? '', note: '' });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const run = async (f: () => Promise<void>) => { setBusy(true); setErr(null); try { await f(); overridesChanged(); onClose(); } catch (e) { setErr((e as Error).message); } finally { setBusy(false); } };
+  const input = (key: keyof typeof v, label: string, type = 'text') => (
+    <label className="block text-[13px] font-semibold text-slate-600">{label}
+      <input type={type} value={v[key]} onChange={(e) => setV({ ...v, [key]: e.target.value })} className="mt-1 block min-h-11 w-full rounded-xl border border-slate-300 px-3 text-[16px] text-slate-900" /></label>);
+  return (
+    <BottomSheet open onClose={onClose} title={o ? `Override · ${o.train}` : 'Add an override'}>
+      <div className="space-y-2.5 pb-2">
+        {o ? <p className="text-[14.5px] font-semibold text-red-800">{o.item}<span className="block text-[12.5px] font-normal text-slate-500">{o.tags ? `${o.tags} · ` : ''}since {o.startedOn ?? '—'}{o.source ? ` · ${o.source}` : ''}</span></p> : <>
+          <div className="flex gap-1.5" role="group" aria-label="Train">{(['TR-1', 'TR-2', 'Common'] as const).map((t) => <button key={t} type="button" aria-pressed={v.train === t} onClick={() => setV({ ...v, train: t })} className={cx('min-h-11 flex-1 rounded-xl border-[1.5px] text-[14px] font-bold', v.train === t ? 'border-brand-800 text-brand-800' : 'border-slate-200 text-slate-500')}>{t}</button>)}</div>
+          {input('item', 'What is overridden (e.g. FSLL-547 trip on LB-201)')}
+          {input('tags', 'Tags (optional)')}
+          {input('started', 'Since', 'date')}</>}
+        {input('reason', 'Reason')}
+        <div className="grid grid-cols-2 gap-2">{input('moc', 'MOC no.')}{input('expires', 'Expires', 'date')}</div>
+        {err && <p className="text-[13px] font-semibold text-red-700">{err}</p>}
+        <button type="button" disabled={busy} onClick={() => run(() => (o ? updateOverride(o.id, { reason: v.reason || null, moc: v.moc || null, expiresOn: v.expires || null })
+          : addOverride({ train: v.train, item: v.item, tags: v.tags || null, reason: v.reason || null, moc: v.moc || null, startedOn: v.started || null, expiresOn: v.expires || null, source: add?.text ? 'From the shift log remarks' : 'Added in the app' })))}
+          className="min-h-11 w-full rounded-xl bg-brand-800 font-bold text-white">{busy ? 'Saving…' : o ? 'Save' : 'Add override'}</button>
+        {o && <div className="space-y-2 rounded-xl bg-slate-50 p-2.5">
+          {input('note', 'How it was closed (e.g. module replaced, 2oo3 restored)')}
+          <button type="button" disabled={busy} onClick={() => run(() => closeOverride(o.id, v.note))} className="min-h-11 w-full rounded-xl bg-white font-bold text-red-700 ring-1 ring-red-200">Close override</button>
+        </div>}
+        <p className="text-[12px] text-slate-500">Only the Section Head can change overrides. Nothing is deleted: a closed override keeps who closed it, when and why.</p>
+      </div>
+    </BottomSheet>
   );
 }
 
@@ -237,7 +282,7 @@ function HandoverCard({ lines, all = false }: { lines: HandoverLine[]; all?: boo
 function TrainPage(p: OverviewProps & { train: TrainId; checks: Check[]; lines: HandoverLine[]; k: Keys; pick: (t: TrainId) => void; back: () => void; openSec: (id: SectionId) => void; setShow: (x: Show) => void }) {
   const t = p.train;
   const mine: HandoverLine[] = p.lines.flatMap((l): HandoverLine[] => {
-    if (l.key === 'Override') { const items = l.items.filter((x) => x.text.startsWith(`${t} `)); return items.length ? [{ key: 'Override', items }] : []; }
+    if (l.key === 'Override') { const items = l.items.filter((x) => (x.overrideId && x.text.startsWith(`${t} `)) || x.suggest?.train === t); return items.length ? [{ key: 'Override', items }] : []; }
     if (l.key === 'Both') return t === 'Common' ? [] : [{ key: 'Both trains', items: l.items }];
     if (l.key === t) return [{ key: 'Now', items: l.items }];
     return [];
@@ -446,7 +491,7 @@ function drawCtx(p: OverviewProps, checks: Check[], train: TrainId, tr: 1 | 2): 
 
 /** The limits of a section (or of Common), worst first: value per train, then band, source, notes and the action. */
 /** Who may change limits on this page, and how the page reloads them after a change. */
-const EditCtx = createContext<{ canEdit: boolean; changed: () => void }>({ canEdit: false, changed: () => undefined });
+const EditCtx = createContext<{ canEdit: boolean; changed: () => void; overrides: Override[]; overridesChanged: () => void }>({ canEdit: false, changed: () => undefined, overrides: [], overridesChanged: () => undefined });
 
 /** The limits of a section (or a state), worst first: one short row each (name, value per train, unit); a tap opens the
  *  band, source, notes, action, its change history and, for the Section Head, "Change limit". */
