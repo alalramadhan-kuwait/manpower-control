@@ -174,7 +174,7 @@ export function handover(input: BoardInput, checks: Check[]): HandoverLine[] {
     const items: { st: St; text: string }[] = [];
     for (const e of inc.filter((x) => x.train === t)) items.push({ st: 'bad', text: `${e.word}: ${e.tags[0] ?? ''}${e.time ? ` ${e.time}` : ''} · ${e.texts[0]}` });
     for (const c of checks.filter((x) => x.train === t && sev(x) && !both.has(x.paramId)).sort((a, b) => RANK[a.state] - RANK[b.state])) items.push({ st: c.state, text: short(c) });
-    for (const c of checks.filter((x) => x.train === t && x.state === 'chk')) items.push({ st: 'chk', text: `${c.label}: ${c.note ?? 'check'}` });
+    for (const c of checks.filter((x) => x.train === t && x.state === 'chk')) items.push({ st: 'chk', text: `${c.label} · ${c.note ?? 'check'}` });
     if (items.length) lines.push({ key: t, items });
   }
   // an incident the remarks don't place on a train is shown on its own, never guessed onto one
@@ -219,4 +219,12 @@ export function trainCounts(checks: Check[], overrides: Override[], t: TrainId) 
   const c = { bad: cs.filter((x) => x.state === 'bad').length, ov, off: cs.filter((x) => x.state === 'off').length, chk: cs.filter((x) => x.state === 'chk').length, grey: new Set(cs.filter((x) => x.state === 'grey').map((x) => x.paramId)).size };
   const st: St = c.bad || c.ov ? 'bad' : c.off ? 'off' : c.chk ? 'chk' : c.grey ? 'grey' : 'ok';
   return { ...c, st };
+}
+
+/** One handover point as a headline and its detail: the text before the first " · " is the point, the rest is detail,
+ *  one sentence per line (owner, 28 Nov 2026: "if a sentence ends it should start on a new line"). */
+export function splitPoint(text: string): { head: string; lines: string[] } {
+  const [head, ...rest] = text.split(' · ');
+  const lines = rest.join(' · ').split(/(?<=[.!?])\s+(?=\S)/).flatMap((x) => x.split(/\s+·\s+/)).map((x) => x.trim()).filter(Boolean);
+  return { head: head.replace(/^(Trip|Leak|Fire|Emergency):\s*/, '$1 '), lines };
 }

@@ -5,7 +5,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { BottomSheet, cx } from '@/ui/components';
-import { checksOf, handover, reactorStrip, trainCounts, summarize, trainOfEquipment, whatsappText, type BoardInput, type Check, type HandoverLine, type SectionId, type St, type StripCell, type TrainId } from '@/core/logbook/board';
+import { checksOf, handover, reactorStrip, splitPoint, trainCounts, summarize, trainOfEquipment, whatsappText, type BoardInput, type Check, type HandoverLine, type SectionId, type St, type StripCell, type TrainId } from '@/core/logbook/board';
 import { kuwaitParts, labTrend, type StoredLog, type StoredSample } from '@/core/logbook/view';
 import { productCards, shiftEnd, type ProductCard } from '@/core/logbook/products';
 import { dueFor, lastLabel, scheduleStatus, type DueState, type ScheduleItem } from '@/core/logbook/schedule';
@@ -205,16 +205,30 @@ function Tiles({ ids, sum, line, gasOverride, open }: { ids: SectionId[]; sum: R
   );
 }
 
+const GROUP_NAME: Record<string, string> = { Override: 'Overrides open', Both: 'Both trains', Now: 'This shift', 'Both trains': 'Both trains', 'TR-1': 'Train 1', 'TR-2': 'Train 2', Common: 'Common' };
+
+/** The handover: a heading per group (overrides, both trains, each train, common), then one line per point. */
 function HandoverCard({ lines, all = false }: { lines: HandoverLine[]; all?: boolean }) {
+  const [open, setOpen] = useState<Set<string>>(new Set());
   if (!lines.length) return null;
   return (
     <div className="rounded-2xl bg-white px-3 py-1 ring-1 ring-slate-200">
-      {lines.map((l) => (
-        <div key={l.key} className="flex gap-2.5 border-t border-slate-100 py-2 text-[14.5px] first:border-0">
-          <span className={cx('w-[66px] shrink-0 font-bold leading-tight', l.key.startsWith('TR') ? 'text-brand-800' : 'text-slate-900')}>{l.key}</span>
-          <span className="min-w-0">{l.items.slice(0, all ? undefined : 4).map((x, k) => <span key={k} className={cx(x.st !== 'ok' && TXT[x.st], x.st === 'bad' && 'font-semibold')}>{k ? ' · ' : ''}{ICON[x.st]} {x.text}</span>)}{!all && l.items.length > 4 && <span className="text-slate-500"> · +{l.items.length - 4}</span>}</span>
-        </div>
-      ))}
+      {lines.map((l) => { const shown = all || open.has(l.key) ? l.items : l.items.slice(0, 4); return (
+        <section key={l.key} className="border-t border-slate-100 py-2 first:border-0">
+          <h3 className={cx('text-[13px] font-bold uppercase tracking-wide', l.key.startsWith('TR') ? 'text-brand-800' : 'text-slate-500')}>{GROUP_NAME[l.key] ?? l.key}</h3>
+          <ul className="mt-1 space-y-1.5">
+            {shown.map((x, k) => { const p = splitPoint(x.text); return (
+              <li key={k} className="flex gap-2 text-[14.5px] leading-snug">
+                <span className={cx('w-4 shrink-0 text-center', x.st !== 'ok' && TXT[x.st])} aria-hidden="true">{ICON[x.st]}</span>
+                <span className="min-w-0">
+                  <span className={cx('block', x.st === 'bad' ? 'font-semibold text-red-700' : x.st === 'off' ? 'text-amber-900' : 'text-slate-800')}>{p.head}</span>
+                  {p.lines.map((d, j) => <span key={j} className="block text-[13px] text-slate-600">{d}</span>)}
+                </span>
+              </li>); })}
+          </ul>
+          {!all && l.items.length > 4 && <button type="button" onClick={() => setOpen((o) => { const n = new Set(o); if (n.has(l.key)) n.delete(l.key); else n.add(l.key); return n; })}
+            className="mt-1 min-h-10 text-[13px] font-bold text-brand-800">{open.has(l.key) ? 'Show less ▴' : `＋ ${l.items.length - 4} more ▾`}</button>}
+        </section>); })}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Limit, LimitMatch } from '../limits';
 import type { StoredLog, StoredSample } from '../view';
-import { checksOf, handover, incidentsOf, reactorStrip, sectionOf, summarize, trainOfEquipment, whatsappText, type BoardInput, type Override } from '../board';
+import { checksOf, handover, incidentsOf, reactorStrip, sectionOf, splitPoint, summarize, trainOfEquipment, whatsappText, type BoardInput, type Override } from '../board';
 
 const L = (o: Partial<Limit> & { paramId: string; section: string }): Limit => ({ description: o.paramId, unit: 'u', target: null, normalLo: null, normalHi: null,
   iowStd: null, iowCrit: null, trip: null, roc: null, source: 'src', action: null, status: 'active', ...o });
@@ -103,5 +103,13 @@ describe('reactor exotherm and ΔP', () => {
     const s1 = reactorStrip(rd, lims, 'TR-2');
     expect(s1.dp.map((x) => `${x.name} ${x.value} ${x.st}`)).toEqual(['OCR 70 off', 'R-201 null grey', 'R-202 null grey', 'R-203 120 off', 'R-204 null grey'].map((x) => x.replace(/R-/, '')));
     expect(s1.dt.map((x) => x.value)).toEqual(['60', '5', null, null, null, '40']);
+  });
+});
+
+describe('splitPoint', () => {
+  it('puts the point first and each sentence of the detail on its own line', () => {
+    expect(splitPoint('Trip: P-901 09:28 · P-901 A tripped at 9:28. Restarted and feed normal.')).toEqual({ head: 'Trip P-901 09:28', lines: ['P-901 A tripped at 9:28.', 'Restarted and feed normal.'] });
+    expect(splitPoint('TR-2 Compressor bypass since 01/01 · expiry not set, MOC not set')).toEqual({ head: 'TR-2 Compressor bypass since 01/01', lines: ['expiry not set, MOC not set'] });
+    expect(splitPoint('OCR inlet 664 °F')).toEqual({ head: 'OCR inlet 664 °F', lines: [] });
   });
 });
