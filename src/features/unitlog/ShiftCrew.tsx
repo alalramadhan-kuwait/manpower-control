@@ -18,7 +18,7 @@ function load(log: StoredLog): Promise<StaffCompare | null> {
 }
 
 const HOW: Record<StaffCompare['controllers'][number]['how'], string> = {
-  planned: 'as planned', cover: 'recorded cover', acting: 'Acting Controller', other_crew: 'not planned in this crew', not_in_roster: 'not in the roster',
+  planned: 'as planned', cover: 'recorded cover', acting: 'Acting Controller', relief: 'relief Controller · no cover recorded', other_crew: 'not planned in this crew', not_in_roster: 'not in the roster',
 };
 
 export default function ShiftCrew({ log }: { log: StoredLog }) {

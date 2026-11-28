@@ -45,3 +45,13 @@ describe('compareStaff', () => {
     expect(compareStaff({ ...log, manpower: [] }, day, people)).toBeNull();
   });
 });
+
+describe('compareStaff with a relief Controller', () => {
+  it('names a VR Controller with no recorded cover as relief', () => {
+    const own = person('A', 'controller'), vr = { ...person('A', 'vr_controller'), crew: null };
+    const day = evaluateDay(DAY, [own, vr], []);
+    const r = compareStaff({ date: DAY, shift: 'Morning', crew: 'A', manpower: [row(vr, 'Controller')] }, day, [own, vr])!;
+    expect(r.controllers).toEqual([expect.objectContaining({ empNo: vr.employeeNumber, how: 'relief' })]);
+    expect(r.missing.map((x) => x.empNo)).toEqual([own.employeeNumber]);
+  });
+});

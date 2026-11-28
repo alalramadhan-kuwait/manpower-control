@@ -17,7 +17,7 @@ export interface StaffCompare {
   /** The log's crew is on that shift in the roster (false: the roster has it on another shift or off). */
   onRota: boolean;
   /** The Controller(s) the log names, and how the roster has them. */
-  controllers: (StaffPerson & { how: 'planned' | 'cover' | 'acting' | 'other_crew' | 'not_in_roster'; homeCrew: string | null })[];
+  controllers: (StaffPerson & { how: 'planned' | 'cover' | 'acting' | 'relief' | 'other_crew' | 'not_in_roster'; homeCrew: string | null })[];
   /** Planned for this shift and in the log. */
   present: StaffPerson[];
   /** Planned, no leave recorded, not in the log. */
@@ -69,7 +69,7 @@ export function compareStaff(log: Pick<StoredLog, 'date' | 'shift' | 'crew' | 'm
     if (s.role === 'Controller' || /^Controller$/i.test(r.position ?? '')) {
       const cover = crewDay?.controller.cover?.person, acting = crewDay?.controller.acting;
       const how = cover && key(cover.employeeNumber) === k ? 'cover' : acting && key(acting.employeeNumber) === k ? 'acting'
-        : planned.has(k) ? 'planned' : p ? 'other_crew' : 'not_in_roster';
+        : planned.has(k) ? 'planned' : p && (p.role === 'vr_controller' || p.role === 'morning_controller') ? 'relief' : p ? 'other_crew' : 'not_in_roster';
       out.controllers.push({ ...s, role: 'Controller', how, homeCrew: home(p) });
     }
   }
