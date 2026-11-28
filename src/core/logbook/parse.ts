@@ -14,9 +14,11 @@ export interface RemarkSection { role: string; groups: RemarkGroup[] }
 export interface Reading { label: string; key: string; tr1: string | null; tr2: string | null; unit: string | null }
 export interface FeedRow { train: string; total: string | null; hot: string | null; cold: string | null; backwashMin: string | null }
 export interface ProductRow { product: string; route: string | null; value: string | null; unit: string | null }
+/** One person in the log's Manpower section (owner, 28 Nov 2026: "who is the controller … who was there"). */
+export interface StaffRow { role: string; empNo: string; name: string; position: string | null; area: string | null }
 export interface ShiftLog {
   kind: LogKind; logNo: number; date: string; shift: string | null; crew: string | null; day: string | null; createdAt: string | null;
-  sections: RemarkSection[]; readings: Reading[]; feed: FeedRow[]; products: ProductRow[]; unplaced: number;
+  sections: RemarkSection[]; readings: Reading[]; feed: FeedRow[]; products: ProductRow[]; unplaced: number; manpower?: StaffRow[];
 }
 
 const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
@@ -222,6 +224,40 @@ export function parseProducts(pages: Page[]): ProductRow[] {
     product: r[0], route: r[1] ?? null, value: r[2] ?? null, unit: r[3] ?? null }));
 }
 
+// ── Manpower: "Controller" / "Field Operator" / "Panel Operator", each a table Employee | Position | Designated Area.
+// A name may wrap onto the next line; the position and area may sit on the name's line or the next one.
+const STAFF_HEAD = /^(Controllers?|Field Operators?|Panel Operators?|Shift (?:Engineer|Supervisor)s?)$/i;
+const EMP = /^(\d{3,7})\s*-\s*(.+)$/;
+export function parseManpower(pages: Page[]): StaffRow[] {
+  const out: StaffRow[] = [];
+  let on = false, role: string | null = null, cur: StaffRow | null = null;
+  let cols = { pos: 330, area: 480 };                    // where Position and Designated Area start (from the header row)
+  for (const page of pages) for (const l of linesOf(page.pieces)) {
+    if (!on) { if (/^Manpower$/i.test(l.text)) on = true; continue; }
+    if (l.pieces[0].x < 150 && STAFF_HEAD.test(l.text)) { role = l.text.replace(/s$/i, '').replace(/^\w/, (c) => c.toUpperCase()); cur = null; continue; }
+    if (/\bEmployee\b/.test(l.text) && /\bPosition\b/.test(l.text)) {
+      const at = (w: RegExp) => l.pieces.find((q) => w.test(q.s))?.x;
+      const pos = at(/^Position/), area = at(/^Designated/);
+      if (pos !== undefined && area !== undefined) cols = { pos: pos - 20, area: area - 20 };
+      continue;
+    }
+    if (!role) continue;
+    // a line only at the left margin that is not a role heading is the next section
+    if (l.pieces.every((q) => q.x < 150)) { on = false; role = null; cur = null; continue; }
+    for (const q of l.pieces) {
+      const t = q.s.trim();
+      if (q.x < 150) continue;                             // the Unit column
+      if (q.x < cols.pos) {
+        const m = EMP.exec(t);
+        if (m) { cur = { role, empNo: m[1], name: norm(m[2]), position: null, area: null }; out.push(cur); }
+        else if (cur) cur.name = norm(`${cur.name} ${t}`);
+      } else if (cur && q.x < cols.area) cur.position = norm(`${cur.position ?? ''} ${t}`);
+      else if (cur) cur.area = norm(`${cur.area ?? ''} ${t}`);
+    }
+  }
+  return out;
+}
+
 /** One shift log, or null when the file is not one of the three logs. */
 export function parseShiftLog(pages: Page[]): ShiftLog | null {
   const head = pages.length ? parseHeader(linesOf(pages[0].pieces).slice(0, 6).map((l) => l.text).join('\n')) : null;
@@ -229,7 +265,7 @@ export function parseShiftLog(pages: Page[]): ShiftLog | null {
   if (head.kind === 'controller1') return { ...head, sections: parseControllerArds(pages), readings: [], feed: [], products: [], unplaced: 0 };
   const r = head.kind === 'ards' ? parseReadings(pages) : { readings: [], unplaced: 0 };
   return { ...head, sections: parseRemarks(pages), readings: r.readings, unplaced: r.unplaced,
-    feed: head.kind === 'ards' ? parseFeed(pages) : [], products: head.kind === 'ards' ? parseProducts(pages) : [] };
+    feed: head.kind === 'ards' ? parseFeed(pages) : [], products: head.kind === 'ards' ? parseProducts(pages) : [], manpower: parseManpower(pages) };
 }
 
 // ── Lab report ("AREA 4 UNIT 12 RESULTS"): one column per sample ────────────────────────────────────────────────

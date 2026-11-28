@@ -1,6 +1,7 @@
 // Made-up pages only: names, numbers and tags here are invented to mirror the layouts, never taken from a real log.
 import { describe, expect, it } from 'vitest';
 import { labTime, num, parseControllerArds, parseHeader, parseLabReport, parseReadings, parseRemarks, parseShiftLog, readingKey, type Page, type Piece } from '../parse';
+import { parseManpower } from '../parse';
 
 const pc = (x: number, y: number, s: string, w = s.length * 5): Piece => ({ p: 1, x, y, w, s });
 const page = (pieces: Piece[], h = 595): Page => ({ h, pieces });
@@ -117,5 +118,26 @@ describe('lab report', () => {
   });
   it('num reads plain numbers only', () => {
     expect([num('1.150'), num('-0.3'), num('+30'), num('no activity'), num(null)]).toEqual([1.15, -0.3, 30, null, null]);
+  });
+});
+
+describe('parseManpower', () => {
+  const P = (x: number, y: number, s: string) => ({ p: 1, x, y, w: s.length * 5, s });
+  const page = { h: 595, pieces: [
+    P(44, 300, 'Manpower'), P(44, 330, 'Controller'), P(50, 350, 'Unit'), P(199, 350, 'Employee'), P(349, 350, 'Position'), P(499, 350, 'Designated Area'),
+    P(199, 370, '90001 - ALPHA BETA'), P(349, 376, 'Controller'), P(199, 382, 'GAMMA'),
+    P(44, 420, 'Field Operator'), P(50, 440, 'Unit'), P(199, 440, 'Employee'), P(349, 440, 'Position'), P(499, 440, 'Designated Area'),
+    P(50, 460, '12'), P(199, 460, '90002 - DELTA EPSILON'), P(349, 466, 'Operator,Field I'), P(499, 466, 'TR2'), P(199, 472, 'ZETA'),
+    P(199, 500, '700003 - Eta Theta Iota'), P(349, 500, 'Operator, Field'), P(499, 500, 'LP'),
+    P(44, 540, 'Panel Operators'), P(199, 560, '90004 - KAPPA LAMBDA'), P(349, 560, 'Operator I'), P(499, 560, 'TR1'),
+    P(44, 590, 'DOR'),
+  ] };
+  it('reads each person with the role, number, wrapped name, position and area', () => {
+    expect(parseManpower([page])).toEqual([
+      { role: 'Controller', empNo: '90001', name: 'ALPHA BETA GAMMA', position: 'Controller', area: null },
+      { role: 'Field Operator', empNo: '90002', name: 'DELTA EPSILON ZETA', position: 'Operator,Field I', area: 'TR2' },
+      { role: 'Field Operator', empNo: '700003', name: 'Eta Theta Iota', position: 'Operator, Field', area: 'LP' },
+      { role: 'Panel Operator', empNo: '90004', name: 'KAPPA LAMBDA', position: 'Operator I', area: 'TR1' },
+    ]);
   });
 });
