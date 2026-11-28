@@ -6,15 +6,16 @@ import type { Limit, LimitMatch } from '@/core/logbook/limits';
 import type { Override } from '@/core/logbook/board';
 import { LIMIT_COLS, LOG_COLS, MATCH_COLS, OVERRIDE_COLS, SAMPLE_COLS, SCHEDULE_COLS, toLimit, toLog, toMatch, toOverride, toSample, toSchedule, type LimitRow, type LogRow, type MatchRow, type OverrideRow, type SampleRow, type ScheduleRow } from '@/core/logbook/rows';
 import type { ScheduleItem } from '@/core/logbook/schedule';
+import { emailTime } from '@/core/logbook/staff';
 
 const daysAgo = (n: number) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
 
 /** The logs of the last `days` days (all three kinds) and when the Mac last sent. */
 export async function fetchUnitLogs(days = 21): Promise<{ logs: StoredLog[]; lastReceived: string | null }> {
-  const { data, error } = await supabase.from('unit_shift_logs').select(LOG_COLS).gte('log_date', daysAgo(days)).order('log_date', { ascending: false }).limit(300);
+  const { data, error } = await supabase.from('unit_shift_logs').select(`${LOG_COLS},source_file`).gte('log_date', daysAgo(days)).order('log_date', { ascending: false }).limit(300);
   if (error) throw error;
-  const rows = data as LogRow[];
-  return { logs: rows.map(toLog), lastReceived: rows.reduce<string | null>((m, r) => (!m || (r.received_at ?? '') > m ? r.received_at ?? m : m), null) };
+  const rows = data as (LogRow & { source_file: string | null })[];
+  return { logs: rows.map((r) => ({ ...toLog(r), emailedAt: emailTime(r.source_file) })), lastReceived: rows.reduce<string | null>((m, r) => (!m || (r.received_at ?? '') > m ? r.received_at ?? m : m), null) };
 }
 
 /** Lab samples collected in the last `days` days. */

@@ -6,6 +6,8 @@ import type { LabResult, RemarkSection, Reading, FeedRow, ProductRow, LogKind, S
 export interface StoredLog {
   kind: LogKind; logNo: number; date: string; shift: string | null; crew: string | null; day: string | null; recordedAt: string | null;
   sections: RemarkSection[]; readings: Reading[]; feed: FeedRow[]; products: ProductRow[]; manpower?: StaffRow[];
+  /** When the log was e-mailed (Kuwait time, "YYYY-MM-DD HH:MM"), from the saved e-mail's file name. */
+  emailedAt?: string | null;
 }
 export interface StoredSample { sampleId: string; material: string | null; equipment: string | null; collectedAt: string | null; note: string | null; results: LabResult[] }
 

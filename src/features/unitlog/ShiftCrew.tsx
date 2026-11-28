@@ -2,9 +2,8 @@
 // created, and the log's Manpower section against the planned roster (not in the log, on leave, from another crew).
 import { useEffect, useState } from 'react';
 import { evaluateRange } from '@/core/manpower';
-import { compareStaff, type StaffCompare, type StaffPerson } from '@/core/logbook/staff';
+import { compareStaff, emailDelay, emailState, type StaffCompare, type StaffPerson } from '@/core/logbook/staff';
 import type { StoredLog } from '@/core/logbook/view';
-import { kuwaitParts } from '@/core/logbook/view';
 import { fetchManpowerInputs } from '@/data/manpower';
 import { cx } from '@/ui/components';
 
@@ -25,8 +24,11 @@ export default function ShiftCrew({ log }: { log: StoredLog }) {
   const [r, setR] = useState<StaffCompare | null | undefined>(undefined);
   const [open, setOpen] = useState(false);
   useEffect(() => { setR(undefined); setOpen(false); let live = true; load(log).then((x) => { if (live) setR(x); }); return () => { live = false; }; }, [log]);
-  const created = kuwaitParts(log.recordedAt)?.time?.slice(0, 5);
-  if (!(log.manpower ?? []).length) return created ? <p className="px-1 text-[12.5px] text-slate-500">Log created {created} · this log has no Manpower section</p> : null;
+  const sent = log.emailedAt?.slice(11, 16) ?? null;
+  const st = emailState(emailDelay(log));
+  const mail = sent ? <span className={cx('font-semibold', st === 'very_late' ? 'text-red-700' : st === 'late' ? 'text-amber-700' : 'text-emerald-700')}>
+    {st === 'very_late' ? '●' : st === 'late' ? '▲' : '✓'} e-mailed {sent}</span> : null;
+  if (!(log.manpower ?? []).length) return mail ? <p className="px-1 text-[12.5px] text-slate-500">{mail} · this log has no Manpower section</p> : null;
   if (r === undefined) return <div className="h-[74px] animate-pulse rounded-2xl bg-white ring-1 ring-slate-200" />;
   if (!r) return null;
   const roster = r.present.length + r.missing.length + r.leave.length + r.inWhileOnLeave.length > 0;
@@ -41,7 +43,7 @@ export default function ShiftCrew({ log }: { log: StoredLog }) {
               {HOW[c.how]}{c.how === 'other_crew' && c.homeCrew ? ` · ${c.homeCrew} crew` : ''}</span>
           </div>
         )) : <div className="text-[15px] text-amber-800">No Controller named in the log</div>}
-        <div className="text-[12.5px] text-slate-500">{r.crew ?? '?'} crew · {(log.manpower ?? []).length} in the log{created ? ` · log created ${created}` : ''}</div>
+        <div className="text-[12.5px] text-slate-500">{r.crew ?? '?'} crew · {(log.manpower ?? []).length} in the log{mail ? <> · {mail}</> : null}</div>
       </div>
       {!r.onRota && roster && <p className="mt-1 text-[12.5px] font-semibold text-amber-800">The roster does not have {r.crew} crew on this shift.</p>}
       {!roster && <p className="mt-1 text-[12.5px] text-slate-500">The planned roster could not be compared.</p>}

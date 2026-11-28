@@ -7,6 +7,7 @@ import type { CrewDay, DayResult, MpPerson } from '../manpower';
 import { personOn } from '../manpower';
 import type { StaffRow } from './parse';
 import type { StoredLog } from './view';
+import { shiftEnd } from './products';
 
 const SHIFT_STATE: Record<string, string> = { Morning: 'M', Afternoon: 'A', Night: 'N' };
 const key = (n: string) => n.replace(/^0+/, '');
@@ -80,3 +81,19 @@ export function compareStaff(log: Pick<StoredLog, 'date' | 'shift' | 'crew' | 'm
   }
   return out;
 }
+
+// ── When the log was e-mailed (owner, 28 Nov 2026: "keep it at email time and keep it simple with colour code") ──
+/** "2026-11-28 1415 Log#33673.pdf" (the Mac saves each e-mail under its received time) → "2026-11-28 14:15". */
+export function emailTime(file: string | null | undefined): string | null {
+  const m = /^(\d{4}-\d{2}-\d{2}) (\d{2})(\d{2})\b/.exec(file ?? '');
+  return m ? `${m[1]} ${m[2]}:${m[3]}` : null;
+}
+/** Minutes after the shift's end the log was e-mailed (negative: before the end). */
+export function emailDelay(log: Pick<StoredLog, 'date' | 'shift' | 'emailedAt'>): number | null {
+  if (!log.emailedAt || !log.shift) return null;
+  const at = (s: string) => Date.parse(`${s.replace(' ', 'T')}:00Z`);
+  return Math.round((at(log.emailedAt) - at(shiftEnd(log.date, log.shift))) / 60000);
+}
+/** On time up to 30 min after the shift ends, late up to 90 min, then very late. */
+export const emailState = (delay: number | null): 'ok' | 'late' | 'very_late' | null =>
+  delay === null ? null : delay <= 30 ? 'ok' : delay <= 90 ? 'late' : 'very_late';

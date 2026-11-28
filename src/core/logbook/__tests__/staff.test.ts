@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { evaluateDay } from '../../manpower';
 import type { MpAbsence, MpPerson } from '../../manpower';
 import type { Crew } from '../../roster';
-import { compareStaff } from '../staff';
+import { compareStaff, emailDelay, emailState, emailTime } from '../staff';
 import type { StaffRow } from '../parse';
 
 // 23 Sep 2026: A = Morning, C = Afternoon, B = Night, D = Off. Made-up people.
@@ -53,5 +53,21 @@ describe('compareStaff with a relief Controller', () => {
     const r = compareStaff({ date: DAY, shift: 'Morning', crew: 'A', manpower: [row(vr, 'Controller')] }, day, [own, vr])!;
     expect(r.controllers).toEqual([expect.objectContaining({ empNo: vr.employeeNumber, how: 'relief' })]);
     expect(r.missing.map((x) => x.empNo)).toEqual([own.employeeNumber]);
+  });
+});
+
+describe('e-mail time', () => {
+  it('reads the time from the saved file name', () => {
+    expect(emailTime('2026-11-28 1415 Log#90001.pdf')).toBe('2026-11-28 14:15');
+    expect(emailTime('notes.pdf')).toBeNull();
+  });
+  it('colours by minutes after the shift end, a night shift ending the next morning', () => {
+    const d = (shift: string, emailedAt: string) => emailDelay({ date: '2026-11-27', shift, emailedAt });
+    expect(d('Morning', '2026-11-27 14:15')).toBe(15);
+    expect(emailState(d('Morning', '2026-11-27 14:15'))).toBe('ok');
+    expect(emailState(d('Afternoon', '2026-11-27 23:00'))).toBe('late');
+    expect(emailState(d('Night', '2026-11-28 08:00'))).toBe('very_late');
+    expect(emailState(d('Night', '2026-11-28 06:18'))).toBe('ok');
+    expect(emailState(emailDelay({ date: '2026-11-27', shift: 'Morning', emailedAt: null }))).toBeNull();
   });
 });
