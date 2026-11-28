@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { evaluateDay } from '../../manpower';
 import type { MpAbsence, MpPerson } from '../../manpower';
 import type { Crew } from '../../roster';
-import { compareStaff, emailDelay, emailState, emailTime } from '../staff';
+import { compareStaff, emailDelay, emailState, emailTime, staffTiles } from '../staff';
 import type { StaffRow } from '../parse';
 
 // 23 Sep 2026: A = Morning, C = Afternoon, B = Night, D = Off. Made-up people.
@@ -40,6 +40,17 @@ describe('compareStaff', () => {
       expect.objectContaining({ empNo: otherCrew.employeeNumber, homeCrew: 'B', inRoster: true }),
       expect.objectContaining({ empNo: '700001', name: 'Contractor Name', homeCrew: null, inRoster: false }),
     ]);
+  });
+  it('builds the six tiles: seats against the minimum, overtime, sick / absent, PV, as planned', () => {
+    const t = Object.fromEntries(staffTiles(r).map((x) => [x.key, x]));
+    expect(t.panel.value).toBe(`1 / ${day.rules.panelMin}`);
+    expect(t.panel.tone).toBe('short');
+    expect(t.field.people.map((p) => p.empNo)).toEqual([fa.employeeNumber, otherCrew.employeeNumber, '700001']);
+    expect(t.ot.people.map((p) => [p.empNo, p.tag])).toEqual([[otherCrew.employeeNumber, 'ot'], ['700001', 'not_in_roster']]);
+    expect(t.sick.people.map((p) => [p.empNo, p.tag])).toEqual(expect.arrayContaining([[fc.employeeNumber, 'sick'], [pb.employeeNumber, 'absent'], [fb.employeeNumber, 'absent']]));
+    expect(t.pv.people).toEqual([]);
+    expect(t.planned.value).toBe('3');
+    expect(t.planned.people.every((p) => p.id)).toBe(true);
   });
   it('says nothing when the log has no Manpower section', () => {
     expect(compareStaff({ ...log, manpower: [] }, day, people)).toBeNull();

@@ -90,7 +90,7 @@ export default function UnitLogPage({ isHead = false }: { isHead?: boolean }) {
         <>
           <Picker label={<><b>{shiftName(ards[i])}</b><div className="text-[12.5px] text-slate-500">{ards[i].crew ?? '?'} Shift · Log #{ards[i].logNo}{tab === 'overview' ? ' · mode not set (Normal limits)' : ''}</div></>}
             older={i < ards.length - 1 ? () => setI(i + 1) : undefined} newer={i > 0 ? () => setI(i - 1) : undefined} />
-          {tab !== 'trains' && <ShiftCrew log={ards[i]} />}
+          {tab !== 'trains' && <ShiftCrew log={ards[i]} isHead={isHead} />}
           {tab === 'overview' ? <Overview log={ards[i]} controller={logs.find((l) => l.kind === 'controller1' && sameShift(l, ards[i])) ?? null} lab={lab} limits={lib.limits} matches={lib.matches} overrides={overrides} schedule={schedule}
             canEdit={isHead} onLimitsChanged={() => fetchLimits().then(setLib).catch(() => undefined)}
             before={ards.slice(i + 1, i + 13)} onOverridesChanged={() => fetchOverrides().then(setOverrides).catch(() => undefined)} />

@@ -92,3 +92,10 @@ export async function closeOverride(id: string, note: string): Promise<void> {
   const { error } = await supabase.rpc('unit_override_close', { p_id: id, p_note: note });
   if (error) throw error;
 }
+
+/** Section Head: add a person seen in a shift log but not in the app to a crew's roster (unit_log_add_to_roster). */
+export async function addToRoster(v: { number: string; name: string; crew: string; position: 'panel_operator' | 'field_operator'; from: string; logPosition: string | null; logNo: number }): Promise<string> {
+  const { data, error } = await supabase.rpc('unit_log_add_to_roster', { p_number: v.number, p_name: v.name, p_crew: v.crew, p_position: v.position, p_from: v.from, p_log_position: v.logPosition, p_log_no: v.logNo });
+  if (error) throw error;
+  return data as string;
+}
